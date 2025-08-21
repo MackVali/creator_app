@@ -50,10 +50,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
           data: { session },
         } = await supabase.auth.getSession();
         setUser(session?.user || null);
+        // Always set loading to false and ready to true, regardless of session state
+        setLoading(false);
+        setIsReady(true);
       } catch (error) {
         console.error("Failed to get initial session:", error);
         setUser(null);
-      } finally {
         setLoading(false);
         setIsReady(true);
       }
@@ -66,6 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user || null);
+      // Update loading state for auth changes
       setLoading(false);
     });
 
