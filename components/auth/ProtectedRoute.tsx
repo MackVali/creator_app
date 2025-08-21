@@ -1,18 +1,21 @@
 "use client"
 
-import { useAuth } from '@/components/auth/AuthProvider'
+import { useAuth } from './AuthProvider'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
-import { AuthForm } from '@/components/auth/AuthForm'
 import { Loader2 } from 'lucide-react'
 
-export default function HomePage() {
+interface ProtectedRouteProps {
+  children: React.ReactNode
+}
+
+export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (!loading && user) {
-      router.push('/dashboard')
+    if (!loading && !user) {
+      router.push('/auth')
     }
   }, [user, loading, router])
 
@@ -27,9 +30,9 @@ export default function HomePage() {
     )
   }
 
-  if (user) {
-    return null // Will redirect to dashboard
+  if (!user) {
+    return null
   }
 
-  return <AuthForm />
+  return <>{children}</>
 }

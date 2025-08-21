@@ -1,0 +1,28 @@
+{
+  "deno.enable": false,
+  "deno.enablePaths": [
+    "supabase/functions",
+    "scripts/deno"
+  ],
+  "deno.lint": true,
+  "deno.unstable": true,
+  "deno.suggest.imports.hosts": {
+    "https://deno.land": true,
+    "https://esm.sh": true
+  },
+  "deno.codeLens.references": true,
+  "deno.codeLens.implementations": true,
+  "deno.codeLens.test": true,
+  "deno.importMap": "supabase/functions/import_map.json",
+
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}
+
+

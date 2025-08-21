@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Deno: Run Current File",
+      "type": "pwa-node",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--allow-all",
+        "--unstable",
+        "--import-map",
+        "supabase/functions/import_map.json"
+      ],
+      "env": {
+        "DENO_ENABLE": "1"
+      },
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Deno: Test supabase/functions",
+      "type": "pwa-node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "test",
+        "--allow-all",
+        "--unstable",
+        "--import-map",
+        "supabase/functions/import_map.json",
+        "supabase/functions"
+      ]
+    }
+  ]
+}
+
+

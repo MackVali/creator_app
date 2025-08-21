@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Deno: Format supabase/functions",
+      "type": "shell",
+      "command": "deno fmt supabase/functions",
+      "problemMatcher": []
+    },
+    {
+      "label": "Deno: Lint supabase/functions",
+      "type": "shell",
+      "command": "deno lint supabase/functions",
+      "problemMatcher": []
+    }
+  ]
+}
+
+
