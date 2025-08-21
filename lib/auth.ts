@@ -7,8 +7,16 @@ export interface AuthUser {
   created_at: string
 }
 
+// Check if Supabase client is available
+function checkSupabase() {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized - check environment variables')
+  }
+}
+
 export async function signInWithMagicLink(email: string) {
-  const { error } = await supabase.auth.signInWithOtp({
+  checkSupabase()
+  const { error } = await supabase!.auth.signInWithOtp({
     email,
     options: {
       emailRedirectTo: `${window.location.origin}/auth/callback`,
@@ -18,12 +26,14 @@ export async function signInWithMagicLink(email: string) {
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut()
+  checkSupabase()
+  const { error } = await supabase!.auth.signOut()
   return { error }
 }
 
 export async function getCurrentUser(): Promise<User | null> {
-  const { data: { user } } = await supabase.auth.getUser()
+  checkSupabase()
+  const { data: { user } } = await supabase!.auth.getUser()
   return user
 }
 
@@ -33,7 +43,8 @@ export async function getCurrentUserId(): Promise<string | null> {
 }
 
 export function onAuthStateChange(callback: (user: User | null) => void) {
-  return supabase.auth.onAuthStateChange((event, session) => {
+  checkSupabase()
+  return supabase!.auth.onAuthStateChange((event, session) => {
     callback(session?.user || null)
   })
 }

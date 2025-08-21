@@ -11,11 +11,19 @@ export async function getUserId() {
   return userId
 }
 
+// Check if Supabase client is available
+function checkSupabase() {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized - check environment variables')
+  }
+}
+
 // Generic create function that automatically adds user_id
 export async function createRecord<T>(
   table: string,
   data: Omit<T, 'id' | 'user_id' | 'created_at' | 'updated_at'>
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
+  checkSupabase()
   const userId = await getUserId()
   
   const recordData = {
@@ -25,13 +33,13 @@ export async function createRecord<T>(
     updated_at: new Date().toISOString(),
   }
 
-  const { data: result, error } = await supabase
+  const { data: result, error } = await supabase!
     .from(table)
     .insert(recordData)
     .select()
     .single()
 
-  return { data: result, error }
+  return { data: result as T | null, error }
 }
 
 // Generic update function that ensures user_id matches
@@ -40,6 +48,7 @@ export async function updateRecord<T>(
   id: string,
   data: Partial<Omit<T, 'id' | 'user_id' | 'created_at'>>
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
+  checkSupabase()
   const userId = await getUserId()
   
   const updateData = {
@@ -47,7 +56,7 @@ export async function updateRecord<T>(
     updated_at: new Date().toISOString(),
   }
 
-  const { data: result, error } = await supabase
+  const { data: result, error } = await supabase!
     .from(table)
     .update(updateData)
     .eq('id', id)
@@ -55,7 +64,7 @@ export async function updateRecord<T>(
     .select()
     .single()
 
-  return { data: result, error }
+  return { data: result as T | null, error }
 }
 
 // Generic delete function that ensures user_id matches
@@ -63,9 +72,10 @@ export async function deleteRecord(
   table: string,
   id: string
 ): Promise<{ error: PostgrestError | null }> {
+  checkSupabase()
   const userId = await getUserId()
   
-  const { error } = await supabase
+  const { error } = await supabase!
     .from(table)
     .delete()
     .eq('id', id)
@@ -79,14 +89,15 @@ export async function queryRecords<T>(
   table: string,
   options: {
     select?: string
-    filters?: Record<string, unknown>
+    filters?: Record<string, string | number | boolean | null>
     orderBy?: { column: string; ascending?: boolean }
     limit?: number
   } = {}
 ): Promise<{ data: T[] | null; error: PostgrestError | null }> {
+  checkSupabase()
   const userId = await getUserId()
   
-  let query = supabase
+  let query = supabase!
     .from(table)
     .select(options.select || '*')
     .eq('user_id', userId)
@@ -94,7 +105,9 @@ export async function queryRecords<T>(
   // Apply additional filters
   if (options.filters) {
     Object.entries(options.filters).forEach(([key, value]) => {
-      query = query.eq(key, value)
+      if (value !== null && value !== undefined) {
+        query = query.eq(key, value)
+      }
     })
   }
 
@@ -120,14 +133,15 @@ export async function getRecord<T>(
   table: string,
   id: string
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
+  checkSupabase()
   const userId = await getUserId()
   
-  const { data: result, error } = await supabase
+  const { data: result, error } = await supabase!
     .from(table)
     .select('*')
     .eq('id', id)
     .eq('user_id', userId)
     .single()
 
-  return { data: result, error }
+  return { data: result as T | null, error }
 }
