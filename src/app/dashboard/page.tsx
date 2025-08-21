@@ -1,10 +1,10 @@
 // <APP_ROOT>/dashboard/page.tsx
-import React from "react";
-import {
-  getUserStats,
-  getMonumentsSummary,
-  getSkillsAndGoals,
-} from "./loaders";
+// (keep your icons/Section/ProgressBar/StatCard/SkillRow components untouched)
+import React from 'react'
+import { redirect } from 'next/navigation'
+import { cookies as nextCookies } from 'next/headers'
+import { getSupabaseServer } from '@/lib/supabase'
+import { getUserStats, getMonumentsSummary, getSkillsAndGoals } from './loaders'
 
 // minimal inline icons
 const Trophy = (p: React.SVGProps<SVGSVGElement>) => (
@@ -239,27 +239,34 @@ function EmptyCard({ text }: { text: string }) {
     <div className="rounded-2xl border border-zinc-800/70 bg-zinc-900/40 p-6 text-sm text-zinc-400">
       {text}
     </div>
-  )
+  );
 }
 
 export default async function DashboardPage() {
-  const [{ level, xp_current, xp_max }, monuments, { skills, goals }] = await Promise.all([
-    getUserStats(),
-    getMonumentsSummary(),
-    getSkillsAndGoals(),
-  ])
+  // Server-side authentication guard
+  const cookieStore = await nextCookies()
+  const supabase = getSupabaseServer(cookieStore as any)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/auth')
 
-  const lvlTitle = `LEVEL ${level ?? 1}`
-  const xpCur = xp_current ?? 0
-  const xpMax = xp_max ?? 4000
+  const [{ level, xp_current, xp_max }, monuments, { skills, goals }] =
+    await Promise.all([
+      getUserStats(),
+      getMonumentsSummary(),
+      getSkillsAndGoals(),
+    ]);
+
+  const lvlTitle = `LEVEL ${level ?? 1}`;
+  const xpCur = xp_current ?? 0;
+  const xpMax = xp_max ?? 4000;
 
   const mCounts = {
-    Achievement: monuments['Achievement'] ?? 0,
-    Legacy: monuments['Legacy'] ?? 0,
-    Triumph: monuments['Triumph'] ?? 0,
-    Pinnacle: monuments['Pinnacle'] ?? 0,
-  }
-  const hasAnyMonuments = Object.values(mCounts).some(n => n > 0)
+    Achievement: monuments["Achievement"] ?? 0,
+    Legacy: monuments["Legacy"] ?? 0,
+    Triumph: monuments["Triumph"] ?? 0,
+    Pinnacle: monuments["Pinnacle"] ?? 0,
+  };
+  const hasAnyMonuments = Object.values(mCounts).some((n) => n > 0);
 
   return (
     <main className="mx-auto max-w-5xl p-6 md:p-10 text-zinc-100">
@@ -268,7 +275,9 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between text-sm text-zinc-300/90">
           <div className="w-full">
             <ProgressBar value={xpCur} max={xpMax} />
-            <div className="mt-2 text-right text-[13px] text-zinc-400">{xpCur} / {xpMax}</div>
+            <div className="mt-2 text-right text-[13px] text-zinc-400">
+              {xpCur} / {xpMax}
+            </div>
           </div>
         </div>
       </Section>
@@ -278,10 +287,26 @@ export default async function DashboardPage() {
       <Section title="MONUMENTS">
         {hasAnyMonuments ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <StatCard icon={<Trophy className="h-5 w-5" />} label="Achievement" count={mCounts.Achievement} />
-            <StatCard icon={<Ribbon className="h-5 w-5" />} label="Legacy" count={mCounts.Legacy} />
-            <StatCard icon={<Target className="h-5 w-5" />} label="Triumph" count={mCounts.Triumph} />
-            <StatCard icon={<Peak className="h-5 w-5" />} label="Pinnacle" count={mCounts.Pinnacle} />
+            <StatCard
+              icon={<Trophy className="h-5 w-5" />}
+              label="Achievement"
+              count={mCounts.Achievement}
+            />
+            <StatCard
+              icon={<Ribbon className="h-5 w-5" />}
+              label="Legacy"
+              count={mCounts.Legacy}
+            />
+            <StatCard
+              icon={<Target className="h-5 w-5" />}
+              label="Triumph"
+              count={mCounts.Triumph}
+            />
+            <StatCard
+              icon={<Peak className="h-5 w-5" />}
+              label="Pinnacle"
+              count={mCounts.Pinnacle}
+            />
           </div>
         ) : (
           <EmptyCard text="No monuments yet. Complete milestones to earn your first monument." />
@@ -293,9 +318,16 @@ export default async function DashboardPage() {
       <Section title="SKILLS">
         {skills.length ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {skills.map((s: { skill_id: string; name: string; progress: number }) => (
-              <SkillRow key={s.skill_id} icon={<Pen className="h-4 w-4" />} name={s.name} value={s.progress} />
-            ))}
+            {skills.map(
+              (s: { skill_id: string; name: string; progress: number }) => (
+                <SkillRow
+                  key={s.skill_id}
+                  icon={<Pen className="h-4 w-4" />}
+                  name={s.name}
+                  value={s.progress}
+                />
+              )
+            )}
           </div>
         ) : (
           <EmptyCard text="No skills yet. Create a skill to start tracking progress." />
@@ -308,7 +340,9 @@ export default async function DashboardPage() {
         {goals.length ? (
           <div className="rounded-2xl border border-zinc-800/70 bg-zinc-900/60 p-5">
             <ul className="list-disc space-y-2 pl-5 text-[15px] leading-6 text-zinc-200">
-              {goals.map((g: string, i: number) => <li key={i}>{g}</li>)}
+              {goals.map((g: string, i: number) => (
+                <li key={i}>{g}</li>
+              ))}
             </ul>
           </div>
         ) : (
@@ -316,5 +350,5 @@ export default async function DashboardPage() {
         )}
       </Section>
     </main>
-  )
+  );
 }
