@@ -5,7 +5,7 @@ export const runtime = 'nodejs'
 import "./globals.css";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Providers from "./providers";
+import ClientProviders from "@/components/ClientProviders";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { EnvChecker } from "@/components/env-checker";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
@@ -39,11 +39,11 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased text-zinc-100`}>
         <EnvChecker>
-          <Providers>
+          <ClientProviders>
             <AuthLayout>
               {body}
             </AuthLayout>
-          </Providers>
+          </ClientProviders>
         </EnvChecker>
         {preview ? <EnvBadge /> : null}
         {preview ? <StyleProbe /> : null}
