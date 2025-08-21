@@ -13,18 +13,29 @@ export default function AuthProvider({
 }) {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
+  const preview = process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
 
   useEffect(() => {
-    const supabase = getSupabaseBrowser();
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-      setReady(true);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session ?? null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
+    const supabase = getSupabaseBrowser?.()
+    if (!supabase) { setReady(true); return }
+
+    if (preview) {
+      // In preview, don't block render
+      setReady(true)
+      const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s ?? null))
+      return () => sub.subscription.unsubscribe()
+    }
+
+    let timed = false
+    const t = setTimeout(() => { timed = true; setReady(true) }, 4000)
+
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null)).finally(() => {
+      if (!timed) setReady(true)
+      clearTimeout(t)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s ?? null))
+    return () => sub.subscription.unsubscribe()
+  }, [preview])
 
   if (!ready) return null;
   return <AuthCtx.Provider value={{ session }}>{children}</AuthCtx.Provider>;
