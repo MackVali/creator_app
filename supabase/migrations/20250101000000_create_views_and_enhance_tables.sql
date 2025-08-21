@@ -70,39 +70,27 @@ CREATE TRIGGER trg_init_user_stats
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.init_user_stats();
 
--- 4. Create the three views exactly as requested
+-- 4. Create views that work with RLS and return empty sets when no data exists
 -- monuments_summary_v: count monuments grouped by category for the current user
 DROP VIEW IF EXISTS public.monuments_summary_v CASCADE;
 CREATE VIEW public.monuments_summary_v AS
-SELECT
-  m.user_id,
-  m.category,
-  count(*)::int as count
-FROM public.monuments m
-GROUP BY m.user_id, m.category;
+SELECT user_id, category, count(*)::int as count
+FROM public.monuments
+GROUP BY user_id, category;
 
 -- skills_progress_v: list skills with a 0–100 progress column for the current user
 DROP VIEW IF EXISTS public.skills_progress_v CASCADE;
 CREATE VIEW public.skills_progress_v AS
-SELECT
-  s.user_id,
-  s.id as skill_id,
-  s."Title" as name,
-  greatest(0, least(100, coalesce(s.progress, 0)))::int as progress
-FROM public.skills s;
+SELECT user_id, id as skill_id, name, greatest(0, least(100, coalesce(progress,0)))::int as progress
+FROM public.skills;
 
 -- goals_active_v: the 3 most recent active goals for the current user
 DROP VIEW IF EXISTS public.goals_active_v CASCADE;
 CREATE VIEW public.goals_active_v AS
-SELECT 
-  g.user_id, 
-  g.id as goal_id, 
-  g."Title" as name, 
-  g.updated_at
-FROM public.goals g
-WHERE coalesce(g.status, 'active') = 'active'
-ORDER BY g.updated_at DESC
-LIMIT 3;
+SELECT user_id, id as goal_id, name, updated_at
+FROM public.goals
+WHERE coalesce(status,'active') = 'active'
+ORDER BY updated_at DESC;
 
 -- user_stats_v: easy reading of user stats
 DROP VIEW IF EXISTS public.user_stats_v CASCADE;

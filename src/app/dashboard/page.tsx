@@ -234,6 +234,16 @@ function GoalsList({ items }: { items: string[] }) {
   );
 }
 
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center py-8 text-zinc-400">
+      <div className="text-center">
+        <div className="text-sm">{message}</div>
+      </div>
+    </div>
+  );
+}
+
 export default async function DashboardPage() {
   const [{ level, xp_current, xp_max }, monuments, { skills, goals }] =
     await Promise.all([
@@ -245,7 +255,7 @@ export default async function DashboardPage() {
   const lvlTitle = `LEVEL ${level ?? 1}`;
   const xp = { current: xp_current ?? 0, max: xp_max ?? 4000 };
 
-  // Ensure monuments always have all categories with fallbacks
+  // Handle monuments data - ensure all categories are represented
   const M = {
     Achievement: monuments.Achievement ?? 0,
     Legacy: monuments.Legacy ?? 0,
@@ -254,42 +264,27 @@ export default async function DashboardPage() {
   };
 
   // Check if monuments data is empty and log warning in development
-  const hasMonumentsData = Object.values(monuments).some(count => count > 0);
-  if (process.env.NODE_ENV === 'development' && !hasMonumentsData) {
-    console.warn('🚨 Monuments data is empty, showing placeholder values to maintain layout');
+  const hasMonumentsData = Object.values(monuments).some((count) => count > 0);
+  if (process.env.NODE_ENV === "development" && !hasMonumentsData) {
+    console.warn(
+      "🚨 Monuments data is empty, showing zero counts to maintain layout"
+    );
   }
 
-  // Ensure skills always have 8 items to maintain grid layout
-  const safeSkills = skills?.length
-    ? skills
-    : [
-        { skill_id: "w", name: "Writing", progress: 60 },
-        { skill_id: "tm", name: "Time Management", progress: 45 },
-        { skill_id: "ps", name: "Public Speaking", progress: 35 },
-        { skill_id: "pb", name: "Problem Solving", progress: 55 },
-        { skill_id: "m1", name: "Music", progress: 40 },
-        { skill_id: "m2", name: "Music", progress: 30 },
-        { skill_id: "m3", name: "Music", progress: 50 },
-        { skill_id: "g", name: "Guitar", progress: 25 },
-      ];
-
-  // Check if skills data is empty and log warning in development
-  if (process.env.NODE_ENV === 'development' && (!skills || skills.length === 0)) {
-    console.warn('🚨 Skills data is empty, showing placeholder values to maintain layout');
+  // Handle skills data - show empty state if no skills
+  const hasSkillsData = skills && skills.length > 0;
+  if (process.env.NODE_ENV === "development" && !hasSkillsData) {
+    console.warn(
+      "🚨 Skills data is empty, showing empty state"
+    );
   }
 
-  // Ensure goals always have 3 items to maintain layout
-  const safeGoals = goals?.length
-    ? goals
-    : [
-        "Complete book manuscript",
-        "Improve presentation skills",
-        "Plan charity event",
-      ];
-
-  // Check if goals data is empty and log warning in development
-  if (process.env.NODE_ENV === 'development' && (!goals || goals.length === 0)) {
-    console.warn('🚨 Goals data is empty, showing placeholder values to maintain layout');
+  // Handle goals data - show empty state if no goals
+  const hasGoalsData = goals && goals.length > 0;
+  if (process.env.NODE_ENV === "development" && !hasGoalsData) {
+    console.warn(
+      "🚨 Goals data is empty, showing empty state"
+    );
   }
 
   return (
@@ -333,23 +328,31 @@ export default async function DashboardPage() {
 
       <div className="h-6" />
       <Section title="SKILLS">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {safeSkills.map((s) => (
-            <SkillRow
-              key={s.skill_id}
-              icon={<Pen className="h-4 w-4" />}
-              name={s.name}
-              value={s.progress}
-            />
-          ))}
-        </div>
+        {hasSkillsData ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {skills.map((s) => (
+              <SkillRow
+                key={s.skill_id}
+                icon={<Pen className="h-4 w-4" />}
+                name={s.name}
+                value={s.progress}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState message="No skills added yet. Start building your skillset!" />
+        )}
       </Section>
 
       <div className="h-6" />
       <Section title="CURRENT GOALS">
-        <div className="rounded-2xl border border-zinc-800/70 bg-zinc-900/60 p-5">
-          <GoalsList items={safeGoals} />
-        </div>
+        {hasGoalsData ? (
+          <div className="rounded-2xl border border-zinc-800/70 bg-zinc-900/60 p-5">
+            <GoalsList items={goals} />
+          </div>
+        ) : (
+          <EmptyState message="No active goals. Set your first goal to get started!" />
+        )}
       </Section>
     </main>
   );
