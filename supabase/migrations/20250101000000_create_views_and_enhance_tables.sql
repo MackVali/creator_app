@@ -115,52 +115,48 @@ GRANT SELECT ON public.skills_progress_v TO authenticated;
 GRANT SELECT ON public.goals_active_v TO authenticated;
 GRANT SELECT ON public.user_stats_v TO authenticated;
 
--- 6. Ensure RLS is enabled and policies exist
--- The base tables already have RLS enabled and policies from previous migrations
--- But let's verify and add any missing policies
-
--- Verify monuments table has proper RLS
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE tablename = 'monuments' AND polname = 'monuments_select_own'
-  ) THEN
-    CREATE POLICY monuments_select_own ON public.monuments
-      FOR SELECT TO authenticated USING (user_id = auth.uid());
-  END IF;
-END $$;
-
--- Verify skills table has proper RLS
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE tablename = 'skills' AND polname = 'skills_select_own'
-  ) THEN
-    CREATE POLICY skills_select_own ON public.skills
-      FOR SELECT TO authenticated USING (user_id = auth.uid());
-  END IF;
-END $$;
-
--- Verify goals table has proper RLS
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE tablename = 'goals' AND polname = 'goals_select_own'
-  ) THEN
-    CREATE POLICY goals_select_own ON public.goals
-      FOR SELECT TO authenticated USING (user_id = auth.uid());
-  END IF;
-END $$;
-
--- Enable RLS and create policy for user_stats table
+-- 6. Enable Row Level Security on all tables
+ALTER TABLE public.monuments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.skills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_stats ENABLE ROW LEVEL SECURITY;
 
+-- 7. Create strict RLS policies for SELECT operations (users can only see own rows)
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE tablename = 'user_stats' AND polname = 'user_stats_select_own'
-  ) THEN
-    CREATE POLICY user_stats_select_own ON public.user_stats
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='monuments_select_own') THEN
+    CREATE POLICY monuments_select_own ON public.monuments 
       FOR SELECT USING (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='skills_select_own') THEN
+    CREATE POLICY skills_select_own ON public.skills 
+      FOR SELECT USING (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='goals_select_own') THEN
+    CREATE POLICY goals_select_own ON public.goals 
+      FOR SELECT USING (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='user_stats_select_own') THEN
+    CREATE POLICY user_stats_select_own ON public.user_stats 
+      FOR SELECT USING (user_id = auth.uid());
+  END IF;
+END $$;
+
+-- 8. Create strict RLS policies for INSERT/UPDATE/DELETE operations (users can only modify own rows)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='monuments_modify_own') THEN
+    CREATE POLICY monuments_modify_own ON public.monuments
+      FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='skills_modify_own') THEN
+    CREATE POLICY skills_modify_own ON public.skills
+      FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='goals_modify_own') THEN
+    CREATE POLICY goals_modify_own ON public.goals
+      FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE polname='user_stats_modify_own') THEN
+    CREATE POLICY user_stats_modify_own ON public.user_stats
+      FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
   END IF;
 END $$;
