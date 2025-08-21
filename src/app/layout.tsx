@@ -4,6 +4,7 @@ import "./globals.css";
 import Providers from "./providers";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { EnvChecker } from "@/components/env-checker";
+import EnvBadge from "@/components/debug/EnvBadge";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({
             </AuthLayout>
           </Providers>
         </EnvChecker>
+        <EnvBadge />
       </body>
     </html>
   );
