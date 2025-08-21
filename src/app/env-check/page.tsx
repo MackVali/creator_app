@@ -1,6 +1,5 @@
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 export default function Page() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
