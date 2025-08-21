@@ -5,6 +5,7 @@ import Providers from "./providers";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { EnvChecker } from "@/components/env-checker";
 import EnvBadge from "@/components/debug/EnvBadge";
+import ErrorBoundary from "@/components/debug/ErrorBoundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,13 +27,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const preview = process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
+  const Wrapped = preview ? <ErrorBoundary>{children}</ErrorBoundary> : <>{children}</>
+  
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased text-zinc-100`}>
         <EnvChecker>
           <Providers>
             <AuthLayout>
-              {children}
+              {Wrapped}
             </AuthLayout>
           </Providers>
         </EnvChecker>
