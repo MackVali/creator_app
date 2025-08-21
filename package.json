@@ -7,6 +7,8 @@
     "build": "next build --turbopack",
     "start": "next start",
     "preview": "npm run build && npm run start",
+    "clean": "rm -rf .next",
+    "kill3000": "lsof -ti :3000 | xargs kill -9 || true",
     "lint": "eslint"
   },
   "dependencies": {
@@ -38,6 +40,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.0",
     "tailwindcss": "^4",
+<<<<<<< HEAD
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5"
   }
