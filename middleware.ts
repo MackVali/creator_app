@@ -21,7 +21,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const { pathname } = req.nextUrl;
-  
+
   // Allow static assets and Next.js internals
   if (
     pathname.startsWith("/_next") ||
@@ -51,8 +51,11 @@ export async function middleware(req: NextRequest) {
       }
     );
 
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
     if (error || !user) {
       // Redirect to auth page if not authenticated
       const url = req.nextUrl.clone();

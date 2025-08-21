@@ -1,11 +1,12 @@
+import "./globals.css";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
 import Providers from "./providers";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { EnvChecker } from "@/components/env-checker";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import EnvBadge from "@/components/debug/EnvBadge";
+import StyleProbe from "@/components/debug/StyleProbe";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,6 +42,7 @@ export default function RootLayout({
           </Providers>
         </EnvChecker>
         {preview ? <EnvBadge /> : null}
+        {preview ? <StyleProbe /> : null}
       </body>
     </html>
   );
