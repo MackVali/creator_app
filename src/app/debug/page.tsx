@@ -1,5 +1,6 @@
 import { cookies as nextCookies } from 'next/headers'
 import { getSupabaseServer } from '@/lib/supabase'
+
 export const runtime = 'nodejs'
 
 export default async function Page() {

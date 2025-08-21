@@ -3,6 +3,8 @@ import { cookies as nextCookies } from 'next/headers'
 import { getSupabaseServer } from '@/lib/supabase'
 import type { UserStats, MonumentCounts, SkillItem, GoalItem } from '@/types/dashboard'
 
+export const runtime = 'nodejs'
+
 export async function GET() {
   const supabase = getSupabaseServer(nextCookies() as any)
 
