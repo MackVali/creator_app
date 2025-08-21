@@ -27,17 +27,21 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const preview = process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
-  const Wrapped = preview ? <ErrorBoundary>{children}</ErrorBoundary> : <>{children}</>
-  
+  const preview = process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
+  const Wrapped = preview ? (
+    <ErrorBoundary>{children}</ErrorBoundary>
+  ) : (
+    <>{children}</>
+  );
+
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased text-zinc-100`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased text-zinc-100`}
+      >
         <EnvChecker>
           <Providers>
-            <AuthLayout>
-              {Wrapped}
-            </AuthLayout>
+            <AuthLayout>{Wrapped}</AuthLayout>
           </Providers>
         </EnvChecker>
         <EnvBadge />

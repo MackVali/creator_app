@@ -10,7 +10,7 @@ import {
   getSkillsAndGoals,
 } from "./loaders";
 
-export const runtime = 'nodejs'
+export const runtime = "nodejs";
 
 // minimal inline icons
 const Trophy = (p: React.SVGProps<SVGSVGElement>) => (
