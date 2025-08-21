@@ -10,6 +10,7 @@
     "clean": "rm -rf .next",
     "kill3000": "lsof -ti :3000 | xargs kill -9 || true",
     "lint": "eslint",
+    "lint:fix": "next lint --fix || true",
     "test-views": "node scripts/test-views.js"
   },
   "dependencies": {

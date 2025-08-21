@@ -83,7 +83,7 @@ export default function HabitsPage() {
             lastCompleted: '2024-01-14'
           }
         ])
-      } catch (err) {
+      } catch (_err) {
         error('Failed to load habits', 'Please try refreshing the page', () => loadHabits())
       } finally {
         setLoading(false)

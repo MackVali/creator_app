@@ -1,10 +1,14 @@
 // <APP_ROOT>/dashboard/page.tsx
 // (keep your icons/Section/ProgressBar/StatCard/SkillRow components untouched)
-import React from 'react'
-import { redirect } from 'next/navigation'
-import { cookies as nextCookies } from 'next/headers'
-import { getSupabaseServer } from '@/lib/supabase'
-import { getUserStats, getMonumentsSummary, getSkillsAndGoals } from './loaders'
+import React from "react";
+import { redirect } from "next/navigation";
+import { cookies as nextCookies } from "next/headers";
+import { getSupabaseServer } from "@/lib/supabase";
+import {
+  getUserStats,
+  getMonumentsSummary,
+  getSkillsAndGoals,
+} from "./loaders";
 
 // minimal inline icons
 const Trophy = (p: React.SVGProps<SVGSVGElement>) => (
@@ -81,75 +85,6 @@ const Pen = (p: React.SVGProps<SVGSVGElement>) => (
     <path d="M18 6l2 2" />
   </svg>
 );
-const Clock = (p: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...p}
-  >
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 7v5l3 3" />
-  </svg>
-);
-const Mic = (p: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...p}
-  >
-    <rect x="9" y="2" width="6" height="11" rx="3" />
-    <path d="M5 10a7 7 0 0 0 14 0M12 19v3M8 22h8" />
-  </svg>
-);
-const Spark = (p: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...p}
-  >
-    <path d="m12 2 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" />
-  </svg>
-);
-const Music = (p: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...p}
-  >
-    <path d="M9 18a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm6-12v10a3 3 0 1 0 2 2V6l5-1V3l-7 2Z" />
-  </svg>
-);
-const Guitar = (p: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...p}
-  >
-    <path d="M11 11 3 19a4 4 0 1 0 6 6l8-8" />
-    <circle cx="19" cy="5" r="2" />
-    <path d="m17 7 4 4" />
-  </svg>
-);
 
 function Section({
   title,
@@ -224,15 +159,6 @@ function SkillRow({
     </div>
   );
 }
-function GoalsList({ items }: { items: string[] }) {
-  return (
-    <ul className="list-disc space-y-2 pl-5 text-[15px] leading-6 text-zinc-200">
-      {items.map((g, i) => (
-        <li key={i}>{g}</li>
-      ))}
-    </ul>
-  );
-}
 
 function EmptyCard({ text }: { text: string }) {
   return (
@@ -244,10 +170,12 @@ function EmptyCard({ text }: { text: string }) {
 
 export default async function DashboardPage() {
   // Server-side authentication guard
-  const cookieStore = await nextCookies()
-  const supabase = getSupabaseServer(cookieStore as any)
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth')
+  const cookieStore = await nextCookies();
+  const supabase = getSupabaseServer(cookieStore as any);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/auth");
 
   const [{ level, xp_current, xp_max }, monuments, { skills, goals }] =
     await Promise.all([

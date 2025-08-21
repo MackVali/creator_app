@@ -64,7 +64,7 @@ export default function GoalsPage() {
             category: 'Fitness'
           }
         ])
-      } catch (err) {
+      } catch (_err) {
         error('Failed to load goals', 'Please try refreshing the page', () => loadGoals())
       } finally {
         setLoading(false)

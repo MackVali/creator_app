@@ -5,6 +5,7 @@ This guide explains how to test the database views and verify that RLS (Row Leve
 ## Overview
 
 We've created several testing tools to validate that:
+
 - ✅ All database views are accessible
 - ✅ RLS policies are working correctly
 - ✅ Users can only access their own data
@@ -17,11 +18,13 @@ We've created several testing tools to validate that:
 **URL**: `/dashboard/test-views`
 
 This page runs tests in the browser and displays results visually. It's useful for:
+
 - Quick validation during development
 - Debugging authentication issues
 - Visual confirmation of test results
 
 **Features**:
+
 - Real-time test execution
 - Detailed error reporting
 - Sample data display
@@ -32,12 +35,14 @@ This page runs tests in the browser and displays results visually. It's useful f
 **Command**: `npm run test-views`
 
 This script runs tests from the command line and is useful for:
+
 - CI/CD pipelines
 - Automated testing
 - Server-side validation
 - Debugging without browser
 
 **Requirements**:
+
 - `SUPABASE_SERVICE_ROLE_KEY` environment variable
 - `NEXT_PUBLIC_SUPABASE_URL` environment variable
 
@@ -45,12 +50,12 @@ This script runs tests from the command line and is useful for:
 
 The testing suite validates these views:
 
-| View | Purpose | Test Description |
-|------|---------|------------------|
-| `user_stats_v` | User level and XP | Verifies user stats are accessible |
-| `monuments_summary_v` | Monument counts | Tests category grouping and counting |
-| `skills_progress_v` | Skills progress | Validates skill data structure |
-| `goals_active_v` | Active goals | Confirms goal filtering and limits |
+| View                  | Purpose           | Test Description                     |
+| --------------------- | ----------------- | ------------------------------------ |
+| `user_stats_v`        | User level and XP | Verifies user stats are accessible   |
+| `monuments_summary_v` | Monument counts   | Tests category grouping and counting |
+| `skills_progress_v`   | Skills progress   | Validates skill data structure       |
+| `goals_active_v`      | Active goals      | Confirms goal filtering and limits   |
 
 ## RLS Policy Testing
 
@@ -114,12 +119,12 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 ### ❌ Common Issues
 
-| Error | Likely Cause | Solution |
-|-------|--------------|----------|
-| `permission denied` | RLS policy too restrictive | Check policy definitions |
-| `relation does not exist` | View not created | Run database migrations |
-| `authentication required` | User not logged in | Check auth state |
-| `invalid input syntax` | Data type mismatch | Verify column types |
+| Error                     | Likely Cause               | Solution                 |
+| ------------------------- | -------------------------- | ------------------------ |
+| `permission denied`       | RLS policy too restrictive | Check policy definitions |
+| `relation does not exist` | View not created           | Run database migrations  |
+| `authentication required` | User not logged in         | Check auth state         |
+| `invalid input syntax`    | Data type mismatch         | Verify column types      |
 
 ### Debugging Tips
 
@@ -165,8 +170,8 @@ SELECT schemaname, viewname FROM pg_views WHERE viewname LIKE '%user_stats%';
 
 ```sql
 -- Check RLS status
-SELECT schemaname, tablename, rowsecurity 
-FROM pg_tables 
+SELECT schemaname, tablename, rowsecurity
+FROM pg_tables
 WHERE tablename IN ('user_stats', 'monuments', 'skills', 'goals');
 
 -- Check policies

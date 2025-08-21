@@ -1,5 +1,5 @@
 import { Button } from "./button"
-import { Plus, Target, Mountain, Clock, CheckCircle, Star, Calendar, Zap } from "lucide-react"
+import { Plus, Target, Mountain, CheckCircle, Star, Calendar } from "lucide-react"
 
 interface EmptyStateProps {
   title: string

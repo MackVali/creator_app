@@ -11,7 +11,7 @@ import {
   useToastHelpers
 } from '@/components/ui'
 import { Button } from '@/components/ui/button'
-import { Plus, Star, TrendingUp, Target, Award } from 'lucide-react'
+import { Plus, Star, TrendingUp, Award } from 'lucide-react'
 
 interface Skill {
   id: string
@@ -98,7 +98,7 @@ export default function SkillsPage() {
             totalPracticeHours: 75
           }
         ])
-      } catch (err) {
+      } catch (_err) {
         error('Failed to load skills', 'Please try refreshing the page', () => loadSkills())
       } finally {
         setLoading(false)

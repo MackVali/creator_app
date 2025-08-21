@@ -83,7 +83,7 @@ export default function ProjectsPage() {
             category: 'Business'
           }
         ])
-      } catch (err) {
+      } catch (_err) {
         error('Failed to load projects', 'Please try refreshing the page', () => loadProjects())
       } finally {
         setLoading(false)

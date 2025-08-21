@@ -1,4 +1,4 @@
-export { useDashboardData } from './useDashboardData'
+export { useDashboardData } from "./useDashboardData";
 export type {
   UserStats,
   MonumentsSummary,
@@ -7,4 +7,4 @@ export type {
   SkillsAndGoals,
   DashboardData,
   UseDashboardDataReturn,
-} from './useDashboardData'
+} from "./useDashboardData";

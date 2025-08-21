@@ -27,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0b0b0c] text-zinc-100`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased text-zinc-100`}>
         <EnvChecker>
           <Providers>
             <AuthLayout>

@@ -1,102 +1,38 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export async function middleware(req: NextRequest) {
-  // Check if required environment variables are present and not empty
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const PUBLIC_PATHS = [
+  "/auth",
+  "/auth/callback",
+  "/healthz",
+  "/env-check",
+  "/favicon.ico",
+  "/robots.txt",
+  "/sitemap.xml",
+];
 
-  if (!supabaseUrl?.trim() || !supabaseAnonKey?.trim()) {
-    // If environment variables are missing or empty, allow all routes to pass through
-    // The EnvChecker component will handle showing the error UI
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // allow public files and next internals
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/static") ||
+    /\.(png|jpg|jpeg|gif|svg|ico|txt|xml|webp|avif|woff2?)$/.test(pathname)
+  )
+    return NextResponse.next();
+
+  // allow all auth routes explicitly
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  let response = NextResponse.next({
-    request: {
-      headers: req.headers,
-    },
-  });
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return req.cookies.get(name)?.value;
-      },
-      set(name: string, value: string, options: any) {
-        req.cookies.set({
-          name,
-          value,
-          ...options,
-        });
-        response = NextResponse.next({
-          request: {
-            headers: req.headers,
-          },
-        });
-        response.cookies.set({
-          name,
-          value,
-          ...options,
-        });
-      },
-      remove(name: string, options: any) {
-        req.cookies.set({
-          name,
-          value: "",
-          ...options,
-        });
-        response = NextResponse.next({
-          request: {
-            headers: req.headers,
-          },
-        });
-        response.cookies.set({
-          name,
-          value: "",
-          ...options,
-        });
-      },
-    },
-  });
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  // Allow auth callback routes to pass through
-  if (req.nextUrl.pathname.startsWith("/auth/callback")) {
-    return response;
-  }
-
-  // If user is not signed in and the current path is not /auth, redirect to /auth
-  if (!session && req.nextUrl.pathname !== "/auth") {
-    const redirectUrl = req.nextUrl.clone();
-    redirectUrl.pathname = "/auth";
-    return NextResponse.redirect(redirectUrl);
-  }
-
-  // If user is signed in and the current path is /auth, redirect to /dashboard
-  if (session && req.nextUrl.pathname === "/auth") {
-    const redirectUrl = req.nextUrl.clone();
-    redirectUrl.pathname = "/dashboard";
-    return NextResponse.redirect(redirectUrl);
-  }
-
-  return response;
+  // Example guard (optional): if you check cookies/session, do it here.
+  // Otherwise, do nothing to avoid blocking.
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     * - api routes
-     */
-    "/((?!_next/static|_next/image|favicon.ico|public|api).*)",
-  ],
+  matcher: "/:path*",
 };
