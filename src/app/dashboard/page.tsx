@@ -1,6 +1,10 @@
 // <APP_ROOT>/dashboard/page.tsx
 import React from "react";
-import { getUserStats, getMonumentsSummary, getSkillsAndGoals } from './loaders'
+import {
+  getUserStats,
+  getMonumentsSummary,
+  getSkillsAndGoals,
+} from "./loaders";
 
 // minimal inline icons
 const Trophy = (p: React.SVGProps<SVGSVGElement>) => (
@@ -231,38 +235,62 @@ function GoalsList({ items }: { items: string[] }) {
 }
 
 export default async function DashboardPage() {
-  const [{ level, xp_current, xp_max }, monuments, { skills, goals }] = await Promise.all([
-    getUserStats(),
-    getMonumentsSummary(),
-    getSkillsAndGoals(),
-  ])
+  const [{ level, xp_current, xp_max }, monuments, { skills, goals }] =
+    await Promise.all([
+      getUserStats(),
+      getMonumentsSummary(),
+      getSkillsAndGoals(),
+    ]);
 
-  const lvlTitle = `LEVEL ${level ?? 1}`
-  const xp = { current: xp_current ?? 0, max: xp_max ?? 4000 }
+  const lvlTitle = `LEVEL ${level ?? 1}`;
+  const xp = { current: xp_current ?? 0, max: xp_max ?? 4000 };
 
+  // Ensure monuments always have all categories with fallbacks
   const M = {
     Achievement: monuments.Achievement ?? 0,
     Legacy: monuments.Legacy ?? 0,
     Triumph: monuments.Triumph ?? 0,
     Pinnacle: monuments.Pinnacle ?? 0,
+  };
+
+  // Check if monuments data is empty and log warning in development
+  const hasMonumentsData = Object.values(monuments).some(count => count > 0);
+  if (process.env.NODE_ENV === 'development' && !hasMonumentsData) {
+    console.warn('🚨 Monuments data is empty, showing placeholder values to maintain layout');
   }
 
+  // Ensure skills always have 8 items to maintain grid layout
   const safeSkills = skills?.length
     ? skills
     : [
-        { skill_id: 'w', name: 'Writing', progress: 60 },
-        { skill_id: 'tm', name: 'Time Management', progress: 45 },
-        { skill_id: 'ps', name: 'Public Speaking', progress: 35 },
-        { skill_id: 'pb', name: 'Problem Solving', progress: 55 },
-        { skill_id: 'm1', name: 'Music', progress: 40 },
-        { skill_id: 'm2', name: 'Music', progress: 30 },
-        { skill_id: 'm3', name: 'Music', progress: 50 },
-        { skill_id: 'g', name: 'Guitar', progress: 25 },
-      ]
+        { skill_id: "w", name: "Writing", progress: 60 },
+        { skill_id: "tm", name: "Time Management", progress: 45 },
+        { skill_id: "ps", name: "Public Speaking", progress: 35 },
+        { skill_id: "pb", name: "Problem Solving", progress: 55 },
+        { skill_id: "m1", name: "Music", progress: 40 },
+        { skill_id: "m2", name: "Music", progress: 30 },
+        { skill_id: "m3", name: "Music", progress: 50 },
+        { skill_id: "g", name: "Guitar", progress: 25 },
+      ];
 
+  // Check if skills data is empty and log warning in development
+  if (process.env.NODE_ENV === 'development' && (!skills || skills.length === 0)) {
+    console.warn('🚨 Skills data is empty, showing placeholder values to maintain layout');
+  }
+
+  // Ensure goals always have 3 items to maintain layout
   const safeGoals = goals?.length
     ? goals
-    : ['Complete book manuscript', 'Improve presentation skills', 'Plan charity event']
+    : [
+        "Complete book manuscript",
+        "Improve presentation skills",
+        "Plan charity event",
+      ];
+
+  // Check if goals data is empty and log warning in development
+  if (process.env.NODE_ENV === 'development' && (!goals || goals.length === 0)) {
+    console.warn('🚨 Goals data is empty, showing placeholder values to maintain layout');
+  }
 
   return (
     <main className="mx-auto max-w-5xl p-6 md:p-10 text-zinc-100">
@@ -280,18 +308,39 @@ export default async function DashboardPage() {
       <div className="h-6" />
       <Section title="MONUMENTS">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <StatCard icon={<Trophy className="h-5 w-5" />} label="Achievement" count={M.Achievement} />
-          <StatCard icon={<Ribbon className="h-5 w-5" />} label="Legacy" count={M.Legacy} />
-          <StatCard icon={<Target className="h-5 w-5" />} label="Triumph" count={M.Triumph} />
-          <StatCard icon={<Peak className="h-5 w-5" />} label="Pinnacle" count={M.Pinnacle} />
+          <StatCard
+            icon={<Trophy className="h-5 w-5" />}
+            label="Achievement"
+            count={M.Achievement}
+          />
+          <StatCard
+            icon={<Ribbon className="h-5 w-5" />}
+            label="Legacy"
+            count={M.Legacy}
+          />
+          <StatCard
+            icon={<Target className="h-5 w-5" />}
+            label="Triumph"
+            count={M.Triumph}
+          />
+          <StatCard
+            icon={<Peak className="h-5 w-5" />}
+            label="Pinnacle"
+            count={M.Pinnacle}
+          />
         </div>
       </Section>
 
       <div className="h-6" />
       <Section title="SKILLS">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {safeSkills.map(s => (
-            <SkillRow key={s.skill_id} icon={<Pen className="h-4 w-4" />} name={s.name} value={s.progress} />
+          {safeSkills.map((s) => (
+            <SkillRow
+              key={s.skill_id}
+              icon={<Pen className="h-4 w-4" />}
+              name={s.name}
+              value={s.progress}
+            />
           ))}
         </div>
       </Section>
@@ -303,5 +352,5 @@ export default async function DashboardPage() {
         </div>
       </Section>
     </main>
-  )
+  );
 }
