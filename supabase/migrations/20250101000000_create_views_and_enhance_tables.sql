@@ -54,7 +54,23 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 3. Create the three views exactly as requested
+-- 3. Create trigger function and trigger for auto-initializing user_stats
+-- Function to initialize user stats when new user signs up
+CREATE OR REPLACE FUNCTION public.init_user_stats()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO public.user_stats (user_id) VALUES (new.id)
+  ON CONFLICT (user_id) DO NOTHING;
+  RETURN new;
+END $$;
+
+-- Drop and recreate trigger (idempotent)
+DROP TRIGGER IF EXISTS trg_init_user_stats ON auth.users;
+CREATE TRIGGER trg_init_user_stats
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.init_user_stats();
+
+-- 4. Create the three views exactly as requested
 -- monuments_summary_v: count monuments grouped by category for the current user
 DROP VIEW IF EXISTS public.monuments_summary_v CASCADE;
 CREATE VIEW public.monuments_summary_v AS
@@ -93,13 +109,13 @@ DROP VIEW IF EXISTS public.user_stats_v CASCADE;
 CREATE VIEW public.user_stats_v AS
 SELECT user_id, level, xp_current, xp_max FROM public.user_stats;
 
--- 4. Grant permissions on views
+-- 5. Grant permissions on views
 GRANT SELECT ON public.monuments_summary_v TO authenticated;
 GRANT SELECT ON public.skills_progress_v TO authenticated;
 GRANT SELECT ON public.goals_active_v TO authenticated;
 GRANT SELECT ON public.user_stats_v TO authenticated;
 
--- 5. Ensure RLS is enabled and policies exist
+-- 6. Ensure RLS is enabled and policies exist
 -- The base tables already have RLS enabled and policies from previous migrations
 -- But let's verify and add any missing policies
 
