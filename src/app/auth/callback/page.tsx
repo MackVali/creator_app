@@ -1,29 +1,36 @@
-import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
-
+'use client'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 export const runtime = 'nodejs'
 
-export default async function AuthCallbackPage() {
-  const supabase = createServerClient(
-    process.env.NEXT_SUPABASE_URL!,
-    process.env.NEXT_SUPABASE_ANON_KEY!,
-    {
-      serviceKey: process.env.SUPABASE_SERVICE_KEY,
-      cookies: {
-        serviceKey: process.env.SUPABASE_SERVICE_KEY,
-      },
-    },
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function AuthCallback() {
+  const router = useRouter()
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    const run = async () => {
+      // Lazy import so nothing executes at SSR/prerender
+      const { getSupabaseBrowser } = await import('@/lib/supabase')
+      const supabase = getSupabaseBrowser?.()
+      if (!supabase) {
+        setErr('Supabase not initialized: missing NEXT_PUBLIC_SUPABASE_URL/_ANON_KEY')
+        return
+      }
+      const { error } = await supabase.auth.exchangeCodeForSession()
+      if (error) { setErr(error.message); return }
+      setDone(true)
+      router.replace('/dashboard')
+    }
+    void run()
+  }, [router])
+
+  return (
+    <div style={{display:'grid',placeItems:'center',height:'100dvh',color:'#ddd',background:'#0a0a0a'}}>
+      {err ? <div>Auth error: {err}</div> : (done ? 'Redirecting…' : 'Signing you in…')}
+    </div>
   )
-
-  const {
-    data: { session },
-    error,
-  } = await supabase.auth.exchangeCodeForSession()
-
-  if (error) {
-    return redirect(`/auth/login?error=${error.message}`)
-  }
-
-  return redirect('/dashboard')
 }

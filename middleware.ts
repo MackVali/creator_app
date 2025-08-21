@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PUBLIC = ['/auth','/auth/callback','/debug','/debug/env','/env-check','/healthz','/favicon.ico','/robots.txt','/sitemap.xml']
+const PUBLIC = ['/auth', '/auth/callback', '/_next', '/api', '/static', '/favicon.ico', '/robots.txt', '/sitemap.xml']
 
 export function middleware(req: NextRequest) {
+  // Always allow public routes
+  if (PUBLIC.some(p => req.nextUrl.pathname.startsWith(p))) return NextResponse.next()
+  
   if (process.env.NEXT_PUBLIC_PREVIEW_BYPASS === '1') return NextResponse.next()
   const { pathname } = req.nextUrl
   if (
