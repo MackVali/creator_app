@@ -1,18 +1,25 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-const PUBLIC = ['/auth','/auth/callback','/favicon.ico','/robots.txt','/sitemap.xml']
+const PUBLIC = [
+  "/auth",
+  "/auth/callback",
+  "/favicon.ico",
+  "/robots.txt",
+  "/sitemap.xml",
+];
 
 export function middleware(req: NextRequest) {
-  if (process.env.PREVIEW_BYPASS === '1') return NextResponse.next()
-  const { pathname } = req.nextUrl
+  if (process.env.PREVIEW_BYPASS === "1") return NextResponse.next();
+  const { pathname } = req.nextUrl;
   if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
-    pathname.startsWith('/static') ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/static") ||
     /\.(png|jpg|jpeg|gif|svg|ico|txt|xml|webp|avif|woff2?)$/.test(pathname) ||
-    PUBLIC.some(p => pathname.startsWith(p))
-  ) return NextResponse.next()
-  return NextResponse.next()
+    PUBLIC.some((p) => pathname.startsWith(p))
+  )
+    return NextResponse.next();
+  return NextResponse.next();
 }
-export const config = { matcher: '/:path*' }
+export const config = { matcher: "/:path*" };
