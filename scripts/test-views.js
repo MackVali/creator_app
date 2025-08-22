@@ -15,10 +15,16 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // Use service role for testing
 
 if (!supabaseUrl || !supabaseKey) {
-  console.error("❌ Missing environment variables:");
-  console.error("   NEXT_PUBLIC_SUPABASE_URL:", supabaseUrl ? "✅" : "❌");
-  console.error("   SUPABASE_SERVICE_ROLE_KEY:", supabaseKey ? "✅" : "❌");
-  process.exit(1);
+  console.warn("⚠️ Skipping test-views: missing environment variables");
+  console.warn(
+    "   NEXT_PUBLIC_SUPABASE_URL:",
+    supabaseUrl ? "✅" : "❌"
+  );
+  console.warn(
+    "   SUPABASE_SERVICE_ROLE_KEY:",
+    supabaseKey ? "✅" : "❌"
+  );
+  process.exit(0);
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
