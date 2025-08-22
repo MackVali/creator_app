@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App-wide dark background + smoothing (optional) */
+html, body, #__next {
+  height: 100%;
+}
+:root {
+  color-scheme: dark;
+}
+body {
+  background: #070707;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
