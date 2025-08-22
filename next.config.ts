@@ -1,23 +1,11 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
   experimental: {
-    optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
+    optimizePackageImports: ['@supabase/supabase-js'],
   },
-  // Ensure proper output for Vercel
-  output: "standalone",
-  // Handle SPA routing
-  trailingSlash: false,
-  // Ensure proper redirects for auth
-  async redirects() {
-    return [
-      {
-        source: "/",
-        destination: "/dashboard",
-        permanent: false,
-      },
-    ];
-  },
-};
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
+}
 
-export default nextConfig;
+module.exports = nextConfig

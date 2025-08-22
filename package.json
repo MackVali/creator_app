@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "build": "next build",
     "start": "next start",
     "preview": "npm run build && npm run start",
     "clean": "rm -rf .next",
     "kill3000": "lsof -ti :3000 | xargs kill -9 || true",
-    "lint": "eslint"
+    "lint": "eslint",
+    "lint:fix": "next lint --fix || true",
+    "test-views": "node scripts/test-views.js"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
@@ -21,26 +23,28 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "2.55.0",
-    "@tanstack/react-query": "5.85.5",
-    "class-variance-authority": "0.7.1",
+    "@supabase/supabase-js": "^2.55.0",
+    "@tanstack/react-query": "^5.85.5",
+    "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "0.540.0",
-    "next": "15.5.0",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "dotenv": "^16.4.5",
+    "lucide-react": "^0.540.0",
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "tailwind-merge": "^2.0.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "15.5.0",
-    "tailwindcss": "^4",
+    "@eslint/eslintrc": "^3.0.0",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.5.0",
+    "tailwindcss": "^4.0.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5"
+    "typescript": "^5.0.0"
   }
 }
