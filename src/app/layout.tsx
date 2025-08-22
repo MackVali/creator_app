@@ -4,7 +4,6 @@ export const runtime = "nodejs";
 
 import "./globals.css";
 import ClientProviders from "@/components/ClientProviders";
-import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import React from "react";
 
 export default function RootLayout({
@@ -15,9 +14,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <ErrorBoundary>
-          <ClientProviders>{children}</ClientProviders>
-        </ErrorBoundary>
+        <ClientProviders>{children}</ClientProviders>
       </body>
     </html>
   );

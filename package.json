@@ -3,15 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "predev": "pkill -f \"next dev|turbopack\" || true",
+    "dev": "PORT=3000 next dev",
     "build": "next build",
-    "start": "next start",
-    "preview": "npm run build && npm run start",
-    "clean": "rm -rf .next",
-    "kill3000": "lsof -ti :3000 | xargs kill -9 || true",
-    "lint": "eslint",
-    "lint:fix": "next lint --fix || true",
-    "test-views": "node scripts/test-views.js"
+    "start": "next start -p 3000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",

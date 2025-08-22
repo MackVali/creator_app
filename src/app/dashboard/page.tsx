@@ -219,9 +219,6 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-5xl p-6 md:p-10 text-zinc-100">
-      {process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" ? (
-        <div style={{ color: "#fff", padding: "8px 0" }}>PREVIEW MOUNTED</div>
-      ) : null}
       {/* LEVEL */}
       <Section title={lvlTitle}>
         <div className="flex items-center justify-between text-sm text-zinc-300/90">

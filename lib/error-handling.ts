@@ -36,8 +36,9 @@ const USER_FRIENDLY_MESSAGES = {
 } as const;
 
 // Parse Supabase auth errors
-export function parseSupabaseError(error: any): AppError {
-  const errorMessage = error?.message || "Unknown error occurred";
+export function parseSupabaseError(error: unknown): AppError {
+  const errorMessage = (error as { message?: string })?.message ||
+    "Unknown error occurred";
 
   // Log the full error for debugging
   console.error("Supabase error:", error);
@@ -89,8 +90,11 @@ export function parseSupabaseError(error: any): AppError {
 }
 
 // Parse network errors
-export function parseNetworkError(error: any): AppError {
-  if (error.name === "TypeError" && error.message.includes("fetch")) {
+export function parseNetworkError(error: unknown): AppError {
+  if (
+    (error as { name?: string; message?: string }).name === "TypeError" &&
+    (error as { message?: string }).message?.includes("fetch")
+  ) {
     return {
       code: ERROR_CODES.NETWORK_ERROR,
       message: error.message,
@@ -99,11 +103,14 @@ export function parseNetworkError(error: any): AppError {
     };
   }
 
-  return parseSupabaseError(error);
-}
+    return parseSupabaseError(error);
+  }
 
 // Generic error handler
-export function handleError(error: any, context: string = "Unknown"): AppError {
+export function handleError(
+  error: unknown,
+  context: string = "Unknown"
+): AppError {
   console.error(`Error in ${context}:`, error);
 
   if (error?.code && Object.values(ERROR_CODES).includes(error.code)) {
