@@ -57,7 +57,7 @@ export default function ClientDashboard({
       </div>
 
       {/* LEVEL */}
-      <div className="rounded-2xl border border-white/10 bg-[#151517] p-4 md:p-5 space-y-4">
+      <div className="rounded-2xl border border-white/10 bg-[#151517] p-4 md:p-5 space-y-4 shadow-sm">
         <div className="text-sm md:text-base uppercase tracking-wide text-white/70">
           LEVEL {level.level}
         </div>
@@ -104,7 +104,7 @@ export default function ClientDashboard({
 
       {/* CURRENT GOALS */}
       <Section title="CURRENT GOALS">
-        <div className="rounded-2xl border border-white/10 bg-[#151517] p-5 md:p-6">
+        <div className="rounded-2xl border border-white/10 bg-[#151517] p-5 md:p-6 shadow-sm">
           <ul className="list-disc list-inside space-y-2 text-white/85 leading-relaxed">
             {goals.map((g, i) => (
               <li key={i}>{g}</li>
