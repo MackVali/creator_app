@@ -9,7 +9,7 @@ interface Props {
 export default function SkillCard({ icon, name, percent }: Props) {
   const pct = Math.max(0, Math.min(100, percent));
   return (
-    <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-[#151517] p-4 shadow-sm hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 ring-white/30">
+    <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-[#151517] p-4 shadow-sm focus-visible:outline-none focus-visible:ring-2 ring-white/30">
       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 opacity-80">
         {icon}
       </div>

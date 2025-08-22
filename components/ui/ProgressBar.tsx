@@ -20,11 +20,11 @@ export default function ProgressBar({ value, max, labelRight }: Props) {
         className="h-full rounded-full bg-white/70"
         style={{ width: `${pct}%` }}
       />
-        {labelRight && (
-          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[11px] md:text-xs px-2 py-0.5 bg-white/10 rounded-full text-white/80">
-            {labelRight}
-          </span>
-        )}
-      </div>
-    );
-  }
+      {labelRight && (
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] md:text-xs px-2 py-0.5 bg-white/10 rounded-full text-white/80">
+          {labelRight}
+        </span>
+      )}
+    </div>
+  );
+}

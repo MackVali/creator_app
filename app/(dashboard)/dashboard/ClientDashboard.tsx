@@ -49,7 +49,7 @@ export default function ClientDashboard({
   goals,
 }: Props) {
   return (
-    <div className="container mx-auto max-w-6xl px-4 md:px-6 py-8 md:py-10 flex flex-col gap-6 md:gap-8 bg-[#0b0b0c]">
+    <div className="container mx-auto max-w-6xl px-4 md:px-6 py-8 md:py-10 flex flex-col gap-6 md:gap-8">
       <h1 className="sr-only">Dashboard</h1>
       {/* HEADER */}
       <div className="relative h-24 md:h-28 w-full rounded-2xl bg-white/5 overflow-hidden">
