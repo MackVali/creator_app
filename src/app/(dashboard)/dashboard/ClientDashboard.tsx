@@ -52,18 +52,21 @@ export default function ClientDashboard({
     <div className="container mx-auto max-w-6xl px-4 md:px-6 py-8 md:py-10 flex flex-col gap-6 md:gap-8">
       <h1 className="sr-only">Dashboard</h1>
       {/* HEADER */}
-      <div className="h-24 md:h-28 w-full rounded-2xl bg-[linear-gradient(135deg,#ffffff15,#ffffff05)] opacity-30" />
+      <div className="relative h-24 md:h-28 w-full rounded-2xl bg-white/5 overflow-hidden">
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,#ffffff33,#ffffff00)] opacity-30" />
+      </div>
 
       {/* LEVEL */}
-      <Section title={`LEVEL ${level.level}`}> 
-        <div className="rounded-2xl border border-white/10 bg-[#151517] p-4 md:p-5">
-          <ProgressBar
-            value={level.xp}
-            max={level.next}
-            labelRight={`${level.xp} / ${level.next}`}
-          />
+      <div className="rounded-2xl border border-white/10 bg-[#151517] p-4 md:p-5 space-y-4">
+        <div className="text-sm md:text-base uppercase tracking-wide text-white/70">
+          LEVEL {level.level}
         </div>
-      </Section>
+        <ProgressBar
+          value={level.xp}
+          max={level.next}
+          labelRight={`${level.xp} / ${level.next}`}
+        />
+      </div>
 
       {/* MONUMENTS */}
       <Section title="MONUMENTS">
@@ -73,7 +76,7 @@ export default function ClientDashboard({
             return (
               <StatCard
                 key={m.label}
-                icon={<Icon className="h-5 w-5" />}
+                icon={<Icon className="h-5 w-5 text-white/70" />}
                 label={m.label}
                 value={m.count}
               />
@@ -90,7 +93,7 @@ export default function ClientDashboard({
             return (
               <SkillCard
                 key={s.name}
-                icon={<Icon className="h-4 w-4" />}
+                icon={<Icon className="h-4 w-4 text-white/70" />}
                 name={s.name}
                 percent={s.percent}
               />
@@ -101,8 +104,8 @@ export default function ClientDashboard({
 
       {/* CURRENT GOALS */}
       <Section title="CURRENT GOALS">
-        <div className="rounded-2xl border border-white/10 bg-[#151517] p-5">
-          <ul className="list-disc space-y-2 pl-4 text-white/80">
+        <div className="rounded-2xl border border-white/10 bg-[#151517] p-5 md:p-6">
+          <ul className="list-disc list-inside space-y-2 text-white/85 leading-relaxed">
             {goals.map((g, i) => (
               <li key={i}>{g}</li>
             ))}

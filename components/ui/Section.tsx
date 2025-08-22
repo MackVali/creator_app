@@ -7,8 +7,8 @@ interface Props {
 
 export default function Section({ title, children }: Props) {
   return (
-    <section className="flex flex-col gap-4 md:gap-6">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-white/70">
+    <section>
+      <h2 className="mb-4 md:mb-6 text-sm md:text-base font-medium uppercase tracking-wide text-white/70">
         {title}
       </h2>
       {children}
