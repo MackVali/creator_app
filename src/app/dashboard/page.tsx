@@ -173,7 +173,26 @@ function EmptyCard({ text }: { text: string }) {
 export default async function DashboardPage() {
   // Server-side authentication guard
   const cookieStore = await nextCookies();
-  const supabase = getSupabaseServer(cookieStore as any);
+  const supabase = getSupabaseServer({
+    get: (name: string) => cookieStore.get(name),
+    set: (
+      _name: string,
+      _value: string,
+      _options: {
+        path?: string;
+        domain?: string;
+        maxAge?: number;
+        secure?: boolean;
+        httpOnly?: boolean;
+        sameSite?: "strict" | "lax" | "none";
+      }
+    ) => {},
+  });
+
+  if (!supabase) {
+    redirect("/auth");
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();

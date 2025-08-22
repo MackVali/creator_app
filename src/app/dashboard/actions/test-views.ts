@@ -8,7 +8,7 @@ export interface ViewTestResult {
   success: boolean;
   rowCount: number;
   error?: string;
-  sampleData?: any;
+  sampleData?: Record<string, unknown> | null;
 }
 
 export interface ViewsTestSummary {
@@ -21,7 +21,21 @@ export interface ViewsTestSummary {
 
 export async function testDatabaseViews(): Promise<ViewsTestSummary> {
   const cookieStore = cookies();
-  const supabase = getSupabaseServer(cookieStore as any);
+  const supabase = getSupabaseServer({
+    get: (name: string) => cookieStore.get(name),
+    set: (
+      _name: string,
+      _value: string,
+      _options: {
+        path?: string;
+        domain?: string;
+        maxAge?: number;
+        secure?: boolean;
+        httpOnly?: boolean;
+        sameSite?: "strict" | "lax" | "none";
+      }
+    ) => {},
+  });
 
   const results: ViewTestResult[] = [];
 
@@ -183,7 +197,21 @@ export async function testSpecificView(
   viewName: string
 ): Promise<ViewTestResult> {
   const cookieStore = cookies();
-  const supabase = getSupabaseServer(cookieStore as any);
+  const supabase = getSupabaseServer({
+    get: (name: string) => cookieStore.get(name),
+    set: (
+      _name: string,
+      _value: string,
+      _options: {
+        path?: string;
+        domain?: string;
+        maxAge?: number;
+        secure?: boolean;
+        httpOnly?: boolean;
+        sameSite?: "strict" | "lax" | "none";
+      }
+    ) => {},
+  });
 
   try {
     const { data, error } = await supabase.from(viewName).select("*").limit(1);
