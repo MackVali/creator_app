@@ -49,7 +49,7 @@ export default function ClientDashboard({
   goals,
 }: Props) {
   return (
-    <div className="container mx-auto max-w-6xl px-4 md:px-6 py-8 md:py-10 flex flex-col gap-6 md:gap-8">
+    <div className="container mx-auto max-w-6xl px-4 md:px-6 py-8 md:py-10 flex flex-col gap-6 md:gap-8 bg-[#0b0b0c]">
       <h1 className="sr-only">Dashboard</h1>
       {/* HEADER */}
       <div className="relative h-24 md:h-28 w-full rounded-2xl bg-white/5 overflow-hidden">
@@ -57,7 +57,7 @@ export default function ClientDashboard({
       </div>
 
       {/* LEVEL */}
-      <div className="rounded-2xl border border-white/10 bg-[#151517] p-4 md:p-5 space-y-4 shadow-sm">
+      <div className="rounded-2xl border border-white/10 bg-[#151517] p-4 space-y-4 shadow-sm">
         <div className="text-sm md:text-base uppercase tracking-wide text-white/70">
           LEVEL {level.level}
         </div>
@@ -70,7 +70,7 @@ export default function ClientDashboard({
 
       {/* MONUMENTS */}
       <Section title="MONUMENTS">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           {monuments.map((m) => {
             const Icon = monumentIcons[m.label] ?? Trophy;
             return (
@@ -87,7 +87,7 @@ export default function ClientDashboard({
 
       {/* SKILLS */}
       <Section title="SKILLS">
-        <div className="grid gap-4 md:gap-5 md:grid-cols-2">
+        <div className="grid md:grid-cols-2 gap-5">
           {skills.map((s) => {
             const Icon = skillIcons[s.name] ?? Pen;
             return (
@@ -104,7 +104,7 @@ export default function ClientDashboard({
 
       {/* CURRENT GOALS */}
       <Section title="CURRENT GOALS">
-        <div className="rounded-2xl border border-white/10 bg-[#151517] p-5 md:p-6 shadow-sm">
+        <div className="rounded-2xl border border-white/10 bg-[#151517] p-5 shadow-sm">
           <ul className="list-disc list-inside space-y-2 text-white/85 leading-relaxed">
             {goals.map((g, i) => (
               <li key={i}>{g}</li>
