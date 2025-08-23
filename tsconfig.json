@@ -23,6 +23,7 @@
       "@/*": ["./src/*", "./components/*", "./lib/*"],
       "@/components/*": ["./components/*"],
       "@/lib/data/*": ["./src/lib/data/*"],
+      "@/lib/db-utils": ["./src/lib/db-utils"],
       "@/lib/*": ["./lib/*"],
       "@/types/*": ["./src/types/*"]
     }

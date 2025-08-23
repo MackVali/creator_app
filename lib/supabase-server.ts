@@ -30,3 +30,5 @@ export async function createSupabaseServerClientWithSet() {
     },
   });
 }
+
+export { createSupabaseServerClient as createClient }
