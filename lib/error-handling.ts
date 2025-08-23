@@ -36,8 +36,9 @@ const USER_FRIENDLY_MESSAGES = {
 } as const;
 
 // Parse Supabase auth errors
-export function parseSupabaseError(error: any): AppError {
-  const errorMessage = error?.message || "Unknown error occurred";
+export function parseSupabaseError(error: unknown): AppError {
+  const err = error as { message?: string };
+  const errorMessage = err?.message || "Unknown error occurred";
 
   // Log the full error for debugging
   console.error("Supabase error:", error);
@@ -89,11 +90,12 @@ export function parseSupabaseError(error: any): AppError {
 }
 
 // Parse network errors
-export function parseNetworkError(error: any): AppError {
-  if (error.name === "TypeError" && error.message.includes("fetch")) {
+export function parseNetworkError(error: unknown): AppError {
+  const err = error as { name?: string; message?: string };
+  if (err.name === "TypeError" && err.message?.includes("fetch")) {
     return {
       code: ERROR_CODES.NETWORK_ERROR,
-      message: error.message,
+      message: err.message || "Network error",
       userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.NETWORK_ERROR],
       shouldLog: true,
     };
@@ -103,16 +105,25 @@ export function parseNetworkError(error: any): AppError {
 }
 
 // Generic error handler
-export function handleError(error: any, context: string = "Unknown"): AppError {
+export function handleError(
+  error: unknown,
+  context: string = "Unknown",
+): AppError {
   console.error(`Error in ${context}:`, error);
 
-  if (error?.code && Object.values(ERROR_CODES).includes(error.code)) {
+  const err = error as { code?: string; message?: string };
+  if (
+    err?.code &&
+    Object.values(ERROR_CODES).includes(
+      err.code as (typeof ERROR_CODES)[keyof typeof ERROR_CODES],
+    )
+  ) {
     return {
-      code: error.code,
-      message: error.message || "Unknown error",
+      code: err.code,
+      message: err.message || "Unknown error",
       userMessage:
         USER_FRIENDLY_MESSAGES[
-          error.code as keyof typeof USER_FRIENDLY_MESSAGES
+          err.code as keyof typeof USER_FRIENDLY_MESSAGES
         ] || USER_FRIENDLY_MESSAGES[ERROR_CODES.UNKNOWN_ERROR],
       shouldLog: false, // Already logged above
     };

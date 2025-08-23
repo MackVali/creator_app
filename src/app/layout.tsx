@@ -7,6 +7,7 @@ import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import TopNav from "@/components/TopNav";
 import BottomNav from "@/components/BottomNav";
+import DevToolbar from "@/components/devtools/DevToolbar";
 import React from "react";
 
 export default function RootLayout({
@@ -14,6 +15,9 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const enableDevtools =
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_ENABLE_DEVTOOLS === "true";
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col">
@@ -22,6 +26,7 @@ export default function RootLayout({
             <TopNav username="MackVali" />
             <main className="flex-1">{children}</main>
             <BottomNav />
+            {enableDevtools && <DevToolbar />}
           </ClientProviders>
         </ErrorBoundary>
       </body>
