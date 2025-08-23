@@ -1,32 +1,19 @@
-"use client";
-
-import { useState, useEffect } from "react";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import {
-  PageHeader,
-  ContentCard,
-  GridContainer,
-  GridSkeleton,
-  useToastHelpers,
-} from "@/components/ui";
-import { Button } from "@/components/ui/button";
-import { Plus, Trophy, Award, Star, Crown } from "lucide-react";
-
-interface Monument {
-  id: string;
-  name: string;
-  description: string;
-  type: "Achievement" | "Legacy" | "Triumph" | "Pinnacle";
-  earnedDate: string;
-  category: string;
-  rarity: "common" | "rare" | "epic" | "legendary";
-}
+import Link from "next/link";
 
 export default function MonumentsPage() {
   return (
-    <div className="p-6 text-white">
-      <h1>Monuments Page</h1>
-      <p>Coming soon...</p>
-    </div>
+    <main className="p-6 space-y-6">
+      <h1 className="text-lg font-semibold">Monuments</h1>
+      <div className="card p-6 text-center">
+        <p>No Monuments yet.</p>
+      </div>
+      <Link
+        href="/monuments/new"
+        className="block w-full rounded-full bg-[var(--accent)] py-2 text-center font-semibold text-black"
+      >
+        + Add Monument
+      </Link>
+    </main>
   );
 }
+
