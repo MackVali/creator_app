@@ -11,7 +11,14 @@
     "kill3000": "lsof -ti :3000 | xargs kill -9 || true",
     "lint": "eslint",
     "lint:fix": "next lint --fix || true",
-    "test-views": "node scripts/test-views.js"
+    "test-views": "node scripts/test-views.js",
+    "deploy:force": "vercel --prod --force",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:env": "vitest run test/env.spec.ts",
+    "test:ui": "vitest -c vitest.jsdom.config.ts",
+    "test:ci": "vitest run --coverage",
+    "prepare": "husky"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
@@ -28,7 +35,6 @@
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dotenv": "^16.4.5",
     "lucide-react": "^0.540.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
@@ -41,10 +47,13 @@
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "dotenv": "^16.4.5",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.5.0",
+    "husky": "^9.1.7",
     "tailwindcss": "^4.0.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }
