@@ -4,11 +4,10 @@ import React from "react";
 import { redirect } from "next/navigation";
 import { cookies as nextCookies } from "next/headers";
 import { getSupabaseServer } from "@/lib/supabase";
-import {
-  getUserStats,
-  getMonumentsSummary,
-  getSkillsAndGoals,
-} from "./loaders";
+import { getUserStats } from "./loaders";
+import { listGoals } from "@/lib/data/goals";
+import { listSkills } from "@/lib/data/skills";
+import { listMonuments } from "@/lib/data/monuments";
 import { ClientDashboard } from "./components/ClientDashboard";
 
 export const runtime = "nodejs";
@@ -199,44 +198,33 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/auth");
 
-  const [{ level, xp_current, xp_max }, monuments, { skills, goals }] =
+  const [{ level, xp_current, xp_max }, goals, skills, monuments] =
     await Promise.all([
       getUserStats(),
-      getMonumentsSummary(),
-      getSkillsAndGoals(),
+      listGoals(),
+      listSkills(),
+      listMonuments(),
     ]);
 
-  // Use the styled ClientDashboard component instead of the basic server-side rendering
   const dashboardData = {
-    userStats: {
-      level: 80, // Sample level like in mockup
-      xp_current: 3200, // Sample XP like in mockup
-      xp_max: 4000,
-    },
+    userStats: { level, xp_current, xp_max },
     monuments: {
-      Achievement: 5, // Sample data like in mockup
-      Legacy: 10,
-      Triumph: 4,
-      Pinnacle: 7,
+      Achievement: monuments.length,
+      Legacy: 0,
+      Triumph: 0,
+      Pinnacle: 0,
     },
     skillsAndGoals: {
-      skills: [
-        { skill_id: 1, name: "Writing", progress: 75 },
-        { skill_id: 2, name: "Time Management", progress: 60 },
-        { skill_id: 3, name: "Public Speaking", progress: 45 },
-        { skill_id: 4, name: "Problem Solving", progress: 80 },
-        { skill_id: 5, name: "Music", progress: 30 },
-        { skill_id: 6, name: "Guitar", progress: 55 },
-      ],
-      goals: [
-        { goal_id: 1, name: "Complete book manuscript", updated_at: undefined },
-        {
-          goal_id: 2,
-          name: "Improve presentation skills",
-          updated_at: undefined,
-        },
-        { goal_id: 3, name: "Plan charity event", updated_at: undefined },
-      ],
+      skills: skills.map((s) => ({
+        skill_id: s.id,
+        name: s.name,
+        progress: 0,
+      })),
+      goals: goals.map((g) => ({
+        goal_id: g.id,
+        name: g.name,
+        updated_at: undefined,
+      })),
     },
   };
 

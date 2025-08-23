@@ -1,34 +1,39 @@
-"use client";
+import Link from 'next/link';
+import { listSkills } from '@/lib/data/skills';
+import { createSkill } from './actions';
+import { PageHeader, ContentCard, ListContainer } from '@/components/ui';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
-import { useState, useEffect } from "react";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import {
-  PageHeader,
-  ContentCard,
-  GridContainer,
-  GridSkeleton,
-  SkillsEmptyState,
-  useToastHelpers,
-} from "@/components/ui";
-import { Button } from "@/components/ui/button";
-import { Plus, Star, TrendingUp, Award } from "lucide-react";
-
-interface Skill {
-  id: string;
-  name: string;
-  description: string;
-  currentLevel: number;
-  targetLevel: number;
-  category: string;
-  lastPracticed?: string;
-  totalPracticeHours: number;
-}
-
-export default function SkillsPage() {
+export default async function Page() {
+  const items = await listSkills();
   return (
-    <div className="p-6 text-white">
-      <h1>Skills Page</h1>
-      <p>Coming soon...</p>
+    <div className="p-6 space-y-6">
+      <PageHeader title="Skills" />
+      {items.length === 0 && (
+        <p className="text-sm text-muted-foreground">No items yet</p>
+      )}
+      {items.length > 0 && (
+        <ListContainer>
+          {items.map((skill) => (
+            <ContentCard key={skill.id} padding="sm">
+              <Link href={`/skills/${skill.id}`} className="block">
+                <div className="font-medium">{skill.name}</div>
+                {skill.description && (
+                  <p className="text-sm text-muted-foreground">
+                    {skill.description}
+                  </p>
+                )}
+              </Link>
+            </ContentCard>
+          ))}
+        </ListContainer>
+      )}
+      <form action={createSkill} className="space-y-2">
+        <Input name="name" placeholder="Name" required />
+        <Input name="description" placeholder="Description" />
+        <Button type="submit">Add</Button>
+      </form>
     </div>
   );
 }
