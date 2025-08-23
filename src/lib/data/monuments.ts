@@ -1,53 +1,32 @@
-'use server';
+import { createClient } from '@/lib/supabase-server'
 
-import { DbError, safeQuery } from '@/lib/db-utils';
-import { createClient } from '@/lib/supabase-server';
+export type Monument = { id: string; name: string; description?: string | null }
 
-export async function listMonuments(): Promise<Array<{ id: string; name: string; description?: string }>> {
-  const supabase = await createClient();
-  if (!supabase) {
-    console.error('[listMonuments] No supabase client');
-    return [];
-  }
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
-  try {
-    const { data, error } = await supabase
-      .from('monuments')
-      .select('id,name,description')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (error) {
-      const err = error as { code?: string; details?: string | null };
-      console.error('[listMonuments] Supabase error', {
-        code: err.code,
-        message: error.message,
-        details: err.details,
-      });
-      return []; // soft-fail; check /debug/rsc for details
-    }
-    return data ?? [];
-  } catch (e) {
-    console.error('[listMonuments] Unexpected error', e);
-    return [];
-  }
+export async function listMonuments(): Promise<Monument[]> {
+  const supabase = await createClient()
+  if (!supabase) return []
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+  const { data, error } = await supabase
+    .from('monuments')
+    .select('id,name,description')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+  if (error) { console.error('[listMonuments]', error); return [] }
+  return data ?? []
 }
 
-export async function getMonument(id: string): Promise<{id:string;name:string;description?:string}|null> {
-  const supabase = await createClient();
-  if (!supabase) throw new Error('No supabase client');
-  return safeQuery('getMonument', async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
-    const { data, error } = await supabase
-      .from('monuments')
-      .select('id,name,description')
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .maybeSingle();
-    if (error) throw new DbError('monuments', error);
-    return data as {id:string;name:string;description?:string} | null;
-  });
+export async function getMonument(id: string): Promise<Monument | null> {
+  const supabase = await createClient()
+  if (!supabase) return null
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data, error } = await supabase
+    .from('monuments')
+    .select('id,name,description')
+    .eq('user_id', user.id)
+    .eq('id', id)
+    .maybeSingle()
+  if (error) { console.error('[getMonument]', error); return null }
+  return data
 }
