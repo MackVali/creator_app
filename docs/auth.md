@@ -133,6 +133,16 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
+When deploying on Vercel, add the above variables to your project's Environment Variables settings.
+
+## Supabase Auth URL Configuration
+
+In the Supabase Dashboard, navigate to **Authentication → URL Configuration** and add the following redirect URLs so OAuth and magic link flows work locally, in preview, and in production:
+
+- `http://localhost:3000`
+- `https://*.vercel.app`
+- your production domain
+
 ## Security Features
 
 1. **Row Level Security (RLS)**: Database policies ensure users can only access their own data

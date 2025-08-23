@@ -75,6 +75,14 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
+### Supabase Configuration
+
+- In your Vercel project settings, add the `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` environment variables.
+- In the Supabase Dashboard, go to **Authentication → URL Configuration** and include the following redirect URLs so OAuth and magic link flows work in every environment:
+  - `http://localhost:3000`
+  - `https://*.vercel.app`
+  - your production domain
+
 ## Database Migrations
 
 - **Link your Supabase project**

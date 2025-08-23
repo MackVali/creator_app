@@ -1,34 +1,58 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-const onVercel = !!process.env.VERCEL; // true on Preview & Prod
-const bypassAuth = false; // force OFF in all Vercel envs
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next();
 
-const SKIP = [
-  /^\/_next\//,
-  /^\/favicon\.ico$/,
-  /^\/images\//,
-  /^\/api\/health$/,
-  /^\/api\/debug\/env$/,
-  /^\/api\/preview\/exit$/,
-];
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return req.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          res.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: CookieOptions) {
+          res.cookies.set({ name, value: "", ...options, maxAge: 0 });
+        },
+      },
+    },
+  );
 
-export function middleware(req: NextRequest) {
-  const p = req.nextUrl.pathname;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Skip static assets and health checks
-  if (SKIP.some((r) => r.test(p))) return NextResponse.next();
+  const path = req.nextUrl.pathname;
 
-  // Hard-disable auth bypass on Vercel (Preview & Production)
-  if (bypassAuth) {
-    return NextResponse.next();
+  // Skip public routes and static assets
+  if (path.startsWith("/api") || path === "/health") {
+    return res;
   }
 
-  // For now, just pass through - auth will be handled at the page level
-  // The key change is that bypassAuth is hardcoded to false, preventing any bypass
-  return NextResponse.next();
+  if (!user && path !== "/auth") {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = "/auth";
+    redirectUrl.searchParams.set("redirect", path);
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  if (user && path.startsWith("/auth")) {
+    const redirectPath = req.nextUrl.searchParams.get("redirect") || "/";
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = redirectPath;
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next|api/health|api/debug/env|images|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api|health).*)"],
 };
+
