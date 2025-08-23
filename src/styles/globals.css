@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* custom layers/utilities can go below */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+:root{
+  --bg:#0f1115; --surface:#171a21; --surface-2:#1c2028;
+  --text:#e6e7ea; --muted:#9aa3ad; --accent:#6ea8ff;
+  --radius:16px; --radius-sm:12px;
+}
+html,body{ background:var(--bg); color:var(--text); }
+.section{ padding:20px 16px 8px; }
+.h-label{ letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--muted); font-size:12px; }
+.card{ background:linear-gradient(180deg,var(--surface),var(--surface-2));
+       border-radius:var(--radius);
+       box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 10px 28px rgba(0,0,0,.5);
+       border:1px solid rgba(255,255,255,.06); }
+.inner-hair{ box-shadow:0 1px 0 rgba(255,255,255,.04) inset; }
+.safe-bottom{ padding-bottom:calc(env(safe-area-inset-bottom,16px) + 12px); }
+.scroll-snap{ scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+.snap-start{ scroll-snap-align:start; }
