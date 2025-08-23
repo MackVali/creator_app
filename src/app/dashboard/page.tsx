@@ -172,62 +172,7 @@ function EmptyCard({ text }: { text: string }) {
 }
 
 export default async function DashboardPage() {
-  // Check if we're in preview mode
-  const isPreview = process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
-
-  // In preview mode, show a simple dashboard without authentication
-  if (isPreview) {
-    return (
-      <main className="mx-auto max-w-5xl p-6 md:p-10 text-zinc-100">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-zinc-100">Dashboard</h1>
-          <p className="text-zinc-400 mt-2">
-            Preview Mode - Authentication Bypassed
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-6">
-            <h2 className="text-xl font-semibold text-zinc-200 mb-4">
-              Welcome to Preview!
-            </h2>
-            <p className="text-zinc-400">
-              This is a preview of your dashboard. In production, users will
-              need to authenticate.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-6">
-            <h2 className="text-xl font-semibold text-zinc-200 mb-4">
-              Quick Links
-            </h2>
-            <div className="space-y-2">
-              <a
-                href="/auth"
-                className="block text-blue-400 hover:text-blue-300"
-              >
-                Authentication
-              </a>
-              <a
-                href="/debug/typography"
-                className="block text-blue-400 hover:text-blue-300"
-              >
-                Debug CSS
-              </a>
-              <a
-                href="/debug/build"
-                className="block text-blue-400 hover:text-blue-300"
-              >
-                Build Test
-              </a>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  // Server-side authentication guard for production
+  // Server-side authentication guard for all environments (including Preview)
   const cookieStore = await nextCookies();
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
