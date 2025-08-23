@@ -10,7 +10,14 @@ import type {
 export const runtime = "nodejs";
 
 export async function GET() {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
+
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase client not initialized" },
+      { status: 500 }
+    );
+  }
 
   const [
     { data: stats },

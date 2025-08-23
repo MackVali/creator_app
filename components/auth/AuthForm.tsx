@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Label, Input, Button, Card, TabButton } from "@/components/ui/field";
-import RoleOption from "@/components/auth/RoleOption";
+
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { parseSupabaseError } from "@/lib/error-handling";
+import RoleOption from "@/components/auth/RoleOption";
 
 // Password validation function
 const validatePassword = (password: string): string | null => {
@@ -34,15 +34,9 @@ export default function AuthForm() {
   const [lockoutDuration] = useState(5 * 60 * 1000); // 5 minutes
 
   const router = useRouter();
+  const supabase = getSupabaseBrowser();
 
-  const supabase = getSupabaseBrowser?.();
-
-  // Check if user is locked out
-  const isLockedOut =
-    lockoutTime &&
-    new Date().getTime() - lockoutTime.getTime() < lockoutDuration;
-
-  // Reset lockout after duration
+  // Reset lockout after duration - placed before any early returns to fix hooks rules
   useEffect(() => {
     if (lockoutTime) {
       const timer = setTimeout(() => {
@@ -53,9 +47,44 @@ export default function AuthForm() {
     }
   }, [lockoutTime, lockoutDuration]);
 
+  // Add this check at the beginning of your component
+  if (!supabase) {
+    return (
+      <div className="w-full max-w-md mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-5xl font-black tracking-widest text-white mb-4">
+            ACCOUNTABILITY
+          </h1>
+          <p className="text-lg text-zinc-300">Level up your life!</p>
+        </div>
+
+        <div className="bg-[#1E1E1E] rounded-3xl border border-[#333] shadow-2xl p-8">
+          <div className="text-center">
+            <div className="text-red-400 bg-red-900/20 p-4 rounded-xl border border-red-500/30 mb-4">
+              ⚠️ Configuration Error
+            </div>
+            <p className="text-zinc-300 mb-4">
+              Supabase is not properly configured. Please check your environment
+              variables.
+            </p>
+            <p className="text-sm text-zinc-400">
+              Required: NEXT_PUBLIC_SUPABASE_URL and
+              NEXT_PUBLIC_SUPABASE_ANON_KEY
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if user is locked out
+  const isLockedOut =
+    lockoutTime &&
+    new Date().getTime() - lockoutTime.getTime() < lockoutDuration;
+
   const handleAuthError = (error: { message?: string }) => {
     const appError = parseSupabaseError(error);
-    setAttempts((prev) => prev + 1);
+    setAttempts((prev: number) => prev + 1);
 
     // Lock out after 5 failed attempts
     if (attempts >= 4) {
@@ -70,12 +99,10 @@ export default function AuthForm() {
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
-
     if (isLockedOut) {
       setError("Account temporarily locked. Please wait before trying again.");
       return;
     }
-
     if (!supabase) {
       setError("Supabase not initialized");
       return;
@@ -89,11 +116,9 @@ export default function AuthForm() {
         email,
         password,
       });
-
       if (error) {
         handleAuthError(error);
       } else {
-        // Reset attempts on successful login
         setAttempts(0);
         router.replace("/dashboard");
       }
@@ -106,18 +131,15 @@ export default function AuthForm() {
 
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
-
     if (isLockedOut) {
       setError("Account temporarily locked. Please wait before trying again.");
       return;
     }
-
     if (!supabase) {
       setError("Supabase not initialized");
       return;
     }
 
-    // Validate password
     const passwordError = validatePassword(password);
     if (passwordError) {
       setError(passwordError);
@@ -137,7 +159,6 @@ export default function AuthForm() {
       if (error) {
         handleAuthError(error);
       } else {
-        // Reset attempts on successful signup
         setAttempts(0);
         router.replace("/dashboard");
       }
@@ -149,111 +170,182 @@ export default function AuthForm() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center">
-      <div className="mb-6 text-center">
-        <div className="text-3xl font-extrabold tracking-widest text-zinc-200">
-          <span className="text-zinc-400">ACCOUNT</span>ABILITY
-        </div>
-        <div className="mt-2 text-sm text-zinc-400">Level up your life!</div>
+    <div className="w-full max-w-md mx-auto">
+      {/* Header */}
+      <div className="text-center mb-10">
+        <h1 className="text-5xl font-black tracking-widest text-white mb-4">
+          ACCOUNTABILITY
+        </h1>
+        <p className="text-lg text-zinc-300">Level up your life!</p>
       </div>
 
-      <Card className="pt-5">
-        <div className="px-1">
-          <div className="text-lg font-semibold text-zinc-200">Welcome</div>
-          <div className="mt-1 text-sm text-zinc-400">
+      {/* Main Card */}
+      <div className="bg-[#1E1E1E] rounded-3xl border border-[#333] shadow-2xl p-8">
+        {/* Welcome Section */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-white mb-3">Welcome</h2>
+          <p className="text-base text-zinc-300">
             Sign in to your account or create a new one
-          </div>
+          </p>
         </div>
 
-        <div className="mt-4 flex rounded-md border border-zinc-800/70 bg-zinc-900/50 p-1">
-          <TabButton active={tab === "signin"} onClick={() => setTab("signin")}>
+        {/* Tab System */}
+        <div className="flex bg-[#2C2C2C] rounded-xl p-1.5 mb-8">
+          <button
+            onClick={() => setTab("signin")}
+            className={`flex-1 py-3 px-6 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              tab === "signin"
+                ? "bg-[#1E1E1E] text-white shadow-lg"
+                : "text-zinc-400 hover:text-zinc-300"
+            }`}
+          >
             Sign In
-          </TabButton>
-          <TabButton active={tab === "signup"} onClick={() => setTab("signup")}>
+          </button>
+          <button
+            onClick={() => setTab("signup")}
+            className={`flex-1 py-3 px-6 rounded-lg text-sm font-semibold transition-all duration-200 ${
+              tab === "signup"
+                ? "bg-[#1E1E1E] text-white shadow-lg"
+                : "text-zinc-400 hover:text-zinc-300"
+            }`}
+          >
             Sign Up
-          </TabButton>
+          </button>
         </div>
 
-        {tab === "signin" ? (
-          <form onSubmit={handleSignIn} className="mt-5 space-y-4">
+        {/* Sign In Form */}
+        {tab === "signin" && (
+          <form onSubmit={handleSignIn} className="space-y-6">
             <div>
-              <Label>Email</Label>
-              <Input
+              <label className="block text-sm font-semibold text-white mb-3">
+                Email
+              </label>
+              <input
                 type="email"
                 placeholder="Enter your email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setEmail(e.target.value)
+                }
+                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                required
               />
             </div>
+
             <div>
-              <Label>Password</Label>
-              <Input
+              <label className="block text-sm font-semibold text-white mb-3">
+                Password
+              </label>
+              <input
                 type="password"
                 placeholder="Enter your password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPassword(e.target.value)
+                }
+                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                required
               />
             </div>
-            <label className="mt-1 flex select-none items-center gap-2 text-[13px] text-zinc-400">
+
+            <label className="flex items-center gap-4 text-sm text-white cursor-pointer">
               <input
                 type="checkbox"
                 checked={stay}
-                onChange={(e) => setStay(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border border-zinc-700 bg-zinc-900"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setStay(e.target.checked)
+                }
+                className="h-5 w-5 rounded border-[#333] bg-[#2C2C2C] text-white focus:ring-2 focus:ring-zinc-500 focus:ring-offset-0 focus:ring-offset-transparent"
               />
-              Remain signed in
+              <span>Remain signed in</span>
             </label>
+
             {isLockedOut && (
-              <div className="text-[13px] text-orange-400 bg-orange-900/20 p-2 rounded border border-orange-500/30">
+              <div className="text-sm text-orange-400 bg-orange-900/20 p-4 rounded-xl border border-orange-500/30">
                 ⚠️ Account temporarily locked. Please wait 5 minutes.
               </div>
             )}
-            {error && !isLockedOut ? (
-              <div className="text-[13px] text-red-400">{error}</div>
-            ) : null}
-            <Button disabled={loading || Boolean(isLockedOut)}>
+
+            {error && !isLockedOut && (
+              <div className="text-sm text-red-400 bg-red-900/20 p-4 rounded-xl border border-red-500/30">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || Boolean(isLockedOut)}
+              className="w-full bg-white text-[#1E1E1E] font-bold py-4 rounded-xl hover:bg-zinc-100 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+            >
               {loading
                 ? "Signing in…"
                 : isLockedOut
                 ? "Account Locked"
                 : "Sign In"}
-            </Button>
-            <div className="mt-1 text-center text-xs text-zinc-500">
+            </button>
+
+            <div className="text-center text-sm text-zinc-400 mt-4">
               Forgot your password?
             </div>
           </form>
-        ) : (
-          <form onSubmit={handleSignUp} className="mt-5 space-y-4">
+        )}
+
+        {/* Sign Up Form */}
+        {tab === "signup" && (
+          <form onSubmit={handleSignUp} className="space-y-6">
             <div>
-              <Label>Full Name</Label>
-              <Input
+              <label className="block text-sm font-semibold text-white mb-3">
+                Full Name
+              </label>
+              <input
+                type="text"
                 placeholder="Enter your full name"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Password</Label>
-              <Input
-                type="password"
-                placeholder="Create a password (min 8 characters)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setFullName(e.target.value)
+                }
+                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                required
               />
             </div>
 
             <div>
-              <Label>Choose Your Role</Label>
-              <div className="space-y-3">
+              <label className="block text-sm font-semibold text-white mb-3">
+                Email
+              </label>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setEmail(e.target.value)
+                }
+                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-white mb-3">
+                Password
+              </label>
+              <input
+                type="password"
+                placeholder="Create a password (min 8 characters)"
+                value={password}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setPassword(e.target.value)
+                }
+                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-white mb-4">
+                Choose Your Role
+              </label>
+              <div className="space-y-4">
                 <RoleOption
                   title="CREATOR"
                   desc="Build habits, track goals, and level up your life"
@@ -278,23 +370,31 @@ export default function AuthForm() {
             </div>
 
             {isLockedOut && (
-              <div className="text-[13px] text-orange-400 bg-orange-900/20 p-2 rounded border border-orange-500/30">
+              <div className="text-sm text-orange-400 bg-orange-900/20 p-4 rounded-xl border border-orange-500/30">
                 ⚠️ Account temporarily locked. Please wait 5 minutes.
               </div>
             )}
-            {error && !isLockedOut ? (
-              <div className="text-[13px] text-red-400">{error}</div>
-            ) : null}
-            <Button disabled={loading || Boolean(isLockedOut)}>
+
+            {error && !isLockedOut && (
+              <div className="text-sm text-red-400 bg-red-900/20 p-4 rounded-xl border border-red-500/30">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || Boolean(isLockedOut)}
+              className="w-full bg-white text-[#1E1E1E] font-bold py-4 rounded-xl hover:bg-zinc-100 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+            >
               {loading
                 ? "Creating…"
                 : isLockedOut
                 ? "Account Locked"
                 : "Create Account"}
-            </Button>
+            </button>
           </form>
         )}
-      </Card>
+      </div>
     </div>
   );
 }

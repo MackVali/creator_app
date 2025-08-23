@@ -17,6 +17,12 @@ export async function createRecord<T>(
   data: Omit<T, "id" | "user_id" | "created_at" | "updated_at">
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return {
+      data: null,
+      error: { message: "Supabase client not initialized" } as PostgrestError,
+    };
+  }
   const userId = await getUserId();
 
   const recordData = {
@@ -42,6 +48,12 @@ export async function updateRecord<T>(
   data: Partial<Omit<T, "id" | "user_id" | "created_at">>
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return {
+      data: null,
+      error: { message: "Supabase client not initialized" } as PostgrestError,
+    };
+  }
   const userId = await getUserId();
 
   const updateData = {
@@ -66,6 +78,11 @@ export async function deleteRecord(
   id: string
 ): Promise<{ error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return {
+      error: { message: "Supabase client not initialized" } as PostgrestError,
+    };
+  }
   const userId = await getUserId();
 
   const { error } = await supabase
@@ -88,6 +105,12 @@ export async function queryRecords<T>(
   } = {}
 ): Promise<{ data: T[] | null; error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return {
+      data: null,
+      error: { message: "Supabase client not initialized" } as PostgrestError,
+    };
+  }
   const userId = await getUserId();
 
   let query = supabase
@@ -127,6 +150,12 @@ export async function getRecord<T>(
   id: string
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return {
+      data: null,
+      error: { message: "Supabase client not initialized" } as PostgrestError,
+    };
+  }
   const userId = await getUserId();
 
   const { data: result, error } = await supabase

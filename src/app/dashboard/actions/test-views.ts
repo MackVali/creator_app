@@ -20,7 +20,7 @@ export interface ViewsTestSummary {
 }
 
 export async function testDatabaseViews(): Promise<ViewsTestSummary> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
     set: (
@@ -36,6 +36,16 @@ export async function testDatabaseViews(): Promise<ViewsTestSummary> {
       }
     ) => {},
   });
+
+  if (!supabase) {
+    return {
+      results: [],
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      hasErrors: true,
+    };
+  }
 
   const results: ViewTestResult[] = [];
 
@@ -196,7 +206,7 @@ export async function testDatabaseViews(): Promise<ViewsTestSummary> {
 export async function testSpecificView(
   viewName: string
 ): Promise<ViewTestResult> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
     set: (
@@ -212,6 +222,15 @@ export async function testSpecificView(
       }
     ) => {},
   });
+
+  if (!supabase) {
+    return {
+      view: viewName,
+      success: false,
+      rowCount: 0,
+      error: "Failed to initialize Supabase client",
+    };
+  }
 
   try {
     const { data, error } = await supabase.from(viewName).select("*").limit(1);

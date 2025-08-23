@@ -15,7 +15,7 @@ export default function AuthCallback() {
         setErr("Supabase not initialized");
         return;
       }
-      const { error } = await supabase.auth.exchangeCodeForSession();
+      const { error } = await supabase.auth.exchangeCodeForSession(window.location.search);
       if (error) {
         setErr(error.message);
         return;

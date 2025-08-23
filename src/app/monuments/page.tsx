@@ -1,24 +1,32 @@
-import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+"use client";
+
+import { useState, useEffect } from "react";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import {
+  PageHeader,
+  ContentCard,
+  GridContainer,
+  GridSkeleton,
+  useToastHelpers,
+} from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Plus, Trophy, Award, Star, Crown } from "lucide-react";
+
+interface Monument {
+  id: string;
+  name: string;
+  description: string;
+  type: "Achievement" | "Legacy" | "Triumph" | "Pinnacle";
+  earnedDate: string;
+  category: string;
+  rarity: "common" | "rare" | "epic" | "legendary";
+}
 
 export default function MonumentsPage() {
   return (
-    <ProtectedRoute>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Monuments</h1>
-          <p className="text-muted-foreground">
-            Celebrate your achievements and milestones
-          </p>
-        </div>
-        
-        {/* Monuments content will go here */}
-        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-          <h3 className="font-semibold">Your Monuments</h3>
-          <p className="text-sm text-muted-foreground">View your achievements here</p>
-        </div>
-      </div>
-    </ProtectedRoute>
-  )
+    <div className="p-6 text-white">
+      <h1>Monuments Page</h1>
+      <p>Coming soon...</p>
+    </div>
+  );
 }
-
-

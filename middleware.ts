@@ -1,25 +1,20 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const PUBLIC = [
-  "/auth",
-  "/auth/callback",
-  "/favicon.ico",
-  "/robots.txt",
-  "/sitemap.xml",
+const SKIP = [
+  /^\/_next\//,
+  /^\/favicon\.ico$/,
+  /^\/images\//,
+  /^\/api\/health$/,
+  /^\/api\/debug\/env$/,
 ];
 
 export function middleware(req: NextRequest) {
-  if (process.env.PREVIEW_BYPASS === "1") return NextResponse.next();
-  const { pathname } = req.nextUrl;
-  if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/api") ||
-    pathname.startsWith("/static") ||
-    /\.(png|jpg|jpeg|gif|svg|ico|txt|xml|webp|avif|woff2?)$/.test(pathname) ||
-    PUBLIC.some((p) => pathname.startsWith(p))
-  )
-    return NextResponse.next();
+  const p = req.nextUrl.pathname;
+  if (SKIP.some((r) => r.test(p))) return NextResponse.next();
   return NextResponse.next();
 }
-export const config = { matcher: "/:path*" };
+
+export const config = {
+  matcher: ["/((?!_next|api/health|api/debug/env|images|favicon.ico).*)"],
+};

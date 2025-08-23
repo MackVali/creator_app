@@ -2,8 +2,8 @@ import { cookies as nextCookies } from "next/headers";
 import { getSupabaseServer } from "./supabase";
 
 // Reusable Supabase server client helper
-export function createSupabaseServerClient() {
-  const cookieStore = nextCookies();
+export async function createSupabaseServerClient() {
+  const cookieStore = await nextCookies();
   return getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
     set: () => {}, // No-op for server-side operations
@@ -21,8 +21,8 @@ export type CookieOptions = {
 };
 
 // Helper for when you need to implement set functionality
-export function createSupabaseServerClientWithSet() {
-  const cookieStore = nextCookies();
+export async function createSupabaseServerClientWithSet() {
+  const cookieStore = await nextCookies();
   return getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
     set: (_name: string, _value: string, _options: CookieOptions) => {

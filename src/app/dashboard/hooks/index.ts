@@ -1,10 +1,9 @@
 export { useDashboardData } from "./useDashboardData";
+export type { UseDashboardDataReturn } from "./useDashboardData";
 export type {
   UserStats,
-  MonumentsSummary,
-  Skill,
-  Goal,
-  SkillsAndGoals,
+  MonumentCounts,
+  SkillItem,
+  GoalItem,
   DashboardData,
-  UseDashboardDataReturn,
-} from "./useDashboardData";
+} from "@/types/dashboard";

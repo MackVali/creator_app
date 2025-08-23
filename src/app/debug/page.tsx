@@ -5,7 +5,7 @@ import { cookies as nextCookies } from "next/headers";
 import { getSupabaseServer } from "@/lib/supabase";
 
 export default async function Page() {
-  const cookieStore = nextCookies();
+  const cookieStore = await nextCookies();
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStore.get(name),
     set: (

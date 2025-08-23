@@ -9,6 +9,9 @@ export interface AuthUser {
 
 export async function signInWithMagicLink(email: string) {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return { error: { message: "Supabase client not initialized" } };
+  }
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
@@ -20,12 +23,18 @@ export async function signInWithMagicLink(email: string) {
 
 export async function signOut() {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return { error: { message: "Supabase client not initialized" } };
+  }
   const { error } = await supabase.auth.signOut();
   return { error };
 }
 
 export async function getCurrentUser(): Promise<User | null> {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return null;
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -39,6 +48,9 @@ export async function getCurrentUserId(): Promise<string | null> {
 
 export function onAuthStateChange(callback: (user: User | null) => void) {
   const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return { data: { subscription: { unsubscribe: () => {} } } };
+  }
   return supabase.auth.onAuthStateChange((event, session) => {
     callback(session?.user || null);
   });
