@@ -10,10 +10,11 @@ export default async function Page() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader title="Skills" />
-      {items.length === 0 && (
-        <p className="text-sm text-muted-foreground">No items yet</p>
-      )}
-      {items.length > 0 && (
+      {items.length === 0 ? (
+        <div className="rounded-lg border p-4 text-sm opacity-80">
+          No items yet or no access. <a href="/debug/rsc" className="underline">Debug</a>
+        </div>
+      ) : (
         <ListContainer>
           {items.map((skill) => (
             <ContentCard key={skill.id} padding="sm">

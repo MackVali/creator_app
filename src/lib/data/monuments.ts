@@ -3,20 +3,36 @@
 import { DbError, safeQuery } from '@/lib/db-utils';
 import { createClient } from '@/lib/supabase-server';
 
-export async function listMonuments(): Promise<Array<{id:string;name:string;description?:string}>> {
+export async function listMonuments(): Promise<Array<{ id: string; name: string; description?: string }>> {
   const supabase = await createClient();
-  if (!supabase) throw new Error('No supabase client');
-  return safeQuery('listMonuments', async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
+  if (!supabase) {
+    console.error('[listMonuments] No supabase client');
+    return [];
+  }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  try {
     const { data, error } = await supabase
       .from('monuments')
       .select('id,name,description')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
-    if (error) throw new DbError('monuments', error);
-    return data || [];
-  });
+    if (error) {
+      const err = error as { code?: string; details?: string | null };
+      console.error('[listMonuments] Supabase error', {
+        code: err.code,
+        message: error.message,
+        details: err.details,
+      });
+      return []; // soft-fail; check /debug/rsc for details
+    }
+    return data ?? [];
+  } catch (e) {
+    console.error('[listMonuments] Unexpected error', e);
+    return [];
+  }
 }
 
 export async function getMonument(id: string): Promise<{id:string;name:string;description?:string}|null> {
