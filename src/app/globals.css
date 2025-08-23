@@ -1,8 +1,1 @@
-@import "tailwindcss";
-
-/* custom layers/utilities can go below */
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
+@import "../styles/globals.css";

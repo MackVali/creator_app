@@ -10,7 +10,7 @@ interface Monument {
   emoji: string | null;
 }
 
-export default function MonumentsPage() {
+export function MonumentContainer() {
   const [monuments, setMonuments] = useState<Monument[] | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = getSupabaseBrowser();
@@ -24,7 +24,8 @@ export default function MonumentsPage() {
       const { data, error } = await supabase
         .from("monuments")
         .select("id,title,emoji")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(3);
       if (!cancelled) {
         if (error) console.error(error);
         setMonuments(data ?? []);
@@ -38,14 +39,10 @@ export default function MonumentsPage() {
   }, [supabase]);
 
   return (
-    <main className="p-4 space-y-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Monuments</h1>
-        <Link
-          href="/monuments/new"
-          className="rounded-full bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-black"
-        >
-          + Add Monument
+    <section className="section mt-2">
+      <div className="mb-3">
+        <Link href="/monuments" className="h-label block">
+          Monuments
         </Link>
       </div>
 
@@ -62,22 +59,25 @@ export default function MonumentsPage() {
           </Link>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {monuments.map((m) => (
-            <li
-              key={m.id}
-              className="card flex items-center gap-3 p-3"
-              style={{ borderRadius: "var(--radius-sm)" }}
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/10 text-2xl">
-                {m.emoji || "🏛️"}
+        <div className="px-4 overflow-x-auto scroll-snap">
+          <div className="flex">
+            {monuments.map((m) => (
+              <div
+                key={m.id}
+                className="card mr-3 flex h-[128px] w-[128px] snap-start flex-col items-center justify-center p-3"
+              >
+                <div className="mb-2 text-2xl" aria-hidden>
+                  {m.emoji || "🏛️"}
+                </div>
+                <div className="w-full truncate text-center text-sm font-semibold">
+                  {m.title}
+                </div>
               </div>
-              <p className="flex-1 truncate font-medium">{m.title}</p>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        </div>
       )}
-    </main>
+    </section>
   );
 }
 
