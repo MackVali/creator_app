@@ -7,7 +7,7 @@
     "dev:tp": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "preview": "npm run build && npm run start",
+    "preview": "pnpm build && pnpm start",
     "clean": "rm -rf .next",
     "kill3000": "lsof -ti :3000 | xargs kill -9 || true",
     "lint": "eslint",
