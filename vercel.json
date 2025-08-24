@@ -1,3 +1,7 @@
 {
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm approve-builds @tailwindcss/oxide sharp unrs-resolver || true && pnpm run build"
+  "buildCommand": "pnpm install --frozen-lockfile && pnpm approve-builds @tailwindcss/oxide sharp unrs-resolver || true && pnpm run build",
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "@next_public_supabase_url",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@next_public_supabase_anon_key"
+  }
 }
