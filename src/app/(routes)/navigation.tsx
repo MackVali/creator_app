@@ -7,5 +7,3 @@ export const routes = [
   { href: "/skills", label: "Skills" },
   { href: "/monuments", label: "Monuments" },
 ] as const;
-
-

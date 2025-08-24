@@ -1,6 +1,7 @@
 "use client";
 
 import type { DashboardData } from "../../../types/dashboard";
+import { useRouter } from "next/navigation";
 
 interface ClientDashboardProps {
   data: DashboardData;
@@ -9,6 +10,7 @@ interface ClientDashboardProps {
 // Example client component using the hook
 export function ClientDashboard({ data }: ClientDashboardProps) {
   const { userStats, monuments, skillsAndGoals } = data;
+  const router = useRouter();
 
   return (
     <div
@@ -288,6 +290,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
         {/* Skills Section */}
         <div style={{ marginBottom: "32px" }}>
           <h2
+            onClick={() => router.push('/skills')}
             style={{
               fontSize: "18px",
               fontWeight: "900",
@@ -295,6 +298,14 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               letterSpacing: "0.1em",
               marginBottom: "16px",
               color: "#E0E0E0",
+              cursor: "pointer",
+              transition: "color 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "#FFFFFF";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "#E0E0E0";
             }}
           >
             SKILLS

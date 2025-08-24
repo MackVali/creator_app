@@ -5,7 +5,7 @@ import { SkillPill } from "@/components/ui/SkillPill";
 import { GoalsCard } from "@/components/ui/GoalsCard";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 
-export default function DashboardPage(){
+export default function DashboardPage() {
   return (
     <main className="pb-20">
       <LevelBanner level={80} current={3200} total={4000} />
@@ -17,16 +17,18 @@ export default function DashboardPage(){
         <SkillPill emoji="⏱️" title="Time Management" pct={40} />
         <SkillPill emoji="🗣️" title="Public Speaking" pct={30} />
         <SkillPill emoji="🧩" title="Problem Solving" pct={55} />
-        <SkillPill emoji="🎵" title="Music" pct={20} />
+        <SkillPill emoji="🎸" title="Guitar" pct={15} />
         <SkillPill emoji="🎸" title="Guitar" pct={15} />
       </Section>
 
       <Section title="Current Goals" className="safe-bottom mt-2">
-        <GoalsCard items={[
-          "Complete book manuscript",
-          "Improve presentation skills",
-          "Plan charity event",
-        ]} />
+        <GoalsCard
+          items={[
+            "Complete book manuscript",
+            "Improve presentation skills",
+            "Plan charity event",
+          ]}
+        />
       </Section>
     </main>
   );

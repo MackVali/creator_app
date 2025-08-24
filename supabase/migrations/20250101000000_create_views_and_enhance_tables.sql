@@ -22,6 +22,38 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Add name column to skills if it doesn't exist (to replace Title)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'skills' AND column_name = 'name'
+  ) THEN
+    ALTER TABLE public.skills ADD COLUMN name text;
+    -- Copy data from Title column if it exists and has data
+    UPDATE public.skills SET name = "Title" WHERE "Title" IS NOT NULL AND name IS NULL;
+  END IF;
+END $$;
+
+-- Add icon column to skills if it doesn't exist
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'skills' AND column_name = 'icon'
+  ) THEN
+    ALTER TABLE public.skills ADD COLUMN icon text;
+  END IF;
+END $$;
+
+-- Add description column to skills if it doesn't exist
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'skills' AND column_name = 'description'
+  ) THEN
+    ALTER TABLE public.skills ADD COLUMN description text;
+  END IF;
+END $$;
+
 -- Add status column to goals if it doesn't exist
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -81,7 +113,7 @@ GROUP BY user_id, category;
 -- skills_progress_v: list skills with a 0–100 progress column for the current user
 DROP VIEW IF EXISTS public.skills_progress_v CASCADE;
 CREATE VIEW public.skills_progress_v AS
-SELECT user_id, id as skill_id, name, greatest(0, least(100, coalesce(progress,0)))::int as progress
+SELECT user_id, id as skill_id, COALESCE(name, "Title") as name, greatest(0, least(100, coalesce(progress,0)))::int as progress
 FROM public.skills;
 
 -- goals_active_v: the 3 most recent active goals for the current user
