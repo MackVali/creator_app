@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { SkillPill } from "@/components/ui/SkillPill";
@@ -12,7 +13,14 @@ export default function DashboardPage(){
 
       <MonumentContainer />
 
-      <Section title="Skills" className="mt-1 px-4">
+      <Section
+        title={
+          <Link href="/skills" className="block">
+            Skills
+          </Link>
+        }
+        className="mt-1 px-4"
+      >
         <SkillPill emoji="🖊️" title="Writing" pct={65} />
         <SkillPill emoji="⏱️" title="Time Management" pct={40} />
         <SkillPill emoji="🗣️" title="Public Speaking" pct={30} />
