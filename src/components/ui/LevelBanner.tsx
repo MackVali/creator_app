@@ -11,7 +11,10 @@ export function LevelBanner({
       </div>
       <div className="relative">
         <div className="h-[12px] w-full rounded-full bg-[#0c0f14] inner-hair" />
-        <div className="absolute left-0 top-0 h-[12px] rounded-full bg-[var(--accent)]" style={{width:`${pct}%`}} />
+        <div
+          className="absolute left-0 top-0 h-[12px] rounded-full bg-gradient-to-r from-gray-700 to-gray-900"
+          style={{ width: `${pct}%` }}
+        />
         <div className="absolute right-1 -top-6 text-[11px] px-2 py-[2px] rounded-full bg-[#0c0f14] border border-white/10">
           {current} / {total}
         </div>

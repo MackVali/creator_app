@@ -15,7 +15,10 @@ export function SkillPill({
         <div className="flex-1">
           <div className="font-semibold">{title}</div>
           <div className="mt-1 h-[6px] rounded-full bg-[#0c0f14]">
-            <div className="h-[6px] rounded-full bg-[var(--accent)]" style={{width:`${w}%`}} />
+            <div
+              className="h-[6px] rounded-full bg-gradient-to-r from-gray-700 to-gray-900"
+              style={{ width: `${w}%` }}
+            />
           </div>
         </div>
       </div>

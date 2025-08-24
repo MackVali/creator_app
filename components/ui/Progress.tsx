@@ -10,15 +10,15 @@ export function Progress({ value, trackClass = '', barClass = '', className = ''
   
   return (
     <div className={`w-full ${className}`}>
-      <div 
-        className={`h-2 rounded-full bg-white/10 ${trackClass}`}
+      <div
+        className={`h-2 rounded-full bg-gray-800 ${trackClass}`}
         role="progressbar"
         aria-valuenow={clampedValue}
         aria-valuemin={0}
         aria-valuemax={100}
       >
-        <div 
-          className={`h-2 rounded-full bg-white/80 transition-all duration-300 ${barClass}`}
+        <div
+          className={`h-2 rounded-full bg-gradient-to-r from-gray-700 to-gray-900 transition-all duration-300 ${barClass}`}
           style={{ width: `${clampedValue}%` }}
         />
       </div>
