@@ -51,7 +51,48 @@ export function onAuthStateChange(callback: (user: User | null) => void) {
   if (!supabase) {
     return { data: { subscription: { unsubscribe: () => {} } } };
   }
-  return supabase.auth.onAuthStateChange((event, session) => {
-    callback(session?.user || null);
+  return supabase.auth.onAuthStateChange(async (event, session) => {
+    const user = session?.user || null;
+
+    // Create empty profile on sign-in if it doesn't exist
+    if (event === "SIGNED_IN" && user) {
+      try {
+        await upsertEmptyProfile(user);
+      } catch (error) {
+        console.error("Failed to upsert empty profile:", error);
+      }
+    }
+
+    callback(user);
   });
+}
+
+export async function upsertEmptyProfile(user: User) {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return;
+
+  try {
+    // Check if profile already exists
+    const { data: existingProfile } = await supabase
+      .from("profiles")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!existingProfile) {
+      // Create empty profile
+      const { error } = await supabase.from("profiles").insert({
+        user_id: user.id,
+        username: user.user_metadata?.username || `user_${user.id.slice(0, 8)}`,
+        name: user.user_metadata?.name || null,
+        bio: "",
+      });
+
+      if (error) {
+        console.error("Error creating empty profile:", error);
+      }
+    }
+  } catch (error) {
+    console.error("Error in upsertEmptyProfile:", error);
+  }
 }

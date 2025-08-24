@@ -1,0 +1,474 @@
+[
+  {
+    "id": "TC001",
+    "title": "User Authentication Successful Login",
+    "description": "Verify that users can login successfully with valid credentials and are redirected to /dashboard.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the login page (/auth)."
+      },
+      {
+        "type": "action",
+        "description": "Enter valid username/email and password."
+      },
+      {
+        "type": "action",
+        "description": "Click the login button."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is redirected to /dashboard."
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "User Authentication Failed Login with Invalid Credentials",
+    "description": "Verify that login fails and an error message is shown when entering invalid credentials.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the login page (/auth)."
+      },
+      {
+        "type": "action",
+        "description": "Enter invalid username/email or password."
+      },
+      {
+        "type": "action",
+        "description": "Click the login button."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that login fails and appropriate error message is displayed."
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Automatic Profile Creation on First Sign-in",
+    "description": "Verify that a new profile is automatically created for users signing in for the first time.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Sign in with a new user account that has never accessed the system."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that a profile is automatically created and linked to this user."
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Profile Editing by Owner Only with RLS Enforcement",
+    "description": "Verify that only the profile owner can edit their profile and RLS prevents unauthorized edits.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as user A and navigate to user A's profile edit page."
+      },
+      {
+        "type": "action",
+        "description": "Update profile fields (e.g., avatar, bio) and save."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that changes are saved successfully."
+      },
+      {
+        "type": "action",
+        "description": "Log in as user B and attempt to access or edit user A's profile."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that access is denied or changes are prevented due to RLS."
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Create, Edit, and Delete Goals, Projects, and Tasks",
+    "description": "Verify users can create, edit, and delete goals, projects, and tasks within the productivity system.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and navigate to goals management."
+      },
+      {
+        "type": "action",
+        "description": "Create a new goal with valid input."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the goal appears in the goals list."
+      },
+      {
+        "type": "action",
+        "description": "Under the goal, create a new project."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the project appears nested under the goal."
+      },
+      {
+        "type": "action",
+        "description": "Within the project, create a new task with required fields."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the task appears under the project."
+      },
+      {
+        "type": "action",
+        "description": "Edit the task’s attributes (name, description, status)."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify updates are saved and shown."
+      },
+      {
+        "type": "action",
+        "description": "Delete the task, then the project, then the goal."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify each item is properly removed and no orphan data remains."
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Scheduling Tasks into Time Windows via Drag and Drop",
+    "description": "Verify users can schedule tasks into time slots (Windows) using drag-and-drop and quick add functionality.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and navigate to the scheduling screen."
+      },
+      {
+        "type": "action",
+        "description": "Drag a task from the task list into an available time window."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that the task is scheduled into the selected time window and appears on today's schedule."
+      },
+      {
+        "type": "action",
+        "description": "Use the quick add feature to schedule a new task into a window."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the task appears in the scheduled window and updates the view accordingly."
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "XP Award and Level Progress on Task Completion",
+    "description": "Verify completing tasks correctly awards XP to linked skills and updates levels and Monument charge.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Create a task linked to specific skills and a Monument."
+      },
+      {
+        "type": "action",
+        "description": "Mark the task as completed."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify XP is awarded to the linked skills."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user's skill levels update accordingly."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the Monument charge increases appropriately."
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Top Navigation Avatar Display and Navigation",
+    "description": "Verify the top navigation bar avatar displays the uploaded user image and that clicking it navigates to the profile page.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and upload a user avatar image."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the avatar appears correctly in the top navigation bar."
+      },
+      {
+        "type": "action",
+        "description": "Click on the avatar in the top navigation."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that the user is navigated to their profile page."
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Redirect Unauthorized Users to /auth on Protected Routes",
+    "description": "Verify that unauthorized users attempting to access protected routes are redirected to the authentication page (/auth).",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt to access /dashboard without being authenticated."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is redirected to /auth login page."
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Performance Benchmark: Dashboard First Render Time",
+    "description": "Verify that the dashboard page first render completes under 1.5 seconds on typical devices and network conditions.",
+    "category": "performance",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and navigate to the /dashboard page."
+      },
+      {
+        "type": "assertion",
+        "description": "Measure and confirm the initial render time is less than 1.5 seconds."
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Performance Benchmark: Route Transitions Under 400 ms",
+    "description": "Verify that transitions between main routes (e.g. /dashboard to /profile) complete in under 400 milliseconds.",
+    "category": "performance",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate from /dashboard to /profile, /goals, and /tasks."
+      },
+      {
+        "type": "assertion",
+        "description": "Measure and verify the route transitions finish in under 400 ms each."
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Public Profile Page Optional Sharing",
+    "description": "Verify the optional public profile page is enabled, can be viewed by others, and displays appropriate user information.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Enable public profile sharing in user settings."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a public URL is generated for the profile."
+      },
+      {
+        "type": "action",
+        "description": "Access the public profile page via generated URL in an incognito window or different user account."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify profile information and avatar are visible and no restricted information is leaked."
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Dynamic Scheduler Suggests Next Best Task",
+    "description": "Verify the scheduler recommends the most appropriate next task based on user energy, priority, and availability.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Create multiple tasks with varying priorities, skill energy levels, and available time slots."
+      },
+      {
+        "type": "action",
+        "description": "Access the scheduler recommendations."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that the suggested next task matches the highest priority task within user's energy and available slots."
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Security: Prevent External Redirects on Authentication Callbacks",
+    "description": "Verify the authentication flow protects against external URL redirects and only allows redirection to approved internal routes.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt login with a redirect parameter pointing to an external URL."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the redirect is blocked or sanitized, ensuring user is redirected only within allowed internal routes."
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Accessibility: Keyboard Navigation and ARIA Labeling",
+    "description": "Verify that all interactive controls have proper ARIA labels, support keyboard focus states, and are fully navigable via keyboard.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Tab through the entire dashboard interface using keyboard only."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that all interactive elements receive focus with visible focus indicators."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that ARIA labels and roles are present on controls such as buttons, links, inputs."
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Data Integrity: Avatar Storage and Retrieval Security",
+    "description": "Verify avatars uploaded by users are securely stored and retrieved with proper permissions enforced by Supabase storage policies.",
+    "category": "security",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Upload an avatar image as an authenticated user."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the image is stored in Supabase storage and accessible only to authorized users."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to retrieve or modify another user's avatar without proper authorization."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is denied and any modifications are blocked."
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Task Completion Edge Case: Multiple Skills Linked",
+    "description": "Verify that when a task linked to multiple skills is completed, all linked skills receive appropriate XP.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Create a task linked with multiple skills."
+      },
+      {
+        "type": "action",
+        "description": "Complete the task."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify XP is correctly awarded to each linked skill."
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Handling Scheduling Conflicts in Time Windows",
+    "description": "Verify the system prevents scheduling overlapping tasks in the same time window and properly alerts the user.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Attempt to drag and drop a task into a time window already occupied by another task."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the system prevents scheduling this task and provides an appropriate message or UX feedback."
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Sign-out Flow and Post Sign-out Access Restriction",
+    "description": "Verify users can sign out and after sign-out, protected pages redirect them to the authentication screen.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login, then use the sign-out option."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is redirected to the authentication page."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access a protected route after sign-out."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the user is redirected back to the authentication page."
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "UI Responsiveness on Mobile Devices",
+    "description": "Verify that all main UI components including navigation bars, dashboards, and scheduling work correctly and are usable on various mobile screen sizes.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access the application with different mobile device screen sizes or emulators."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI components resize correctly and remain fully functional, including sidebar, bottom navigation, and drag-and-drop scheduling."
+      }
+    ]
+  }
+]

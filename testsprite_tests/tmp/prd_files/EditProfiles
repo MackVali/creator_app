@@ -1,0 +1,20 @@
+Feature: Profiles (create/edit tied to signed-in user)
+Objective: Each signed-in user has one profile row they can edit; TopNav avatar opens /profile.
+Routes:
+/profile (owner view with “Edit Profile”)
+/profile/edit (edit form)
+Fields: name, username (unique, lowercase, 3–20, [a-z0-9_]+), dob, city, bio (≤300), avatar_url.
+Rules:
+Create row on first visit if missing (user_id = auth.uid()).
+Only owner can insert/update their profile.
+Public read allowed (or self-only—mark current setting in the report).
+Avatar stored in avatars bucket; public read, authed write.
+TopNav shows avatar (or initials) and links to /profile.
+Acceptance tests:
+First visit to /profile creates profile row for the current auth.uid().
+Editing name and city persists and reflects on reload.
+Username uniqueness is enforced case-insensitively (try duplicate).
+Upload avatar → avatar shows in TopNav and on /profile.
+Attempt to update another user’s profile is blocked (403 or policy error).
+Empty optional fields render cleanly (no “undefined”).
+Direct nav to /profile/edit shows form only for owner; others redirected or blocked.

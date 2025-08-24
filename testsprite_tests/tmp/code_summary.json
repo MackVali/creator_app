@@ -1,0 +1,115 @@
+{
+  "tech_stack": [
+    "TypeScript",
+    "Next.js 15",
+    "React 19",
+    "Supabase",
+    "Tailwind CSS",
+    "Vitest",
+    "Radix UI",
+    "TanStack Query"
+  ],
+  "features": [
+    {
+      "name": "Authentication System",
+      "description": "Complete authentication system with Supabase Auth, protected routes, and role-based access control",
+      "files": [
+        "components/auth/AuthForm.tsx",
+        "components/auth/AuthLayout.tsx",
+        "components/auth/AuthProvider.tsx",
+        "components/auth/ProtectedRoute.tsx",
+        "components/auth/RoleOption.tsx",
+        "lib/auth.ts",
+        "src/app/(public)/auth/page.tsx",
+        "src/app/(public)/auth/callback/page.tsx",
+        "src/app/(public)/auth/reset/page.tsx",
+        "src/app/(public)/auth/update-password/page.tsx"
+      ]
+    },
+    {
+      "name": "Profile Management",
+      "description": "User profile creation, editing, and management with avatar support",
+      "files": [
+        "lib/db/profiles.ts",
+        "lib/db.ts",
+        "lib/hooks/useProfile.ts",
+        "src/app/(app)/profile/page.tsx",
+        "src/app/(app)/profile/ProfileContent.tsx",
+        "src/app/(app)/profile/edit/page.tsx",
+        "src/app/(app)/profile/edit/ProfileEditForm.tsx",
+        "src/app/(app)/u/[username]/page.tsx",
+        "src/app/(app)/u/[username]/PublicProfileContent.tsx"
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "description": "Main dashboard with level progress, skills, goals, and monuments",
+      "files": [
+        "src/app/(app)/dashboard/page.tsx",
+        "src/app/(app)/dashboard/DashboardClient.tsx",
+        "components/ui/LevelBanner.tsx",
+        "components/ui/MonumentContainer.tsx",
+        "components/ui/Section.tsx",
+        "components/ui/SkillPill.tsx",
+        "components/ui/GoalsCard.tsx"
+      ]
+    },
+    {
+      "name": "Navigation System",
+      "description": "Top navigation bar, sidebar, and bottom navigation for mobile",
+      "files": [
+        "components/TopNav.tsx",
+        "components/TopNavAvatar.tsx",
+        "components/sidebar.tsx",
+        "components/mobile-nav.tsx",
+        "components/BottomNav.tsx"
+      ]
+    },
+    {
+      "name": "Database Integration",
+      "description": "Supabase database integration with profiles, authentication, and storage",
+      "files": [
+        "lib/supabase.ts",
+        "lib/supabase-server.ts",
+        "lib/db/profiles.ts",
+        "lib/db.ts",
+        "supabase/config.toml",
+        "supabase/migrations/"
+      ]
+    },
+    {
+      "name": "UI Components",
+      "description": "Reusable UI components built with Radix UI and Tailwind CSS",
+      "files": [
+        "components/ui/button.tsx",
+        "components/ui/card.tsx",
+        "components/ui/input.tsx",
+        "components/ui/avatar.tsx",
+        "components/ui/badge.tsx",
+        "components/ui/dropdown-menu.tsx",
+        "components/ui/sheet.tsx",
+        "components/ui/toast.tsx"
+      ]
+    },
+    {
+      "name": "Protected Routes",
+      "description": "Middleware and route protection for authenticated users",
+      "files": [
+        "src/middleware.ts",
+        "components/auth/ProtectedRoute.tsx",
+        "components/ProfileProvider.tsx"
+      ]
+    },
+    {
+      "name": "Testing Infrastructure",
+      "description": "Vitest testing setup with test utilities and examples",
+      "files": [
+        "vitest.config.ts",
+        "vitest.jsdom.config.ts",
+        "vitest.setup.ts",
+        "test/env.spec.ts",
+        "test/utils/supabaseAdmin.ts"
+      ]
+    }
+  ]
+}

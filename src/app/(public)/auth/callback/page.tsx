@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function AuthCallback() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
@@ -15,14 +16,17 @@ export default function AuthCallback() {
         setErr("Supabase not initialized");
         return;
       }
-      const { error } = await supabase.auth.exchangeCodeForSession(window.location.search);
+      const { error } = await supabase.auth.exchangeCodeForSession(
+        window.location.search
+      );
       if (error) {
         setErr(error.message);
         return;
       }
-      router.replace("/dashboard");
+      const redirectTo = searchParams.get("redirect") || "/dashboard";
+      router.replace(redirectTo);
     })();
-  }, [router]);
+  }, [router, searchParams]);
   return (
     <div
       style={{

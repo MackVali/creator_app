@@ -1,6 +1,6 @@
 "use client";
 
-import type { DashboardData } from "../../../types/dashboard";
+import type { DashboardData } from "@/types/dashboard";
 
 interface ClientDashboardProps {
   data: DashboardData;
