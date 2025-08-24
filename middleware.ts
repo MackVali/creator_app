@@ -14,10 +14,10 @@ export async function middleware(req: NextRequest) {
   const isPublic =
     isAsset || PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
 
-  // Create a mutable response; pass { request } for edge correctness
-  const res = NextResponse.next({ request: req });
+  // Mutable response for cookie writes
+  const res = NextResponse.next();
 
-  // Build Supabase client using Next 15 cookie API (getAll/setAll)
+  // IMPORTANT: In Next 15 middleware, use getAll/setAll (NOT get/set/remove)
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || '',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
@@ -27,19 +27,20 @@ export async function middleware(req: NextRequest) {
           return req.cookies.getAll();
         },
         setAll(cookiesToSet) {
+          // Gracefully handle build-time execution where setting may be blocked
           try {
-            cookiesToSet.forEach(({ name, value, options }) => {
+            for (const { name, value, options } of cookiesToSet) {
               res.cookies.set(name, value, options);
-            });
+            }
           } catch {
-            // Called from a Server Component during build? Ignore.
+            // no-op
           }
         },
       },
     }
   );
 
-  // Refresh session + read user
+  // Refresh session & read user
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -66,7 +67,7 @@ export async function middleware(req: NextRequest) {
   return res;
 }
 
-// Apply to all app routes; assets are filtered above
+// Apply to all app routes; assets handled above
 export const config = {
   matcher: ['/((?!_next/|favicon.ico).*)'],
 };
