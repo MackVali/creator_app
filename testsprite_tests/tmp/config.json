@@ -1,0 +1,18 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "loginUser": "mackvali19@gmail.com",
+  "loginPassword": "10192003wsm",
+  "executionArgs": {
+    "projectName": "premium-app",
+    "projectPath": "/Users/validtali/premium-app",
+    "testIds": [],
+    "additionalInstruction": "Focus on testing the profile functionality including profile creation, editing, avatar display, and public profile viewing. Test the authentication flow and ensure profiles are properly tied to signed-in users.",
+    "envs": {
+      "API_KEY": "sk-user-k9FJmaEryg61CuN4wmxsPBflWlYhc3q82gYktyXVS6bWX16InqW1Ww7TZo0NonySv0vSCddkh-d1UI-HUzcLmOT7dEj_B_svnqPJcrFv3MzlNvXQObb2HEwybAT3ncrTpmM"
+    }
+  },
+  "proxy": "http://1f0a30a9-4dbb-4b60-9e2e-2f03ea2a4cd9:wayi7brLLQMKTqkS0IkNzZtArKd4lE2V@tun.testsprite.com:8080"
+}

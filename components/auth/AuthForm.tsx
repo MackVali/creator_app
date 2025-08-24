@@ -1,18 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { parseSupabaseError } from "@/lib/error-handling";
 import RoleOption from "@/components/auth/RoleOption";
 
-// Password validation function
+// Password validation function - relaxed requirements
 const validatePassword = (password: string): string | null => {
   if (password.length < 8) return "Password must be at least 8 characters";
-  if (!/[A-Z]/.test(password)) return "Password must contain uppercase letter";
-  if (!/[a-z]/.test(password)) return "Password must contain lowercase letter";
-  if (!/\d/.test(password)) return "Password must contain number";
-  if (!/\W/.test(password)) return "Password must contain special character";
+  if (!/[a-zA-Z]/.test(password))
+    return "Password must contain at least 1 letter";
+  if (!/\d/.test(password)) return "Password must contain at least 1 number";
   return null;
 };
 
@@ -27,6 +26,7 @@ export default function AuthForm() {
   const [stay, setStay] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   // Rate limiting state
   const [attempts, setAttempts] = useState(0);
@@ -34,6 +34,7 @@ export default function AuthForm() {
   const [lockoutDuration] = useState(5 * 60 * 1000); // 5 minutes
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = getSupabaseBrowser();
 
   // Reset lockout after duration - placed before any early returns to fix hooks rules
@@ -110,6 +111,7 @@ export default function AuthForm() {
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
@@ -120,7 +122,8 @@ export default function AuthForm() {
         handleAuthError(error);
       } else {
         setAttempts(0);
-        router.replace("/dashboard");
+        const redirectTo = searchParams.get("redirect") || "/dashboard";
+        router.replace(redirectTo);
       }
     } catch (err) {
       handleAuthError(err as { message?: string });
@@ -148,19 +151,32 @@ export default function AuthForm() {
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName, role } },
+        options: {
+          data: { full_name: fullName, role },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
       });
 
       if (error) {
         handleAuthError(error);
       } else {
         setAttempts(0);
-        router.replace("/dashboard");
+        // Check if email confirmation is required
+        if (data.user && !data.user.email_confirmed_at) {
+          setSuccess(
+            "Account created! Please check your email to confirm your account."
+          );
+        } else {
+          // Email confirmation disabled, redirect to dashboard
+          const redirectTo = searchParams.get("redirect") || "/dashboard";
+          router.replace(redirectTo);
+        }
       }
     } catch (err) {
       handleAuthError(err as { message?: string });
@@ -168,6 +184,10 @@ export default function AuthForm() {
       setLoading(false);
     }
   }
+
+  const handleForgotPassword = () => {
+    router.push("/auth/reset");
+  };
 
   return (
     <div className="w-full max-w-md mx-auto">
@@ -212,6 +232,13 @@ export default function AuthForm() {
             Sign Up
           </button>
         </div>
+
+        {/* Success Message */}
+        {success && (
+          <div className="text-sm text-green-400 bg-green-900/20 p-4 rounded-xl border border-green-500/30 mb-6">
+            ✅ {success}
+          </div>
+        )}
 
         {/* Sign In Form */}
         {tab === "signin" && (
@@ -284,8 +311,14 @@ export default function AuthForm() {
                 : "Sign In"}
             </button>
 
-            <div className="text-center text-sm text-zinc-400 mt-4">
-              Forgot your password?
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                className="text-sm text-zinc-400 hover:text-zinc-300 transition-colors"
+              >
+                Forgot your password?
+              </button>
             </div>
           </form>
         )}
@@ -331,7 +364,7 @@ export default function AuthForm() {
               </label>
               <input
                 type="password"
-                placeholder="Create a password (min 8 characters)"
+                placeholder="Create a password (min 8 chars, 1 letter, 1 number)"
                 value={password}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setPassword(e.target.value)

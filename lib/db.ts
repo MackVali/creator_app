@@ -1,6 +1,7 @@
 import { getSupabaseBrowser } from "./supabase";
 import { getCurrentUserId } from "./auth";
 import { PostgrestError } from "@supabase/supabase-js";
+import { Profile, ProfileFormData, ProfileUpdateResult } from "./types";
 
 // Helper function to get the current user's ID
 export async function getUserId() {
@@ -166,4 +167,118 @@ export async function getRecord<T>(
     .single();
 
   return { data: result as T | null, error };
+}
+
+export async function getProfileByUserId(
+  userId: string
+): Promise<Profile | null> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return null;
+
+  console.log("🔍 getProfileByUserId called with userId:", userId);
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle(); // Use maybeSingle to handle case where profile doesn't exist
+
+  if (error) {
+    console.error("❌ Error fetching profile for user", userId, ":", error);
+    return null;
+  }
+
+  console.log("✅ Profile found for user", userId, ":", data);
+  return data;
+}
+
+export async function getProfileByUsername(
+  username: string
+): Promise<Profile | null> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .ilike("username", username) // Use ilike for case-insensitive comparison
+    .maybeSingle(); // Use maybeSingle to handle case where profile doesn't exist
+
+  if (error) {
+    console.error("Error fetching profile by username:", error);
+    return null;
+  }
+
+  return data;
+}
+
+export async function updateProfile(
+  userId: string,
+  profileData: ProfileFormData,
+  avatarUrl?: string
+): Promise<ProfileUpdateResult> {
+  try {
+    console.log("🔍 updateProfile called with userId:", userId);
+    console.log("🔍 Profile data:", profileData);
+
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      return { success: false, error: "Supabase client not initialized" };
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(profileData)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("❌ Failed to update profile:", error);
+      return { success: false, error: error.message };
+    }
+
+    console.log("✅ Profile updated successfully:", data);
+    return { success: true, profile: data };
+  } catch (error) {
+    console.error("Error in updateProfile:", error);
+    return { success: false, error: "Failed to update profile" };
+  }
+}
+
+export async function checkUsernameAvailability(
+  username: string,
+  excludeUserId?: string
+): Promise<boolean> {
+  try {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return false;
+
+    const { data: existingProfile, error } = await supabase
+      .from("profiles")
+      .select("user_id")
+      .ilike("username", username)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error checking username availability:", error);
+      return false;
+    }
+
+    if (!existingProfile) {
+      // No profile found with this username, so it's available
+      return true;
+    }
+
+    // If we're excluding a specific user ID and this profile belongs to that user, username is available
+    if (excludeUserId && existingProfile.user_id === excludeUserId) {
+      return true;
+    }
+
+    // Username is taken by another user
+    return false;
+  } catch (error) {
+    console.error("Error checking username availability:", error);
+    return false;
+  }
 }

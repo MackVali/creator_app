@@ -1,12 +1,28 @@
 "use client";
 
 import { Menu } from "lucide-react";
+import TopNavAvatar from "./TopNavAvatar";
+import { useProfile } from "@/lib/hooks/useProfile";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { useEffect, useState } from "react";
 
-interface TopNavProps {
-  username: string;
-}
+export default function TopNav() {
+  const { profile, userId } = useProfile();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const supabase = getSupabaseBrowser();
 
-export default function TopNav({ username }: TopNavProps) {
+  useEffect(() => {
+    const getUserEmail = async () => {
+      if (supabase) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        setUserEmail(user?.email || null);
+      }
+    };
+    getUserEmail();
+  }, [supabase]);
+
   const toggleSidebar = () => {
     // Placeholder for future sidebar toggle
     console.log("toggle sidebar");
@@ -18,10 +34,9 @@ export default function TopNav({ username }: TopNavProps) {
         <Menu className="h-6 w-6" />
       </button>
       <span className="font-semibold" data-testid="username">
-        {username}
+        {profile?.username || userEmail || "Guest"}
       </span>
-      <div className="h-8 w-8 rounded-full bg-gray-700" />
+      <TopNavAvatar profile={profile} userId={userId} />
     </nav>
   );
 }
-
