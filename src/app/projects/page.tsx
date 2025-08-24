@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
-import { 
-  PageHeader, 
-  ContentCard, 
+import {
+  PageHeader,
+  ContentCard,
   GridContainer,
   GridSkeleton,
   ProjectsEmptyState,
-  useToastHelpers
+  useToastHelpers,
+  Progress
 } from '@/components/ui'
 import { Button } from '@/components/ui/button'
 import { Plus, FolderKanban, Calendar, Target, TrendingUp } from 'lucide-react'
@@ -195,17 +196,11 @@ export default function ProjectsPage() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Progress</span>
-                      <span className="font-medium text-blue-600">
+                      <span className="font-medium text-gray-400">
                         {project.progress}%
                       </span>
                     </div>
-                    
-                    <div className="w-full bg-muted rounded-full h-2">
-                      <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${project.progress}%` }}
-                      />
-                    </div>
+                    <Progress value={project.progress} />
                   </div>
                   
                   <div className="grid grid-cols-2 gap-4 text-sm pt-2 border-t">
