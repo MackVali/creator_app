@@ -290,7 +290,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
         {/* Skills Section */}
         <div style={{ marginBottom: "32px" }}>
           <h2
-            onClick={() => router.push('/skills')}
+            onClick={() => router.push("/skills")}
             style={{
               fontSize: "18px",
               fontWeight: "900",
