@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 import "./globals.css";
 import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
+import AuthProvider from "@/components/auth/AuthProvider";
 import React from "react";
 
 export default function RootLayout({
@@ -16,9 +17,11 @@ export default function RootLayout({
     <html lang="en">
       <body className="flex min-h-screen flex-col">
         <ErrorBoundary>
-          <ClientProviders>
-            <main className="flex-1">{children}</main>
-          </ClientProviders>
+          <AuthProvider>
+            <ClientProviders>
+              <main className="flex-1">{children}</main>
+            </ClientProviders>
+          </AuthProvider>
         </ErrorBoundary>
       </body>
     </html>
