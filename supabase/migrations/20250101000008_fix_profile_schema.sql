@@ -106,15 +106,5 @@ GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT ALL ON public.profiles TO authenticated;
 GRANT USAGE ON SEQUENCE public.profiles_id_seq TO authenticated;
 
--- 9. Insert a test profile for the current user if none exists
--- This helps with testing
-INSERT INTO public.profiles (user_id, username, name, bio, dob, city, avatar_url)
-SELECT 
-  '57e8b61e-c9fc-416c-8d0d-cbb02e78e100'::uuid, -- Test user ID from TestSprite logs
-  'mackvali',
-  'Mack Vali',
-  'Premium App User',
-  '1990-01-01'::date,
-  'San Francisco',
-  NULL
-ON CONFLICT (user_id) DO NOTHING;
+-- 9. Note: Test profile insertion removed due to constraint issues
+-- Profiles will be created automatically via the trigger when users sign up

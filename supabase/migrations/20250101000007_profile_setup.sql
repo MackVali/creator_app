@@ -26,12 +26,14 @@ CREATE TRIGGER profiles_set_updated_at
 
 -- 4. Create RLS policies for profiles table
 -- Owner-only write policy
-CREATE POLICY IF NOT EXISTS profiles_modify_own ON public.profiles
+DROP POLICY IF EXISTS profiles_modify_own ON public.profiles;
+CREATE POLICY profiles_modify_own ON public.profiles
   FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 -- Read policy based on environment variable
 -- Default to public read, but can be controlled by ALLOW_PUBLIC_READ env var
-CREATE POLICY IF NOT EXISTS profiles_read_public ON public.profiles
+DROP POLICY IF EXISTS profiles_read_public ON public.profiles;
+CREATE POLICY profiles_read_public ON public.profiles
   FOR SELECT USING (true);
 
 -- 5. Create avatars storage bucket if it doesn't exist
