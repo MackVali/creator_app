@@ -8,7 +8,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
 interface Skill {
-  id: string;
+  skill_id: string; // Changed from 'id' to 'skill_id' to match database view
   name: string;
   icon: string;
   level: number;
@@ -17,8 +17,8 @@ interface Skill {
 }
 
 interface Category {
-  id: string;
-  name: string;
+  cat_id: string; // Changed from 'id' to 'cat_id' to match database view
+  cat_name: string; // Changed from 'name' to 'cat_name' to match database view
   skill_count: number;
   skills: Skill[];
 }
@@ -33,7 +33,7 @@ function SkillsPageContent() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [loading, setLoading] = useState(true);
-  
+
   const supabase = getSupabaseBrowser();
   const router = useRouter();
 
@@ -43,16 +43,16 @@ function SkillsPageContent() {
 
   const fetchSkills = async () => {
     if (!supabase) return;
-    
+
     try {
       const { data, error } = await supabase
-        .from('skills_by_cats_v')
-        .select('*');
-      
+        .from("skills_by_cats_v")
+        .select("*");
+
       if (error) throw error;
       setCategories(data || []);
     } catch (error) {
-      console.error('Error fetching skills:', error);
+      console.error("Error fetching skills:", error);
     } finally {
       setLoading(false);
     }
@@ -70,51 +70,53 @@ function SkillsPageContent() {
 
   const createCategory = async () => {
     if (!newCategoryName.trim() || !supabase) return;
-    
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-      
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
       const { error } = await supabase
-        .from('cats')
+        .from("cats")
         .insert({ name: newCategoryName.trim(), user_id: user.id });
-      
+
       if (error) throw error;
-      
+
       setNewCategoryName("");
       setIsCreatingCategory(false);
       fetchSkills();
     } catch (error) {
-      console.error('Error creating category:', error);
+      console.error("Error creating category:", error);
     }
   };
 
   const createSkill = async () => {
     if (!newSkillName.trim() || !selectedCategory || !supabase) return;
-    
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-      
-      const { error } = await supabase
-        .from('skills')
-        .insert({ 
-          name: newSkillName.trim(), 
-          icon: newSkillIcon,
-          cat_id: selectedCategory,
-          user_id: user.id,
-          level: 1
-        });
-      
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const { error } = await supabase.from("skills").insert({
+        name: newSkillName.trim(),
+        icon: newSkillIcon,
+        cat_id: selectedCategory,
+        user_id: user.id,
+        level: 1,
+      });
+
       if (error) throw error;
-      
+
       setNewSkillName("");
       setNewSkillIcon("💡");
       setSelectedCategory("");
       setIsCreateModalOpen(false);
       fetchSkills();
     } catch (error) {
-      console.error('Error creating skill:', error);
+      console.error("Error creating skill:", error);
     }
   };
 
@@ -132,9 +134,11 @@ function SkillsPageContent() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-[#E0E0E0] mb-2">Skills</h1>
-          <p className="text-[#A0A0A0]">Manage and organize your skills by categories</p>
+          <p className="text-[#A0A0A0]">
+            Manage and organize your skills by categories
+          </p>
         </div>
-        <Button 
+        <Button
           onClick={() => setIsCreateModalOpen(true)}
           className="bg-[#BBB] text-[#1E1E1E] hover:bg-[#A0A0A0]"
         >
@@ -147,23 +151,26 @@ function SkillsPageContent() {
       <div className="space-y-6">
         {categories.length > 0 ? (
           categories.map((cat) => (
-            <div key={cat.id} className="bg-[#2C2C2C] rounded-lg border border-[#333] overflow-hidden">
+            <div
+              key={cat.cat_id}
+              className="bg-[#2C2C2C] rounded-lg border border-[#333] overflow-hidden"
+            >
               {/* Category Header */}
-              <div 
+              <div
                 className="p-4 cursor-pointer hover:bg-[#353535] transition-colors"
-                onClick={() => toggleCategory(cat.id)}
+                onClick={() => toggleCategory(cat.cat_id)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="text-xl font-medium text-[#E0E0E0]">
-                      {cat.name}
+                      {cat.cat_name}
                     </div>
                     <div className="text-sm text-[#A0A0A0] bg-[#404040] px-3 py-1 rounded-full">
                       {cat.skill_count} skills
                     </div>
                   </div>
                   <div className="text-[#A0A0A0]">
-                    {expandedCats.has(cat.id) ? (
+                    {expandedCats.has(cat.cat_id) ? (
                       <ChevronDown className="w-5 h-5" />
                     ) : (
                       <ChevronRight className="w-5 h-5" />
@@ -173,42 +180,42 @@ function SkillsPageContent() {
               </div>
 
               {/* Skills List */}
-              {expandedCats.has(cat.id) && (
+              {expandedCats.has(cat.cat_id) && (
                 <div className="border-t border-[#333] bg-[#252525]">
                   <div className="p-4 space-y-3">
                     {cat.skills && cat.skills.length > 0 ? (
                       cat.skills.map((skill) => (
                         <div
-                          key={skill.id}
+                          key={skill.skill_id}
                           className="flex items-center gap-4 p-4 bg-[#1E1E1E] rounded-md border border-[#333] hover:bg-[#252525] transition-colors"
                         >
                           {/* Skill Icon */}
                           <div className="text-2xl flex-shrink-0">
                             {skill.icon}
                           </div>
-                          
+
                           {/* Skill Name */}
                           <div className="flex-1 min-w-0">
                             <div className="text-lg font-medium text-[#E0E0E0]">
                               {skill.name}
                             </div>
                           </div>
-                          
+
                           {/* Level Badge */}
                           <div className="text-sm text-[#A0A0A0] bg-[#404040] px-3 py-1 rounded-full flex-shrink-0">
                             Level {skill.level}
                           </div>
-                          
+
                           {/* Progress Bar */}
                           <div className="w-32 flex-shrink-0">
                             <div className="w-full h-3 bg-[#333] rounded-full overflow-hidden">
-                              <div 
+                              <div
                                 className="h-full bg-[#BBB] rounded-full transition-all duration-300"
                                 style={{ width: `${skill.progress}%` }}
                               />
                             </div>
                           </div>
-                          
+
                           {/* Progress Percentage */}
                           <div className="text-sm text-[#A0A0A0] w-16 text-right flex-shrink-0">
                             {skill.progress}%
@@ -228,9 +235,13 @@ function SkillsPageContent() {
         ) : (
           <div className="text-center py-16 text-[#808080]">
             <div className="text-6xl mb-4">🎯</div>
-            <h3 className="text-xl font-medium text-[#E0E0E0] mb-2">No skills yet</h3>
-            <p className="text-[#A0A0A0] mb-6">Create your first skill to get started on your journey</p>
-            <Button 
+            <h3 className="text-xl font-medium text-[#E0E0E0] mb-2">
+              No skills yet
+            </h3>
+            <p className="text-[#A0A0A0] mb-6">
+              Create your first skill to get started on your journey
+            </p>
+            <Button
               onClick={() => setIsCreateModalOpen(true)}
               className="bg-[#BBB] text-[#1E1E1E] hover:bg-[#A0A0A0]"
             >
@@ -245,8 +256,10 @@ function SkillsPageContent() {
       {isCreateModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-[#2C2C2C] rounded-lg p-6 w-full max-w-md mx-4 border border-[#333]">
-            <h3 className="text-xl font-bold text-[#E0E0E0] mb-4">Create New Skill</h3>
-            
+            <h3 className="text-xl font-bold text-[#E0E0E0] mb-4">
+              Create New Skill
+            </h3>
+
             <div className="space-y-4">
               {/* Skill Name */}
               <div>
@@ -288,8 +301,8 @@ function SkillsPageContent() {
                 >
                   <option value="">Select a category</option>
                   {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
+                    <option key={cat.cat_id} value={cat.cat_id}>
+                      {cat.cat_name}
                     </option>
                   ))}
                 </select>
@@ -302,9 +315,9 @@ function SkillsPageContent() {
                   onClick={() => setIsCreatingCategory(!isCreatingCategory)}
                   className="text-sm text-[#BBB] hover:text-[#E0E0E0] underline"
                 >
-                  {isCreatingCategory ? 'Cancel' : 'Create new category'}
+                  {isCreatingCategory ? "Cancel" : "Create new category"}
                 </button>
-                
+
                 {isCreatingCategory && (
                   <div className="mt-3">
                     <input
