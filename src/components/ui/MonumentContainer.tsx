@@ -59,22 +59,20 @@ export function MonumentContainer() {
           </Link>
         </div>
       ) : (
-        <div className="px-4 overflow-x-auto scroll-snap">
-          <div className="flex">
-            {monuments.map((m) => (
-              <div
-                key={m.id}
-                className="card mr-3 flex h-[128px] w-[128px] flex-shrink-0 snap-start flex-col items-center justify-center p-3"
-              >
-                <div className="mb-2 text-2xl" aria-hidden>
-                  {m.emoji || "🏛️"}
-                </div>
-                <div className="w-full truncate text-center text-sm font-semibold">
-                  {m.title}
-                </div>
+        <div className="grid grid-cols-4 gap-3 px-4">
+          {monuments.map((m) => (
+            <div
+              key={m.id}
+              className="card flex h-16 w-16 flex-col items-center justify-center p-2"
+            >
+              <div className="mb-1 text-lg" aria-hidden>
+                {m.emoji || "🏛️"}
               </div>
-            ))}
-          </div>
+              <div className="w-full truncate text-center text-xs font-semibold">
+                {m.title}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </section>
