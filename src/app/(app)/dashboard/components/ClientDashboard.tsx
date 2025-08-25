@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { DashboardData } from "@/types/dashboard";
 
 interface ClientDashboardProps {
@@ -292,22 +293,13 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
 
         {/* Skills Section */}
         <div style={{ marginBottom: "32px" }}>
-          <h2
-            style={{
-              fontSize: "18px",
-              fontWeight: "900",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              marginBottom: "16px",
-              color: "#E0E0E0",
-              cursor: "pointer",
-            }}
-            onClick={() => (window.location.href = "/skills")}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#BBB")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#E0E0E0")}
-          >
-            SKILLS
-          </h2>
+          <Link href="/skills">
+            <h2
+              className="mb-4 text-[18px] font-black uppercase tracking-[0.1em] text-[#E0E0E0] hover:text-[#BBB]"
+            >
+              SKILLS
+            </h2>
+          </Link>
           <div
             style={{
               display: "flex",
