@@ -69,7 +69,7 @@ export function MonumentContainer() {
                 <div className="mb-1 text-lg" aria-hidden>
                   {m.emoji || "🏛️"}
                 </div>
-                <div className="w-full truncate text-center text-xs font-semibold">
+                <div className="w-full break-words text-center text-xs font-semibold leading-tight">
                   {m.title}
                 </div>
               </div>
