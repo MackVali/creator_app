@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { GoalsCard } from "@/components/ui/GoalsCard";
@@ -59,7 +60,7 @@ export default function DashboardClient() {
 
       <MonumentContainer />
 
-      <Section title="Skills" className="mt-1 px-4">
+      <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
         {loading ? (
           <div className="text-center py-8 text-gray-500">
             Loading skills...
