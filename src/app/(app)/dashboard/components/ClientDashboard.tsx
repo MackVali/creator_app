@@ -10,6 +10,11 @@ interface ClientDashboardProps {
 export function ClientDashboard({ data }: ClientDashboardProps) {
   const { userStats, monuments, skillsAndGoals } = data;
 
+  // Debug logging
+  console.log("🔍 Dashboard Data:", data);
+  console.log("🎯 Skills and Goals:", skillsAndGoals);
+  console.log("🐱 Categories:", skillsAndGoals.cats);
+
   return (
     <div
       style={{
@@ -297,9 +302,9 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               color: "#E0E0E0",
               cursor: "pointer",
             }}
-            onClick={() => window.location.href = '/skills'}
-            onMouseEnter={(e) => e.currentTarget.style.color = "#BBB"}
-            onMouseLeave={(e) => e.currentTarget.style.color = "#E0E0E0"}
+            onClick={() => (window.location.href = "/skills")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#BBB")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#E0E0E0")}
           >
             SKILLS
           </h2>
@@ -330,18 +335,49 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                       borderBottom: "1px solid #333",
                     }}
                     onClick={() => {
-                      const skillsList = document.getElementById(`skills-${cat.cat_id}`);
+                      const skillsList = document.getElementById(
+                        `skills-${cat.cat_id}`
+                      );
                       if (skillsList) {
-                        skillsList.style.display = skillsList.style.display === "none" ? "block" : "none";
+                        skillsList.style.display =
+                          skillsList.style.display === "none"
+                            ? "block"
+                            : "none";
                       }
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <div style={{ fontSize: "18px", fontWeight: "500", color: "#E0E0E0" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: "18px",
+                            fontWeight: "500",
+                            color: "#E0E0E0",
+                          }}
+                        >
                           {cat.cat_name}
                         </div>
-                        <div style={{ fontSize: "14px", color: "#A0A0A0", background: "#404040", padding: "4px 8px", borderRadius: "12px" }}>
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            color: "#A0A0A0",
+                            background: "#404040",
+                            padding: "4px 8px",
+                            borderRadius: "12px",
+                          }}
+                        >
                           {cat.skill_count} skills
                         </div>
                       </div>
@@ -350,7 +386,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Skills List */}
                   <div
                     id={`skills-${cat.cat_id}`}
@@ -360,7 +396,13 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                       padding: "16px",
                     }}
                   >
-                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                      }}
+                    >
                       {cat.skills && cat.skills.length > 0 ? (
                         cat.skills.map((skill) => (
                           <div
@@ -379,22 +421,45 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                             <div style={{ fontSize: "20px", flexShrink: "0" }}>
                               {skill.icon || "💡"}
                             </div>
-                            
+
                             {/* Skill Name */}
                             <div style={{ flex: "1", minWidth: "0" }}>
-                              <div style={{ fontSize: "14px", fontWeight: "500", color: "#E0E0E0" }}>
+                              <div
+                                style={{
+                                  fontSize: "14px",
+                                  fontWeight: "500",
+                                  color: "#E0E0E0",
+                                }}
+                              >
                                 {skill.name}
                               </div>
                             </div>
-                            
+
                             {/* Level Badge */}
-                            <div style={{ fontSize: "12px", color: "#A0A0A0", background: "#404040", padding: "4px 8px", borderRadius: "12px", flexShrink: "0" }}>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#A0A0A0",
+                                background: "#404040",
+                                padding: "4px 8px",
+                                borderRadius: "12px",
+                                flexShrink: "0",
+                              }}
+                            >
                               Lv {skill.level}
                             </div>
-                            
+
                             {/* Progress Bar */}
                             <div style={{ width: "80px", flexShrink: "0" }}>
-                              <div style={{ width: "100%", height: "8px", background: "#333", borderRadius: "9999px", overflow: "hidden" }}>
+                              <div
+                                style={{
+                                  width: "100%",
+                                  height: "8px",
+                                  background: "#333",
+                                  borderRadius: "9999px",
+                                  overflow: "hidden",
+                                }}
+                              >
                                 <div
                                   style={{
                                     height: "100%",
@@ -406,15 +471,30 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                                 />
                               </div>
                             </div>
-                            
+
                             {/* Progress Percentage */}
-                            <div style={{ fontSize: "12px", color: "#A0A0A0", width: "48px", textAlign: "right", flexShrink: "0" }}>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "#A0A0A0",
+                                width: "48px",
+                                textAlign: "right",
+                                flexShrink: "0",
+                              }}
+                            >
                               {skill.progress}%
                             </div>
                           </div>
                         ))
                       ) : (
-                        <div style={{ fontSize: "14px", color: "#808080", textAlign: "center", padding: "16px" }}>
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            color: "#808080",
+                            textAlign: "center",
+                            padding: "16px",
+                          }}
+                        >
                           No skills in this category
                         </div>
                       )}
@@ -423,7 +503,13 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                 </div>
               ))
             ) : (
-              <div style={{ textAlign: "center", padding: "32px", color: "#808080" }}>
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "32px",
+                  color: "#808080",
+                }}
+              >
                 No skills found. Create your first skill to get started!
               </div>
             )}
