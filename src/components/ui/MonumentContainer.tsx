@@ -25,7 +25,7 @@ export function MonumentContainer() {
         .from("monuments")
         .select("id,title,emoji")
         .order("created_at", { ascending: false })
-        .limit(8);
+        .range(0, 7);
       if (!cancelled) {
         if (error) console.error(error);
         setMonuments(data ?? []);
@@ -69,7 +69,7 @@ export function MonumentContainer() {
                 <div className="mb-1 text-lg" aria-hidden>
                   {m.emoji || "🏛️"}
                 </div>
-                <div className="w-full break-words text-center text-xs font-semibold leading-tight">
+                <div className="w-full break-words text-center text-[10px] font-semibold leading-tight">
                   {m.title}
                 </div>
               </div>
