@@ -60,11 +60,11 @@ export function MonumentContainer() {
         </div>
       ) : (
         <div className="px-4">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4 gap-1">
             {monuments.map((m) => (
               <div
                 key={m.id}
-                className="card flex h-16 w-16 flex-col items-center justify-center p-1"
+                className="card flex aspect-square w-full flex-col items-center justify-center p-1"
               >
                 <div className="mb-1 text-lg" aria-hidden>
                   {m.emoji || "🏛️"}
