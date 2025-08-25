@@ -25,7 +25,7 @@ export function MonumentContainer() {
         .from("monuments")
         .select("id,title,emoji")
         .order("created_at", { ascending: false })
-        .limit(3);
+        .limit(8);
       if (!cancelled) {
         if (error) console.error(error);
         setMonuments(data ?? []);
@@ -59,17 +59,17 @@ export function MonumentContainer() {
           </Link>
         </div>
       ) : (
-        <div className="px-4 overflow-x-auto scroll-snap">
-          <div className="flex">
+        <div className="px-4">
+          <div className="grid grid-cols-4 gap-2">
             {monuments.map((m) => (
               <div
                 key={m.id}
-                className="card mr-3 flex h-[128px] w-[128px] snap-start flex-col items-center justify-center p-3"
+                className="card flex h-16 w-16 flex-col items-center justify-center p-1"
               >
-                <div className="mb-2 text-2xl" aria-hidden>
+                <div className="mb-1 text-lg" aria-hidden>
                   {m.emoji || "🏛️"}
                 </div>
-                <div className="w-full truncate text-center text-sm font-semibold">
+                <div className="w-full truncate text-center text-xs font-semibold">
                   {m.title}
                 </div>
               </div>
