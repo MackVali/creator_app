@@ -28,9 +28,9 @@ export default function BottomNav() {
           <Plus className="h-8 w-8" />
         </Link>
       </div>
-      <Link href="/friends" className="flex flex-col items-center gap-1 hover:text-blue-400">
+      <Link href="/skills" className="flex flex-col items-center gap-1 hover:text-blue-400">
         <Users className="h-6 w-6" />
-        <span className="text-xs">Friends</span>
+        <span className="text-xs">Skills</span>
       </Link>
       <Link href="/coming-soon" className="flex flex-col items-center gap-1 hover:text-blue-400">
         <MoreHorizontal className="h-6 w-6" />
