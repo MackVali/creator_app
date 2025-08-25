@@ -1,34 +1,18 @@
-"use client";
+import { getMySkills, getMyMonuments } from "@/data/skills";
+import { SkillGrid } from "@/components/skills/SkillGrid";
+import { CreateSkillButton } from "@/components/skills/CreateSkillButton";
 
-import { useState, useEffect } from "react";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import {
-  PageHeader,
-  ContentCard,
-  GridContainer,
-  GridSkeleton,
-  SkillsEmptyState,
-  useToastHelpers,
-} from "@/components/ui";
-import { Button } from "@/components/ui/button";
-import { Plus, Star, TrendingUp, Award } from "lucide-react";
+export const dynamic = "force-dynamic";
 
-interface Skill {
-  id: string;
-  name: string;
-  description: string;
-  currentLevel: number;
-  targetLevel: number;
-  category: string;
-  lastPracticed?: string;
-  totalPracticeHours: number;
-}
-
-export default function SkillsPage() {
+export default async function SkillsPage() {
+  const [skills, monuments] = await Promise.all([getMySkills(), getMyMonuments()]);
   return (
-    <div className="p-6 text-white">
-      <h1>Skills Page</h1>
-      <p>Coming soon...</p>
-    </div>
+    <main className="mx-auto w-full max-w-6xl px-4 py-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">My Skills</h1>
+        <CreateSkillButton monuments={monuments} />
+      </div>
+      <SkillGrid skills={skills} emptyMessage="No skills yet. Create your first one." />
+    </main>
   );
 }
