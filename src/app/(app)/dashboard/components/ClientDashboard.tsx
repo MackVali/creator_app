@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { DashboardData } from "@/types/dashboard";
 
 interface ClientDashboardProps {
@@ -8,6 +9,7 @@ interface ClientDashboardProps {
 
 // Example client component using the hook
 export function ClientDashboard({ data }: ClientDashboardProps) {
+  const router = useRouter();
   const { userStats, monuments, skillsAndGoals } = data;
 
   // Debug logging
@@ -519,6 +521,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
         {/* Current Goals Section */}
         <div>
           <h2
+            onClick={() => router.push("/goals")}
             style={{
               fontSize: "18px",
               fontWeight: "900",
@@ -526,7 +529,11 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               letterSpacing: "0.1em",
               marginBottom: "16px",
               color: "#E0E0E0",
+              cursor: "pointer",
+              transition: "color 0.2s ease",
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#FFFFFF")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#E0E0E0")}
           >
             CURRENT GOALS
           </h2>
@@ -540,13 +547,9 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
           >
             <ul style={{ margin: "0", padding: "0", listStyle: "none" }}>
               {skillsAndGoals.goals.map(
-                (goal: {
-                  goal_id: string | number;
-                  name: string;
-                  updated_at?: string;
-                }) => (
+                (goal: { id: string; name: string; created_at?: string }) => (
                   <li
-                    key={goal.goal_id}
+                    key={goal.id}
                     style={{
                       display: "flex",
                       alignItems: "center",

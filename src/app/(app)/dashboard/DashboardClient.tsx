@@ -4,9 +4,10 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
-import { GoalsCard } from "@/components/ui/GoalsCard";
+import { GoalCardGrid } from "@/components/ui/GoalCardGrid";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import type { GoalItem } from "@/types/dashboard";
 
 interface Skill {
   skill_id: string;
@@ -25,20 +26,22 @@ interface Category {
 
 export default function DashboardClient() {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [goals, setGoals] = useState<GoalItem[]>([]);
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSkills();
+    fetchDashboardData();
   }, []);
 
-  const fetchSkills = async () => {
+  const fetchDashboardData = async () => {
     try {
       const response = await fetch("/api/dashboard");
       const data = await response.json();
       setCategories(data.skillsAndGoals.cats || []);
+      setGoals(data.skillsAndGoals.goals || []);
     } catch (error) {
-      console.error("Error fetching skills:", error);
+      console.error("Error fetching dashboard data:", error);
     } finally {
       setLoading(false);
     }
@@ -157,13 +160,14 @@ export default function DashboardClient() {
         )}
       </Section>
 
-      <Section title="Current Goals" className="safe-bottom mt-2">
-        <GoalsCard
-          items={[
-            "Complete book manuscript",
-            "Improve presentation skills",
-            "Plan charity event",
-          ]}
+      <Section
+        title={<Link href="/goals">Current Goals</Link>}
+        className="safe-bottom mt-2 px-4"
+      >
+        <GoalCardGrid
+          goals={goals}
+          loading={loading}
+          showLinks={false} // Set to true if /goals/[id] route exists
         />
       </Section>
     </main>

@@ -17,10 +17,14 @@ export type CatItem = {
   skill_count: number;
   skills: SkillItem[];
 };
+
 export type GoalItem = {
-  goal_id: string | number;
+  id: string;
   name: string;
-  updated_at?: string;
+  priority: "NO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "ULTRA-CRITICAL";
+  energy: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
+  monument_id?: string | null;
+  created_at: string;
 };
 
 export type DashboardData = {

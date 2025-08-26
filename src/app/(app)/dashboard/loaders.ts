@@ -85,7 +85,7 @@ export async function getMonumentsSummary(
 
 export async function getSkillsAndGoals(
   cookieStore?: Awaited<ReturnType<typeof nextCookies>>
-): Promise<{ cats: CatItem[]; goals: string[] }> {
+): Promise<{ cats: CatItem[]; goals: GoalItem[] }> {
   const cookieStoreResolved = cookieStore || (await nextCookies());
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStoreResolved.get(name),
@@ -110,10 +110,10 @@ export async function getSkillsAndGoals(
     supabase
       .from("skills_by_cats_v")
       .select("cat_id,cat_name,skill_count,skills"),
-    supabase.from("goals_active_v").select("goal_id,name,updated_at").limit(3),
+    supabase.from("goals").select("id,name,created_at").limit(3),
   ]);
 
   const cats = (catsRes.data ?? []) as CatItem[];
-  const goals = ((goalsRes.data ?? []) as GoalItem[]).map((g) => g.name);
+  const goals = (goalsRes.data ?? []) as GoalItem[];
   return { cats, goals };
 }
