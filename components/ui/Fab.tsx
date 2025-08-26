@@ -74,28 +74,26 @@ export function Fab({ className = "" }: FabProps) {
     <div className={className}>
       {/* AddEvents Menu */}
       {isOpen && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div
-            ref={menuRef}
-            className="bg-gray-900/80 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
-          >
-            {addEvents.map((event, index) => (
-              <button
-                key={event.label}
-                onClick={() => handleEventClick(event.eventType)}
-                className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap ${event.color}`}
-                style={{
-                  animationDelay: `${index * 50}ms`,
-                  transform: `translateY(${isOpen ? "0" : "20px"})`,
-                  opacity: isOpen ? 1 : 0,
-                  transition: `all 0.2s ease ${index * 50}ms`,
-                }}
-              >
-                <span className="text-sm opacity-80">add</span>{" "}
-                <span className="text-lg font-bold">{event.label}</span>
-              </button>
-            ))}
-          </div>
+        <div
+          ref={menuRef}
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 bg-gray-900/80 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
+        >
+          {addEvents.map((event, index) => (
+            <button
+              key={event.label}
+              onClick={() => handleEventClick(event.eventType)}
+              className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap ${event.color}`}
+              style={{
+                animationDelay: `${index * 50}ms`,
+                transform: `translateY(${isOpen ? "0" : "20px"})`,
+                opacity: isOpen ? 1 : 0,
+                transition: `all 0.2s ease ${index * 50}ms`,
+              }}
+            >
+              <span className="text-sm opacity-80">add</span>{" "}
+              <span className="text-lg font-bold">{event.label}</span>
+            </button>
+          ))}
         </div>
       )}
 
