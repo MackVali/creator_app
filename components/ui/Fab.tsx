@@ -76,7 +76,7 @@ export function Fab({ className = "" }: FabProps) {
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 bg-gray-900/80 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 bg-gray-900/60 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
         >
           {addEvents.map((event, index) => (
             <button
