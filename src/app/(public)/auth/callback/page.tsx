@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ROUTES } from "@/lib/routes";
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -23,8 +24,8 @@ export default function AuthCallback() {
         setErr(error.message);
         return;
       }
-      const redirectTo = searchParams.get("redirect") || "/dashboard";
-      router.replace(redirectTo);
+      const next = searchParams.get("next") || ROUTES.dashboard;
+      router.replace(next);
     })();
   }, [router, searchParams]);
   return (

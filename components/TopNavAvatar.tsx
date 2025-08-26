@@ -13,14 +13,15 @@ interface Profile {
 interface TopNavAvatarProps {
   profile: Profile | null;
   userId: string | null;
+  href: string;
 }
 
-export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
+export default function TopNavAvatar({ profile, userId, href }: TopNavAvatarProps) {
   const router = useRouter();
 
   const handleClick = () => {
     if (userId) {
-      router.push("/profile");
+      router.push(href);
     }
   };
 
@@ -42,7 +43,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
     <button
       onClick={handleClick}
       className="h-8 w-8 rounded-full overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
-      data-testid="topnav-avatar"
+      data-testid="nav-profile"
     >
       <Avatar className="h-8 w-8">
         {profile?.avatar_url ? (

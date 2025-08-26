@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { ROUTES } from "@/lib/routes";
 import { parseSupabaseError } from "@/lib/error-handling";
 import RoleOption from "@/components/auth/RoleOption";
 
@@ -122,8 +123,8 @@ export default function AuthForm() {
         handleAuthError(error);
       } else {
         setAttempts(0);
-        const redirectTo = searchParams.get("redirect") || "/dashboard";
-        router.replace(redirectTo);
+        const next = searchParams.get("next") || ROUTES.dashboard;
+        router.replace(next);
       }
     } catch (err) {
       handleAuthError(err as { message?: string });
@@ -174,8 +175,8 @@ export default function AuthForm() {
           );
         } else {
           // Email confirmation disabled, redirect to dashboard
-          const redirectTo = searchParams.get("redirect") || "/dashboard";
-          router.replace(redirectTo);
+          const next = searchParams.get("next") || ROUTES.dashboard;
+          router.replace(next);
         }
       }
     } catch (err) {

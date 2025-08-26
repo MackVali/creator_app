@@ -22,7 +22,7 @@
     "paths": {
       "@/*": ["./src/*", "./components/*", "./lib/*"],
       "@/components/*": ["./src/components/*", "./components/*"],
-      "@/lib/*": ["./lib/*"],
+      "@/lib/*": ["./src/lib/*", "./lib/*"],
       "@/types/*": ["./src/types/*"]
     }
   },

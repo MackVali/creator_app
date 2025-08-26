@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 import TopNavAvatar from "./TopNavAvatar";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { ROUTES } from "@/lib/routes";
 import { useEffect, useState } from "react";
 
 export default function TopNav() {
@@ -36,7 +37,7 @@ export default function TopNav() {
       <span className="font-semibold" data-testid="username">
         {profile?.username || userEmail || "Guest"}
       </span>
-      <TopNavAvatar profile={profile} userId={userId} />
+      <TopNavAvatar profile={profile} userId={userId} href={ROUTES.profile} />
     </nav>
   );
 }
