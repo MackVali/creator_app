@@ -74,8 +74,11 @@ export function Fab({ className = "" }: FabProps) {
     <div className={className}>
       {/* AddEvents Menu */}
       {isOpen && (
-        <div ref={menuRef} className="absolute bottom-20 right-0 mb-2">
-          <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]">
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div
+            ref={menuRef}
+            className="bg-gray-900/80 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
+          >
             {addEvents.map((event, index) => (
               <button
                 key={event.label}
