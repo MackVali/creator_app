@@ -30,8 +30,15 @@ export async function GET() {
       .select("level,xp_current,xp_max")
       .maybeSingle(),
     supabase.from("monuments_summary_v").select("category,count"),
-    supabase.from("skills_by_cats_v").select("cat_id,cat_name,skill_count,skills"),
-    supabase.from("goals_active_v").select("goal_id,name,updated_at").limit(3),
+    supabase
+      .from("skills_by_cats_v")
+      .select("cat_id,cat_name,skill_count,skills"),
+    supabase
+      .from("goals")
+      .select("id,name,priority,energy,monument_id,created_at")
+      .order("priority", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(6),
   ]);
 
   const statsOut: UserStats = stats ?? {
@@ -53,7 +60,7 @@ export async function GET() {
   }
 
   const catsOut = (skills ?? []) as CatItem[];
-  const goalsOut = ((goals ?? []) as GoalItem[]).map((g) => g.name);
+  const goalsOut = (goals ?? []) as GoalItem[];
 
   return NextResponse.json({
     stats: statsOut,

@@ -1,16 +1,22 @@
-import { PageShell, SectionCard } from '@/components/ui'
+"use client";
+
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { PageHeader } from "@/components/ui";
 
 export default function NewTaskPage() {
   return (
-    <PageShell title="New Task">
-      <div className="space-y-8">
-        <SectionCard>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-gray-900 text-white">
+        <div className="container mx-auto px-4 py-6">
+          <PageHeader
+            title="Create New Task"
+            description="Add a new task to your project"
+          />
           <div className="text-center py-12">
-            <div className="text-zinc-400 mb-4">Task creation form</div>
-            <div className="text-sm text-zinc-500">Form will be implemented here</div>
+            <p className="text-gray-400">Task creation form coming soon...</p>
           </div>
-        </SectionCard>
+        </div>
       </div>
-    </PageShell>
-  )
+    </ProtectedRoute>
+  );
 }
