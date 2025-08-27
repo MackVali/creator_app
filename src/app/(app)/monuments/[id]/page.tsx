@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
@@ -122,6 +123,12 @@ export default function MonumentDetailPage() {
         <p className="text-sm text-gray-400">
           Created {formatDate(monument.created_at)}
         </p>
+        <Link
+          href={`/monuments/${id}/edit`}
+          className="inline-block rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-black"
+        >
+          Edit Monument
+        </Link>
       </div>
 
       {/* Related Goals Section */}
