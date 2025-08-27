@@ -223,7 +223,7 @@ export async function createContentCard(
         title: cardData.title,
         description: cardData.description,
         url: cardData.url,
-        thumbnail_url: cardData.thumbnail_url,
+        thumbnail_url: cardData.thumbnail ? null : null, // Will be set after upload
         category: cardData.category,
         position: nextPosition,
         is_active: true,

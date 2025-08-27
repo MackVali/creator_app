@@ -71,34 +71,58 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   const initials = getInitials(profile.name || null, profile.username);
 
   // Default content cards if none exist
-  const defaultContentCards = [
+  const defaultContentCards: ContentCard[] = [
     {
       id: "default-1",
+      user_id: profile.user_id,
       title: "Website",
       description: "Visit my personal website",
       url: "#",
-      category: "Personal"
+      thumbnail_url: null,
+      category: "Personal",
+      position: 0,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     },
     {
       id: "default-2", 
+      user_id: profile.user_id,
       title: "Portfolio",
       description: "View my work and projects",
       url: "#",
-      category: "Work"
+      thumbnail_url: null,
+      category: "Work",
+      position: 1,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     },
     {
       id: "default-3",
+      user_id: profile.user_id,
       title: "Blog",
       description: "Read my latest thoughts and insights",
       url: "#",
-      category: "Content"
+      thumbnail_url: null,
+      category: "Content",
+      position: 2,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     },
     {
       id: "default-4",
+      user_id: profile.user_id,
       title: "Contact",
       description: "Get in touch with me",
       url: "#",
-      category: "Contact"
+      thumbnail_url: null,
+      category: "Contact",
+      position: 3,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }
   ];
 
