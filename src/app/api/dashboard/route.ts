@@ -35,23 +35,24 @@ export async function GET() {
   // Debug logging for development
   if (process.env.NODE_ENV !== "production") {
     console.debug(
-      "🔍 Debug: skills response",
-      skillsResponse.length || 0,
-      skillsResponse.slice(0, 3)
+      "🔍 Debug: skills response length:",
+      skillsResponse.length || 0
     );
     console.debug(
-      "🔍 Debug: cats response",
-      catsResponse.data?.length || 0,
-      catsResponse.data?.slice(0, 3)
+      "🔍 Debug: skills response data:",
+      skillsResponse
     );
     console.debug(
-      "🔍 Debug: first skill sample",
-      skillsResponse[0] ? {
-        id: skillsResponse[0].id,
-        name: skillsResponse[0].name,
-        cat_id: skillsResponse[0].cat_id,
-        icon: skillsResponse[0].icon
-      } : "No skills"
+      "🔍 Debug: cats response length:",
+      catsResponse.data?.length || 0
+    );
+    console.debug(
+      "🔍 Debug: cats response data:",
+      catsResponse.data
+    );
+    console.debug(
+      "🔍 Debug: user ID:",
+      user.id
     );
   }
 
@@ -66,6 +67,11 @@ export async function GET() {
       cat_name: category?.name || "Uncategorized",
     };
   });
+
+  // Debug skillsData
+  if (process.env.NODE_ENV !== "production") {
+    console.debug("🔍 Debug: skillsData after mapping:", skillsData);
+  }
 
   const [{ data: stats }, { data: monuments }, { data: goals }] =
     await Promise.all([
@@ -130,9 +136,14 @@ export async function GET() {
     {} as Record<string, CatItem>
   );
 
+  // Debug skillsByCategory
+  if (process.env.NODE_ENV !== "production") {
+    console.debug("🔍 Debug: skillsByCategory after grouping:", skillsByCategory);
+  }
+
   // Always include all CATs, even if they have no skills
   const allCats = catsResponse.data || [];
-  
+
   // Create a complete list of CATs with their skills (or empty skills array)
   const catsOut = allCats.map((cat) => {
     // Check if this CAT has skills in the skillsByCategory
