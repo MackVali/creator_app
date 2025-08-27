@@ -15,7 +15,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
   // Debug logging
   console.log("🔍 Dashboard Data:", data);
   console.log("🎯 Skills and Goals:", skillsAndGoals);
-  console.log("🐱 Categories:", skillsAndGoals.cats);
+  console.log("🐱 Skills:", skillsAndGoals.skills);
 
   return (
     <div
@@ -317,8 +317,24 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               gap: "16px",
             }}
           >
-            {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
-              skillsAndGoals.cats.map((cat) => (
+            {(() => {
+              // Group skills by category
+              const skillsByCategory = skillsAndGoals.skills.reduce((acc, skill) => {
+                if (!acc[skill.cat_id]) {
+                  acc[skill.cat_id] = {
+                    cat_id: skill.cat_id,
+                    cat_name: skill.cat_name,
+                    skills: []
+                  };
+                }
+                acc[skill.cat_id].skills.push(skill);
+                return acc;
+              }, {} as Record<string, { cat_id: string; cat_name: string; skills: typeof skillsAndGoals.skills }>);
+
+              const categories = Object.values(skillsByCategory);
+              
+              return categories.length > 0 ? (
+                categories.map((cat) => (
                 <div
                   key={cat.cat_id}
                   style={{
@@ -380,7 +396,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                             borderRadius: "12px",
                           }}
                         >
-                          {cat.skill_count} skills
+                          {cat.skills.length} skills
                         </div>
                       </div>
                       <div style={{ color: "#A0A0A0", fontSize: "20px" }}>
@@ -421,7 +437,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                           >
                             {/* Skill Icon */}
                             <div style={{ fontSize: "20px", flexShrink: "0" }}>
-                              {skill.icon || "💡"}
+                              {skill.skill_icon || "💡"}
                             </div>
 
                             {/* Skill Name */}
@@ -433,7 +449,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                                   color: "#E0E0E0",
                                 }}
                               >
-                                {skill.name}
+                                {skill.skill_name}
                               </div>
                             </div>
 
@@ -448,7 +464,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                                 flexShrink: "0",
                               }}
                             >
-                              Lv {skill.level}
+                              Lv {skill.skill_level}
                             </div>
 
                             {/* Progress Bar */}
@@ -514,7 +530,8 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               >
                 No skills found. Create your first skill to get started!
               </div>
-            )}
+            );
+            })()}
           </div>
         </div>
 

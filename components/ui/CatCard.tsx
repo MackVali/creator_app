@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { CatItem } from "@/types/dashboard";
+import { SkillItem } from "@/types/dashboard";
 import { SkillRow } from "./SkillRow";
 
 interface CatCardProps {
-  cat: CatItem;
+  categoryName: string;
+  skills: SkillItem[];
 }
 
-export function CatCard({ cat }: CatCardProps) {
+export function CatCard({ categoryName, skills }: CatCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const toggleExpanded = () => {
@@ -26,10 +27,10 @@ export function CatCard({ cat }: CatCardProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="text-lg font-medium text-[#E0E0E0]">
-              {cat.cat_name}
+              {categoryName}
             </div>
             <div className="text-sm text-[#A0A0A0] bg-[#404040] px-2 py-1 rounded-full">
-              {cat.skill_count} skills
+              {skills.length} skills
             </div>
           </div>
           <div className="text-[#A0A0A0]">
@@ -46,8 +47,8 @@ export function CatCard({ cat }: CatCardProps) {
       {isExpanded && (
         <div className="border-t border-[#333] bg-[#252525]">
           <div className="p-4 space-y-3">
-            {cat.skills.length > 0 ? (
-              cat.skills.map((skill) => (
+            {skills.length > 0 ? (
+              skills.map((skill) => (
                 <SkillRow key={skill.skill_id} skill={skill} />
               ))
             ) : (
