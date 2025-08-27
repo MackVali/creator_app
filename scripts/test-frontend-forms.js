@@ -5,6 +5,8 @@
  * Run with: node scripts/test-frontend-forms.js
  */
 
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const fs = require("fs");
 const path = require("path");
 
