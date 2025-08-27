@@ -1,19 +1,284 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser, getProfile } from "@/lib/db/profiles";
-import ProfileEditForm from "./ProfileEditForm";
+"use client";
 
-export default async function ProfileEditPage() {
-  const user = await getCurrentUser();
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { getProfileByUserId, updateProfile } from "@/lib/db";
+import { Profile, ProfileFormData } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, Save, User, Calendar, MapPin, FileText } from "lucide-react";
+import Link from "next/link";
 
-  if (!user) {
-    redirect("/auth");
+export default function ProfileEditPage() {
+  const router = useRouter();
+  const { session } = useAuth();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const [formData, setFormData] = useState<ProfileFormData>({
+    name: "",
+    username: "",
+    dob: "",
+    city: "",
+    bio: "",
+  });
+
+  useEffect(() => {
+    async function loadProfile() {
+      if (!session?.user?.id) {
+        router.push("/auth");
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const userProfile = await getProfileByUserId(session.user.id);
+        
+        if (userProfile) {
+          setProfile(userProfile);
+          setFormData({
+            name: userProfile.name || "",
+            username: userProfile.username || "",
+            dob: userProfile.dob || "",
+            city: userProfile.city || "",
+            bio: userProfile.bio || "",
+          });
+        }
+      } catch (err) {
+        console.error("Error loading profile:", err);
+        setError("Failed to load profile");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadProfile();
+  }, [session, router]);
+
+  const handleInputChange = (field: keyof ProfileFormData, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!session?.user?.id) {
+      setError("Not authenticated");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      const result = await updateProfile(session.user.id, formData);
+      
+      if (result.success && result.profile) {
+        setSuccess(true);
+        setProfile(result.profile);
+        
+        // Redirect to profile page after a short delay
+        setTimeout(() => {
+          router.push("/profile");
+        }, 1500);
+      } else {
+        setError(result.error || "Failed to update profile");
+      }
+    } catch (err) {
+      console.error("Error updating profile:", err);
+      setError("An unexpected error occurred");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading profile...</p>
+        </div>
+      </div>
+    );
   }
 
-  const profile = await getProfile(user.id);
-
-  if (!profile) {
-    redirect("/profile");
+  if (error && !profile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <button 
+            onClick={() => router.push("/dashboard")}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
   }
 
-  return <ProfileEditForm profile={profile} userId={user.id} />;
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+      {/* Header */}
+      <div className="bg-white/80 backdrop-blur-md border-b border-gray-200">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="flex items-center space-x-4">
+            <Link href="/profile">
+              <Button variant="ghost" size="sm" className="p-2">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900">Edit Profile</h1>
+          </div>
+        </div>
+      </div>
+
+      {/* Form */}
+      <div className="max-w-2xl mx-auto px-4 py-8">
+        <Card className="shadow-xl border-0">
+          <CardHeader>
+            <CardTitle className="text-center text-2xl">Update Your Profile</CardTitle>
+            <p className="text-center text-gray-600">
+              Customize your profile to make it uniquely yours
+            </p>
+          </CardHeader>
+          
+          <CardContent>
+            {success && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-green-800 text-center">
+                  Profile updated successfully! Redirecting...
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-800 text-center">{error}</p>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Name */}
+              <div className="space-y-2">
+                <Label htmlFor="name" className="flex items-center space-x-2">
+                  <User className="h-4 w-4 text-blue-600" />
+                  <span>Full Name</span>
+                </Label>
+                <Input
+                  id="name"
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => handleInputChange("name", e.target.value)}
+                  placeholder="Enter your full name"
+                  className="h-12 text-lg"
+                />
+              </div>
+
+              {/* Username */}
+              <div className="space-y-2">
+                <Label htmlFor="username" className="flex items-center space-x-2">
+                  <User className="h-4 w-4 text-purple-600" />
+                  <span>Username</span>
+                </Label>
+                <Input
+                  id="username"
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => handleInputChange("username", e.target.value)}
+                  placeholder="Choose a unique username"
+                  className="h-12 text-lg"
+                />
+                <p className="text-sm text-gray-500">
+                  This will be your unique identifier: @{formData.username || "username"}
+                </p>
+              </div>
+
+              {/* Bio */}
+              <div className="space-y-2">
+                <Label htmlFor="bio" className="flex items-center space-x-2">
+                  <FileText className="h-4 w-4 text-green-600" />
+                  <span>Bio</span>
+                </Label>
+                <Textarea
+                  id="bio"
+                  value={formData.bio}
+                  onChange={(e) => handleInputChange("bio", e.target.value)}
+                  placeholder="Tell us about yourself..."
+                  className="min-h-[100px] text-lg resize-none"
+                />
+                                  <p className="text-sm text-gray-500">
+                    Keep it concise and engaging. Example: &ldquo;Dad • Creator • Entrepreneur • Philanthropist&rdquo;
+                  </p>
+              </div>
+
+              {/* Date of Birth */}
+              <div className="space-y-2">
+                <Label htmlFor="dob" className="flex items-center space-x-2">
+                  <Calendar className="h-4 w-4 text-orange-600" />
+                  <span>Date of Birth</span>
+                </Label>
+                <Input
+                  id="dob"
+                  type="date"
+                  value={formData.dob}
+                  onChange={(e) => handleInputChange("dob", e.target.value)}
+                  className="h-12 text-lg"
+                />
+              </div>
+
+              {/* City */}
+              <div className="space-y-2">
+                <Label htmlFor="city" className="flex items-center space-x-2">
+                  <MapPin className="h-4 w-4 text-red-600" />
+                  <span>City</span>
+                </Label>
+                <Input
+                  id="city"
+                  type="text"
+                  value={formData.city}
+                  onChange={(e) => handleInputChange("city", e.target.value)}
+                  placeholder="Where are you located?"
+                  className="h-12 text-lg"
+                />
+              </div>
+
+              {/* Submit Button */}
+              <div className="pt-6">
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full h-14 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                >
+                  {saving ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Saving...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <Save className="h-5 w-5" />
+                      <span>Save Changes</span>
+                    </div>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 }

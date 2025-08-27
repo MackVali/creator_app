@@ -96,19 +96,68 @@ export interface SkillCategories {
   name: string | null;
 }
 
+// Enhanced Profile interface
 export interface Profile {
   id: number;
   user_id: string;
   username: string;
-  name?: string | null; // Made optional since column doesn't exist yet
-  dob?: string | null; // Made optional since column doesn't exist yet
-  city?: string | null; // Made optional since column doesn't exist yet
-  bio?: string | null; // Made optional since column doesn't exist yet
-  avatar_url?: string | null; // Made optional since column doesn't exist yet
+  name?: string | null;
+  dob?: string | null;
+  city?: string | null;
+  bio?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  verified?: boolean;
+  theme_color?: string;
+  font_family?: string;
+  accent_color?: string;
   created_at: string;
-  updated_at?: string; // Made optional since column doesn't exist yet
+  updated_at?: string;
 }
 
+// Social Links
+export interface SocialLink {
+  id: string;
+  user_id: string;
+  platform: string;
+  url: string;
+  icon?: string | null;
+  color?: string | null;
+  position: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Content Cards
+export interface ContentCard {
+  id: string;
+  user_id: string;
+  title: string;
+  description?: string | null;
+  url: string;
+  thumbnail_url?: string | null;
+  category?: string | null;
+  position: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Profile Themes
+export interface ProfileTheme {
+  id: string;
+  name: string;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  background_gradient?: string | null;
+  font_family: string;
+  is_premium: boolean;
+  created_at: string;
+}
+
+// Profile Form Data
 export interface ProfileFormData {
   name: string;
   username: string;
@@ -116,12 +165,50 @@ export interface ProfileFormData {
   city: string;
   bio: string;
   avatar?: File;
+  banner?: File;
+  theme_color?: string;
+  font_family?: string;
+  accent_color?: string;
 }
 
+// Social Link Form Data
+export interface SocialLinkFormData {
+  platform: string;
+  url: string;
+  icon?: string;
+  color?: string;
+  position?: number;
+}
+
+// Content Card Form Data
+export interface ContentCardFormData {
+  title: string;
+  description?: string;
+  url: string;
+  thumbnail?: File;
+  category?: string;
+  position?: number;
+}
+
+// Profile Update Result
 export interface ProfileUpdateResult {
   success: boolean;
   error?: string;
   profile?: Profile;
+}
+
+// Social Link Update Result
+export interface SocialLinkUpdateResult {
+  success: boolean;
+  error?: string;
+  socialLink?: SocialLink;
+}
+
+// Content Card Update Result
+export interface ContentCardUpdateResult {
+  success: boolean;
+  error?: string;
+  contentCard?: ContentCard;
 }
 
 // Database schema type
@@ -197,6 +284,26 @@ export interface Database {
         Row: SkillCategories;
         Insert: Omit<SkillCategories, "id">;
         Update: Partial<Omit<SkillCategories, "id">>;
+      };
+      profiles: {
+        Row: Profile;
+        Insert: Omit<Profile, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<Profile, "id" | "created_at" | "updated_at">>;
+      };
+      social_links: {
+        Row: SocialLink;
+        Insert: Omit<SocialLink, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<SocialLink, "id" | "created_at" | "updated_at">>;
+      };
+      content_cards: {
+        Row: ContentCard;
+        Insert: Omit<ContentCard, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<ContentCard, "id" | "created_at" | "updated_at">>;
+      };
+      profile_themes: {
+        Row: ProfileTheme;
+        Insert: Omit<ProfileTheme, "id" | "created_at">;
+        Update: Partial<Omit<ProfileTheme, "id" | "created_at">>;
       };
     };
   };

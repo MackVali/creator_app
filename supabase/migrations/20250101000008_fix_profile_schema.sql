@@ -104,7 +104,6 @@ CREATE TRIGGER trg_upsert_empty_profile
 -- 8. Grant necessary permissions
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT ALL ON public.profiles TO authenticated;
-GRANT USAGE ON SEQUENCE public.profiles_id_seq TO authenticated;
 
 -- 9. Note: Test profile insertion removed due to constraint issues
 -- Profiles will be created automatically via the trigger when users sign up

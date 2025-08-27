@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, MapPin, User } from "lucide-react";
+import { Calendar, MapPin, User, Edit3 } from "lucide-react";
 
 interface Profile {
   user_id: string;
@@ -44,9 +44,19 @@ export default function ProfileContent({
     return new Date(dateString).toLocaleDateString();
   };
 
+  const hasProfileData = profile.name || profile.bio || profile.dob || profile.city;
+
   return (
     <div className="container mx-auto px-4 py-6 max-w-2xl">
-      <h1 className="text-3xl font-bold mb-6">Profile</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold">Profile</h1>
+        <Link href="/profile/edit">
+          <Button variant="outline" size="sm">
+            <Edit3 className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+        </Link>
+      </div>
 
       <Card>
         <CardHeader className="text-center">
@@ -67,24 +77,38 @@ export default function ProfileContent({
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {profile.bio && (
+          {profile.bio ? (
             <div className="text-center">
               <p className="text-gray-700">{profile.bio}</p>
+            </div>
+          ) : (
+            <div className="text-center text-gray-500 italic">
+              <p>No bio added yet</p>
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {profile.dob && (
+            {profile.dob ? (
               <div className="flex items-center space-x-2">
                 <Calendar className="h-5 w-5 text-gray-500" />
                 <span className="text-gray-700">{formatDate(profile.dob)}</span>
               </div>
+            ) : (
+              <div className="flex items-center space-x-2 text-gray-400">
+                <Calendar className="h-5 w-5" />
+                <span>Birthday not set</span>
+              </div>
             )}
 
-            {profile.city && (
+            {profile.city ? (
               <div className="flex items-center space-x-2">
                 <MapPin className="h-5 w-5 text-gray-500" />
                 <span className="text-gray-700">{profile.city}</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2 text-gray-400">
+                <MapPin className="h-5 w-5" />
+                <span>Location not set</span>
               </div>
             )}
           </div>
@@ -93,10 +117,16 @@ export default function ProfileContent({
             Member since {formatDate(profile.created_at)}
           </div>
 
-          {profile.user_id === userId && (
-            <div className="flex justify-center pt-4">
+          {!hasProfileData && (
+            <div className="text-center py-6 border-t border-gray-200">
+              <p className="text-gray-500 mb-4">
+                Your profile is looking a bit empty. Add some details to make it more personal!
+              </p>
               <Link href="/profile/edit">
-                <Button>Edit Profile</Button>
+                <Button>
+                  <Edit3 className="h-4 w-4 mr-2" />
+                  Complete Your Profile
+                </Button>
               </Link>
             </div>
           )}
