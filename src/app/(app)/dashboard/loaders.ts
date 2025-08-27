@@ -4,7 +4,7 @@ import { getSupabaseServer } from "@/lib/supabase";
 import type {
   UserStats,
   MonumentCounts,
-  SkillItem,
+  CatItem,
   GoalItem,
 } from "@/types/dashboard";
 
@@ -85,7 +85,7 @@ export async function getMonumentsSummary(
 
 export async function getSkillsAndGoals(
   cookieStore?: Awaited<ReturnType<typeof nextCookies>>
-): Promise<{ skills: SkillItem[]; goals: GoalItem[] }> {
+): Promise<{ cats: CatItem[]; goals: GoalItem[] }> {
   const cookieStoreResolved = cookieStore || (await nextCookies());
   const supabase = getSupabaseServer({
     get: (name: string) => cookieStoreResolved.get(name),
@@ -104,16 +104,16 @@ export async function getSkillsAndGoals(
   });
 
   if (!supabase) {
-    return { skills: [], goals: [] };
+    return { cats: [], goals: [] };
   }
-  const [skillsRes, goalsRes] = await Promise.all([
+  const [catsRes, goalsRes] = await Promise.all([
     supabase
       .from("skills_by_cats_v")
-      .select("cat_id,cat_name,skill_id,skill_name,skill_icon,skill_level,progress"),
+      .select("cat_id,cat_name,user_id,skill_count,skills"),
     supabase.from("goals").select("id,name,created_at").limit(3),
   ]);
 
-  const skills = (skillsRes.data ?? []) as SkillItem[];
+  const cats = (catsRes.data ?? []) as CatItem[];
   const goals = (goalsRes.data ?? []) as GoalItem[];
-  return { skills, goals };
+  return { cats, goals };
 }

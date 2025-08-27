@@ -15,7 +15,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
   // Debug logging
   console.log("🔍 Dashboard Data:", data);
   console.log("🎯 Skills and Goals:", skillsAndGoals);
-  console.log("🐱 Skills:", skillsAndGoals.skills);
+  console.log("🐱 Categories:", skillsAndGoals.cats);
 
   return (
     <div
@@ -317,24 +317,8 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               gap: "16px",
             }}
           >
-            {(() => {
-              // Group skills by category
-              const skillsByCategory = skillsAndGoals.skills.reduce((acc, skill) => {
-                if (!acc[skill.cat_id]) {
-                  acc[skill.cat_id] = {
-                    cat_id: skill.cat_id,
-                    cat_name: skill.cat_name,
-                    skills: []
-                  };
-                }
-                acc[skill.cat_id].skills.push(skill);
-                return acc;
-              }, {} as Record<string, { cat_id: string; cat_name: string; skills: typeof skillsAndGoals.skills }>);
-
-              const categories = Object.values(skillsByCategory);
-              
-              return categories.length > 0 ? (
-                categories.map((cat) => (
+            {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
+              skillsAndGoals.cats.map((cat) => (
                 <div
                   key={cat.cat_id}
                   style={{
@@ -396,7 +380,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                             borderRadius: "12px",
                           }}
                         >
-                          {cat.skills.length} skills
+                          {cat.skill_count} skills
                         </div>
                       </div>
                       <div style={{ color: "#A0A0A0", fontSize: "20px" }}>
@@ -530,8 +514,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               >
                 No skills found. Create your first skill to get started!
               </div>
-            );
-            })()}
+            )}
           </div>
         </div>
 

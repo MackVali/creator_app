@@ -4,13 +4,19 @@ export type MonumentCounts = Record<
   number
 >;
 export type SkillItem = {
-  cat_id: string;
-  cat_name: string;
   skill_id: string | number;
   skill_name: string;
   skill_icon: string;
   skill_level: number;
   progress: number;
+};
+
+export type CatItem = {
+  cat_id: string;
+  cat_name: string;
+  user_id: string;
+  skill_count: number;
+  skills: SkillItem[];
 };
 
 export type GoalItem = {
@@ -26,7 +32,7 @@ export type DashboardData = {
   userStats: UserStats;
   monuments: MonumentCounts;
   skillsAndGoals: {
-    skills: SkillItem[];
+    cats: CatItem[];
     goals: GoalItem[];
   };
 };

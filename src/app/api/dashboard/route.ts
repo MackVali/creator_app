@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   UserStats,
   MonumentCounts,
-  SkillItem,
+  CatItem,
   GoalItem,
 } from "@/types/dashboard";
 
@@ -32,9 +32,7 @@ export async function GET() {
     supabase.from("monuments_summary_v").select("category,count"),
     supabase
       .from("skills_by_cats_v")
-      .select(
-        "cat_id,cat_name,skill_id,skill_name,skill_icon,skill_level,progress"
-      ),
+      .select("cat_id,cat_name,user_id,skill_count,skills"),
     supabase
       .from("goals")
       .select("id,name,priority,energy,monument_id,created_at")
@@ -61,14 +59,14 @@ export async function GET() {
     if (m?.category in mBase) mBase[m.category] = m.count ?? 0;
   }
 
-  const skillsOut = (skills ?? []) as SkillItem[];
+  const catsOut = (skills ?? []) as CatItem[];
   const goalsOut = (goals ?? []) as GoalItem[];
 
   return NextResponse.json({
     stats: statsOut,
     monuments: mBase,
     skillsAndGoals: {
-      skills: skillsOut,
+      cats: catsOut,
       goals: goalsOut,
     },
   });
