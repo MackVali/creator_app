@@ -24,39 +24,20 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  // Try to get skills from the view first, fallback to direct table queries
-  let skillsData;
-  try {
-    const skillsResponse = await supabase
-      .from("skills_by_cats_v")
-      .select("cat_id,cat_name,user_id,skill_id,skill_name,skill_icon,skill_level,progress");
-    skillsData = skillsResponse.data;
-    console.log("🔍 View query result:", skillsResponse);
-  } catch (error) {
-    console.log("🔍 View query failed, falling back to direct queries:", error);
-    // Fallback: query tables directly
-    const [skillsResponse, catsResponse] = await Promise.all([
-      supabase.from("skills").select("id,name,icon,level,cat_id,user_id").eq("user_id", user.id),
-      supabase.from("cats").select("id,name,user_id").eq("user_id", user.id)
-    ]);
-    
-    if (skillsResponse.data && catsResponse.data) {
-      // Transform the data to match the expected format
-      skillsData = skillsResponse.data.map(skill => {
-        const category = catsResponse.data.find(cat => cat.id === skill.cat_id);
-        return {
-          cat_id: skill.cat_id,
-          cat_name: category?.name || "Uncategorized",
-          user_id: skill.user_id,
-          skill_id: skill.id,
-          skill_name: skill.name,
-          skill_icon: skill.icon,
-          skill_level: skill.level,
-          progress: 0
-        };
-      });
-    }
-  }
+  // Get skills and categories separately, then join them
+  const [skillsResponse, catsResponse] = await Promise.all([
+    supabase.from("skills").select("id,name,icon,level,cat_id,user_id").eq("user_id", user.id),
+    supabase.from("cats").select("id,name,user_id").eq("user_id", user.id)
+  ]);
+
+  // Join the data manually
+  const skillsData = skillsResponse.data?.map(skill => {
+    const category = catsResponse.data?.find(cat => cat.id === skill.cat_id);
+    return {
+      ...skill,
+      cat_name: category?.name || "Uncategorized"
+    };
+  }) || [];
 
   const [
     { data: stats },
@@ -110,11 +91,11 @@ export async function GET() {
     }
 
     acc[catId].skills.push({
-      skill_id: skill.skill_id,
-      skill_name: skill.skill_name,
-      skill_icon: skill.skill_icon,
-      skill_level: skill.skill_level,
-      progress: skill.progress,
+      skill_id: skill.id,
+      skill_name: skill.name,
+      skill_icon: skill.icon,
+      skill_level: skill.level,
+      progress: 0,
     });
     acc[catId].skill_count = acc[catId].skills.length;
     return acc;
