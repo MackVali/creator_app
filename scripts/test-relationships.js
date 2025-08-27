@@ -5,6 +5,8 @@
  * Run with: node scripts/test-relationships.js
  */
 
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const { createClient } = require("@supabase/supabase-js");
 
 // Load environment variables
