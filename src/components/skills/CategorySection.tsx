@@ -17,7 +17,11 @@ interface CategorySectionProps {
   skills: Skill[];
 }
 
-export function CategorySection({ title, skillCount, skills }: CategorySectionProps) {
+export function CategorySection({
+  title,
+  skillCount,
+  skills,
+}: CategorySectionProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -52,6 +56,7 @@ export function CategorySection({ title, skillCount, skills }: CategorySectionPr
                 name={skill.name}
                 level={skill.level}
                 percent={skill.progress ?? 0}
+                skillId={skill.skill_id}
               />
             ))
           ) : (
@@ -66,4 +71,3 @@ export function CategorySection({ title, skillCount, skills }: CategorySectionPr
 }
 
 export default CategorySection;
-
