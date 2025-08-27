@@ -1,23 +1,100 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser, ensureProfile, getProfile } from "@/lib/db/profiles";
-import ProfileContent from "./ProfileContent";
+"use client";
 
-export default async function ProfilePage() {
-  const user = await getCurrentUser();
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { getProfileByUserId } from "@/lib/db";
+import { Profile } from "@/lib/types";
+import LinkMeProfile from "./LinkMeProfile";
 
-  if (!user) {
-    redirect("/auth");
+export default function ProfilePage() {
+  const router = useRouter();
+  const { session } = useAuth();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadProfile() {
+      if (!session?.user?.id) {
+        router.push("/auth");
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const userProfile = await getProfileByUserId(session.user.id);
+        
+        if (!userProfile) {
+          // Create a basic profile if none exists
+          setProfile({
+            id: 0,
+            user_id: session.user.id,
+            username: session.user.email?.split('@')[0] || 'user',
+            name: session.user.user_metadata?.full_name || 'New User',
+            dob: null,
+            city: null,
+            bio: null,
+            avatar_url: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          setProfile(userProfile);
+        }
+      } catch (err) {
+        console.error("Error loading profile:", err);
+        setError("Failed to load profile");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadProfile();
+  }, [session, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your profile...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Ensure profile exists
-  await ensureProfile(user.id);
-
-  // Get the profile
-  const profile = await getProfile(user.id);
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <button 
+            onClick={() => router.push("/dashboard")}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!profile) {
-    redirect("/auth");
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Profile not found</p>
+          <button 
+            onClick={() => router.push("/dashboard")}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
   }
 
-  return <ProfileContent profile={profile} userId={user.id} />;
+  return <LinkMeProfile profile={profile} />;
 }
