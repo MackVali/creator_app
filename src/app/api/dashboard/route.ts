@@ -24,10 +24,43 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  // Try to get skills from the view first, fallback to direct table queries
+  let skillsData;
+  try {
+    const skillsResponse = await supabase
+      .from("skills_by_cats_v")
+      .select("cat_id,cat_name,user_id,skill_id,skill_name,skill_icon,skill_level,progress");
+    skillsData = skillsResponse.data;
+    console.log("🔍 View query result:", skillsResponse);
+  } catch (error) {
+    console.log("🔍 View query failed, falling back to direct queries:", error);
+    // Fallback: query tables directly
+    const [skillsResponse, catsResponse] = await Promise.all([
+      supabase.from("skills").select("id,name,icon,level,cat_id,user_id").eq("user_id", user.id),
+      supabase.from("cats").select("id,name,user_id").eq("user_id", user.id)
+    ]);
+    
+    if (skillsResponse.data && catsResponse.data) {
+      // Transform the data to match the expected format
+      skillsData = skillsResponse.data.map(skill => {
+        const category = catsResponse.data.find(cat => cat.id === skill.cat_id);
+        return {
+          cat_id: skill.cat_id,
+          cat_name: category?.name || "Uncategorized",
+          user_id: skill.user_id,
+          skill_id: skill.id,
+          skill_name: skill.name,
+          skill_icon: skill.icon,
+          skill_level: skill.level,
+          progress: 0
+        };
+      });
+    }
+  }
+
   const [
     { data: stats },
     { data: monuments },
-    { data: skills },
     { data: goals },
   ] = await Promise.all([
     supabase
@@ -35,9 +68,6 @@ export async function GET() {
       .select("level,xp_current,xp_max")
       .maybeSingle(),
     supabase.from("monuments_summary_v").select("category,count"),
-    supabase
-      .from("skills_by_cats_v")
-      .select("cat_id,cat_name,user_id,skill_id,skill_name,skill_icon,skill_level,progress"),
     supabase
       .from("goals")
       .select("id,name,priority,energy,monument_id,created_at")
@@ -65,7 +95,7 @@ export async function GET() {
   }
 
   // Group skills by category for the frontend
-  const skillsByCategory = (skills ?? []).reduce((acc, skill) => {
+  const skillsByCategory = (skillsData ?? []).reduce((acc, skill) => {
     const catId = skill.cat_id;
     if (!catId) return acc; // Skip skills without category
 
@@ -92,6 +122,10 @@ export async function GET() {
 
   const catsOut = Object.values(skillsByCategory);
   const goalsOut = (goals ?? []) as GoalItem[];
+
+  // Debug logging
+  console.log("🔍 Raw skills data:", skillsData);
+  console.log("🔍 Grouped skills:", catsOut);
 
   return NextResponse.json({
     stats: statsOut,
