@@ -6,7 +6,6 @@ import type {
   CatItem,
   GoalItem,
 } from "@/types/dashboard";
-import { getSkillsForUser } from "../../../lib/data/skills";
 import type { SkillRow } from "../../../lib/types/skill";
 
 export const runtime = "nodejs";
@@ -27,8 +26,14 @@ export async function GET() {
   }
 
   // Get skills and categories separately, then join them
-  const [skillsResponse, catsResponse] = await Promise.all([
-    getSkillsForUser(user.id), // Get all skills for user
+  const [{ data: skillsResponse }, catsResponse] = await Promise.all([
+    supabase
+      .from("skills")
+      .select(
+        "id,name,icon,cat_id,level,monument_id,created_at,updated_at,user_id"
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }),
     supabase.from("cats").select("id,name,user_id").eq("user_id", user.id),
   ]);
 
@@ -36,7 +41,7 @@ export async function GET() {
   if (process.env.NODE_ENV !== "production") {
     console.debug(
       "🔍 Debug: skills response length:",
-      skillsResponse.length || 0
+      skillsResponse?.length || 0
     );
     console.debug(
       "🔍 Debug: skills response data:",
@@ -57,7 +62,7 @@ export async function GET() {
   }
 
   // Join the data manually
-  const skillsData = skillsResponse.map((skill: SkillRow) => {
+  const skillsData = (skillsResponse ?? []).map((skill: SkillRow) => {
     const category = catsResponse.data?.find(
       (cat: { id: string; name: string; user_id: string }) =>
         cat.id === skill.cat_id
@@ -125,9 +130,10 @@ export async function GET() {
 
       acc[key].skills.push({
         skill_id: skill.id,
-        skill_name: skill.name, // Use real name, no placeholder
-        skill_icon: skill.icon || "🧩", // Handle null icon case
-        skill_level: skill.level ?? 1,
+        cat_id: skill.cat_id || "",
+        name: skill.name, // Use real name, no placeholder
+        icon: skill.icon || "🧩", // Handle null icon case
+        level: skill.level ?? 1,
         progress: 0,
       });
       acc[key].skill_count = acc[key].skills.length;

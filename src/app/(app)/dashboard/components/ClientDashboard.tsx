@@ -421,7 +421,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                           >
                             {/* Skill Icon */}
                             <div style={{ fontSize: "20px", flexShrink: "0" }}>
-                              {skill.skill_icon || "💡"}
+                              {skill.icon || "💡"}
                             </div>
 
                             {/* Skill Name */}
@@ -433,7 +433,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                                   color: "#E0E0E0",
                                 }}
                               >
-                                {skill.skill_name}
+                                {skill.name}
                               </div>
                             </div>
 
@@ -448,7 +448,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                                 flexShrink: "0",
                               }}
                             >
-                              Lv {skill.skill_level}
+                              Lv {skill.level}
                             </div>
 
                             {/* Progress Bar */}
