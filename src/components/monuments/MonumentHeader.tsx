@@ -19,7 +19,9 @@ export default function MonumentHeader({ name, emoji, createdAt, onEditClick }: 
         </div>
         <div>
           <div className="text-xl font-semibold">{name}</div>
-          {created && <div className="text-xs text-slate-400">Created {created}</div>}
+          {created && (
+            <div className="text-xs font-normal text-slate-400">Created {created}</div>
+          )}
         </div>
       </div>
       <button

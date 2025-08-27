@@ -2,14 +2,14 @@
 
 /**
  * Test script to verify Goal → Project → Task relationships
- * Run with: node scripts/test-relationships.js
+ * Run with: node scripts/test-relationships.mjs
  */
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const { createClient } = require("@supabase/supabase-js");
+import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
 
 // Load environment variables
-require("dotenv").config();
+dotenv.config();
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

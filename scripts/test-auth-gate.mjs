@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-/* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * Auth Gate Test Script
  *
@@ -8,7 +7,7 @@
  * and checking redirects and responses.
  */
 
-const http = require("http");
+import http from "node:http";
 
 const BASE_URL = "http://localhost:3000";
 

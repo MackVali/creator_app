@@ -2,12 +2,10 @@
 
 /**
  * Test script to verify frontend form components
- * Run with: node scripts/test-frontend-forms.js
+ * Run with: node scripts/test-frontend-forms.mjs
  */
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
 
 console.log("🧪 Testing Frontend Form Components...\n");
 

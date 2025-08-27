@@ -1,4 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+
+beforeAll(() => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??=
+    "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??= "service-role-key";
+});
 
 describe("Supabase env", () => {
   it("loads test vars", () => {
