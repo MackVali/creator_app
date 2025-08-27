@@ -1,4 +1,4 @@
-import { getSupabaseBrowser } from "../../../lib/supabase";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import type { CatRow } from "../types/cat";
 
 export async function getCatsForUser(userId: string) {

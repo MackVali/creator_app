@@ -9,20 +9,15 @@ import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import CategorySection from "@/components/skills/CategorySection";
 import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
 import type { GoalItem } from "@/types/dashboard";
-
-interface Skill {
-  skill_id: string;
-  skill_name: string;
-  skill_icon: string;
-  skill_level: number;
-  progress: number | null;
-}
+import { getCatsForUser } from "@/lib/data/cats";
+import { getSkillsForUser, groupSkillsByCat } from "@/lib/data/skills";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import type { SkillRow } from "@/lib/types/skill";
 
 interface Category {
-  cat_id: string;
-  cat_name: string;
-  skill_count: number;
-  skills: Skill[];
+  id: string;
+  name: string;
+  skills: SkillRow[];
 }
 
 export default function DashboardClient() {
@@ -36,16 +31,53 @@ export default function DashboardClient() {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch("/api/dashboard");
-      const data = await response.json();
-      
-      // Debug logging
-      console.log("🔍 Dashboard API response:", data);
-      console.log("🔍 Categories data:", data.skillsAndGoals?.cats);
-      console.log("🔍 Goals data:", data.skillsAndGoals?.goals);
-      
-      setCategories(data.skillsAndGoals?.cats || []);
-      setGoals(data.skillsAndGoals?.goals || []);
+      const sb = getSupabaseBrowser();
+      if (!sb) throw new Error("Supabase client not available");
+
+      const {
+        data: { user },
+      } = await sb.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const [cats, skills, goalsRes] = await Promise.all([
+        getCatsForUser(user.id),
+        getSkillsForUser(user.id),
+        sb
+          .from("goals")
+          .select("id,name,priority,energy,monument_id,created_at")
+          .eq("user_id", user.id)
+          .order("priority", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(6),
+      ]);
+
+      const byCat = groupSkillsByCat(skills);
+      const catsWithSkills: Category[] = cats.map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        skills: byCat[cat.id] || [],
+      }));
+
+      if (byCat[null]) {
+        catsWithSkills.push({
+          id: "uncategorized",
+          name: "Uncategorized",
+          skills: byCat[null],
+        });
+      }
+
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("Dashboard counts:", {
+          cats: catsWithSkills.length,
+          skills: skills.length,
+        });
+      }
+
+      setCategories(catsWithSkills);
+      setGoals((goalsRes.data ?? []) as GoalItem[]);
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -70,9 +102,8 @@ export default function DashboardClient() {
           <div className="space-y-4">
             {categories.map((cat) => (
               <CategorySection
-                key={cat.cat_id}
-                title={cat.cat_name}
-                skillCount={cat.skill_count}
+                key={cat.id}
+                title={cat.name}
                 skills={cat.skills}
               />
             ))}

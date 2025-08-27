@@ -1,27 +1,19 @@
+"use client";
+
 import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import SkillCard from "@/components/skills/SkillCard";
 import { cn } from "@/lib/utils";
-// Removed unused import
+import type { SkillRow } from "@/lib/types/skill";
 
 interface CategorySectionProps {
   title: string;
-  skillCount: number;
-  skills: Array<{
-    skill_id: string;
-    skill_name: string;
-    skill_icon: string;
-    skill_level: number;
-    progress: number | null;
-  }>;
+  skills: SkillRow[];
 }
 
-export function CategorySection({
-  title,
-  skillCount,
-  skills,
-}: CategorySectionProps) {
+export function CategorySection({ title, skills }: CategorySectionProps) {
   const [open, setOpen] = useState(false);
+  const skillCount = skills.length;
 
   return (
     <div className="rounded-2xl bg-slate-800/40 ring-1 ring-white/10 overflow-hidden">
@@ -50,17 +42,17 @@ export function CategorySection({
           {skills && skills.length > 0 ? (
             skills.map((skill) => (
               <SkillCard
-                key={skill.skill_id}
-                icon={skill.skill_icon}
-                name={skill.skill_name}
-                level={skill.skill_level}
-                percent={skill.progress || 0}
-                skillId={skill.skill_id}
+                key={skill.id}
+                icon={skill.icon}
+                name={skill.name}
+                level={skill.level ?? 1}
+                percent={0}
+                skillId={skill.id}
               />
             ))
           ) : (
             <div className="text-center py-4 text-gray-500 text-sm">
-              No skills
+              No skills yet
             </div>
           )}
         </div>
