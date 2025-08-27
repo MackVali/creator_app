@@ -12,9 +12,11 @@ interface Skill {
 export default async function SkillPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const supabase = getSupabaseServer(cookies());
+  const { id } = await params;
+
+  const supabase = getSupabaseServer(await cookies());
   if (!supabase) {
     return <div className="p-4">Supabase not configured</div>;
   }
@@ -29,7 +31,7 @@ export default async function SkillPage({
   const { data, error } = await supabase
     .from("skills")
     .select("id,name,icon,created_at")
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("user_id", user.id)
     .single<Skill>();
 
@@ -52,7 +54,7 @@ export default async function SkillPage({
       </header>
       <section>
         <h2 className="text-xl font-semibold mb-4">Related Goals</h2>
-        <FilteredGoalsGrid entity="skill" id={params.id} />
+        <FilteredGoalsGrid entity="skill" id={id} />
       </section>
     </main>
   );
