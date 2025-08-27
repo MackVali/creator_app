@@ -19,6 +19,11 @@ export async function GET() {
     );
   }
 
+  const user = (await supabase.auth.getUser()).data.user;
+  if (!user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   const [
     { data: stats },
     { data: monuments },
@@ -32,7 +37,7 @@ export async function GET() {
     supabase.from("monuments_summary_v").select("category,count"),
     supabase
       .from("skills_by_cats_v")
-      .select("cat_id,cat_name,user_id,skill_count,skills"),
+      .select("cat_id,cat_name,user_id,skill_id,skill_name,skill_icon,skill_level,progress"),
     supabase
       .from("goals")
       .select("id,name,priority,energy,monument_id,created_at")
@@ -60,37 +65,28 @@ export async function GET() {
   }
 
   // Group skills by category for the frontend
-  const skillsByCategory = (skills ?? []).reduce((acc, skill: {
-    cat_id: string;
-    cat_name: string;
-    user_id: string;
-    id?: string;
-    skill_id?: string;
-    name?: string;
-    skill_name?: string;
-    icon?: string;
-    skill_icon?: string;
-    level?: number;
-    skill_level?: number;
-    progress?: number;
-  }) => {
-    if (!acc[skill.cat_id]) {
-      acc[skill.cat_id] = {
-        cat_id: skill.cat_id,
+  const skillsByCategory = (skills ?? []).reduce((acc, skill) => {
+    const catId = skill.cat_id;
+    if (!catId) return acc; // Skip skills without category
+
+    if (!acc[catId]) {
+      acc[catId] = {
+        cat_id: catId,
         cat_name: skill.cat_name,
         user_id: skill.user_id,
         skill_count: 0,
-        skills: []
+        skills: [],
       };
     }
-    acc[skill.cat_id].skills.push({
-      skill_id: skill.id || skill.skill_id || 'unknown',
-      skill_name: skill.name || skill.skill_name || 'Unnamed Skill',
-      skill_icon: skill.icon || skill.skill_icon || '💡',
-      skill_level: skill.level || skill.skill_level || 1,
-      progress: skill.progress || 0
+
+    acc[catId].skills.push({
+      skill_id: skill.skill_id,
+      skill_name: skill.skill_name,
+      skill_icon: skill.skill_icon,
+      skill_level: skill.skill_level,
+      progress: skill.progress,
     });
-    acc[skill.cat_id].skill_count = acc[skill.cat_id].skills.length;
+    acc[catId].skill_count = acc[catId].skills.length;
     return acc;
   }, {} as Record<string, CatItem>);
 
