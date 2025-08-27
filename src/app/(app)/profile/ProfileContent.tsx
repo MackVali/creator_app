@@ -12,6 +12,7 @@ interface Profile {
   city?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
+  banner_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -58,10 +59,21 @@ export default function ProfileContent({
         </Link>
       </div>
 
-      <Card>
-        <CardHeader className="text-center">
+      <Card className="overflow-hidden">
+        {profile.banner_url ? (
+          <div className="h-32 w-full">
+            <img
+              src={profile.banner_url}
+              alt="Cover photo"
+              className="object-cover w-full h-full"
+            />
+          </div>
+        ) : (
+          <div className="h-32 w-full bg-gradient-to-r from-purple-500 to-blue-500" />
+        )}
+        <CardHeader className="-mt-12 text-center">
           <div className="flex justify-center mb-4">
-            <Avatar className="h-24 w-24">
+            <Avatar className="h-24 w-24 border-4 border-white">
               {profile.avatar_url ? (
                 <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
               ) : null}

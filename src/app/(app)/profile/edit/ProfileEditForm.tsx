@@ -25,6 +25,7 @@ interface Profile {
   city?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
+  banner_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +57,10 @@ export default function ProfileEditForm({
   const [avatarPreview, setAvatarPreview] = useState<string | null>(
     profile.avatar_url || null
   );
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(
+    profile.banner_url || null
+  );
 
   const router = useRouter();
   const toast = useToastHelpers();
@@ -70,6 +75,7 @@ export default function ProfileEditForm({
       bio: profile.bio || "",
     });
     setAvatarPreview(profile.avatar_url || null);
+    setBannerPreview(profile.banner_url || null);
   }, [profile]);
 
   // Debounced username availability check
@@ -135,6 +141,19 @@ export default function ProfileEditForm({
     }
   };
 
+  const handleBannerChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setBannerFile(file);
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setBannerPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -191,6 +210,36 @@ export default function ProfileEditForm({
     }
   };
 
+  const uploadCover = async (
+    file: File
+  ): Promise<{ success: boolean; url?: string; error?: string }> => {
+    try {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${userId}-banner-${Date.now()}.${fileExt}`;
+
+      const { error } = await supabase.storage
+        .from("banners")
+        .upload(fileName, file);
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("banners").getPublicUrl(fileName);
+
+      return { success: true, url: publicUrl };
+    } catch (error) {
+      return { success: false, error: "Failed to upload banner" };
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -201,6 +250,7 @@ export default function ProfileEditForm({
     setSaving(true);
     try {
       let avatarUrl = profile.avatar_url;
+      let bannerUrl = profile.banner_url;
 
       // Upload avatar if changed
       if (avatarFile) {
@@ -213,8 +263,23 @@ export default function ProfileEditForm({
         avatarUrl = uploadResult.url;
       }
 
+      // Upload banner if changed
+      if (bannerFile) {
+        const uploadResult = await uploadCover(bannerFile);
+        if (!uploadResult.success) {
+          toast.error("Error", uploadResult.error || "Failed to upload banner");
+          setSaving(false);
+          return;
+        }
+        bannerUrl = uploadResult.url;
+      }
+
       // Update profile using server action
-      const result = await updateMyProfile(formData);
+      const result = await updateMyProfile({
+        ...formData,
+        avatar_url: avatarUrl || null,
+        banner_url: bannerUrl || null,
+      });
 
       if (result.success) {
         toast.success("Success", "Profile updated successfully!");
@@ -259,6 +324,36 @@ export default function ProfileEditForm({
           </CardHeader>
 
           <CardContent className="space-y-6">
+            {/* Cover Photo Section */}
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">Cover Photo</p>
+              <div className="relative h-32 w-full rounded-md overflow-hidden">
+                {bannerPreview ? (
+                  <img
+                    src={bannerPreview}
+                    alt="Cover preview"
+                    className="object-cover w-full h-full"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-500">
+                    No cover photo
+                  </div>
+                )}
+                <label className="absolute bottom-2 right-2 bg-blue-600 text-white rounded-full p-2 cursor-pointer hover:bg-blue-700 transition-colors">
+                  <Camera className="h-4 w-4" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBannerChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">
+                Upload a cover image (JPG, PNG, GIF up to 5MB)
+              </p>
+            </div>
+
             {/* Avatar Section */}
             <div className="flex items-center space-x-6">
               <div className="relative">
