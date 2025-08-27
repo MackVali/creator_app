@@ -2,19 +2,18 @@ import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import SkillCard from "@/components/skills/SkillCard";
 import { cn } from "@/lib/utils";
-
-interface Skill {
-  skill_id: string;
-  name: string;
-  icon: string;
-  level: number;
-  progress: number | null;
-}
+// Removed unused import
 
 interface CategorySectionProps {
   title: string;
   skillCount: number;
-  skills: Skill[];
+  skills: Array<{
+    skill_id: string;
+    skill_name: string;
+    skill_icon: string;
+    skill_level: number;
+    progress: number | null;
+  }>;
 }
 
 export function CategorySection({
@@ -52,10 +51,10 @@ export function CategorySection({
             skills.map((skill) => (
               <SkillCard
                 key={skill.skill_id}
-                icon={skill.icon || "💡"}
-                name={skill.name}
-                level={skill.level}
-                percent={skill.progress ?? 0}
+                icon={skill.skill_icon}
+                name={skill.skill_name}
+                level={skill.skill_level}
+                percent={skill.progress || 0}
                 skillId={skill.skill_id}
               />
             ))

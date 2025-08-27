@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { getSkillsForUser } from "../../../lib/data/skills";
+import type { SkillRow } from "../../../lib/types/skill";
 
 interface Skill {
   skill_id: string; // Changed from 'id' to 'skill_id' to match database view
@@ -45,12 +47,62 @@ function SkillsPageContent() {
     if (!supabase) return;
 
     try {
-      const { data, error } = await supabase
-        .from("skills_by_cats_v")
-        .select("*");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
 
-      if (error) throw error;
-      setCategories(data || []);
+      // Use new function to get skills directly
+      const skills = await getSkillsForUser(user.id);
+
+      // Group skills by category
+      const skillsByCategory = skills.reduce(
+        (acc: Record<string, Category>, skill: SkillRow) => {
+          const catId = skill.cat_id;
+          const key = catId || "uncategorized";
+          
+          if (!acc[key]) {
+            acc[key] = {
+              cat_id: catId || "uncategorized",
+              cat_name: catId ? "Loading..." : "Uncategorized", // Will be updated below
+              skill_count: 0,
+              skills: [],
+            };
+          }
+
+          acc[key].skills.push({
+            skill_id: skill.id,
+            name: skill.name || "Unnamed Skill", // Handle null name case
+            icon: skill.icon || "🧩", // Handle null icon case
+            level: skill.level ?? 1,
+            progress: 0,
+            cat_id: skill.cat_id || "", // Handle null cat_id case
+          });
+          acc[key].skill_count = acc[key].skills.length;
+          return acc;
+        },
+        {}
+      );
+
+      // Get category names
+      const { data: cats } = await supabase
+        .from("cats")
+        .select("id,name")
+        .eq("user_id", user.id);
+
+      // Update category names
+      cats?.forEach((cat) => {
+        if (skillsByCategory[cat.id]) {
+          skillsByCategory[cat.id].cat_name = cat.name;
+        }
+      });
+      
+      // Handle uncategorized skills
+      if (skillsByCategory["uncategorized"]) {
+        skillsByCategory["uncategorized"].cat_name = "Uncategorized";
+      }
+
+      setCategories(Object.values(skillsByCategory));
     } catch (error) {
       console.error("Error fetching skills:", error);
     } finally {
