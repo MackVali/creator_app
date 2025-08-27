@@ -35,9 +35,14 @@ export async function GET() {
   // Debug logging for development
   if (process.env.NODE_ENV !== "production") {
     console.debug(
-      "skills: rows",
+      "🔍 Debug: skills response",
       skillsResponse.length || 0,
       skillsResponse.slice(0, 3)
+    );
+    console.debug(
+      "🔍 Debug: cats response",
+      catsResponse.data?.length || 0,
+      catsResponse.data?.slice(0, 3)
     );
   }
 
@@ -116,12 +121,40 @@ export async function GET() {
     {} as Record<string, CatItem>
   );
 
-  const catsOut = Object.values(skillsByCategory);
+  // Always include all CATs, even if they have no skills
+  const allCats = catsResponse.data || [];
+  const catsWithSkills = Object.values(skillsByCategory);
+  
+  // Create a complete list of CATs with their skills (or empty skills array)
+  const catsOut = allCats.map(cat => {
+    const existingCat = catsWithSkills.find(c => c.cat_id === cat.id);
+    if (existingCat) {
+      return existingCat;
+    } else {
+      // CAT exists but has no skills
+      return {
+        cat_id: cat.id,
+        cat_name: cat.name,
+        user_id: cat.user_id,
+        skill_count: 0,
+        skills: [],
+      };
+    }
+  });
+
+  // Add uncategorized skills if they exist
+  const uncategorizedCat = catsWithSkills.find(c => c.cat_id === "uncategorized");
+  if (uncategorizedCat) {
+    catsOut.push(uncategorizedCat);
+  }
+
   const goalsOut = (goals ?? []) as GoalItem[];
 
   // Debug logging
   console.log("🔍 Raw skills data:", skillsData);
-  console.log("🔍 Grouped skills:", catsOut);
+  console.log("🔍 All CATs:", allCats);
+  console.log("🔍 CATs with skills:", catsWithSkills);
+  console.log("🔍 Final CATs output:", catsOut);
 
   return NextResponse.json({
     stats: statsOut,
