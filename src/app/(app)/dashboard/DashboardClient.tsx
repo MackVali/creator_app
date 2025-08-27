@@ -12,9 +12,9 @@ import type { GoalItem } from "@/types/dashboard";
 
 interface Skill {
   skill_id: string;
-  name: string;
-  icon: string;
-  level: number;
+  skill_name: string;
+  skill_icon: string;
+  skill_level: number;
   progress: number | null;
 }
 
@@ -38,8 +38,14 @@ export default function DashboardClient() {
     try {
       const response = await fetch("/api/dashboard");
       const data = await response.json();
-      setCategories(data.skillsAndGoals.cats || []);
-      setGoals(data.skillsAndGoals.goals || []);
+      
+      // Debug logging
+      console.log("🔍 Dashboard API response:", data);
+      console.log("🔍 Categories data:", data.skillsAndGoals?.cats);
+      console.log("🔍 Goals data:", data.skillsAndGoals?.goals);
+      
+      setCategories(data.skillsAndGoals?.cats || []);
+      setGoals(data.skillsAndGoals?.goals || []);
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {

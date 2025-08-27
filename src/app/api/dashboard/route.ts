@@ -6,6 +6,8 @@ import type {
   CatItem,
   GoalItem,
 } from "@/types/dashboard";
+import { getSkillsForUser } from "../../../lib/data/skills";
+import type { SkillRow } from "../../../lib/types/skill";
 
 export const runtime = "nodejs";
 
@@ -26,36 +28,65 @@ export async function GET() {
 
   // Get skills and categories separately, then join them
   const [skillsResponse, catsResponse] = await Promise.all([
-    supabase.from("skills").select("id,name,icon,level,cat_id,user_id").eq("user_id", user.id),
-    supabase.from("cats").select("id,name,user_id").eq("user_id", user.id)
+    getSkillsForUser(user.id), // Get all skills for user
+    supabase.from("cats").select("id,name,user_id").eq("user_id", user.id),
   ]);
+
+  // Debug logging for development
+  if (process.env.NODE_ENV !== "production") {
+    console.debug(
+      "🔍 Debug: skills response length:",
+      skillsResponse.length || 0
+    );
+    console.debug(
+      "🔍 Debug: skills response data:",
+      skillsResponse
+    );
+    console.debug(
+      "🔍 Debug: cats response length:",
+      catsResponse.data?.length || 0
+    );
+    console.debug(
+      "🔍 Debug: cats response data:",
+      catsResponse.data
+    );
+    console.debug(
+      "🔍 Debug: user ID:",
+      user.id
+    );
+  }
 
   // Join the data manually
-  const skillsData = skillsResponse.data?.map(skill => {
-    const category = catsResponse.data?.find(cat => cat.id === skill.cat_id);
+  const skillsData = skillsResponse.map((skill: SkillRow) => {
+    const category = catsResponse.data?.find(
+      (cat: { id: string; name: string; user_id: string }) =>
+        cat.id === skill.cat_id
+    );
     return {
       ...skill,
-      cat_name: category?.name || "Uncategorized"
+      cat_name: category?.name || "Uncategorized",
     };
-  }) || [];
+  });
 
-  const [
-    { data: stats },
-    { data: monuments },
-    { data: goals },
-  ] = await Promise.all([
-    supabase
-      .from("user_stats_v")
-      .select("level,xp_current,xp_max")
-      .maybeSingle(),
-    supabase.from("monuments_summary_v").select("category,count"),
-    supabase
-      .from("goals")
-      .select("id,name,priority,energy,monument_id,created_at")
-      .order("priority", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(6),
-  ]);
+  // Debug skillsData
+  if (process.env.NODE_ENV !== "production") {
+    console.debug("🔍 Debug: skillsData after mapping:", skillsData);
+  }
+
+  const [{ data: stats }, { data: monuments }, { data: goals }] =
+    await Promise.all([
+      supabase
+        .from("user_stats_v")
+        .select("level,xp_current,xp_max")
+        .maybeSingle(),
+      supabase.from("monuments_summary_v").select("category,count"),
+      supabase
+        .from("goals")
+        .select("id,name,priority,energy,monument_id,created_at")
+        .order("priority", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(6),
+    ]);
 
   const statsOut: UserStats = stats ?? {
     level: 1,
@@ -76,37 +107,74 @@ export async function GET() {
   }
 
   // Group skills by category for the frontend
-  const skillsByCategory = (skillsData ?? []).reduce((acc, skill) => {
-    const catId = skill.cat_id;
-    if (!catId) return acc; // Skip skills without category
+  const skillsByCategory = skillsData.reduce(
+    (acc: Record<string, CatItem>, skill: SkillRow & { cat_name: string }) => {
+      const catId = skill.cat_id;
+      const catName = catId ? skill.cat_name : "Uncategorized";
+      const key = catId || "uncategorized";
 
-    if (!acc[catId]) {
-      acc[catId] = {
-        cat_id: catId,
-        cat_name: skill.cat_name,
-        user_id: skill.user_id,
+      if (!acc[key]) {
+        acc[key] = {
+          cat_id: catId || "uncategorized",
+          cat_name: catName,
+          user_id: skill.user_id,
+          skill_count: 0,
+          skills: [],
+        };
+      }
+
+      acc[key].skills.push({
+        skill_id: skill.id,
+        skill_name: skill.name, // Use real name, no placeholder
+        skill_icon: skill.icon || "🧩", // Handle null icon case
+        skill_level: skill.level ?? 1,
+        progress: 0,
+      });
+      acc[key].skill_count = acc[key].skills.length;
+      return acc;
+    },
+    {} as Record<string, CatItem>
+  );
+
+  // Debug skillsByCategory
+  if (process.env.NODE_ENV !== "production") {
+    console.debug("🔍 Debug: skillsByCategory after grouping:", skillsByCategory);
+  }
+
+  // Always include all CATs, even if they have no skills
+  const allCats = catsResponse.data || [];
+
+  // Create a complete list of CATs with their skills (or empty skills array)
+  const catsOut = allCats.map((cat) => {
+    // Check if this CAT has skills in the skillsByCategory
+    const catSkills = skillsByCategory[cat.id];
+    if (catSkills) {
+      return catSkills; // Return CAT with its skills
+    } else {
+      // CAT exists but has no skills
+      return {
+        cat_id: cat.id,
+        cat_name: cat.name,
+        user_id: cat.user_id,
         skill_count: 0,
         skills: [],
       };
     }
+  });
 
-    acc[catId].skills.push({
-      skill_id: skill.id,
-      skill_name: skill.name,
-      skill_icon: skill.icon,
-      skill_level: skill.level,
-      progress: 0,
-    });
-    acc[catId].skill_count = acc[catId].skills.length;
-    return acc;
-  }, {} as Record<string, CatItem>);
+  // Add uncategorized skills if they exist
+  const uncategorizedCat = skillsByCategory["uncategorized"];
+  if (uncategorizedCat) {
+    catsOut.push(uncategorizedCat);
+  }
 
-  const catsOut = Object.values(skillsByCategory);
   const goalsOut = (goals ?? []) as GoalItem[];
 
   // Debug logging
   console.log("🔍 Raw skills data:", skillsData);
-  console.log("🔍 Grouped skills:", catsOut);
+  console.log("🔍 All CATs:", allCats);
+  console.log("🔍 Skills by category:", skillsByCategory);
+  console.log("🔍 Final CATs output:", catsOut);
 
   return NextResponse.json({
     stats: statsOut,
