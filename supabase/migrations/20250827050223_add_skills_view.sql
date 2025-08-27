@@ -11,9 +11,9 @@ SELECT
   ARRAY_AGG(
     json_build_object(
       'skill_id', s.id,
-      'skill_name', COALESCE(s.name, 'Unnamed Skill'),
-      'skill_icon', COALESCE(s.icon, '💡'),
-      'skill_level', COALESCE(s.level, 1),
+      'name', COALESCE(s.name, 'Unnamed Skill'),
+      'icon', COALESCE(s.icon, '💡'),
+      'level', COALESCE(s.level, 1),
       'progress', 0
     ) ORDER BY COALESCE(s.name, 'Unnamed Skill')
   ) FILTER (WHERE s.id IS NOT NULL) as skills
