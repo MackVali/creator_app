@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import ProgressBarGradient from "@/components/skills/ProgressBarGradient";
 
 interface SkillCardProps {
@@ -6,15 +7,26 @@ interface SkillCardProps {
   name: string;
   level: number;
   percent?: number;
+  skillId?: string; // Add skillId prop for navigation
 }
 
-export function SkillCard({ icon, name, level, percent = 0 }: SkillCardProps) {
+export function SkillCard({
+  icon,
+  name,
+  level,
+  percent = 0,
+  skillId,
+}: SkillCardProps) {
   const value = percent ?? 0;
 
-  return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900/60 ring-1 ring-white/10 shadow-[inset_0_1px_rgba(255,255,255,0.05),0_6px_18px_rgba(0,0,0,0.35)]">
+  const cardContent = (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900/60 ring-1 ring-white/10 shadow-[inset_0_1px_rgba(255,255,255,0.05),0_6px_18px_rgba(0,0,0,0.35)] hover:bg-slate-800/60 transition-colors">
       <div className="flex h-9 w-9 items-center justify-center rounded bg-white/5 ring-1 ring-white/10">
-        {typeof icon === "string" ? <span className="text-lg">{icon}</span> : icon}
+        {typeof icon === "string" ? (
+          <span className="text-lg">{icon}</span>
+        ) : (
+          icon
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate" title={name}>
@@ -30,7 +42,16 @@ export function SkillCard({ icon, name, level, percent = 0 }: SkillCardProps) {
       </div>
     </div>
   );
+
+  if (skillId) {
+    return (
+      <Link href={`/skills/${skillId}`} className="block">
+        {cardContent}
+      </Link>
+    );
+  }
+
+  return cardContent;
 }
 
 export default SkillCard;
-

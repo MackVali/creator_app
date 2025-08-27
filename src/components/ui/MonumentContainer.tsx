@@ -62,17 +62,22 @@ export function MonumentContainer() {
         <div className="px-4">
           <div className="grid grid-cols-4 gap-1">
             {monuments.map((m) => (
-              <div
+              <Link
                 key={m.id}
-                className="card flex aspect-square w-full flex-col items-center justify-center p-1"
+                href={`/monuments/${m.id}`}
+                className="card flex aspect-square w-full flex-col items-center justify-center p-1 hover:bg-white/5 transition-colors"
               >
-                <div className="mb-1 text-lg" aria-hidden>
+                <div
+                  className="mb-1 text-lg"
+                  role="img"
+                  aria-label={`Monument: ${m.title}`}
+                >
                   {m.emoji || "🏛️"}
                 </div>
                 <div className="w-full break-words text-center text-[10px] font-semibold leading-tight">
                   {m.title}
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -80,4 +85,3 @@ export function MonumentContainer() {
     </section>
   );
 }
-
