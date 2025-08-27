@@ -5,7 +5,6 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
 import { getSkillsForUser } from "../../../lib/data/skills";
 import type { SkillRow } from "../../../lib/types/skill";
 
@@ -37,7 +36,6 @@ function SkillsPageContent() {
   const [loading, setLoading] = useState(true);
 
   const supabase = getSupabaseBrowser();
-  const router = useRouter();
 
   useEffect(() => {
     fetchSkills();
@@ -60,7 +58,7 @@ function SkillsPageContent() {
         (acc: Record<string, Category>, skill: SkillRow) => {
           const catId = skill.cat_id;
           const key = catId || "uncategorized";
-          
+
           if (!acc[key]) {
             acc[key] = {
               cat_id: catId || "uncategorized",
@@ -96,7 +94,7 @@ function SkillsPageContent() {
           skillsByCategory[cat.id].cat_name = cat.name;
         }
       });
-      
+
       // Handle uncategorized skills
       if (skillsByCategory["uncategorized"]) {
         skillsByCategory["uncategorized"].cat_name = "Uncategorized";

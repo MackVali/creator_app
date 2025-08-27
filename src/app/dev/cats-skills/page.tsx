@@ -15,8 +15,22 @@ interface DebugData {
     skillsCount: number;
   }>;
   uncategorizedSkillsCount: number;
-  firstThreeCats: any[];
-  firstThreeSkills: any[];
+  firstThreeCats: Array<{
+    id: string;
+    name: string;
+    user_id: string;
+    created_at?: string | null;
+  }>;
+  firstThreeSkills: Array<{
+    id: string;
+    name: string;
+    icon: string | null;
+    cat_id: string | null;
+    level: number | null;
+    user_id: string;
+    created_at?: string | null;
+    updated_at?: string | null;
+  }>;
 }
 
 export default function CatsSkillsDebugPage() {
