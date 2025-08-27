@@ -215,7 +215,8 @@ export async function getProfileByUsername(
 export async function updateProfile(
   userId: string,
   profileData: ProfileFormData,
-  avatarUrl?: string
+  avatarUrl?: string,
+  bannerUrl?: string
 ): Promise<ProfileUpdateResult> {
   try {
     console.log("🔍 updateProfile called with userId:", userId);
@@ -226,9 +227,29 @@ export async function updateProfile(
       return { success: false, error: "Supabase client not initialized" };
     }
 
+    // Prepare update data
+    const updateData: Partial<Profile> = {
+      name: profileData.name,
+      username: profileData.username,
+      dob: profileData.dob || null,
+      city: profileData.city || null,
+      bio: profileData.bio || null,
+      theme_color: profileData.theme_color,
+      font_family: profileData.font_family,
+      accent_color: profileData.accent_color,
+    };
+
+    // Add avatar and banner URLs if provided
+    if (avatarUrl) {
+      updateData.avatar_url = avatarUrl;
+    }
+    if (bannerUrl) {
+      updateData.banner_url = bannerUrl;
+    }
+
     const { data, error } = await supabase
       .from("profiles")
-      .update(profileData)
+      .update(updateData)
       .eq("user_id", userId)
       .select()
       .single();
@@ -280,5 +301,67 @@ export async function checkUsernameAvailability(
   } catch (error) {
     console.error("Error checking username availability:", error);
     return false;
+  }
+}
+
+// Enhanced profile functions
+export async function createProfile(
+  userId: string,
+  profileData: Partial<ProfileFormData>
+): Promise<ProfileUpdateResult> {
+  try {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      return { success: false, error: "Supabase client not initialized" };
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .insert({
+        user_id: userId,
+        username: profileData.username || `user_${userId.slice(0, 8)}`,
+        name: profileData.name || "New User",
+        bio: profileData.bio || null,
+        dob: profileData.dob || null,
+        city: profileData.city || null,
+        avatar_url: null,
+        banner_url: null,
+        verified: false,
+        theme_color: "#3B82F6",
+        font_family: "Inter",
+        accent_color: "#8B5CF6",
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating profile:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, profile: data };
+  } catch (error) {
+    console.error("Error in createProfile:", error);
+    return { success: false, error: "Failed to create profile" };
+  }
+}
+
+export async function ensureProfileExists(userId: string): Promise<Profile | null> {
+  try {
+    // Check if profile exists
+    let profile = await getProfileByUserId(userId);
+    
+    if (!profile) {
+      // Create profile if it doesn't exist
+      const result = await createProfile(userId, {});
+      if (result.success && result.profile) {
+        profile = result.profile;
+      }
+    }
+    
+    return profile;
+  } catch (error) {
+    console.error("Error ensuring profile exists:", error);
+    return null;
   }
 }

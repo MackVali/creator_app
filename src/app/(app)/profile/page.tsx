@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { getProfileByUserId } from "@/lib/db";
-import { Profile } from "@/lib/types";
+import { getProfileByUserId, ensureProfileExists } from "@/lib/db";
+import { Profile, SocialLink, ContentCard } from "@/lib/types";
 import LinkMeProfile from "./LinkMeProfile";
 
 export default function ProfilePage() {
@@ -23,11 +23,13 @@ export default function ProfilePage() {
 
       try {
         setLoading(true);
-        const userProfile = await getProfileByUserId(session.user.id);
+        
+        // Ensure profile exists, create if it doesn't
+        let userProfile = await ensureProfileExists(session.user.id);
         
         if (!userProfile) {
           // Create a basic profile if none exists
-          setProfile({
+          userProfile = {
             id: 0,
             user_id: session.user.id,
             username: session.user.email?.split('@')[0] || 'user',
@@ -36,12 +38,17 @@ export default function ProfilePage() {
             city: null,
             bio: null,
             avatar_url: null,
+            banner_url: null,
+            verified: false,
+            theme_color: "#3B82F6",
+            font_family: "Inter",
+            accent_color: "#8B5CF6",
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          });
-        } else {
-          setProfile(userProfile);
+          };
         }
+        
+        setProfile(userProfile);
       } catch (err) {
         console.error("Error loading profile:", err);
         setError("Failed to load profile");
