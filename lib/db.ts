@@ -1,7 +1,12 @@
 import { getSupabaseBrowser } from "./supabase";
 import { getCurrentUserId } from "./auth";
 import { PostgrestError } from "@supabase/supabase-js";
-import { Profile, ProfileFormData, ProfileUpdateResult } from "./types";
+import {
+  Profile,
+  ProfileFormData,
+  ProfileUpdateResult,
+  ContentCard,
+} from "./types";
 
 // Helper function to get the current user's ID
 export async function getUserId() {
@@ -346,11 +351,13 @@ export async function createProfile(
   }
 }
 
-export async function ensureProfileExists(userId: string): Promise<Profile | null> {
+export async function ensureProfileExists(
+  userId: string
+): Promise<Profile | null> {
   try {
     // Check if profile exists
     let profile = await getProfileByUserId(userId);
-    
+
     if (!profile) {
       // Create profile if it doesn't exist
       const result = await createProfile(userId, {});
@@ -358,10 +365,62 @@ export async function ensureProfileExists(userId: string): Promise<Profile | nul
         profile = result.profile;
       }
     }
-    
+
     return profile;
   } catch (error) {
     console.error("Error ensuring profile exists:", error);
     return null;
+  }
+}
+
+// Get profile by username handle
+export async function getProfileByHandle(
+  handle: string
+): Promise<Profile | null> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .ilike("username", handle)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error fetching profile by handle:", error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Error in getProfileByHandle:", error);
+    return null;
+  }
+}
+
+// Get profile links (content cards) for a user
+export async function getProfileLinks(userId: string): Promise<ContentCard[]> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return [];
+
+  try {
+    const { data, error } = await supabase
+      .from("content_cards")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching profile links:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Error in getProfileLinks:", error);
+    return [];
   }
 }

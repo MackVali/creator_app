@@ -59,4 +59,3 @@ CREATE TRIGGER trg_upsert_empty_profile
 -- 8. Grant necessary permissions
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT ALL ON public.profiles TO authenticated;
-GRANT USAGE ON SEQUENCE public.profiles_id_seq TO authenticated;

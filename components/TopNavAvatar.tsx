@@ -12,6 +12,7 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { User, LogIn, Settings, LogOut } from "lucide-react";
 import { signOut } from "@/lib/auth";
+import { getProfileByUserId } from "@/lib/db";
 
 interface Profile {
   user_id: string;
@@ -29,19 +30,38 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const router = useRouter();
   const { session } = useAuth();
 
-  const handleAvatarClick = () => {
+  const handleAvatarClick = async () => {
     if (session && userId) {
-      // Auto-direct signed-in users to their profile
-      router.push("/profile");
+      // Get user's profile to redirect to handle-based route
+      try {
+        const profile = await getProfileByUserId(userId);
+        if (profile?.username) {
+          router.push(`/profile/${profile.username}`);
+        } else {
+          router.push("/profile");
+        }
+      } catch (error) {
+        // Fallback to profile page if error
+        router.push("/profile");
+      }
     } else if (!session) {
       // If not signed in, go to auth page
       router.push("/auth");
     }
   };
 
-  const handleProfileClick = () => {
+  const handleProfileClick = async () => {
     if (userId) {
-      router.push("/profile");
+      try {
+        const profile = await getProfileByUserId(userId);
+        if (profile?.username) {
+          router.push(`/profile/${profile.username}`);
+        } else {
+          router.push("/profile");
+        }
+      } catch (error) {
+        router.push("/profile");
+      }
     }
   };
 
