@@ -10,9 +10,12 @@ import CategorySection from "@/components/skills/CategorySection";
 import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
 import type { GoalItem } from "@/types/dashboard";
 import { getCatsForUser } from "@/lib/data/cats";
-import { getSkillsForUser, groupSkillsByCat } from "@/lib/data/skills";
-import { getSupabaseBrowser } from "@/lib/supabase";
-import type { SkillRow } from "@/lib/types/skill";
+import {
+  getSkillsForUser,
+  groupSkillsByCat,
+  type SkillRow,
+} from "@/lib/data/skills";
+import { createClient } from "@/lib/supabase/browser";
 
 interface Category {
   id: string;
@@ -31,9 +34,7 @@ export default function DashboardClient() {
 
   const fetchDashboardData = async () => {
     try {
-      const sb = getSupabaseBrowser();
-      if (!sb) throw new Error("Supabase client not available");
-
+      const sb = createClient();
       const {
         data: { user },
       } = await sb.auth.getUser();
@@ -61,11 +62,11 @@ export default function DashboardClient() {
         skills: byCat[cat.id] || [],
       }));
 
-      if (byCat[null]) {
+      if (byCat["null"]) {
         catsWithSkills.push({
           id: "uncategorized",
           name: "Uncategorized",
-          skills: byCat[null],
+          skills: byCat["null"],
         });
       }
 

@@ -3,11 +3,11 @@ import Link from "next/link";
 import ProgressBarGradient from "@/components/skills/ProgressBarGradient";
 
 interface SkillCardProps {
-  icon?: string | React.ReactNode | null;
+  icon: string | React.ReactNode | null;
   name: string;
   level?: number;
   percent?: number;
-  skillId?: string; // Add skillId prop for navigation
+  skillId?: string;
 }
 
 export function SkillCard({
@@ -19,7 +19,6 @@ export function SkillCard({
 }: SkillCardProps) {
   const value = percent ?? 0;
 
-  // Render icon based on type
   const renderIcon = () => {
     if (!icon) {
       return (
@@ -28,19 +27,17 @@ export function SkillCard({
         </span>
       );
     }
-
     if (typeof icon === "string" && icon.startsWith("http")) {
       return <img src={icon} alt="" className="h-6 w-6" />;
-    } else if (typeof icon === "string") {
+    }
+    if (typeof icon === "string") {
       return (
         <span aria-hidden="true" className="text-xl leading-none">
           {icon}
         </span>
       );
-    } else {
-      // If it's a ReactNode, render directly
-      return icon;
     }
+    return icon;
   };
 
   const cardContent = (
