@@ -12,10 +12,11 @@ import type { GoalItem } from "@/types/dashboard";
 
 interface Skill {
   skill_id: string;
-  skill_name: string;
-  skill_icon: string;
-  skill_level: number;
+  name: string;
+  icon: string;
+  level: number;
   progress: number | null;
+  cat_id: string | null;
 }
 
 interface Category {

@@ -9,9 +9,9 @@ interface CategorySectionProps {
   skillCount: number;
   skills: Array<{
     skill_id: string;
-    skill_name: string;
-    skill_icon: string;
-    skill_level: number;
+    name: string;
+    icon: string;
+    level: number;
     progress: number | null;
   }>;
 }
@@ -51,9 +51,9 @@ export function CategorySection({
             skills.map((skill) => (
               <SkillCard
                 key={skill.skill_id}
-                icon={skill.skill_icon}
-                name={skill.skill_name}
-                level={skill.skill_level}
+                icon={skill.icon}
+                name={skill.name}
+                level={skill.level}
                 percent={skill.progress || 0}
                 skillId={skill.skill_id}
               />

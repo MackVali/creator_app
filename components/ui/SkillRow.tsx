@@ -41,25 +41,25 @@ export function SkillRow({ skill }: SkillRowProps) {
     <div className="flex items-center gap-3 p-3 bg-[#1E1E1E] rounded-md border border-[#333] hover:bg-[#252525] transition-colors">
       {/* Skill Icon */}
       <div className="text-xl flex-shrink-0">
-        {getSkillIcon(skill.skill_name, skill.skill_icon)}
+        {getSkillIcon(skill.name, skill.icon)}
       </div>
       
       {/* Skill Name */}
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-[#E0E0E0] truncate">
-          {skill.skill_name}
+          {skill.name}
         </div>
       </div>
       
       {/* Level Badge */}
       <div className="text-xs text-[#A0A0A0] bg-[#404040] px-2 py-1 rounded-full flex-shrink-0">
-        Lv {skill.skill_level}
+        Lv {skill.level}
       </div>
       
       {/* Progress Bar */}
       <div className="w-20 flex-shrink-0">
         <div className="w-full h-2 bg-[#333] rounded-full overflow-hidden">
-          <div 
+          <div
             className="h-full bg-[#BBB] rounded-full transition-all duration-300"
             style={{ width: `${skill.progress}%` }}
           />

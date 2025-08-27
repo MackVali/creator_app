@@ -5,10 +5,11 @@ export type MonumentCounts = Record<
 >;
 export type SkillItem = {
   skill_id: string | number;
-  skill_name: string;
-  skill_icon: string;
-  skill_level: number;
+  name: string;
+  icon: string;
+  level: number;
   progress: number;
+  cat_id: string | null;
 };
 
 export type CatItem = {
