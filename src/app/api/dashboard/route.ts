@@ -125,9 +125,10 @@ export async function GET() {
 
       acc[key].skills.push({
         skill_id: skill.id,
-        skill_name: skill.name, // Use real name, no placeholder
-        skill_icon: skill.icon || "🧩", // Handle null icon case
-        skill_level: skill.level ?? 1,
+        cat_id: skill.cat_id || "",
+        name: skill.name, // Use real name, no placeholder
+        icon: skill.icon || "🧩", // Handle null icon case
+        level: skill.level ?? 1,
         progress: 0,
       });
       acc[key].skill_count = acc[key].skills.length;
