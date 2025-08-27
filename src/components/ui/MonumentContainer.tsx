@@ -62,17 +62,18 @@ export function MonumentContainer() {
         <div className="px-4">
           <div className="grid grid-cols-4 gap-1">
             {monuments.map((m) => (
-              <div
+              <Link
                 key={m.id}
+                href={`/monuments/${m.id}`}
                 className="card flex aspect-square w-full flex-col items-center justify-center p-1"
               >
-                <div className="mb-1 text-lg" aria-hidden>
+                <span className="mb-1 text-lg" aria-hidden>
                   {m.emoji || "🏛️"}
-                </div>
+                </span>
                 <div className="w-full break-words text-center text-[10px] font-semibold leading-tight">
                   {m.title}
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

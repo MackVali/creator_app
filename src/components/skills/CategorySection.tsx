@@ -48,6 +48,7 @@ export function CategorySection({ title, skillCount, skills }: CategorySectionPr
             skills.map((skill) => (
               <SkillCard
                 key={skill.skill_id}
+                id={skill.skill_id}
                 icon={skill.icon || "💡"}
                 name={skill.name}
                 level={skill.level}
