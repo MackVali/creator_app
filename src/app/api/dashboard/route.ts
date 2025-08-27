@@ -44,6 +44,15 @@ export async function GET() {
       catsResponse.data?.length || 0,
       catsResponse.data?.slice(0, 3)
     );
+    console.debug(
+      "🔍 Debug: first skill sample",
+      skillsResponse[0] ? {
+        id: skillsResponse[0].id,
+        name: skillsResponse[0].name,
+        cat_id: skillsResponse[0].cat_id,
+        icon: skillsResponse[0].icon
+      } : "No skills"
+    );
   }
 
   // Join the data manually
@@ -123,13 +132,13 @@ export async function GET() {
 
   // Always include all CATs, even if they have no skills
   const allCats = catsResponse.data || [];
-  const catsWithSkills = Object.values(skillsByCategory);
   
   // Create a complete list of CATs with their skills (or empty skills array)
-  const catsOut = allCats.map(cat => {
-    const existingCat = catsWithSkills.find(c => c.cat_id === cat.id);
-    if (existingCat) {
-      return existingCat;
+  const catsOut = allCats.map((cat) => {
+    // Check if this CAT has skills in the skillsByCategory
+    const catSkills = skillsByCategory[cat.id];
+    if (catSkills) {
+      return catSkills; // Return CAT with its skills
     } else {
       // CAT exists but has no skills
       return {
@@ -143,7 +152,7 @@ export async function GET() {
   });
 
   // Add uncategorized skills if they exist
-  const uncategorizedCat = catsWithSkills.find(c => c.cat_id === "uncategorized");
+  const uncategorizedCat = skillsByCategory["uncategorized"];
   if (uncategorizedCat) {
     catsOut.push(uncategorizedCat);
   }
@@ -153,7 +162,7 @@ export async function GET() {
   // Debug logging
   console.log("🔍 Raw skills data:", skillsData);
   console.log("🔍 All CATs:", allCats);
-  console.log("🔍 CATs with skills:", catsWithSkills);
+  console.log("🔍 Skills by category:", skillsByCategory);
   console.log("🔍 Final CATs output:", catsOut);
 
   return NextResponse.json({
