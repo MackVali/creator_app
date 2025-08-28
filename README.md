@@ -75,6 +75,10 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
+## Profile Images
+
+Users can personalize their profile with optional avatar and banner images. Ensure your Supabase project contains `avatars` and `banners` storage buckets with appropriate access policies before testing uploads.
+
 ## Database Migrations
 
 - **Link your Supabase project**
