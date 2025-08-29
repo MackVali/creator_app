@@ -248,17 +248,17 @@ export default function ProfileEditForm({
 
   const initials = getInitials(profile.name || null, profile.username);
 
-  return (
-    <div className="container mx-auto px-4 py-6 max-w-2xl">
-      <h1 className="text-3xl font-bold mb-6">Edit Profile</h1>
+    return (
+      <div className="container mx-auto px-4 py-6 max-w-2xl text-gray-100">
+        <h1 className="text-3xl font-bold mb-6 text-white">Edit Profile</h1>
 
-      <form onSubmit={handleSubmit}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Edit Profile</CardTitle>
-          </CardHeader>
+        <form onSubmit={handleSubmit}>
+          <Card className="bg-slate-800 border border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-white">Edit Profile</CardTitle>
+            </CardHeader>
 
-          <CardContent className="space-y-6">
+            <CardContent className="space-y-6">
             {/* Avatar Section */}
             <div className="flex items-center space-x-6">
               <div className="relative">
@@ -280,12 +280,12 @@ export default function ProfileEditForm({
                   />
                 </label>
               </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Profile Picture</p>
-                <p className="text-xs text-gray-500">
-                  Upload a new image (JPG, PNG, GIF up to 5MB)
-                </p>
-              </div>
+                <div>
+                  <p className="text-sm text-gray-300 mb-2">Profile Picture</p>
+                  <p className="text-xs text-gray-400">
+                    Upload a new image (JPG, PNG, GIF up to 5MB)
+                  </p>
+                </div>
             </div>
 
             {/* Form Fields */}
@@ -317,11 +317,11 @@ export default function ProfileEditForm({
                     usernameAvailable === false ? "border-red-500" : ""
                   }
                 />
-                {usernameChecking && (
-                  <p className="text-sm text-gray-500">
-                    Checking availability...
-                  </p>
-                )}
+                  {usernameChecking && (
+                    <p className="text-sm text-gray-400">
+                      Checking availability...
+                    </p>
+                  )}
                 {usernameAvailable === false && (
                   <p className="text-sm text-red-500">
                     Username is already taken

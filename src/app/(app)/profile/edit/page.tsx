@@ -165,71 +165,71 @@ export default function ProfileEditPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading profile...</p>
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-200">Loading profile...</p>
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (error && !profile) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button 
-            onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Back to Dashboard
-          </button>
+    if (error && !profile) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-red-400 mb-4">{error}</p>
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Back to Dashboard
+            </button>
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+    <div className="min-h-screen bg-slate-900 text-gray-100">
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-md border-b border-gray-200">
+      <div className="bg-slate-800/80 backdrop-blur-md border-b border-slate-700">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <div className="flex items-center space-x-4">
             <Link href="/profile">
-              <Button variant="ghost" size="sm" className="p-2">
+              <Button variant="ghost" size="sm" className="p-2 text-gray-100">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold text-gray-900">Edit Profile</h1>
+            <h1 className="text-2xl font-bold text-gray-100">Edit Profile</h1>
           </div>
         </div>
       </div>
 
       {/* Form */}
       <div className="max-w-2xl mx-auto px-4 py-8">
-        <Card className="shadow-xl border-0">
+        <Card className="shadow-xl bg-slate-800 border border-slate-700 text-gray-100">
           <CardHeader>
-            <CardTitle className="text-center text-2xl">Update Your Profile</CardTitle>
-            <p className="text-center text-gray-600">
+            <CardTitle className="text-center text-2xl text-white">Update Your Profile</CardTitle>
+            <p className="text-center text-gray-400">
               Customize your profile to make it uniquely yours
             </p>
           </CardHeader>
-          
+
           <CardContent>
             {success && (
-              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-green-800 text-center">
+              <div className="mb-6 p-4 bg-green-900/50 border border-green-700 rounded-lg">
+                <p className="text-green-400 text-center">
                   Profile updated successfully! Redirecting...
                 </p>
               </div>
             )}
 
             {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-red-800 text-center">{error}</p>
+              <div className="mb-6 p-4 bg-red-900/50 border border-red-700 rounded-lg">
+                <p className="text-red-400 text-center">{error}</p>
               </div>
             )}
 
@@ -237,7 +237,7 @@ export default function ProfileEditPage() {
               {/* Cover Photo */}
               <div className="space-y-2">
                 <Label htmlFor="banner">Cover Photo</Label>
-                <div className="w-full h-40 bg-gray-100 rounded-lg overflow-hidden">
+                <div className="w-full h-40 bg-slate-700 rounded-lg overflow-hidden">
                   {bannerPreview && (
                     <img
                       src={bannerPreview}
@@ -307,7 +307,7 @@ export default function ProfileEditPage() {
                   placeholder="Choose a unique username"
                   className="h-12 text-lg"
                 />
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-400">
                   This will be your unique identifier: @{formData.username || "username"}
                 </p>
               </div>
@@ -325,7 +325,7 @@ export default function ProfileEditPage() {
                   placeholder="Tell us about yourself..."
                   className="min-h-[100px] text-lg resize-none"
                 />
-                                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-400">
                     Keep it concise and engaging. Example: &ldquo;Dad • Creator • Entrepreneur • Philanthropist&rdquo;
                   </p>
               </div>
