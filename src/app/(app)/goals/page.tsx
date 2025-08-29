@@ -156,7 +156,7 @@ export default function GoalsPage() {
         case "due":
           return (a.dueDate || "").localeCompare(b.dueDate || "");
         case "progress":
-          return b.progress - a.progress;
+          return (b.progress ?? 0) - (a.progress ?? 0);
         case "updated":
           return (
             new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
