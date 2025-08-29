@@ -107,8 +107,6 @@ function SkillsPageContent() {
   const [formEmoji, setFormEmoji] = useState("💡");
   const [formCat, setFormCat] = useState("");
   const [formNewCat, setFormNewCat] = useState("");
-  const [formLevel, setFormLevel] = useState(1);
-  const [formProgress, setFormProgress] = useState(0);
 
   const supabase = getSupabaseBrowser();
 
@@ -219,8 +217,8 @@ function SkillsPageContent() {
       id: "local-" + Date.now(),
       name,
       icon: formEmoji,
-      level: Math.max(1, Math.min(10, formLevel)),
-      progress: Math.max(0, Math.min(100, formProgress)),
+      level: 1,
+      progress: 0,
       cat_id: catId || null,
       created_at: new Date().toISOString(),
     };
@@ -230,8 +228,6 @@ function SkillsPageContent() {
     setFormEmoji("💡");
     setFormCat("");
     setFormNewCat("");
-    setFormLevel(1);
-    setFormProgress(0);
   };
 
   const handleRemoveSkill = (id: string) => {
@@ -381,11 +377,14 @@ function SkillsPageContent() {
 
       {/* Create Drawer */}
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="bottom" className="bg-[#1E1E1E] text-white">
+        <SheetContent
+          side="bottom"
+          className="bg-[#1E1E1E] text-white max-h-[80vh]"
+        >
           <SheetHeader>
             <SheetTitle>Add Skill</SheetTitle>
           </SheetHeader>
-          <div className="p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div>
               <label className="block text-sm mb-1">Name</label>
               <Input
@@ -396,31 +395,12 @@ function SkillsPageContent() {
             </div>
             <div>
               <label className="block text-sm mb-1">Emoji</label>
-              <div className="grid grid-cols-6 gap-2">
-                {[
-                  "💡",
-                  "🎯",
-                  "🎸",
-                  "📚",
-                  "💻",
-                  "🎨",
-                  "🏃",
-                  "🧠",
-                ].map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    onClick={() => setFormEmoji(e)}
-                    className={`h-11 w-11 flex items-center justify-center rounded-md ${
-                      formEmoji === e ? "bg-[#404040]" : "bg-[#2C2C2C]"
-                    }`}
-                  >
-                    <span className="text-xl" role="img" aria-label="emoji">
-                      {e}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <Input
+                value={formEmoji}
+                onChange={(e) => setFormEmoji(e.target.value)}
+                className="h-11"
+                placeholder="🎯"
+              />
             </div>
             <div>
               <label className="block text-sm mb-1">Category</label>
@@ -446,32 +426,6 @@ function SkillsPageContent() {
                 />
               )}
             </div>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <label className="block text-sm mb-1">Level</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={formLevel}
-                  onChange={(e) => setFormLevel(parseInt(e.target.value) || 1)}
-                  className="h-11"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-sm mb-1">Progress</label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={formProgress}
-                  onChange={(e) =>
-                    setFormProgress(parseInt(e.target.value) || 0)
-                  }
-                  className="h-11"
-                />
-              </div>
-            </div>
           </div>
           <SheetFooter>
             <Button
@@ -479,7 +433,7 @@ function SkillsPageContent() {
               onClick={handleAddSkill}
               disabled={!formName}
             >
-              Add (Preview)
+              Add
             </Button>
           </SheetFooter>
         </SheetContent>
