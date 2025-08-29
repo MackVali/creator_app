@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import ProgressBarGradient from "@/components/skills/ProgressBarGradient";
 
 interface SkillCardProps {
@@ -22,7 +23,7 @@ export function SkillCard({
   // Render icon based on type
   const renderIcon = () => {
     if (typeof icon === "string" && icon.startsWith("http")) {
-      return <img src={icon} alt="" className="h-6 w-6" />;
+      return <Image src={icon} alt="" width={24} height={24} className="h-6 w-6" />;
     } else if (typeof icon === "string") {
       return (
         <span aria-hidden="true" className="text-xl leading-none">

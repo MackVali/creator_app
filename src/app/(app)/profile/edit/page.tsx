@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Save, User, Calendar, MapPin, FileText } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 const platformLabels: Record<string, string> = {
   instagram: "Instagram",
@@ -298,11 +299,12 @@ export default function ProfileEditPage() {
               {/* Cover Photo */}
               <div className="space-y-2">
                 <Label htmlFor="banner">Cover Photo</Label>
-                <div className="w-full h-40 bg-slate-700 rounded-lg overflow-hidden">
+                <div className="w-full h-40 bg-slate-700 rounded-lg overflow-hidden relative">
                   {bannerPreview && (
-                    <img
+                    <Image
                       src={bannerPreview}
                       alt="Cover preview"
+                      fill
                       className="object-cover w-full h-full"
                     />
                   )}

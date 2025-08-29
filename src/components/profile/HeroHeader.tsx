@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ExternalLink, Share2 } from "lucide-react";
 import { Profile } from "@/lib/types";
+import Image from "next/image";
 
 interface HeroHeaderProps {
   profile: Profile;
@@ -86,12 +87,13 @@ export default function HeroHeader({
         {/* Avatar */}
         <div className="flex justify-center mb-4">
           <div className="relative">
-            <div className="w-[84px] h-[84px] rounded-full overflow-hidden ring-4 ring-slate-900 bg-slate-800">
+            <div className="relative w-[84px] h-[84px] rounded-full overflow-hidden ring-4 ring-slate-900 bg-slate-800">
               {profile.avatar_url ? (
-                <img
+                <Image
                   src={profile.avatar_url}
                   alt={`${profile.name || profile.username}'s avatar`}
-                  className="w-full h-full object-cover"
+                  fill
+                  className="object-cover"
                 />
               ) : (
                 <div className="w-full h-full bg-slate-700 flex items-center justify-center text-white text-2xl font-bold">

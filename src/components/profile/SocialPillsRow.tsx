@@ -92,7 +92,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
 
   // Filter out undefined URLs and sort by platform priority
   const availableSocials = Object.entries(socials)
-    .filter(([_, url]) => url && url !== "#")
+    .filter(([, url]) => url && url !== "#")
     .sort(([a], [b]) => {
       const priority = [
         "instagram",

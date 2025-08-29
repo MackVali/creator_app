@@ -2,7 +2,6 @@
 
 import { ContentCard } from "@/lib/types";
 import LinkTile from "./LinkTile";
-import { ProfileSkeleton } from "./ProfileSkeleton";
 
 interface LinkGridProps {
   links: ContentCard[];
