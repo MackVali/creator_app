@@ -1,8 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, MapPin, User, Edit3 } from "lucide-react";
+import LinkedAccountsBar from "@/components/profile/LinkedAccountsBar";
 
 interface Profile {
   user_id: string;
@@ -50,12 +53,17 @@ export default function ProfileContent({
     <div className="container mx-auto px-4 py-6 max-w-2xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Profile</h1>
-        <Link href="/profile/edit">
-          <Button variant="outline" size="sm">
-            <Edit3 className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
-        </Link>
+        <div className="space-x-2">
+          <Link href="/profile/linked-accounts">
+            <Button variant="outline" size="sm">Links</Button>
+          </Link>
+          <Link href="/profile/edit">
+            <Button variant="outline" size="sm">
+              <Edit3 className="h-4 w-4 mr-2" />
+              Edit
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <Card>
@@ -74,6 +82,7 @@ export default function ProfileContent({
             {profile.name || "No name set"}
           </CardTitle>
           <p className="text-gray-600 text-lg">@{profile.username}</p>
+          <LinkedAccountsBar userId={profile.user_id} />
         </CardHeader>
 
         <CardContent className="space-y-4">

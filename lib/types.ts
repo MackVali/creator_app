@@ -116,6 +116,15 @@ export interface Profile {
 }
 
 // Social Links
+export interface LinkedAccount {
+  id: string;
+  user_id: string;
+  platform: string;
+  url: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SocialLink {
   id: string;
   user_id: string;
@@ -171,6 +180,12 @@ export interface ProfileFormData {
   accent_color?: string;
 }
 
+// Linked Account Form Data
+export interface LinkedAccountFormData {
+  platform: string;
+  url: string;
+}
+
 // Social Link Form Data
 export interface SocialLinkFormData {
   platform: string;
@@ -195,6 +210,13 @@ export interface ProfileUpdateResult {
   success: boolean;
   error?: string;
   profile?: Profile;
+}
+
+// Linked Account Update Result
+export interface LinkedAccountUpdateResult {
+  success: boolean;
+  error?: string;
+  account?: LinkedAccount;
 }
 
 // Social Link Update Result
@@ -289,6 +311,11 @@ export interface Database {
         Row: Profile;
         Insert: Omit<Profile, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<Profile, "id" | "created_at" | "updated_at">>;
+      };
+      linked_accounts: {
+        Row: LinkedAccount;
+        Insert: Omit<LinkedAccount, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<LinkedAccount, "id" | "created_at" | "updated_at">>;
       };
       social_links: {
         Row: SocialLink;
