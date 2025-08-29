@@ -12,6 +12,8 @@ export const profileSchema = z.object({
   dob: z.string().nullable(),
   city: z.string().max(100).nullable(),
   bio: z.string().max(300).nullable(),
+  avatar_url: z.string().url().nullable().optional(),
+  banner_url: z.string().url().nullable().optional(),
 });
 
 export type ProfileFormData = z.infer<typeof profileSchema>;

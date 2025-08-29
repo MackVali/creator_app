@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToastHelpers } from "@/components/ui/toast";
 import { Camera, Loader2 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
+import { uploadAvatar, uploadBanner } from "@/lib/storage";
 import {
   profileSchema,
   type ProfileFormData,
@@ -25,6 +26,7 @@ interface Profile {
   city?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
+  banner_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +58,10 @@ export default function ProfileEditForm({
   const [avatarPreview, setAvatarPreview] = useState<string | null>(
     profile.avatar_url || null
   );
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(
+    profile.banner_url || null
+  );
 
   const router = useRouter();
   const toast = useToastHelpers();
@@ -70,6 +76,7 @@ export default function ProfileEditForm({
       bio: profile.bio || "",
     });
     setAvatarPreview(profile.avatar_url || null);
+    setBannerPreview(profile.banner_url || null);
   }, [profile]);
 
   // Debounced username availability check
@@ -135,6 +142,18 @@ export default function ProfileEditForm({
     }
   };
 
+  const handleBannerChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setBannerFile(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setBannerPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -161,35 +180,6 @@ export default function ProfileEditForm({
     return Object.keys(newErrors).length === 0;
   };
 
-  const uploadAvatar = async (
-    file: File
-  ): Promise<{ success: boolean; url?: string; error?: string }> => {
-    try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${userId}-${Date.now()}.${fileExt}`;
-
-      const { data, error } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, file);
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("avatars").getPublicUrl(fileName);
-
-      return { success: true, url: publicUrl };
-    } catch (error) {
-      return { success: false, error: "Failed to upload avatar" };
-    }
-  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -198,37 +188,50 @@ export default function ProfileEditForm({
       return;
     }
 
-    setSaving(true);
-    try {
-      let avatarUrl = profile.avatar_url;
-
-      // Upload avatar if changed
-      if (avatarFile) {
-        const uploadResult = await uploadAvatar(avatarFile);
-        if (!uploadResult.success) {
-          toast.error("Error", uploadResult.error || "Failed to upload avatar");
-          setSaving(false);
-          return;
+      setSaving(true);
+      try {
+        let avatarUrl = profile.avatar_url || null;
+        if (avatarFile) {
+          const uploadResult = await uploadAvatar(avatarFile, userId);
+          if (!uploadResult.success) {
+            toast.error("Error", uploadResult.error || "Failed to upload avatar");
+            setSaving(false);
+            return;
+          }
+          avatarUrl = uploadResult.url || null;
         }
-        avatarUrl = uploadResult.url;
-      }
 
-      // Update profile using server action
-      const result = await updateMyProfile(formData);
+        let bannerUrl = profile.banner_url || null;
+        if (bannerFile) {
+          const uploadResult = await uploadBanner(bannerFile, userId);
+          if (!uploadResult.success) {
+            toast.error("Error", uploadResult.error || "Failed to upload banner");
+            setSaving(false);
+            return;
+          }
+          bannerUrl = uploadResult.url || null;
+        }
 
-      if (result.success) {
-        toast.success("Success", "Profile updated successfully!");
-        router.push("/profile");
-      } else {
-        toast.error("Error", result.error || "Failed to update profile");
+        // Update profile using server action
+        const result = await updateMyProfile({
+          ...formData,
+          avatar_url: avatarUrl,
+          banner_url: bannerUrl,
+        });
+
+        if (result.success) {
+          toast.success("Success", "Profile updated successfully!");
+          router.push("/profile");
+        } else {
+          toast.error("Error", result.error || "Failed to update profile");
+        }
+      } catch (error) {
+        console.error("Error updating profile:", error);
+        toast.error("Error", "An unexpected error occurred");
+      } finally {
+        setSaving(false);
       }
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      toast.error("Error", "An unexpected error occurred");
-    } finally {
-      setSaving(false);
-    }
-  };
+    };
 
   const handleCancel = () => {
     router.push("/profile");
@@ -259,6 +262,36 @@ export default function ProfileEditForm({
           </CardHeader>
 
           <CardContent className="space-y-6">
+            {/* Cover Photo Section */}
+            <div className="space-y-2">
+              <Label className="flex items-center space-x-2">
+                <span>Cover Photo</span>
+              </Label>
+              <div className="relative h-40 w-full rounded-lg overflow-hidden">
+                {bannerPreview ? (
+                  <img
+                    src={bannerPreview}
+                    alt="Cover preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-200" />
+                )}
+                <label className="absolute bottom-2 right-2 bg-blue-600 text-white rounded-full p-2 cursor-pointer hover:bg-blue-700 transition-colors">
+                  <Camera className="h-4 w-4" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBannerChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">
+                Upload a cover photo (JPG, PNG, GIF up to 5MB)
+              </p>
+            </div>
+
             {/* Avatar Section */}
             <div className="flex items-center space-x-6">
               <div className="relative">
