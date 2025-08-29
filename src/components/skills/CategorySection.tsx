@@ -1,68 +1,53 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { CatRow } from "@/lib/data/cats";
+import { SkillRow } from "@/lib/data/skills";
 import SkillCard from "@/components/skills/SkillCard";
 import { cn } from "@/lib/utils";
-// Removed unused import
 
-interface CategorySectionProps {
-  title: string;
-  skillCount: number;
-  skills: Array<{
-    skill_id: string;
-    cat_id: string;
-    name: string;
-    icon: string;
-    level: number;
-    progress: number;
-  }>;
+interface Props {
+  cat: CatRow | { id: "null"; name: string };
+  skills: SkillRow[];
 }
 
-export function CategorySection({
-  title,
-  skillCount,
-  skills,
-}: CategorySectionProps) {
-  const [open, setOpen] = useState(false);
-
+export function CategorySection({ cat, skills }: Props) {
+  const [open, setOpen] = useState(true);
   return (
-    <div className="rounded-2xl bg-slate-800/40 ring-1 ring-white/10 overflow-hidden">
+    <div className="bg-slate-900/60 ring-1 ring-white/10 rounded-2xl shadow-[inset_0_1px_rgba(255,255,255,.06),0_8px_24px_rgba(0,0,0,.45)]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between py-3 px-4"
+        aria-expanded={open}
+        className="flex w-full items-center justify-between p-4"
       >
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold uppercase tracking-wide">
-            {title}
-          </span>
-          <span className="text-[11px] rounded-full bg-white/8 ring-1 ring-white/10 px-2 py-[2px]">
-            {skillCount} skills
+          <span className="text-sm font-semibold">{cat.name}</span>
+          <span className="text-xs px-2 rounded-full bg-white/10 text-white/80">
+            {skills.length}
           </span>
         </div>
         <ChevronDown
           className={cn(
-            "h-5 w-5 text-gray-400 transition-transform",
+            "h-5 w-5 text-white/70 transition-transform",
             open ? "rotate-180" : ""
           )}
         />
       </button>
       {open && (
-        <div className="bg-slate-900/60 border-t border-white/5 px-4 pb-4 pt-2 space-y-2">
-          {skills && skills.length > 0 ? (
+        <div className="px-4 pb-4 pt-0 space-y-2">
+          {skills.length ? (
             skills.map((skill) => (
               <SkillCard
-                key={skill.skill_id}
-                icon={skill.icon}
+                key={skill.id}
+                id={skill.id}
+                icon={skill.icon ?? ""}
                 name={skill.name}
-                level={skill.level}
-                percent={skill.progress || 0}
-                skillId={skill.skill_id}
+                level={skill.level ?? undefined}
+                percent={0}
               />
             ))
           ) : (
-            <div className="text-center py-4 text-gray-500 text-sm">
-              No skills
-            </div>
+            <p className="text-sm text-white/60">No skills yet.</p>
           )}
         </div>
       )}

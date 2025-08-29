@@ -1,42 +1,35 @@
-import React from "react";
 import Link from "next/link";
+import { ReactNode } from "react";
 import ProgressBarGradient from "@/components/skills/ProgressBarGradient";
 
 interface SkillCardProps {
-  icon: string | React.ReactNode;
+  id: string;
+  icon: string | ReactNode;
   name: string;
   level?: number;
   percent?: number;
-  skillId?: string; // Add skillId prop for navigation
 }
 
-export function SkillCard({
-  icon,
-  name,
-  level = 1,
-  percent = 0,
-  skillId,
-}: SkillCardProps) {
-  const value = percent ?? 0;
-
-  // Render icon based on type
+export function SkillCard({ id, icon, name, level = 1, percent = 0 }: SkillCardProps) {
   const renderIcon = () => {
     if (typeof icon === "string" && icon.startsWith("http")) {
-      return <img src={icon} alt="" className="h-6 w-6" />;
-    } else if (typeof icon === "string") {
+      return <img src={icon} alt="" className="h-5 w-5" />;
+    }
+    if (typeof icon === "string") {
       return (
-        <span aria-hidden="true" className="text-xl leading-none">
+        <span aria-hidden className="text-lg leading-none">
           {icon}
         </span>
       );
-    } else {
-      // If it's a ReactNode, render directly
-      return icon;
     }
+    return icon;
   };
 
-  const cardContent = (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900/60 ring-1 ring-white/10 shadow-[inset_0_1px_rgba(255,255,255,0.05),0_6px_18px_rgba(0,0,0,0.35)] hover:bg-slate-800/60 transition-colors">
+  return (
+    <Link
+      href={`/skills/${id}`}
+      className="flex items-center gap-3 p-3 bg-slate-900/60 ring-1 ring-white/10 rounded-2xl shadow-[inset_0_1px_rgba(255,255,255,.06),0_8px_24px_rgba(0,0,0,.45)]"
+    >
       <div className="flex h-9 w-9 items-center justify-center rounded bg-white/5 ring-1 ring-white/10">
         {renderIcon()}
       </div>
@@ -44,26 +37,14 @@ export function SkillCard({
         <div className="text-sm font-medium truncate" title={name}>
           {name}
         </div>
-        <ProgressBarGradient value={value} height={10} className="mt-2" />
+        <ProgressBarGradient value={percent ?? 0} className="mt-1" />
       </div>
-      <div className="flex flex-col items-end gap-1">
-        <span className="text-[11px] rounded-full bg-white/8 ring-1 ring-white/10 px-2 py-[2px]">
-          Lv {level}
-        </span>
-        <span className="text-[11px] opacity-70">{Math.round(value)}%</span>
+      <div className="flex flex-col items-end ml-3 text-xs text-white/80">
+        <span className="px-2 rounded-full bg-white/10">Lv {level ?? 1}</span>
+        <span className="mt-1">{Math.round(percent ?? 0)}%</span>
       </div>
-    </div>
+    </Link>
   );
-
-  if (skillId) {
-    return (
-      <Link href={`/skills/${skillId}`} className="block">
-        {cardContent}
-      </Link>
-    );
-  }
-
-  return cardContent;
 }
 
 export default SkillCard;
