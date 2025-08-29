@@ -77,7 +77,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Profile Images
 
-Users can personalize their profile with optional avatar and banner images. Ensure your Supabase project contains `avatars` and `banners` storage buckets with appropriate access policies before testing uploads.
+Users can personalize their profile with optional avatar and banner images. Ensure your Supabase project contains `avatars` and `banners` storage buckets with appropriate access policies before testing uploads. The `profiles` table must also have `avatar_url` and `banner_url` columns. Run `setup_profile_system.sql` in the Supabase SQL editor to add them if your project pre-dates this change.
 
 ## Database Migrations
 

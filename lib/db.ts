@@ -217,61 +217,6 @@ export async function getProfileByUsername(
   return data;
 }
 
-export async function updateProfile(
-  userId: string,
-  profileData: ProfileFormData,
-  avatarUrl?: string,
-  bannerUrl?: string
-): Promise<ProfileUpdateResult> {
-  try {
-    console.log("🔍 updateProfile called with userId:", userId);
-    console.log("🔍 Profile data:", profileData);
-
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      return { success: false, error: "Supabase client not initialized" };
-    }
-
-    // Prepare update data
-    const updateData: Partial<Profile> = {
-      name: profileData.name,
-      username: profileData.username,
-      dob: profileData.dob || null,
-      city: profileData.city || null,
-      bio: profileData.bio || null,
-      theme_color: profileData.theme_color,
-      font_family: profileData.font_family,
-      accent_color: profileData.accent_color,
-    };
-
-    // Add avatar and banner URLs if provided
-    if (avatarUrl) {
-      updateData.avatar_url = avatarUrl;
-    }
-    if (bannerUrl) {
-      updateData.banner_url = bannerUrl;
-    }
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .update(updateData)
-      .eq("user_id", userId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error("❌ Failed to update profile:", error);
-      return { success: false, error: error.message };
-    }
-
-    console.log("✅ Profile updated successfully:", data);
-    return { success: true, profile: data };
-  } catch (error) {
-    console.error("Error in updateProfile:", error);
-    return { success: false, error: "Failed to update profile" };
-  }
-}
-
 export async function checkUsernameAvailability(
   username: string,
   excludeUserId?: string

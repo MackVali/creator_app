@@ -2,7 +2,8 @@
 -- Run this directly in your Supabase SQL Editor
 
 -- 1. Add new columns to profiles table (only if they don't exist)
-ALTER TABLE IF EXISTS public.profiles 
+ALTER TABLE IF EXISTS public.profiles
+ADD COLUMN IF NOT EXISTS avatar_url text,
 ADD COLUMN IF NOT EXISTS banner_url text,
 ADD COLUMN IF NOT EXISTS verified boolean DEFAULT false,
 ADD COLUMN IF NOT EXISTS theme_color text DEFAULT '#3B82F6',
