@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type { DashboardData } from "@/types/dashboard";
+import { CurrentGoals } from "@/components/dashboard/current-goals/CurrentGoals";
 
 interface ClientDashboardProps {
   data: DashboardData;
@@ -519,69 +520,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
         </div>
 
         {/* Current Goals Section */}
-        <div>
-          <h2
-            onClick={() => router.push("/goals")}
-            style={{
-              fontSize: "18px",
-              fontWeight: "900",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              marginBottom: "16px",
-              color: "#E0E0E0",
-              cursor: "pointer",
-              transition: "color 0.2s ease",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#FFFFFF")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#E0E0E0")}
-          >
-            CURRENT GOALS
-          </h2>
-          <div
-            style={{
-              background: "#2C2C2C",
-              borderRadius: "8px",
-              padding: "16px",
-              border: "1px solid #333",
-            }}
-          >
-            <ul style={{ margin: "0", padding: "0", listStyle: "none" }}>
-              {skillsAndGoals.goals.map(
-                (goal: { id: string; name: string; created_at?: string }) => (
-                  <li
-                    key={goal.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      padding: "8px 0",
-                      borderBottom: "1px solid #333",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "6px",
-                        height: "6px",
-                        background: "#A0A0A0",
-                        borderRadius: "50%",
-                        flexShrink: "0",
-                      }}
-                    ></div>
-                    <span
-                      style={{
-                        fontWeight: "500",
-                        fontSize: "14px",
-                        color: "#E0E0E0",
-                      }}
-                    >
-                      {goal.name}
-                    </span>
-                  </li>
-                )
-              )}
-            </ul>
-          </div>
-        </div>
+        <CurrentGoals />
       </div>
     </div>
   );
