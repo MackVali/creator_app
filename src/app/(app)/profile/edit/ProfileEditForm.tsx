@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToastHelpers } from "@/components/ui/toast";
 import { Camera, Loader2 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   profileSchema,
   type ProfileFormData,
@@ -88,10 +88,11 @@ export default function ProfileEditForm({
     const timeoutId = setTimeout(async () => {
       setUsernameChecking(true);
       try {
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          setUsernameAvailable(false);
+          return;
+        }
 
         const { data, error } = await supabase
           .from("profiles")
@@ -184,10 +185,10 @@ export default function ProfileEditForm({
     file: File
   ): Promise<{ success: boolean; url?: string; error?: string }> => {
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        return { success: false, error: "Supabase not initialized" };
+      }
 
       const fileExt = file.name.split(".").pop();
       const fileName = `${userId}-${Date.now()}.${fileExt}`;
@@ -214,10 +215,10 @@ export default function ProfileEditForm({
     file: File
   ): Promise<{ success: boolean; url?: string; error?: string }> => {
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        return { success: false, error: "Supabase not initialized" };
+      }
 
       const fileExt = file.name.split(".").pop();
       const fileName = `${userId}-banner-${Date.now()}.${fileExt}`;
