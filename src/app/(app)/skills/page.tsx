@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
-import { Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
 import type { SkillRow } from "../../../lib/types/skill";
@@ -118,6 +118,17 @@ function SkillsPageContent() {
     setExpandedCats(newExpanded);
   };
 
+  const toggleAllCategories = () => {
+    if (expandedCats.size === categories.length) {
+      setExpandedCats(new Set());
+    } else {
+      setExpandedCats(new Set(categories.map((cat) => cat.cat_id)));
+    }
+  };
+
+  const allExpanded =
+    expandedCats.size === categories.length && categories.length > 0;
+
   const createCategory = async () => {
     if (!newCategoryName.trim() || !supabase) return;
 
@@ -188,13 +199,31 @@ function SkillsPageContent() {
             Manage and organize your skills by categories
           </p>
         </div>
-        <Button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="bg-[#BBB] text-[#1E1E1E] hover:bg-[#A0A0A0]"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Create Skill
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={toggleAllCategories}
+            className="bg-[#404040] text-[#E0E0E0] hover:bg-[#505050]"
+          >
+            {allExpanded ? (
+              <>
+                <ChevronUp className="w-4 h-4 mr-2" />
+                Collapse All
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4 mr-2" />
+                Expand All
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="bg-[#BBB] text-[#1E1E1E] hover:bg-[#A0A0A0]"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Create Skill
+          </Button>
+        </div>
       </div>
 
       {/* Categories and Skills */}
