@@ -6,6 +6,12 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
 import { Profile, ProfileFormData } from "@/lib/types";
 import { uploadAvatar, uploadBanner } from "@/lib/storage";
+import {
+  getSocialLinks,
+  createSocialLink,
+  updateSocialLink,
+  deleteSocialLink,
+} from "@/lib/db/profile-management";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +20,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Save, User, Calendar, MapPin, FileText } from "lucide-react";
 import Link from "next/link";
+
+const platformLabels: Record<string, string> = {
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  youtube: "YouTube",
+  spotify: "Spotify",
+  apple: "Apple Music",
+  snapchat: "Snapchat",
+};
+
+const socialPlatforms = Object.keys(platformLabels);
+
+function createInitialSocialState() {
+  return socialPlatforms.reduce((acc, platform) => {
+    acc[platform] = { id: undefined as string | undefined, url: "" };
+    return acc;
+  }, {} as Record<string, { id?: string; url: string }>);
+}
 
 export default function ProfileEditPage() {
   const router = useRouter();
@@ -36,6 +60,7 @@ export default function ProfileEditPage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [socialLinks, setSocialLinks] = useState<Record<string, { id?: string; url: string }>>(createInitialSocialState());
 
   useEffect(() => {
     async function loadProfile() {
@@ -59,6 +84,16 @@ export default function ProfileEditPage() {
           });
           setAvatarPreview(userProfile.avatar_url || null);
           setBannerPreview(userProfile.banner_url || null);
+
+          const links = await getSocialLinks(session.user.id);
+          const linksMap = createInitialSocialState();
+          links.forEach((link) => {
+            const key = link.platform.toLowerCase();
+            if (linksMap[key] !== undefined) {
+              linksMap[key] = { id: link.id, url: link.url };
+            }
+          });
+          setSocialLinks(linksMap);
         }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -102,6 +137,13 @@ export default function ProfileEditPage() {
     }
   };
 
+  const handleSocialLinkChange = (platform: string, value: string) => {
+    setSocialLinks((prev) => ({
+      ...prev,
+      [platform]: { ...prev[platform], url: value },
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -143,8 +185,27 @@ export default function ProfileEditPage() {
         avatarUrl,
         bannerUrl
       );
-      
+
       if (result.success && result.profile) {
+        try {
+          await Promise.all(
+            socialPlatforms.map(async (platform) => {
+              const link = socialLinks[platform];
+              if (link.url) {
+                if (link.id) {
+                  await updateSocialLink(link.id, session.user.id, { url: link.url });
+                } else {
+                  await createSocialLink(session.user.id, { platform, url: link.url });
+                }
+              } else if (link.id) {
+                await deleteSocialLink(link.id, session.user.id);
+              }
+            })
+          );
+        } catch (linkErr) {
+          console.error("Error updating social links:", linkErr);
+        }
+
         setSuccess(true);
         setProfile(result.profile);
         setAvatarPreview(result.profile.avatar_url || null);
@@ -359,6 +420,26 @@ export default function ProfileEditPage() {
                   placeholder="Where are you located?"
                   className="h-12 text-lg"
                 />
+              </div>
+
+              {/* Social Links */}
+              <div className="space-y-4">
+                <h2 className="text-xl font-semibold text-white mt-4">Social Links</h2>
+                {socialPlatforms.map((platform) => (
+                  <div className="space-y-2" key={platform}>
+                    <Label htmlFor={`social-${platform}`}>
+                      {platformLabels[platform]}
+                    </Label>
+                    <Input
+                      id={`social-${platform}`}
+                      type="url"
+                      value={socialLinks[platform].url}
+                      onChange={(e) => handleSocialLinkChange(platform, e.target.value)}
+                      placeholder={`Enter your ${platformLabels[platform]} URL`}
+                      className="h-12 text-lg"
+                    />
+                  </div>
+                ))}
               </div>
 
               {/* Submit Button */}

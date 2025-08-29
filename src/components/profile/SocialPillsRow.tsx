@@ -6,11 +6,14 @@ import {
   Twitter,
   Youtube,
   Music,
+  Music2,
   Linkedin,
   Mail,
   Globe,
   Github,
   MessageCircle,
+  Ghost,
+  Apple,
 } from "lucide-react";
 
 interface SocialPillsRowProps {
@@ -44,6 +47,21 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
       icon: Music,
       color: "bg-black",
       label: "TikTok",
+    },
+    spotify: {
+      icon: Music2,
+      color: "bg-green-500",
+      label: "Spotify",
+    },
+    apple: {
+      icon: Apple,
+      color: "bg-gray-900",
+      label: "Apple Music",
+    },
+    snapchat: {
+      icon: Ghost,
+      color: "bg-yellow-400",
+      label: "Snapchat",
     },
     linkedin: {
       icon: Linkedin,
@@ -82,6 +100,9 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
         "twitter",
         "youtube",
         "tiktok",
+        "spotify",
+        "apple",
+        "snapchat",
         "linkedin",
         "email",
         "website",
