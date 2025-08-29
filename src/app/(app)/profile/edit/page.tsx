@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
 import { Profile, ProfileFormData } from "@/lib/types";
+import { uploadAvatar, uploadBanner } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Save, User, Calendar, MapPin, FileText } from "lucide-react";
 import Link from "next/link";
 
@@ -29,6 +31,11 @@ export default function ProfileEditPage() {
     city: "",
     bio: "",
   });
+
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadProfile() {
@@ -50,6 +57,8 @@ export default function ProfileEditPage() {
             city: userProfile.city || "",
             bio: userProfile.bio || "",
           });
+          setAvatarPreview(userProfile.avatar_url || null);
+          setBannerPreview(userProfile.banner_url || null);
         }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -69,6 +78,30 @@ export default function ProfileEditPage() {
     }));
   };
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setAvatarPreview(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setBannerFile(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setBannerPreview(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -81,12 +114,42 @@ export default function ProfileEditPage() {
       setSaving(true);
       setError(null);
 
-      const result = await updateProfile(session.user.id, formData);
+      let avatarUrl: string | undefined;
+      let bannerUrl: string | undefined;
+
+      if (avatarFile) {
+        const uploadRes = await uploadAvatar(avatarFile, session.user.id);
+        if (!uploadRes.success || !uploadRes.url) {
+          setError(uploadRes.error || "Failed to upload profile picture");
+          setSaving(false);
+          return;
+        }
+        avatarUrl = uploadRes.url;
+      }
+
+      if (bannerFile) {
+        const uploadRes = await uploadBanner(bannerFile, session.user.id);
+        if (!uploadRes.success || !uploadRes.url) {
+          setError(uploadRes.error || "Failed to upload cover photo");
+          setSaving(false);
+          return;
+        }
+        bannerUrl = uploadRes.url;
+      }
+
+      const result = await updateProfile(
+        session.user.id,
+        formData,
+        avatarUrl,
+        bannerUrl
+      );
       
       if (result.success && result.profile) {
         setSuccess(true);
         setProfile(result.profile);
-        
+        setAvatarPreview(result.profile.avatar_url || null);
+        setBannerPreview(result.profile.banner_url || null);
+
         // Redirect to profile page after a short delay
         setTimeout(() => {
           router.push("/profile");
@@ -171,6 +234,49 @@ export default function ProfileEditPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Cover Photo */}
+              <div className="space-y-2">
+                <Label htmlFor="banner">Cover Photo</Label>
+                <div className="w-full h-40 bg-gray-100 rounded-lg overflow-hidden">
+                  {bannerPreview && (
+                    <img
+                      src={bannerPreview}
+                      alt="Cover preview"
+                      className="object-cover w-full h-full"
+                    />
+                  )}
+                </div>
+                <Input
+                  id="banner"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleBannerChange}
+                />
+              </div>
+
+              {/* Profile Picture */}
+              <div className="space-y-2">
+                <Label htmlFor="avatar">Profile Picture</Label>
+                <div className="flex items-center space-x-4">
+                  <Avatar className="h-24 w-24">
+                    {avatarPreview && (
+                      <AvatarImage src={avatarPreview} alt="Avatar preview" />
+                    )}
+                    <AvatarFallback>
+                      {formData.name
+                        ? formData.name.charAt(0)
+                        : formData.username.charAt(0)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <Input
+                    id="avatar"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                  />
+                </div>
+              </div>
+
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="flex items-center space-x-2">
