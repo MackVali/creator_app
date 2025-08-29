@@ -5,7 +5,10 @@ const nextConfig = {
     optimizePackageImports: ["@supabase/supabase-js"],
   },
   images: {
-    remotePatterns: [{ hostname: "i.pravatar.cc" }],
+    remotePatterns: [
+      { hostname: "i.pravatar.cc" },
+      { hostname: "upload.wikimedia.org" },
+    ],
   },
   // Remove these lines to expose real errors:
   // typescript: { ignoreBuildErrors: true },
