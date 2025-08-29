@@ -1,413 +1,489 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Plus, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
-import type { SkillRow } from "../../../lib/types/skill";
+import {
+  LayoutGrid,
+  List as ListIcon,
+  Plus,
+  MoreVertical,
+  ChevronRight,
+} from "lucide-react";
+
+// simple debounce hook for search
+function useDebounce<T>(value: T, delay: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debounced;
+}
+
+// circular progress ring component
+function CircularProgress({ value }: { value: number }) {
+  const normalized = Math.max(0, Math.min(100, value));
+  const circumference = 2 * Math.PI * 20;
+  const offset = circumference - (normalized / 100) * circumference;
+  return (
+    <div className="relative w-14 h-14">
+      <svg className="w-14 h-14" viewBox="0 0 44 44">
+        <circle
+          className="text-gray-700"
+          strokeWidth="4"
+          stroke="currentColor"
+          fill="transparent"
+          r="20"
+          cx="22"
+          cy="22"
+        />
+        <circle
+          className="text-gray-400"
+          strokeWidth="4"
+          stroke="currentColor"
+          fill="transparent"
+          r="20"
+          cx="22"
+          cy="22"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-xs text-gray-100">
+        {normalized}%
+      </span>
+    </div>
+  );
+}
 
 interface Skill {
-  skill_id: string; // Changed from 'id' to 'skill_id' to match database view
+  id: string;
   name: string;
   icon: string;
   level: number;
   progress: number;
-  cat_id: string;
+  cat_id: string | null;
+  created_at?: string | null;
 }
 
 interface Category {
-  cat_id: string; // Changed from 'id' to 'cat_id' to match database view
-  cat_name: string; // Changed from 'name' to 'cat_name' to match database view
-  skill_count: number;
-  skills: Skill[];
+  id: string;
+  name: string;
 }
 
 function SkillsPageContent() {
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newSkillName, setNewSkillName] = useState("");
-  const [newSkillIcon, setNewSkillIcon] = useState("💡");
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 200);
+  const [selectedCat, setSelectedCat] = useState("all");
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [sort, setSort] = useState("name");
+  const [open, setOpen] = useState(false);
+
+  // create drawer fields
+  const [formName, setFormName] = useState("");
+  const [formEmoji, setFormEmoji] = useState("💡");
+  const [formCat, setFormCat] = useState("");
+  const [formNewCat, setFormNewCat] = useState("");
+  const [formLevel, setFormLevel] = useState(1);
+  const [formProgress, setFormProgress] = useState(0);
 
   const supabase = getSupabaseBrowser();
 
   useEffect(() => {
-    fetchSkills();
-  }, []);
+    const fetchData = async () => {
+      if (!supabase) return;
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("User not authenticated");
 
-  const fetchSkills = async () => {
-    if (!supabase) return;
+        const [skillRows, cats] = await Promise.all([
+          getSkillsForUser(user.id),
+          supabase.from("cats").select("id,name").eq("user_id", user.id),
+        ]);
 
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
+        const formattedSkills: Skill[] = (skillRows || []).map((s) => ({
+          id: s.id,
+          name: s.name || "Unnamed",
+          icon: s.icon || "🧩",
+          level: s.level ?? 1,
+          progress: 0,
+          cat_id: s.cat_id,
+          created_at: s.created_at,
+        }));
+        setSkills(formattedSkills);
 
-      // Use new function to get skills directly
-      const skills = await getSkillsForUser(user.id);
-
-      // Group skills by category
-      const skillsByCategory = skills.reduce(
-        (acc: Record<string, Category>, skill: SkillRow) => {
-          const catId = skill.cat_id;
-          const key = catId || "uncategorized";
-
-          if (!acc[key]) {
-            acc[key] = {
-              cat_id: catId || "uncategorized",
-              cat_name: catId ? "Loading..." : "Uncategorized", // Will be updated below
-              skill_count: 0,
-              skills: [],
-            };
-          }
-
-          acc[key].skills.push({
-            skill_id: skill.id,
-            name: skill.name || "Unnamed Skill", // Handle null name case
-            icon: skill.icon || "🧩", // Handle null icon case
-            level: skill.level ?? 1,
-            progress: 0,
-            cat_id: skill.cat_id || "", // Handle null cat_id case
-          });
-          acc[key].skill_count = acc[key].skills.length;
-          return acc;
-        },
-        {}
-      );
-
-      // Get category names
-      const { data: cats } = await supabase
-        .from("cats")
-        .select("id,name")
-        .eq("user_id", user.id);
-
-      // Update category names
-      cats?.forEach((cat) => {
-        if (skillsByCategory[cat.id]) {
-          skillsByCategory[cat.id].cat_name = cat.name;
-        }
-      });
-
-      // Handle uncategorized skills
-      if (skillsByCategory["uncategorized"]) {
-        skillsByCategory["uncategorized"].cat_name = "Uncategorized";
+        const catList: Category[] = (cats.data || []).map((c) => ({
+          id: c.id,
+          name: c.name,
+        }));
+        setCategories(catList);
+      } catch (e) {
+        console.error("Error fetching skills:", e);
+      } finally {
+        setLoading(false);
       }
+    };
+    fetchData();
+  }, [supabase]);
 
-      setCategories(Object.values(skillsByCategory));
-    } catch (error) {
-      console.error("Error fetching skills:", error);
-    } finally {
-      setLoading(false);
+  // search filter
+  const searchFiltered = useMemo(() => {
+    const q = debouncedSearch.toLowerCase();
+    return skills.filter((s) => s.name.toLowerCase().includes(q));
+  }, [skills, debouncedSearch]);
+
+  // counts per category after search filter
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    searchFiltered.forEach((s) => {
+      const key = s.cat_id || "uncategorized";
+      c[key] = (c[key] || 0) + 1;
+    });
+    return c;
+  }, [searchFiltered]);
+
+  // sort & category filter
+  const filtered = useMemo(() => {
+    let data = [...searchFiltered];
+    if (selectedCat !== "all") {
+      data = data.filter(
+        (s) => (s.cat_id || "uncategorized") === selectedCat
+      );
     }
+    switch (sort) {
+      case "level":
+        data.sort((a, b) => (b.level || 0) - (a.level || 0));
+        break;
+      case "progress":
+        data.sort((a, b) => b.progress - a.progress);
+        break;
+      case "recent":
+        data.sort(
+          (a, b) =>
+            new Date(b.created_at || 0).getTime() -
+            new Date(a.created_at || 0).getTime()
+        );
+        break;
+      default:
+        data.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return data;
+  }, [searchFiltered, selectedCat, sort]);
+
+  const allCats = useMemo(() => {
+    const base = [...categories];
+    if (counts["uncategorized"] && !base.find((c) => c.id === "uncategorized")) {
+      base.push({ id: "uncategorized", name: "Uncategorized" });
+    }
+    return [
+      { id: "all", name: "All" },
+      ...base,
+    ];
+  }, [categories, counts]);
+
+  const handleAddSkill = () => {
+    const name = formName.trim();
+    if (!name) return;
+    let catId = formCat;
+    const catName = formNewCat.trim();
+    if (formCat === "new" && catName) {
+      catId = "local-" + Date.now();
+      setCategories((prev) => [...prev, { id: catId, name: catName }]);
+    }
+    const newSkill: Skill = {
+      id: "local-" + Date.now(),
+      name,
+      icon: formEmoji,
+      level: Math.max(1, Math.min(10, formLevel)),
+      progress: Math.max(0, Math.min(100, formProgress)),
+      cat_id: catId || null,
+      created_at: new Date().toISOString(),
+    };
+    setSkills((prev) => [...prev, newSkill]);
+    setOpen(false);
+    setFormName("");
+    setFormEmoji("💡");
+    setFormCat("");
+    setFormNewCat("");
+    setFormLevel(1);
+    setFormProgress(0);
   };
 
-  const toggleCategory = (catId: string) => {
-    const newExpanded = new Set(expandedCats);
-    if (newExpanded.has(catId)) {
-      newExpanded.delete(catId);
-    } else {
-      newExpanded.add(catId);
-    }
-    setExpandedCats(newExpanded);
-  };
-
-  const createCategory = async () => {
-    if (!newCategoryName.trim() || !supabase) return;
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const { error } = await supabase
-        .from("cats")
-        .insert({ name: newCategoryName.trim(), user_id: user.id });
-
-      if (error) throw error;
-
-      setNewCategoryName("");
-      setIsCreatingCategory(false);
-      fetchSkills();
-    } catch (error) {
-      console.error("Error creating category:", error);
-    }
-  };
-
-  const createSkill = async () => {
-    if (!newSkillName.trim() || !selectedCategory || !supabase) return;
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      const { error } = await supabase.from("skills").insert({
-        name: newSkillName.trim(),
-        icon: newSkillIcon,
-        cat_id: selectedCategory,
-        user_id: user.id,
-        level: 1,
-      });
-
-      if (error) throw error;
-
-      setNewSkillName("");
-      setNewSkillIcon("💡");
-      setSelectedCategory("");
-      setIsCreateModalOpen(false);
-      fetchSkills();
-    } catch (error) {
-      console.error("Error creating skill:", error);
-    }
+  const handleRemoveSkill = (id: string) => {
+    setSkills((prev) => prev.filter((s) => s.id !== id));
   };
 
   if (loading) {
     return (
-      <div className="p-6 text-white">
-        <div className="text-center">Loading skills...</div>
+      <div className="p-4 space-y-4">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-11 w-full" />
+        <Skeleton className="h-11 w-full" />
       </div>
     );
   }
 
+  const empty = filtered.length === 0;
+
   return (
-    <div className="p-6 text-white max-w-6xl mx-auto">
+    <div className="text-white pb-20">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between px-4 py-4">
         <div>
-          <h1 className="text-3xl font-bold text-[#E0E0E0] mb-2">Skills</h1>
-          <p className="text-[#A0A0A0]">
-            Manage and organize your skills by categories
-          </p>
+          <h1 className="text-2xl font-bold leading-tight">Skills</h1>
+          <p className="text-sm text-gray-400">Track and improve your skills</p>
         </div>
         <Button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="bg-[#BBB] text-[#1E1E1E] hover:bg-[#A0A0A0]"
+          onClick={() => setOpen(true)}
+          className="h-11 px-4 bg-gray-200 text-black hover:bg-gray-300"
         >
           <Plus className="w-4 h-4 mr-2" />
-          Create Skill
+          Create
         </Button>
       </div>
 
-      {/* Categories and Skills */}
-      <div className="space-y-6">
-        {categories.length > 0 ? (
-          categories.map((cat) => (
-            <div
-              key={cat.cat_id}
-              className="bg-[#2C2C2C] rounded-lg border border-[#333] overflow-hidden"
+      {/* Utility Bar */}
+      <div className="sticky top-0 z-10 bg-[#1E1E1E] px-4 pb-2">
+        <div className="flex items-center gap-2 mb-2">
+          <Input
+            placeholder="Search skills..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-11 flex-1"
+          />
+          <Button
+            onClick={() => setView("grid")}
+            variant={view === "grid" ? undefined : "secondary"}
+            className="h-11 w-11 p-0"
+          >
+            <LayoutGrid className="w-5 h-5" />
+            <span className="sr-only">Grid view</span>
+          </Button>
+          <Button
+            onClick={() => setView("list")}
+            variant={view === "list" ? undefined : "secondary"}
+            className="h-11 w-11 p-0"
+          >
+            <ListIcon className="w-5 h-5" />
+            <span className="sr-only">List view</span>
+          </Button>
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {allCats.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCat(cat.id)}
+              className={`flex-shrink-0 px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
+                selectedCat === cat.id
+                  ? "bg-gray-200 text-black border-gray-200"
+                  : "bg-[#2C2C2C] border-[#333]"
+              }`}
             >
-              {/* Category Header */}
-              <div
-                className="p-4 cursor-pointer hover:bg-[#353535] transition-colors"
-                onClick={() => toggleCategory(cat.cat_id)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="text-xl font-medium text-[#E0E0E0]">
-                      {cat.cat_name}
-                    </div>
-                    <div className="text-sm text-[#A0A0A0] bg-[#404040] px-3 py-1 rounded-full">
-                      {cat.skill_count} skills
-                    </div>
-                  </div>
-                  <div className="text-[#A0A0A0]">
-                    {expandedCats.has(cat.cat_id) ? (
-                      <ChevronDown className="w-5 h-5" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5" />
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Skills List */}
-              {expandedCats.has(cat.cat_id) && (
-                <div className="border-t border-[#333] bg-[#252525]">
-                  <div className="p-4 space-y-3">
-                    {cat.skills && cat.skills.length > 0 ? (
-                      cat.skills.map((skill) => (
-                        <div
-                          key={skill.skill_id}
-                          className="flex items-center gap-4 p-4 bg-[#1E1E1E] rounded-md border border-[#333] hover:bg-[#252525] transition-colors"
-                        >
-                          {/* Skill Icon */}
-                          <div className="text-2xl flex-shrink-0">
-                            {skill.icon}
-                          </div>
-
-                          {/* Skill Name */}
-                          <div className="flex-1 min-w-0">
-                            <div className="text-lg font-medium text-[#E0E0E0]">
-                              {skill.name}
-                            </div>
-                          </div>
-
-                          {/* Level Badge */}
-                          <div className="text-sm text-[#A0A0A0] bg-[#404040] px-3 py-1 rounded-full flex-shrink-0">
-                            Level {skill.level}
-                          </div>
-
-                          {/* Progress Bar */}
-                          <div className="w-32 flex-shrink-0">
-                            <div className="w-full h-3 bg-[#333] rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-[#BBB] rounded-full transition-all duration-300"
-                                style={{ width: `${skill.progress}%` }}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Progress Percentage */}
-                          <div className="text-sm text-[#A0A0A0] w-16 text-right flex-shrink-0">
-                            {skill.progress}%
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-8 text-[#808080]">
-                        No skills in this category yet
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))
-        ) : (
-          <div className="text-center py-16 text-[#808080]">
-            <div className="text-6xl mb-4">🎯</div>
-            <h3 className="text-xl font-medium text-[#E0E0E0] mb-2">
-              No skills yet
-            </h3>
-            <p className="text-[#A0A0A0] mb-6">
-              Create your first skill to get started on your journey
-            </p>
-            <Button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="bg-[#BBB] text-[#1E1E1E] hover:bg-[#A0A0A0]"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Your First Skill
-            </Button>
-          </div>
-        )}
+              {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
+            </button>
+          ))}
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="ml-auto h-11 bg-[#2C2C2C] border border-[#333] rounded-md px-3"
+          >
+            <option value="name">A→Z</option>
+            <option value="level">Level (desc)</option>
+            <option value="progress">Progress (desc)</option>
+            <option value="recent">Recently Added</option>
+          </select>
+        </div>
       </div>
 
-      {/* Create Skill Modal */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#2C2C2C] rounded-lg p-6 w-full max-w-md mx-4 border border-[#333]">
-            <h3 className="text-xl font-bold text-[#E0E0E0] mb-4">
-              Create New Skill
-            </h3>
-
-            <div className="space-y-4">
-              {/* Skill Name */}
-              <div>
-                <label className="block text-sm font-medium text-[#E0E0E0] mb-2">
-                  Skill Name
-                </label>
-                <input
-                  type="text"
-                  value={newSkillName}
-                  onChange={(e) => setNewSkillName(e.target.value)}
-                  className="w-full p-3 bg-[#1E1E1E] border border-[#333] rounded-md text-[#E0E0E0] focus:outline-none focus:border-[#BBB]"
-                  placeholder="e.g., Guitar, Programming, Cooking"
-                />
+      {/* Skills */}
+      {empty ? (
+        <div className="p-8">
+          <div className="text-center text-gray-400">No skills found</div>
+        </div>
+      ) : view === "grid" ? (
+        <div className="grid grid-cols-2 gap-4 p-4">
+          {filtered.map((skill) => (
+            <div
+              key={skill.id}
+              className="relative bg-[#2C2C2C] rounded-lg p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform"
+            >
+              <CircularProgress value={skill.progress} />
+              <div className="text-center w-full">
+                <div className="text-sm font-medium truncate">
+                  {skill.name}
+                </div>
+                <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
+                  Lv {skill.level}
+                </span>
               </div>
-
-              {/* Skill Icon */}
-              <div>
-                <label className="block text-sm font-medium text-[#E0E0E0] mb-2">
-                  Icon
-                </label>
-                <input
-                  type="text"
-                  value={newSkillIcon}
-                  onChange={(e) => setNewSkillIcon(e.target.value)}
-                  className="w-full p-3 bg-[#1E1E1E] border border-[#333] rounded-md text-[#E0E0E0] focus:outline-none focus:border-[#BBB] text-center text-2xl"
-                  placeholder="🎸"
-                />
-              </div>
-
-              {/* Category Selection */}
-              <div>
-                <label className="block text-sm font-medium text-[#E0E0E0] mb-2">
-                  Category
-                </label>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full p-3 bg-[#1E1E1E] border border-[#333] rounded-md text-[#E0E0E0] focus:outline-none focus:border-[#BBB]"
-                >
-                  <option value="">Select a category</option>
-                  {categories.map((cat) => (
-                    <option key={cat.cat_id} value={cat.cat_id}>
-                      {cat.cat_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Create New Category Option */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreatingCategory(!isCreatingCategory)}
-                  className="text-sm text-[#BBB] hover:text-[#E0E0E0] underline"
-                >
-                  {isCreatingCategory ? "Cancel" : "Create new category"}
-                </button>
-
-                {isCreatingCategory && (
-                  <div className="mt-3">
-                    <input
-                      type="text"
-                      value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      className="w-full p-3 bg-[#1E1E1E] border border-[#333] rounded-md text-[#E0E0E0] focus:outline-none focus:border-[#BBB]"
-                      placeholder="New category name"
-                    />
-                    <Button
-                      onClick={createCategory}
-                      className="mt-2 w-full bg-[#404040] text-[#E0E0E0] hover:bg-[#505050]"
-                      disabled={!newCategoryName.trim()}
-                    >
-                      Create Category
-                    </Button>
-                  </div>
-                )}
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="absolute top-2 right-2 p-2" aria-label="More">
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                    Remove
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 mt-6">
-              <Button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="flex-1 bg-[#404040] text-[#E0E0E0] hover:bg-[#505050]"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={createSkill}
-                className="flex-1 bg-[#BBB] text-[#1E1E1E] hover:bg-[#A0A0A0]"
-                disabled={!newSkillName.trim() || !selectedCategory}
-              >
-                Create Skill
-              </Button>
+          ))}
+        </div>
+      ) : (
+        <div className="p-4 space-y-3">
+          {filtered.map((skill) => (
+            <div
+              key={skill.id}
+              className="flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
+            >
+              <div className="flex items-center gap-3">
+                <CircularProgress value={skill.progress} />
+                <div>
+                  <div className="text-sm font-medium">{skill.name}</div>
+                  <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
+                    Lv {skill.level}
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
             </div>
-          </div>
+          ))}
         </div>
       )}
+
+      {/* Create Drawer */}
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent side="bottom" className="bg-[#1E1E1E] text-white">
+          <SheetHeader>
+            <SheetTitle>Add Skill</SheetTitle>
+          </SheetHeader>
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm mb-1">Name</label>
+              <Input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="h-11"
+              />
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Emoji</label>
+              <div className="grid grid-cols-6 gap-2">
+                {[
+                  "💡",
+                  "🎯",
+                  "🎸",
+                  "📚",
+                  "💻",
+                  "🎨",
+                  "🏃",
+                  "🧠",
+                ].map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => setFormEmoji(e)}
+                    className={`h-11 w-11 flex items-center justify-center rounded-md ${
+                      formEmoji === e ? "bg-[#404040]" : "bg-[#2C2C2C]"
+                    }`}
+                  >
+                    <span className="text-xl" role="img" aria-label="emoji">
+                      {e}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Category</label>
+              <select
+                value={formCat}
+                onChange={(e) => setFormCat(e.target.value)}
+                className="h-11 w-full bg-[#2C2C2C] border border-[#333] rounded-md px-3"
+              >
+                <option value="">Select...</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+                <option value="new">+ New Category</option>
+              </select>
+              {formCat === "new" && (
+                <Input
+                  placeholder="New category"
+                  value={formNewCat}
+                  onChange={(e) => setFormNewCat(e.target.value)}
+                  className="h-11 mt-2"
+                />
+              )}
+            </div>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="block text-sm mb-1">Level</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={formLevel}
+                  onChange={(e) => setFormLevel(parseInt(e.target.value) || 1)}
+                  className="h-11"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm mb-1">Progress</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={formProgress}
+                  onChange={(e) =>
+                    setFormProgress(parseInt(e.target.value) || 0)
+                  }
+                  className="h-11"
+                />
+              </div>
+            </div>
+          </div>
+          <SheetFooter>
+            <Button
+              className="w-full bg-gray-200 text-black hover:bg-gray-300"
+              onClick={handleAddSkill}
+              disabled={!formName}
+            >
+              Add (Preview)
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -419,3 +495,4 @@ export default function SkillsPage() {
     </ProtectedRoute>
   );
 }
+
