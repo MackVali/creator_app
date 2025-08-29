@@ -164,8 +164,8 @@ export interface ProfileFormData {
   dob: string;
   city: string;
   bio: string;
-  avatar?: File;
-  banner?: File;
+  avatar_url?: string | null;
+  banner_url?: string | null;
   theme_color?: string;
   font_family?: string;
   accent_color?: string;
