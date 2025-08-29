@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ReactNode } from "react";
 import ProgressBarGradient from "@/components/skills/ProgressBarGradient";
+import { cn } from "@/lib/utils";
 
 interface SkillCardProps {
   id: string;
@@ -28,7 +29,11 @@ export function SkillCard({ id, icon, name, level = 1, percent = 0 }: SkillCardP
   return (
     <Link
       href={`/skills/${id}`}
-      className="flex items-center gap-3 p-3 bg-slate-900/60 ring-1 ring-white/10 rounded-2xl shadow-[inset_0_1px_rgba(255,255,255,.06),0_8px_24px_rgba(0,0,0,.45)]"
+      className={cn(
+        "flex items-center gap-3 p-3",
+        "bg-slate-900/60 ring-1 ring-white/10 rounded-2xl",
+        "shadow-[inset_0_1px_rgba(255,255,255,.06),0_8px_24px_rgba(0,0,0,.45)]"
+      )}
     >
       <div className="flex h-9 w-9 items-center justify-center rounded bg-white/5 ring-1 ring-white/10">
         {renderIcon()}
@@ -48,3 +53,4 @@ export function SkillCard({ id, icon, name, level = 1, percent = 0 }: SkillCardP
 }
 
 export default SkillCard;
+
