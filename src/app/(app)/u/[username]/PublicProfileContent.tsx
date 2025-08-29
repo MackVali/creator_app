@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, MapPin, User } from "lucide-react";
 import { getProfileByUsername } from "@/lib/db";
 import { Profile } from "@/lib/types";
+import LinkedAccountsBar from "@/components/profile/LinkedAccountsBar";
 
 interface PublicProfileContentProps {
   username: string;
@@ -94,6 +95,7 @@ export default function PublicProfileContent({
                 <Badge variant="secondary">@{profile.username}</Badge>
               </div>
               {profile.bio && <p className="text-gray-600">{profile.bio}</p>}
+              <LinkedAccountsBar userId={profile.user_id} />
             </div>
           </div>
         </CardContent>
