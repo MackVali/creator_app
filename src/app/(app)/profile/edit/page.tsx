@@ -197,13 +197,18 @@ export default function ProfileEditPage() {
       {/* Header */}
       <div className="bg-[#15161A] border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 py-4">
-          <div className="flex items-center space-x-4">
-            <Link href="/profile">
-              <Button variant="ghost" size="sm" className="p-2">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Link href="/profile">
+                <Button variant="ghost" size="sm" className="p-2">
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold text-zinc-100">Edit Profile</h1>
+            </div>
+            <Link href="/profile/linked-accounts">
+              <Button variant="outline" size="sm">Linked Accounts</Button>
             </Link>
-            <h1 className="text-2xl font-bold text-zinc-100">Edit Profile</h1>
           </div>
         </div>
       </div>
