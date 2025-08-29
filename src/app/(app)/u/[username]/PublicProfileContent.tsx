@@ -72,10 +72,21 @@ export default function PublicProfileContent({
   return (
     <div className="space-y-6">
       {/* Profile Header */}
-      <Card>
-        <CardContent className="pt-6">
+      <Card className="overflow-hidden">
+        {profile.banner_url ? (
+          <div className="h-32 w-full">
+            <img
+              src={profile.banner_url}
+              alt="Cover photo"
+              className="object-cover w-full h-full"
+            />
+          </div>
+        ) : (
+          <div className="h-32 w-full bg-gradient-to-r from-purple-500 to-blue-500" />
+        )}
+        <CardContent className="-mt-12 pt-6">
           <div className="flex items-center space-x-6">
-            <Avatar className="h-24 w-24">
+            <Avatar className="h-24 w-24 border-4 border-white">
               {profile.avatar_url ? (
                 <AvatarImage
                   src={profile.avatar_url}
