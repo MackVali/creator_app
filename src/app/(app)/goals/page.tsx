@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { Goal } from "./_components/types";
+import { Goal, GoalPriority, ProjectStatus, GoalStatus } from "./_components/types";
 import { GoalsHeader } from "./_components/GoalsHeader";
 import {
   GoalsUtilityBar,
@@ -14,116 +14,8 @@ import { GoalCard } from "./_components/GoalCard";
 import { CreateGoalDrawer } from "./_components/CreateGoalDrawer";
 import { LoadingSkeleton } from "./_components/LoadingSkeleton";
 import { EmptyState } from "./_components/EmptyState";
-
-const initialGoals: Goal[] = [
-  {
-    id: "1",
-    title: "Learn Guitar",
-    emoji: "🎸",
-    dueDate: "2024-12-01",
-    priority: "High",
-    progress: 40,
-    status: "Active",
-    updatedAt: "2024-05-20",
-    projects: [
-      {
-        id: "p1",
-        name: "Practice chords",
-        status: "In-Progress",
-        progress: 60,
-        dueDate: "2024-06-10",
-      },
-      {
-        id: "p2",
-        name: "Learn song",
-        status: "Todo",
-        progress: 0,
-      },
-    ],
-  },
-  {
-    id: "2",
-    title: "Read 12 Books",
-    emoji: "📚",
-    dueDate: "2024-12-31",
-    priority: "Medium",
-    progress: 70,
-    status: "Active",
-    updatedAt: "2024-05-18",
-    projects: [
-      {
-        id: "p3",
-        name: "Finish Dune",
-        status: "Done",
-        progress: 100,
-      },
-      {
-        id: "p4",
-        name: "Start 1984",
-        status: "Todo",
-        progress: 0,
-      },
-    ],
-  },
-  {
-    id: "3",
-    title: "Build Portfolio",
-    emoji: "💻",
-    dueDate: "2024-07-01",
-    priority: "High",
-    progress: 90,
-    status: "Completed",
-    updatedAt: "2024-05-10",
-    projects: [
-      {
-        id: "p5",
-        name: "Design layout",
-        status: "Done",
-        progress: 100,
-      },
-      {
-        id: "p6",
-        name: "Deploy site",
-        status: "Done",
-        progress: 100,
-      },
-    ],
-  },
-  {
-    id: "4",
-    title: "Plan Vacation",
-    emoji: "🏖️",
-    dueDate: "2024-05-15",
-    priority: "Low",
-    progress: 20,
-    status: "Overdue",
-    updatedAt: "2024-04-30",
-    projects: [
-      {
-        id: "p7",
-        name: "Book flights",
-        status: "Todo",
-        progress: 0,
-      },
-      {
-        id: "p8",
-        name: "Reserve hotel",
-        status: "Todo",
-        progress: 0,
-      },
-    ],
-  },
-  {
-    id: "5",
-    title: "Meditation Habit",
-    emoji: "🧘",
-    priority: "Low",
-    progress: 10,
-    status: "Active",
-    updatedAt: "2024-05-25",
-    projects: [],
-  },
-];
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -137,11 +29,71 @@ export default function GoalsPage() {
   const [loadingProjects, setLoadingProjects] = useState<Record<string, boolean>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const { session } = useAuth();
+  const supabase = getSupabaseBrowser();
+
+  const mapPriority = (p?: string): GoalPriority | undefined => {
+    if (!p) return undefined;
+    const map: Record<string, GoalPriority> = {
+      LOW: "Low",
+      MEDIUM: "Medium",
+      HIGH: "High",
+    };
+    return map[p as keyof typeof map];
+  };
+
+  const mapStage = (s?: string): ProjectStatus => {
+    if (!s) return "Todo";
+    const stage = s.toLowerCase();
+    if (stage.includes("progress")) return "In-Progress";
+    if (stage.includes("done")) return "Done";
+    return "Todo";
+  };
+
   useEffect(() => {
-    setGoals(initialGoals);
-    const timer = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(timer);
-  }, []);
+    const loadGoals = async () => {
+      if (!supabase || !session?.user) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from("goals")
+          .select(
+            "id, name, priority, updated_at, created_at, projects (id, name, stage, created_at)"
+          )
+          .eq("user_id", session.user.id)
+          .order("updated_at", { ascending: false });
+
+        if (error) throw error;
+
+        const mapped = (data || []).map((g) => ({
+          id: g.id,
+          title: g.name,
+          priority: mapPriority(g.priority),
+          progress: 0,
+          status: "Active" as GoalStatus,
+          updatedAt: g.updated_at || g.created_at,
+          projectCount: g.projects ? g.projects.length : 0,
+          projects: (g.projects || []).map(
+            (p: { id: string; name: string; stage: string }) => ({
+              id: p.id,
+              name: p.name,
+              status: mapStage(p.stage),
+              progress: 0,
+            })
+          ),
+        }));
+        setGoals(mapped);
+      } catch (e) {
+        console.error("Error loading goals", e);
+        setGoals([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadGoals();
+  }, [supabase, session?.user]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 200);
@@ -155,11 +107,13 @@ export default function GoalsPage() {
         next.delete(id);
       } else {
         next.add(id);
-        setLoadingProjects((lp) => ({ ...lp, [id]: true }));
-        setTimeout(
-          () => setLoadingProjects((lp) => ({ ...lp, [id]: false })),
-          400
-        );
+        if (!loadingProjects[id]) {
+          setLoadingProjects((lp) => ({ ...lp, [id]: true }));
+          setTimeout(
+            () => setLoadingProjects((lp) => ({ ...lp, [id]: false })),
+            300
+          );
+        }
       }
       return next;
     });

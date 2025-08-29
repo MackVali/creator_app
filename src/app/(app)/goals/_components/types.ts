@@ -3,8 +3,8 @@ export type ProjectStatus = "Todo" | "In-Progress" | "Done";
 export interface Project {
   id: string;
   name: string;
-  status: ProjectStatus;
-  progress: number;
+  status?: ProjectStatus;
+  progress?: number;
   dueDate?: string;
 }
 
@@ -17,8 +17,9 @@ export interface Goal {
   emoji?: string;
   dueDate?: string;
   priority?: GoalPriority;
-  progress: number;
-  status: GoalStatus;
-  updatedAt: string;
+  progress?: number;
+  status?: GoalStatus;
+  updatedAt?: string;
+  projectCount?: number;
   projects: Project[];
 }

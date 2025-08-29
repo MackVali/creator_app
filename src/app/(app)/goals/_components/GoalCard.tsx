@@ -47,7 +47,7 @@ export function GoalCard({ goal, isOpen, onToggle, loading }: GoalCardProps) {
             />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
-            <Progress value={goal.progress} className="w-20" />
+            <Progress value={goal.progress ?? 0} className="w-20" />
             {goal.dueDate && (
               <Badge variant="outline" className="text-xs">
                 {goal.dueDate}
@@ -58,7 +58,7 @@ export function GoalCard({ goal, isOpen, onToggle, loading }: GoalCardProps) {
                 {goal.priority}
               </Badge>
             )}
-            <span>{goal.projects.length} proj</span>
+            <span>{goal.projectCount ?? goal.projects.length} proj</span>
           </div>
         </button>
         <DropdownMenu>
