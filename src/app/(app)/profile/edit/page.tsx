@@ -4,13 +4,15 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
+import { uploadAvatar, uploadBanner } from "@/lib/storage";
 import { Profile, ProfileFormData } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, User, Calendar, MapPin, FileText } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ArrowLeft, Save, User, Calendar, MapPin, FileText, Camera } from "lucide-react";
 import Link from "next/link";
 
 export default function ProfileEditPage() {
@@ -29,6 +31,11 @@ export default function ProfileEditPage() {
     city: "",
     bio: "",
   });
+
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadProfile() {
@@ -50,6 +57,8 @@ export default function ProfileEditPage() {
             city: userProfile.city || "",
             bio: userProfile.bio || "",
           });
+          setAvatarPreview(userProfile.avatar_url || null);
+          setBannerPreview(userProfile.banner_url || null);
         }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -69,6 +78,38 @@ export default function ProfileEditPage() {
     }));
   };
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (file) {
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => setAvatarPreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (file) {
+      setBannerFile(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => setBannerPreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const getInitials = (name: string | null | undefined, username: string) => {
+    if (name) {
+      return name
+        .split(" ")
+        .map((word) => word.charAt(0))
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+    }
+    return username.slice(0, 2).toUpperCase();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -81,13 +122,41 @@ export default function ProfileEditPage() {
       setSaving(true);
       setError(null);
 
-      const result = await updateProfile(session.user.id, formData);
-      
+      let avatarUrl = profile?.avatar_url || undefined;
+      if (avatarFile) {
+        const upload = await uploadAvatar(avatarFile, session.user.id);
+        if (!upload.success) {
+          setError(upload.error || "Failed to upload avatar");
+          setSaving(false);
+          return;
+        }
+        avatarUrl = upload.url;
+      }
+
+      let bannerUrl = profile?.banner_url || undefined;
+      if (bannerFile) {
+        const upload = await uploadBanner(bannerFile, session.user.id);
+        if (!upload.success) {
+          setError(upload.error || "Failed to upload banner");
+          setSaving(false);
+          return;
+        }
+        bannerUrl = upload.url;
+      }
+
+      const result = await updateProfile(
+        session.user.id,
+        formData,
+        avatarUrl,
+        bannerUrl
+      );
+
       if (result.success && result.profile) {
         setSuccess(true);
         setProfile(result.profile);
-        
-        // Redirect to profile page after a short delay
+        setAvatarPreview(result.profile.avatar_url || avatarUrl || null);
+        setBannerPreview(result.profile.banner_url || bannerUrl || null);
+
         setTimeout(() => {
           router.push("/profile");
         }, 1500);
@@ -171,6 +240,68 @@ export default function ProfileEditPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Cover Photo */}
+              <div className="space-y-2">
+                <Label className="flex items-center space-x-2">
+                  <span>Cover Photo</span>
+                </Label>
+                <div className="relative h-40 w-full rounded-lg overflow-hidden">
+                  {bannerPreview ? (
+                    <img
+                      src={bannerPreview}
+                      alt="Cover preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gray-200" />
+                  )}
+                  <label className="absolute bottom-2 right-2 bg-blue-600 text-white rounded-full p-2 cursor-pointer hover:bg-blue-700">
+                    <Camera className="h-4 w-4" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleBannerChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Upload a cover photo (JPG, PNG, GIF up to 5MB)
+                </p>
+              </div>
+
+              {/* Avatar */}
+              <div className="flex items-center space-x-6">
+                <div className="relative">
+                  <Avatar className="h-24 w-24">
+                    {avatarPreview ? (
+                      <AvatarImage src={avatarPreview} alt="Avatar preview" />
+                    ) : null}
+                    <AvatarFallback className="text-2xl font-bold">
+                      {getInitials(
+                        profile?.name || null,
+                        profile?.username || formData.username
+                      )}
+                    </AvatarFallback>
+                  </Avatar>
+                  <label className="absolute bottom-0 right-0 bg-blue-600 text-white rounded-full p-2 cursor-pointer hover:bg-blue-700">
+                    <Camera className="h-4 w-4" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Profile Picture</p>
+                  <p className="text-xs text-gray-500">
+                    Upload a new image (JPG, PNG, GIF up to 5MB)
+                  </p>
+                </div>
+              </div>
+
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="flex items-center space-x-2">
