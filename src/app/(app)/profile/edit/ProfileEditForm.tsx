@@ -64,6 +64,7 @@ export default function ProfileEditForm({
 
   const router = useRouter();
   const toast = useToastHelpers();
+  const supabase = getSupabaseBrowser();
 
   // Initialize form data when profile changes
   useEffect(() => {
@@ -88,7 +89,6 @@ export default function ProfileEditForm({
     const timeoutId = setTimeout(async () => {
       setUsernameChecking(true);
       try {
-        const supabase = getSupabaseBrowser();
         if (!supabase) {
           setUsernameAvailable(false);
           return;
@@ -117,7 +117,7 @@ export default function ProfileEditForm({
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [formData.username, profile.username, userId]);
+  }, [formData.username, profile.username, userId, supabase]);
 
   const handleInputChange = (field: keyof ProfileFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -184,16 +184,20 @@ export default function ProfileEditForm({
   const uploadAvatar = async (
     file: File
   ): Promise<{ success: boolean; url?: string; error?: string }> => {
+    if (!supabase) {
+      return { success: false, error: "Supabase not initialized" };
+    }
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      return { success: false, error: "Not authenticated" };
+    }
     try {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) {
-        return { success: false, error: "Supabase not initialized" };
-      }
-
       const fileExt = file.name.split(".").pop();
       const fileName = `${userId}-${Date.now()}.${fileExt}`;
 
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from("avatars")
         .upload(fileName, file);
 
@@ -214,12 +218,16 @@ export default function ProfileEditForm({
   const uploadCover = async (
     file: File
   ): Promise<{ success: boolean; url?: string; error?: string }> => {
+    if (!supabase) {
+      return { success: false, error: "Supabase not initialized" };
+    }
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
+      return { success: false, error: "Not authenticated" };
+    }
     try {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) {
-        return { success: false, error: "Supabase not initialized" };
-      }
-
       const fileExt = file.name.split(".").pop();
       const fileName = `${userId}-banner-${Date.now()}.${fileExt}`;
 

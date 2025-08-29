@@ -22,7 +22,12 @@ function getEnv() {
 export function getSupabaseBrowser() {
   const { url, key } = getEnv();
   if (!url || !key) return null;
-  return createBrowserClient(url, key);
+  return createBrowserClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  });
 }
 
 export function getSupabaseServer(cookies: {
