@@ -4,11 +4,10 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
-import { GoalCardGrid } from "@/components/ui/GoalCardGrid";
+import { GoalsContainer } from "@/components/ui/GoalsContainer";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import CategorySection from "@/components/skills/CategorySection";
 import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
-import type { GoalItem } from "@/types/dashboard";
 
 interface Skill {
   skill_id: string;
@@ -28,7 +27,6 @@ interface Category {
 
 export default function DashboardClient() {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [goals, setGoals] = useState<GoalItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,9 +42,8 @@ export default function DashboardClient() {
       console.log("🔍 Dashboard API response:", data);
       console.log("🔍 Categories data:", data.skillsAndGoals?.cats);
       console.log("🔍 Goals data:", data.skillsAndGoals?.goals);
-      
+
       setCategories(data.skillsAndGoals?.cats || []);
-      setGoals(data.skillsAndGoals?.goals || []);
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -89,11 +86,7 @@ export default function DashboardClient() {
         title={<Link href="/goals">Current Goals</Link>}
         className="safe-bottom mt-2 px-4"
       >
-        <GoalCardGrid
-          goals={goals}
-          loading={loading}
-          showLinks={false} // Set to true if /goals/[id] route exists
-        />
+        <GoalsContainer />
       </Section>
     </main>
   );
