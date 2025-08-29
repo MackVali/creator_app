@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Save, User, Calendar, MapPin, FileText } from "lucide-react";
 import Link from "next/link";
+import SocialAccountLinker from "./SocialAccountLinker";
 
 export default function ProfileEditPage() {
   const router = useRouter();
@@ -384,6 +385,7 @@ export default function ProfileEditPage() {
             </form>
           </CardContent>
         </Card>
+        <SocialAccountLinker />
       </div>
     </div>
   );

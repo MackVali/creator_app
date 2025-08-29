@@ -16,6 +16,7 @@ import {
   type ProfileFormData,
   updateMyProfile,
 } from "@/lib/db/profiles-client";
+import SocialAccountLinker from "./SocialAccountLinker";
 
 interface Profile {
   user_id: string;
@@ -405,6 +406,7 @@ export default function ProfileEditForm({
           </CardContent>
         </Card>
       </form>
+      <SocialAccountLinker />
     </div>
   );
 }
