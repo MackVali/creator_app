@@ -1,6 +1,7 @@
 export { PageShell } from "./PageShell";
 export { SectionCard } from "./SectionCard";
 export { Progress } from "./Progress";
+export { Dropzone } from "./dropzone";
 export { MonumentCard } from "./MonumentCard";
 export { SkillPill } from "./SkillPill";
 export { GoalList } from "./GoalList";

@@ -220,8 +220,8 @@ export async function getProfileByUsername(
 export async function updateProfile(
   userId: string,
   profileData: ProfileFormData,
-  avatarUrl?: string,
-  bannerUrl?: string
+  avatarUrl?: string | null,
+  bannerUrl?: string | null
 ): Promise<ProfileUpdateResult> {
   try {
     console.log("🔍 updateProfile called with userId:", userId);
@@ -244,11 +244,11 @@ export async function updateProfile(
       accent_color: profileData.accent_color,
     };
 
-    // Add avatar and banner URLs if provided
-    if (avatarUrl) {
+    // Add avatar and banner URLs if provided (allow explicit null)
+    if (avatarUrl !== undefined) {
       updateData.avatar_url = avatarUrl;
     }
-    if (bannerUrl) {
+    if (bannerUrl !== undefined) {
       updateData.banner_url = bannerUrl;
     }
 
