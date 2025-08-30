@@ -33,7 +33,7 @@ export function CreateGoalDrawer({
     }
   }, [goal, open]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title) return;
     if (goal && onUpdate) {
@@ -45,7 +45,13 @@ export function CreateGoalDrawer({
           emoji: emoji || null,
           due_date: dueDate || null,
         };
-        await supabase.from("goals").update(updates).eq("id", goal.id);
+        const { error } = await supabase
+          .from("goals")
+          .update(updates)
+          .eq("id", goal.id);
+        if (error) {
+          console.error("Error updating goal", error);
+        }
       }
       const updated: Goal = {
         ...goal,
