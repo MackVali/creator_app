@@ -255,7 +255,7 @@ export default function GoalsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-white pb-24">
+      <div className="min-h-screen bg-[#1E1E1E] text-[#E0E0E0] pb-24">
         <GoalsHeader onCreate={() => setDrawer(true)} />
         <GoalsUtilityBar
           search={search}

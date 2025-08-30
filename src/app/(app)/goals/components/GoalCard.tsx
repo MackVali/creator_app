@@ -29,21 +29,16 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
     }
   };
 
-  const priorityColor =
-    goal.priority === "High"
-      ? "bg-red-600"
-      : goal.priority === "Medium"
-      ? "bg-yellow-600"
-      : "bg-green-600";
+  const priorityColor = "bg-[#3C3C3C] text-[#A0A0A0]";
 
   return (
-    <div className="bg-gray-800 rounded-lg shadow text-left">
+    <div className="bg-[#2B2B2B] border border-[#3C3C3C] rounded-lg text-left">
       <div className="relative">
         <button
           onClick={toggle}
           aria-expanded={open}
           aria-controls={`goal-${goal.id}`}
-          className="w-full flex items-start justify-between p-4 active:scale-95 transition-transform motion-safe:duration-150 motion-reduce:transform-none"
+          className="w-full flex items-start justify-between p-4 active:scale-95 hover:bg-[#353535] transition-transform motion-safe:duration-150 motion-reduce:transform-none"
         >
           <div className="flex-1">
             <div className="flex items-center gap-2">
@@ -52,22 +47,22 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
                 {goal.title}
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-gray-300">
-              <div className="w-10 h-2 bg-gray-700 rounded-full overflow-hidden">
+            <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-[#A0A0A0]">
+              <div className="w-10 h-2 bg-[#3C3C3C] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500"
+                  className="h-full bg-[#A0A0A0]"
                   style={{ width: `${goal.progress}%` }}
                 />
               </div>
               {goal.dueDate && (
-                <span className="px-2 py-0.5 bg-gray-700 rounded-full">
+                <span className="px-2 py-0.5 bg-[#3C3C3C] rounded-full">
                   {new Date(goal.dueDate).toLocaleDateString()}
                 </span>
               )}
               <span className={`px-2 py-0.5 rounded-full ${priorityColor}`}>
                 {goal.priority}
               </span>
-              <span className="px-2 py-0.5 bg-gray-700 rounded-full">
+              <span className="px-2 py-0.5 bg-[#3C3C3C] rounded-full">
                 {goal.projects.length} projects
               </span>
             </div>
@@ -81,7 +76,7 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
             <DropdownMenuTrigger asChild>
               <button
                 aria-label="Goal actions"
-                className="p-1 rounded bg-gray-700"
+                className="p-1 rounded bg-[#2B2B2B] border border-[#3C3C3C] hover:bg-[#353535]"
               >
                 <MoreHorizontal className="w-4 h-4" />
               </button>
