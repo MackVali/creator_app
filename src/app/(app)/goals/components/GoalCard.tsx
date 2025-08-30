@@ -4,15 +4,43 @@ import { useState } from "react";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
 import type { Goal } from "../types";
 import { ProjectsDropdown } from "./ProjectsDropdown";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { CreateGoalDrawer } from "./CreateGoalDrawer";
 
 interface GoalCardProps {
   goal: Goal;
+  onChange?(goal: Goal): void;
 }
 
-export function GoalCard({ goal }: GoalCardProps) {
+export function GoalCard({ goal, onChange }: GoalCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [data, setData] = useState(goal);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const handleUpdate = (g: Goal) => {
+    setData(g);
+    onChange?.(g);
+  };
+
+  const toggleActive = async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const newActive = !data.active;
+    await supabase
+      .from("goals")
+      .update({ active: newActive, status: newActive ? "Active" : "Inactive" })
+      .eq("id", data.id);
+    const updated = { ...data, active: newActive, status: newActive ? "Active" : "Inactive" };
+    setData(updated);
+    onChange?.(updated);
+  };
 
   const toggle = () => {
     setOpen((o) => !o);
@@ -23,9 +51,9 @@ export function GoalCard({ goal }: GoalCardProps) {
   };
 
   const priorityColor =
-    goal.priority === "High"
+    data.priority === "High"
       ? "bg-red-600"
-      : goal.priority === "Medium"
+      : data.priority === "Medium"
       ? "bg-yellow-600"
       : "bg-green-600";
 
@@ -35,33 +63,33 @@ export function GoalCard({ goal }: GoalCardProps) {
         <button
           onClick={toggle}
           aria-expanded={open}
-          aria-controls={`goal-${goal.id}`}
+          aria-controls={`goal-${data.id}`}
           className="w-full flex items-start justify-between p-4 active:scale-95 transition-transform motion-safe:duration-150 motion-reduce:transform-none"
         >
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              {goal.emoji && <span className="text-xl" aria-hidden>{goal.emoji}</span>}
-              <span id={`goal-${goal.id}-label`} className="font-medium truncate">
-                {goal.title}
+              {data.emoji && <span className="text-xl" aria-hidden>{data.emoji}</span>}
+              <span id={`goal-${data.id}-label`} className="font-medium truncate">
+                {data.title}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-gray-300">
               <div className="w-10 h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-blue-500"
-                  style={{ width: `${goal.progress}%` }}
+                  style={{ width: `${data.progress}%` }}
                 />
               </div>
-              {goal.dueDate && (
+              {data.dueDate && (
                 <span className="px-2 py-0.5 bg-gray-700 rounded-full">
-                  {new Date(goal.dueDate).toLocaleDateString()}
+                  {new Date(data.dueDate).toLocaleDateString()}
                 </span>
               )}
               <span className={`px-2 py-0.5 rounded-full ${priorityColor}`}>
-                {goal.priority}
+                {data.priority}
               </span>
               <span className="px-2 py-0.5 bg-gray-700 rounded-full">
-                {goal.projects.length} projects
+                {data.projects.length} projects
               </span>
             </div>
           </div>
@@ -70,32 +98,35 @@ export function GoalCard({ goal }: GoalCardProps) {
           />
         </button>
         <div className="absolute top-2 right-2">
-          <button
-            aria-label="Goal actions"
-            onClick={() => setMenuOpen((m) => !m)}
-            className="p-1 rounded bg-gray-700"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
-          {menuOpen && (
-            <ul className="absolute right-0 mt-1 bg-gray-700 rounded shadow-lg text-sm z-10">
-              {['Edit','Mark Done','Delete'].map((act) => (
-                <li key={act}>
-                  <button className="block w-full text-left px-3 py-1 hover:bg-gray-600">
-                    {act}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button aria-label="Goal actions" className="p-1 rounded bg-gray-700">
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={toggleActive}>
+                {data.active ? "Mark Inactive" : "Mark Active"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       <ProjectsDropdown
-        id={`goal-${goal.id}`}
-        goalTitle={goal.title}
-        projects={goal.projects}
+        id={`goal-${data.id}`}
+        goalTitle={data.title}
+        projects={data.projects}
         open={open}
         loading={loading}
+      />
+      <CreateGoalDrawer
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        onUpdate={handleUpdate}
+        goal={data}
       />
     </div>
   );

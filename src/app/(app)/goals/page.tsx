@@ -115,13 +115,18 @@ export default function GoalsPage() {
                     projList.length
                 )
               : 0;
+          let status: Goal["status"] = "Active";
+          if (!g.active) status = "Inactive";
+          else if (progress >= 100) status = "Completed";
+          else if (g.status === "Overdue") status = "Overdue";
           return {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
             progress,
-            status: progress >= 100 ? "Completed" : "Active",
-            updatedAt: g.created_at,
+            status,
+            active: g.active,
+            updatedAt: g.updated_at || g.created_at,
             projects: projList,
           };
         });
@@ -174,6 +179,8 @@ export default function GoalsPage() {
   }, [goals, search, filter, sort]);
 
   const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
+  const updateGoal = (goal: Goal) =>
+    setGoals((g) => g.map((item) => (item.id === goal.id ? goal : item)));
 
   return (
     <ProtectedRoute>
@@ -202,10 +209,10 @@ export default function GoalsPage() {
             }
           >
             {filteredGoals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard key={goal.id} goal={goal} onChange={updateGoal} />
             ))}
-          </div>
-        )}
+        </div>
+      )}
         <CreateGoalDrawer
           open={drawer}
           onClose={() => setDrawer(false)}

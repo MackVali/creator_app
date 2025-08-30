@@ -6,7 +6,10 @@ export interface Goal {
   priority: string;
   energy: string;
   why?: string;
+  status: string;
+  active: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export async function getGoalsForUser(userId: string): Promise<Goal[]> {
@@ -17,7 +20,7 @@ export async function getGoalsForUser(userId: string): Promise<Goal[]> {
 
   const { data, error } = await supabase
     .from("goals")
-    .select("id, name, priority, energy, why, created_at")
+    .select("id, name, priority, energy, why, status, active, created_at, updated_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -37,7 +40,7 @@ export async function getGoalById(goalId: string): Promise<Goal | null> {
 
   const { data, error } = await supabase
     .from("goals")
-    .select("id, name, priority, energy, why, created_at")
+    .select("id, name, priority, energy, why, status, active, created_at, updated_at")
     .eq("id", goalId)
     .single();
 

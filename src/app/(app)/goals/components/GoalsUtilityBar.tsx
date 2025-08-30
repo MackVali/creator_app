@@ -3,7 +3,12 @@
 import { useState, useEffect } from "react";
 import { List, LayoutGrid } from "lucide-react";
 
-export type FilterStatus = "All" | "Active" | "Completed" | "Overdue";
+export type FilterStatus =
+  | "All"
+  | "Active"
+  | "Inactive"
+  | "Completed"
+  | "Overdue";
 export type SortOption = "A→Z" | "Due Soon" | "Progress" | "Recently Updated";
 
 interface GoalsUtilityBarProps {
@@ -43,7 +48,9 @@ export function GoalsUtilityBar({
         className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
       />
       <div className="flex flex-wrap items-center gap-2">
-        {(["All", "Active", "Completed", "Overdue"] as FilterStatus[]).map((s) => (
+        {(
+          ["All", "Active", "Inactive", "Completed", "Overdue"] as FilterStatus[]
+        ).map((s) => (
           <button
             key={s}
             onClick={() => onFilter(s)}
