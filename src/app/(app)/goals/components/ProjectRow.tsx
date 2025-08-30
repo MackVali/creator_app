@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import type { Project } from "../types";
 
 interface ProjectRowProps {
@@ -7,6 +9,9 @@ interface ProjectRowProps {
 }
 
 export function ProjectRow({ project }: ProjectRowProps) {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((o) => !o);
+
   const statusColor =
     project.status === "Done"
       ? "bg-green-600"
@@ -14,9 +19,16 @@ export function ProjectRow({ project }: ProjectRowProps) {
       ? "bg-yellow-600"
       : "bg-gray-600";
 
+  const hasTasks = project.tasks.length > 0;
+
   return (
     <div className="py-1">
-      <div className="flex items-center justify-between">
+      <button
+        onClick={toggle}
+        className="w-full flex items-center justify-between"
+        aria-expanded={open}
+        aria-controls={`project-${project.id}`}
+      >
         <div className="flex items-center gap-2">
           <span className="text-sm">{project.name}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor}`}>
@@ -35,15 +47,26 @@ export function ProjectRow({ project }: ProjectRowProps) {
               {new Date(project.dueDate).toLocaleDateString()}
             </span>
           )}
+          {hasTasks && (
+            <ChevronDown
+              className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`}
+            />
+          )}
         </div>
-      </div>
-      {project.tasks.length > 0 && (
-        <ul className="ml-4 mt-1 space-y-1">
-          {project.tasks.map((t) => (
-            <li key={t.id} className="text-xs text-gray-400">
-              • {t.name}
-            </li>
-          ))}
+      </button>
+      {hasTasks && (
+        <ul
+          id={`project-${project.id}`}
+          className={`ml-4 mt-1 space-y-1 overflow-hidden transition-all ${
+            open ? "max-h-96" : "max-h-0"
+          }`}
+        >
+          {open &&
+            project.tasks.map((t) => (
+              <li key={t.id} className="text-xs text-gray-400">
+                • {t.name}
+              </li>
+            ))}
         </ul>
       )}
     </div>
