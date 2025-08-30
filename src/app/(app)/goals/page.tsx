@@ -12,9 +12,10 @@ import { GoalCard } from "./components/GoalCard";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
 import { CreateGoalDrawer } from "./components/CreateGoalDrawer";
+import { EditGoalDrawer } from "./components/EditGoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { getGoalsForUser } from "@/lib/queries/goals";
+import { getGoalsForUser, toggleGoalActive } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
 
 function mapPriority(priority: string): Goal["priority"] {
@@ -49,6 +50,7 @@ export default function GoalsPage() {
   const [sort, setSort] = useState<SortOption>("A→Z");
   const [drawer, setDrawer] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<Goal | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -120,6 +122,7 @@ export default function GoalsPage() {
             title: g.name,
             priority: mapPriority(g.priority),
             progress,
+            active: g.is_active,
             status: progress >= 100 ? "Completed" : "Active",
             updatedAt: g.created_at,
             projects: projList,
@@ -174,6 +177,20 @@ export default function GoalsPage() {
   }, [goals, search, filter, sort]);
 
   const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
+  const saveGoal = (goal: Goal) =>
+    setGoals((g) => g.map((gl) => (gl.id === goal.id ? goal : gl)));
+  const handleToggleActive = async (goal: Goal) => {
+    const next = !goal.active;
+    setGoals((g) =>
+      g.map((gl) => (gl.id === goal.id ? { ...gl, active: next } : gl))
+    );
+    try {
+      await toggleGoalActive(goal.id, next);
+    } catch (err) {
+      console.error("Error updating goal", err);
+    }
+  };
+  const handleEdit = (goal: Goal) => setEditing(goal);
 
   return (
     <ProtectedRoute>
@@ -202,7 +219,12 @@ export default function GoalsPage() {
             }
           >
             {filteredGoals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                onEdit={handleEdit}
+                onToggleActive={handleToggleActive}
+              />
             ))}
           </div>
         )}
@@ -210,6 +232,12 @@ export default function GoalsPage() {
           open={drawer}
           onClose={() => setDrawer(false)}
           onAdd={addGoal}
+        />
+        <EditGoalDrawer
+          open={!!editing}
+          goal={editing}
+          onClose={() => setEditing(null)}
+          onSave={saveGoal}
         />
       </div>
     </ProtectedRoute>

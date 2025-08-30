@@ -14,6 +14,7 @@ export interface Goal {
   priority: "Low" | "Medium" | "High";
   progress: number; // 0-100
   status: "Active" | "Completed" | "Overdue";
+  active: boolean;
   updatedAt: string;
   projects: Project[];
 }

@@ -4,15 +4,22 @@ import { useState } from "react";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
 import type { Goal } from "../types";
 import { ProjectsDropdown } from "./ProjectsDropdown";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface GoalCardProps {
   goal: Goal;
+  onEdit(goal: Goal): void;
+  onToggleActive(goal: Goal): void;
 }
 
-export function GoalCard({ goal }: GoalCardProps) {
+export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const toggle = () => {
     setOpen((o) => !o);
@@ -70,24 +77,24 @@ export function GoalCard({ goal }: GoalCardProps) {
           />
         </button>
         <div className="absolute top-2 right-2">
-          <button
-            aria-label="Goal actions"
-            onClick={() => setMenuOpen((m) => !m)}
-            className="p-1 rounded bg-gray-700"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
-          {menuOpen && (
-            <ul className="absolute right-0 mt-1 bg-gray-700 rounded shadow-lg text-sm z-10">
-              {['Edit','Mark Done','Delete'].map((act) => (
-                <li key={act}>
-                  <button className="block w-full text-left px-3 py-1 hover:bg-gray-600">
-                    {act}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                aria-label="Goal actions"
+                className="p-1 rounded bg-gray-700"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={() => onEdit(goal)}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onToggleActive(goal)}>
+                {goal.active ? "Mark Inactive" : "Mark Active"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       <ProjectsDropdown
