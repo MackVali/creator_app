@@ -4,11 +4,14 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
-import { GoalCardGrid } from "@/components/ui/GoalCardGrid";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import CategorySection from "@/components/skills/CategorySection";
 import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
-import type { GoalItem } from "@/types/dashboard";
+import { GoalCard } from "../goals/components/GoalCard";
+import type { Goal, Project } from "../goals/types";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { getGoalsForUser } from "@/lib/queries/goals";
+import { getProjectsForUser } from "@/lib/queries/projects";
 
 interface Skill {
   skill_id: string;
@@ -26,30 +29,177 @@ interface Category {
   skills: Skill[];
 }
 
+function mapPriority(priority: string): Goal["priority"] {
+  switch (priority) {
+    case "HIGH":
+    case "CRITICAL":
+    case "ULTRA-CRITICAL":
+      return "High";
+    case "MEDIUM":
+      return "Medium";
+    default:
+      return "Low";
+  }
+}
+
+function projectStageToStatus(stage: string): Project["status"] {
+  switch (stage) {
+    case "RESEARCH":
+      return "Todo";
+    case "RELEASE":
+      return "Done";
+    default:
+      return "In-Progress";
+  }
+}
+
+function goalStatusToStatus(status?: string | null): Goal["status"] {
+  switch (status) {
+    case "COMPLETED":
+    case "Completed":
+    case "DONE":
+      return "Completed";
+    case "INACTIVE":
+    case "Inactive":
+      return "Inactive";
+    case "OVERDUE":
+    case "Overdue":
+      return "Overdue";
+    case "ACTIVE":
+    case "Active":
+    case "IN_PROGRESS":
+    case "IN PROGRESS":
+    default:
+      return "Active";
+  }
+}
+
 export default function DashboardClient() {
   const [categories, setCategories] = useState<Category[]>([]);
-  const [goals, setGoals] = useState<GoalItem[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
+  const loadGoals = async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    let goalsData: Awaited<ReturnType<typeof getGoalsForUser>> = [];
+    try {
+      goalsData = await getGoalsForUser(user.id);
+    } catch (err) {
+      console.error("Error fetching goals:", err);
+    }
+
+    let projectsData: Awaited<ReturnType<typeof getProjectsForUser>> = [];
+    try {
+      projectsData = await getProjectsForUser(user.id);
+    } catch (err) {
+      console.error("Error fetching projects:", err);
+    }
+
+    let tasksData: {
+      id: string;
+      project_id: string | null;
+      stage: string;
+      name: string;
+    }[] = [];
+    try {
+      const tasksRes = await supabase
+        .from("tasks")
+        .select("id, project_id, stage, name")
+        .eq("user_id", user.id);
+      tasksData = tasksRes.data || [];
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+    }
+    const tasksByProject = tasksData.reduce(
+      (
+        acc: Record<
+          string,
+          { id: string; name: string; stage: string }[]
+        >,
+        task
+      ) => {
+        if (!task.project_id) return acc;
+        acc[task.project_id] = acc[task.project_id] || [];
+        acc[task.project_id].push({
+          id: task.id,
+          name: task.name,
+          stage: task.stage,
+        });
+        return acc;
+      },
+      {}
+    );
+
+    const projectsByGoal = new Map<string, Project[]>();
+    projectsData.forEach((p) => {
+      const tasks = tasksByProject[p.id] || [];
+      const total = tasks.length;
+      const done = tasks.filter((t) => t.stage === "PERFECT").length;
+      const progress = total ? Math.round((done / total) * 100) : 0;
+      const status = projectStageToStatus(p.stage);
+      const proj: Project = {
+        id: p.id,
+        name: p.name,
+        status,
+        progress,
+        tasks,
+      };
+      const list = projectsByGoal.get(p.goal_id) || [];
+      list.push(proj);
+      projectsByGoal.set(p.goal_id, list);
+    });
+
+    const realGoals: Goal[] = goalsData
+      .map((g) => {
+        const projList = projectsByGoal.get(g.id) || [];
+        const progress =
+          projList.length > 0
+            ? Math.round(
+                projList.reduce((sum, p) => sum + p.progress, 0) /
+                  projList.length
+              )
+            : 0;
+        const status = g.status
+          ? goalStatusToStatus(g.status)
+          : progress >= 100
+          ? "Completed"
+          : "Active";
+        return {
+          id: g.id,
+          title: g.name,
+          priority: mapPriority(g.priority),
+          progress,
+          status,
+          active: g.active ?? status === "Active",
+          updatedAt: g.created_at,
+          projects: projList,
+        };
+      })
+      .filter((g) => g.active);
+
+    setGoals(realGoals);
+  };
+
   const fetchDashboardData = async () => {
     try {
       const response = await fetch("/api/dashboard");
       const data = await response.json();
-      
-      // Debug logging
-      console.log("🔍 Dashboard API response:", data);
-      console.log("🔍 Categories data:", data.skillsAndGoals?.cats);
-      console.log("🔍 Goals data:", data.skillsAndGoals?.goals);
-      
+
       setCategories(data.skillsAndGoals?.cats || []);
-      setGoals(data.skillsAndGoals?.goals || []);
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
+      await loadGoals();
       setLoading(false);
     }
   };
@@ -89,11 +239,21 @@ export default function DashboardClient() {
         title={<Link href="/goals">Current Goals</Link>}
         className="safe-bottom mt-2 px-4"
       >
-        <GoalCardGrid
-          goals={goals}
-          loading={loading}
-          showLinks={false} // Set to true if /goals/[id] route exists
-        />
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-24 bg-gray-800 animate-pulse rounded" />
+            ))}
+          </div>
+        ) : goals.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {goals.map((goal) => (
+              <GoalCard key={goal.id} goal={goal} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">No active goals.</div>
+        )}
       </Section>
     </main>
   );

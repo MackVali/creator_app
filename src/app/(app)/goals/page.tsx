@@ -11,7 +11,7 @@ import {
 import { GoalCard } from "./components/GoalCard";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
-import { CreateGoalDrawer } from "./components/CreateGoalDrawer";
+import { GoalDrawer } from "./components/GoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
@@ -41,6 +41,27 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
+function goalStatusToStatus(status?: string | null): Goal["status"] {
+  switch (status) {
+    case "COMPLETED":
+    case "Completed":
+    case "DONE":
+      return "Completed";
+    case "INACTIVE":
+    case "Inactive":
+      return "Inactive";
+    case "OVERDUE":
+    case "Overdue":
+      return "Overdue";
+    case "ACTIVE":
+    case "Active":
+    case "IN_PROGRESS":
+    case "IN PROGRESS":
+    default:
+      return "Active";
+  }
+}
+
 export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -48,6 +69,7 @@ export default function GoalsPage() {
   const [filter, setFilter] = useState<FilterStatus>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
   const [drawer, setDrawer] = useState(false);
+  const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,22 +89,51 @@ export default function GoalsPage() {
           return;
         }
 
-        const [goalsData, projectsData, tasksRes] = await Promise.all([
-          getGoalsForUser(user.id),
-          getProjectsForUser(user.id),
-          supabase
-            .from("tasks")
-            .select("id, project_id, stage")
-            .eq("user_id", user.id),
-        ]);
+        let goalsData: Awaited<ReturnType<typeof getGoalsForUser>> = [];
+        try {
+          goalsData = await getGoalsForUser(user.id);
+        } catch (err) {
+          console.error("Error fetching goals:", err);
+        }
 
-        const tasksData = tasksRes.data || [];
+        let projectsData: Awaited<ReturnType<typeof getProjectsForUser>> = [];
+        try {
+          projectsData = await getProjectsForUser(user.id);
+        } catch (err) {
+          console.error("Error fetching projects:", err);
+        }
+
+        let tasksData: {
+          id: string;
+          project_id: string | null;
+          stage: string;
+          name: string;
+        }[] = [];
+        try {
+          const tasksRes = await supabase
+            .from("tasks")
+            .select("id, project_id, stage, name")
+            .eq("user_id", user.id);
+          tasksData = tasksRes.data || [];
+        } catch (err) {
+          console.error("Error fetching tasks:", err);
+        }
 
         const tasksByProject = tasksData.reduce(
-          (acc: Record<string, { stage: string }[]>, task) => {
+          (
+            acc: Record<
+              string,
+              { id: string; name: string; stage: string }[]
+            >,
+            task
+          ) => {
             if (!task.project_id) return acc;
             acc[task.project_id] = acc[task.project_id] || [];
-            acc[task.project_id].push(task);
+            acc[task.project_id].push({
+              id: task.id,
+              name: task.name,
+              stage: task.stage,
+            });
             return acc;
           },
           {}
@@ -100,6 +151,7 @@ export default function GoalsPage() {
             name: p.name,
             status,
             progress,
+            tasks,
           };
           const list = projectsByGoal.get(p.goal_id) || [];
           list.push(proj);
@@ -115,12 +167,18 @@ export default function GoalsPage() {
                     projList.length
                 )
               : 0;
+          const status = g.status
+            ? goalStatusToStatus(g.status)
+            : progress >= 100
+            ? "Completed"
+            : "Active";
           return {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
             progress,
-            status: progress >= 100 ? "Completed" : "Active",
+            status,
+            active: g.active ?? status === "Active",
             updatedAt: g.created_at,
             projects: projList,
           };
@@ -175,6 +233,26 @@ export default function GoalsPage() {
 
   const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
 
+  const updateGoal = (goal: Goal) =>
+    setGoals((gs) => gs.map((g) => (g.id === goal.id ? goal : g)));
+
+  const handleEdit = (goal: Goal) => {
+    setEditing(goal);
+    setDrawer(true);
+  };
+
+  const handleToggleActive = async (goal: Goal) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const nextActive = !goal.active;
+    const status: Goal["status"] = nextActive ? "Active" : "Inactive";
+    await supabase
+      .from("goals")
+      .update({ active: nextActive, status })
+      .eq("id", goal.id);
+    updateGoal({ ...goal, active: nextActive, status });
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-white pb-24">
@@ -202,14 +280,38 @@ export default function GoalsPage() {
             }
           >
             {filteredGoals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                onEdit={() => handleEdit(goal)}
+                onToggleActive={() => handleToggleActive(goal)}
+              />
             ))}
           </div>
         )}
-        <CreateGoalDrawer
+        <GoalDrawer
           open={drawer}
-          onClose={() => setDrawer(false)}
+          onClose={() => {
+            setDrawer(false);
+            setEditing(null);
+          }}
           onAdd={addGoal}
+          initialGoal={editing}
+          onUpdate={async (goal) => {
+            const supabase = getSupabaseBrowser();
+            if (supabase) {
+              await supabase
+                .from("goals")
+                .update({
+                  name: goal.title,
+                  priority: goal.priority,
+                  active: goal.active,
+                  status: goal.status,
+                })
+                .eq("id", goal.id);
+            }
+            updateGoal(goal);
+          }}
         />
       </div>
     </ProtectedRoute>
