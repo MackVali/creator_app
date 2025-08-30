@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { Skeleton } from "@/components/ui/skeleton";
+import { NotesGrid } from "@/components/notes/NotesGrid";
 
 interface Skill {
   id: string;
@@ -135,6 +136,12 @@ export default function SkillDetailPage() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold text-white">Related Goals</h2>
         <FilteredGoalsGrid entity="skill" id={id} />
+      </div>
+
+      {/* Notes Section */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold text-white">Notes</h2>
+        <NotesGrid skillId={id} />
       </div>
     </main>
   );
