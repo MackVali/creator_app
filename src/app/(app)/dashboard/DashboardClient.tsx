@@ -164,10 +164,10 @@ export default function DashboardClient() {
       const data = await response.json();
 
       setCategories(data.skillsAndGoals?.cats || []);
-      await loadGoals();
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
+      await loadGoals();
       setLoading(false);
     }
   };
