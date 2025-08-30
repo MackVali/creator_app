@@ -11,7 +11,7 @@ import {
 import { GoalCard } from "./components/GoalCard";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
-import { CreateGoalDrawer } from "./components/CreateGoalDrawer";
+import { GoalDrawer } from "./components/GoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
@@ -48,6 +48,7 @@ export default function GoalsPage() {
   const [filter, setFilter] = useState<FilterStatus>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
   const [drawer, setDrawer] = useState(false);
+  const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -94,7 +95,8 @@ export default function GoalsPage() {
           const total = tasks.length;
           const done = tasks.filter((t) => t.stage === "PERFECT").length;
           const progress = total ? Math.round((done / total) * 100) : 0;
-          const status = projectStageToStatus(p.stage);
+          const status =
+            (p.status as Project["status"]) || projectStageToStatus(p.stage);
           const proj: Project = {
             id: p.id,
             name: p.name,
@@ -115,12 +117,15 @@ export default function GoalsPage() {
                     projList.length
                 )
               : 0;
+          const status = (g.status as Goal["status"]) ||
+            (progress >= 100 ? "Completed" : "Active");
           return {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
             progress,
-            status: progress >= 100 ? "Completed" : "Active",
+            status,
+            active: g.active ?? status === "Active",
             updatedAt: g.created_at,
             projects: projList,
           };
@@ -175,6 +180,26 @@ export default function GoalsPage() {
 
   const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
 
+  const updateGoal = (goal: Goal) =>
+    setGoals((gs) => gs.map((g) => (g.id === goal.id ? goal : g)));
+
+  const handleEdit = (goal: Goal) => {
+    setEditing(goal);
+    setDrawer(true);
+  };
+
+  const handleToggleActive = async (goal: Goal) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const nextActive = !goal.active;
+    const status: Goal["status"] = nextActive ? "Active" : "Inactive";
+    await supabase
+      .from("goals")
+      .update({ active: nextActive, status })
+      .eq("id", goal.id);
+    updateGoal({ ...goal, active: nextActive, status });
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-white pb-24">
@@ -202,14 +227,38 @@ export default function GoalsPage() {
             }
           >
             {filteredGoals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                onEdit={() => handleEdit(goal)}
+                onToggleActive={() => handleToggleActive(goal)}
+              />
             ))}
           </div>
         )}
-        <CreateGoalDrawer
+        <GoalDrawer
           open={drawer}
-          onClose={() => setDrawer(false)}
+          onClose={() => {
+            setDrawer(false);
+            setEditing(null);
+          }}
           onAdd={addGoal}
+          initialGoal={editing}
+          onUpdate={async (goal) => {
+            const supabase = getSupabaseBrowser();
+            if (supabase) {
+              await supabase
+                .from("goals")
+                .update({
+                  name: goal.title,
+                  priority: goal.priority,
+                  active: goal.active,
+                  status: goal.status,
+                })
+                .eq("id", goal.id);
+            }
+            updateGoal(goal);
+          }}
         />
       </div>
     </ProtectedRoute>

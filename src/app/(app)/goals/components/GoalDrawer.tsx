@@ -1,39 +1,69 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Goal } from "../types";
 
-interface CreateGoalDrawerProps {
+interface GoalDrawerProps {
   open: boolean;
   onClose(): void;
+  /** Callback when creating a new goal */
   onAdd(goal: Goal): void;
+  /** Existing goal to edit */
+  initialGoal?: Goal | null;
+  /** Callback when updating an existing goal */
+  onUpdate?(goal: Goal): void;
 }
 
-export function CreateGoalDrawer({ open, onClose, onAdd }: CreateGoalDrawerProps) {
+export function GoalDrawer({
+  open,
+  onClose,
+  onAdd,
+  initialGoal,
+  onUpdate,
+}: GoalDrawerProps) {
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Goal["priority"]>("Low");
 
+  const editing = Boolean(initialGoal);
+
+  useEffect(() => {
+    if (initialGoal) {
+      setTitle(initialGoal.title);
+      setEmoji(initialGoal.emoji || "");
+      setDueDate(initialGoal.dueDate || "");
+      setPriority(initialGoal.priority);
+    } else {
+      setTitle("");
+      setEmoji("");
+      setDueDate("");
+      setPriority("Low");
+    }
+  }, [initialGoal]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title) return;
-    const newGoal: Goal = {
-      id: Date.now().toString(),
+
+    const base: Goal = {
+      id: initialGoal?.id || Date.now().toString(),
       title,
       emoji,
       dueDate: dueDate || undefined,
       priority,
-      progress: 0,
-      status: "Active",
+      progress: initialGoal?.progress || 0,
+      status: initialGoal?.status || "Active",
       updatedAt: new Date().toISOString(),
-      projects: [],
+      projects: initialGoal?.projects || [],
+      active: initialGoal?.active ?? true,
     };
-    onAdd(newGoal);
-    setTitle("");
-    setEmoji("");
-    setDueDate("");
-    setPriority("Low");
+
+    if (editing && onUpdate) {
+      onUpdate(base);
+    } else {
+      onAdd(base);
+    }
     onClose();
   };
 
@@ -43,7 +73,7 @@ export function CreateGoalDrawer({ open, onClose, onAdd }: CreateGoalDrawerProps
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="absolute right-0 top-0 h-full w-80 bg-gray-800 p-4 overflow-y-auto">
-        <h2 className="text-lg font-semibold mb-4">Create Goal</h2>
+        <h2 className="text-lg font-semibold mb-4">{editing ? "Edit Goal" : "Create Goal"}</h2>
         <form onSubmit={submit} className="space-y-4">
           <div>
             <label className="block text-sm mb-1">Title *</label>
@@ -88,7 +118,7 @@ export function CreateGoalDrawer({ open, onClose, onAdd }: CreateGoalDrawerProps
               Cancel
             </button>
             <button type="submit" className="px-3 py-2 rounded bg-blue-600">
-              Add
+              {editing ? "Save" : "Add"}
             </button>
           </div>
         </form>
