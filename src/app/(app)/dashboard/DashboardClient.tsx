@@ -91,16 +91,30 @@ export default function DashboardClient() {
     } = await supabase.auth.getUser();
     if (!user) return;
 
-    const [goalsData, projectsData, tasksRes] = await Promise.all([
-      getGoalsForUser(user.id),
-      getProjectsForUser(user.id),
-      supabase
+    let goalsData: Awaited<ReturnType<typeof getGoalsForUser>> = [];
+    try {
+      goalsData = await getGoalsForUser(user.id);
+    } catch (err) {
+      console.error("Error fetching goals:", err);
+    }
+
+    let projectsData: Awaited<ReturnType<typeof getProjectsForUser>> = [];
+    try {
+      projectsData = await getProjectsForUser(user.id);
+    } catch (err) {
+      console.error("Error fetching projects:", err);
+    }
+
+    let tasksData: { id: string; project_id: string | null; stage: string }[] = [];
+    try {
+      const tasksRes = await supabase
         .from("tasks")
         .select("id, project_id, stage")
-        .eq("user_id", user.id),
-    ]);
-
-    const tasksData = tasksRes.data || [];
+        .eq("user_id", user.id);
+      tasksData = tasksRes.data || [];
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+    }
     const tasksByProject = tasksData.reduce(
       (acc: Record<string, { stage: string }[]>, task) => {
         if (!task.project_id) return acc;
