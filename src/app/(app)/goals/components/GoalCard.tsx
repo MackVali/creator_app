@@ -7,9 +7,11 @@ import { ProjectsDropdown } from "./ProjectsDropdown";
 
 interface GoalCardProps {
   goal: Goal;
+  onEdit(goal: Goal): void;
+  onToggleActive(id: string): void;
 }
 
-export function GoalCard({ goal }: GoalCardProps) {
+export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -79,13 +81,28 @@ export function GoalCard({ goal }: GoalCardProps) {
           </button>
           {menuOpen && (
             <ul className="absolute right-0 mt-1 bg-gray-700 rounded shadow-lg text-sm z-10">
-              {['Edit','Mark Done','Delete'].map((act) => (
-                <li key={act}>
-                  <button className="block w-full text-left px-3 py-1 hover:bg-gray-600">
-                    {act}
-                  </button>
-                </li>
-              ))}
+              <li>
+                <button
+                  className="block w-full text-left px-3 py-1 hover:bg-gray-600"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onEdit(goal);
+                  }}
+                >
+                  Edit
+                </button>
+              </li>
+              <li>
+                <button
+                  className="block w-full text-left px-3 py-1 hover:bg-gray-600"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onToggleActive(goal.id);
+                  }}
+                >
+                  {goal.active ? "Mark Inactive" : "Mark Active"}
+                </button>
+              </li>
             </ul>
           )}
         </div>

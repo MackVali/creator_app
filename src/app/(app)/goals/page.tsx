@@ -59,6 +59,7 @@ export default function GoalsPage() {
   const [filter, setFilter] = useState<FilterStatus>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
   const [drawer, setDrawer] = useState(false);
+  const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -140,6 +141,7 @@ export default function GoalsPage() {
             status: progress >= 100 ? "Completed" : "Active",
             updatedAt: g.created_at,
             projects: projList,
+            active: progress < 100,
           };
         });
 
@@ -164,7 +166,11 @@ export default function GoalsPage() {
       return goalMatch || projectMatch;
     });
     if (filter !== "All") {
-      data = data.filter((g) => g.status === filter);
+      if (filter === "Active") {
+        data = data.filter((g) => g.active);
+      } else {
+        data = data.filter((g) => g.status === filter);
+      }
     }
     const sorted = [...data];
     switch (sort) {
@@ -190,12 +196,33 @@ export default function GoalsPage() {
     return sorted;
   }, [goals, search, filter, sort]);
 
-  const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
+  const saveGoal = (goal: Goal) =>
+    setGoals((g) => {
+      const idx = g.findIndex((x) => x.id === goal.id);
+      if (idx === -1) {
+        return [goal, ...g];
+      }
+      const copy = [...g];
+      copy[idx] = goal;
+      return copy;
+    });
+
+  const toggleActive = (id: string) =>
+    setGoals((g) =>
+      g.map((goal) =>
+        goal.id === id ? { ...goal, active: !goal.active } : goal
+      )
+    );
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-white pb-24">
-        <GoalsHeader onCreate={() => setDrawer(true)} />
+        <GoalsHeader
+          onCreate={() => {
+            setEditing(null);
+            setDrawer(true);
+          }}
+        />
         <GoalsUtilityBar
           search={search}
           onSearch={setSearch}
@@ -209,7 +236,12 @@ export default function GoalsPage() {
         {loading ? (
           <LoadingSkeleton />
         ) : filteredGoals.length === 0 ? (
-          <EmptyState onCreate={() => setDrawer(true)} />
+          <EmptyState
+            onCreate={() => {
+              setEditing(null);
+              setDrawer(true);
+            }}
+          />
         ) : (
           <div
             className={
@@ -219,14 +251,26 @@ export default function GoalsPage() {
             }
           >
             {filteredGoals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                onEdit={(g) => {
+                  setEditing(g);
+                  setDrawer(true);
+                }}
+                onToggleActive={toggleActive}
+              />
             ))}
           </div>
         )}
         <CreateGoalDrawer
           open={drawer}
-          onClose={() => setDrawer(false)}
-          onAdd={addGoal}
+          onClose={() => {
+            setDrawer(false);
+            setEditing(null);
+          }}
+          onSave={saveGoal}
+          goal={editing || undefined}
         />
       </div>
     </ProtectedRoute>

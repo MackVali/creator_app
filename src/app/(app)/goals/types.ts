@@ -23,4 +23,5 @@ export interface Goal {
   status: "Active" | "Completed" | "Overdue";
   updatedAt: string;
   projects: Project[];
+  active: boolean;
 }
