@@ -11,7 +11,6 @@ interface Skill {
   name: string;
   icon: string | null;
   level: number;
-  progress: number | null;
   created_at: string;
 }
 
@@ -35,7 +34,7 @@ export default function SkillDetailPage() {
         await supabase.auth.getSession();
         const { data, error } = await supabase
           .from("skills")
-          .select("id,name,icon,level,progress,created_at")
+          .select("id,name,icon,level,created_at")
           .eq("id", id)
           .single();
 
@@ -69,8 +68,7 @@ export default function SkillDetailPage() {
         <div className="space-y-4">
           <Skeleton className="h-16 w-16 rounded-full mx-auto" />
           <Skeleton className="h-8 w-48 mx-auto" />
-          <div className="flex justify-center gap-4">
-            <Skeleton className="h-6 w-20" />
+          <div className="flex justify-center">
             <Skeleton className="h-6 w-20" />
           </div>
           <Skeleton className="h-4 w-32 mx-auto" />
@@ -125,11 +123,8 @@ export default function SkillDetailPage() {
           {skill.icon || "💡"}
         </div>
         <h1 className="text-3xl font-bold text-white">{skill.name}</h1>
-        <div className="flex justify-center gap-4 text-sm">
+        <div className="flex justify-center text-sm">
           <span className="text-gray-300">Level {skill.level}</span>
-          <span className="text-gray-300">
-            {skill.progress ? `${Math.round(skill.progress)}%` : "0%"} Progress
-          </span>
         </div>
         <p className="text-sm text-gray-400">
           Created {formatDate(skill.created_at)}
