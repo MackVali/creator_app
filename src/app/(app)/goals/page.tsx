@@ -3,16 +3,46 @@
 import { useState, useMemo, useEffect } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { GoalsHeader } from "./components/GoalsHeader";
-import { GoalsUtilityBar, FilterStatus, SortOption } from "./components/GoalsUtilityBar";
+import {
+  GoalsUtilityBar,
+  FilterStatus,
+  SortOption,
+} from "./components/GoalsUtilityBar";
 import { GoalCard } from "./components/GoalCard";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
 import { CreateGoalDrawer } from "./components/CreateGoalDrawer";
-import type { Goal } from "./types";
-import { mockGoals } from "./mockData";
+import type { Goal, Project } from "./types";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { getGoalsForUser } from "@/lib/queries/goals";
+import { getProjectsForUser } from "@/lib/queries/projects";
+
+function mapPriority(priority: string): Goal["priority"] {
+  switch (priority) {
+    case "HIGH":
+    case "CRITICAL":
+    case "ULTRA-CRITICAL":
+      return "High";
+    case "MEDIUM":
+      return "Medium";
+    default:
+      return "Low";
+  }
+}
+
+function projectStageToStatus(stage: string): Project["status"] {
+  switch (stage) {
+    case "RESEARCH":
+      return "Todo";
+    case "RELEASE":
+      return "Done";
+    default:
+      return "In-Progress";
+  }
+}
 
 export default function GoalsPage() {
-  const [goals, setGoals] = useState<Goal[]>(mockGoals);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterStatus>("All");
@@ -21,8 +51,89 @@ export default function GoalsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const id = setTimeout(() => setLoading(false), 800);
-    return () => clearTimeout(id);
+    const load = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        const [goalsData, projectsData, tasksRes] = await Promise.all([
+          getGoalsForUser(user.id),
+          getProjectsForUser(user.id),
+          supabase
+            .from("tasks")
+            .select("id, project_id, stage")
+            .eq("user_id", user.id),
+        ]);
+
+        const tasksData = tasksRes.data || [];
+
+        const tasksByProject = tasksData.reduce(
+          (acc: Record<string, { stage: string }[]>, task) => {
+            if (!task.project_id) return acc;
+            acc[task.project_id] = acc[task.project_id] || [];
+            acc[task.project_id].push(task);
+            return acc;
+          },
+          {}
+        );
+
+        const projectsByGoal = new Map<string, Project[]>();
+        projectsData.forEach((p) => {
+          const tasks = tasksByProject[p.id] || [];
+          const total = tasks.length;
+          const done = tasks.filter((t) => t.stage === "PERFECT").length;
+          const progress = total ? Math.round((done / total) * 100) : 0;
+          const status = projectStageToStatus(p.stage);
+          const proj: Project = {
+            id: p.id,
+            name: p.name,
+            status,
+            progress,
+          };
+          const list = projectsByGoal.get(p.goal_id) || [];
+          list.push(proj);
+          projectsByGoal.set(p.goal_id, list);
+        });
+
+        const realGoals: Goal[] = goalsData.map((g) => {
+          const projList = projectsByGoal.get(g.id) || [];
+          const progress =
+            projList.length > 0
+              ? Math.round(
+                  projList.reduce((sum, p) => sum + p.progress, 0) /
+                    projList.length
+                )
+              : 0;
+          return {
+            id: g.id,
+            title: g.name,
+            priority: mapPriority(g.priority),
+            progress,
+            status: progress >= 100 ? "Completed" : "Active",
+            updatedAt: g.created_at,
+            projects: projList,
+          };
+        });
+
+        setGoals(realGoals);
+      } catch (err) {
+        console.error("Error loading goals", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, []);
 
   const filteredGoals = useMemo(() => {
