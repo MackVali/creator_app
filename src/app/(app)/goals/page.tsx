@@ -11,7 +11,7 @@ import {
 import { GoalCard } from "./components/GoalCard";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
-import { CreateGoalDrawer } from "./components/CreateGoalDrawer";
+import { GoalDrawer } from "./components/GoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
@@ -48,6 +48,7 @@ export default function GoalsPage() {
   const [filter, setFilter] = useState<FilterStatus>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
   const [drawer, setDrawer] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -115,12 +116,19 @@ export default function GoalsPage() {
                     projList.length
                 )
               : 0;
+          const active = g.active !== false;
+          const status = active
+            ? progress >= 100
+              ? "Completed"
+              : "Active"
+            : "Inactive";
           return {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
             progress,
-            status: progress >= 100 ? "Completed" : "Active",
+            status,
+            active,
             updatedAt: g.created_at,
             projects: projList,
           };
@@ -174,11 +182,39 @@ export default function GoalsPage() {
   }, [goals, search, filter, sort]);
 
   const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
+  const updateGoal = (goal: Goal) =>
+    setGoals((g) => g.map((item) => (item.id === goal.id ? goal : item)));
+  const handleEdit = (goal: Goal) => {
+    setEditingGoal(goal);
+    setDrawer(true);
+  };
+  const handleActiveChange = (id: string, active: boolean) => {
+    setGoals((g) =>
+      g.map((goal) =>
+        goal.id === id
+          ? {
+              ...goal,
+              active,
+              status: active
+                ? goal.progress >= 100
+                  ? "Completed"
+                  : "Active"
+                : "Inactive",
+            }
+          : goal
+      )
+    );
+  };
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-900 text-white pb-24">
-        <GoalsHeader onCreate={() => setDrawer(true)} />
+        <GoalsHeader
+          onCreate={() => {
+            setEditingGoal(null);
+            setDrawer(true);
+          }}
+        />
         <GoalsUtilityBar
           search={search}
           onSearch={setSearch}
@@ -202,14 +238,24 @@ export default function GoalsPage() {
             }
           >
             {filteredGoals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                onEdit={handleEdit}
+                onActiveChange={handleActiveChange}
+              />
             ))}
           </div>
         )}
-        <CreateGoalDrawer
+        <GoalDrawer
           open={drawer}
           onClose={() => setDrawer(false)}
           onAdd={addGoal}
+          goal={editingGoal || undefined}
+          onUpdate={(g) => {
+            updateGoal(g);
+            setEditingGoal(null);
+          }}
         />
       </div>
     </ProtectedRoute>
