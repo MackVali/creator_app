@@ -146,8 +146,7 @@ export default function DashboardClient() {
       const total = tasks.length;
       const done = tasks.filter((t) => t.stage === "PERFECT").length;
       const progress = total ? Math.round((done / total) * 100) : 0;
-      const status =
-        (p.status as Project["status"]) || projectStageToStatus(p.stage);
+      const status = projectStageToStatus(p.stage);
       const proj: Project = {
         id: p.id,
         name: p.name,
