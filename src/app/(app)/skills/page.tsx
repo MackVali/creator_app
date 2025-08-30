@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -324,8 +325,9 @@ function SkillsPageContent() {
       ) : view === "grid" ? (
         <div className="grid grid-cols-2 gap-4 p-4">
           {filtered.map((skill) => (
-            <div
+            <Link
               key={skill.id}
+              href={`/skills/${skill.id}`}
               className="relative bg-[#2C2C2C] rounded-lg p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform"
             >
               <CircularProgress value={skill.progress} />
@@ -339,7 +341,14 @@ function SkillsPageContent() {
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="absolute top-2 right-2 p-2" aria-label="More">
+                  <button
+                    className="absolute top-2 right-2 p-2"
+                    aria-label="More"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
@@ -350,14 +359,15 @@ function SkillsPageContent() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
+            </Link>
           ))}
         </div>
       ) : (
         <div className="p-4 space-y-3">
           {filtered.map((skill) => (
-            <div
+            <Link
               key={skill.id}
+              href={`/skills/${skill.id}`}
               className="flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
             >
               <div className="flex items-center gap-3">
@@ -370,7 +380,7 @@ function SkillsPageContent() {
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
-            </div>
+            </Link>
           ))}
         </div>
       )}
