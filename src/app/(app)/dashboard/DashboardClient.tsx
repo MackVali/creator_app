@@ -105,21 +105,36 @@ export default function DashboardClient() {
       console.error("Error fetching projects:", err);
     }
 
-    let tasksData: { id: string; project_id: string | null; stage: string }[] = [];
+    let tasksData: {
+      id: string;
+      project_id: string | null;
+      stage: string;
+      name: string;
+    }[] = [];
     try {
       const tasksRes = await supabase
         .from("tasks")
-        .select("id, project_id, stage")
+        .select("id, project_id, stage, name")
         .eq("user_id", user.id);
       tasksData = tasksRes.data || [];
     } catch (err) {
       console.error("Error fetching tasks:", err);
     }
     const tasksByProject = tasksData.reduce(
-      (acc: Record<string, { stage: string }[]>, task) => {
+      (
+        acc: Record<
+          string,
+          { id: string; name: string; stage: string }[]
+        >,
+        task
+      ) => {
         if (!task.project_id) return acc;
         acc[task.project_id] = acc[task.project_id] || [];
-        acc[task.project_id].push(task);
+        acc[task.project_id].push({
+          id: task.id,
+          name: task.name,
+          stage: task.stage,
+        });
         return acc;
       },
       {}
@@ -133,7 +148,13 @@ export default function DashboardClient() {
       const progress = total ? Math.round((done / total) * 100) : 0;
       const status =
         (p.status as Project["status"]) || projectStageToStatus(p.stage);
-      const proj: Project = { id: p.id, name: p.name, status, progress };
+      const proj: Project = {
+        id: p.id,
+        name: p.name,
+        status,
+        progress,
+        tasks,
+      };
       const list = projectsByGoal.get(p.goal_id) || [];
       list.push(proj);
       projectsByGoal.set(p.goal_id, list);
@@ -141,9 +162,7 @@ export default function DashboardClient() {
 
     const realGoals: Goal[] = goalsData
       .map((g) => {
-        const projList = (projectsByGoal.get(g.id) || []).filter(
-          (p) => p.status === "Active"
-        );
+        const projList = projectsByGoal.get(g.id) || [];
         const progress =
           projList.length > 0
             ? Math.round(

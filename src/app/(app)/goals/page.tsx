@@ -103,11 +103,16 @@ export default function GoalsPage() {
           console.error("Error fetching projects:", err);
         }
 
-        let tasksData: { id: string; project_id: string | null; stage: string }[] = [];
+        let tasksData: {
+          id: string;
+          project_id: string | null;
+          stage: string;
+          name: string;
+        }[] = [];
         try {
           const tasksRes = await supabase
             .from("tasks")
-            .select("id, project_id, stage")
+            .select("id, project_id, stage, name")
             .eq("user_id", user.id);
           tasksData = tasksRes.data || [];
         } catch (err) {
@@ -115,10 +120,20 @@ export default function GoalsPage() {
         }
 
         const tasksByProject = tasksData.reduce(
-          (acc: Record<string, { stage: string }[]>, task) => {
+          (
+            acc: Record<
+              string,
+              { id: string; name: string; stage: string }[]
+            >,
+            task
+          ) => {
             if (!task.project_id) return acc;
             acc[task.project_id] = acc[task.project_id] || [];
-            acc[task.project_id].push(task);
+            acc[task.project_id].push({
+              id: task.id,
+              name: task.name,
+              stage: task.stage,
+            });
             return acc;
           },
           {}
@@ -137,6 +152,7 @@ export default function GoalsPage() {
             name: p.name,
             status,
             progress,
+            tasks,
           };
           const list = projectsByGoal.get(p.goal_id) || [];
           list.push(proj);
