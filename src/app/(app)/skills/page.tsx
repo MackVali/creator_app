@@ -47,7 +47,7 @@ function CircularProgress({ value }: { value: number }) {
     <div className="relative w-14 h-14">
       <svg className="w-14 h-14" viewBox="0 0 44 44">
         <circle
-          className="text-gray-700"
+          className="text-[#3C3C3C]"
           strokeWidth="4"
           stroke="currentColor"
           fill="transparent"
@@ -56,7 +56,7 @@ function CircularProgress({ value }: { value: number }) {
           cy="22"
         />
         <circle
-          className="text-gray-400"
+          className="text-[#A0A0A0]"
           strokeWidth="4"
           stroke="currentColor"
           fill="transparent"
@@ -68,7 +68,7 @@ function CircularProgress({ value }: { value: number }) {
           strokeLinecap="round"
         />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-xs text-gray-100">
+      <span className="absolute inset-0 flex items-center justify-center text-xs text-[#E0E0E0]">
         {normalized}%
       </span>
     </div>
@@ -236,10 +236,10 @@ function SkillsPageContent() {
 
   if (loading) {
     return (
-      <div className="p-4 space-y-4">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-11 w-full" />
-        <Skeleton className="h-11 w-full" />
+      <div className="p-4 space-y-4 bg-[#1E1E1E]">
+        <Skeleton className="h-8 w-32 bg-[#2B2B2B]" />
+        <Skeleton className="h-11 w-full bg-[#2B2B2B]" />
+        <Skeleton className="h-11 w-full bg-[#2B2B2B]" />
       </div>
     );
   }
@@ -247,16 +247,16 @@ function SkillsPageContent() {
   const empty = filtered.length === 0;
 
   return (
-    <div className="text-white pb-20">
+    <div className="bg-[#1E1E1E] text-[#E0E0E0] pb-20">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4">
         <div>
           <h1 className="text-2xl font-bold leading-tight">Skills</h1>
-          <p className="text-sm text-gray-400">Track and improve your skills</p>
+          <p className="text-sm text-[#A0A0A0]">Track and improve your skills</p>
         </div>
         <Button
           onClick={() => setOpen(true)}
-          className="h-11 px-4 bg-gray-200 text-black hover:bg-gray-300"
+          className="h-11 px-4 bg-[#2B2B2B] text-[#E0E0E0] border border-[#3C3C3C] hover:bg-[#353535]"
         >
           <Plus className="w-4 h-4 mr-2" />
           Create
@@ -270,20 +270,22 @@ function SkillsPageContent() {
             placeholder="Search skills..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-11 flex-1"
+            className="h-11 flex-1 bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] placeholder-[#666666]"
           />
           <Button
             onClick={() => setView("grid")}
-            variant={view === "grid" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
+            className={`h-11 w-11 p-0 border border-[#3C3C3C] text-[#E0E0E0] ${
+              view === "grid" ? "bg-[#353535]" : "bg-[#2B2B2B] hover:bg-[#353535]"
+            }`}
           >
             <LayoutGrid className="w-5 h-5" />
             <span className="sr-only">Grid view</span>
           </Button>
           <Button
             onClick={() => setView("list")}
-            variant={view === "list" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
+            className={`h-11 w-11 p-0 border border-[#3C3C3C] text-[#E0E0E0] ${
+              view === "list" ? "bg-[#353535]" : "bg-[#2B2B2B] hover:bg-[#353535]"
+            }`}
           >
             <ListIcon className="w-5 h-5" />
             <span className="sr-only">List view</span>
@@ -294,10 +296,10 @@ function SkillsPageContent() {
             <button
               key={cat.id}
               onClick={() => setSelectedCat(cat.id)}
-              className={`flex-shrink-0 px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
+              className={`flex-shrink-0 px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border border-[#3C3C3C] ${
                 selectedCat === cat.id
-                  ? "bg-gray-200 text-black border-gray-200"
-                  : "bg-[#2C2C2C] border-[#333]"
+                  ? "bg-[#353535] text-[#E0E0E0]"
+                  : "bg-[#2B2B2B] text-[#A0A0A0] hover:bg-[#353535]"
               }`}
             >
               {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
@@ -306,7 +308,7 @@ function SkillsPageContent() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="ml-auto h-11 bg-[#2C2C2C] border border-[#333] rounded-md px-3"
+            className="ml-auto h-11 bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] rounded-md px-3"
           >
             <option value="name">A→Z</option>
             <option value="level">Level (desc)</option>
@@ -319,33 +321,33 @@ function SkillsPageContent() {
       {/* Skills */}
       {empty ? (
         <div className="p-8">
-          <div className="text-center text-gray-400">No skills found</div>
+          <div className="text-center text-[#A0A0A0]">No skills found</div>
         </div>
       ) : view === "grid" ? (
         <div className="grid grid-cols-2 gap-4 p-4">
           {filtered.map((skill) => (
             <div
               key={skill.id}
-              className="relative bg-[#2C2C2C] rounded-lg p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform"
+              className="relative bg-[#2B2B2B] border border-[#3C3C3C] rounded-lg p-4 flex flex-col items-center gap-2 hover:bg-[#353535] active:scale-95 transition-transform"
             >
               <CircularProgress value={skill.progress} />
               <div className="text-center w-full">
-                <div className="text-sm font-medium truncate">
+                <div className="text-sm font-medium truncate text-[#E0E0E0]">
                   {skill.name}
                 </div>
-                <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
+                <span className="text-[10px] bg-[#3C3C3C] text-[#A0A0A0] px-2 py-0.5 rounded-full">
                   Lv {skill.level}
                 </span>
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="absolute top-2 right-2 p-2" aria-label="More">
+                  <button className="absolute top-2 right-2 p-2 text-[#A0A0A0] hover:text-[#E0E0E0]" aria-label="More">
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                <DropdownMenuContent className="bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0]">
+                  <DropdownMenuItem className="hover:bg-[#353535]" onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
+                  <DropdownMenuItem className="hover:bg-[#353535]" onClick={() => handleRemoveSkill(skill.id)}>
                     Remove
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -358,18 +360,18 @@ function SkillsPageContent() {
           {filtered.map((skill) => (
             <div
               key={skill.id}
-              className="flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
+              className="flex items-center justify-between bg-[#2B2B2B] border border-[#3C3C3C] rounded-lg p-3 hover:bg-[#353535]"
             >
               <div className="flex items-center gap-3">
                 <CircularProgress value={skill.progress} />
                 <div>
-                  <div className="text-sm font-medium">{skill.name}</div>
-                  <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
+                  <div className="text-sm font-medium text-[#E0E0E0]">{skill.name}</div>
+                  <span className="text-[10px] bg-[#3C3C3C] text-[#A0A0A0] px-2 py-0.5 rounded-full">
                     Lv {skill.level}
                   </span>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <ChevronRight className="w-4 h-4 text-[#A0A0A0]" />
             </div>
           ))}
         </div>
@@ -379,35 +381,35 @@ function SkillsPageContent() {
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
           side="bottom"
-          className="bg-[#1E1E1E] text-white max-h-[80vh]"
+          className="bg-[#1E1E1E] text-[#E0E0E0] max-h-[80vh]"
         >
           <SheetHeader>
             <SheetTitle>Add Skill</SheetTitle>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div>
-              <label className="block text-sm mb-1">Name</label>
+              <label className="block text-sm mb-1 text-[#E0E0E0]">Name</label>
               <Input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                className="h-11"
+                className="h-11 bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] placeholder-[#666666]"
               />
             </div>
             <div>
-              <label className="block text-sm mb-1">Emoji</label>
+              <label className="block text-sm mb-1 text-[#E0E0E0]">Emoji</label>
               <Input
                 value={formEmoji}
                 onChange={(e) => setFormEmoji(e.target.value)}
-                className="h-11"
+                className="h-11 bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] placeholder-[#666666]"
                 placeholder="🎯"
               />
             </div>
             <div>
-              <label className="block text-sm mb-1">Category</label>
+              <label className="block text-sm mb-1 text-[#E0E0E0]">Category</label>
               <select
                 value={formCat}
                 onChange={(e) => setFormCat(e.target.value)}
-                className="h-11 w-full bg-[#2C2C2C] border border-[#333] rounded-md px-3"
+                className="h-11 w-full bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] rounded-md px-3"
               >
                 <option value="">Select...</option>
                 {categories.map((c) => (
@@ -422,14 +424,14 @@ function SkillsPageContent() {
                   placeholder="New category"
                   value={formNewCat}
                   onChange={(e) => setFormNewCat(e.target.value)}
-                  className="h-11 mt-2"
+                  className="h-11 mt-2 bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] placeholder-[#666666]"
                 />
               )}
             </div>
           </div>
           <SheetFooter>
             <Button
-              className="w-full bg-gray-200 text-black hover:bg-gray-300"
+              className="w-full bg-[#2B2B2B] text-[#E0E0E0] border border-[#3C3C3C] hover:bg-[#353535]"
               onClick={handleAddSkill}
               disabled={!formName}
             >
