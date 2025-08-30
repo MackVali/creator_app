@@ -8,9 +8,9 @@ interface ProjectRowProps {
 
 export function ProjectRow({ project }: ProjectRowProps) {
   const statusColor =
-    project.status === "Done"
+    project.status === "Completed"
       ? "bg-green-600"
-      : project.status === "In-Progress"
+      : project.status === "Active"
       ? "bg-yellow-600"
       : "bg-gray-600";
 

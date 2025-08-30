@@ -11,7 +11,7 @@ import {
 import { GoalCard } from "./components/GoalCard";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
-import { CreateGoalDrawer } from "./components/CreateGoalDrawer";
+import { GoalDrawer } from "./components/GoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
@@ -94,7 +94,7 @@ export default function GoalsPage() {
           const total = tasks.length;
           const done = tasks.filter((t) => t.stage === "PERFECT").length;
           const progress = total ? Math.round((done / total) * 100) : 0;
-          const status = projectStageToStatus(p.stage);
+          const status = p.status || projectStageToStatus(p.stage);
           const proj: Project = {
             id: p.id,
             name: p.name,
@@ -120,7 +120,8 @@ export default function GoalsPage() {
             title: g.name,
             priority: mapPriority(g.priority),
             progress,
-            status: progress >= 100 ? "Completed" : "Active",
+            status: progress >= 100 ? "Completed" : g.status || "Active",
+            active: g.active,
             updatedAt: g.created_at,
             projects: projList,
           };
@@ -206,10 +207,10 @@ export default function GoalsPage() {
             ))}
           </div>
         )}
-        <CreateGoalDrawer
+        <GoalDrawer
           open={drawer}
           onClose={() => setDrawer(false)}
-          onAdd={addGoal}
+          onSave={addGoal}
         />
       </div>
     </ProtectedRoute>
