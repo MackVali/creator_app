@@ -41,6 +41,27 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
+function goalStatusToStatus(status?: string | null): Goal["status"] {
+  switch (status) {
+    case "COMPLETED":
+    case "Completed":
+    case "DONE":
+      return "Completed";
+    case "INACTIVE":
+    case "Inactive":
+      return "Inactive";
+    case "OVERDUE":
+    case "Overdue":
+      return "Overdue";
+    case "ACTIVE":
+    case "Active":
+    case "IN_PROGRESS":
+    case "IN PROGRESS":
+    default:
+      return "Active";
+  }
+}
+
 export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -117,8 +138,11 @@ export default function GoalsPage() {
                     projList.length
                 )
               : 0;
-          const status = (g.status as Goal["status"]) ||
-            (progress >= 100 ? "Completed" : "Active");
+          const status = g.status
+            ? goalStatusToStatus(g.status)
+            : progress >= 100
+            ? "Completed"
+            : "Active";
           return {
             id: g.id,
             title: g.name,
