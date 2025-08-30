@@ -210,7 +210,13 @@ export default function GoalsPage() {
   const toggleActive = (id: string) =>
     setGoals((g) =>
       g.map((goal) =>
-        goal.id === id ? { ...goal, active: !goal.active } : goal
+        goal.id === id
+          ? {
+              ...goal,
+              active: !goal.active,
+              status: !goal.active ? "Active" : goal.status,
+            }
+          : goal
       )
     );
 
