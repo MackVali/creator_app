@@ -135,6 +135,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         name: string;
         priority: string;
         energy: string;
+        description?: string;
         why?: string;
         goal_id?: string;
         project_id?: string;
@@ -150,7 +151,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
       // Add description if provided
       if (formData.description.trim()) {
-        insertData.why = formData.description.trim();
+        if (eventType === "GOAL") {
+          insertData.why = formData.description.trim();
+        } else {
+          insertData.description = formData.description.trim();
+        }
       }
 
       // Add event-specific fields
