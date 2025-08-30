@@ -35,7 +35,7 @@ export function ProjectsDropdown({
           {loading ? (
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-6 bg-gray-800 rounded animate-pulse" />
+                <div key={i} className="h-6 bg-[#3C3C3C] rounded animate-pulse" />
               ))}
             </div>
           ) : projects.length > 0 ? (
@@ -45,12 +45,16 @@ export function ProjectsDropdown({
               ))}
             </div>
           ) : (
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-[#A0A0A0]">
               No projects linked yet
-              <button className="ml-2 text-blue-400">Add Project</button>
+              <button className="ml-2 px-2 py-1 rounded bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] hover:bg-[#353535]">
+                Add Project
+              </button>
             </div>
           )}
-          <button className="mt-3 text-xs text-blue-400">View all projects</button>
+          <button className="mt-3 text-xs px-2 py-1 rounded bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] hover:bg-[#353535]">
+            View all projects
+          </button>
         </div>
       )}
     </div>

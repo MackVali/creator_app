@@ -35,20 +35,22 @@ export function GoalsUtilityBar({
   }, [local, onSearch]);
 
   return (
-    <div className="sticky top-0 z-10 bg-gray-900 px-4 py-3 space-y-2">
+    <div className="sticky top-0 z-10 bg-[#1E1E1E] px-4 py-3 space-y-2">
       <input
         value={local}
         onChange={(e) => setLocal(e.target.value)}
         placeholder="Search goals"
-        className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
+        className="w-full px-3 py-2 rounded-md bg-[#2B2B2B] border border-[#3C3C3C] text-sm text-[#E0E0E0] placeholder-[#666666] focus:outline-none focus:bg-[#353535]"
       />
       <div className="flex flex-wrap items-center gap-2">
         {(["All", "Active", "Completed", "Overdue"] as FilterStatus[]).map((s) => (
           <button
             key={s}
             onClick={() => onFilter(s)}
-            className={`px-3 py-1 rounded-full text-xs border border-gray-700 ${
-              filter === s ? "bg-blue-600" : "bg-gray-800"
+            className={`px-3 py-1 rounded-full text-xs border border-[#3C3C3C] ${
+              filter === s
+                ? "bg-[#3C3C3C] text-[#E0E0E0]"
+                : "bg-[#2B2B2B] text-[#A0A0A0] hover:bg-[#353535]"
             }`}
           >
             {s}
@@ -57,7 +59,7 @@ export function GoalsUtilityBar({
         <select
           value={sort}
           onChange={(e) => onSort(e.target.value as SortOption)}
-          className="ml-auto bg-gray-800 text-sm px-2 py-1 rounded-md"
+          className="ml-auto bg-[#2B2B2B] border border-[#3C3C3C] text-sm text-[#E0E0E0] px-2 py-1 rounded-md hover:bg-[#353535]"
         >
           <option value="A→Z">A→Z</option>
           <option value="Due Soon">Due Soon</option>
@@ -67,7 +69,7 @@ export function GoalsUtilityBar({
         <button
           aria-label="Toggle view"
           onClick={() => onViewChange(view === "grid" ? "list" : "grid")}
-          className="p-2 rounded-md bg-gray-800"
+          className="p-2 rounded-md bg-[#2B2B2B] border border-[#3C3C3C] hover:bg-[#353535]"
         >
           {view === "grid" ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
         </button>

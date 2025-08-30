@@ -12,12 +12,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((o) => !o);
 
-  const statusColor =
-    project.status === "Done"
-      ? "bg-green-600"
-      : project.status === "In-Progress"
-      ? "bg-yellow-600"
-      : "bg-gray-600";
+  const statusColor = "bg-[#3C3C3C] text-[#A0A0A0]";
 
   const hasTasks = project.tasks.length > 0;
 
@@ -25,7 +20,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
     <div className="py-1">
       <button
         onClick={toggle}
-        className="w-full flex items-center justify-between"
+        className="w-full flex items-center justify-between hover:bg-[#353535]"
         aria-expanded={open}
         aria-controls={`project-${project.id}`}
       >
@@ -36,14 +31,14 @@ export function ProjectRow({ project }: ProjectRowProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div className="w-16 h-2 bg-[#3C3C3C] rounded-full overflow-hidden">
             <div
-              className="h-full bg-blue-500"
+              className="h-full bg-[#A0A0A0]"
               style={{ width: `${project.progress}%` }}
             />
           </div>
           {project.dueDate && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-[#A0A0A0]">
               {new Date(project.dueDate).toLocaleDateString()}
             </span>
           )}
@@ -63,7 +58,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
         >
           {open &&
             project.tasks.map((t) => (
-              <li key={t.id} className="text-xs text-gray-400">
+              <li key={t.id} className="text-xs text-[#A0A0A0]">
                 • {t.name}
               </li>
             ))}

@@ -8,14 +8,14 @@ interface GoalsHeaderProps {
 
 export function GoalsHeader({ onCreate }: GoalsHeaderProps) {
   return (
-    <header className="px-4 py-4 flex items-center justify-between bg-gray-900">
+    <header className="px-4 py-4 flex items-center justify-between bg-[#1E1E1E]">
       <div>
         <h1 className="text-2xl font-bold">Goals</h1>
-        <p className="text-sm text-gray-400">Track and manage your goals</p>
+        <p className="text-sm text-[#A0A0A0]">Track and manage your goals</p>
       </div>
       <button
         onClick={onCreate}
-        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 px-3 py-2 rounded-md text-sm"
+        className="flex items-center gap-2 bg-[#2B2B2B] border border-[#3C3C3C] text-[#E0E0E0] px-3 py-2 rounded-md text-sm hover:bg-[#353535] active:bg-[#353535]"
       >
         <Plus className="w-4 h-4" /> Create Goal
       </button>
