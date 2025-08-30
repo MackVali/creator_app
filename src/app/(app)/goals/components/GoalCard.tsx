@@ -64,7 +64,7 @@ export function GoalCard({ goal, onChange }: GoalCardProps) {
           onClick={toggle}
           aria-expanded={open}
           aria-controls={`goal-${data.id}`}
-          className="w-full flex items-start justify-between p-4 active:scale-95 transition-transform motion-safe:duration-150 motion-reduce:transform-none"
+          className={`w-full flex items-start justify-between p-4 active:scale-95 transition-transform motion-safe:duration-150 motion-reduce:transform-none`}
         >
           <div className="flex-1">
             <div className="flex items-center gap-2">
