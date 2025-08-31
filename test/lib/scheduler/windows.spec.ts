@@ -18,13 +18,15 @@ describe("genSlots", () => {
         max_consecutive_min: null,
       },
     ];
-    const slots = genSlots(date, windows, 15);
-    expect(slots).toHaveLength(4);
+    const slots = genSlots(date, windows);
+    expect(slots).toHaveLength(12);
     expect(slots[0].start.getHours()).toBe(6);
     expect(slots[0].start.getMinutes()).toBe(0);
-    expect(slots[3].end.getHours()).toBe(7);
-    expect(slots[3].end.getMinutes()).toBe(0);
-    expect(slots.map((s) => s.index)).toEqual([0, 1, 2, 3]);
+    expect(slots[11].end.getHours()).toBe(7);
+    expect(slots[11].end.getMinutes()).toBe(0);
+    expect(slots.map((s) => s.index)).toEqual(
+      Array.from({ length: 12 }, (_, i) => i)
+    );
   });
 });
 

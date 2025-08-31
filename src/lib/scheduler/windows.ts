@@ -26,12 +26,9 @@ export interface Slot {
   maxConsecutiveMin: number | null;
 }
 
-export function genSlots(
-  date: Date,
-  windows: WindowRow[],
-  slotMinutes = 5
-): Slot[] {
+export function genSlots(date: Date, windows: WindowRow[]): Slot[] {
   const slots: Slot[] = [];
+  const slotMinutes = 5;
   for (const w of windows) {
     const [sh, sm] = (w.start_local || "0:0").split(":").map(Number);
     const [eh, em] = (w.end_local || "0:0").split(":").map(Number);
