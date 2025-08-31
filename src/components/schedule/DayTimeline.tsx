@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Clock } from "lucide-react";
 
 export const GEM_PURPLE = "#9966CC";
 
@@ -8,18 +9,25 @@ interface DayTimelineProps {
   startHour?: number;
   endHour?: number;
   pxPerMin?: number;
+  date?: Date;
 }
 
 export function DayTimeline({
   startHour = 0,
   endHour = 24,
   pxPerMin = 2,
+  date = new Date(),
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!isSameDay(date, new Date())) {
+      setNowMinutes(null);
+      return;
+    }
+
     function update() {
       const d = new Date();
       const minutes = d.getHours() * 60 + d.getMinutes();
@@ -28,7 +36,7 @@ export function DayTimeline({
     update();
     const id = setInterval(update, 30_000);
     return () => clearInterval(id);
-  }, [startHour]);
+  }, [startHour, date]);
 
   const showNowLine =
     nowMinutes !== null && nowMinutes >= 0 && nowMinutes <= totalMinutes;
@@ -70,13 +78,29 @@ export function DayTimeline({
       {showNowLine && (
         <>
           <div
+            className="absolute left-0 right-0 pointer-events-none"
+            style={{
+              top: nowTop - 10,
+              height: 20,
+              background: `linear-gradient(to bottom, rgba(153, 102, 204, 0) 0%, rgba(153, 102, 204, 0.4) 50%, rgba(153, 102, 204, 0) 100%)`,
+            }}
+          />
+          <div
             className="absolute left-0 right-0"
             style={{
               top: nowTop,
-              borderTop: `2px solid ${GEM_PURPLE}`,
-              boxShadow: `0 0 6px ${GEM_PURPLE}`,
+              height: 2,
+              backgroundColor: GEM_PURPLE,
+              boxShadow: `0 0 8px ${GEM_PURPLE}`,
             }}
           />
+          <div
+            className="absolute flex items-center gap-1 text-xs text-white"
+            style={{ top: nowTop - 8, left: 4 }}
+          >
+            <Clock className="h-3 w-3" />
+            <span>Now</span>
+          </div>
           <div
             className="absolute right-0 text-xs text-white pr-2"
             style={{ top: nowTop - 8 }}
@@ -102,4 +126,12 @@ function formatTime(totalMinutes: number) {
   const hour12 = hours % 12 === 0 ? 12 : hours % 12;
   const minuteStr = minutes.toString().padStart(2, "0");
   return `${hour12}:${minuteStr}`;
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
