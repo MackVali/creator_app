@@ -12,6 +12,10 @@ export function MonthView({ date = new Date() }: MonthViewProps) {
   const first = new Date(year, month, 1);
   const startWeekday = first.getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const label = date.toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
 
   const cells: (number | null)[] = [];
   for (let i = 0; i < startWeekday; i++) cells.push(null);
@@ -20,6 +24,7 @@ export function MonthView({ date = new Date() }: MonthViewProps) {
 
   return (
     <div className="text-xs text-gray-300">
+      <div className="mb-2 text-center text-sm text-gray-200">{label}</div>
       <div className="grid grid-cols-7 text-center">
         {dayNames.map((d) => (
           <div key={d} className="p-1 font-medium">

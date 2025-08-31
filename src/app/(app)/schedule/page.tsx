@@ -31,6 +31,15 @@ export default function SchedulePage() {
     touchStartX.current = null
   }
 
+  function formatFullDate(d: Date) {
+    return d.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+
   return (
     <ProtectedRoute>
       <div className="space-y-6">
@@ -51,6 +60,10 @@ export default function SchedulePage() {
               {v}
             </button>
           ))}
+        </div>
+
+        <div className="text-center text-sm text-gray-200">
+          {formatFullDate(view === 'focus' ? new Date() : currentDate)}
         </div>
 
         <div
