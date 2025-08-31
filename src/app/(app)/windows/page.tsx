@@ -32,7 +32,10 @@ export default function WindowsPage() {
   const [editing, setEditing] = useState<WindowRow | null>(null);
 
   const [label, setLabel] = useState("");
-  const [days, setDays] = useState<number[]>([]);
+  const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [dayPreset, setDayPreset] = useState<
+    "every" | "weekdays" | "weekends" | "custom"
+  >("every");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [energy, setEnergy] = useState("low");
@@ -70,7 +73,8 @@ export default function WindowsPage() {
   function openNew() {
     setEditing(null);
     setLabel("");
-    setDays([]);
+    setDayPreset("every");
+    setDays([0, 1, 2, 3, 4, 5, 6]);
     setStart("");
     setEnd("");
     setEnergy("low");
@@ -79,9 +83,18 @@ export default function WindowsPage() {
     setShowForm(true);
   }
 
+  function determinePreset(arr: number[]) {
+    const sorted = [...arr].sort().join(",");
+    if (sorted === "0,1,2,3,4,5,6") return "every";
+    if (sorted === "1,2,3,4,5") return "weekdays";
+    if (sorted === "0,6") return "weekends";
+    return "custom";
+  }
+
   function openEdit(w: WindowRow) {
     setEditing(w);
     setLabel(w.label);
+    setDayPreset(determinePreset(w.days_of_week || []));
     setDays(w.days_of_week || []);
     setStart(w.start_local || "");
     setEnd(w.end_local || "");
@@ -89,6 +102,13 @@ export default function WindowsPage() {
     setTags((w.tags || []).join(","));
     setMaxConsecutive(w.max_consecutive_min ?? "");
     setShowForm(true);
+  }
+
+  function selectPreset(preset: typeof dayPreset) {
+    setDayPreset(preset);
+    if (preset === "every") setDays([0, 1, 2, 3, 4, 5, 6]);
+    if (preset === "weekdays") setDays([1, 2, 3, 4, 5]);
+    if (preset === "weekends") setDays([0, 6]);
   }
 
   function toggleDay(i: number) {
@@ -103,6 +123,19 @@ export default function WindowsPage() {
       .sort()
       .map((i) => DAY_LABELS[i])
       .join(", ");
+  }
+
+  function parseTime(t: string) {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  }
+
+  function formatDuration(min: number) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (h && m) return `${h}h ${m}m`;
+    if (h) return `${h}h`;
+    return `${m}m`;
   }
 
   async function saveWindow(e: React.FormEvent) {
@@ -256,19 +289,49 @@ export default function WindowsPage() {
 
               <div className="space-y-1">
                 <Label>Days of Week</Label>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {DAY_LABELS.map((d, idx) => (
-                    <label key={idx} className="flex items-center gap-1 text-sm">
-                      <input
-                        type="checkbox"
-                        className="accent-gray-600"
-                        checked={days.includes(idx)}
-                        onChange={() => toggleDay(idx)}
-                      />
-                      {d}
-                    </label>
-                  ))}
+                <div className="flex gap-2 pt-1">
+                  {["Every day", "Weekdays", "Weekends", "Custom"].map(
+                    (p, i) => (
+                      <Button
+                        key={p}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={
+                          dayPreset ===
+                          (["every", "weekdays", "weekends", "custom"] as const)[i]
+                            ? "bg-gray-700"
+                            : "bg-gray-800"
+                        }
+                        onClick={() =>
+                          selectPreset(
+                            (["every", "weekdays", "weekends", "custom"] as const)[i]
+                          )
+                        }
+                      >
+                        {p}
+                      </Button>
+                    )
+                  )}
                 </div>
+                {dayPreset === "custom" && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {DAY_LABELS.map((d, idx) => (
+                      <Button
+                        key={idx}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={
+                          days.includes(idx) ? "bg-gray-700" : "bg-gray-800"
+                        }
+                        onClick={() => toggleDay(idx)}
+                      >
+                        {d}
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2">
@@ -293,19 +356,48 @@ export default function WindowsPage() {
                   />
                 </div>
               </div>
+              {start && end && (
+                <div
+                  className={`text-center text-xs pt-1 ${
+                    parseTime(end) <= parseTime(start)
+                      ? "text-red-400"
+                      : "text-gray-400"
+                  }`}
+                >
+                  {parseTime(end) <= parseTime(start)
+                    ? "End must be after Start."
+                    : `${start} \u2192 ${end} • ${formatDuration(
+                        parseTime(end) - parseTime(start)
+                      )}`}
+                </div>
+              )}
 
               <div className="space-y-1">
-                <Label htmlFor="energy">Energy Cap</Label>
-                <select
-                  id="energy"
-                  value={energy}
-                  onChange={(e) => setEnergy(e.target.value)}
-                  className="w-full rounded-md bg-gray-800 p-2 text-sm"
-                >
-                  <option value="low">low</option>
-                  <option value="med">med</option>
-                  <option value="high">high</option>
-                </select>
+                <Label>Energy Cap</Label>
+                <div className="flex overflow-hidden rounded-md">
+                  {[
+                    { value: "low", label: "Low" },
+                    { value: "med", label: "Medium" },
+                    { value: "high", label: "High" },
+                    { value: "peak", label: "Peak" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`flex-1 px-3 py-2 text-sm ${
+                        energy === opt.value
+                          ? "bg-gray-700 text-white"
+                          : "bg-gray-800 text-gray-300"
+                      }`}
+                      onClick={() => setEnergy(opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs text-gray-400">
+                  Tasks require ≤ selected energy.
+                </div>
               </div>
 
               <div className="space-y-1">
