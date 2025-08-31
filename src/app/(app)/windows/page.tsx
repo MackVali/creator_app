@@ -41,6 +41,12 @@ export default function WindowsPage() {
   const [energy, setEnergy] = useState("low");
   const [tags, setTags] = useState("");
   const [maxConsecutive, setMaxConsecutive] = useState<number | "">("");
+  const [conflictWindow, setConflictWindow] = useState<WindowRow | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<any | null>(null);
+
+  const is24Hour = !new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+  }).resolvedOptions().hour12;
 
   useEffect(() => {
     load();
@@ -130,6 +136,10 @@ export default function WindowsPage() {
     return h * 60 + m;
   }
 
+  function arraysEqual(a: number[], b: number[]) {
+    return a.slice().sort().join(",") === b.slice().sort().join(",");
+  }
+
   function formatDuration(min: number) {
     const h = Math.floor(min / 60);
     const m = min % 60;
@@ -145,6 +155,43 @@ export default function WindowsPage() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
+    if (!label.trim()) {
+      toast.error("Label required", "Please enter a label");
+      return;
+    }
+    if (days.length === 0) {
+      toast.error("Select days", "Choose at least one day");
+      return;
+    }
+    if (!start || !end) {
+      toast.error("Time required", "Provide start and end times");
+      return;
+    }
+    if (parseTime(end) <= parseTime(start)) {
+      toast.error("Time error", "End must be after Start");
+      return;
+    }
+
+    const duplicate = windows.find(
+      (w) =>
+        w.id !== editing?.id &&
+        arraysEqual(w.days_of_week || [], days) &&
+        w.start_local === start &&
+        w.end_local === end
+    );
+    if (duplicate) {
+      if (confirm("Similar window exists. Use existing + edit?")) {
+        openEdit(duplicate);
+      }
+      return;
+    }
+
+    const conflict = windows.find((w) => {
+      if (w.id === editing?.id) return false;
+      const overlapDay = w.days_of_week.some((d) => days.includes(d));
+      if (!overlapDay) return false;
+      return parseTime(start) < parseTime(w.end_local) && parseTime(end) > parseTime(w.start_local);
+    });
     const payload = {
       label,
       days_of_week: days,
@@ -159,13 +206,24 @@ export default function WindowsPage() {
         maxConsecutive === "" ? null : Number(maxConsecutive),
       user_id: user.id,
     };
+
+    if (conflict) {
+      setConflictWindow(conflict);
+      setPendingPayload(payload);
+      return;
+    }
+
+    await performSave(payload, user.id);
+  }
+
+  async function performSave(payload: any, userId: string) {
     let error;
     if (editing) {
       ({ error } = await supabase
         .from("windows")
         .update(payload)
         .eq("id", editing.id)
-        .eq("user_id", user.id));
+        .eq("user_id", userId));
     } else {
       ({ error } = await supabase.from("windows").insert(payload));
     }
@@ -174,6 +232,8 @@ export default function WindowsPage() {
     } else {
       toast.success("Saved", "Window saved");
       setShowForm(false);
+      setConflictWindow(null);
+      setPendingPayload(null);
       load();
     }
   }
@@ -283,13 +343,14 @@ export default function WindowsPage() {
                   id="label"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
+                  enterKeyHint="next"
                   required
                 />
               </div>
 
               <div className="space-y-1">
                 <Label>Days of Week</Label>
-                <div className="flex gap-2 pt-1">
+                <div className="flex flex-wrap gap-2 pt-1">
                   {["Every day", "Weekdays", "Weekends", "Custom"].map(
                     (p, i) => (
                       <Button
@@ -297,12 +358,12 @@ export default function WindowsPage() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className={
+                        className={`min-w-[44px] h-11 ${
                           dayPreset ===
                           (["every", "weekdays", "weekends", "custom"] as const)[i]
-                            ? "bg-gray-700"
-                            : "bg-gray-800"
-                        }
+                            ? "bg-gray-100 text-gray-900"
+                            : "bg-gray-800 text-gray-300"
+                        }`}
                         onClick={() =>
                           selectPreset(
                             (["every", "weekdays", "weekends", "custom"] as const)[i]
@@ -322,9 +383,11 @@ export default function WindowsPage() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className={
-                          days.includes(idx) ? "bg-gray-700" : "bg-gray-800"
-                        }
+                        className={`min-w-[44px] h-11 ${
+                          days.includes(idx)
+                            ? "bg-gray-100 text-gray-900"
+                            : "bg-gray-800 text-gray-300"
+                        }`}
                         onClick={() => toggleDay(idx)}
                       >
                         {d}
@@ -342,6 +405,9 @@ export default function WindowsPage() {
                     type="time"
                     value={start}
                     onChange={(e) => setStart(e.target.value)}
+                    step={300}
+                    lang={is24Hour ? "en-GB" : "en-US"}
+                    enterKeyHint="next"
                     required
                   />
                 </div>
@@ -352,6 +418,9 @@ export default function WindowsPage() {
                     type="time"
                     value={end}
                     onChange={(e) => setEnd(e.target.value)}
+                    step={300}
+                    lang={is24Hour ? "en-GB" : "en-US"}
+                    enterKeyHint="next"
                     required
                   />
                 </div>
@@ -384,7 +453,7 @@ export default function WindowsPage() {
                     <button
                       key={opt.value}
                       type="button"
-                      className={`flex-1 px-3 py-2 text-sm ${
+                      className={`flex-1 h-11 px-3 text-sm ${
                         energy === opt.value
                           ? "bg-gray-700 text-white"
                           : "bg-gray-800 text-gray-300"
@@ -407,6 +476,7 @@ export default function WindowsPage() {
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                   placeholder="tag1, tag2"
+                  enterKeyHint="next"
                 />
               </div>
 
@@ -422,6 +492,8 @@ export default function WindowsPage() {
                       e.target.value === "" ? "" : parseInt(e.target.value)
                     )
                   }
+                  inputMode="numeric"
+                  enterKeyHint="done"
                 />
               </div>
 
@@ -442,6 +514,52 @@ export default function WindowsPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        )}
+        {conflictWindow && pendingPayload && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm space-y-4 rounded-lg bg-gray-900 p-6 text-center">
+              <p className="text-gray-200">
+                Overlaps with existing window "{conflictWindow.label}".
+              </p>
+              <div className="flex flex-col gap-2 pt-2">
+                <Button
+                  className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+                  onClick={() => performSave(pendingPayload, pendingPayload.user_id)}
+                >
+                  Keep both
+                </Button>
+                <Button
+                  className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+                  onClick={() => {
+                    const startMin = parseTime(pendingPayload.start_local);
+                    const conflictStart = parseTime(conflictWindow.start_local);
+                    if (conflictStart <= startMin) {
+                      toast.error("Conflict", "No room before conflict");
+                      setConflictWindow(null);
+                      setPendingPayload(null);
+                      return;
+                    }
+                    const newEnd = conflictWindow.start_local;
+                    setEnd(newEnd);
+                    const adjusted = { ...pendingPayload, end_local: newEnd };
+                    performSave(adjusted, pendingPayload.user_id);
+                  }}
+                >
+                  Adjust end time
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="text-gray-300 hover:bg-gray-700"
+                  onClick={() => {
+                    setConflictWindow(null);
+                    setPendingPayload(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>
