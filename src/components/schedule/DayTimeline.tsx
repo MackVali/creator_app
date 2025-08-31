@@ -11,7 +11,7 @@ interface DayTimelineProps {
 }
 
 export function DayTimeline({
-  startHour = 5,
+  startHour = 0,
   endHour = 24,
   pxPerMin = 2,
 }: DayTimelineProps) {
@@ -68,21 +68,38 @@ export function DayTimeline({
       })}
 
       {showNowLine && (
-        <div
-          className="absolute left-0 right-0"
-          style={{
-            top: nowTop,
-            borderTop: `2px solid ${GEM_PURPLE}`,
-            boxShadow: `0 0 6px ${GEM_PURPLE}`,
-          }}
-        />
+        <>
+          <div
+            className="absolute left-0 right-0"
+            style={{
+              top: nowTop,
+              borderTop: `2px solid ${GEM_PURPLE}`,
+              boxShadow: `0 0 6px ${GEM_PURPLE}`,
+            }}
+          />
+          <div
+            className="absolute right-0 text-xs text-white pr-2"
+            style={{ top: nowTop - 8 }}
+          >
+            {formatTime(nowMinutes! + startHour * 60)}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
 function formatHour(h: number) {
-  const suffix = h >= 12 ? "PM" : "AM";
-  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  const normalized = h % 24;
+  const suffix = normalized >= 12 ? "PM" : "AM";
+  const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
   return `${hour12} ${suffix}`;
+}
+
+function formatTime(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60) % 24;
+  const minutes = totalMinutes % 60;
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  const minuteStr = minutes.toString().padStart(2, "0");
+  return `${hour12}:${minuteStr}`;
 }
