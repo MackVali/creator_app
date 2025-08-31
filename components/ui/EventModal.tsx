@@ -8,6 +8,7 @@ import { Input } from "./input";
 import { Label } from "./label";
 import { Textarea } from "./textarea";
 import { Select, SelectContent, SelectItem } from "./select";
+import { useToastHelpers } from "./toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
 import {
@@ -24,6 +25,7 @@ interface EventModalProps {
 
 export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [mounted, setMounted] = useState(false);
+  const toast = useToastHelpers();
 
   useEffect(() => {
     setMounted(true);
@@ -88,6 +90,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     energy: "NO",
     goal_id: "",
     project_id: "",
+    duration_min: "",
+    effective_duration_min: 0,
     stage:
       eventType === "PROJECT"
         ? "RESEARCH"
@@ -111,6 +115,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     if (!formData.name.trim()) {
       alert("Please enter a name for your " + eventType.toLowerCase());
       return;
+    }
+
+    let duration: number | undefined;
+    if (eventType === "PROJECT" || eventType === "TASK") {
+      duration = parseInt(formData.duration_min, 10);
+      if (!duration || duration <= 0) {
+        toast.error("Invalid Duration", "Duration must be greater than 0");
+        return;
+      }
     }
 
     try {
@@ -142,6 +155,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         stage?: string;
         type?: string;
         recurrence?: string;
+        duration_min?: number;
       } = {
         user_id: user.id,
         name: formData.name.trim(),
@@ -178,6 +192,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.recurrence = formData.recurrence;
       }
 
+      if (duration !== undefined) {
+        insertData.duration_min = duration;
+      }
+
       console.log("Inserting data:", insertData);
 
       const { data, error } = await supabase
@@ -187,9 +205,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
       if (error) {
         console.error("Error creating " + eventType.toLowerCase() + ":", error);
-        alert(
-          "Failed to create " + eventType.toLowerCase() + ". Please try again."
-        );
+        toast.error("Error", "Failed to create " + eventType.toLowerCase());
         return;
       }
 
@@ -197,15 +213,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         "Successfully created " + eventType.toLowerCase() + ":",
         data
       );
+      toast.success("Saved", `${eventType} created successfully`);
       onClose();
 
       // Refresh the page to show the new goal (temporary solution)
       window.location.reload();
     } catch (error) {
       console.error("Error creating " + eventType.toLowerCase() + ":", error);
-      alert(
-        "Failed to create " + eventType.toLowerCase() + ". Please try again."
-      );
+      toast.error("Error", "Failed to create " + eventType.toLowerCase());
     }
   };
 
@@ -369,6 +384,50 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Duration */}
+          {(eventType === "PROJECT" || eventType === "TASK") && (
+            <div className="space-y-2">
+              <Label
+                htmlFor="duration"
+                className="text-white text-sm font-medium"
+              >
+                Duration (minutes)
+              </Label>
+              <Input
+                id="duration"
+                type="number"
+                min={1}
+                value={formData.duration_min}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    duration_min: e.target.value,
+                  })
+                }
+                className="bg-gray-800 border-gray-600 text-white h-10 text-sm"
+                required
+              />
+            </div>
+          )}
+
+          {/* Effective Duration */}
+          {eventType === "PROJECT" && (
+            <div className="space-y-2">
+              <Label
+                htmlFor="effectiveDuration"
+                className="text-white text-sm font-medium"
+              >
+                Effective Duration
+              </Label>
+              <Input
+                id="effectiveDuration"
+                value={formData.effective_duration_min}
+                readOnly
+                className="bg-gray-800 border-gray-600 text-white h-10 text-sm"
+              />
+            </div>
+          )}
 
           {/* Goal Selection for Projects */}
           {eventType === "PROJECT" && (

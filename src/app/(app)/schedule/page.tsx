@@ -1,11 +1,13 @@
 "use client"
 
 import { useRef, useState } from 'react'
+import Link from 'next/link'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { MonthView } from '@/components/schedule/MonthView'
 import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
+import { Button } from '@/components/ui/button'
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -43,8 +45,16 @@ export default function SchedulePage() {
   return (
     <ProtectedRoute>
       <div className="space-y-6">
-        <div>
+        <div className="relative">
           <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
+          <Link href="/windows" className="absolute right-0 top-0">
+            <Button
+              size="sm"
+              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+            >
+              Windows
+            </Button>
+          </Link>
           <p className="text-muted-foreground">
             Plan and manage your time
           </p>

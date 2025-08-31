@@ -1,0 +1,523 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
+export interface Database {
+  public: {
+    Tables: {
+      goals: {
+        Row: {
+          id: string;
+          created_at: string;
+          is_current: boolean;
+          priority_id: number;
+          energy_id: number;
+          stage_id: number;
+          monument_id: string;
+          Title: string;
+          user_id: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          is_current?: boolean;
+          priority_id: number;
+          energy_id: number;
+          stage_id: number;
+          monument_id: string;
+          Title?: string;
+          user_id: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          is_current?: boolean;
+          priority_id?: number;
+          energy_id?: number;
+          stage_id?: number;
+          monument_id?: string;
+          Title?: string;
+          user_id?: string;
+        };
+      };
+      habits: {
+        Row: {
+          id: string;
+          created_at: string;
+          recurrence: number | null;
+          Title: string | null;
+          type_id: number;
+          user_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          recurrence?: number | null;
+          Title?: string | null;
+          type_id?: number;
+          user_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          recurrence?: number | null;
+          Title?: string | null;
+          type_id?: number;
+          user_id?: string | null;
+        };
+      };
+      projects: {
+        Row: {
+          id: string;
+          created_at: string;
+          energy_id: number | null;
+          priority_id: number | null;
+          goal_id: string | null;
+          stage_id: number;
+          Title: string;
+          user_id: string | null;
+          duration_min: number | null;
+          effective_duration_min: number | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          energy_id?: number | null;
+          priority_id?: number | null;
+          goal_id?: string | null;
+          stage_id: number;
+          Title?: string;
+          user_id?: string | null;
+          duration_min?: number | null;
+          effective_duration_min?: number | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          energy_id?: number | null;
+          priority_id?: number | null;
+          goal_id?: string | null;
+          stage_id?: number;
+          Title?: string;
+          user_id?: string | null;
+          duration_min?: number | null;
+          effective_duration_min?: number | null;
+        };
+      };
+      tasks: {
+        Row: {
+          id: string;
+          created_at: string;
+          priority_id: number | null;
+          energy_id: number | null;
+          stage_id: number;
+          project_id: string;
+          Title: string;
+          user_id: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          priority_id?: number | null;
+          energy_id?: number | null;
+          stage_id?: number;
+          project_id: string;
+          Title?: string;
+          user_id: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          priority_id?: number | null;
+          energy_id?: number | null;
+          stage_id?: number;
+          project_id?: string;
+          Title?: string;
+          user_id?: string;
+        };
+      };
+      skills: {
+        Row: {
+          id: string;
+          created_at: string;
+          Title: string | null;
+          cat_id: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          Title?: string | null;
+          cat_id?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          Title?: string | null;
+          cat_id?: string | null;
+          user_id?: string | null;
+        };
+      };
+      monuments: {
+        Row: {
+          id: string;
+          created_at: string;
+          Title: string | null;
+          description: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          Title?: string | null;
+          description?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          Title?: string | null;
+          description?: string | null;
+          user_id?: string | null;
+        };
+      };
+      monument_skills: {
+        Row: {
+          user_id: string;
+          monument_id: string | null;
+          skill_id: string | null;
+        };
+        Insert: {
+          user_id: string;
+          monument_id?: string | null;
+          skill_id?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          monument_id?: string | null;
+          skill_id?: string | null;
+        };
+      };
+      energy: {
+        Row: {
+          id: number;
+          name: string;
+          order_index: number;
+        };
+        Insert: {
+          id: number;
+          name: string;
+          order_index: number;
+        };
+        Update: {
+          id?: number;
+          name?: string;
+          order_index?: number;
+        };
+      };
+      goal_stage: {
+        Row: {
+          id: number;
+          name: string | null;
+          order_index: number | null;
+        };
+        Insert: {
+          id: number;
+          name?: string | null;
+          order_index?: number | null;
+        };
+        Update: {
+          id?: number;
+          name?: string | null;
+          order_index?: number | null;
+        };
+      };
+      habit_types: {
+        Row: {
+          id: number;
+          name: string | null;
+        };
+        Insert: {
+          id: number;
+          name?: string | null;
+        };
+        Update: {
+          id?: number;
+          name?: string | null;
+        };
+      };
+      priority: {
+        Row: {
+          id: number;
+          name: string;
+          order_index: number;
+        };
+        Insert: {
+          id: number;
+          name: string;
+          order_index: number;
+        };
+        Update: {
+          id?: number;
+          name?: string;
+          order_index?: number;
+        };
+      };
+      project_stage: {
+        Row: {
+          id: number;
+          name: string | null;
+          order_index: number | null;
+        };
+        Insert: {
+          id: number;
+          name?: string | null;
+          order_index?: number | null;
+        };
+        Update: {
+          id?: number;
+          name?: string | null;
+          order_index?: number | null;
+        };
+      };
+      task_stage: {
+        Row: {
+          id: number;
+          name: string | null;
+          order_index: number | null;
+        };
+        Insert: {
+          id: number;
+          name?: string | null;
+          order_index?: number | null;
+        };
+        Update: {
+          id?: number;
+          name?: string | null;
+          order_index?: number | null;
+        };
+      };
+      skill_categories: {
+        Row: {
+          id: number;
+          name: string | null;
+        };
+        Insert: {
+          id: number;
+          name?: string | null;
+        };
+        Update: {
+          id?: number;
+          name?: string | null;
+        };
+      };
+      profiles: {
+        Row: {
+          id: string;
+          created_at: string;
+          user_id: string | null;
+          username: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          user_id?: string | null;
+          username: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          user_id?: string | null;
+          username?: string;
+        };
+      };
+      linked_accounts: {
+        Row: {
+          id: string;
+          user_id: string;
+          platform: string;
+          url: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          platform: string;
+          url: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          platform?: string;
+          url?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      social_links: {
+        Row: {
+          id: string;
+          user_id: string;
+          platform: string;
+          url: string;
+          icon: string | null;
+          color: string | null;
+          position: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          platform: string;
+          url: string;
+          icon?: string | null;
+          color?: string | null;
+          position?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          platform?: string;
+          url?: string;
+          icon?: string | null;
+          color?: string | null;
+          position?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      content_cards: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          url: string;
+          thumbnail_url: string | null;
+          category: string | null;
+          position: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          url: string;
+          thumbnail_url?: string | null;
+          category?: string | null;
+          position?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          description?: string | null;
+          url?: string;
+          thumbnail_url?: string | null;
+          category?: string | null;
+          position?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      profile_themes: {
+        Row: {
+          id: string;
+          name: string;
+          primary_color: string;
+          secondary_color: string;
+          accent_color: string;
+          background_gradient: string | null;
+          font_family: string;
+          is_premium: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          primary_color: string;
+          secondary_color: string;
+          accent_color: string;
+          background_gradient?: string | null;
+          font_family: string;
+          is_premium?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          primary_color?: string;
+          secondary_color?: string;
+          accent_color?: string;
+          background_gradient?: string | null;
+          font_family?: string;
+          is_premium?: boolean;
+          created_at?: string;
+        };
+      };
+      windows: {
+        Row: {
+          id: string;
+          created_at: string;
+          user_id: string;
+          label: string;
+          days_of_week: number[];
+          start_local: string;
+          end_local: string;
+          energy_cap: string | null;
+          tags: string[] | null;
+          max_consecutive_min: number | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          user_id: string;
+          label: string;
+          days_of_week?: number[];
+          start_local?: string;
+          end_local?: string;
+          energy_cap?: string | null;
+          tags?: string[] | null;
+          max_consecutive_min?: number | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          user_id?: string;
+          label?: string;
+          days_of_week?: number[];
+          start_local?: string;
+          end_local?: string;
+          energy_cap?: string | null;
+          tags?: string[] | null;
+          max_consecutive_min?: number | null;
+        };
+      };
+    };
+    Views: {};
+    Functions: {};
+    Enums: {};
+    CompositeTypes: {};
+  };
+}
