@@ -1,5 +1,7 @@
 "use client";
 
+export const runtime = "nodejs";
+
 import { useEffect, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PageHeader } from "@/components/ui";
