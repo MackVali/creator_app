@@ -15,7 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
-import { deleteRecord } from "@/lib/db";
+import { deleteRecord, updateRecord } from "@/lib/db";
 import {
   LayoutGrid,
   List as ListIcon,
@@ -82,6 +82,7 @@ function SkillsPageContent() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState("name");
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Skill | null>(null);
 
   const supabase = getSupabaseBrowser();
 
@@ -180,8 +181,25 @@ function SkillsPageContent() {
   }, [categories, counts]);
 
   const addSkill = (skill: Skill) => setSkills((prev) => [...prev, skill]);
+  const updateSkill = async (skill: Skill) => {
+    setSkills((prev) => prev.map((s) => (s.id === skill.id ? skill : s)));
+    const { error } = await updateRecord<Skill>("skills", skill.id, {
+      name: skill.name,
+      icon: skill.icon,
+      level: skill.level,
+      progress: skill.progress,
+      cat_id: skill.cat_id,
+    });
+    if (error) {
+      console.error("Error updating skill:", error);
+    }
+  };
   const addCategory = (cat: Category) =>
     setCategories((prev) => [...prev, cat]);
+  const startEdit = (skill: Skill) => {
+    setEditing(skill);
+    setOpen(true);
+  };
   const handleRemoveSkill = async (id: string) => {
     setSkills((prev) => prev.filter((s) => s.id !== id));
     const { error } = await deleteRecord("skills", id);
@@ -334,8 +352,8 @@ function SkillsPageContent() {
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
+                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
+                  <DropdownMenuItem onClick={() => startEdit(skill)}>Edit</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
                     Remove
                   </DropdownMenuItem>
@@ -375,8 +393,8 @@ function SkillsPageContent() {
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
+                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
+                  <DropdownMenuItem onClick={() => startEdit(skill)}>Edit</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
                     Remove
                   </DropdownMenuItem>
@@ -389,10 +407,15 @@ function SkillsPageContent() {
 
       <SkillDrawer
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false);
+          setEditing(null);
+        }}
         onAdd={addSkill}
         categories={categories}
         onAddCategory={addCategory}
+        initialSkill={editing}
+        onUpdate={updateSkill}
       />
     </div>
   );

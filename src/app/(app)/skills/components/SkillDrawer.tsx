@@ -90,7 +90,7 @@ export function SkillDrawer({
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black" onClick={onClose} />
       <div className="absolute right-0 top-0 h-full w-80 bg-gray-800 p-4 overflow-y-auto">
         <h2 className="text-lg font-semibold mb-4">{editing ? "Edit Skill" : "Add Skill"}</h2>
         <form onSubmit={submit} className="space-y-4">
