@@ -15,6 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
+import { deleteRecord } from "@/lib/db";
 import {
   LayoutGrid,
   List as ListIcon,
@@ -181,9 +182,26 @@ function SkillsPageContent() {
   const addSkill = (skill: Skill) => setSkills((prev) => [...prev, skill]);
   const addCategory = (cat: Category) =>
     setCategories((prev) => [...prev, cat]);
-
-  const handleRemoveSkill = (id: string) => {
+  const handleRemoveSkill = async (id: string) => {
     setSkills((prev) => prev.filter((s) => s.id !== id));
+    const { error } = await deleteRecord("skills", id);
+    if (error) {
+      console.error("Error deleting skill:", error);
+    }
+  };
+
+  const handleRemoveCategory = async (id: string) => {
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+    setSkills((prev) =>
+      prev.map((s) => (s.cat_id === id ? { ...s, cat_id: null } : s))
+    );
+    if (selectedCat === id) {
+      setSelectedCat("all");
+    }
+    const { error } = await deleteRecord("cats", id);
+    if (error) {
+      console.error("Error deleting category:", error);
+    }
   };
 
   if (loading) {
@@ -243,17 +261,30 @@ function SkillsPageContent() {
         </div>
         <div className="flex items-center gap-2 overflow-x-auto">
           {allCats.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCat(cat.id)}
-              className={`flex-shrink-0 px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
-                selectedCat === cat.id
-                  ? "bg-gray-200 text-black border-gray-200"
-                  : "bg-[#2C2C2C] border-[#333]"
-              }`}
-            >
-              {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
-            </button>
+            <div key={cat.id} className="relative flex-shrink-0">
+              <button
+                onClick={() => setSelectedCat(cat.id)}
+                className={`px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
+                  selectedCat === cat.id
+                    ? "bg-gray-200 text-black border-gray-200"
+                    : "bg-[#2C2C2C] border-[#333]"
+                }`}
+              >
+                {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
+              </button>
+              {cat.id !== "all" && cat.id !== "uncategorized" && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveCategory(cat.id);
+                  }}
+                  className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center"
+                  aria-label={`Delete ${cat.name}`}
+                >
+                  ×
+                </button>
+              )}
+            </div>
           ))}
           <select
             value={sort}
@@ -319,7 +350,7 @@ function SkillsPageContent() {
             <Link
               key={skill.id}
               href={`/skills/${skill.id}`}
-              className="flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
+              className="relative flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
             >
               <div className="flex items-center gap-3">
                 <CircularProgress value={skill.progress} />
@@ -331,6 +362,26 @@ function SkillsPageContent() {
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="absolute top-2 right-2 p-2"
+                    aria-label="More"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                    Remove
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </Link>
           ))}
         </div>
