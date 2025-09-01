@@ -31,24 +31,24 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-4 gap-1">
         {monuments.map((m) => (
           <motion.button
             key={m.id}
             layoutId={`card-${m.id}`}
             onClick={() => setActiveId(m.id)}
-            className="flex flex-col rounded-xl bg-zinc-100 p-4 text-left shadow-sm transition-shadow hover:shadow-md dark:bg-zinc-800"
+            className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
           >
-            <motion.div layoutId={`emoji-${m.id}`} className="text-3xl">
+            <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
               {m.emoji}
             </motion.div>
             <motion.h3
               layoutId={`title-${m.id}`}
-              className="mt-2 text-sm font-medium text-zinc-800 dark:text-zinc-100"
+              className="w-full break-words text-center text-[10px] font-semibold leading-tight"
             >
               {m.title}
             </motion.h3>
-            <p className="mt-1 text-xs text-zinc-500">{m.stats}</p>
+            <p className="mt-0.5 text-[9px] text-zinc-500">{m.stats}</p>
           </motion.button>
         ))}
       </div>
