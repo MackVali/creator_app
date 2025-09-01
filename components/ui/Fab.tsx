@@ -19,6 +19,7 @@ export function Fab({ className = "" }: FabProps) {
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const [menuPage, setMenuPage] = useState(0);
   const [touchStartX, setTouchStartX] = useState(0);
+  const [swipeProgress, setSwipeProgress] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -74,12 +75,26 @@ export function Fab({ className = "" }: FabProps) {
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartX(e.touches[0].clientX);
+    setSwipeProgress(0);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const currentX = e.touches[0].clientX;
+    const diff = currentX - touchStartX;
+    if (menuPage === 0 && diff < 0) {
+      setSwipeProgress(Math.min(-diff / 100, 1));
+    } else if (menuPage === 1 && diff > 0) {
+      setSwipeProgress(Math.min(diff / 100, 1));
+    } else {
+      setSwipeProgress(0);
+    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     const diff = e.changedTouches[0].clientX - touchStartX;
     if (diff < -50) setMenuPage(1);
     if (diff > 50) setMenuPage(0);
+    setSwipeProgress(0);
   };
 
   // Close menu when clicking outside
@@ -109,10 +124,17 @@ export function Fab({ className = "" }: FabProps) {
         <div
           ref={menuRef}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          className={`absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px] ${
-            menuPage === 1 ? "bg-gray-900/60" : "bg-gray-900/40"
-          }`}
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
+          style={{
+            backgroundColor: `rgba(17, 24, 39, ${
+              menuPage === 1
+                ? 0.6 - 0.2 * swipeProgress
+                : 0.4 + 0.2 * swipeProgress
+            })`,
+            transition: "background-color 0.1s linear",
+          }}
         >
           {menuPage === 0
             ? addEvents.map((event, index) => (
