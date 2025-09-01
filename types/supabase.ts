@@ -482,30 +482,30 @@ export interface Database {
           created_at: string;
           user_id: string;
           label: string;
-          days_of_week: number[];
+          days: number[];
           start_local: string;
           end_local: string;
-          energy_cap: string | null;
+          energy: string;
         };
         Insert: {
           id?: string;
           created_at?: string;
           user_id: string;
           label: string;
-          days_of_week?: number[];
+          days?: number[];
           start_local?: string;
           end_local?: string;
-          energy_cap?: string | null;
+          energy?: string;
         };
         Update: {
           id?: string;
           created_at?: string;
           user_id?: string;
           label?: string;
-          days_of_week?: number[];
+          days?: number[];
           start_local?: string;
           end_local?: string;
-          energy_cap?: string | null;
+          energy?: string;
         };
       };
     };

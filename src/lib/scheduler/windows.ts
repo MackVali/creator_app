@@ -9,11 +9,9 @@ export async function getWindowsForDate(date: Date, userId: string) {
   const weekday = date.getDay();
   const { data, error } = await supabase
     .from("windows")
-    .select(
-      "id,label,days_of_week,start_local,end_local,energy_cap"
-    )
+    .select("id,label,days,start_local,end_local,energy")
     .eq("user_id", userId)
-    .contains("days_of_week", [weekday]);
+    .contains("days", [weekday]);
   if (error) throw error;
   return (data ?? []) as WindowRow[];
 }

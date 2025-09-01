@@ -15,10 +15,10 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 interface WindowRow {
   id: string;
   label: string;
-  days_of_week: number[];
+  days: number[];
   start_local: string;
   end_local: string;
-  energy_cap: EnergyCap | null;
+  energy: EnergyCap | null;
 }
 
 type EnergyCap =
@@ -31,10 +31,10 @@ type EnergyCap =
 
 interface WindowPayload {
   label: string;
-  days_of_week: number[];
+  days: number[];
   start_local: string;
   end_local: string;
-  energy_cap: EnergyCap | null;
+  energy: EnergyCap | null;
   user_id: string;
 }
 
@@ -90,9 +90,7 @@ export default function WindowsPage() {
     }
     const { data, error } = await supabase
       .from("windows")
-      .select(
-        "id,label,days_of_week,start_local,end_local,energy_cap"
-      )
+      .select("id,label,days,start_local,end_local,energy")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
@@ -123,11 +121,11 @@ export default function WindowsPage() {
   function openEdit(w: WindowRow) {
     setEditing(w);
     setLabel(w.label);
-    setDayPreset(determinePreset(w.days_of_week || []));
-    setDays(w.days_of_week || []);
+    setDayPreset(determinePreset(w.days || []));
+    setDays(w.days || []);
     setStart(w.start_local || "");
     setEnd(w.end_local || "");
-    setEnergy(w.energy_cap || "NO");
+    setEnergy(w.energy || "NO");
     setShowForm(true);
   }
 
@@ -196,7 +194,7 @@ export default function WindowsPage() {
     const duplicate = windows.find(
       (w) =>
         w.id !== editing?.id &&
-        arraysEqual(w.days_of_week || [], days) &&
+        arraysEqual(w.days || [], days) &&
         w.start_local === start &&
         w.end_local === end
     );
@@ -209,16 +207,16 @@ export default function WindowsPage() {
 
     const conflict = windows.find((w) => {
       if (w.id === editing?.id) return false;
-      const overlapDay = w.days_of_week.some((d) => days.includes(d));
+      const overlapDay = w.days.some((d) => days.includes(d));
       if (!overlapDay) return false;
       return parseTime(start) < parseTime(w.end_local) && parseTime(end) > parseTime(w.start_local);
     });
     const payload: WindowPayload = {
       label,
-      days_of_week: days,
+      days,
       start_local: start,
       end_local: end,
-      energy_cap: energy,
+      energy,
       user_id: user.id,
     };
 
@@ -303,10 +301,10 @@ export default function WindowsPage() {
                     <div>
                       <div className="font-medium">{w.label}</div>
                       <div className="text-sm text-gray-400">
-                        {formatDays(w.days_of_week)} {w.start_local} - {w.end_local}
+                        {formatDays(w.days)} {w.start_local} - {w.end_local}
                       </div>
                       <div className="text-sm text-gray-400">
-                        {w.energy_cap}
+                        {w.energy}
                       </div>
                     </div>
                     <div className="flex flex-col gap-2">
