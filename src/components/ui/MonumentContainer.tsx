@@ -3,15 +3,18 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import MonumentGridWithSharedTransition, {
+  type Monument as MonumentCard,
+} from "@/components/MonumentGridWithSharedTransition";
 
-interface Monument {
+interface FetchedMonument {
   id: string;
   title: string;
   emoji: string | null;
 }
 
 export function MonumentContainer() {
-  const [monuments, setMonuments] = useState<Monument[] | null>(null);
+  const [monuments, setMonuments] = useState<FetchedMonument[] | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = getSupabaseBrowser();
 
@@ -60,26 +63,14 @@ export function MonumentContainer() {
         </div>
       ) : (
         <div className="px-4">
-          <div className="grid grid-cols-4 gap-1">
-            {monuments.map((m) => (
-              <Link
-                key={m.id}
-                href={`/monuments/${m.id}`}
-                className="card flex aspect-square w-full flex-col items-center justify-center p-1 hover:bg-white/5 transition-colors"
-              >
-                <div
-                  className="mb-1 text-lg"
-                  role="img"
-                  aria-label={`Monument: ${m.title}`}
-                >
-                  {m.emoji || "🏛️"}
-                </div>
-                <div className="w-full break-words text-center text-[10px] font-semibold leading-tight">
-                  {m.title}
-                </div>
-              </Link>
-            ))}
-          </div>
+          <MonumentGridWithSharedTransition
+            monuments={(monuments ?? []).map<MonumentCard>((m) => ({
+              id: m.id,
+              emoji: m.emoji || "🏛️",
+              title: m.title,
+              stats: "0 Goals",
+            }))}
+          />
         </div>
       )}
     </section>
