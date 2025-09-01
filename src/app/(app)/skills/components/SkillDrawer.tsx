@@ -20,11 +20,11 @@ export interface Category {
 interface SkillDrawerProps {
   open: boolean;
   onClose(): void;
-  onAdd(skill: Skill): void;
+  onAdd(skill: Skill): void | Promise<void>;
   categories: Category[];
   onAddCategory(cat: Category): void;
   initialSkill?: Skill | null;
-  onUpdate?(skill: Skill): void;
+  onUpdate?(skill: Skill): void | Promise<void>;
 }
 
 export function SkillDrawer({

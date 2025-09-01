@@ -15,7 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
-import { deleteRecord, updateRecord } from "@/lib/db";
+import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
 import {
   LayoutGrid,
   List as ListIcon,
@@ -180,7 +180,43 @@ function SkillsPageContent() {
     ];
   }, [categories, counts]);
 
-  const addSkill = (skill: Skill) => setSkills((prev) => [...prev, skill]);
+  const addSkill = async (skill: Skill) => {
+    // persist new categories if needed
+    let catId = skill.cat_id;
+    if (catId && catId.startsWith("local-")) {
+      const localCat = categories.find((c) => c.id === catId);
+      if (localCat) {
+        const { data: savedCat, error: catError } = await createRecord<Category>(
+          "cats",
+          { name: localCat.name }
+        );
+        if (catError) {
+          console.error("Error creating category:", catError);
+        } else if (savedCat) {
+          catId = savedCat.id;
+          setCategories((prev) =>
+            prev.map((c) => (c.id === localCat.id ? savedCat : c))
+          );
+        }
+      }
+    }
+
+    const { data, error } = await createRecord<Skill>("skills", {
+      name: skill.name,
+      icon: skill.icon,
+      level: skill.level,
+      progress: skill.progress,
+      cat_id: catId ?? null,
+    });
+    if (error) {
+      console.error("Error creating skill:", error);
+      return;
+    }
+    setSkills((prev) => [
+      ...prev,
+      { ...skill, id: data!.id, cat_id: catId ?? null, created_at: data!.created_at },
+    ]);
+  };
   const updateSkill = async (skill: Skill) => {
     setSkills((prev) => prev.map((s) => (s.id === skill.id ? skill : s)));
     const { error } = await updateRecord<Skill>("skills", skill.id, {
