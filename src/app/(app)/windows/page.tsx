@@ -18,12 +18,31 @@ interface WindowRow {
   days_of_week: number[];
   start_local: string;
   end_local: string;
-  energy_cap: string | null;
+  energy_cap: EnergyCap | null;
   tags: string[] | null;
   max_consecutive_min: number | null;
 }
 
+type EnergyCap = "low" | "med" | "high" | "peak";
+
+interface WindowPayload {
+  label: string;
+  days_of_week: number[];
+  start_local: string;
+  end_local: string;
+  energy_cap: EnergyCap | null;
+  tags: string[];
+  max_consecutive_min: number | null;
+  user_id: string;
+}
+
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const ENERGY_OPTIONS: { value: EnergyCap; label: string }[] = [
+  { value: "low", label: "Low" },
+  { value: "med", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "peak", label: "Peak" },
+];
 
 export default function WindowsPage() {
   const supabase = getSupabaseBrowser();
@@ -40,11 +59,13 @@ export default function WindowsPage() {
   >("every");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [energy, setEnergy] = useState("low");
+  const [energy, setEnergy] = useState<EnergyCap>("low");
   const [tags, setTags] = useState("");
   const [maxConsecutive, setMaxConsecutive] = useState<number | "">("");
   const [conflictWindow, setConflictWindow] = useState<WindowRow | null>(null);
-  const [pendingPayload, setPendingPayload] = useState<any | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<WindowPayload | null>(
+    null
+  );
 
   const is24Hour = !new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -194,7 +215,7 @@ export default function WindowsPage() {
       if (!overlapDay) return false;
       return parseTime(start) < parseTime(w.end_local) && parseTime(end) > parseTime(w.start_local);
     });
-    const payload = {
+    const payload: WindowPayload = {
       label,
       days_of_week: days,
       start_local: start,
@@ -218,7 +239,8 @@ export default function WindowsPage() {
     await performSave(payload, user.id);
   }
 
-  async function performSave(payload: any, userId: string) {
+  async function performSave(payload: WindowPayload, userId: string) {
+    if (!supabase) return;
     let error;
     if (editing) {
       ({ error } = await supabase
@@ -445,27 +467,22 @@ export default function WindowsPage() {
 
               <div className="space-y-1">
                 <Label>Energy Cap</Label>
-                <div className="flex overflow-hidden rounded-md">
-                  {[
-                    { value: "low", label: "Low" },
-                    { value: "med", label: "Medium" },
-                    { value: "high", label: "High" },
-                    { value: "peak", label: "Peak" },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      className={`flex-1 h-11 px-3 text-sm ${
-                        energy === opt.value
-                          ? "bg-gray-700 text-white"
-                          : "bg-gray-800 text-gray-300"
-                      }`}
-                      onClick={() => setEnergy(opt.value)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+                  <div className="flex overflow-hidden rounded-md">
+                    {ENERGY_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`flex-1 h-11 px-3 text-sm ${
+                          energy === opt.value
+                            ? "bg-gray-700 text-white"
+                            : "bg-gray-800 text-gray-300"
+                        }`}
+                        onClick={() => setEnergy(opt.value)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 <div className="text-xs text-gray-400">
                   Tasks require ≤ selected energy.
                 </div>
@@ -520,9 +537,9 @@ export default function WindowsPage() {
         )}
         {conflictWindow && pendingPayload && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-sm space-y-4 rounded-lg bg-gray-900 p-6 text-center">
+              <div className="w-full max-w-sm space-y-4 rounded-lg bg-gray-900 p-6 text-center">
               <p className="text-gray-200">
-                Overlaps with existing window "{conflictWindow.label}".
+                Overlaps with existing window &quot;{conflictWindow.label}&quot;.
               </p>
               <div className="flex flex-col gap-2 pt-2">
                 <Button
@@ -544,7 +561,10 @@ export default function WindowsPage() {
                     }
                     const newEnd = conflictWindow.start_local;
                     setEnd(newEnd);
-                    const adjusted = { ...pendingPayload, end_local: newEnd };
+                    const adjusted: WindowPayload = {
+                      ...pendingPayload,
+                      end_local: newEnd,
+                    };
                     performSave(adjusted, pendingPayload.user_id);
                   }}
                 >
