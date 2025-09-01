@@ -19,11 +19,15 @@ interface WindowRow {
   start_local: string;
   end_local: string;
   energy_cap: EnergyCap | null;
-  tags: string[] | null;
-  max_consecutive_min: number | null;
 }
 
-type EnergyCap = "low" | "med" | "high" | "peak";
+type EnergyCap =
+  | "NO"
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH"
+  | "ULTRA"
+  | "EXTREME";
 
 interface WindowPayload {
   label: string;
@@ -31,17 +35,17 @@ interface WindowPayload {
   start_local: string;
   end_local: string;
   energy_cap: EnergyCap | null;
-  tags: string[];
-  max_consecutive_min: number | null;
   user_id: string;
 }
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ENERGY_OPTIONS: { value: EnergyCap; label: string }[] = [
-  { value: "low", label: "Low" },
-  { value: "med", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "peak", label: "Peak" },
+  { value: "NO", label: "No Energy" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "ULTRA", label: "Ultra" },
+  { value: "EXTREME", label: "Extreme" },
 ];
 
 export default function WindowsPage() {
@@ -59,9 +63,7 @@ export default function WindowsPage() {
   >("every");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [energy, setEnergy] = useState<EnergyCap>("low");
-  const [tags, setTags] = useState("");
-  const [maxConsecutive, setMaxConsecutive] = useState<number | "">("");
+  const [energy, setEnergy] = useState<EnergyCap>("NO");
   const [conflictWindow, setConflictWindow] = useState<WindowRow | null>(null);
   const [pendingPayload, setPendingPayload] = useState<WindowPayload | null>(
     null
@@ -89,7 +91,7 @@ export default function WindowsPage() {
     const { data, error } = await supabase
       .from("windows")
       .select(
-        "id,label,days_of_week,start_local,end_local,energy_cap,tags,max_consecutive_min"
+        "id,label,days_of_week,start_local,end_local,energy_cap"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
@@ -106,9 +108,7 @@ export default function WindowsPage() {
     setDays([0, 1, 2, 3, 4, 5, 6]);
     setStart("");
     setEnd("");
-    setEnergy("low");
-    setTags("");
-    setMaxConsecutive("");
+    setEnergy("NO");
     setShowForm(true);
   }
 
@@ -127,9 +127,7 @@ export default function WindowsPage() {
     setDays(w.days_of_week || []);
     setStart(w.start_local || "");
     setEnd(w.end_local || "");
-    setEnergy(w.energy_cap || "low");
-    setTags((w.tags || []).join(","));
-    setMaxConsecutive(w.max_consecutive_min ?? "");
+    setEnergy(w.energy_cap || "NO");
     setShowForm(true);
   }
 
@@ -221,12 +219,6 @@ export default function WindowsPage() {
       start_local: start,
       end_local: end,
       energy_cap: energy,
-      tags: tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0),
-      max_consecutive_min:
-        maxConsecutive === "" ? null : Number(maxConsecutive),
       user_id: user.id,
     };
 
@@ -343,11 +335,12 @@ export default function WindowsPage() {
         </div>
 
         {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <form
-              onSubmit={saveWindow}
-              className="w-full max-w-md space-y-4 rounded-lg bg-gray-900 p-6"
-            >
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
+            <div className="flex min-h-full items-center justify-center p-4">
+              <form
+                onSubmit={saveWindow}
+                className="w-full max-w-md space-y-4 rounded-lg bg-gray-900 p-6"
+              >
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">
                   {editing ? "Edit Window" : "New Window"}
@@ -373,7 +366,7 @@ export default function WindowsPage() {
               </div>
 
               <div className="space-y-1">
-                <Label>Days of Week</Label>
+                <Label>Days</Label>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {["Every day", "Weekdays", "Weekends", "Custom"].map(
                     (p, i) => (
@@ -466,54 +459,28 @@ export default function WindowsPage() {
               )}
 
               <div className="space-y-1">
-                <Label>Energy Cap</Label>
-                  <div className="flex overflow-hidden rounded-md">
-                    {ENERGY_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        className={`flex-1 h-11 px-3 text-sm ${
-                          energy === opt.value
-                            ? "bg-gray-700 text-white"
-                            : "bg-gray-800 text-gray-300"
-                        }`}
-                        onClick={() => setEnergy(opt.value)}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+                <Label>Energy</Label>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {ENERGY_OPTIONS.map((opt) => (
+                    <Button
+                      key={opt.value}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={`min-w-[44px] h-11 ${
+                        energy === opt.value
+                          ? "bg-gray-100 text-gray-900"
+                          : "bg-gray-800 text-gray-300"
+                      }`}
+                      onClick={() => setEnergy(opt.value)}
+                    >
+                      {opt.label}
+                    </Button>
+                  ))}
+                </div>
                 <div className="text-xs text-gray-400">
                   Tasks require ≤ selected energy.
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="tags">Tags</Label>
-                <Input
-                  id="tags"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                  placeholder="tag1, tag2"
-                  enterKeyHint="next"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="max">Max Consecutive (min)</Label>
-                <Input
-                  id="max"
-                  type="number"
-                  min="0"
-                  value={maxConsecutive}
-                  onChange={(e) =>
-                    setMaxConsecutive(
-                      e.target.value === "" ? "" : parseInt(e.target.value)
-                    )
-                  }
-                  inputMode="numeric"
-                  enterKeyHint="done"
-                />
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -534,6 +501,7 @@ export default function WindowsPage() {
               </div>
             </form>
           </div>
+        </div>
         )}
         {conflictWindow && pendingPayload && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
