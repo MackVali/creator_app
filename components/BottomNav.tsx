@@ -6,7 +6,7 @@ import { Fab } from "@/components/ui/Fab";
 
 export default function BottomNav() {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 text-gray-400 flex justify-around items-center py-2">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 text-gray-400 flex justify-around items-center h-16">
       <Link
         href="/"
         className="flex flex-col items-center gap-1 hover:text-blue-400"

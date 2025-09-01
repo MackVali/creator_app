@@ -8,7 +8,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <ToastProvider>
       <ProfileProvider>
         <TopNav />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))]">
+          {children}
+        </main>
         <BottomNav />
       </ProfileProvider>
     </ToastProvider>
