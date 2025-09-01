@@ -486,8 +486,6 @@ export interface Database {
           start_local: string;
           end_local: string;
           energy_cap: string | null;
-          tags: string[] | null;
-          max_consecutive_min: number | null;
         };
         Insert: {
           id?: string;
@@ -498,8 +496,6 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy_cap?: string | null;
-          tags?: string[] | null;
-          max_consecutive_min?: number | null;
         };
         Update: {
           id?: string;
@@ -510,8 +506,6 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy_cap?: string | null;
-          tags?: string[] | null;
-          max_consecutive_min?: number | null;
         };
       };
     };

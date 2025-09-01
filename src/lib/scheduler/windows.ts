@@ -10,7 +10,7 @@ export async function getWindowsForDate(date: Date, userId: string) {
   const { data, error } = await supabase
     .from("windows")
     .select(
-      "id,label,days_of_week,start_local,end_local,energy_cap,tags,max_consecutive_min"
+      "id,label,days_of_week,start_local,end_local,energy_cap"
     )
     .eq("user_id", userId)
     .contains("days_of_week", [weekday]);
@@ -23,7 +23,6 @@ export interface Slot {
   start: Date;
   end: Date;
   index: number;
-  maxConsecutiveMin: number | null;
 }
 
 export function genSlots(date: Date, windows: WindowRow[]): Slot[] {
@@ -46,7 +45,6 @@ export function genSlots(date: Date, windows: WindowRow[]): Slot[] {
         start: new Date(cursor),
         end,
         index,
-        maxConsecutiveMin: w.max_consecutive_min ?? null,
       });
       cursor = end;
       index++;

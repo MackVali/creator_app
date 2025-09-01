@@ -14,8 +14,6 @@ describe("genSlots", () => {
         start_local: "06:00",
         end_local: "07:00",
         energy_cap: null,
-        tags: null,
-        max_consecutive_min: null,
       },
     ];
     const slots = genSlots(date, windows);
