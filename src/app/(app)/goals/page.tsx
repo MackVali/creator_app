@@ -64,7 +64,6 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
 
 export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [view, setView] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterStatus>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
@@ -264,21 +263,13 @@ export default function GoalsPage() {
           onFilter={setFilter}
           sort={sort}
           onSort={setSort}
-          view={view}
-          onViewChange={setView}
         />
         {loading ? (
           <LoadingSkeleton />
         ) : filteredGoals.length === 0 ? (
           <EmptyState onCreate={() => setDrawer(true)} />
         ) : (
-          <div
-            className={
-              view === "grid"
-                ? "grid grid-cols-2 gap-4 p-4"
-                : "flex flex-col gap-4 p-4"
-            }
-          >
+          <div className="flex flex-col gap-4 p-4">
             {filteredGoals.map((goal) => (
               <GoalCard
                 key={goal.id}

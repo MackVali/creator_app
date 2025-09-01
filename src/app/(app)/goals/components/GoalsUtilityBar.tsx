@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { List, LayoutGrid } from "lucide-react";
 
 export type FilterStatus = "All" | "Active" | "Completed" | "Overdue";
 export type SortOption = "A→Z" | "Due Soon" | "Progress" | "Recently Updated";
@@ -13,8 +12,6 @@ interface GoalsUtilityBarProps {
   onFilter(f: FilterStatus): void;
   sort: SortOption;
   onSort(s: SortOption): void;
-  view: "grid" | "list";
-  onViewChange(v: "grid" | "list"): void;
 }
 
 export function GoalsUtilityBar({
@@ -24,8 +21,6 @@ export function GoalsUtilityBar({
   onFilter,
   sort,
   onSort,
-  view,
-  onViewChange,
 }: GoalsUtilityBarProps) {
   const [local, setLocal] = useState(search);
 
@@ -64,13 +59,6 @@ export function GoalsUtilityBar({
           <option value="Progress">Progress</option>
           <option value="Recently Updated">Recently Updated</option>
         </select>
-        <button
-          aria-label="Toggle view"
-          onClick={() => onViewChange(view === "grid" ? "list" : "grid")}
-          className="p-2 rounded-md bg-gray-800"
-        >
-          {view === "grid" ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
-        </button>
       </div>
     </div>
   );
