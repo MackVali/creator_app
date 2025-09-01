@@ -16,6 +16,11 @@ import {
   getProjectsForUser,
   type Project,
 } from "@/lib/queries/projects";
+import {
+  getMonumentsForUser,
+  type Monument,
+} from "@/lib/queries/monuments";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 
 interface EventModalProps {
   isOpen: boolean;
@@ -46,6 +51,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       // Always load goals (needed for both projects and tasks)
       const goalsData = await getGoalsForUser(user.id);
       setGoals(goalsData);
+
+      if (eventType === "GOAL") {
+        const monumentsData = await getMonumentsForUser(user.id);
+        setMonuments(monumentsData);
+      }
+
+      if (eventType === "PROJECT" || eventType === "TASK") {
+        const skillsData = await getSkillsForUser(user.id);
+        setSkills(skillsData);
+      }
 
       // Load projects if this is a task form
       if (eventType === "TASK") {
@@ -90,6 +105,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     energy: "NO",
     goal_id: "",
     project_id: "",
+    monument_id: "",
+    skill_id: "",
+    skill_ids: [] as string[],
     duration_min: "",
     effective_duration_min: 0,
     stage:
@@ -105,6 +123,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   // State for dropdown data
   const [goals, setGoals] = useState<Goal[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(false);
 
   if (!isOpen || !mounted) return null;
@@ -156,6 +176,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         type?: string;
         recurrence?: string;
         duration_min?: number;
+        monument_id?: string;
+        skill_id?: string;
       } = {
         user_id: user.id,
         name: formData.name.trim(),
@@ -187,9 +209,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
         insertData.project_id = formData.project_id;
         insertData.stage = formData.stage;
+        if (formData.skill_id) {
+          insertData.skill_id = formData.skill_id;
+        }
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
         insertData.recurrence = formData.recurrence;
+      } else if (eventType === "GOAL" && formData.monument_id) {
+        insertData.monument_id = formData.monument_id;
       }
 
       if (duration !== undefined) {
@@ -201,12 +228,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const { data, error } = await supabase
         .from(eventType.toLowerCase() + "s") // goals, projects, tasks, habits
         .insert(insertData)
-        .select();
+        .select()
+        .single();
 
       if (error) {
         console.error("Error creating " + eventType.toLowerCase() + ":", error);
         toast.error("Error", "Failed to create " + eventType.toLowerCase());
         return;
+      }
+
+      if (eventType === "PROJECT" && formData.skill_ids.length > 0) {
+        const projectId = data?.id;
+        if (projectId) {
+          const inserts = formData.skill_ids.map((skillId) => ({
+            project_id: projectId,
+            skill_id: skillId,
+          }));
+          const { error: psError } = await supabase
+            .from("project_skills")
+            .insert(inserts);
+          if (psError) {
+            console.error("Error linking skills to project:", psError);
+          }
+        }
       }
 
       console.log(
@@ -385,6 +429,33 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             </Select>
           </div>
 
+          {/* Monument Selection for Goals */}
+          {eventType === "GOAL" && (
+            <div className="space-y-2">
+              <Label
+                htmlFor="monument"
+                className="text-white text-sm font-medium"
+              >
+                Monument
+              </Label>
+              <Select
+                value={formData.monument_id}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, monument_id: value })
+                }
+              >
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {monuments.map((monument) => (
+                    <SelectItem key={monument.id} value={monument.id}>
+                      {monument.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Duration */}
           {(eventType === "PROJECT" || eventType === "TASK") && (
             <div className="space-y-2">
@@ -431,30 +502,65 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
           {/* Goal Selection for Projects */}
           {eventType === "PROJECT" && (
-            <div className="space-y-2">
-              <Label htmlFor="goal" className="text-white text-sm font-medium">
-                Goal <span className="text-red-400">*</span>
-              </Label>
-              <Select
-                value={formData.goal_id}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, goal_id: value })
-                }
-              >
-                <SelectContent>
-                  {goals.map((goal) => (
-                    <SelectItem key={goal.id} value={goal.id}>
-                      {goal.name}
-                    </SelectItem>
+            <>
+              <div className="space-y-2">
+                <Label
+                  htmlFor="goal"
+                  className="text-white text-sm font-medium"
+                >
+                  Goal <span className="text-red-400">*</span>
+                </Label>
+                <Select
+                  value={formData.goal_id}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, goal_id: value })
+                  }
+                >
+                  <SelectContent>
+                    {goals.map((goal) => (
+                      <SelectItem key={goal.id} value={goal.id}>
+                        {goal.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {goals.length === 0 && (
+                  <p className="text-sm text-gray-400">
+                    No goals yet. Create a goal first to add projects.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="skills"
+                  className="text-white text-sm font-medium"
+                >
+                  Skills
+                </Label>
+                <select
+                  id="skills"
+                  multiple
+                  value={formData.skill_ids}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      skill_ids: Array.from(
+                        e.target.selectedOptions,
+                        (o) => o.value
+                      ),
+                    })
+                  }
+                  className="w-full bg-gray-800 border border-gray-600 text-white rounded-md p-2 text-sm"
+                >
+                  {skills.map((skill) => (
+                    <option key={skill.id} value={skill.id}>
+                      {skill.name}
+                    </option>
                   ))}
-                </SelectContent>
-              </Select>
-              {goals.length === 0 && (
-                <p className="text-sm text-gray-400">
-                  No goals yet. Create a goal first to add projects.
-                </p>
-              )}
-            </div>
+                </select>
+              </div>
+            </>
           )}
 
           {/* Goal and Project Selection for Tasks */}
@@ -510,6 +616,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       : "Select a goal to see available projects."}
                   </p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="skill"
+                  className="text-white text-sm font-medium"
+                >
+                  Skill
+                </Label>
+                <Select
+                  value={formData.skill_id}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, skill_id: value })
+                  }
+                >
+                  <SelectContent>
+                    {skills.map((skill) => (
+                      <SelectItem key={skill.id} value={skill.id}>
+                        {skill.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </>
           )}
