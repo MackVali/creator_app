@@ -515,9 +515,9 @@ export interface Database {
         };
       };
     };
-    Views: {};
-    Functions: {};
-    Enums: {};
-    CompositeTypes: {};
+    Views: Record<string, unknown>;
+    Functions: Record<string, unknown>;
+    Enums: Record<string, unknown>;
+    CompositeTypes: Record<string, unknown>;
   };
 }
