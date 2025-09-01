@@ -59,11 +59,6 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
                   style={{ width: `${goal.progress}%` }}
                 />
               </div>
-              {goal.dueDate && (
-                <span className="px-2 py-0.5 bg-gray-700 rounded-full">
-                  {new Date(goal.dueDate).toLocaleDateString()}
-                </span>
-              )}
               <span className={`px-2 py-0.5 rounded-full ${priorityColor}`}>
                 {goal.priority}
               </span>

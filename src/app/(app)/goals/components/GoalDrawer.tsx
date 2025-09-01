@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from "react";
 import type { Goal } from "../types";
+import { getSupabaseBrowser } from "@/lib/supabase";
 
 interface GoalDrawerProps {
   open: boolean;
   onClose(): void;
   /** Callback when creating a new goal */
-  onAdd(goal: Goal): void;
+  onAdd(goal: Goal): void | Promise<void>;
   /** Existing goal to edit */
   initialGoal?: Goal | null;
   /** Callback when updating an existing goal */
-  onUpdate?(goal: Goal): void;
+  onUpdate?(goal: Goal): void | Promise<void>;
 }
 
 export function GoalDrawer({
@@ -23,8 +24,11 @@ export function GoalDrawer({
 }: GoalDrawerProps) {
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
-  const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Goal["priority"]>("Low");
+  const [monumentId, setMonumentId] = useState("");
+  const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
+  const [skillId, setSkillId] = useState("");
+  const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
 
   const editing = Boolean(initialGoal);
 
@@ -32,15 +36,47 @@ export function GoalDrawer({
     if (initialGoal) {
       setTitle(initialGoal.title);
       setEmoji(initialGoal.emoji || "");
-      setDueDate(initialGoal.dueDate || "");
       setPriority(initialGoal.priority);
+      setMonumentId(initialGoal.monumentId || "");
+      setSkillId(initialGoal.skillId || "");
     } else {
       setTitle("");
       setEmoji("");
-      setDueDate("");
       setPriority("Low");
+      setMonumentId("");
+      setSkillId("");
     }
   }, [initialGoal]);
+
+  useEffect(() => {
+    if (!open) return;
+    const loadRefs = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      await supabase.auth.getSession();
+      const [monRes, skillRes] = await Promise.all([
+        supabase
+          .from("monuments")
+          .select("id,title")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("skills")
+          .select("id,name")
+          .order("created_at", { ascending: false }),
+      ]);
+      if (monRes.error) {
+        console.error("Error fetching monuments:", monRes.error);
+      } else {
+        setMonuments(monRes.data ?? []);
+      }
+      if (skillRes.error) {
+        console.error("Error fetching skills:", skillRes.error);
+      } else {
+        setSkills(skillRes.data ?? []);
+      }
+    };
+    loadRefs();
+  }, [open]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,8 +86,9 @@ export function GoalDrawer({
       id: initialGoal?.id || Date.now().toString(),
       title,
       emoji,
-      dueDate: dueDate || undefined,
       priority,
+      monumentId: monumentId || null,
+      skillId: skillId || null,
       progress: initialGoal?.progress || 0,
       status: initialGoal?.status || "Active",
       updatedAt: new Date().toISOString(),
@@ -93,13 +130,34 @@ export function GoalDrawer({
             />
           </div>
           <div>
-            <label className="block text-sm mb-1">Due Date</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
+            <label className="block text-sm mb-1">Monument</label>
+            <select
+              value={monumentId}
+              onChange={(e) => setMonumentId(e.target.value)}
               className="w-full px-3 py-2 rounded bg-gray-700"
-            />
+            >
+              <option value="">None</option>
+              {monuments.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Skill</label>
+            <select
+              value={skillId}
+              onChange={(e) => setSkillId(e.target.value)}
+              className="w-full px-3 py-2 rounded bg-gray-700"
+            >
+              <option value="">None</option>
+              {skills.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm mb-1">Priority</label>

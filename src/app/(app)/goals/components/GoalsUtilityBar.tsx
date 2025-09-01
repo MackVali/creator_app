@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 
 export type FilterStatus = "All" | "Active" | "Completed" | "Overdue";
-export type SortOption = "A→Z" | "Due Soon" | "Progress" | "Recently Updated";
+export type SortOption = "A→Z" | "Progress" | "Recently Updated";
 
 interface GoalsUtilityBarProps {
   search: string;
@@ -55,7 +55,6 @@ export function GoalsUtilityBar({
           className="ml-auto bg-gray-800 text-sm px-2 py-1 rounded-md"
         >
           <option value="A→Z">A→Z</option>
-          <option value="Due Soon">Due Soon</option>
           <option value="Progress">Progress</option>
           <option value="Recently Updated">Recently Updated</option>
         </select>

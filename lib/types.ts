@@ -14,6 +14,7 @@ export interface Goals extends BaseTable {
   stage_id: number;
   monument_id: number;
   Title: string;
+  skill_id?: string | null;
 }
 
 export interface Projects extends BaseTable {
@@ -30,6 +31,7 @@ export interface Tasks extends BaseTable {
   project_id: number | null;
   stage_id: number;
   Title: string;
+  skill_id?: string | null;
 }
 
 export interface Habits extends BaseTable {
