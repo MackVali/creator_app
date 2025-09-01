@@ -68,6 +68,7 @@ export default function WindowsPage() {
   const [pendingPayload, setPendingPayload] = useState<WindowPayload | null>(
     null
   );
+  const [saving, setSaving] = useState(false);
 
   const is24Hour = !new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -231,6 +232,7 @@ export default function WindowsPage() {
 
   async function performSave(payload: WindowPayload, userId: string) {
     if (!supabase) return;
+    setSaving(true);
     let error;
     if (editing) {
       ({ error } = await supabase
@@ -241,8 +243,10 @@ export default function WindowsPage() {
     } else {
       ({ error } = await supabase.from("windows").insert(payload));
     }
+    setSaving(false);
     if (error) {
-      toast.error("Error", "Failed to save window");
+      console.error(error);
+      toast.error("Error", error.message || "Failed to save window");
     } else {
       toast.success("Saved", "Window saved");
       setShowForm(false);
@@ -493,8 +497,9 @@ export default function WindowsPage() {
                 <Button
                   type="submit"
                   className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+                  disabled={saving}
                 >
-                  Save
+                  {saving ? "Saving..." : "Save"}
                 </Button>
               </div>
             </form>
@@ -511,6 +516,7 @@ export default function WindowsPage() {
                 <Button
                   className="bg-gray-800 text-gray-100 hover:bg-gray-700"
                   onClick={() => performSave(pendingPayload, pendingPayload.user_id)}
+                  disabled={saving}
                 >
                   Keep both
                 </Button>
@@ -533,6 +539,7 @@ export default function WindowsPage() {
                     };
                     performSave(adjusted, pendingPayload.user_id);
                   }}
+                  disabled={saving}
                 >
                   Adjust end time
                 </Button>
