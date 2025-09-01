@@ -19,6 +19,8 @@ interface WindowRow {
   start_local: string;
   end_local: string;
   energy_cap: EnergyCap | null;
+  tags: string[] | null;
+  max_consecutive_min: number | null;
 }
 
 type EnergyCap =
@@ -35,6 +37,8 @@ interface WindowPayload {
   start_local: string;
   end_local: string;
   energy_cap: EnergyCap | null;
+  tags: string[];
+  max_consecutive_min: number | null;
   user_id: string;
 }
 
@@ -90,7 +94,9 @@ export default function WindowsPage() {
     }
     const { data, error } = await supabase
       .from("windows")
-      .select("id,label,days_of_week,start_local,end_local,energy_cap")
+      .select(
+        "id,label,days_of_week,start_local,end_local,energy_cap,tags,max_consecutive_min"
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
@@ -217,6 +223,8 @@ export default function WindowsPage() {
       start_local: start,
       end_local: end,
       energy_cap: energy,
+      tags: editing?.tags ?? [],
+      max_consecutive_min: editing?.max_consecutive_min ?? null,
       user_id: user.id,
     };
 
