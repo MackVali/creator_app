@@ -5,13 +5,7 @@ import Link from "next/link";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetFooter,
-} from "@/components/ui/sheet";
+import { SkillDrawer, type Category, type Skill } from "./components/SkillDrawer";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -76,21 +70,6 @@ function CircularProgress({ value }: { value: number }) {
   );
 }
 
-interface Skill {
-  id: string;
-  name: string;
-  icon: string;
-  level: number;
-  progress: number;
-  cat_id: string | null;
-  created_at?: string | null;
-}
-
-interface Category {
-  id: string;
-  name: string;
-}
-
 function SkillsPageContent() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -102,12 +81,6 @@ function SkillsPageContent() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState("name");
   const [open, setOpen] = useState(false);
-
-  // create drawer fields
-  const [formName, setFormName] = useState("");
-  const [formEmoji, setFormEmoji] = useState("💡");
-  const [formCat, setFormCat] = useState("");
-  const [formNewCat, setFormNewCat] = useState("");
 
   const supabase = getSupabaseBrowser();
 
@@ -205,31 +178,9 @@ function SkillsPageContent() {
     ];
   }, [categories, counts]);
 
-  const handleAddSkill = () => {
-    const name = formName.trim();
-    if (!name) return;
-    let catId = formCat;
-    const catName = formNewCat.trim();
-    if (formCat === "new" && catName) {
-      catId = "local-" + Date.now();
-      setCategories((prev) => [...prev, { id: catId, name: catName }]);
-    }
-    const newSkill: Skill = {
-      id: "local-" + Date.now(),
-      name,
-      icon: formEmoji,
-      level: 1,
-      progress: 0,
-      cat_id: catId || null,
-      created_at: new Date().toISOString(),
-    };
-    setSkills((prev) => [...prev, newSkill]);
-    setOpen(false);
-    setFormName("");
-    setFormEmoji("💡");
-    setFormCat("");
-    setFormNewCat("");
-  };
+  const addSkill = (skill: Skill) => setSkills((prev) => [...prev, skill]);
+  const addCategory = (cat: Category) =>
+    setCategories((prev) => [...prev, cat]);
 
   const handleRemoveSkill = (id: string) => {
     setSkills((prev) => prev.filter((s) => s.id !== id));
@@ -385,69 +336,13 @@ function SkillsPageContent() {
         </div>
       )}
 
-      {/* Create Drawer */}
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="bottom"
-          className="bg-[#1E1E1E] text-white max-h-[80vh]"
-        >
-          <SheetHeader>
-            <SheetTitle>Add Skill</SheetTitle>
-          </SheetHeader>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div>
-              <label className="block text-sm mb-1">Name</label>
-              <Input
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                className="h-11"
-              />
-            </div>
-            <div>
-              <label className="block text-sm mb-1">Emoji</label>
-              <Input
-                value={formEmoji}
-                onChange={(e) => setFormEmoji(e.target.value)}
-                className="h-11"
-                placeholder="🎯"
-              />
-            </div>
-            <div>
-              <label className="block text-sm mb-1">Category</label>
-              <select
-                value={formCat}
-                onChange={(e) => setFormCat(e.target.value)}
-                className="h-11 w-full bg-[#2C2C2C] border border-[#333] rounded-md px-3"
-              >
-                <option value="">Select...</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-                <option value="new">+ New Category</option>
-              </select>
-              {formCat === "new" && (
-                <Input
-                  placeholder="New category"
-                  value={formNewCat}
-                  onChange={(e) => setFormNewCat(e.target.value)}
-                  className="h-11 mt-2"
-                />
-              )}
-            </div>
-          </div>
-          <SheetFooter>
-            <Button
-              className="w-full bg-gray-200 text-black hover:bg-gray-300"
-              onClick={handleAddSkill}
-              disabled={!formName}
-            >
-              Add
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      <SkillDrawer
+        open={open}
+        onClose={() => setOpen(false)}
+        onAdd={addSkill}
+        categories={categories}
+        onAddCategory={addCategory}
+      />
     </div>
   );
 }
