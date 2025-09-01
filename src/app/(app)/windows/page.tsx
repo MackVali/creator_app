@@ -333,11 +333,12 @@ export default function WindowsPage() {
         </div>
 
         {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <form
-              onSubmit={saveWindow}
-              className="w-full max-w-md space-y-4 rounded-lg bg-gray-900 p-6"
-            >
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
+            <div className="flex min-h-full items-center justify-center p-4">
+              <form
+                onSubmit={saveWindow}
+                className="w-full max-w-md space-y-4 rounded-lg bg-gray-900 p-6"
+              >
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">
                   {editing ? "Edit Window" : "New Window"}
@@ -498,6 +499,7 @@ export default function WindowsPage() {
               </div>
             </form>
           </div>
+        </div>
         )}
         {conflictWindow && pendingPayload && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
