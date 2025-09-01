@@ -10,10 +10,10 @@ describe("genSlots", () => {
         created_at: "",
         user_id: "u1",
         label: "Morning",
-        days_of_week: [0],
+        days: [0],
         start_local: "06:00",
         end_local: "07:00",
-        energy_cap: null,
+        energy: "NO",
       },
     ];
     const slots = genSlots(date, windows);
