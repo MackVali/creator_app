@@ -2,6 +2,7 @@
 
 import { ProjectRow } from "./ProjectRow";
 import type { Project } from "../types";
+import { Progress } from "@/components/ui/Progress";
 
 interface ProjectsDropdownProps {
   id: string;
@@ -33,11 +34,12 @@ export function ProjectsDropdown({
             Projects for {goalTitle}
           </h4>
           {loading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-6 bg-gray-800 rounded animate-pulse" />
-              ))}
-            </div>
+            <Progress
+              value={100}
+              className="mb-2"
+              trackClass="bg-gray-700"
+              barClass="bg-blue-500 animate-pulse"
+            />
           ) : projects.length > 0 ? (
             <div className="space-y-2">
               {projects.map((p) => (
