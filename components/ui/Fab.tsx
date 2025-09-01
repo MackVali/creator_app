@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, X } from "lucide-react";
 import { EventModal } from "./EventModal";
+import { NoteModal } from "./NoteModal";
+import { ComingSoonModal } from "./ComingSoonModal";
 
 interface FabProps {
   className?: string;
@@ -13,6 +15,10 @@ export function Fab({ className = "" }: FabProps) {
   const [modalEventType, setModalEventType] = useState<
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
   >(null);
+  const [showNote, setShowNote] = useState(false);
+  const [comingSoon, setComingSoon] = useState<string | null>(null);
+  const [menuPage, setMenuPage] = useState(0);
+  const [touchStartX, setTouchStartX] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -39,6 +45,13 @@ export function Fab({ className = "" }: FabProps) {
     },
   ];
 
+  const extraEvents = [
+    { label: "SERVICE" },
+    { label: "PRODUCT" },
+    { label: "REQUEST" },
+    { label: "NOTE" },
+  ];
+
   const handleEventClick = (
     eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT"
   ) => {
@@ -46,8 +59,27 @@ export function Fab({ className = "" }: FabProps) {
     setModalEventType(eventType);
   };
 
+  const handleExtraClick = (label: string) => {
+    setIsOpen(false);
+    if (label === "NOTE") {
+      setShowNote(true);
+    } else {
+      setComingSoon(label);
+    }
+  };
+
   const toggleMenu = () => {
     setIsOpen(!isOpen);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const diff = e.changedTouches[0].clientX - touchStartX;
+    if (diff < -50) setMenuPage(1);
+    if (diff > 50) setMenuPage(0);
   };
 
   // Close menu when clicking outside
@@ -76,24 +108,45 @@ export function Fab({ className = "" }: FabProps) {
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 bg-gray-900/40 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className={`absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px] ${
+            menuPage === 1 ? "bg-gray-900/60" : "bg-gray-900/40"
+          }`}
         >
-          {addEvents.map((event, index) => (
-            <button
-              key={event.label}
-              onClick={() => handleEventClick(event.eventType)}
-              className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap ${event.color}`}
-              style={{
-                animationDelay: `${index * 50}ms`,
-                transform: `translateY(${isOpen ? "0" : "20px"})`,
-                opacity: isOpen ? 1 : 0,
-                transition: `all 0.2s ease ${index * 50}ms`,
-              }}
-            >
-              <span className="text-sm opacity-80">add</span>{" "}
-              <span className="text-lg font-bold">{event.label}</span>
-            </button>
-          ))}
+          {menuPage === 0
+            ? addEvents.map((event, index) => (
+                <button
+                  key={event.label}
+                  onClick={() => handleEventClick(event.eventType)}
+                  className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap ${event.color}`}
+                  style={{
+                    animationDelay: `${index * 50}ms`,
+                    transform: `translateY(${isOpen ? "0" : "20px"})`,
+                    opacity: isOpen ? 1 : 0,
+                    transition: `all 0.2s ease ${index * 50}ms`,
+                  }}
+                >
+                  <span className="text-sm opacity-80">add</span>{" "}
+                  <span className="text-lg font-bold">{event.label}</span>
+                </button>
+              ))
+            : extraEvents.map((event, index) => (
+                <button
+                  key={event.label}
+                  onClick={() => handleExtraClick(event.label)}
+                  className="w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap bg-gray-700 hover:bg-gray-600"
+                  style={{
+                    animationDelay: `${index * 50}ms`,
+                    transform: `translateY(${isOpen ? "0" : "20px"})`,
+                    opacity: isOpen ? 1 : 0,
+                    transition: `all 0.2s ease ${index * 50}ms`,
+                  }}
+                >
+                  <span className="text-sm opacity-80">add</span>{" "}
+                  <span className="text-lg font-bold">{event.label}</span>
+                </button>
+              ))}
         </div>
       )}
 
@@ -118,6 +171,12 @@ export function Fab({ className = "" }: FabProps) {
         isOpen={modalEventType !== null}
         onClose={() => setModalEventType(null)}
         eventType={modalEventType!}
+      />
+      <NoteModal isOpen={showNote} onClose={() => setShowNote(false)} />
+      <ComingSoonModal
+        isOpen={comingSoon !== null}
+        onClose={() => setComingSoon(null)}
+        label={comingSoon || ""}
       />
     </div>
   );
