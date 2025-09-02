@@ -25,8 +25,8 @@ export function Fab({ className = "" }: FabProps) {
 
   const getMenuBackground = () => {
     const progress = menuPage === 1 ? 1 - swipeProgress : swipeProgress;
-    const start = [229, 231, 235]; // gray-200
-    const end = [31, 41, 55]; // gray-800
+    const start = [55, 65, 81]; // gray-700
+    const end = [0, 0, 0]; // black
     const r = start[0] + (end[0] - start[0]) * progress;
     const g = start[1] + (end[1] - start[1]) * progress;
     const b = start[2] + (end[2] - start[2]) * progress;
@@ -37,22 +37,22 @@ export function Fab({ className = "" }: FabProps) {
     {
       label: "GOAL",
       eventType: "GOAL" as const,
-      color: "hover:bg-gray-300",
+      color: "hover:bg-gray-600",
     },
     {
       label: "PROJECT",
       eventType: "PROJECT" as const,
-      color: "hover:bg-gray-300",
+      color: "hover:bg-gray-600",
     },
     {
       label: "TASK",
       eventType: "TASK" as const,
-      color: "hover:bg-gray-300",
+      color: "hover:bg-gray-600",
     },
     {
       label: "HABIT",
       eventType: "HABIT" as const,
-      color: "hover:bg-gray-300",
+      color: "hover:bg-gray-600",
     },
   ];
 
@@ -147,7 +147,7 @@ export function Fab({ className = "" }: FabProps) {
                 <button
                   key={event.label}
                   onClick={() => handleEventClick(event.eventType)}
-                  className={`w-full px-6 py-3 text-left text-gray-900 font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
+                  className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
                   style={{
                     animationDelay: `${index * 50}ms`,
                     transform: `translateY(${isOpen ? "0" : "20px"})`,
