@@ -27,22 +27,22 @@ export function Fab({ className = "" }: FabProps) {
     {
       label: "GOAL",
       eventType: "GOAL" as const,
-      color: "bg-gray-700 hover:bg-gray-600",
+      color: "hover:bg-gray-800",
     },
     {
       label: "PROJECT",
       eventType: "PROJECT" as const,
-      color: "bg-gray-700 hover:bg-gray-600",
+      color: "hover:bg-gray-800",
     },
     {
       label: "TASK",
       eventType: "TASK" as const,
-      color: "bg-gray-700 hover:bg-gray-600",
+      color: "hover:bg-gray-800",
     },
     {
       label: "HABIT",
       eventType: "HABIT" as const,
-      color: "bg-gray-700 hover:bg-gray-600",
+      color: "hover:bg-gray-800",
     },
   ];
 
@@ -141,7 +141,7 @@ export function Fab({ className = "" }: FabProps) {
                 <button
                   key={event.label}
                   onClick={() => handleEventClick(event.eventType)}
-                  className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap ${event.color}`}
+                  className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
                   style={{
                     animationDelay: `${index * 50}ms`,
                     transform: `translateY(${isOpen ? "0" : "20px"})`,
@@ -157,7 +157,7 @@ export function Fab({ className = "" }: FabProps) {
                 <button
                   key={event.label}
                   onClick={() => handleExtraClick(event.label)}
-                  className="w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap bg-gray-700 hover:bg-gray-600"
+                  className="w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap"
                   style={{
                     animationDelay: `${index * 50}ms`,
                     transform: `translateY(${isOpen ? "0" : "20px"})`,
