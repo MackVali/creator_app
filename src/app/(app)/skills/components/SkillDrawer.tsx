@@ -9,6 +9,7 @@ export interface Skill {
   level: number;
   progress: number;
   cat_id: string | null;
+  monument_id: string | null;
   created_at?: string | null;
 }
 
@@ -20,11 +21,12 @@ export interface Category {
 interface SkillDrawerProps {
   open: boolean;
   onClose(): void;
-  onAdd(skill: Skill): void;
+  onAdd(skill: Skill): Promise<void>;
   categories: Category[];
-  onAddCategory(cat: Category): void;
+  monuments: { id: string; title: string }[];
+  onAddCategory(name: string): Promise<Category | null>;
   initialSkill?: Skill | null;
-  onUpdate?(skill: Skill): void;
+  onUpdate?(skill: Skill): Promise<void>;
 }
 
 export function SkillDrawer({
@@ -32,6 +34,7 @@ export function SkillDrawer({
   onClose,
   onAdd,
   categories,
+  monuments,
   onAddCategory,
   initialSkill,
   onUpdate,
@@ -40,6 +43,7 @@ export function SkillDrawer({
   const [emoji, setEmoji] = useState("💡");
   const [cat, setCat] = useState("");
   const [newCat, setNewCat] = useState("");
+  const [monument, setMonument] = useState("");
 
   const editing = Boolean(initialSkill);
 
@@ -48,24 +52,25 @@ export function SkillDrawer({
       setName(initialSkill.name);
       setEmoji(initialSkill.icon || "💡");
       setCat(initialSkill.cat_id || "");
+      setMonument(initialSkill.monument_id || "");
     } else {
       setName("");
       setEmoji("💡");
       setCat("");
       setNewCat("");
+      setMonument("");
     }
   }, [initialSkill, open]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
 
     let catId = cat;
     if (cat === "new" && newCat.trim()) {
-      const created = { id: "local-" + Date.now(), name: newCat.trim() };
-      catId = created.id;
-      onAddCategory(created);
+      const saved = await onAddCategory(newCat.trim());
+      catId = saved?.id || "";
     }
 
     const base: Skill = {
@@ -75,13 +80,18 @@ export function SkillDrawer({
       level: initialSkill?.level ?? 1,
       progress: initialSkill?.progress ?? 0,
       cat_id: catId || null,
+      monument_id: monument || null,
       created_at: initialSkill?.created_at ?? new Date().toISOString(),
     };
 
-    if (editing && onUpdate) {
-      onUpdate(base);
-    } else {
-      onAdd(base);
+    try {
+      if (editing && onUpdate) {
+        await onUpdate(base);
+      } else {
+        await onAdd(base);
+      }
+    } catch (err) {
+      console.error("Failed to save skill:", err);
     }
     onClose();
   };
@@ -90,7 +100,7 @@ export function SkillDrawer({
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black" onClick={onClose} />
       <div className="absolute right-0 top-0 h-full w-80 bg-gray-800 p-4 overflow-y-auto">
         <h2 className="text-lg font-semibold mb-4">{editing ? "Edit Skill" : "Add Skill"}</h2>
         <form onSubmit={submit} className="space-y-4">
@@ -110,6 +120,21 @@ export function SkillDrawer({
               onChange={(e) => setEmoji(e.target.value)}
               className="w-full px-3 py-2 rounded bg-gray-700"
             />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Monument</label>
+            <select
+              value={monument}
+              onChange={(e) => setMonument(e.target.value)}
+              className="w-full px-3 py-2 rounded bg-gray-700"
+            >
+              <option value="">Select...</option>
+              {monuments.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm mb-1">Category</label>

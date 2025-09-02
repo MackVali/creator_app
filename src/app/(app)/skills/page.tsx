@@ -13,8 +13,11 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToastHelpers } from "@/components/ui/toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
+import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
+import type { SkillRow } from "@/lib/types/skill";
 import {
   LayoutGrid,
   List as ListIcon,
@@ -22,6 +25,11 @@ import {
   MoreVertical,
   ChevronRight,
 } from "lucide-react";
+
+interface Monument {
+  id: string;
+  title: string;
+}
 
 // simple debounce hook for search
 function useDebounce<T>(value: T, delay: number) {
@@ -73,6 +81,7 @@ function CircularProgress({ value }: { value: number }) {
 function SkillsPageContent() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
@@ -81,8 +90,10 @@ function SkillsPageContent() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState("name");
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Skill | null>(null);
 
   const supabase = getSupabaseBrowser();
+  const toast = useToastHelpers();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -93,9 +104,10 @@ function SkillsPageContent() {
         } = await supabase.auth.getUser();
         if (!user) throw new Error("User not authenticated");
 
-        const [skillRows, cats] = await Promise.all([
+        const [skillRows, cats, mons] = await Promise.all([
           getSkillsForUser(user.id),
           supabase.from("cats").select("id,name").eq("user_id", user.id),
+          supabase.from("monuments").select("id,title").eq("user_id", user.id),
         ]);
 
         const formattedSkills: Skill[] = (skillRows || []).map((s) => ({
@@ -105,6 +117,7 @@ function SkillsPageContent() {
           level: s.level ?? 1,
           progress: 0,
           cat_id: s.cat_id,
+          monument_id: s.monument_id,
           created_at: s.created_at,
         }));
         setSkills(formattedSkills);
@@ -114,6 +127,12 @@ function SkillsPageContent() {
           name: c.name,
         }));
         setCategories(catList);
+
+        const monList: Monument[] = (mons.data || []).map((m) => ({
+          id: m.id,
+          title: m.title,
+        }));
+        setMonuments(monList);
       } catch (e) {
         console.error("Error fetching skills:", e);
       } finally {
@@ -178,12 +197,86 @@ function SkillsPageContent() {
     ];
   }, [categories, counts]);
 
-  const addSkill = (skill: Skill) => setSkills((prev) => [...prev, skill]);
-  const addCategory = (cat: Category) =>
-    setCategories((prev) => [...prev, cat]);
+  const addSkill = async (skill: Skill) => {
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const catIdToUse =
+      skill.cat_id && uuidRegex.test(skill.cat_id) ? skill.cat_id : null;
 
-  const handleRemoveSkill = (id: string) => {
+    const { data, error } = await createRecord<SkillRow>("skills", {
+      name: skill.name,
+      icon: skill.icon,
+      level: skill.level,
+      cat_id: catIdToUse,
+      monument_id: skill.monument_id ?? null,
+    });
+    if (error) {
+      console.error("Error creating skill:", error);
+      toast.error("Error", error.message || "Failed to create skill");
+      return;
+    }
+    setSkills((prev) => [
+      ...prev,
+      {
+        ...skill,
+        id: data!.id,
+        cat_id: catIdToUse,
+        monument_id: skill.monument_id ?? null,
+        created_at: data!.created_at,
+      },
+    ]);
+  };
+  const updateSkill = async (skill: Skill) => {
+    setSkills((prev) => prev.map((s) => (s.id === skill.id ? skill : s)));
+    const { error } = await updateRecord<SkillRow>("skills", skill.id, {
+      name: skill.name,
+      icon: skill.icon,
+      level: skill.level,
+      cat_id: skill.cat_id,
+      monument_id: skill.monument_id,
+    });
+    if (error) {
+      console.error("Error updating skill:", error);
+    }
+  };
+  const addCategory = async (name: string): Promise<Category | null> => {
+    const { data, error } = await createRecord<Category>("cats", { name });
+    if (error || !data) {
+      console.error("Error creating category:", error);
+      toast.error(
+        "Error",
+        error?.message || "Failed to create category"
+      );
+      return null;
+    }
+    const cat = { id: data.id, name: data.name } as Category;
+    setCategories((prev) => [...prev, cat]);
+    return cat;
+  };
+  const startEdit = (skill: Skill) => {
+    setEditing(skill);
+    setOpen(true);
+  };
+  const handleRemoveSkill = async (id: string) => {
     setSkills((prev) => prev.filter((s) => s.id !== id));
+    const { error } = await deleteRecord("skills", id);
+    if (error) {
+      console.error("Error deleting skill:", error);
+    }
+  };
+
+  const handleRemoveCategory = async (id: string) => {
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+    setSkills((prev) =>
+      prev.map((s) => (s.cat_id === id ? { ...s, cat_id: null } : s))
+    );
+    if (selectedCat === id) {
+      setSelectedCat("all");
+    }
+    const { error } = await deleteRecord("cats", id);
+    if (error) {
+      console.error("Error deleting category:", error);
+    }
   };
 
   if (loading) {
@@ -243,17 +336,30 @@ function SkillsPageContent() {
         </div>
         <div className="flex items-center gap-2 overflow-x-auto">
           {allCats.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCat(cat.id)}
-              className={`flex-shrink-0 px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
-                selectedCat === cat.id
-                  ? "bg-gray-200 text-black border-gray-200"
-                  : "bg-[#2C2C2C] border-[#333]"
-              }`}
-            >
-              {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
-            </button>
+            <div key={cat.id} className="relative flex-shrink-0">
+              <button
+                onClick={() => setSelectedCat(cat.id)}
+                className={`px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
+                  selectedCat === cat.id
+                    ? "bg-gray-200 text-black border-gray-200"
+                    : "bg-[#2C2C2C] border-[#333]"
+                }`}
+              >
+                {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
+              </button>
+              {cat.id !== "all" && cat.id !== "uncategorized" && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveCategory(cat.id);
+                  }}
+                  className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center"
+                  aria-label={`Delete ${cat.name}`}
+                >
+                  ×
+                </button>
+              )}
+            </div>
           ))}
           <select
             value={sort}
@@ -303,9 +409,23 @@ function SkillsPageContent() {
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      startEdit(skill);
+                    }}
+                  >
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRemoveSkill(skill.id);
+                    }}
+                  >
                     Remove
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -319,7 +439,7 @@ function SkillsPageContent() {
             <Link
               key={skill.id}
               href={`/skills/${skill.id}`}
-              className="flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
+              className="relative flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
             >
               <div className="flex items-center gap-3">
                 <CircularProgress value={skill.progress} />
@@ -331,6 +451,40 @@ function SkillsPageContent() {
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="absolute top-2 right-2 p-2"
+                    aria-label="More"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      startEdit(skill);
+                    }}
+                  >
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRemoveSkill(skill.id);
+                    }}
+                  >
+                    Remove
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </Link>
           ))}
         </div>
@@ -338,10 +492,16 @@ function SkillsPageContent() {
 
       <SkillDrawer
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false);
+          setEditing(null);
+        }}
         onAdd={addSkill}
         categories={categories}
+        monuments={monuments}
         onAddCategory={addCategory}
+        initialSkill={editing}
+        onUpdate={updateSkill}
       />
     </div>
   );
