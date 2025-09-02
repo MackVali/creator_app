@@ -1,4 +1,5 @@
 export const ENERGY = {
+  // TODO: replace with full energy tiers
   LIST: ["LOW", "MEDIUM", "HIGH"], // placeholder values
 } as const;
 
