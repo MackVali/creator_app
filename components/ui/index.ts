@@ -7,6 +7,8 @@ export { GoalList } from "./GoalList";
 export { ProjectList } from "./ProjectList";
 export { TaskList } from "./TaskList";
 export { EventModal } from "./EventModal";
+export { NoteModal } from "./NoteModal";
+export { ComingSoonModal } from "./ComingSoonModal";
 export { Select, SelectContent, SelectItem } from "./select";
 export { CatCard } from "./CatCard";
 export { SkillRow } from "./SkillRow";
