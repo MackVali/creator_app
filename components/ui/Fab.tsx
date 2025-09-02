@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Plus, X } from "lucide-react";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
@@ -130,53 +131,60 @@ export function Fab({ className = "" }: FabProps) {
   return (
     <div className={className}>
       {/* AddEvents Menu */}
-      {isOpen && (
-        <div
-          ref={menuRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
-          style={{
-            backgroundColor: getMenuBackground(),
-            transition: "background-color 0.1s linear",
-          }}
-        >
-          {menuPage === 0
-            ? addEvents.map((event, index) => (
-                <button
-                  key={event.label}
-                  onClick={() => handleEventClick(event.eventType)}
-                  className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
-                  style={{
-                    animationDelay: `${index * 50}ms`,
-                    transform: `translateY(${isOpen ? "0" : "20px"})`,
-                    opacity: isOpen ? 1 : 0,
-                    transition: `all 0.2s ease ${index * 50}ms`,
-                  }}
-                >
-                  <span className="text-sm opacity-80">add</span>{" "}
-                  <span className="text-lg font-bold">{event.label}</span>
-                </button>
-              ))
-            : extraEvents.map((event, index) => (
-                <button
-                  key={event.label}
-                  onClick={() => handleExtraClick(event.label)}
-                  className="w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap"
-                  style={{
-                    animationDelay: `${index * 50}ms`,
-                    transform: `translateY(${isOpen ? "0" : "20px"})`,
-                    opacity: isOpen ? 1 : 0,
-                    transition: `all 0.2s ease ${index * 50}ms`,
-                  }}
-                >
-                  <span className="text-sm opacity-80">add</span>{" "}
-                  <span className="text-lg font-bold">{event.label}</span>
-                </button>
-              ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            ref={menuRef}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
+            style={{
+              backgroundColor: getMenuBackground(),
+              transition: "background-color 0.1s linear",
+              transformOrigin: "bottom center",
+            }}
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 20 }}
+            transition={{ type: "spring", stiffness: 260, damping: 20 }}
+          >
+            {menuPage === 0
+              ? addEvents.map((event, index) => (
+                  <button
+                    key={event.label}
+                    onClick={() => handleEventClick(event.eventType)}
+                    className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
+                    style={{
+                      animationDelay: `${index * 50}ms`,
+                      transform: `translateY(${isOpen ? "0" : "20px"})`,
+                      opacity: isOpen ? 1 : 0,
+                      transition: `all 0.2s ease ${index * 50}ms`,
+                    }}
+                  >
+                    <span className="text-sm opacity-80">add</span>{" "}
+                    <span className="text-lg font-bold">{event.label}</span>
+                  </button>
+                ))
+              : extraEvents.map((event, index) => (
+                  <button
+                    key={event.label}
+                    onClick={() => handleExtraClick(event.label)}
+                    className="w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap"
+                    style={{
+                      animationDelay: `${index * 50}ms`,
+                      transform: `translateY(${isOpen ? "0" : "20px"})`,
+                      opacity: isOpen ? 1 : 0,
+                      transition: `all 0.2s ease ${index * 50}ms`,
+                    }}
+                  >
+                    <span className="text-sm opacity-80">add</span>{" "}
+                    <span className="text-lg font-bold">{event.label}</span>
+                  </button>
+                ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* FAB Button - Restored to your original styling */}
       <button
