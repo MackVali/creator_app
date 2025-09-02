@@ -23,26 +23,36 @@ export function Fab({ className = "" }: FabProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
+  const getMenuBackground = () => {
+    const progress = menuPage === 1 ? 1 - swipeProgress : swipeProgress;
+    const start = [229, 231, 235]; // gray-200
+    const end = [31, 41, 55]; // gray-800
+    const r = start[0] + (end[0] - start[0]) * progress;
+    const g = start[1] + (end[1] - start[1]) * progress;
+    const b = start[2] + (end[2] - start[2]) * progress;
+    return `rgb(${r}, ${g}, ${b})`;
+  };
+
   const addEvents = [
     {
       label: "GOAL",
       eventType: "GOAL" as const,
-      color: "hover:bg-gray-800",
+      color: "hover:bg-gray-300",
     },
     {
       label: "PROJECT",
       eventType: "PROJECT" as const,
-      color: "hover:bg-gray-800",
+      color: "hover:bg-gray-300",
     },
     {
       label: "TASK",
       eventType: "TASK" as const,
-      color: "hover:bg-gray-800",
+      color: "hover:bg-gray-300",
     },
     {
       label: "HABIT",
       eventType: "HABIT" as const,
-      color: "hover:bg-gray-800",
+      color: "hover:bg-gray-300",
     },
   ];
 
@@ -128,11 +138,7 @@ export function Fab({ className = "" }: FabProps) {
           onTouchEnd={handleTouchEnd}
           className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
           style={{
-            backgroundColor: `rgba(17, 24, 39, ${
-              menuPage === 1
-                ? 0.6 - 0.2 * swipeProgress
-                : 0.4 + 0.2 * swipeProgress
-            })`,
+            backgroundColor: getMenuBackground(),
             transition: "background-color 0.1s linear",
           }}
         >
@@ -141,7 +147,7 @@ export function Fab({ className = "" }: FabProps) {
                 <button
                   key={event.label}
                   onClick={() => handleEventClick(event.eventType)}
-                  className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
+                  className={`w-full px-6 py-3 text-left text-gray-900 font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
                   style={{
                     animationDelay: `${index * 50}ms`,
                     transform: `translateY(${isOpen ? "0" : "20px"})`,
