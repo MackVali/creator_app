@@ -198,35 +198,10 @@ function SkillsPageContent() {
   }, [categories, counts]);
 
   const addSkill = async (skill: Skill) => {
-    // persist new categories if needed
-    let catId = skill.cat_id;
-    if (catId && catId.startsWith("local-")) {
-      const localCat = categories.find((c) => c.id === catId);
-      if (localCat) {
-        const { data: savedCat, error: catError } = await createRecord<Category>(
-          "cats",
-          { name: localCat.name }
-        );
-        if (catError) {
-          console.error("Error creating category:", catError);
-          toast.error("Error", catError.message || "Failed to create category");
-          catId = null;
-        } else if (savedCat) {
-          catId = savedCat.id;
-          setCategories((prev) =>
-            prev.map((c) => (c.id === localCat.id ? savedCat : c))
-          );
-        } else {
-          catId = null;
-        }
-      } else {
-        catId = null;
-      }
-    }
-
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const catIdToUse = catId && uuidRegex.test(catId) ? catId : null;
+    const catIdToUse =
+      skill.cat_id && uuidRegex.test(skill.cat_id) ? skill.cat_id : null;
 
     const { data, error } = await createRecord<SkillRow>("skills", {
       name: skill.name,
@@ -264,8 +239,20 @@ function SkillsPageContent() {
       console.error("Error updating skill:", error);
     }
   };
-  const addCategory = (cat: Category) =>
+  const addCategory = async (name: string): Promise<Category | null> => {
+    const { data, error } = await createRecord<Category>("cats", { name });
+    if (error || !data) {
+      console.error("Error creating category:", error);
+      toast.error(
+        "Error",
+        error?.message || "Failed to create category"
+      );
+      return null;
+    }
+    const cat = { id: data.id, name: data.name } as Category;
     setCategories((prev) => [...prev, cat]);
+    return cat;
+  };
   const startEdit = (skill: Skill) => {
     setEditing(skill);
     setOpen(true);

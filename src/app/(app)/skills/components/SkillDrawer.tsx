@@ -24,7 +24,7 @@ interface SkillDrawerProps {
   onAdd(skill: Skill): Promise<void>;
   categories: Category[];
   monuments: { id: string; title: string }[];
-  onAddCategory(cat: Category): void;
+  onAddCategory(name: string): Promise<Category | null>;
   initialSkill?: Skill | null;
   onUpdate?(skill: Skill): Promise<void>;
 }
@@ -69,9 +69,8 @@ export function SkillDrawer({
 
     let catId = cat;
     if (cat === "new" && newCat.trim()) {
-      const created = { id: "local-" + Date.now(), name: newCat.trim() };
-      catId = created.id;
-      onAddCategory(created);
+      const saved = await onAddCategory(newCat.trim());
+      catId = saved?.id || "";
     }
 
     const base: Skill = {
