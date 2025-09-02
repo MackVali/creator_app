@@ -18,12 +18,14 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
 import type { SkillRow } from "@/lib/types/skill";
+import { cn } from "@/lib/utils";
 import {
   LayoutGrid,
   List as ListIcon,
   Plus,
   MoreVertical,
   ChevronRight,
+  Star,
 } from "lucide-react";
 
 interface Monument {
@@ -41,39 +43,49 @@ function useDebounce<T>(value: T, delay: number) {
   return debounced;
 }
 
-// circular progress ring component
-function CircularProgress({ value }: { value: number }) {
+// premium progress ring component
+function ProgressRing({ value }: { value: number }) {
   const normalized = Math.max(0, Math.min(100, value));
-  const circumference = 2 * Math.PI * 20;
+  const radius = 32; // size 72px with 8px stroke
+  const circumference = 2 * Math.PI * radius;
   const offset = circumference - (normalized / 100) * circumference;
+  const isEmpty = normalized === 0;
   return (
-    <div className="relative w-14 h-14">
-      <svg className="w-14 h-14" viewBox="0 0 44 44">
+    <div
+      className={cn(
+        "relative w-[72px] h-[72px] rounded-full",
+        !isEmpty && "shadow-[inset_0_0_8px_rgba(185,185,185,0.15)]"
+      )}
+    >
+      <svg className="w-full h-full" viewBox="0 0 72 72">
         <circle
-          className="text-gray-700"
-          strokeWidth="4"
-          stroke="currentColor"
+          strokeWidth="8"
+          stroke="#3A3A3A"
           fill="transparent"
-          r="20"
-          cx="22"
-          cy="22"
+          r={radius}
+          cx="36"
+          cy="36"
+          {...(isEmpty ? { strokeDasharray: "2 6" } : {})}
         />
-        <circle
-          className="text-gray-400"
-          strokeWidth="4"
-          stroke="currentColor"
-          fill="transparent"
-          r="20"
-          cx="22"
-          cy="22"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
+        {!isEmpty && (
+          <circle
+            strokeWidth="8"
+            stroke="#B9B9B9"
+            fill="transparent"
+            r={radius}
+            cx="36"
+            cy="36"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+          />
+        )}
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-xs text-gray-100">
-        {normalized}%
-      </span>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-sm font-medium text-[#E6E6E6] tabular-nums">
+          {normalized}%
+        </span>
+      </div>
     </div>
   );
 }
@@ -281,10 +293,19 @@ function SkillsPageContent() {
 
   if (loading) {
     return (
-      <div className="p-4 space-y-4">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-11 w-full" />
-        <Skeleton className="h-11 w-full" />
+      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 min-[420px]:grid-cols-3 gap-3 p-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-4 p-4 rounded-2xl border border-[#353535] bg-[#242424]"
+          >
+            <Skeleton className="w-[72px] h-[72px] rounded-full bg-[#2B2B2B]" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-3/4 bg-[#2B2B2B]" />
+              <Skeleton className="h-3 w-1/3 bg-[#2B2B2B]" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -315,23 +336,31 @@ function SkillsPageContent() {
             placeholder="Search skills..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-11 flex-1"
+            className="h-11 flex-1 bg-[#242424] border-[#353535] placeholder:text-[#808080] focus-visible:ring-1 focus-visible:ring-[#9966CC]"
           />
           <Button
             onClick={() => setView("grid")}
-            variant={view === "grid" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
+            variant="ghost"
+            size="icon"
+            aria-label="Grid view"
+            className={cn(
+              "h-11 w-11 rounded-md hover:bg-[#2B2B2B] active:scale-[0.98] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]",
+              view === "grid" && "bg-[#2B2B2B]"
+            )}
           >
             <LayoutGrid className="w-5 h-5" />
-            <span className="sr-only">Grid view</span>
           </Button>
           <Button
             onClick={() => setView("list")}
-            variant={view === "list" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
+            variant="ghost"
+            size="icon"
+            aria-label="List view"
+            className={cn(
+              "h-11 w-11 rounded-md hover:bg-[#2B2B2B] active:scale-[0.98] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]",
+              view === "list" && "bg-[#2B2B2B]"
+            )}
           >
             <ListIcon className="w-5 h-5" />
-            <span className="sr-only">List view</span>
           </Button>
         </div>
         <div className="flex items-center gap-2 overflow-x-auto">
@@ -339,11 +368,12 @@ function SkillsPageContent() {
             <div key={cat.id} className="relative flex-shrink-0">
               <button
                 onClick={() => setSelectedCat(cat.id)}
-                className={`px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
+                className={cn(
+                  "px-3 min-h-[44px] rounded-full text-sm whitespace-nowrap border border-[#3A3A3A] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]",
                   selectedCat === cat.id
-                    ? "bg-gray-200 text-black border-gray-200"
-                    : "bg-[#2C2C2C] border-[#333]"
-                }`}
+                    ? "bg-[#2E2E2E] text-[#E6E6E6]"
+                    : "bg-[#242424] text-[#A6A6A6]"
+                )}
               >
                 {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
               </button>
@@ -364,7 +394,8 @@ function SkillsPageContent() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="ml-auto h-11 bg-[#2C2C2C] border border-[#333] rounded-md px-3"
+            aria-label="Sort skills"
+            className="ml-auto h-11 bg-[#242424] border border-[#353535] rounded-md px-3 text-sm text-[#E6E6E6] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]"
           >
             <option value="name">A→Z</option>
             <option value="level">Level (desc)</option>
@@ -376,31 +407,40 @@ function SkillsPageContent() {
 
       {/* Skills */}
       {empty ? (
-        <div className="p-8">
-          <div className="text-center text-gray-400">No skills found</div>
+        <div className="p-8 flex flex-col items-center gap-4 text-center">
+          <Star className="w-12 h-12 text-[#A6A6A6]" />
+          <p className="text-sm text-[#A6A6A6]">No skills yet</p>
+          <Button
+            variant="secondary"
+            onClick={() => setOpen(true)}
+            className="gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Create your first skill
+          </Button>
         </div>
       ) : view === "grid" ? (
-        <div className="grid grid-cols-2 gap-4 p-4">
+        <div className="grid grid-cols-1 min-[360px]:grid-cols-2 min-[420px]:grid-cols-3 gap-3 p-4">
           {filtered.map((skill) => (
             <Link
               key={skill.id}
               href={`/skills/${skill.id}`}
-              className="relative bg-[#2C2C2C] rounded-lg p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform"
+              className="group relative flex items-center gap-4 p-4 rounded-2xl border border-[#353535] bg-[#242424] transition-transform active:scale-[0.99] hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]"
             >
-              <CircularProgress value={skill.progress} />
-              <div className="text-center w-full">
-                <div className="text-sm font-medium truncate">
+              <ProgressRing value={skill.progress} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[15px] font-semibold text-[#E6E6E6] truncate capitalize">
                   {skill.name}
                 </div>
-                <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
-                  Lv {skill.level}
-                </span>
               </div>
+              <span className="text-xs text-[#A6A6A6] bg-[#2B2B2B] px-2 py-0.5 rounded-full">
+                Lv {skill.level}
+              </span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="absolute top-2 right-2 p-2"
-                    aria-label="More"
+                    className="relative h-10 w-10 flex items-center justify-center rounded-md overflow-hidden hover:bg-white/5 active:bg-white/10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]"
+                    aria-label="More options"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -409,7 +449,7 @@ function SkillsPageContent() {
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
+                <DropdownMenuContent className="bg-[#242424] border-[#353535]">
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.preventDefault();
@@ -439,23 +479,25 @@ function SkillsPageContent() {
             <Link
               key={skill.id}
               href={`/skills/${skill.id}`}
-              className="relative flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
+              className="group relative flex items-center justify-between p-4 rounded-2xl border border-[#353535] bg-[#242424] transition-transform active:scale-[0.99] hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]"
             >
-              <div className="flex items-center gap-3">
-                <CircularProgress value={skill.progress} />
-                <div>
-                  <div className="text-sm font-medium">{skill.name}</div>
-                  <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <ProgressRing value={skill.progress} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[15px] font-semibold text-[#E6E6E6] truncate capitalize">
+                    {skill.name}
+                  </div>
+                  <span className="mt-1 inline-block text-xs text-[#A6A6A6] bg-[#2B2B2B] px-2 py-0.5 rounded-full">
                     Lv {skill.level}
                   </span>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <ChevronRight className="w-4 h-4 text-[#A6A6A6]" />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="absolute top-2 right-2 p-2"
-                    aria-label="More"
+                    className="absolute top-2 right-2 h-10 w-10 flex items-center justify-center rounded-md overflow-hidden hover:bg-white/5 active:bg-white/10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#9966CC]"
+                    aria-label="More options"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -464,7 +506,7 @@ function SkillsPageContent() {
                     <MoreVertical className="w-4 h-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
+                <DropdownMenuContent className="bg-[#242424] border-[#353535]">
                   <DropdownMenuItem
                     onClick={(e) => {
                       e.preventDefault();
