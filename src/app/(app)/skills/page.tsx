@@ -13,6 +13,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToastHelpers } from "@/components/ui/toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
@@ -92,6 +93,7 @@ function SkillsPageContent() {
   const [editing, setEditing] = useState<Skill | null>(null);
 
   const supabase = getSupabaseBrowser();
+  const toast = useToastHelpers();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -207,24 +209,35 @@ function SkillsPageContent() {
         );
         if (catError) {
           console.error("Error creating category:", catError);
+          toast.error("Error", catError.message || "Failed to create category");
+          catId = null;
         } else if (savedCat) {
           catId = savedCat.id;
           setCategories((prev) =>
             prev.map((c) => (c.id === localCat.id ? savedCat : c))
           );
+        } else {
+          catId = null;
         }
+      } else {
+        catId = null;
       }
     }
+
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const catIdToUse = catId && uuidRegex.test(catId) ? catId : null;
 
     const { data, error } = await createRecord<SkillRow>("skills", {
       name: skill.name,
       icon: skill.icon,
       level: skill.level,
-      cat_id: catId ?? null,
+      cat_id: catIdToUse,
       monument_id: skill.monument_id ?? null,
     });
     if (error) {
       console.error("Error creating skill:", error);
+      toast.error("Error", error.message || "Failed to create skill");
       return;
     }
     setSkills((prev) => [
@@ -232,7 +245,7 @@ function SkillsPageContent() {
       {
         ...skill,
         id: data!.id,
-        cat_id: catId ?? null,
+        cat_id: catIdToUse,
         monument_id: skill.monument_id ?? null,
         created_at: data!.created_at,
       },
