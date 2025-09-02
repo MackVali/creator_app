@@ -1,4 +1,5 @@
 import { TaskLite, taskWeight } from "./weight";
+import { ENERGY } from "./config";
 
 export type WindowLite = {
   id: string;
@@ -24,6 +25,11 @@ function parseTime(date: Date, time: string): Date {
   const d = new Date(date);
   d.setHours(h, m, 0, 0);
   return d;
+}
+
+function energyIndex(level: string | null | undefined): number {
+  const idx = (ENERGY.LIST as readonly string[]).indexOf(level ?? "");
+  return idx === -1 ? ENERGY.LIST.length : idx;
 }
 
 export function genSlotsForWindow(
@@ -77,8 +83,15 @@ export function placeByEnergyWeight(
   windows: WindowLite[],
   date: Date
 ) {
+  const windowsSorted = [...windows].sort((a, b) => {
+    const aStart = parseTime(date, a.start_local).getTime();
+    const bStart = parseTime(date, b.start_local).getTime();
+    if (aStart !== bStart) return aStart - bStart;
+    return a.id.localeCompare(b.id);
+  });
+
   const slotsByWindow: Record<string, Slot[]> = {};
-  for (const w of windows) {
+  for (const w of windowsSorted) {
     slotsByWindow[w.id] = genSlotsForWindow(w, date);
   }
 
@@ -97,8 +110,8 @@ export function placeByEnergyWeight(
   });
 
   for (const task of sortedTasks) {
-    const candidates = windows.filter(
-      (w) => task.energy === w.energy_cap
+    const candidates = windowsSorted.filter(
+      (w) => energyIndex(task.energy) <= energyIndex(w.energy_cap)
     );
     if (candidates.length === 0) {
       unplaced.push({ taskId: task.id, reason: "no-window" });
