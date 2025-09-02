@@ -47,14 +47,24 @@ export default function SchedulePage() {
       <div className="space-y-6">
         <div className="relative">
           <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
-          <Link href="/windows" className="absolute right-0 top-0">
-            <Button
-              size="sm"
-              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-            >
-              Windows
-            </Button>
-          </Link>
+          <div className="absolute right-0 top-0 flex gap-2">
+            <Link href="/schedule/draft">
+              <Button
+                size="sm"
+                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+              >
+                Draft
+              </Button>
+            </Link>
+            <Link href="/windows">
+              <Button
+                size="sm"
+                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+              >
+                Windows
+              </Button>
+            </Link>
+          </div>
           <p className="text-muted-foreground">
             Plan and manage your time
           </p>
