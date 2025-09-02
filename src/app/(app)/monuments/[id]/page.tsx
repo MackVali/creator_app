@@ -6,6 +6,8 @@ import { useParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProgressBarGradient } from "@/components/skills/ProgressBarGradient";
+import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 
 interface Monument {
   id: string;
@@ -108,6 +110,8 @@ export default function MonumentDetailPage() {
     });
   };
 
+  const mockProgress = 65;
+
   return (
     <main className="p-4 space-y-6">
       {/* Monument Header */}
@@ -123,6 +127,10 @@ export default function MonumentDetailPage() {
         <p className="text-sm text-gray-400">
           Created {formatDate(monument.created_at)}
         </p>
+        <div className="max-w-md mx-auto w-full space-y-2">
+          <span className="text-sm text-gray-400">Charging</span>
+          <ProgressBarGradient value={mockProgress} height={8} />
+        </div>
         <Link
           href={`/monuments/${id}/edit`}
           className="inline-block rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-black"
@@ -135,6 +143,12 @@ export default function MonumentDetailPage() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold text-white">Related Goals</h2>
         <FilteredGoalsGrid entity="monument" id={id} />
+      </div>
+
+      {/* Notes Section */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold text-white">Notes</h2>
+        <MonumentNotesGrid monumentId={id} />
       </div>
     </main>
   );
