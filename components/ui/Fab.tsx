@@ -67,20 +67,18 @@ export function Fab({ className = "" }: FabProps) {
   const menuVariants = {
     closed: {
       opacity: 0,
-      scale: 0.8,
-      y: 20,
-      transition: { type: "tween", ease: "easeIn", duration: 0.1 },
+      clipPath: "inset(100% 0% 0% 0%)",
+      transition: { type: "tween", ease: "easeInOut", duration: 0.2 },
     },
     open: {
       opacity: 1,
-      scale: 1,
-      y: 0,
+      clipPath: "inset(0% 0% 0% 0%)",
       transition: {
         type: "tween",
         ease: "easeOut",
-        duration: 0.2,
+        duration: 0.25,
         staggerChildren: 0.05,
-        delayChildren: 0.05,
+        delayChildren: 0.1,
       },
     },
   } as const;
@@ -88,7 +86,7 @@ export function Fab({ className = "" }: FabProps) {
   const itemVariants = {
     closed: {
       opacity: 0,
-      y: 20,
+      y: 10,
       transition: { type: "tween", ease: "easeIn", duration: 0.15 },
     },
     open: {
