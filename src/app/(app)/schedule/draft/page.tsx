@@ -10,6 +10,7 @@ import {
 } from "@/lib/scheduler/repo";
 import { placeByEnergyWeight } from "@/lib/scheduler/placer";
 import { TaskLite, taskWeight } from "@/lib/scheduler/weight";
+import { MOCK_TASKS, MOCK_WINDOWS } from "@/lib/scheduler/mock";
 
 function fmt(d: Date) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -48,6 +49,14 @@ export default function DraftSchedulerPage() {
     return map;
   }, [tasks]);
 
+  function handleLoadMock() {
+    setWindows(MOCK_WINDOWS);
+    setTasks(MOCK_TASKS);
+    setPlacements([]);
+    setUnplaced([]);
+    setError(null);
+  }
+
   async function handleLoad() {
     try {
       const weekday = new Date().getDay();
@@ -85,6 +94,12 @@ export default function DraftSchedulerPage() {
           onClick={handleLoad}
         >
           Load Data
+        </Button>
+        <Button
+          className="flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          onClick={handleLoadMock}
+        >
+          Load Mock
         </Button>
         <Button
           className="flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
