@@ -65,15 +65,20 @@ export function Fab({ className = "" }: FabProps) {
   ];
 
   const menuVariants = {
-    closed: { opacity: 0, scale: 0.8, y: 20 },
+    closed: {
+      opacity: 0,
+      scale: 0.8,
+      y: 20,
+      transition: { type: "tween", ease: "easeIn", duration: 0.1 },
+    },
     open: {
       opacity: 1,
       scale: 1,
       y: 0,
       transition: {
-        type: "spring",
-        stiffness: 260,
-        damping: 20,
+        type: "tween",
+        ease: "easeOut",
+        duration: 0.2,
         staggerChildren: 0.05,
         delayChildren: 0.05,
       },
@@ -81,8 +86,16 @@ export function Fab({ className = "" }: FabProps) {
   } as const;
 
   const itemVariants = {
-    closed: { opacity: 0, y: 20 },
-    open: { opacity: 1, y: 0 },
+    closed: {
+      opacity: 0,
+      y: 20,
+      transition: { type: "tween", ease: "easeIn", duration: 0.15 },
+    },
+    open: {
+      opacity: 1,
+      y: 0,
+      transition: { type: "tween", ease: "easeOut", duration: 0.15 },
+    },
   } as const;
 
   const handleEventClick = (
