@@ -12,7 +12,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { Skeleton } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
 import {
@@ -33,39 +32,62 @@ function useDebounce<T>(value: T, delay: number) {
   return debounced;
 }
 
-// circular progress ring component
-function CircularProgress({ value }: { value: number }) {
-  const normalized = Math.max(0, Math.min(100, value));
-  const circumference = 2 * Math.PI * 20;
-  const offset = circumference - (normalized / 100) * circumference;
+// premium progress ring
+function ProgressRing({
+  value,
+  level,
+  className = "",
+}: {
+  value: number;
+  level: number;
+  className?: string;
+}) {
+  const clamped = Math.max(0, Math.min(100, value));
+  const size = 72;
+  const stroke = 8;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (clamped / 100) * circumference;
+  const dash = clamped === 0 ? "2 6" : `${circumference}`;
   return (
-    <div className="relative w-14 h-14">
-      <svg className="w-14 h-14" viewBox="0 0 44 44">
+    <div
+      className={`relative w-[72px] h-[72px] rounded-full ${
+        clamped > 0 ? "shadow-[inset_0_0_4px_rgba(185,185,185,0.3)]" : ""
+      } ${className}`}
+    >
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        className="text-[#B9B9B9]"
+      >
         <circle
-          className="text-gray-700"
-          strokeWidth="4"
-          stroke="currentColor"
+          stroke="#3A3A3A"
+          strokeWidth={stroke}
           fill="transparent"
-          r="20"
-          cx="22"
-          cy="22"
+          r={radius}
+          cx={size / 2}
+          cy={size / 2}
         />
         <circle
-          className="text-gray-400"
-          strokeWidth="4"
           stroke="currentColor"
+          strokeWidth={stroke}
           fill="transparent"
-          r="20"
-          cx="22"
-          cy="22"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
+          r={radius}
+          cx={size / 2}
+          cy={size / 2}
+          strokeDasharray={dash}
+          strokeDashoffset={clamped === 0 ? undefined : offset}
           strokeLinecap="round"
+          className="transition-[stroke-dashoffset] duration-300 ease-linear"
         />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-xs text-gray-100">
-        {normalized}%
-      </span>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-xs">
+        <span className="font-medium tabular-nums text-[#E6E6E6]">
+          {Math.round(clamped)}%
+        </span>
+        <span className="text-[10px] text-[#A6A6A6]">Lv {level}</span>
+      </div>
     </div>
   );
 }
@@ -188,10 +210,19 @@ function SkillsPageContent() {
 
   if (loading) {
     return (
-      <div className="p-4 space-y-4">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-11 w-full" />
-        <Skeleton className="h-11 w-full" />
+      <div className="p-4 grid grid-cols-2 min-[420px]:grid-cols-3 gap-3.5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="p-4 rounded-2xl border border-[#353535] bg-[#242424]"
+          >
+            <div className="w-[72px] h-[72px] rounded-full bg-gradient-to-r from-[#2B2B2B] via-[#303030] to-[#2B2B2B] bg-[length:200%_100%] animate-shimmer" />
+            <div className="mt-4 space-y-2">
+              <div className="h-4 w-3/4 rounded bg-gradient-to-r from-[#2B2B2B] via-[#303030] to-[#2B2B2B] bg-[length:200%_100%] animate-shimmer" />
+              <div className="h-3 w-1/2 rounded bg-gradient-to-r from-[#2B2B2B] via-[#303030] to-[#2B2B2B] bg-[length:200%_100%] animate-shimmer" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -222,34 +253,40 @@ function SkillsPageContent() {
             placeholder="Search skills..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-11 flex-1"
+            className="h-11 flex-1 bg-[#242424] border border-[#353535] placeholder:text-[#808080] focus-visible:ring-1 focus-visible:ring-[#9966CC]"
           />
-          <Button
+          <button
             onClick={() => setView("grid")}
-            variant={view === "grid" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
+            aria-label="Grid view"
+            className={`h-11 w-11 flex items-center justify-center rounded-md border border-[#3A3A3A] transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#9966CC] ${
+              view === "grid"
+                ? "bg-[#2E2E2E] text-[#E6E6E6]"
+                : "bg-[#242424] text-[#A6A6A6]"
+            }`}
           >
             <LayoutGrid className="w-5 h-5" />
-            <span className="sr-only">Grid view</span>
-          </Button>
-          <Button
+          </button>
+          <button
             onClick={() => setView("list")}
-            variant={view === "list" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
+            aria-label="List view"
+            className={`h-11 w-11 flex items-center justify-center rounded-md border border-[#3A3A3A] transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#9966CC] ${
+              view === "list"
+                ? "bg-[#2E2E2E] text-[#E6E6E6]"
+                : "bg-[#242424] text-[#A6A6A6]"
+            }`}
           >
             <ListIcon className="w-5 h-5" />
-            <span className="sr-only">List view</span>
-          </Button>
+          </button>
         </div>
         <div className="flex items-center gap-2 overflow-x-auto">
           {allCats.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCat(cat.id)}
-              className={`flex-shrink-0 px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
+              className={`flex-shrink-0 px-4 min-h-[44px] rounded-full text-sm border border-[#3A3A3A] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#9966CC] ${
                 selectedCat === cat.id
-                  ? "bg-gray-200 text-black border-gray-200"
-                  : "bg-[#2C2C2C] border-[#333]"
+                  ? "bg-[#2E2E2E] text-[#E6E6E6]"
+                  : "bg-[#242424] text-[#A6A6A6]"
               }`}
             >
               {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
@@ -258,7 +295,8 @@ function SkillsPageContent() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="ml-auto h-11 bg-[#2C2C2C] border border-[#333] rounded-md px-3"
+            aria-label="Sort"
+            className="ml-auto h-11 rounded-md bg-[#242424] border border-[#3A3A3A] px-3 text-[#A6A6A6] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#9966CC] active:scale-[0.98]"
           >
             <option value="name">A→Z</option>
             <option value="level">Level (desc)</option>
@@ -270,65 +308,79 @@ function SkillsPageContent() {
 
       {/* Skills */}
       {empty ? (
-        <div className="p-8">
-          <div className="text-center text-gray-400">No skills found</div>
+        <div className="p-8 flex justify-center">
+          <div className="flex flex-col items-center gap-4 p-8 rounded-2xl border border-[#353535] bg-[#242424]">
+            <Plus className="w-8 h-8 text-[#A6A6A6]" />
+            <div className="text-[#A6A6A6]">No skills yet</div>
+            <Button
+              variant="secondary"
+              onClick={() => setOpen(true)}
+              className="px-4"
+            >
+              Create your first skill
+            </Button>
+          </div>
         </div>
       ) : view === "grid" ? (
-        <div className="grid grid-cols-2 gap-4 p-4">
+        <div className="grid grid-cols-2 min-[420px]:grid-cols-3 gap-3.5 p-4">
           {filtered.map((skill) => (
             <Link
               key={skill.id}
               href={`/skills/${skill.id}`}
-              className="relative bg-[#2C2C2C] rounded-lg p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform"
+              className="relative rounded-2xl border border-[#353535] bg-[#242424] p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9966CC] transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.99]"
             >
-              <CircularProgress value={skill.progress} />
-              <div className="text-center w-full">
-                <div className="text-sm font-medium truncate">
+              <div className="grid grid-cols-[72px_1fr_auto] grid-rows-[auto_auto] gap-x-4 gap-y-2">
+                <ProgressRing
+                  value={skill.progress}
+                  level={skill.level}
+                  className="row-span-2"
+                />
+                <div className="text-[15px] font-semibold text-[#E6E6E6] truncate">
                   {skill.name}
                 </div>
-                <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="relative h-11 w-11 -mr-2 flex items-center justify-center rounded-full overflow-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#9966CC] active:scale-[0.98] [&:after]:content-[''] [&:after]:absolute [&:after]:inset-0 [&:after]:bg-white [&:after]:opacity-0 [&:after]:transition [&:after]:duration-300 active:[&:after]:opacity-8"
+                      aria-label="More"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                      Remove
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <span className="text-xs px-2 py-[2px] rounded-full bg-[#2B2B2B] text-[#A6A6A6]">
                   Lv {skill.level}
                 </span>
               </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="absolute top-2 right-2 p-2"
-                    aria-label="More"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
-                    Remove
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </Link>
           ))}
         </div>
       ) : (
-        <div className="p-4 space-y-3">
+        <div className="p-4 space-y-3.5">
           {filtered.map((skill) => (
             <Link
               key={skill.id}
               href={`/skills/${skill.id}`}
-              className="flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
+              className="flex items-center gap-4 rounded-2xl border border-[#353535] bg-[#242424] p-4 transition-transform hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9966CC]"
             >
-              <div className="flex items-center gap-3">
-                <CircularProgress value={skill.progress} />
-                <div>
-                  <div className="text-sm font-medium">{skill.name}</div>
-                  <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
-                    Lv {skill.level}
-                  </span>
+              <ProgressRing value={skill.progress} level={skill.level} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[15px] font-semibold text-[#E6E6E6] truncate">
+                  {skill.name}
                 </div>
+                <span className="mt-2 inline-block text-xs px-2 py-[2px] rounded-full bg-[#2B2B2B] text-[#A6A6A6]">
+                  Lv {skill.level}
+                </span>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </Link>
