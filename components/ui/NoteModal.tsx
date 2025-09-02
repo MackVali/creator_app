@@ -123,7 +123,11 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
               rows={4}
             />
           </div>
-          <Button type="submit" className="w-full">
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={!formData.skillId}
+          >
             Save Note
           </Button>
         </form>
