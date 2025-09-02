@@ -25,6 +25,7 @@ export default function DraftSchedulerPage() {
     ReturnType<typeof placeByEnergyWeight>["unplaced"]
   >([]);
   const [debug, setDebug] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const windowsByEnergy = useMemo(() => {
     const map: Record<string, WindowLite[]> = {};
@@ -48,15 +49,25 @@ export default function DraftSchedulerPage() {
   }, [tasks]);
 
   async function handleLoad() {
-    const weekday = new Date().getDay();
-    const [ws, ts] = await Promise.all([
-      fetchWindowsForDate(weekday),
-      fetchReadyTasks(),
-    ]);
-    setWindows(ws);
-    setTasks(ts);
-    setPlacements([]);
-    setUnplaced([]);
+    try {
+      const weekday = new Date().getDay();
+      const [ws, ts] = await Promise.all([
+        fetchWindowsForDate(weekday),
+        fetchReadyTasks(),
+      ]);
+      setWindows(ws);
+      setTasks(ts);
+      setPlacements([]);
+      setUnplaced([]);
+      setError(null);
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : String(e));
+      setWindows([]);
+      setTasks([]);
+      setPlacements([]);
+      setUnplaced([]);
+    }
   }
 
   function handleAutoPlace() {
@@ -83,6 +94,8 @@ export default function DraftSchedulerPage() {
           Auto-place
         </Button>
       </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {windows.length > 0 && (
         <section>
