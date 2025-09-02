@@ -410,8 +410,22 @@ function SkillsPageContent() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
-                  <DropdownMenuItem onClick={() => startEdit(skill)}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      startEdit(skill);
+                    }}
+                  >
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRemoveSkill(skill.id);
+                    }}
+                  >
                     Remove
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -451,8 +465,22 @@ function SkillsPageContent() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
-                  <DropdownMenuItem onClick={() => startEdit(skill)}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      startEdit(skill);
+                    }}
+                  >
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleRemoveSkill(skill.id);
+                    }}
+                  >
                     Remove
                   </DropdownMenuItem>
                 </DropdownMenuContent>

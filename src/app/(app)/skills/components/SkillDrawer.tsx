@@ -21,12 +21,12 @@ export interface Category {
 interface SkillDrawerProps {
   open: boolean;
   onClose(): void;
-  onAdd(skill: Skill): void | Promise<void>;
+  onAdd(skill: Skill): Promise<void>;
   categories: Category[];
   monuments: { id: string; title: string }[];
   onAddCategory(cat: Category): void;
   initialSkill?: Skill | null;
-  onUpdate?(skill: Skill): void | Promise<void>;
+  onUpdate?(skill: Skill): Promise<void>;
 }
 
 export function SkillDrawer({
@@ -62,7 +62,7 @@ export function SkillDrawer({
     }
   }, [initialSkill, open]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -85,10 +85,14 @@ export function SkillDrawer({
       created_at: initialSkill?.created_at ?? new Date().toISOString(),
     };
 
-    if (editing && onUpdate) {
-      onUpdate(base);
-    } else {
-      onAdd(base);
+    try {
+      if (editing && onUpdate) {
+        await onUpdate(base);
+      } else {
+        await onAdd(base);
+      }
+    } catch (err) {
+      console.error("Failed to save skill:", err);
     }
     onClose();
   };
