@@ -43,7 +43,7 @@ export function ContentCard({
 }
 
 interface PageHeaderProps {
-  title: string
+  title: ReactNode
   description?: string
   children?: ReactNode
   className?: string
