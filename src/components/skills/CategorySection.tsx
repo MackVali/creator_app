@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import SkillCard from "@/components/skills/SkillCard";
 import { cn } from "@/lib/utils";
-// Removed unused import
 
 interface CategorySectionProps {
   title: string;
@@ -46,28 +46,39 @@ export function CategorySection({
           )}
         />
       </button>
-      {open && (
-        <div className="bg-slate-900/60 border-t border-white/5 px-4 pb-4 pt-2 space-y-2">
-          {skills && skills.length > 0 ? (
-            skills.map((skill) => (
-              <SkillCard
-                key={skill.skill_id}
-                icon={skill.icon}
-                name={skill.name}
-                level={skill.level}
-                percent={skill.progress || 0}
-                skillId={skill.skill_id}
-              />
-            ))
-          ) : (
-            <div className="text-center py-4 text-gray-500 text-sm">
-              No skills
-            </div>
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{
+                height: { duration: 0.3, ease: "easeInOut" },
+                opacity: { duration: 0.2, ease: "easeInOut" },
+              }}
+              className="bg-slate-900/60 border-t border-white/5 px-4 pb-4 pt-2 space-y-2 overflow-hidden"
+            >
+              {skills && skills.length > 0 ? (
+                skills.map((skill) => (
+                  <SkillCard
+                    key={skill.skill_id}
+                    icon={skill.icon}
+                    name={skill.name}
+                    level={skill.level}
+                    percent={skill.progress || 0}
+                    skillId={skill.skill_id}
+                  />
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500 text-sm">
+                  No skills
+                </div>
+              )}
+            </motion.div>
           )}
-        </div>
-      )}
-    </div>
-  );
-}
+        </AnimatePresence>
+      </div>
+    );
+  }
 
 export default CategorySection;
