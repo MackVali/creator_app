@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
+import type { SkillRow } from "@/lib/types/skill";
 import {
   LayoutGrid,
   List as ListIcon,
@@ -201,11 +202,10 @@ function SkillsPageContent() {
       }
     }
 
-    const { data, error } = await createRecord<Skill>("skills", {
+    const { data, error } = await createRecord<SkillRow>("skills", {
       name: skill.name,
       icon: skill.icon,
       level: skill.level,
-      progress: skill.progress,
       cat_id: catId ?? null,
     });
     if (error) {
@@ -219,11 +219,10 @@ function SkillsPageContent() {
   };
   const updateSkill = async (skill: Skill) => {
     setSkills((prev) => prev.map((s) => (s.id === skill.id ? skill : s)));
-    const { error } = await updateRecord<Skill>("skills", skill.id, {
+    const { error } = await updateRecord<SkillRow>("skills", skill.id, {
       name: skill.name,
       icon: skill.icon,
       level: skill.level,
-      progress: skill.progress,
       cat_id: skill.cat_id,
     });
     if (error) {
