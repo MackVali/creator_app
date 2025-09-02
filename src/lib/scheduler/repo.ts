@@ -4,9 +4,9 @@ import type { TaskLite, ProjectLite } from './weight';
 export type WindowLite = {
   id: string;
   label: string;
-  energy_cap: number;
-  start_local: string | null;
-  end_local: string | null;
+  energy_cap: string;
+  start_local: string;
+  end_local: string;
   days_of_week: number[] | null;
 };
 
