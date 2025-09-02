@@ -25,6 +25,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+interface Monument {
+  id: string;
+  title: string;
+}
+
 // simple debounce hook for search
 function useDebounce<T>(value: T, delay: number) {
   const [debounced, setDebounced] = useState(value);
@@ -75,6 +80,7 @@ function CircularProgress({ value }: { value: number }) {
 function SkillsPageContent() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
@@ -96,9 +102,10 @@ function SkillsPageContent() {
         } = await supabase.auth.getUser();
         if (!user) throw new Error("User not authenticated");
 
-        const [skillRows, cats] = await Promise.all([
+        const [skillRows, cats, mons] = await Promise.all([
           getSkillsForUser(user.id),
           supabase.from("cats").select("id,name").eq("user_id", user.id),
+          supabase.from("monuments").select("id,title").eq("user_id", user.id),
         ]);
 
         const formattedSkills: Skill[] = (skillRows || []).map((s) => ({
@@ -108,6 +115,7 @@ function SkillsPageContent() {
           level: s.level ?? 1,
           progress: 0,
           cat_id: s.cat_id,
+          monument_id: s.monument_id,
           created_at: s.created_at,
         }));
         setSkills(formattedSkills);
@@ -117,6 +125,12 @@ function SkillsPageContent() {
           name: c.name,
         }));
         setCategories(catList);
+
+        const monList: Monument[] = (mons.data || []).map((m) => ({
+          id: m.id,
+          title: m.title,
+        }));
+        setMonuments(monList);
       } catch (e) {
         console.error("Error fetching skills:", e);
       } finally {
@@ -207,7 +221,7 @@ function SkillsPageContent() {
       icon: skill.icon,
       level: skill.level,
       cat_id: catId ?? null,
-      monument_id: null,
+      monument_id: skill.monument_id ?? null,
     });
     if (error) {
       console.error("Error creating skill:", error);
@@ -215,7 +229,13 @@ function SkillsPageContent() {
     }
     setSkills((prev) => [
       ...prev,
-      { ...skill, id: data!.id, cat_id: catId ?? null, created_at: data!.created_at },
+      {
+        ...skill,
+        id: data!.id,
+        cat_id: catId ?? null,
+        monument_id: skill.monument_id ?? null,
+        created_at: data!.created_at,
+      },
     ]);
   };
   const updateSkill = async (skill: Skill) => {
@@ -225,6 +245,7 @@ function SkillsPageContent() {
       icon: skill.icon,
       level: skill.level,
       cat_id: skill.cat_id,
+      monument_id: skill.monument_id,
     });
     if (error) {
       console.error("Error updating skill:", error);
@@ -449,6 +470,7 @@ function SkillsPageContent() {
         }}
         onAdd={addSkill}
         categories={categories}
+        monuments={monuments}
         onAddCategory={addCategory}
         initialSkill={editing}
         onUpdate={updateSkill}

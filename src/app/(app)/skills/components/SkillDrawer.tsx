@@ -9,6 +9,7 @@ export interface Skill {
   level: number;
   progress: number;
   cat_id: string | null;
+  monument_id: string | null;
   created_at?: string | null;
 }
 
@@ -22,6 +23,7 @@ interface SkillDrawerProps {
   onClose(): void;
   onAdd(skill: Skill): void | Promise<void>;
   categories: Category[];
+  monuments: { id: string; title: string }[];
   onAddCategory(cat: Category): void;
   initialSkill?: Skill | null;
   onUpdate?(skill: Skill): void | Promise<void>;
@@ -32,6 +34,7 @@ export function SkillDrawer({
   onClose,
   onAdd,
   categories,
+  monuments,
   onAddCategory,
   initialSkill,
   onUpdate,
@@ -40,6 +43,7 @@ export function SkillDrawer({
   const [emoji, setEmoji] = useState("💡");
   const [cat, setCat] = useState("");
   const [newCat, setNewCat] = useState("");
+  const [monument, setMonument] = useState("");
 
   const editing = Boolean(initialSkill);
 
@@ -48,11 +52,13 @@ export function SkillDrawer({
       setName(initialSkill.name);
       setEmoji(initialSkill.icon || "💡");
       setCat(initialSkill.cat_id || "");
+      setMonument(initialSkill.monument_id || "");
     } else {
       setName("");
       setEmoji("💡");
       setCat("");
       setNewCat("");
+      setMonument("");
     }
   }, [initialSkill, open]);
 
@@ -75,6 +81,7 @@ export function SkillDrawer({
       level: initialSkill?.level ?? 1,
       progress: initialSkill?.progress ?? 0,
       cat_id: catId || null,
+      monument_id: monument || null,
       created_at: initialSkill?.created_at ?? new Date().toISOString(),
     };
 
@@ -110,6 +117,21 @@ export function SkillDrawer({
               onChange={(e) => setEmoji(e.target.value)}
               className="w-full px-3 py-2 rounded bg-gray-700"
             />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Monument</label>
+            <select
+              value={monument}
+              onChange={(e) => setMonument(e.target.value)}
+              className="w-full px-3 py-2 rounded bg-gray-700"
+            >
+              <option value="">Select...</option>
+              {monuments.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-sm mb-1">Category</label>
