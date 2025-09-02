@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { MonumentDetail } from "@/components/monuments/MonumentDetail";
 
 export interface Monument {
   id: string;
@@ -64,49 +65,15 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
           >
             <motion.div
               layoutId={`card-${selected.id}`}
-              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-zinc-50 shadow-xl dark:bg-zinc-900"
+              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-zinc-900 shadow-xl"
             >
-              <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                <motion.div layoutId={`emoji-${selected.id}`} className="text-3xl">
-                  {selected.emoji}
-                </motion.div>
-                <motion.h2
-                  layoutId={`title-${selected.id}`}
-                  className="flex-1 px-3 text-base font-medium text-zinc-800 dark:text-zinc-100"
-                >
-                  {selected.title}
-                </motion.h2>
-                <button
-                  onClick={() => setActiveId(null)}
-                  className="rounded-md bg-zinc-200 px-3 py-1 text-sm dark:bg-zinc-800"
-                >
-                  Close
-                </button>
-              </div>
-              <div className="space-y-4 p-4">
-                <div className="rounded-lg bg-zinc-100 p-4 dark:bg-zinc-800">
-                  <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-                    Stats
-                  </h3>
-                  <p className="mt-1 text-sm text-zinc-500">{selected.stats}</p>
-                </div>
-
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-                    Related Goals
-                  </h3>
-                  <ul className="space-y-2">
-                    {[1, 2, 3].map((i) => (
-                      <li
-                        key={i}
-                        className="rounded-md bg-zinc-100 p-3 text-sm text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-                      >
-                        Goal placeholder {i}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
+              <button
+                onClick={() => setActiveId(null)}
+                className="absolute right-4 top-4 z-10 rounded-md bg-zinc-800 px-3 py-1 text-sm"
+              >
+                Close
+              </button>
+              <MonumentDetail id={selected.id} />
             </motion.div>
           </motion.div>
         )}
