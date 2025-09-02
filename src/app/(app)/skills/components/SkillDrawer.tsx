@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { Monument } from "@/lib/queries/monuments";
+
+export type { Monument };
 
 export interface Skill {
   id: string;
@@ -9,6 +12,7 @@ export interface Skill {
   level: number;
   progress: number;
   cat_id: string | null;
+  monument_id: string;
   created_at?: string | null;
 }
 
@@ -20,11 +24,12 @@ export interface Category {
 interface SkillDrawerProps {
   open: boolean;
   onClose(): void;
-  onAdd(skill: Skill): void;
+  onAdd(skill: Skill): Promise<void> | void;
   categories: Category[];
+  monuments: Monument[];
   onAddCategory(cat: Category): void;
   initialSkill?: Skill | null;
-  onUpdate?(skill: Skill): void;
+  onUpdate?(skill: Skill): Promise<void> | void;
 }
 
 export function SkillDrawer({
@@ -40,6 +45,7 @@ export function SkillDrawer({
   const [emoji, setEmoji] = useState("💡");
   const [cat, setCat] = useState("");
   const [newCat, setNewCat] = useState("");
+  const [monument, setMonument] = useState("");
 
   const editing = Boolean(initialSkill);
 
@@ -48,18 +54,20 @@ export function SkillDrawer({
       setName(initialSkill.name);
       setEmoji(initialSkill.icon || "💡");
       setCat(initialSkill.cat_id || "");
+      setMonument(initialSkill.monument_id || "");
     } else {
       setName("");
       setEmoji("💡");
       setCat("");
       setNewCat("");
+      setMonument("");
     }
   }, [initialSkill, open]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed || !monument) return;
 
     let catId = cat;
     if (cat === "new" && newCat.trim()) {
@@ -75,13 +83,14 @@ export function SkillDrawer({
       level: initialSkill?.level ?? 1,
       progress: initialSkill?.progress ?? 0,
       cat_id: catId || null,
+      monument_id: monument,
       created_at: initialSkill?.created_at ?? new Date().toISOString(),
     };
 
     if (editing && onUpdate) {
-      onUpdate(base);
+      await onUpdate(base);
     } else {
-      onAdd(base);
+      await onAdd(base);
     }
     onClose();
   };
@@ -134,6 +143,22 @@ export function SkillDrawer({
                 className="w-full px-3 py-2 rounded bg-gray-700 mt-2"
               />
             )}
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Monument *</label>
+            <select
+              value={monument}
+              onChange={(e) => setMonument(e.target.value)}
+              required
+              className="w-full px-3 py-2 rounded bg-gray-700"
+            >
+              <option value="">Select...</option>
+              {monuments.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button

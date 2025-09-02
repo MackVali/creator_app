@@ -5,7 +5,12 @@ import Link from "next/link";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SkillDrawer, type Category, type Skill } from "./components/SkillDrawer";
+import {
+  SkillDrawer,
+  type Category,
+  type Skill,
+  type Monument,
+} from "./components/SkillDrawer";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -14,7 +19,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { getSkillsForUser } from "../../../lib/data/skills";
+import {
+  getSkillsForUser,
+  createSkill,
+  deleteSkill,
+} from "../../../lib/data/skills";
+import { getMonumentsForUser } from "@/lib/queries/monuments";
 import {
   LayoutGrid,
   List as ListIcon,
@@ -73,6 +83,8 @@ function CircularProgress({ value }: { value: number }) {
 function SkillsPageContent() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [userId, setUserId] = useState("");
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
@@ -93,9 +105,11 @@ function SkillsPageContent() {
         } = await supabase.auth.getUser();
         if (!user) throw new Error("User not authenticated");
 
-        const [skillRows, cats] = await Promise.all([
+        setUserId(user.id);
+        const [skillRows, cats, mons] = await Promise.all([
           getSkillsForUser(user.id),
           supabase.from("cats").select("id,name").eq("user_id", user.id),
+          getMonumentsForUser(user.id),
         ]);
 
         const formattedSkills: Skill[] = (skillRows || []).map((s) => ({
@@ -105,6 +119,7 @@ function SkillsPageContent() {
           level: s.level ?? 1,
           progress: 0,
           cat_id: s.cat_id,
+          monument_id: s.monument_id || "",
           created_at: s.created_at,
         }));
         setSkills(formattedSkills);
@@ -114,6 +129,8 @@ function SkillsPageContent() {
           name: c.name,
         }));
         setCategories(catList);
+
+        setMonuments(mons);
       } catch (e) {
         console.error("Error fetching skills:", e);
       } finally {
@@ -178,12 +195,44 @@ function SkillsPageContent() {
     ];
   }, [categories, counts]);
 
-  const addSkill = (skill: Skill) => setSkills((prev) => [...prev, skill]);
+  const addSkill = async (skill: Skill) => {
+    if (!userId) return;
+    try {
+      const inserted = await createSkill(userId, {
+        name: skill.name,
+        icon: skill.icon,
+        cat_id: skill.cat_id,
+        monument_id: skill.monument_id,
+        level: skill.level,
+      });
+      setSkills((prev) => [
+        ...prev,
+        {
+          id: inserted.id,
+          name: inserted.name || skill.name,
+          icon: inserted.icon || skill.icon,
+          level: inserted.level ?? skill.level,
+          progress: 0,
+          cat_id: inserted.cat_id,
+          monument_id: inserted.monument_id || "",
+          created_at: inserted.created_at,
+        },
+      ]);
+    } catch (e) {
+      console.error("Error adding skill:", e);
+    }
+  };
   const addCategory = (cat: Category) =>
     setCategories((prev) => [...prev, cat]);
 
-  const handleRemoveSkill = (id: string) => {
-    setSkills((prev) => prev.filter((s) => s.id !== id));
+  const handleRemoveSkill = async (id: string) => {
+    if (!userId) return;
+    try {
+      await deleteSkill(userId, id);
+      setSkills((prev) => prev.filter((s) => s.id !== id));
+    } catch (e) {
+      console.error("Error removing skill:", e);
+    }
   };
 
   if (loading) {
@@ -341,6 +390,7 @@ function SkillsPageContent() {
         onClose={() => setOpen(false)}
         onAdd={addSkill}
         categories={categories}
+        monuments={monuments}
         onAddCategory={addCategory}
       />
     </div>
