@@ -207,6 +207,7 @@ function SkillsPageContent() {
       icon: skill.icon,
       level: skill.level,
       cat_id: catId ?? null,
+      monument_id: null,
     });
     if (error) {
       console.error("Error creating skill:", error);
