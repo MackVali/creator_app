@@ -187,7 +187,7 @@ export function Fab({ className = "" }: FabProps) {
                     key={event.label}
                     variants={itemVariants}
                     onClick={() => handleEventClick(event.eventType)}
-                    className={`w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:scale-105 whitespace-nowrap ${event.color}`}
+                    className={`w-full px-6 py-3 text-left text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap ${event.color}`}
                   >
                     <span className="text-sm opacity-80">add</span>{" "}
                     <span className="text-lg font-bold">{event.label}</span>
@@ -198,7 +198,7 @@ export function Fab({ className = "" }: FabProps) {
                     key={event.label}
                     variants={itemVariants}
                     onClick={() => handleExtraClick(event.label)}
-                    className="w-full px-6 py-3 text-left text-white font-medium transition-all duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 hover:scale-105 whitespace-nowrap"
+                    className="w-full px-6 py-3 text-left text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap"
                   >
                     <span className="text-sm opacity-80">add</span>{" "}
                     <span className="text-lg font-bold">{event.label}</span>
