@@ -20,7 +20,8 @@ export async function getUserId() {
 // Generic create function that automatically adds user_id
 export async function createRecord<T>(
   table: string,
-  data: Omit<T, "id" | "user_id" | "created_at" | "updated_at">
+  data: Omit<T, "id" | "user_id" | "created_at" | "updated_at">,
+  options: { includeUpdatedAt?: boolean } = {}
 ): Promise<{ data: T | null; error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
   if (!supabase) {
@@ -35,7 +36,7 @@ export async function createRecord<T>(
     ...data,
     user_id: userId,
     created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    ...(options.includeUpdatedAt && { updated_at: new Date().toISOString() }),
   };
 
   const { data: result, error } = await supabase
