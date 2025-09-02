@@ -26,7 +26,7 @@ export type GoalLite = {
   priority: string;
 };
 
-function hasKey<T extends Record<string, number>>(obj: T, key: string): key is keyof T {
+function hasKey<T extends object>(obj: T, key: PropertyKey): key is keyof T {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
