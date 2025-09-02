@@ -353,8 +353,20 @@ function SkillsPageContent() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
-                  <DropdownMenuItem onClick={() => alert("Edit coming soon")}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRemoveSkill(skill.id)}>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      alert("Edit coming soon");
+                    }}
+                  >
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      handleRemoveSkill(skill.id);
+                    }}
+                  >
                     Remove
                   </DropdownMenuItem>
                 </DropdownMenuContent>
