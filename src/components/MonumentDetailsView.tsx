@@ -94,7 +94,12 @@ const MOCK_NOTES = [
   },
 ];
 
-const MOCK_ACTIVITY = [
+const MOCK_ACTIVITY: Array<{
+  id: string;
+  when: string;
+  kind: "note" | "goal_linked" | "progress" | "status";
+  text: string;
+}> = [
   {
     id: "a1",
     when: new Date().toISOString(),
@@ -291,7 +296,7 @@ function NotesList({
     setLocalNotes([newNote, ...localNotes]);
     setText("");
     setComposing(false);
-    onAddNote && onAddNote(newNote.text);
+    onAddNote?.(newNote.text);
   };
 
   return (
@@ -411,7 +416,7 @@ function StickyActionBar({ onArchive, onDelete }: { onArchive?: () => void; onDe
               <button
                 onClick={() => {
                   setConfirm(false);
-                  onDelete && onDelete();
+                    onDelete?.();
                 }}
                 className="rounded bg-red-600 px-3 py-1 text-sm text-white"
               >
@@ -502,7 +507,22 @@ export default function MonumentDetailsView({
         <RingProgress progress={monument.progress} status={monument.status} />
         <div className="mt-2 text-sm text-[var(--text-2)]">{monument.status}</div>
         <ChargingBar active={monument.status === "Charging"} />
-        <QuickActions onLinkGoals={onLinkGoals || (() => setGoals(MOCK_GOALS))} onAddNote={onAddNote} />
+        <QuickActions
+          onLinkGoals={onLinkGoals || (() => setGoals(MOCK_GOALS))}
+          onAddNote={
+            onAddNote
+              ? () => onAddNote("")
+              : () =>
+                  setNoteList([
+                    {
+                      id: Date.now().toString(),
+                      text: "New note",
+                      updatedAt: new Date().toISOString(),
+                    },
+                    ...(noteList || []),
+                  ])
+          }
+        />
       </section>
 
       {/* Tags */}
