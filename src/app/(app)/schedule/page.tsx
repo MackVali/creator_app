@@ -48,6 +48,14 @@ export default function SchedulePage() {
         <div className="relative">
           <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
           <div className="absolute right-0 top-0 flex gap-2">
+            <Link href="/tasks">
+              <Button
+                size="sm"
+                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+              >
+                Tasks
+              </Button>
+            </Link>
             <Link href="/schedule/draft">
               <Button
                 size="sm"
