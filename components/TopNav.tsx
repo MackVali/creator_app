@@ -5,6 +5,13 @@ import TopNavAvatar from "./TopNavAvatar";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function TopNav() {
   const { profile, userId } = useProfile();
@@ -23,16 +30,32 @@ export default function TopNav() {
     getUserEmail();
   }, [supabase]);
 
-  const toggleSidebar = () => {
-    // Placeholder for future sidebar toggle
-    console.log("toggle sidebar");
-  };
-
   return (
     <nav className="w-full flex items-center justify-between px-4 py-2 bg-gray-900 text-white">
-      <button onClick={toggleSidebar} className="p-2 hover:text-blue-400">
-        <Menu className="h-6 w-6" />
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="h-11 w-11 p-2 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            aria-label="Open menu"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="bg-[#1C1F22] border-[#2F343A] text-[#E6E6E6]"
+        >
+          <DropdownMenuItem asChild>
+            <Link href="/analytics">Analytics</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/help">Help</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/settings">Settings</Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <span className="font-semibold" data-testid="username">
         {profile?.username || userEmail || "Guest"}
       </span>
