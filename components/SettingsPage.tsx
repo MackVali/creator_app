@@ -1,10 +1,24 @@
 "use client";
 // Render <SettingsPage /> in /settings route
-import { useState, ReactNode } from "react";
+import { useState, useEffect, ReactNode } from "react";
+import { useProfile } from "@/lib/hooks/useProfile";
+import { getCurrentUser } from "@/lib/auth";
 
 export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
+  const { profile } = useProfile();
+  const [email, setEmail] = useState("");
+
+  useEffect(() => {
+    async function loadEmail() {
+      const user = await getCurrentUser();
+      setEmail(user?.email || "");
+    }
+    loadEmail();
+  }, []);
+
+  const initials = getInitials(profile?.name || null, email);
 
   return (
     <div className="bg-[#1E1E1E] min-h-screen text-[#E6E6E6]">
@@ -29,14 +43,24 @@ export default function SettingsPage() {
           <Row
             ariaLabel="Profile information"
             left={
-              <div className="h-12 w-12 rounded-full bg-[#353535] flex items-center justify-center text-lg">
-                MV
-              </div>
+              profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={profile.name || email}
+                  className="h-12 w-12 rounded-full object-cover"
+                />
+              ) : (
+                <div className="h-12 w-12 rounded-full bg-[#353535] flex items-center justify-center text-lg">
+                  {initials}
+                </div>
+              )
             }
             label={
               <div>
-                <p className="font-medium">Mona Valdez</p>
-                <p className="text-sm text-[#A6A6A6]">mona@example.com</p>
+                <p className="font-medium">{profile?.name || email || "User"}</p>
+                {email && (
+                  <p className="text-sm text-[#A6A6A6]">{email}</p>
+                )}
               </div>
             }
           />
@@ -177,5 +201,19 @@ function ToggleSwitch({ checked, onChange, ariaLabel }: ToggleSwitchProps) {
       />
     </button>
   );
+}
+
+function getInitials(name: string | null, email: string) {
+  if (name) {
+    return name
+      .split(" ")
+      .map((w) => w.charAt(0))
+      .join("")
+      .toUpperCase();
+  }
+  if (email) {
+    return email.charAt(0).toUpperCase();
+  }
+  return "";
 }
 
