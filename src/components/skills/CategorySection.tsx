@@ -26,7 +26,7 @@ export function CategorySection({ title, skills, color }: CategorySectionProps) 
       <div className="mb-2 text-center text-sm font-semibold text-[#E6E6E6] truncate">
         {title}
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col items-start gap-1">
         {skills && skills.length > 0 ? (
           skills.map((skill) => (
             <div

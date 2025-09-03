@@ -212,13 +212,13 @@ export default function DashboardClient() {
 
       <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="h-24 rounded-lg bg-gray-800 animate-pulse" />
             ))}
           </div>
         ) : categories.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {categories.map((cat) => (
               <CategorySection
                 key={cat.cat_id}
