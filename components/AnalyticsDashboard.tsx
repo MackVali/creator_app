@@ -2,6 +2,7 @@
 
 import { useState, type ComponentType } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   TrendingUp,
   CheckSquare,
@@ -464,16 +465,17 @@ function Header({
   dateRange: "7d" | "30d" | "90d" | "custom";
   onRangeChange: (range: "7d" | "30d" | "90d" | "custom") => void;
 }) {
+  const router = useRouter();
   return (
     <header className="flex items-center justify-between">
       <div className="flex items-center space-x-2">
-        <Link
-          href="/dashboard"
+        <button
+          onClick={() => router.push("/dashboard")}
           aria-label="Back to dashboard"
           className="h-11 w-11 flex items-center justify-center rounded text-[#9966CC] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
         >
           <ArrowLeft />
-        </Link>
+        </button>
         <div>
           <h1 className="text-2xl font-bold">Analytics</h1>
           <p className="text-sm text-[#A6A6A6]">Track your progress across the app</p>
