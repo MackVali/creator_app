@@ -16,10 +16,20 @@ export async function fetchReadyTasks(): Promise<TaskLite[]> {
 
   const { data, error } = await supabase
     .from('tasks')
-    .select('id, priority, stage, duration_min, energy, project_id');
+    .select('id, name, priority, stage, duration_min, energy, project_id');
 
   if (error) throw error;
-  return (data ?? []) as TaskLite[];
+  return (data ?? []).map(
+    ({ id, name, priority, stage, duration_min, energy, project_id }) => ({
+      id,
+      name,
+      priority,
+      stage,
+      duration_min,
+      energy,
+      project_id,
+    })
+  );
 }
 
 export async function fetchWindowsForDate(

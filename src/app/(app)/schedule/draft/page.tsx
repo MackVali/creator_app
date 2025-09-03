@@ -137,7 +137,7 @@ export default function DraftSchedulerPage() {
             {tasks.map((t) => (
               <li key={t.id} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">
                 <div className="flex justify-between text-sm">
-                  <span>{t.id}</span>
+                  <span>{t.name}</span>
                   <div className="flex gap-1">
                     {t.energy && (
                       <Badge variant="outline" className="text-[10px]">
@@ -170,7 +170,7 @@ export default function DraftSchedulerPage() {
                   className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
                 >
                   <div className="flex justify-between text-sm">
-                    <span>{p.taskId}</span>
+                    <span>{taskMap[p.taskId]?.name ?? p.taskId}</span>
                     <div className="flex gap-1">
                       {w && (
                         <Badge variant="outline" className="text-[10px]">
@@ -204,7 +204,7 @@ export default function DraftSchedulerPage() {
                   className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
                 >
                   <div className="flex justify-between text-sm">
-                    <span>{u.taskId}</span>
+                    <span>{t ? t.name : u.taskId}</span>
                     <div className="flex gap-1">
                       {t?.energy && (
                         <Badge variant="outline" className="text-[10px]">

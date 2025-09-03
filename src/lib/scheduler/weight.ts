@@ -8,6 +8,7 @@ import {
 
 export type TaskLite = {
   id: string;
+  name: string;
   priority: string;
   stage: string;
   duration_min: number;

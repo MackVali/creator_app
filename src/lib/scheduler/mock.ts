@@ -23,6 +23,7 @@ export const MOCK_WINDOWS: WindowLite[] = [
 export const MOCK_TASKS: TaskLite[] = [
   {
     id: 't1',
+    name: 'Mock Task 1',
     priority: 'HIGH',
     stage: 'Prepare',
     duration_min: 60,
@@ -31,6 +32,7 @@ export const MOCK_TASKS: TaskLite[] = [
   },
   {
     id: 't2',
+    name: 'Mock Task 2',
     priority: 'MEDIUM',
     stage: 'Produce',
     duration_min: 30,
@@ -39,6 +41,7 @@ export const MOCK_TASKS: TaskLite[] = [
   },
   {
     id: 't3',
+    name: 'Mock Task 3',
     priority: 'LOW',
     stage: 'Perfect',
     duration_min: 45,

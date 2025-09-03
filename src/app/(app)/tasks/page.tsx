@@ -50,7 +50,7 @@ export default function TasksPage() {
               className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
             >
               <div className="flex justify-between text-sm">
-                <span>{t.id}</span>
+                <span>{t.name}</span>
                 <div className="flex gap-1">
                   {t.energy && (
                     <Badge variant="outline" className="text-[10px]">
