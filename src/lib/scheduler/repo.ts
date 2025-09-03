@@ -14,20 +14,12 @@ export async function fetchReadyTasks(): Promise<TaskLite[]> {
   const supabase = getSupabaseBrowser();
   if (!supabase) throw new Error('Supabase client not available');
 
-  type TaskRow = TaskLite & { status: string };
   const { data, error } = await supabase
     .from('tasks')
-    .select(
-      'id, priority, stage, duration_min, energy, project_id, status'
-    )
-    .in('status', ['backlog', 'ready']);
+    .select('id, priority, stage, duration_min, energy, project_id');
 
   if (error) throw error;
-  return ((data ?? []) as TaskRow[]).map((row) => {
-    const { status, ...task } = row;
-    void status;
-    return task;
-  });
+  return (data ?? []) as TaskLite[];
 }
 
 export async function fetchWindowsForDate(
