@@ -63,10 +63,14 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
 
   const mid = Math.ceil(items.length / 2);
   return (
-    <nav className="w-full bg-gray-900 text-gray-400 flex justify-around items-center h-16">
-      {items.slice(0, mid).map(renderItem)}
-      <div className="w-14" aria-hidden="true" />
-      {items.slice(mid).map(renderItem)}
+    <nav className="w-full bg-gray-900 text-gray-400 flex items-center h-16">
+      <div className="flex flex-1 justify-evenly pr-6">
+        {items.slice(0, mid).map(renderItem)}
+      </div>
+      <div className="w-14 shrink-0" aria-hidden="true" />
+      <div className="flex flex-1 justify-evenly pl-6">
+        {items.slice(mid).map(renderItem)}
+      </div>
     </nav>
   );
 }
