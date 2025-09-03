@@ -14,35 +14,45 @@ export interface BottomBarNavProps {
 }
 
 export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavProps) {
+  const renderItem = (item: BottomBarNavItem) => {
+    const isActive = item.href === currentPath;
+    return (
+      <a
+        key={item.key}
+        href={item.href}
+        aria-current={isActive ? "page" : undefined}
+        onClick={(e) => {
+          if (isActive) {
+            e.preventDefault();
+            return;
+          }
+          if (onNavigate) {
+            e.preventDefault();
+            onNavigate(item.href);
+          }
+        }}
+        className="flex flex-col items-center text-xs"
+      >
+        <div
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-full transition-all ${
+            isActive
+              ? "text-white bg-gray-800/60 border border-[#9966CC] shadow-[0_0_12px_#9966CC]"
+              : "hover:text-white"
+          }`}
+        >
+          {item.icon}
+          <span>{item.label}</span>
+        </div>
+      </a>
+    );
+  };
+
+  const mid = Math.ceil(items.length / 2);
   return (
     <nav className="w-full bg-gray-900 text-gray-400 flex justify-around items-center h-16">
-      {items.map((item) => {
-        const isActive = item.href === currentPath;
-        return (
-          <a
-            key={item.key}
-            href={item.href}
-            aria-current={isActive ? "page" : undefined}
-            onClick={(e) => {
-              if (isActive) {
-                e.preventDefault();
-                return;
-              }
-              if (onNavigate) {
-                e.preventDefault();
-                onNavigate(item.href);
-              }
-            }}
-            className={`flex flex-col items-center gap-1 p-2 text-xs rounded-md transition-colors ${
-              isActive ? "text-white bg-gray-800 border border-[#9966CC]" : "hover:text-white"
-            }`}
-            style={isActive ? { boxShadow: "0 0 8px #9966CC" } : undefined}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </a>
-        );
-      })}
+      {items.slice(0, mid).map(renderItem)}
+      <div className="w-14" aria-hidden="true" />
+      {items.slice(mid).map(renderItem)}
     </nav>
   );
 }
