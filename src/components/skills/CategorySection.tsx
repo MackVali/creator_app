@@ -1,84 +1,48 @@
-import React, { useState } from "react";
-import { ChevronDown } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
-import SkillCard from "@/components/skills/SkillCard";
-import { cn } from "@/lib/utils";
+import React from "react";
 
 interface CategorySectionProps {
   title: string;
-  skillCount: number;
   skills: Array<{
     skill_id: string;
     cat_id: string;
     name: string;
     icon: string;
-    level: number;
-    progress: number;
+    level?: number;
+    progress?: number;
   }>;
+  /** Optional hex color assigned to this category */
+  color?: string | null;
 }
 
-export function CategorySection({
-  title,
-  skillCount,
-  skills,
-}: CategorySectionProps) {
-  const [open, setOpen] = useState(false);
+export function CategorySection({ title, skills, color }: CategorySectionProps) {
+  const borderColor = color || "#353535";
+  const backgroundColor = color ? `${color}20` : "#242424";
 
   return (
-    <div className="rounded-2xl bg-slate-800/40 ring-1 ring-white/10 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between py-3 px-4"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold uppercase tracking-wide">
-            {title}
-          </span>
-          <span className="text-[11px] rounded-full bg-white/8 ring-1 ring-white/10 px-2 py-[2px]">
-            {skillCount} skills
-          </span>
-        </div>
-        <ChevronDown
-          className={cn(
-            "h-5 w-5 text-gray-400 transition-transform",
-            open ? "rotate-180" : ""
-          )}
-        />
-      </button>
-        <AnimatePresence initial={false}>
-          {open && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{
-                height: { duration: 0.3, ease: "easeInOut" },
-                opacity: { duration: 0.2, ease: "easeInOut" },
-              }}
-              className="bg-slate-900/60 border-t border-white/5 px-4 pb-4 pt-2 space-y-2 overflow-hidden"
-            >
-              {skills && skills.length > 0 ? (
-                skills.map((skill) => (
-                  <SkillCard
-                    key={skill.skill_id}
-                    icon={skill.icon}
-                    name={skill.name}
-                    level={skill.level}
-                    percent={skill.progress || 0}
-                    skillId={skill.skill_id}
-                  />
-                ))
-              ) : (
-                <div className="text-center py-4 text-gray-500 text-sm">
-                  No skills
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+    <div
+      className="rounded-lg border p-2"
+      style={{ borderColor, backgroundColor }}
+    >
+      <div className="mb-2 text-center text-sm font-semibold text-[#E6E6E6] truncate">
+        {title}
       </div>
-    );
-  }
+      <div className="flex flex-col gap-1">
+        {skills && skills.length > 0 ? (
+          skills.map((skill) => (
+            <div
+              key={skill.skill_id}
+              className="flex items-center gap-2 rounded px-2 py-1 text-[#E6E6E6] hover:bg-[#2B2B2B] active:scale-[0.98] transition transform"
+            >
+              <span className="text-base">{skill.icon || "💡"}</span>
+              <span className="truncate text-sm">{skill.name}</span>
+            </div>
+          ))
+        ) : (
+          <div className="text-center text-xs text-[#808080]">No skills</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default CategorySection;

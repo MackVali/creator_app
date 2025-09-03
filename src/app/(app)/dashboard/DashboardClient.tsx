@@ -6,7 +6,6 @@ import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import CategorySection from "@/components/skills/CategorySection";
-import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -27,6 +26,7 @@ interface Category {
   cat_name: string;
   skill_count: number;
   skills: Skill[];
+  color?: string | null;
 }
 
 function mapPriority(priority: string): Goal["priority"] {
@@ -212,19 +212,19 @@ export default function DashboardClient() {
 
       <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
         {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <SkillCardSkeleton key={i} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-24 rounded-lg bg-gray-800 animate-pulse" />
             ))}
           </div>
         ) : categories.length > 0 ? (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {categories.map((cat) => (
               <CategorySection
                 key={cat.cat_id}
                 title={cat.cat_name}
-                skillCount={cat.skill_count}
                 skills={cat.skills}
+                color={cat.color}
               />
             ))}
           </div>
