@@ -18,6 +18,7 @@ export type TaskLite = {
 
 export type ProjectLite = {
   id: string;
+  name?: string;
   priority: string;
   stage: string;
 };

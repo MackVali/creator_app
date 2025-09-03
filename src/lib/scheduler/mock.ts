@@ -1,4 +1,4 @@
-import type { TaskLite } from './weight';
+import type { TaskLite, ProjectLite } from './weight';
 import type { WindowLite } from './repo';
 
 export const MOCK_WINDOWS: WindowLite[] = [
@@ -20,6 +20,21 @@ export const MOCK_WINDOWS: WindowLite[] = [
   },
 ];
 
+export const MOCK_PROJECTS: ProjectLite[] = [
+  {
+    id: 'p1',
+    name: 'Mock Project 1',
+    priority: 'HIGH',
+    stage: 'BUILD',
+  },
+  {
+    id: 'p2',
+    name: 'Mock Project 2',
+    priority: 'MEDIUM',
+    stage: 'RESEARCH',
+  },
+];
+
 export const MOCK_TASKS: TaskLite[] = [
   {
     id: 't1',
@@ -28,7 +43,7 @@ export const MOCK_TASKS: TaskLite[] = [
     stage: 'Prepare',
     duration_min: 60,
     energy: 'LOW',
-    project_id: null,
+    project_id: 'p1',
   },
   {
     id: 't2',
@@ -37,7 +52,7 @@ export const MOCK_TASKS: TaskLite[] = [
     stage: 'Produce',
     duration_min: 30,
     energy: 'HIGH',
-    project_id: null,
+    project_id: 'p1',
   },
   {
     id: 't3',
@@ -46,7 +61,7 @@ export const MOCK_TASKS: TaskLite[] = [
     stage: 'Perfect',
     duration_min: 45,
     energy: 'LOW',
-    project_id: null,
+    project_id: 'p2',
   },
 ];
 

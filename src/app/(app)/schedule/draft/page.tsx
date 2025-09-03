@@ -6,11 +6,17 @@ import { Badge } from "@/components/ui/badge";
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
+  fetchProjectsMap,
   type WindowLite,
 } from "@/lib/scheduler/repo";
 import { placeByEnergyWeight } from "@/lib/scheduler/placer";
-import { TaskLite, taskWeight } from "@/lib/scheduler/weight";
-import { MOCK_TASKS, MOCK_WINDOWS } from "@/lib/scheduler/mock";
+import {
+  TaskLite,
+  ProjectLite,
+  taskWeight,
+  projectWeight,
+} from "@/lib/scheduler/weight";
+import { MOCK_TASKS, MOCK_WINDOWS, MOCK_PROJECTS } from "@/lib/scheduler/mock";
 
 function fmt(d: Date) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -19,6 +25,7 @@ function fmt(d: Date) {
 export default function DraftSchedulerPage() {
   const [tasks, setTasks] = useState<TaskLite[]>([]);
   const [windows, setWindows] = useState<WindowLite[]>([]);
+  const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [placements, setPlacements] = useState<
     ReturnType<typeof placeByEnergyWeight>["placements"]
   >([]);
@@ -49,9 +56,26 @@ export default function DraftSchedulerPage() {
     return map;
   }, [tasks]);
 
+  const projectWeights = useMemo(() => {
+    const sumByProject: Record<string, number> = {};
+    for (const t of tasks) {
+      if (t.project_id) {
+        sumByProject[t.project_id] =
+          (sumByProject[t.project_id] ?? 0) + taskWeight(t);
+      }
+    }
+    return projects
+      .map((p) => ({
+        ...p,
+        weight: projectWeight(p, sumByProject[p.id] ?? 0),
+      }))
+      .sort((a, b) => b.weight - a.weight);
+  }, [tasks, projects]);
+
   function handleLoadMock() {
     setWindows(MOCK_WINDOWS);
     setTasks(MOCK_TASKS);
+    setProjects(MOCK_PROJECTS);
     setPlacements([]);
     setUnplaced([]);
     setError(null);
@@ -60,12 +84,14 @@ export default function DraftSchedulerPage() {
   async function handleLoad() {
     try {
       const weekday = new Date().getDay();
-      const [ws, ts] = await Promise.all([
+      const [ws, ts, pm] = await Promise.all([
         fetchWindowsForDate(weekday),
         fetchReadyTasks(),
+        fetchProjectsMap(),
       ]);
       setWindows(ws);
       setTasks(ts);
+      setProjects(Object.values(pm));
       setPlacements([]);
       setUnplaced([]);
       setError(null);
@@ -74,6 +100,7 @@ export default function DraftSchedulerPage() {
       setError(e instanceof Error ? e.message : String(e));
       setWindows([]);
       setTasks([]);
+      setProjects([]);
       setPlacements([]);
       setUnplaced([]);
     }
@@ -151,6 +178,30 @@ export default function DraftSchedulerPage() {
                 </div>
                 <div className="text-xs text-zinc-400">
                   {t.priority} / {t.stage} • {t.duration_min}m
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {projectWeights.length > 0 && (
+        <section>
+          <h2 className="mb-2 font-semibold">Projects</h2>
+          <ul className="space-y-2">
+            {projectWeights.map((p) => (
+              <li
+                key={p.id}
+                className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
+              >
+                <div className="flex justify-between text-sm">
+                  <span>{p.name ?? p.id}</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {p.weight.toFixed(2)}
+                  </Badge>
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {p.priority} / {p.stage}
                 </div>
               </li>
             ))}
@@ -237,7 +288,7 @@ export default function DraftSchedulerPage() {
         </Button>
         {debug && (
           <pre className="mt-2 max-h-60 overflow-auto rounded bg-zinc-900 p-2 text-[10px]">
-            {JSON.stringify({ tasks, windows, placements, unplaced }, null, 2)}
+            {JSON.stringify({ tasks, projects, windows, placements, unplaced }, null, 2)}
           </pre>
         )}
       </div>
