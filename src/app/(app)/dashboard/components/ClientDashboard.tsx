@@ -310,99 +310,40 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
           >
             SKILLS
           </h2>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-            }}
-          >
-            {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
-              skillsAndGoals.cats.map((cat) => (
-                <div
-                  key={cat.cat_id}
-                  style={{
-                    background: "#2C2C2C",
-                    borderRadius: "8px",
-                    border: "1px solid #333",
-                    overflow: "hidden",
-                  }}
-                >
-                  {/* Category Header */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(5, 1fr)",
+                gap: "16px",
+              }}
+            >
+              {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
+                skillsAndGoals.cats.map((cat) => (
                   <div
+                    key={cat.cat_id}
                     style={{
-                      padding: "16px",
-                      cursor: "pointer",
-                      background: "#2C2C2C",
-                      borderBottom: "1px solid #333",
-                    }}
-                    onClick={() => {
-                      const skillsList = document.getElementById(
-                        `skills-${cat.cat_id}`
-                      );
-                      if (skillsList) {
-                        skillsList.style.display =
-                          skillsList.style.display === "none"
-                            ? "block"
-                            : "none";
-                      }
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      alignItems: "center",
                     }}
                   >
                     <div
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
+                        fontSize: "16px",
+                        fontWeight: "600",
+                        color: "#E0E0E0",
+                        textAlign: "center",
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "18px",
-                            fontWeight: "500",
-                            color: "#E0E0E0",
-                          }}
-                        >
-                          {cat.cat_name}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#A0A0A0",
-                            background: "#404040",
-                            padding: "4px 8px",
-                            borderRadius: "12px",
-                          }}
-                        >
-                          {cat.skill_count} skills
-                        </div>
-                      </div>
-                      <div style={{ color: "#A0A0A0", fontSize: "20px" }}>
-                        ▼
-                      </div>
+                      {cat.cat_name}
                     </div>
-                  </div>
-
-                  {/* Skills List */}
-                  <div
-                    id={`skills-${cat.cat_id}`}
-                    style={{
-                      display: "none",
-                      background: "#252525",
-                      padding: "16px",
-                    }}
-                  >
                     <div
                       style={{
                         display: "flex",
                         flexDirection: "column",
-                        gap: "12px",
+                        gap: "8px",
+                        width: "100%",
                       }}
                     >
                       {cat.skills && cat.skills.length > 0 ? (
@@ -412,110 +353,44 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                             style={{
                               display: "flex",
                               alignItems: "center",
-                              gap: "12px",
-                              padding: "12px",
-                              background: "#1E1E1E",
-                              borderRadius: "6px",
-                              border: "1px solid #333",
+                              gap: "8px",
+                              color: "#E0E0E0",
                             }}
                           >
-                            {/* Skill Icon */}
-                            <div style={{ fontSize: "20px", flexShrink: "0" }}>
+                            <span style={{ fontSize: "20px" }}>
                               {skill.icon || "💡"}
-                            </div>
-
-                            {/* Skill Name */}
-                            <div style={{ flex: "1", minWidth: "0" }}>
-                              <div
-                                style={{
-                                  fontSize: "14px",
-                                  fontWeight: "500",
-                                  color: "#E0E0E0",
-                                }}
-                              >
-                                {skill.name}
-                              </div>
-                            </div>
-
-                            {/* Level Badge */}
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#A0A0A0",
-                                background: "#404040",
-                                padding: "4px 8px",
-                                borderRadius: "12px",
-                                flexShrink: "0",
-                              }}
-                            >
-                              Lv {skill.level}
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div style={{ width: "80px", flexShrink: "0" }}>
-                              <div
-                                style={{
-                                  width: "100%",
-                                  height: "8px",
-                                  background: "#333",
-                                  borderRadius: "9999px",
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    height: "100%",
-                                    background: "#BBB",
-                                    borderRadius: "9999px",
-                                    transition: "width 0.3s ease-out",
-                                    width: `${skill.progress}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Progress Percentage */}
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#A0A0A0",
-                                width: "48px",
-                                textAlign: "right",
-                                flexShrink: "0",
-                              }}
-                            >
-                              {skill.progress}%
-                            </div>
+                            </span>
+                            <span style={{ fontSize: "14px" }}>
+                              {skill.name}
+                            </span>
                           </div>
                         ))
                       ) : (
                         <div
                           style={{
-                            fontSize: "14px",
+                            fontSize: "12px",
                             color: "#808080",
                             textAlign: "center",
-                            padding: "16px",
                           }}
                         >
-                          No skills in this category
+                          No skills
                         </div>
                       )}
                     </div>
                   </div>
+                ))
+              ) : (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "32px",
+                    color: "#808080",
+                  }}
+                >
+                  No skills found. Create your first skill to get started!
                 </div>
-              ))
-            ) : (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "32px",
-                  color: "#808080",
-                }}
-              >
-                No skills found. Create your first skill to get started!
-              </div>
-            )}
-          </div>
+              )}
+            </div>
         </div>
 
         {/* Current Goals Section */}
