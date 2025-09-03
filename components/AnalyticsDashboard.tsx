@@ -460,7 +460,7 @@ function Header({
   dateRange,
   onRangeChange,
 }: {
-  dateRange: string;
+  dateRange: "7d" | "30d" | "90d" | "custom";
   onRangeChange: (range: "7d" | "30d" | "90d" | "custom") => void;
 }) {
   return (
