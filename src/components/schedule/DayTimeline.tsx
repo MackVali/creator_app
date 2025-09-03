@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
 
 export const GEM_PURPLE = "#9966CC";
@@ -10,6 +10,7 @@ interface DayTimelineProps {
   endHour?: number;
   pxPerMin?: number;
   date?: Date;
+  children?: ReactNode;
 }
 
 export function DayTimeline({
@@ -17,6 +18,7 @@ export function DayTimeline({
   endHour = 24,
   pxPerMin = 2,
   date = new Date(),
+  children,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
@@ -76,6 +78,8 @@ export function DayTimeline({
           </div>
         );
       })}
+
+      {children}
 
       {showNowLine && (
         <>
