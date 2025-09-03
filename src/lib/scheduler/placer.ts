@@ -1,4 +1,4 @@
-import { TaskLite, taskWeight } from "./weight";
+import type { TaskLite } from "./weight";
 import { ENERGY } from "./config";
 
 export type WindowLite = {
@@ -78,8 +78,10 @@ function consume(slots: Slot[], startIndex: number, durationMin: number) {
   }
 }
 
+export type Schedulable = TaskLite & { weight: number };
+
 export function placeByEnergyWeight(
-  tasks: TaskLite[],
+  tasks: Schedulable[],
   windows: WindowLite[],
   date: Date
 ) {
@@ -105,7 +107,7 @@ export function placeByEnergyWeight(
   const unplaced: { taskId: string; reason: string }[] = [];
 
   const sortedTasks = [...tasks].sort((a, b) => {
-    const diff = taskWeight(b) - taskWeight(a);
+    const diff = b.weight - a.weight;
     return diff !== 0 ? diff : a.id.localeCompare(b.id);
   });
 
@@ -117,7 +119,6 @@ export function placeByEnergyWeight(
       unplaced.push({ taskId: task.id, reason: "no-window" });
       continue;
     }
-    const weight = taskWeight(task);
     let placed = false;
     for (const w of candidates) {
       const slots = slotsByWindow[w.id];
@@ -131,7 +132,7 @@ export function placeByEnergyWeight(
         windowId: w.id,
         start,
         end,
-        weight,
+        weight: task.weight,
       });
       placed = true;
       break;

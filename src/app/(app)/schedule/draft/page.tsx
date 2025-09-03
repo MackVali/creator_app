@@ -6,11 +6,20 @@ import { Badge } from "@/components/ui/badge";
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
+  fetchProjectsMap,
   type WindowLite,
 } from "@/lib/scheduler/repo";
 import { placeByEnergyWeight } from "@/lib/scheduler/placer";
-import { TaskLite, taskWeight } from "@/lib/scheduler/weight";
-import { MOCK_TASKS, MOCK_WINDOWS } from "@/lib/scheduler/mock";
+import { ENERGY } from "@/lib/scheduler/config";
+import {
+  TaskLite,
+  ProjectLite,
+  taskWeight,
+  projectWeight,
+} from "@/lib/scheduler/weight";
+import { MOCK_TASKS, MOCK_WINDOWS, MOCK_PROJECTS } from "@/lib/scheduler/mock";
+
+type Energy = (typeof ENERGY.LIST)[number];
 
 function fmt(d: Date) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -19,6 +28,7 @@ function fmt(d: Date) {
 export default function DraftSchedulerPage() {
   const [tasks, setTasks] = useState<TaskLite[]>([]);
   const [windows, setWindows] = useState<WindowLite[]>([]);
+  const [projects, setProjects] = useState<ProjectLite[]>([]);
   const [placements, setPlacements] = useState<
     ReturnType<typeof placeByEnergyWeight>["placements"]
   >([]);
@@ -43,15 +53,69 @@ export default function DraftSchedulerPage() {
     return map;
   }, [windows]);
 
+  const weightedTasks = useMemo(
+    () => tasks.map((t) => ({ ...t, weight: taskWeight(t) })),
+    [tasks]
+  );
+
+  const projectItems = useMemo(() => {
+    const items: (
+      ProjectLite & {
+        name: string;
+        duration_min: number;
+        energy: Energy | null;
+        weight: number;
+      }
+    )[] = [];
+    for (const p of projects) {
+      const related = tasks.filter((t) => t.project_id === p.id);
+      if (related.length === 0) continue;
+      const duration_min = related.reduce(
+        (sum, t) => sum + t.duration_min,
+        0
+      );
+      const energy = related.reduce<Energy | null>((acc, t) => {
+        if (!t.energy) return acc;
+        const current = t.energy as Energy;
+        if (!acc) return current;
+        return ENERGY.LIST.indexOf(current) > ENERGY.LIST.indexOf(acc)
+          ? current
+          : acc;
+      }, null);
+      const relatedWeightSum = related.reduce(
+        (sum, t) => sum + taskWeight(t),
+        0
+      );
+      const weight = projectWeight(p, relatedWeightSum);
+      items.push({
+        ...p,
+        name: p.name ?? "",
+        duration_min,
+        energy,
+        weight,
+      });
+    }
+    return items.sort((a, b) => b.weight - a.weight);
+  }, [projects, tasks]);
+
   const taskMap = useMemo(() => {
-    const map: Record<string, TaskLite> = {};
-    for (const t of tasks) map[t.id] = t;
+    const map: Record<string, typeof weightedTasks[number]> = {};
+    for (const t of weightedTasks) map[t.id] = t;
     return map;
-  }, [tasks]);
+  }, [weightedTasks]);
+
+  const projectMap = useMemo(() => {
+    const map: Record<string, typeof projectItems[number]> = {};
+    for (const p of projectItems) map[p.id] = p;
+    return map;
+  }, [projectItems]);
+
+  const getItem = (id: string) => taskMap[id] ?? projectMap[id];
 
   function handleLoadMock() {
     setWindows(MOCK_WINDOWS);
     setTasks(MOCK_TASKS);
+    setProjects(MOCK_PROJECTS);
     setPlacements([]);
     setUnplaced([]);
     setError(null);
@@ -60,12 +124,14 @@ export default function DraftSchedulerPage() {
   async function handleLoad() {
     try {
       const weekday = new Date().getDay();
-      const [ws, ts] = await Promise.all([
+      const [ws, ts, pm] = await Promise.all([
         fetchWindowsForDate(weekday),
         fetchReadyTasks(),
+        fetchProjectsMap(),
       ]);
       setWindows(ws);
       setTasks(ts);
+      setProjects(Object.values(pm));
       setPlacements([]);
       setUnplaced([]);
       setError(null);
@@ -74,14 +140,22 @@ export default function DraftSchedulerPage() {
       setError(e instanceof Error ? e.message : String(e));
       setWindows([]);
       setTasks([]);
+      setProjects([]);
       setPlacements([]);
       setUnplaced([]);
     }
   }
 
-  function handleAutoPlace() {
+  function handleAutoPlaceTasks() {
     const date = new Date();
-    const result = placeByEnergyWeight(tasks, windows, date);
+    const result = placeByEnergyWeight(weightedTasks, windows, date);
+    setPlacements(result.placements);
+    setUnplaced(result.unplaced);
+  }
+
+  function handleAutoPlaceProjects() {
+    const date = new Date();
+    const result = placeByEnergyWeight(projectItems, windows, date);
     setPlacements(result.placements);
     setUnplaced(result.unplaced);
   }
@@ -103,10 +177,17 @@ export default function DraftSchedulerPage() {
         </Button>
         <Button
           className="flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-          onClick={handleAutoPlace}
-          disabled={!tasks.length || !windows.length}
+          onClick={handleAutoPlaceTasks}
+          disabled={!windows.length || weightedTasks.length === 0}
         >
-          Auto-place
+          Auto-place Tasks
+        </Button>
+        <Button
+          className="flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          onClick={handleAutoPlaceProjects}
+          disabled={!windows.length || projectItems.length === 0}
+        >
+          Auto-place Projects
         </Button>
       </div>
 
@@ -130,11 +211,11 @@ export default function DraftSchedulerPage() {
         </section>
       )}
 
-      {tasks.length > 0 && (
+      {weightedTasks.length > 0 && (
         <section>
           <h2 className="mb-2 font-semibold">Tasks</h2>
           <ul className="space-y-2">
-            {tasks.map((t) => (
+            {weightedTasks.map((t) => (
               <li key={t.id} className="rounded-md border border-zinc-800 bg-zinc-900 p-2">
                 <div className="flex justify-between text-sm">
                   <span>{t.name}</span>
@@ -145,12 +226,36 @@ export default function DraftSchedulerPage() {
                       </Badge>
                     )}
                     <Badge variant="outline" className="text-[10px]">
-                      {taskWeight(t)}
+                      {t.weight}
                     </Badge>
                   </div>
                 </div>
                 <div className="text-xs text-zinc-400">
                   {t.priority} / {t.stage} • {t.duration_min}m
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {projectItems.length > 0 && (
+        <section>
+          <h2 className="mb-2 font-semibold">Projects</h2>
+          <ul className="space-y-2">
+            {projectItems.map((p) => (
+              <li
+                key={p.id}
+                className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
+              >
+                <div className="flex justify-between text-sm">
+                  <span>{p.name ?? p.id}</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {p.weight.toFixed(2)}
+                  </Badge>
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {p.priority} / {p.stage} • {p.duration_min}m
                 </div>
               </li>
             ))}
@@ -164,13 +269,14 @@ export default function DraftSchedulerPage() {
           <ul className="space-y-2">
             {placements.map((p) => {
               const w = windowMap[p.windowId];
+              const item = getItem(p.taskId);
               return (
                 <li
                   key={p.taskId}
                   className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
                 >
                   <div className="flex justify-between text-sm">
-                    <span>{taskMap[p.taskId]?.name ?? p.taskId}</span>
+                    <span>{item?.name ?? p.taskId}</span>
                     <div className="flex gap-1">
                       {w && (
                         <Badge variant="outline" className="text-[10px]">
@@ -197,23 +303,23 @@ export default function DraftSchedulerPage() {
           <h2 className="mb-2 font-semibold">Unplaced</h2>
           <ul className="space-y-2">
             {unplaced.map((u) => {
-              const t = taskMap[u.taskId];
+              const item = getItem(u.taskId);
               return (
                 <li
                   key={u.taskId}
                   className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
                 >
                   <div className="flex justify-between text-sm">
-                    <span>{t ? t.name : u.taskId}</span>
+                    <span>{item ? item.name : u.taskId}</span>
                     <div className="flex gap-1">
-                      {t?.energy && (
+                      {item?.energy && (
                         <Badge variant="outline" className="text-[10px]">
-                          {t.energy}
+                          {item.energy}
                         </Badge>
                       )}
-                      {t && (
+                      {item && (
                         <Badge variant="outline" className="text-[10px]">
-                          {taskWeight(t)}
+                          {item.weight}
                         </Badge>
                       )}
                     </div>
@@ -237,7 +343,7 @@ export default function DraftSchedulerPage() {
         </Button>
         {debug && (
           <pre className="mt-2 max-h-60 overflow-auto rounded bg-zinc-900 p-2 text-[10px]">
-            {JSON.stringify({ tasks, windows, placements, unplaced }, null, 2)}
+            {JSON.stringify({ tasks, projects, windows, placements, unplaced }, null, 2)}
           </pre>
         )}
       </div>
