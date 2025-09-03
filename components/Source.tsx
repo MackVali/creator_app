@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element */
 import React, { useEffect, useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 
 // utility helpers
 function classNames(...classes: (string | undefined | null | false)[]) {
@@ -60,46 +61,8 @@ export default function Source({
   onDeleteService,
   onDeleteProduct,
 }: SourceProps) {
-  const [services, setServices] = useState<Service[]>(
-    servicesProp ?? [
-      {
-        id: "s1",
-        title: "Portrait Session",
-        price: 150,
-        durationMins: 60,
-        status: "draft",
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: "s2",
-        title: "Studio Rental",
-        price: 300,
-        durationMins: 120,
-        status: "published",
-        updatedAt: new Date().toISOString(),
-      },
-    ]
-  )
-  const [products, setProducts] = useState<Product[]>(
-    productsProp ?? [
-      {
-        id: "p1",
-        title: "Merch Tee",
-        price: 25,
-        inventory: 10,
-        status: "draft",
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: "p2",
-        title: "Digital Preset Pack",
-        price: 15,
-        inventory: 100,
-        status: "published",
-        updatedAt: new Date().toISOString(),
-      },
-    ]
-  )
+  const [services, setServices] = useState<Service[]>(servicesProp ?? [])
+  const [products, setProducts] = useState<Product[]>(productsProp ?? [])
 
   const [activeTab, setActiveTab] = useState<"services" | "products">("services")
   const [subTab, setSubTab] = useState<"draft" | "published">("draft")
@@ -124,6 +87,17 @@ export default function Source({
   }>({ type: "service", open: false, draft: null })
   const [preview, setPreview] = useState<{ type: "service" | "product"; item: any } | null>(null)
   const [confirm, setConfirm] = useState<{ type: "service" | "product"; id: string } | null>(null)
+
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  useEffect(() => {
+    const create = searchParams.get("create")
+    if (create === "service" || create === "product") {
+      setDrawer({ type: create, open: true, draft: null })
+      setActiveTab(create === "service" ? "services" : "products")
+      router.replace("/source")
+    }
+  }, [searchParams, router])
 
   const currentList = activeTab === "services" ? services : products
   const setCurrentList = activeTab === "services" ? setServices : setProducts

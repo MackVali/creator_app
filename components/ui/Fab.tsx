@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, X } from "lucide-react";
 import { EventModal } from "./EventModal";
@@ -23,6 +24,7 @@ export function Fab({ className = "" }: FabProps) {
   const [swipeProgress, setSwipeProgress] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const router = useRouter();
 
   const getMenuBackground = () => {
     const progress = menuPage === 1 ? 1 - swipeProgress : swipeProgress;
@@ -107,6 +109,8 @@ export function Fab({ className = "" }: FabProps) {
     setIsOpen(false);
     if (label === "NOTE") {
       setShowNote(true);
+    } else if (label === "SERVICE" || label === "PRODUCT") {
+      router.push(`/source?create=${label.toLowerCase()}`);
     } else {
       setComingSoon(label);
     }
