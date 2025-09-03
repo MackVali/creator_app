@@ -34,11 +34,17 @@ export default function TopNav() {
     <nav className="w-full flex items-center justify-between px-4 py-2 bg-gray-900 text-white">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="p-2 hover:text-blue-400" aria-label="Open menu">
+          <button
+            className="h-11 w-11 p-2 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            aria-label="Open menu"
+          >
             <Menu className="h-6 w-6" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="bg-[#2C2C2C] border-[#333]">
+        <DropdownMenuContent
+          align="start"
+          className="bg-[#1C1F22] border-[#2F343A] text-[#E6E6E6]"
+        >
           <DropdownMenuItem asChild>
             <Link href="/analytics">Analytics</Link>
           </DropdownMenuItem>
