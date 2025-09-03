@@ -19,6 +19,8 @@ import {
 } from "@/lib/scheduler/weight";
 import { MOCK_TASKS, MOCK_WINDOWS, MOCK_PROJECTS } from "@/lib/scheduler/mock";
 
+type Energy = (typeof ENERGY.LIST)[number];
+
 function fmt(d: Date) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
@@ -60,8 +62,9 @@ export default function DraftSchedulerPage() {
   const projectItems = useMemo(() => {
     const items: (
       ProjectLite & {
+        name: string;
         duration_min: number;
-        energy: string | null;
+        energy: Energy | null;
         weight: number;
       }
     )[] = [];
@@ -72,11 +75,12 @@ export default function DraftSchedulerPage() {
         (sum, t) => sum + t.duration_min,
         0
       );
-      const energy = related.reduce<string | null>((acc, t) => {
+      const energy = related.reduce<Energy | null>((acc, t) => {
         if (!t.energy) return acc;
-        if (!acc) return t.energy;
-        return ENERGY.LIST.indexOf(t.energy) > ENERGY.LIST.indexOf(acc)
-          ? t.energy
+        const current = t.energy as Energy;
+        if (!acc) return current;
+        return ENERGY.LIST.indexOf(current) > ENERGY.LIST.indexOf(acc)
+          ? current
           : acc;
       }, null);
       const relatedWeightSum = related.reduce(
@@ -84,7 +88,13 @@ export default function DraftSchedulerPage() {
         0
       );
       const weight = projectWeight(p, relatedWeightSum);
-      items.push({ ...p, duration_min, energy, weight });
+      items.push({
+        ...p,
+        name: p.name ?? "",
+        duration_min,
+        energy,
+        weight,
+      });
     }
     return items.sort((a, b) => b.weight - a.weight);
   }, [projects, tasks]);
