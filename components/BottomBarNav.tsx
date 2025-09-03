@@ -31,31 +31,17 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
             onNavigate(item.href);
           }
         }}
-        className="flex flex-col items-center text-xs"
+        className="flex items-center justify-center"
       >
         <div
-          className={`flex flex-col items-center gap-1 px-3 py-1 transition-colors ${
-            isActive ? "text-white" : "hover:text-white"
+          className={`flex flex-col items-center gap-1 rounded-md px-3 py-1 text-xs transition-colors ${
+            isActive
+              ? "border border-gray-700 bg-gray-800/60 text-white shadow-[0_0_8px_#9966CC]"
+              : "hover:text-white"
           }`}
         >
-          <div
-            className={
-              isActive
-                ? "filter drop-shadow-[0_0_6px_rgba(153,102,204,0.6)]"
-                : undefined
-            }
-          >
-            {item.icon}
-          </div>
-          <span
-            className={
-              isActive
-                ? "filter drop-shadow-[0_0_6px_rgba(153,102,204,0.6)]"
-                : undefined
-            }
-          >
-            {item.label}
-          </span>
+          {item.icon}
+          <span>{item.label}</span>
         </div>
       </a>
     );
@@ -63,13 +49,19 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
 
   const mid = Math.ceil(items.length / 2);
   return (
-    <nav className="w-full bg-gray-900 text-gray-400 flex items-center h-16">
-      <div className="flex flex-1 justify-evenly pr-6">
-        {items.slice(0, mid).map(renderItem)}
-      </div>
-      <div className="w-14 shrink-0" aria-hidden="true" />
-      <div className="flex flex-1 justify-evenly pl-6">
-        {items.slice(mid).map(renderItem)}
+    <nav className="w-full bg-gray-900 text-gray-400">
+      <div
+        className="grid h-16 items-center"
+        style={{
+          gridTemplateColumns: `repeat(${mid},1fr) 3.5rem repeat(${items.length - mid},1fr)`,
+        }}
+      >
+        {items.map((item, idx) => (
+          <React.Fragment key={item.key}>
+            {idx === mid ? <div /> : null}
+            {renderItem(item)}
+          </React.Fragment>
+        ))}
       </div>
     </nav>
   );
