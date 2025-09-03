@@ -29,7 +29,6 @@ export default function DraftSchedulerPage() {
   const [tasks, setTasks] = useState<TaskLite[]>([]);
   const [windows, setWindows] = useState<WindowLite[]>([]);
   const [projects, setProjects] = useState<ProjectLite[]>([]);
-  const [mode, setMode] = useState<"TASK" | "PROJECT">("TASK");
   const [placements, setPlacements] = useState<
     ReturnType<typeof placeByEnergyWeight>["placements"]
   >([]);
@@ -147,35 +146,22 @@ export default function DraftSchedulerPage() {
     }
   }
 
-  function handleAutoPlace() {
+  function handleAutoPlaceTasks() {
     const date = new Date();
-    const items = mode === "PROJECT" ? projectItems : weightedTasks;
-    const result = placeByEnergyWeight(items, windows, date);
+    const result = placeByEnergyWeight(weightedTasks, windows, date);
+    setPlacements(result.placements);
+    setUnplaced(result.unplaced);
+  }
+
+  function handleAutoPlaceProjects() {
+    const date = new Date();
+    const result = placeByEnergyWeight(projectItems, windows, date);
     setPlacements(result.placements);
     setUnplaced(result.unplaced);
   }
 
   return (
     <div className="space-y-6 p-4 text-zinc-100">
-      <div className="flex gap-2">
-        <Button
-          className={`flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700 ${
-            mode === "TASK" ? "bg-zinc-700" : ""
-          }`}
-          onClick={() => setMode("TASK")}
-        >
-          Task Planning
-        </Button>
-        <Button
-          className={`flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700 ${
-            mode === "PROJECT" ? "bg-zinc-700" : ""
-          }`}
-          onClick={() => setMode("PROJECT")}
-        >
-          Project Planning
-        </Button>
-      </div>
-
       <div className="flex gap-2">
         <Button
           className="flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
@@ -191,15 +177,17 @@ export default function DraftSchedulerPage() {
         </Button>
         <Button
           className="flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-          onClick={handleAutoPlace}
-          disabled={
-            !windows.length ||
-            (mode === "PROJECT"
-              ? projectItems.length === 0
-              : weightedTasks.length === 0)
-          }
+          onClick={handleAutoPlaceTasks}
+          disabled={!windows.length || weightedTasks.length === 0}
         >
-          Auto-place
+          Auto-place Tasks
+        </Button>
+        <Button
+          className="flex-1 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          onClick={handleAutoPlaceProjects}
+          disabled={!windows.length || projectItems.length === 0}
+        >
+          Auto-place Projects
         </Button>
       </div>
 
@@ -223,7 +211,7 @@ export default function DraftSchedulerPage() {
         </section>
       )}
 
-      {mode === "TASK" && weightedTasks.length > 0 && (
+      {weightedTasks.length > 0 && (
         <section>
           <h2 className="mb-2 font-semibold">Tasks</h2>
           <ul className="space-y-2">
@@ -251,7 +239,7 @@ export default function DraftSchedulerPage() {
         </section>
       )}
 
-      {mode === "PROJECT" && projectItems.length > 0 && (
+      {projectItems.length > 0 && (
         <section>
           <h2 className="mb-2 font-semibold">Projects</h2>
           <ul className="space-y-2">
@@ -355,7 +343,7 @@ export default function DraftSchedulerPage() {
         </Button>
         {debug && (
           <pre className="mt-2 max-h-60 overflow-auto rounded bg-zinc-900 p-2 text-[10px]">
-            {JSON.stringify({ tasks, projects, windows, placements, unplaced, mode }, null, 2)}
+            {JSON.stringify({ tasks, projects, windows, placements, unplaced }, null, 2)}
           </pre>
         )}
       </div>

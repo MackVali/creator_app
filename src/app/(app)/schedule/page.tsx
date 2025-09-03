@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -12,7 +12,15 @@ import { Button } from '@/components/ui/button'
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [view, setView] = useState<'month' | 'week' | 'day' | 'focus'>('day')
+  const [planning, setPlanning] = useState<'TASK' | 'PROJECT'>(() => {
+    if (typeof window === 'undefined') return 'TASK'
+    return (localStorage.getItem('planning-mode') as 'TASK' | 'PROJECT') || 'TASK'
+  })
   const touchStartX = useRef<number | null>(null)
+
+  useEffect(() => {
+    localStorage.setItem('planning-mode', planning)
+  }, [planning])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -88,6 +96,20 @@ export default function SchedulePage() {
               {v}
             </button>
           ))}
+        </div>
+
+        <div className="flex justify-center">
+          <div className="flex rounded-full bg-zinc-900 p-1 text-xs">
+            {(['TASK','PROJECT'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setPlanning(m)}
+                className={`rounded-full px-3 py-1 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+              >
+                {m === 'TASK' ? 'Tasks' : 'Projects'}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="text-center text-sm text-gray-200">
