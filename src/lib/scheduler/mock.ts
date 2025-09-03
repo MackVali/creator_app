@@ -5,18 +5,18 @@ export const MOCK_WINDOWS: WindowLite[] = [
   {
     id: 'w1',
     label: 'Morning Focus',
-    energy_cap: 'LOW',
+    energy: 'LOW',
     start_local: '09:00',
     end_local: '11:00',
-    days_of_week: null,
+    days: null,
   },
   {
     id: 'w2',
     label: 'Afternoon Deep Work',
-    energy_cap: 'HIGH',
+    energy: 'HIGH',
     start_local: '13:00',
     end_local: '15:00',
-    days_of_week: null,
+    days: null,
   },
 ];
 

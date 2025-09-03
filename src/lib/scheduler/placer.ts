@@ -4,7 +4,7 @@ import { ENERGY } from "./config";
 export type WindowLite = {
   id: string;
   label: string;
-  energy_cap: string;
+  energy: string;
   start_local: string;
   end_local: string;
 };
@@ -111,7 +111,7 @@ export function placeByEnergyWeight(
 
   for (const task of sortedTasks) {
     const candidates = windowsSorted.filter(
-      (w) => energyIndex(task.energy) <= energyIndex(w.energy_cap)
+      (w) => energyIndex(task.energy) <= energyIndex(w.energy)
     );
     if (candidates.length === 0) {
       unplaced.push({ taskId: task.id, reason: "no-window" });

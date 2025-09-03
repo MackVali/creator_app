@@ -31,8 +31,8 @@ export default function DraftSchedulerPage() {
   const windowsByEnergy = useMemo(() => {
     const map: Record<string, WindowLite[]> = {};
     for (const w of windows) {
-      if (!map[w.energy_cap]) map[w.energy_cap] = [];
-      map[w.energy_cap].push(w);
+      if (!map[w.energy]) map[w.energy] = [];
+      map[w.energy].push(w);
     }
     return map;
   }, [windows]);
@@ -174,7 +174,7 @@ export default function DraftSchedulerPage() {
                     <div className="flex gap-1">
                       {w && (
                         <Badge variant="outline" className="text-[10px]">
-                          {w.energy_cap}
+                          {w.energy}
                         </Badge>
                       )}
                       <Badge variant="outline" className="text-[10px]">

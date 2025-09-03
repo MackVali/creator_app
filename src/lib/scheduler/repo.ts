@@ -4,10 +4,10 @@ import type { TaskLite, ProjectLite } from './weight';
 export type WindowLite = {
   id: string;
   label: string;
-  energy_cap: string;
+  energy: string;
   start_local: string;
   end_local: string;
-  days_of_week: number[] | null;
+  days: number[] | null;
 };
 
 export async function fetchReadyTasks(): Promise<TaskLite[]> {
@@ -30,10 +30,8 @@ export async function fetchWindowsForDate(
 
   const { data, error } = await supabase
     .from('windows')
-    .select(
-      'id, label, energy_cap, start_local, end_local, days_of_week'
-    )
-    .contains('days_of_week', [weekday0to6]);
+    .select('id, label, energy, start_local, end_local, days')
+    .contains('days', [weekday0to6]);
 
   if (error) throw error;
   return (data ?? []) as WindowLite[];
