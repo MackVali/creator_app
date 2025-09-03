@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Home, Calendar, Users, MoreHorizontal } from "lucide-react";
+import { Home, Calendar, Users, DollarSign } from "lucide-react";
 import { Fab } from "@/components/ui/Fab";
 
 export default function BottomNav() {
@@ -33,11 +33,11 @@ export default function BottomNav() {
         <span className="text-xs">Friends</span>
       </Link>
       <Link
-        href="/coming-soon"
+        href="/source"
         className="flex flex-col items-center gap-1 hover:text-blue-400"
       >
-        <MoreHorizontal className="h-6 w-6" />
-        <span className="text-xs">Coming Soon</span>
+        <DollarSign className="h-6 w-6" />
+        <span className="text-xs">Source</span>
       </Link>
     </nav>
   );
