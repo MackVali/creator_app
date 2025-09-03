@@ -36,6 +36,9 @@ export default function SchedulePage() {
   const [placements, setPlacements] = useState<
     ReturnType<typeof placeByEnergyWeight>['placements']
   >([])
+  const [unplaced, setUnplaced] = useState<
+    ReturnType<typeof placeByEnergyWeight>['unplaced']
+  >([])
   const touchStartX = useRef<number | null>(null)
 
   const startHour = 0
@@ -80,6 +83,7 @@ export default function SchedulePage() {
         duration_min: number
         energy: Energy | null
         weight: number
+        taskCount: number
       }
     )[] = []
     for (const p of projects) {
@@ -105,6 +109,7 @@ export default function SchedulePage() {
         duration_min,
         energy,
         weight,
+        taskCount: related.length,
       })
     }
     return items
@@ -126,15 +131,19 @@ export default function SchedulePage() {
     planning === 'TASK' ? taskMap[id] : projectMap[id]
 
   useEffect(() => {
-    if (windows.length === 0) return
-    const date = currentDate
-    if (planning === 'TASK') {
-      const result = placeByEnergyWeight(weightedTasks, windows, date)
+    function run() {
+      if (windows.length === 0) return
+      const date = currentDate
+      const result =
+        planning === 'TASK'
+          ? placeByEnergyWeight(weightedTasks, windows, date)
+          : placeByEnergyWeight(projectItems, windows, date)
       setPlacements(result.placements)
-    } else {
-      const result = placeByEnergyWeight(projectItems, windows, date)
-      setPlacements(result.placements)
+      setUnplaced(result.unplaced)
     }
+    run()
+    const id = setInterval(run, 5 * 60 * 1000)
+    return () => clearInterval(id)
   }, [planning, weightedTasks, projectItems, windows, currentDate])
 
   function handleTouchStart(e: React.TouchEvent) {
@@ -163,6 +172,11 @@ export default function SchedulePage() {
       day: 'numeric',
       year: 'numeric',
     })
+  }
+
+  function timeToMin(t: string) {
+    const [h = 0, m = 0] = t.split(':').map(Number)
+    return h * 60 + m
   }
 
   return (
@@ -206,7 +220,7 @@ export default function SchedulePage() {
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`flex-1 rounded-md py-1 text-sm capitalize ${view===v ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-zinc-400'}`}
+              className={`flex-1 h-11 rounded-md text-sm capitalize ${view===v ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-zinc-400'}`}
             >
               {v}
             </button>
@@ -219,7 +233,8 @@ export default function SchedulePage() {
               <button
                 key={m}
                 onClick={() => setPlanning(m)}
-                className={`rounded-full px-3 py-1 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+                aria-label={`Switch to ${m === 'TASK' ? 'task' : 'project'} planning`}
+                className={`h-11 rounded-full px-4 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
               >
                 {m === 'TASK' ? 'Tasks' : 'Projects'}
               </button>
@@ -244,6 +259,20 @@ export default function SchedulePage() {
               startHour={startHour}
               pxPerMin={pxPerMin}
             >
+              {windows.map(w => {
+                const startMin = timeToMin(w.start_local)
+                const endMin = timeToMin(w.end_local)
+                const top = (startMin - startHour * 60) * pxPerMin
+                const height = (endMin - startMin) * pxPerMin
+                return (
+                  <div
+                    key={w.id}
+                    aria-label={w.label}
+                    className="absolute left-0 right-0 rounded border border-zinc-700 bg-zinc-900"
+                    style={{ top, height, opacity: 0.3 }}
+                  />
+                )
+              })}
               {placements.map(p => {
                 const item = getItem(p.taskId)
                 if (!item) return null
@@ -255,14 +284,38 @@ export default function SchedulePage() {
                 return (
                   <div
                     key={p.taskId}
-                    className={`absolute left-0 right-2 overflow-hidden rounded p-1 text-xs text-white ${
-                      planning === 'TASK'
-                        ? 'bg-zinc-800'
-                        : 'bg-purple-800'
-                    }`}
+                    aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
+                    className="absolute left-2 right-2 overflow-hidden rounded-2xl border border-[#353535] bg-[#242424] p-2 text-xs text-white"
                     style={{ top, height }}
                   >
-                    {item.name}
+                    <div className="relative h-full w-full">
+                      <div
+                        className={`absolute left-0 top-0 h-full w-1 ${
+                          planning === 'TASK' ? 'bg-[#9966CC]' : 'bg-zinc-500'
+                        }`}
+                      />
+                      <div className="ml-2 flex h-full flex-col justify-between">
+                        <div className="flex items-center justify-between">
+                          <span className="truncate text-sm font-medium">
+                            {item.name}
+                          </span>
+                          <span className="text-zinc-400">
+                            {item.duration_min}m
+                          </span>
+                        </div>
+                        <div className="mb-1 mt-1 h-1 w-full rounded bg-zinc-700">
+                          <div
+                            className="h-full rounded bg-[#9966CC]"
+                            style={{ width: '0%' }}
+                          />
+                        </div>
+                        {planning === 'PROJECT' && 'taskCount' in item && (
+                          <div className="text-[10px] text-zinc-400">
+                            {item.taskCount} tasks
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )
               })}
@@ -270,6 +323,33 @@ export default function SchedulePage() {
           )}
           {view === 'focus' && <FocusTimeline />}
         </div>
+
+        {unplaced.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-zinc-200">Unplaced</h2>
+            <ul className="space-y-2">
+              {unplaced.map(u => {
+                const item = getItem(u.taskId)
+                const reason =
+                  u.reason === 'no-window'
+                    ? 'No window fits'
+                    : 'No slot available'
+                return (
+                  <li
+                    key={u.taskId}
+                    aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item?.name ?? u.taskId} unplaced: ${reason}`}
+                    className="rounded-2xl border border-[#353535] bg-[#242424] p-3 text-xs text-white"
+                  >
+                    <div className="flex justify-between">
+                      <span>{item?.name ?? u.taskId}</span>
+                      <span className="text-zinc-400">{reason}</span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   )
