@@ -310,87 +310,50 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
           >
             SKILLS
           </h2>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(5, 1fr)",
-                gap: "16px",
-              }}
-            >
-              {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
-                skillsAndGoals.cats.map((cat) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
+              skillsAndGoals.cats.map((cat) => {
+                const color = cat.color || "#353535";
+                const bg = cat.color ? `${cat.color}20` : "#242424";
+                return (
                   <div
                     key={cat.cat_id}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      alignItems: "center",
-                    }}
+                    className="rounded-lg border p-2"
+                    style={{ borderColor: color, backgroundColor: bg }}
                   >
-                    <div
-                      style={{
-                        fontSize: "16px",
-                        fontWeight: "600",
-                        color: "#E0E0E0",
-                        textAlign: "center",
-                      }}
-                    >
+                    <div className="mb-2 text-center text-sm font-semibold text-[#E6E6E6] truncate">
                       {cat.cat_name}
                     </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "8px",
-                        width: "100%",
-                      }}
-                    >
+                    <div className="flex flex-col gap-1">
                       {cat.skills && cat.skills.length > 0 ? (
                         cat.skills.map((skill) => (
                           <div
                             key={skill.skill_id}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              color: "#E0E0E0",
-                            }}
+                            className="flex items-center gap-2 rounded px-2 py-1 text-[#E6E6E6] hover:bg-[#2B2B2B] active:scale-[0.98] transition transform"
                           >
-                            <span style={{ fontSize: "20px" }}>
+                            <span className="text-base">
                               {skill.icon || "💡"}
                             </span>
-                            <span style={{ fontSize: "14px" }}>
+                            <span className="truncate text-sm">
                               {skill.name}
                             </span>
                           </div>
                         ))
                       ) : (
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#808080",
-                            textAlign: "center",
-                          }}
-                        >
+                        <div className="text-center text-xs text-[#808080]">
                           No skills
                         </div>
                       )}
                     </div>
                   </div>
-                ))
-              ) : (
-                <div
-                  style={{
-                    textAlign: "center",
-                    padding: "32px",
-                    color: "#808080",
-                  }}
-                >
-                  No skills found. Create your first skill to get started!
-                </div>
-              )}
-            </div>
+                );
+              })
+            ) : (
+              <div className="p-8 text-center text-[#808080]">
+                No skills found. Create your first skill to get started!
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Current Goals Section */}

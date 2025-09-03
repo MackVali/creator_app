@@ -18,6 +18,8 @@ export type CatItem = {
   user_id: string;
   skill_count: number;
   skills: SkillItem[];
+  /** Optional hex color assigned to this category */
+  color?: string | null;
 };
 
 export type GoalItem = {
