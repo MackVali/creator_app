@@ -440,6 +440,7 @@ export default function MonumentDetailsView({
   const [noteList, setNoteList] = useState(notes);
   const [activityList, setActivityList] = useState(activity);
   const [loading, setLoading] = useState({ goals: !relatedGoals, notes: !notes, activity: !activity });
+  const [entered, setEntered] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -451,10 +452,27 @@ export default function MonumentDetailsView({
     return () => clearTimeout(timer);
   }, [relatedGoals, notes, activity]);
 
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
-    <div style={tokenStyle} className="min-h-screen bg-[var(--bg)] pb-32 text-[var(--text)]">
-      {/* Header */}
-      <header className="sticky top-0 z-10 flex flex-col border-b border-[var(--border)] bg-[var(--bg)]/80 p-4 backdrop-blur">
+    <div
+      style={tokenStyle}
+      className={classNames(
+        "min-h-screen bg-[var(--bg)] pb-32 text-[var(--text)] transition-opacity duration-300 ease-out",
+        entered ? "opacity-100" : "opacity-0"
+      )}
+    >
+      <div
+        style={{
+          transform: entered ? undefined : "scale(0.96)",
+          transition: "transform 300ms cubic-bezier(0.22,1,0.36,1)",
+        }}
+      >
+        {/* Header */}
+        <header className="sticky top-0 z-10 flex flex-col border-b border-[var(--border)] bg-[var(--bg)]/80 p-4 backdrop-blur">
         <div className="flex items-center justify-between">
           <button
             aria-label="Back"
@@ -534,7 +552,8 @@ export default function MonumentDetailsView({
         {loading.activity ? <Skeletons type="activity" /> : <ActivityTimeline items={activityList} />}
       </section>
 
-      <StickyActionBar onArchive={onArchive} onDelete={onDelete} />
+        <StickyActionBar onArchive={onArchive} onDelete={onDelete} />
+      </div>
     </div>
   );
 }
