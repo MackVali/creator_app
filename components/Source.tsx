@@ -39,7 +39,7 @@ export type Product = {
   updatedAt: string
 }
 
-export interface ComingSoonProDashboardProps {
+export interface SourceProps {
   services?: Service[]
   products?: Product[]
   onCreateService?(draft: Service): void
@@ -50,7 +50,7 @@ export interface ComingSoonProDashboardProps {
   onDeleteProduct?(id: string): void
 }
 
-export default function ComingSoonProDashboard({
+export default function Source({
   services: servicesProp,
   products: productsProp,
   onCreateService,
@@ -59,7 +59,7 @@ export default function ComingSoonProDashboard({
   onUpdateProduct,
   onDeleteService,
   onDeleteProduct,
-}: ComingSoonProDashboardProps) {
+}: SourceProps) {
   const [services, setServices] = useState<Service[]>(
     servicesProp ?? [
       {
