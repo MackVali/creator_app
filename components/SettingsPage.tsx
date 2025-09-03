@@ -1,6 +1,7 @@
 "use client";
 // Render <SettingsPage /> in /settings route
 import { useState, useEffect, ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -9,6 +10,7 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { profile } = useProfile();
   const [email, setEmail] = useState("");
+  const router = useRouter();
 
   useEffect(() => {
     async function loadEmail() {
@@ -26,6 +28,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-3 px-4 py-3">
           <button
             aria-label="Go back"
+            onClick={() => router.push("/dashboard")}
             className="text-2xl text-[#E6E6E6] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
           >
             ←
