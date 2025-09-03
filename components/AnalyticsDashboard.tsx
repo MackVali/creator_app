@@ -9,6 +9,7 @@ import {
   BatteryCharging,
   Clock,
   Flame,
+  ArrowLeft,
 } from "lucide-react";
 
 function classNames(
@@ -465,9 +466,18 @@ function Header({
 }) {
   return (
     <header className="flex items-center justify-between">
-      <div>
-        <h1 className="text-2xl font-bold">Analytics</h1>
-        <p className="text-sm text-[#A6A6A6]">Track your progress across the app</p>
+      <div className="flex items-center space-x-2">
+        <Link
+          href="/dashboard"
+          aria-label="Back to dashboard"
+          className="h-11 w-11 flex items-center justify-center rounded text-[#9966CC] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+        >
+          <ArrowLeft />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold">Analytics</h1>
+          <p className="text-sm text-[#A6A6A6]">Track your progress across the app</p>
+        </div>
       </div>
       <DateRangeSelector value={dateRange} onChange={onRangeChange} />
     </header>
