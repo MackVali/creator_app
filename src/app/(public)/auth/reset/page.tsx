@@ -19,7 +19,7 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-md mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-5xl font-black tracking-widest text-white mb-4">
-            ACCOUNTABILITY
+            CREATOR
           </h1>
           <p className="text-lg text-zinc-300">Level up your life!</p>
         </div>
@@ -80,7 +80,7 @@ export default function ResetPasswordPage() {
       {/* Header */}
       <div className="text-center mb-10">
         <h1 className="text-5xl font-black tracking-widest text-white mb-4">
-          ACCOUNTABILITY
+          CREATOR
         </h1>
         <p className="text-lg text-zinc-300">Reset your password</p>
       </div>
