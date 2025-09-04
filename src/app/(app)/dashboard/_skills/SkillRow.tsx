@@ -16,6 +16,9 @@ interface Props {
 }
 
 export default function SkillRow({ skill, onColor, trackColor, fillColor }: Props) {
+  const showLevel = skill.level !== null && skill.level !== undefined;
+  const showProgress = skill.xpPercent !== null && skill.xpPercent !== undefined;
+
   return (
     <Link
       href={`/skills/${skill.id}`}
@@ -29,27 +32,31 @@ export default function SkillRow({ skill, onColor, trackColor, fillColor }: Prop
         <div className="font-medium truncate" style={{ color: onColor }}>
           {skill.name}
         </div>
-        <div
-          className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-lg border border-white/15 bg-white/8"
-          style={{ color: onColor }}
-        >
-          Lv {skill.level}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 min-w-[36%]">
-        <div
-          className="flex-1 h-2 rounded-full overflow-hidden"
-          style={{ backgroundColor: trackColor }}
-        >
+        {showLevel && (
           <div
-            className="h-full rounded-full transition-[width] duration-200"
-            style={{ width: computeWidth(skill.xpPercent), backgroundColor: fillColor }}
-          />
-        </div>
-        <span className="text-xs" style={{ color: onColor }}>
-          {skill.xpPercent}%
-        </span>
+            className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-lg border border-white/15 bg-white/8"
+            style={{ color: onColor }}
+          >
+            Lv {skill.level}
+          </div>
+        )}
       </div>
+      {showProgress && (
+        <div className="flex items-center gap-2 min-w-[36%]">
+          <div
+            className="flex-1 h-2 rounded-full overflow-hidden"
+            style={{ backgroundColor: trackColor }}
+          >
+            <div
+              className="h-full rounded-full transition-[width] duration-200"
+              style={{ width: computeWidth(skill.xpPercent as number), backgroundColor: fillColor }}
+            />
+          </div>
+          <span className="text-xs" style={{ color: onColor }}>
+            {skill.xpPercent}%
+          </span>
+        </div>
+      )}
     </Link>
   );
 }

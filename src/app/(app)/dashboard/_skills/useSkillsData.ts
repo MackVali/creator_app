@@ -14,8 +14,8 @@ export interface Skill {
   id: string;
   name: string;
   emoji?: string | null;
-  level: number;
-  xpPercent: number;
+  level?: number | null;
+  xpPercent?: number | null;
   category_id: string | null;
 }
 
@@ -34,26 +34,40 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
 export async function fetchSkills(userId: string): Promise<Skill[]> {
   const supabase = getSupabaseBrowser();
   if (!supabase) throw new Error("Supabase client not available");
-  const { data, error } = await supabase
+  const baseQuery = supabase
     .from("skills")
     .select("id,name,icon,level,progress,cat_id")
     .eq("user_id", userId)
     .order("name", { ascending: true });
-  if (error) throw error;
+
+  const { data, error } = await baseQuery;
+  let rows = data;
+  if (error) {
+    // Fallback for projects that lack level/progress columns
+    const fallback = await supabase
+      .from("skills")
+      .select("id,name,icon,cat_id")
+      .eq("user_id", userId)
+      .order("name", { ascending: true });
+    if (fallback.error) throw fallback.error;
+    rows = fallback.data;
+  }
+
   type SkillRow = {
     id: string;
     name: string | null;
     icon: string | null;
-    level: number | null;
-    progress: number | null;
+    level?: number | null;
+    progress?: number | null;
     cat_id: string | null;
   };
-  return ((data as SkillRow[] | null) ?? []).map((s) => ({
+
+  return ((rows as SkillRow[] | null) ?? []).map((s) => ({
     id: s.id,
     name: s.name || "Unnamed",
     emoji: s.icon,
-    level: s.level ?? 1,
-    xpPercent: s.progress ?? 0,
+    level: s.level ?? undefined,
+    xpPercent: s.progress ?? undefined,
     category_id: s.cat_id,
   }));
 }
