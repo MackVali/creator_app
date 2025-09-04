@@ -88,7 +88,7 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="bg-[#2C2C2C] border-[#333] text-white"
+              className="bg-gray-800 border border-gray-700 text-white shadow-md"
             >
               <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
               <DropdownMenuItem onClick={onToggleActive}>
