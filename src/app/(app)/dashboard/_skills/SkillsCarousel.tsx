@@ -14,9 +14,17 @@ export default function SkillsCarousel() {
 
   const handleDragEnd = useCallback(
     (_: unknown, info: PanInfo) => {
-      if (info.offset.x < -50 && activeIndex < categories.length - 1) {
+      const threshold = 30;
+      const velocity = 300;
+      if (
+        (info.offset.x < -threshold || info.velocity.x < -velocity) &&
+        activeIndex < categories.length - 1
+      ) {
         setActiveId(categories[activeIndex + 1].id);
-      } else if (info.offset.x > 50 && activeIndex > 0) {
+      } else if (
+        (info.offset.x > threshold || info.velocity.x > velocity) &&
+        activeIndex > 0
+      ) {
         setActiveId(categories[activeIndex - 1].id);
       }
     },
@@ -59,6 +67,7 @@ export default function SkillsCarousel() {
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               drag={offset === 0 ? "x" : false}
               dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.3}
               onDragEnd={handleDragEnd}
             >
               <SkillCategoryCard

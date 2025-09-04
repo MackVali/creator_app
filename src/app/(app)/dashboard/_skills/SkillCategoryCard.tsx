@@ -11,7 +11,7 @@ interface Props {
 
 export default function SkillCategoryCard({ category, skills }: Props) {
   return (
-    <div className="h-full flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow p-4 overflow-y-auto">
+    <div className="h-full flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow p-4 overflow-hidden">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium text-zinc-100">
           {category.name.toUpperCase()}

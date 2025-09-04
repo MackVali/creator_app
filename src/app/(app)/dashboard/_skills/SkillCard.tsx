@@ -14,7 +14,7 @@ export function SkillCard({ skill }: SkillCardProps) {
   return (
     <motion.div
       whileTap={{ scale: 0.97 }}
-      className="rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow-sm p-3 flex items-center gap-3"
+      className="w-full rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow-sm p-3 flex items-center gap-3"
     >
       <Link href={`/skills/${skill.id}`} className="flex items-center gap-3 flex-1">
         <div className="w-10 h-10 flex items-center justify-center rounded-full bg-zinc-800 text-lg">
