@@ -40,19 +40,6 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     .eq("user_id", userId)
     .order("name", { ascending: true });
 
-  const { data, error } = await baseQuery;
-  let rows = data;
-  if (error) {
-    // Fallback for projects that lack level/progress columns
-    const fallback = await supabase
-      .from("skills")
-      .select("id,name,icon,cat_id")
-      .eq("user_id", userId)
-      .order("name", { ascending: true });
-    if (fallback.error) throw fallback.error;
-    rows = fallback.data;
-  }
-
   type SkillRow = {
     id: string;
     name: string | null;
@@ -62,7 +49,20 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     cat_id: string | null;
   };
 
-  return ((rows as SkillRow[] | null) ?? []).map((s) => ({
+  const { data, error } = await baseQuery;
+  let rows: SkillRow[] = (data as SkillRow[] | null) ?? [];
+  if (error) {
+    // Fallback for projects that lack level/progress columns
+    const fallback = await supabase
+      .from("skills")
+      .select("id,name,icon,cat_id")
+      .eq("user_id", userId)
+      .order("name", { ascending: true });
+    if (fallback.error) throw fallback.error;
+    rows = (fallback.data as SkillRow[] | null) ?? [];
+  }
+
+  return rows.map((s) => ({
     id: s.id,
     name: s.name || "Unnamed",
     emoji: s.icon,
