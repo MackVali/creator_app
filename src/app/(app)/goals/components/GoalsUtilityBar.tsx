@@ -2,14 +2,24 @@
 
 import { useState, useEffect } from "react";
 
-export type FilterStatus = "All" | "Active" | "Completed" | "Overdue";
+export type EnergyFilter =
+  | "All"
+  | "No"
+  | "Low"
+  | "Medium"
+  | "High"
+  | "Ultra"
+  | "Extreme";
+export type PriorityFilter = "All" | "Low" | "Medium" | "High";
 export type SortOption = "A→Z" | "Due Soon" | "Progress" | "Recently Updated";
 
 interface GoalsUtilityBarProps {
   search: string;
   onSearch(term: string): void;
-  filter: FilterStatus;
-  onFilter(f: FilterStatus): void;
+  energy: EnergyFilter;
+  onEnergy(e: EnergyFilter): void;
+  priority: PriorityFilter;
+  onPriority(p: PriorityFilter): void;
   sort: SortOption;
   onSort(s: SortOption): void;
 }
@@ -17,8 +27,10 @@ interface GoalsUtilityBarProps {
 export function GoalsUtilityBar({
   search,
   onSearch,
-  filter,
-  onFilter,
+  energy,
+  onEnergy,
+  priority,
+  onPriority,
   sort,
   onSort,
 }: GoalsUtilityBarProps) {
@@ -38,17 +50,29 @@ export function GoalsUtilityBar({
         className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
       />
       <div className="flex flex-wrap items-center gap-2">
-        {(["All", "Active", "Completed", "Overdue"] as FilterStatus[]).map((s) => (
-          <button
-            key={s}
-            onClick={() => onFilter(s)}
-            className={`px-3 py-1 rounded-full text-xs border border-gray-700 ${
-              filter === s ? "bg-blue-600" : "bg-gray-800"
-            }`}
-          >
-            {s}
-          </button>
-        ))}
+        <select
+          value={energy}
+          onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
+          className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+        >
+          <option value="All">Energy: All</option>
+          <option value="No">No</option>
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+          <option value="Ultra">Ultra</option>
+          <option value="Extreme">Extreme</option>
+        </select>
+        <select
+          value={priority}
+          onChange={(e) => onPriority(e.target.value as PriorityFilter)}
+          className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+        >
+          <option value="All">Priority: All</option>
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+        </select>
         <select
           value={sort}
           onChange={(e) => onSort(e.target.value as SortOption)}

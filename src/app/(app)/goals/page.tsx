@@ -5,7 +5,8 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { GoalsHeader } from "./components/GoalsHeader";
 import {
   GoalsUtilityBar,
-  FilterStatus,
+  EnergyFilter,
+  PriorityFilter,
   SortOption,
 } from "./components/GoalsUtilityBar";
 import { GoalCard } from "./components/GoalCard";
@@ -27,6 +28,23 @@ function mapPriority(priority: string): Goal["priority"] {
       return "Medium";
     default:
       return "Low";
+  }
+}
+
+function mapEnergy(energy: string): Goal["energy"] {
+  switch (energy) {
+    case "LOW":
+      return "Low";
+    case "MEDIUM":
+      return "Medium";
+    case "HIGH":
+      return "High";
+    case "ULTRA":
+      return "Ultra";
+    case "EXTREME":
+      return "Extreme";
+    default:
+      return "No";
   }
 }
 
@@ -65,7 +83,8 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
 export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterStatus>("All");
+  const [energy, setEnergy] = useState<EnergyFilter>("All");
+  const [priority, setPriority] = useState<PriorityFilter>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
@@ -175,6 +194,7 @@ export default function GoalsPage() {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
+            energy: mapEnergy(g.energy),
             progress,
             status,
             active: g.active ?? status === "Active",
@@ -203,8 +223,11 @@ export default function GoalsPage() {
       );
       return goalMatch || projectMatch;
     });
-    if (filter !== "All") {
-      data = data.filter((g) => g.status === filter);
+    if (energy !== "All") {
+      data = data.filter((g) => g.energy === energy);
+    }
+    if (priority !== "All") {
+      data = data.filter((g) => g.priority === priority);
     }
     const sorted = [...data];
     switch (sort) {
@@ -228,7 +251,7 @@ export default function GoalsPage() {
         break;
     }
     return sorted;
-  }, [goals, search, filter, sort]);
+  }, [goals, search, energy, priority, sort]);
 
   const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
 
@@ -259,8 +282,10 @@ export default function GoalsPage() {
         <GoalsUtilityBar
           search={search}
           onSearch={setSearch}
-          filter={filter}
-          onFilter={setFilter}
+          energy={energy}
+          onEnergy={setEnergy}
+          priority={priority}
+          onPriority={setPriority}
           sort={sort}
           onSort={setSort}
         />
@@ -296,6 +321,7 @@ export default function GoalsPage() {
                 .update({
                   name: goal.title,
                   priority: goal.priority,
+                  energy: goal.energy,
                   active: goal.active,
                   status: goal.status,
                 })

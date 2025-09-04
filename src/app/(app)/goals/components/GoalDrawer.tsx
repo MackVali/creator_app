@@ -25,6 +25,7 @@ export function GoalDrawer({
   const [emoji, setEmoji] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Goal["priority"]>("Low");
+  const [energy, setEnergy] = useState<Goal["energy"]>("No");
 
   const editing = Boolean(initialGoal);
 
@@ -34,11 +35,13 @@ export function GoalDrawer({
       setEmoji(initialGoal.emoji || "");
       setDueDate(initialGoal.dueDate || "");
       setPriority(initialGoal.priority);
+      setEnergy(initialGoal.energy);
     } else {
       setTitle("");
       setEmoji("");
       setDueDate("");
       setPriority("Low");
+      setEnergy("No");
     }
   }, [initialGoal]);
 
@@ -52,6 +55,7 @@ export function GoalDrawer({
       emoji,
       dueDate: dueDate || undefined,
       priority,
+      energy,
       progress: initialGoal?.progress || 0,
       status: initialGoal?.status || "Active",
       updatedAt: new Date().toISOString(),
@@ -111,6 +115,21 @@ export function GoalDrawer({
               <option value="Low">Low</option>
               <option value="Medium">Medium</option>
               <option value="High">High</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Energy</label>
+            <select
+              value={energy}
+              onChange={(e) => setEnergy(e.target.value as Goal["energy"])}
+              className="w-full px-3 py-2 rounded bg-gray-700"
+            >
+              <option value="No">No</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+              <option value="Ultra">Ultra</option>
+              <option value="Extreme">Extreme</option>
             </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
