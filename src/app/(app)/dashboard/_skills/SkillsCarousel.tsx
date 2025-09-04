@@ -76,21 +76,33 @@ export default function SkillsCarousel() {
   const cards = useMemo(() => {
     return categories.map((cat, idx) => {
       const offset = idx - activeIndex;
+      if (Math.abs(offset) > 3) return null;
       const isActive = offset === 0;
-      const x = cardWidth * 0.86 * offset;
+
+      const PEEK = 48;
+      const GAP = 8;
+      let x = 0;
+      if (offset > 0) {
+        x = cardWidth - PEEK * offset - GAP * (offset - 1);
+      } else if (offset < 0) {
+        const n = Math.abs(offset);
+        x = -cardWidth + PEEK * n + GAP * (n - 1);
+      }
+
+      const depth = categories.length - Math.abs(offset);
       const animate = prefersReducedMotion
         ? {
             x,
-            opacity: isActive ? 1 : 0.6,
-            zIndex: categories.length - Math.abs(offset),
+            opacity: isActive ? 1 : 0.6 - Math.abs(offset) * 0.1,
+            zIndex: depth,
           }
         : {
             x,
-            scale: isActive ? 1 : 0.92,
-            opacity: isActive ? 1 : 0.6,
+            scale: isActive ? 1 : 1 - Math.min(Math.abs(offset) * 0.08, 0.24),
+            opacity: isActive ? 1 : 0.6 - Math.abs(offset) * 0.1,
             filter: isActive ? "blur(0px)" : "blur(1.5px)",
             y: isActive ? 0 : 6,
-            zIndex: categories.length - Math.abs(offset),
+            zIndex: depth,
           };
       return (
         <motion.div
@@ -136,7 +148,7 @@ export default function SkillsCarousel() {
       }}
       style={{
         maskImage:
-          "linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)",
+          "linear-gradient(to right, transparent, black 48px, black calc(100% - 48px), transparent)",
       }}
     >
       <div ref={containerRef} className="relative min-h-[62vh]">
