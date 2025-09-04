@@ -5,12 +5,19 @@ import clsx from "clsx";
 
 type EnergyLevel = "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
 
-interface EnergyFlameProps {
+type FlameSize = "sm" | "md" | "lg";
+
+interface FlameEmberProps {
   level: EnergyLevel;
-  size?: number;
+  size?: FlameSize;
   className?: string;
-  monochrome?: boolean;
 }
+
+const SIZE_MAP: Record<FlameSize, number> = {
+  sm: 16,
+  md: 24,
+  lg: 32,
+};
 
 interface LevelConfig {
   scale: number; // overall scale of flame group
@@ -135,59 +142,39 @@ const LEVEL_COLORS: Record<Exclude<EnergyLevel, "NO">, LevelColors> = {
   },
 };
 
-export function EnergyFlame({
+export function FlameEmber({
   level,
-  size = 24,
+  size = "md",
   className,
-  monochrome = false,
-}: EnergyFlameProps) {
+}: FlameEmberProps) {
   const id = React.useId();
   const cfg = LEVEL_CONFIG[level];
+  const px = SIZE_MAP[size];
 
   const colors =
     level === "NO"
       ? null
       : LEVEL_COLORS[level as Exclude<EnergyLevel, "NO">];
 
-  const outerFill = monochrome
-    ? "#A6A6A6"
-    : colors
-    ? `url(#outer-${id})`
-    : "#000";
-  const innerFill = monochrome
-    ? "#D0D0D0"
-    : colors
-    ? `url(#inner-${id})`
-    : "#000";
-  const coreFill = monochrome
-    ? "#F2F2F2"
-    : colors
-    ? colors.core
-    : "#000";
-
-  const emberFill = monochrome
-    ? "#D0D0D0"
-    : colors
-    ? colors.ember
-    : "#000";
-
-  const glowFilter = monochrome
-    ? `blur(${cfg.blur}px) drop-shadow(0 0 10px rgba(153,102,204,0.45))`
-    : `blur(${cfg.blur}px) ${cfg.glow}`;
+  const outerFill = colors ? `url(#outer-${id})` : "#000";
+  const innerFill = colors ? `url(#inner-${id})` : "#000";
+  const coreFill = colors ? colors.core : "#000";
+  const emberFill = colors ? colors.ember : "#000";
+  const glowFilter = `blur(${cfg.blur}px) ${cfg.glow}`;
 
   return (
     <div
       className={clsx("relative", className)}
-      style={{ width: size, height: size, pointerEvents: "none" }}
+      style={{ width: px, height: px, pointerEvents: "none" }}
       aria-label={`Energy: ${level.charAt(0)}${level.slice(1).toLowerCase()}`}
     >
       <svg
         viewBox="0 0 24 24"
-        width={size}
-        height={size}
+        width={px}
+        height={px}
         style={{ overflow: "visible" }}
       >
-        {level !== "NO" && !monochrome && colors && (
+        {level !== "NO" && colors && (
           <defs>
             <linearGradient
               id={`outer-${id}`}
@@ -381,5 +368,5 @@ export function EnergyFlame({
   );
 }
 
-export type { EnergyLevel, EnergyFlameProps };
+export type { EnergyLevel, FlameEmberProps };
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { EnergyFlame } from "@/components/ui";
-import type { EnergyLevel } from "@/components/ui/EnergyFlame";
+import { FlameEmber } from "@/components/ui";
+import type { EnergyLevel } from "@/components/ui/FlameEmber";
 
 const LEVELS: EnergyLevel[] = [
   "NO",
@@ -17,7 +17,7 @@ export default function EnergyLevelsDemo() {
     <div className="p-4 space-y-4 text-white">
       {LEVELS.map((lvl) => (
         <div key={lvl} className="flex items-center gap-3">
-          <EnergyFlame level={lvl} />
+          <FlameEmber level={lvl} />
           <span className="capitalize">{lvl.toLowerCase()}</span>
         </div>
       ))}

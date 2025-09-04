@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { EmptyState } from "./empty-state";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getGoalById } from "@/lib/queries/goals";
-import { EnergyFlame, type EnergyLevel } from "./EnergyFlame";
+import { FlameEmber, type EnergyLevel } from "./FlameEmber";
 
 interface Project {
   id: string;
@@ -114,9 +114,9 @@ export function ProjectList() {
             <div className="flex items-start justify-between mb-2">
               <h3 className="font-medium text-white">{project.name}</h3>
               <div className="flex items-center gap-2">
-                <EnergyFlame
+                <FlameEmber
                   level={project.energy as EnergyLevel}
-                  size={20}
+                  size="sm"
                 />
                 <Badge variant="outline" className="text-xs">
                   {project.goal_name}
