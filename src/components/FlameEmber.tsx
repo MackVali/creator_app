@@ -269,13 +269,13 @@ function UltraFlameBlue() {
         {/* Optional tiny side nubs (blue) */}
         <path className="nub" fill="#1976d2" d="M28,86 C26,85 25,83 26,81 C27,79 30,78 32,79 C31,82 30,84 28,86 Z" />
         <path className="nub" fill="#1976d2" d="M76,86 C78,85 79,83 78,81 C77,79 74,78 72,79 C73,82 74,84 76,86 Z" />
+      </g>
 
-        {/* Light blue specks (subtle) */}
-        <g className="specks">
-          <circle className="speck" cx="34" cy="70" r="1.2" fill="#bbdefb" />
-          <circle className="speck d1" cx="68" cy="67" r="1.0" fill="#e3f2fd" />
-          <circle className="speck d2" cx="57" cy="62" r="0.9" fill="#cfe8ff" />
-        </g>
+      {/* Light blue specks (subtle) outside flame */}
+      <g className="specks">
+        <circle className="speck" cx="34" cy="24" r="1.2" fill="#bbdefb" />
+        <circle className="speck d1" cx="68" cy="21" r="1.0" fill="#e3f2fd" />
+        <circle className="speck d2" cx="57" cy="18" r="0.9" fill="#cfe8ff" />
       </g>
 
       <style>{`
@@ -390,14 +390,14 @@ function ExtremeFlamePurple() {
 
         {/* Optional micro top flame highlight (white) */}
         <path d="M60,46 C59,47 58,48 57,48 C58,46 59,45 60,44 Z" fill="#ffffff" opacity="0.75"/>
+      </g>
 
-        {/* Dark purple specks (more, but still subtle) */}
-        <g className="specks">
-          <circle className="speck"   cx="35" cy="71" r="1.3" fill="#6a1b9a" />
-          <circle className="speck d1" cx="66" cy="68" r="1.1" fill="#4a148c" />
-          <circle className="speck d2" cx="56" cy="63" r="1.0" fill="#5e35b1" />
-          <circle className="speck d3" cx="44" cy="66" r="0.9" fill="#4527a0" />
-        </g>
+      {/* Dark purple specks (more, but still subtle) outside flame */}
+      <g className="specks">
+        <circle className="speck"   cx="35" cy="26" r="1.3" fill="#6a1b9a" />
+        <circle className="speck d1" cx="66" cy="23" r="1.1" fill="#4a148c" />
+        <circle className="speck d2" cx="56" cy="21" r="1.0" fill="#5e35b1" />
+        <circle className="speck d3" cx="44" cy="25" r="0.9" fill="#4527a0" />
       </g>
 
       <style>{`
