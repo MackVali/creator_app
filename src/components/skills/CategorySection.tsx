@@ -1,15 +1,13 @@
 import React from "react";
+import { SkillItem } from "@/types/dashboard";
 
 interface CategorySectionProps {
   title: string;
-  skills: Array<{
-    skill_id: string;
-    cat_id: string;
-    name: string;
-    icon: string;
-    level?: number;
-    progress?: number;
-  }>;
+  /**
+   * List of skills belonging to this category. Uses the shared `SkillItem`
+   * type so the component stays in sync with dashboard data structures.
+   */
+  skills: SkillItem[];
   /** Optional hex color assigned to this category */
   color?: string | null;
 }
