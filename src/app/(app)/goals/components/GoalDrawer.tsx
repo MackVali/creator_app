@@ -52,6 +52,7 @@ export function GoalDrawer({
       emoji,
       dueDate: dueDate || undefined,
       priority,
+      energy: initialGoal?.energy || "NO",
       progress: initialGoal?.progress || 0,
       status: initialGoal?.status || "Active",
       updatedAt: new Date().toISOString(),

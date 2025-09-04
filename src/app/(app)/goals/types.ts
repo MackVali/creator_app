@@ -19,6 +19,7 @@ export interface Goal {
   emoji?: string;
   dueDate?: string;
   priority: "Low" | "Medium" | "High";
+  energy: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
   progress: number; // 0-100
   status: "Active" | "Completed" | "Overdue" | "Inactive";
   active: boolean;
