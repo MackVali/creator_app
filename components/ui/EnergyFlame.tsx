@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import clsx from "clsx";
 
@@ -128,17 +130,17 @@ export function EnergyFlame({
               style={{
                 transformOrigin: "center bottom",
                 // CSS custom property for angle and duration
-                ["--sway-angle" as any]: `${cfg.sway}deg`,
-                ["--sway-duration" as any]: `${cfg.swayDur}s`,
-              }}
+                "--sway-angle": `${cfg.sway}deg`,
+                "--sway-duration": `${cfg.swayDur}s`,
+              } as React.CSSProperties}
             >
               <g
                 className={clsx("flicker", {
                   flare: level === "ULTRA",
                 })}
                 style={{
-                  ["--flicker-duration" as any]: `${cfg.flickerDur}s`,
-                }}
+                  "--flicker-duration": `${cfg.flickerDur}s`,
+                } as React.CSSProperties}
               >
                 <path
                   d="M12.9633 2.28579C12.8416 2.12249 12.6586 2.01575 12.4565 1.9901C12.2545 1.96446 12.0506 2.02211 11.8919 2.14981C10.0218 3.65463 8.7174 5.83776 8.35322 8.32637C7.69665 7.85041 7.11999 7.27052 6.6476 6.61081C6.51764 6.42933 6.3136 6.31516 6.09095 6.29934C5.8683 6.28353 5.65017 6.36771 5.49587 6.529C3.95047 8.14442 3 10.3368 3 12.7497C3 17.7202 7.02944 21.7497 12 21.7497C16.9706 21.7497 21 17.7202 21 12.7497C21 9.08876 18.8143 5.93999 15.6798 4.53406C14.5706 3.99256 13.6547 3.21284 12.9633 2.28579Z"
@@ -164,9 +166,9 @@ export function EnergyFlame({
                 r="2"
                 className="smoke"
                 style={{
-                  ["--smoke-duration" as any]: `${8 + i * 2}s`,
-                  ["--smoke-delay" as any]: `${i * 1.5}s`,
-                }}
+                  "--smoke-duration": `${8 + i * 2}s`,
+                  "--smoke-delay": `${i * 1.5}s`,
+                } as React.CSSProperties}
                 fill="#A6A6A6"
                 opacity="0.6"
               />
@@ -178,8 +180,8 @@ export function EnergyFlame({
           <g
             className="embers"
             style={{
-              ["--ember-duration" as any]: `${cfg.emberDur}s`,
-            }}
+              "--ember-duration": `${cfg.emberDur}s`,
+            } as React.CSSProperties}
           >
             {[0, 1, 2].map((i) => (
               <circle
