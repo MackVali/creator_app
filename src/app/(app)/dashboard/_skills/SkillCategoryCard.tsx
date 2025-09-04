@@ -11,12 +11,12 @@ interface Props {
 
 export default function SkillCategoryCard({ category, skills }: Props) {
   return (
-    <div className="h-full flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/60 shadow p-4 overflow-hidden">
+    <div className="h-full flex flex-col rounded-2xl border border-border bg-card shadow p-4 overflow-hidden">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium text-zinc-100">
+        <h3 className="text-lg font-medium text-card-foreground">
           {category.name.toUpperCase()}
         </h3>
-        <span className="text-xs rounded-full bg-zinc-800 text-zinc-300 px-2 py-0.5">
+        <span className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5">
           {skills.length}
         </span>
       </div>
