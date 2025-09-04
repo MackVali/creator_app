@@ -270,31 +270,12 @@ function UltraFlameBlue() {
         <path className="nub" fill="#1976d2" d="M28,86 C26,85 25,83 26,81 C27,79 30,78 32,79 C31,82 30,84 28,86 Z" />
         <path className="nub" fill="#1976d2" d="M76,86 C78,85 79,83 78,81 C77,79 74,78 72,79 C73,82 74,84 76,86 Z" />
 
-        {/* Floating ember specks */}
-        <circle
-          className="speck"
-          cx="33"
-          cy="70"
-          r="1.4"
-          fill="#e3f2fd"
-          style={{ animationDelay: "0ms" }}
-        />
-        <circle
-          className="speck"
-          cx="69"
-          cy="66"
-          r="1.2"
-          fill="#bbdefb"
-          style={{ animationDelay: "350ms" }}
-        />
-        <circle
-          className="speck"
-          cx="51"
-          cy="72"
-          r="1.1"
-          fill="#e3f2fd"
-          style={{ animationDelay: "700ms" }}
-        />
+        {/* Light blue specks (subtle) */}
+        <g className="specks">
+          <circle className="speck" cx="34" cy="70" r="1.2" fill="#bbdefb" />
+          <circle className="speck d1" cx="68" cy="67" r="1.0" fill="#e3f2fd" />
+          <circle className="speck d2" cx="57" cy="62" r="0.9" fill="#cfe8ff" />
+        </g>
       </g>
 
       <style>{`
@@ -304,7 +285,11 @@ function UltraFlameBlue() {
         .mid   { animation: flickerMid   650ms ease-in-out infinite; }
         .core  { animation: flickerCore  600ms ease-in-out infinite, glow 1000ms ease-in-out infinite; }
         .nub   { animation: nubFlicker   700ms ease-in-out infinite; }
-        .speck { animation: speckRise 1400ms linear infinite; opacity:0; }
+
+        /* Ember specks (ULTRA) */
+        .specks .speck { opacity: 0; animation: speckRise 1400ms linear infinite; }
+        .specks .speck.d1 { animation-delay: 300ms; }
+        .specks .speck.d2 { animation-delay: 600ms; }
 
         @keyframes tilt    { 0%{rotate:0} 35%{rotate:4.5deg} 70%{rotate:-4.5deg} 100%{rotate:0} }
         @keyframes breathe { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.09)} }
@@ -316,7 +301,12 @@ function UltraFlameBlue() {
           } 50%{transform:translateY(-1.7px) scaleY(1.12) skewX(1.1deg)} }
         @keyframes glow { 0%,100%{opacity:.9} 50%{opacity:1} }
         @keyframes nubFlicker { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-.8px) scale(1.06)} }
-        @keyframes speckRise { 0%{transform:translateY(0) scale(1);opacity:0} 15%{opacity:.9} 100%{transform:translateY(-16px) scale(.6);opacity:0} }
+
+        @keyframes speckRise {
+          0%   { transform: translateY(0) scale(1);   opacity: 0; }
+          10%  { opacity: .85; }
+          100% { transform: translateY(-18px) scale(.6); opacity: 0; }
+        }
 
         @media (prefers-reduced-motion: reduce) {
           .ultra, .outer, .mid, .core, .nub, .speck { animation: none !important; }
@@ -401,39 +391,13 @@ function ExtremeFlamePurple() {
         {/* Optional micro top flame highlight (white) */}
         <path d="M60,46 C59,47 58,48 57,48 C58,46 59,45 60,44 Z" fill="#ffffff" opacity="0.75"/>
 
-        {/* Floating ember specks */}
-        <circle
-          className="speck"
-          cx="33"
-          cy="70"
-          r="1.4"
-          fill="#4a148c"
-          style={{ animationDelay: "0ms" }}
-        />
-        <circle
-          className="speck"
-          cx="69"
-          cy="66"
-          r="1.2"
-          fill="#6a1b9a"
-          style={{ animationDelay: "300ms" }}
-        />
-        <circle
-          className="speck"
-          cx="51"
-          cy="72"
-          r="1.1"
-          fill="#4a148c"
-          style={{ animationDelay: "600ms" }}
-        />
-        <circle
-          className="speck"
-          cx="60"
-          cy="78"
-          r="1.0"
-          fill="#6a1b9a"
-          style={{ animationDelay: "900ms" }}
-        />
+        {/* Dark purple specks (more, but still subtle) */}
+        <g className="specks">
+          <circle className="speck"   cx="35" cy="71" r="1.3" fill="#6a1b9a" />
+          <circle className="speck d1" cx="66" cy="68" r="1.1" fill="#4a148c" />
+          <circle className="speck d2" cx="56" cy="63" r="1.0" fill="#5e35b1" />
+          <circle className="speck d3" cx="44" cy="66" r="0.9" fill="#4527a0" />
+        </g>
       </g>
 
       <style>{`
@@ -442,7 +406,12 @@ function ExtremeFlamePurple() {
         .outer { animation: flickerOuter 550ms ease-in-out infinite; }
         .mid   { animation: flickerMid   520ms ease-in-out infinite; }
         .skull { animation: skullPulse   900ms ease-in-out infinite; }
-        .speck { animation: speckRise 1200ms linear infinite; opacity:0; }
+
+        /* Ember specks (EXTREME) */
+        .specks .speck { opacity: 0; animation: speckRiseX 1300ms linear infinite; }
+        .specks .speck.d1 { animation-delay: 220ms; }
+        .specks .speck.d2 { animation-delay: 440ms; }
+        .specks .speck.d3 { animation-delay: 660ms; }
 
         @keyframes tilt    { 0%{rotate:0} 35%{rotate:6deg} 70%{rotate:-6deg} 100%{rotate:0} }
         @keyframes breathe { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.12)} }
@@ -452,7 +421,12 @@ function ExtremeFlamePurple() {
           } 50%{transform:translateY(-1.9px) scaleY(1.16) skewX(-1.3deg)} }
         @keyframes skullPulse { 0%,100%{transform:translateY(0) scale(1); opacity:.95}
           50%{transform:translateY(-.6px) scale(1.03); opacity:1} }
-        @keyframes speckRise { 0%{transform:translateY(0) scale(1);opacity:0} 15%{opacity:.9} 100%{transform:translateY(-16px) scale(.6);opacity:0} }
+
+        @keyframes speckRiseX {
+          0%   { transform: translateY(0) scale(1);   opacity: 0; }
+          12%  { opacity: .9; }
+          100% { transform: translateY(-20px) scale(.55); opacity: 0; }
+        }
 
         @media (prefers-reduced-motion: reduce) {
           .extreme, .outer, .mid, .skull, .speck { animation: none !important; }
