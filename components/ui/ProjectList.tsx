@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "./badge";
@@ -112,9 +113,17 @@ export function ProjectList() {
           <CardContent className="p-4">
             <div className="flex items-start justify-between mb-2">
               <h3 className="font-medium text-white">{project.name}</h3>
-              <Badge variant="outline" className="text-xs">
-                {project.goal_name}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs">
+                  {project.goal_name}
+                </Badge>
+                <Link
+                  href={`/projects/${project.id}/edit`}
+                  className="text-xs text-blue-400"
+                >
+                  Edit
+                </Link>
+              </div>
             </div>
             <div className="flex gap-2">
               <Badge variant={getPriorityVariant(project.priority)}>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ProjectRow } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
@@ -52,7 +53,12 @@ export function ProjectsDropdown({
               <button className="ml-2 text-blue-400">Add Project</button>
             </div>
           )}
-          <button className="mt-3 text-xs text-blue-400">View all projects</button>
+          <Link
+            href="/projects"
+            className="mt-3 text-xs text-blue-400"
+          >
+            See all projects
+          </Link>
         </div>
       )}
     </div>
