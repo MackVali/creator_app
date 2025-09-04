@@ -20,6 +20,7 @@ export { Fab } from "./Fab";
 export { CreateSheet } from "./CreateSheet";
 export { QuickPeek } from "./QuickPeek";
 export { MobileNav } from "../mobile-nav";
+export { default as FlameEmber } from "@/components/FlameEmber";
 
 // New UX components
 export {

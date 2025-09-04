@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Project } from "../types";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
 interface ProjectRowProps {
   project: Project;
@@ -11,13 +12,6 @@ interface ProjectRowProps {
 export function ProjectRow({ project }: ProjectRowProps) {
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((o) => !o);
-
-  const statusColor =
-    project.status === "Done"
-      ? "bg-green-600"
-      : project.status === "In-Progress"
-      ? "bg-yellow-600"
-      : "bg-gray-600";
 
   const hasTasks = project.tasks.length > 0;
 
@@ -31,9 +25,10 @@ export function ProjectRow({ project }: ProjectRowProps) {
       >
         <div className="flex items-center gap-2">
           <span className="text-sm">{project.name}</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor}`}>
-            {project.status}
-          </span>
+          <FlameEmber
+            level={project.energy.toUpperCase() as FlameLevel}
+            size="sm"
+          />
         </div>
         <div className="flex items-center gap-2">
           <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">

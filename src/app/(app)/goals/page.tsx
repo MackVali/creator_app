@@ -164,13 +164,14 @@ export default function GoalsPage() {
           const done = tasks.filter((t) => t.stage === "PERFECT").length;
           const progress = total ? Math.round((done / total) * 100) : 0;
           const status = projectStageToStatus(p.stage);
-          const proj: Project = {
-            id: p.id,
-            name: p.name,
-            status,
-            progress,
-            tasks,
-          };
+        const proj: Project = {
+          id: p.id,
+          name: p.name,
+          status,
+          progress,
+          energy: mapEnergy(p.energy),
+          tasks,
+        };
           const list = projectsByGoal.get(p.goal_id) || [];
           list.push(proj);
           projectsByGoal.set(p.goal_id, list);
