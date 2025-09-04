@@ -31,10 +31,17 @@ export function useSkillsData() {
   useEffect(() => {
     const load = async () => {
       const sb = getSupabaseBrowser();
+      if (!sb) {
+        setLoading(false);
+        return;
+      }
       const {
         data: { user },
       } = await sb.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
       const { data: cats } = await sb
         .from("cats")
