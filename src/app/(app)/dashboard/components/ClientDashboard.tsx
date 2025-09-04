@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type { DashboardData } from "@/types/dashboard";
+import CategorySection from "@/components/skills/CategorySection";
 
 interface ClientDashboardProps {
   data: DashboardData;
@@ -310,44 +311,16 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
           >
             SKILLS
           </h2>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
-              skillsAndGoals.cats.map((cat) => {
-                const color = cat.color || "#353535";
-                const bg = cat.color ? `${cat.color}20` : "#242424";
-                return (
-                  <div
-                    key={cat.cat_id}
-                    className="rounded-lg border p-1"
-                    style={{ borderColor: color, backgroundColor: bg }}
-                  >
-                    <div className="mb-1 text-center text-[10px] font-semibold text-[#E6E6E6] truncate">
-                      {cat.cat_name}
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {cat.skills && cat.skills.length > 0 ? (
-                        cat.skills.map((skill) => (
-                          <div
-                            key={skill.skill_id}
-                            className="flex items-center gap-1 rounded px-1 py-0.5 text-[#E6E6E6] hover:bg-[#2B2B2B] active:scale-[0.98] transition transform"
-                          >
-                            <span className="text-xs">
-                              {skill.icon || "💡"}
-                            </span>
-                            <span className="truncate text-[10px]">
-                              {skill.name}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-center text-[10px] text-[#808080]">
-                          No skills
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
+              skillsAndGoals.cats.map((cat) => (
+                <CategorySection
+                  key={cat.cat_id}
+                  title={cat.cat_name}
+                  skills={cat.skills}
+                  color={cat.color}
+                />
+              ))
             ) : (
               <div className="p-8 text-center text-[#808080]">
                 No skills found. Create your first skill to get started!
