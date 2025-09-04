@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { GoalsHeader } from "./components/GoalsHeader";
 import {
@@ -70,6 +71,8 @@ export default function GoalsPage() {
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   useEffect(() => {
     const load = async () => {
@@ -193,6 +196,17 @@ export default function GoalsPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (editId && goals.length > 0) {
+      const goalToEdit = goals.find((g) => g.id === editId);
+      if (goalToEdit) {
+        setEditing(goalToEdit);
+        setDrawer(true);
+      }
+    }
+  }, [searchParams, goals]);
+
   const filteredGoals = useMemo(() => {
     let data = goals.filter((g) => {
       const term = search.toLowerCase();
@@ -285,6 +299,7 @@ export default function GoalsPage() {
           onClose={() => {
             setDrawer(false);
             setEditing(null);
+            router.replace("/goals");
           }}
           onAdd={addGoal}
           initialGoal={editing}
