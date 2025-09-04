@@ -219,13 +219,17 @@ export function EnergyFlame({
           <g
             className="energy-animate"
             style={{
-              animation: `energy-flame-sway ${swayDuration}s ease-in-out infinite alternate`,
+              transformOrigin: "50% 100%",
+              animation: `energy-flame-sway ${swayDuration}s ease-in-out infinite`,
+              animationDelay: `-${cfg.flicker / 2}s`,
             }}
           >
             <g
               className="energy-animate"
               style={{
-                animation: `energy-flame-flicker ${cfg.flicker}s ease-in-out infinite alternate`,
+                transformOrigin: "50% 100%",
+                animation: `energy-flame-flicker ${cfg.flicker}s ease-in-out infinite`,
+                animationDelay: `-${cfg.flicker / 3}s`,
               }}
             >
               <path
@@ -275,12 +279,13 @@ export function EnergyFlame({
         </g>
         <style>{`
           @keyframes energy-flame-flicker {
-            0% { transform: scale(${1 - cfg.flickerScale}); }
-            100% { transform: scale(${1 + cfg.flickerScale}); }
+            0%,100% { transform: scale(${1 - cfg.flickerScale}); }
+            50% { transform: scale(${1 + cfg.flickerScale}); }
           }
           @keyframes energy-flame-sway {
             0% { transform: rotate(-${cfg.sway}deg); }
-            100% { transform: rotate(${cfg.sway}deg); }
+            50% { transform: rotate(${cfg.sway}deg); }
+            100% { transform: rotate(-${cfg.sway}deg); }
           }
           @keyframes energy-flare {
             0%,95% { filter: brightness(1); }
