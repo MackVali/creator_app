@@ -98,15 +98,24 @@ export default function FlameEmber({ level, size = "md", className }: FlameEmber
 }
 
 function renderFlame(level: FlameLevel) {
-  if (level === "NO") return <NoFlame />;
-  const profile = PROFILE[level];
-  const palette = PALETTES[level as keyof typeof PALETTES] || PALETTES.HIGH;
-  return <LevelFlame level={level} profile={profile} palette={palette} />;
+  switch (level) {
+    case "NO":
+      return <NoFlame />;
+    case "ULTRA":
+      return <UltraFlameBlue />;
+    case "EXTREME":
+      return <ExtremeFlamePurple />;
+    default: {
+      const profile = PROFILE[level];
+      const palette = PALETTES[level as keyof typeof PALETTES] || PALETTES.HIGH;
+      return <LevelFlame level={level} profile={profile} palette={palette} />;
+    }
+  }
 }
 
 function LevelFlame({ level, profile, palette }: { level: FlameLevel; profile: Profile; palette: Palette }) {
   const id = level.toLowerCase();
-  const coreScale = level === "LOW" ? 0.85 : level === "ULTRA" ? 1.05 : 1;
+  const coreScale = level === "LOW" ? 0.85 : 1;
   const midStyle: React.CSSProperties = level === "LOW" ? { transform: "translateY(8px) scale(0.8)", transformOrigin: "50% 100%" } : { transformOrigin: "50% 100%" };
 
   return (
@@ -169,17 +178,222 @@ function LevelFlame({ level, profile, palette }: { level: FlameLevel; profile: P
             style={{ opacity: 0, animation: `speckRise 1400ms linear ${i * 350}ms infinite` }}
           />
         ))}
-        {level === "EXTREME" && (
-          <path
-            className="micro"
-            fill={`url(#coreGrad-${id})`}
-            d="M52,42 C50,41 49,39 50,38 C51,37 53,37 54,38 C54,39 53,41 52,42 Z"
-            style={{ transformOrigin: "50% 100%", animation: "micro 900ms ease-in-out infinite" }}
-          />
-        )}
       </g>
 
       <style>{cssFor(profile)}</style>
+    </svg>
+  );
+}
+
+/** ————— ULTRA: Blue outer, red middle, white highlights ————— */
+function UltraFlameBlue() {
+  return (
+    <svg viewBox="0 0 100 120" width="100%" height="100%" role="img" aria-label="Ultra energy flame (blue/red)">
+      <defs>
+        {/* Soft glow */}
+        <filter id="glowUltra" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b" />
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+
+        {/* Blue outer gradient */}
+        <linearGradient id="outerBlue" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stopColor="#2196f3"/>
+          <stop offset="100%" stopColor="#0d47a1"/>
+        </linearGradient>
+
+        {/* Red middle swirl */}
+        <linearGradient id="midRed" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stopColor="#ff3d00"/>
+          <stop offset="100%" stopColor="#c62828"/>
+        </linearGradient>
+
+        {/* Red core w/ subtle white bloom */}
+        <radialGradient id="coreRed" cx="50%" cy="70%" r="60%">
+          <stop offset="0%"   stopColor="#ffffff" stopOpacity="0.95"/>
+          <stop offset="40%"  stopColor="#ffebee" stopOpacity="0.85"/>
+          <stop offset="65%"  stopColor="#ff5252" stopOpacity="0.95"/>
+          <stop offset="100%" stopColor="#e53935" stopOpacity="1"/>
+        </radialGradient>
+      </defs>
+
+      <g filter="url(#glowUltra)" className="ultra">
+        {/* Outer silhouette (use your standard/high outline for consistency) */}
+        <path
+          className="outer"
+          fill="url(#outerBlue)"
+          d="M50,114 C35,112 26,103 24,94 C22,85 26,78 29,73
+             C27,71 25,65 26,59 C27,52 31,47 36,43
+             C37,38 40,33 45,28 C50,22 54,18 56,22
+             C59,27 57,34 58,39 C63,38 68,40 71,45
+             C74,49 74,56 72,60 C80,64 84,70 84,79
+             C84,92 73,110 50,114 Z"
+          stroke="#e3f2fd" strokeWidth="1.2" opacity="0.95"
+        />
+
+        {/* Middle red swirl */}
+        <path
+          className="mid"
+          fill="url(#midRed)"
+          d="M52,106 C40,104 33,96 33,89 C33,83 36,79 40,76
+             C39,74 38,70 39,67 C40,63 43,60 46,58
+             C47,55 49,51 52,49 C55,47 56,49 56,52
+             C57,55 56,58 56,61 C60,60 63,61 65,64
+             C67,66 67,70 66,72 C71,75 73,79 73,84
+             C73,93 65,104 52,106 Z"
+          opacity="0.95"
+        />
+
+        {/* Red core with white highlight */}
+        <path
+          className="core"
+          fill="url(#coreRed)"
+          d="M52,100 C44,99 40,93 40,88 C40,84 42,81 45,79
+             C45,77 45,74 46,72 C47,70 49,69 51,68
+             C52,66 54,64 55,64 C56,64 56,66 56,67
+             C56,69 55,71 55,72 C57,72 59,73 60,75
+             C61,76 61,78 60,79 C62,80 63,82 63,84
+             C63,90 58,99 52,100 Z"
+        />
+
+        {/* White highlights / glints */}
+        <path
+          d="M61,64 C60,65 58,66 57,66 C58,64 59,63 61,62 Z"
+          fill="#ffffff" opacity="0.7"
+        />
+        <path
+          d="M44,84 C43,85 42,86 41,86 C41,85 41,84 42,83 Z"
+          fill="#ffffff" opacity="0.55"
+        />
+
+        {/* Optional tiny side nubs (blue) */}
+        <path className="nub" fill="#1976d2" d="M28,86 C26,85 25,83 26,81 C27,79 30,78 32,79 C31,82 30,84 28,86 Z" />
+        <path className="nub" fill="#1976d2" d="M76,86 C78,85 79,83 78,81 C77,79 74,78 72,79 C73,82 74,84 76,86 Z" />
+      </g>
+
+      <style>{`
+        .ultra { transform-origin:50% 100%;
+          animation: tilt 1500ms ease-in-out infinite, breathe 900ms ease-in-out infinite; }
+        .outer { animation: flickerOuter 700ms ease-in-out infinite; }
+        .mid   { animation: flickerMid   650ms ease-in-out infinite; }
+        .core  { animation: flickerCore  600ms ease-in-out infinite, glow 1000ms ease-in-out infinite; }
+        .nub   { animation: nubFlicker   700ms ease-in-out infinite; }
+
+        @keyframes tilt    { 0%{rotate:0} 35%{rotate:4.5deg} 70%{rotate:-4.5deg} 100%{rotate:0} }
+        @keyframes breathe { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.09)} }
+        @keyframes flickerOuter { 0%,100%{transform:translateY(0) scaleY(1)
+          } 50%{transform:translateY(-1.1px) scaleY(1.07) skewX(.8deg)} }
+        @keyframes flickerMid { 0%,100%{transform:translateY(0) scaleY(1)
+          } 50%{transform:translateY(-1.4px) scaleY(1.09) skewX(-1.0deg)} }
+        @keyframes flickerCore { 0%,100%{transform:translateY(0) scaleY(1)
+          } 50%{transform:translateY(-1.7px) scaleY(1.12) skewX(1.1deg)} }
+        @keyframes glow { 0%,100%{opacity:.9} 50%{opacity:1} }
+        @keyframes nubFlicker { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-.8px) scale(1.06)} }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ultra, .outer, .mid, .core, .nub { animation: none !important; }
+        }
+      `}</style>
+    </svg>
+  );
+}
+
+/** ————— EXTREME: Bright purple (two shades), white border, white skull center ————— */
+function ExtremeFlamePurple() {
+  return (
+    <svg viewBox="0 0 100 120" width="100%" height="100%" role="img" aria-label="Extreme energy flame (purple/skull)">
+      <defs>
+        <filter id="glowExtreme" x="-45%" y="-45%" width="190%" height="190%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+
+        {/* Two-shade purple body */}
+        <linearGradient id="outerPurple" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stopColor="#d500f9"/>
+          <stop offset="100%" stopColor="#8e24aa"/>
+        </linearGradient>
+
+        <linearGradient id="midPurple" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stopColor="#ce93d8"/>
+          <stop offset="100%" stopColor="#ab47bc"/>
+        </linearGradient>
+      </defs>
+
+      <g filter="url(#glowExtreme)" className="extreme">
+        {/* Outer silhouette with WHITE BORDER */}
+        <path
+          className="outer"
+          fill="url(#outerPurple)"
+          stroke="#ffffff"
+          strokeWidth="1.6"
+          d="M50,116 C32,112 24,100 24,90 C24,82 29,76 33,72
+             C30,67 30,60 33,55 C36,50 41,48 45,46
+             C45,40 49,34 54,31 C59,28 61,31 61,36
+             C61,40 60,44 60,48 C66,48 70,51 73,56
+             C75,60 75,65 73,69 C82,72 87,79 87,88
+             C87,100 73,113 50,116 Z"
+        />
+
+        {/* Middle purple swirl */}
+        <path
+          className="mid"
+          fill="url(#midPurple)"
+          d="M52,106 C41,104 35,97 35,91 C35,86 38,82 41,80
+             C40,78 39,74 40,71 C41,67 44,64 47,62
+             C48,59 50,56 53,54 C56,52 57,54 57,57
+             C58,60 57,63 57,66 C61,65 64,66 66,68
+             C68,70 68,73 67,75 C72,78 74,82 74,86
+             C74,94 66,104 52,106 Z"
+          opacity="0.95"
+        />
+
+        {/* WHITE PUNISHER-LIKE SKULL (simple) */}
+        <g className="skull" transform="translate(0,-6)">
+          {/* Head */}
+          <path
+            d="M50,92
+               C44,92 40,88 40,82
+               C40,75 46,70 50,70
+               C54,70 60,75 60,82
+               C60,88 56,92 50,92 Z"
+            fill="#ffffff"
+          />
+          {/* Eye sockets (cutout feel) */}
+          <ellipse cx="46.5" cy="82" rx="2.6" ry="2.2" fill="#1a1a1a"/>
+          <ellipse cx="53.5" cy="82" rx="2.6" ry="2.2" fill="#1a1a1a"/>
+          {/* Nose */}
+          <path d="M50,85 L48.8,87.2 L51.2,87.2 Z" fill="#1a1a1a"/>
+
+          {/* Teeth bars (minimalist) */}
+          <rect x="46" y="89" width="8" height="1.6" fill="#ffffff"/>
+          <rect x="46" y="91" width="8" height="1.6" fill="#ffffff"/>
+        </g>
+
+        {/* Optional micro top flame highlight (white) */}
+        <path d="M60,46 C59,47 58,48 57,48 C58,46 59,45 60,44 Z" fill="#ffffff" opacity="0.75"/>
+      </g>
+
+      <style>{`
+        .extreme { transform-origin:50% 100%;
+          animation: tilt 1300ms ease-in-out infinite, breathe 800ms ease-in-out infinite; }
+        .outer { animation: flickerOuter 550ms ease-in-out infinite; }
+        .mid   { animation: flickerMid   520ms ease-in-out infinite; }
+        .skull { animation: skullPulse   900ms ease-in-out infinite; }
+
+        @keyframes tilt    { 0%{rotate:0} 35%{rotate:6deg} 70%{rotate:-6deg} 100%{rotate:0} }
+        @keyframes breathe { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(1.12)} }
+        @keyframes flickerOuter { 0%,100%{transform:translateY(0) scaleY(1)
+          } 50%{transform:translateY(-1.6px) scaleY(1.14) skewX(1.2deg)} }
+        @keyframes flickerMid { 0%,100%{transform:translateY(0) scaleY(1)
+          } 50%{transform:translateY(-1.9px) scaleY(1.16) skewX(-1.3deg)} }
+        @keyframes skullPulse { 0%,100%{transform:translateY(0) scale(1); opacity:.95}
+          50%{transform:translateY(-.6px) scale(1.03); opacity:1} }
+
+        @media (prefers-reduced-motion: reduce) {
+          .extreme, .outer, .mid, .skull { animation: none !important; }
+        }
+      `}</style>
     </svg>
   );
 }
@@ -234,12 +448,9 @@ function cssFor(profile: Profile) {
     .speck { opacity:0; animation:speckRise 1400ms linear infinite; }
     @keyframes speckRise { 0%{transform:translateY(0) scale(1);opacity:0} 15%{opacity:.9} 100%{transform:translateY(-16px) scale(.6);opacity:0} }
 
-    .micro { transform-origin:50% 100%; }
-    @keyframes micro { 0%{opacity:0;transform:translateY(0) scale(.6)} 50%{opacity:1;transform:translateY(-4px) scale(1)} 100%{opacity:0;transform:translateY(-8px) scale(.8)} }
-
     @keyframes halo { 0%,100%{opacity:.15;transform:scale(1)} 50%{opacity:.3;transform:scale(1.05)} }
 
-    @media (prefers-reduced-motion: reduce) { .flame, .outer, .mid, .core, .nub, .speck, .micro { animation: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .flame, .outer, .mid, .core, .nub, .speck { animation: none !important; } }
   `;
 }
 
