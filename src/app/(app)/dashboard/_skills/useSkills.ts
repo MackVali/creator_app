@@ -60,15 +60,15 @@ export function groupSkillsByCategory(skills: Skill[]): Record<string, Skill[]> 
   }, {});
 }
 
-export function useSkillsTabs() {
-  const [tabs, setTabs] = useState<Category[]>([]);
-  const [skillsByTab, setSkillsByTab] = useState<Record<string, Skill[]>>({});
+export function useSkillsCarousel() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [skillsByCategory, setSkillsByCategory] = useState<Record<string, Skill[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const search = useSearchParams();
   const router = useRouter();
   const initial = search.get("cat") || undefined;
-  const [activeTab, setActiveTabState] = useState<string | undefined>(initial);
+  const [activeId, setActiveIdState] = useState<string | undefined>(initial);
 
   useEffect(() => {
     const load = async () => {
@@ -81,10 +81,10 @@ export function useSkillsTabs() {
           getCategoriesForUser(user.id),
           getSkillsForUser(user.id),
         ]);
-        setTabs(cats);
-        setSkillsByTab(groupSkillsByCategory(skills));
+        setCategories(cats);
+        setSkillsByCategory(groupSkillsByCategory(skills));
         if (!initial && cats[0]) {
-          setActiveTabState(cats[0].id);
+          setActiveIdState(cats[0].id);
           const params = new URLSearchParams(search);
           params.set("cat", cats[0].id);
           router.replace(`?${params.toString()}`);
@@ -99,21 +99,28 @@ export function useSkillsTabs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const setActiveTab = (id: string) => {
-    setActiveTabState(id);
+  const setActiveId = (id: string) => {
+    setActiveIdState(id);
     const params = new URLSearchParams(search);
     params.set("cat", id);
     router.replace(`?${params.toString()}`);
   };
 
-  const tabsWithUncat = useMemo(() => {
-    const t = [...tabs];
-    if (skillsByTab["uncategorized"]) {
+  const categoriesWithUncat = useMemo(() => {
+    const t = [...categories];
+    if (skillsByCategory["uncategorized"]) {
       t.push({ id: "uncategorized", name: "Uncategorized" });
     }
     return t;
-  }, [tabs, skillsByTab]);
+  }, [categories, skillsByCategory]);
 
-  return { tabs: tabsWithUncat, activeTab, setActiveTab, skillsByTab, isLoading, error };
+  return {
+    categories: categoriesWithUncat,
+    activeId,
+    setActiveId,
+    skillsByCategory,
+    isLoading,
+    error,
+  };
 }
 

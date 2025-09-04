@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
-import TabsSkills from "./_skills/TabsSkills";
+import SkillsCarousel from "./_skills/SkillsCarousel";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -208,7 +208,7 @@ export default function DashboardClient() {
       <MonumentContainer />
 
       <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
-        <TabsSkills />
+        <SkillsCarousel />
       </Section>
 
       <Section
