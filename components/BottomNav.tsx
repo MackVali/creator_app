@@ -9,7 +9,7 @@ export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const items = [
-    { key: "dashboard", label: "Dashboard", href: "/", icon: <Home className="h-6 w-6" /> },
+    { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: <Home className="h-6 w-6" /> },
     { key: "schedule", label: "Schedule", href: "/schedule", icon: <Calendar className="h-6 w-6" /> },
     { key: "friends", label: "Friends", href: "/friends", icon: <Users className="h-6 w-6" /> },
     { key: "source", label: "Source", href: "/source", icon: <DollarSign className="h-6 w-6" /> },
