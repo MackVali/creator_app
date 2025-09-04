@@ -1,4 +1,4 @@
-import React, { CSSProperties } from "react";
+import React, { CSSProperties, useId } from "react";
 import clsx from "clsx";
 
 export type EnergyLevel =
@@ -16,63 +16,93 @@ interface EnergyFlameProps {
   monochrome?: boolean;
 }
 
-// color tokens
 const colors = {
-  emberOrange: "#FF6A00",
-  amber: "#FFC107",
-  yellow: "#FFE380",
-  hotBlue: "#4CB2FF",
-  sapphire: "#2E7BEF",
-  coreRed: "#FF3B3B",
-  grayDark: "#A6A6A6",
-  grayLight: "#D0D0D0",
   gemPurple: "#9966CC",
+  grayLight: "#D0D0D0",
+  grayDark: "#A6A6A6",
 };
 
-const levelConfig: Record<EnergyLevel, { scale: number; flicker: number; sway: number; rotate: number; embers: number; glow: { blur: number; color: string } | null }> = {
-  NO: { scale: 0.6, flicker: 0, sway: 0, rotate: 0, embers: 0, glow: null },
+interface FlameConfig {
+  scale: number;
+  flicker: number; // seconds
+  flickerScale: number;
+  sway: number; // degrees
+  glow: { blur: number; color: string; extra?: string };
+  embers: number;
+  outer: [string, string];
+  inner: [string, string];
+  core: string;
+  emberColor: string;
+  flare?: boolean;
+}
+
+const levelConfig: Record<EnergyLevel, FlameConfig | null> = {
+  NO: null,
   LOW: {
-    scale: 0.6,
+    scale: 16 / 24,
     flicker: 1.2,
-    sway: 2.4,
-    rotate: 2,
+    flickerScale: 0.02,
+    sway: 2,
+    glow: { blur: 6, color: "rgba(255,193,7,0.18)" },
     embers: 0,
-    glow: { blur: 6, color: "rgba(255,193,7,0.25)" },
+    outer: ["#FFC66D", "#FF8A3D"],
+    inner: ["#FFE0A3", "#FFC66D"],
+    core: "#FFF2B3",
+    emberColor: "#FFE380",
   },
   MEDIUM: {
-    scale: 0.75,
-    flicker: 1.1,
-    sway: 2.2,
-    rotate: 3,
+    scale: 18 / 24,
+    flicker: 1.05,
+    flickerScale: 0.03,
+    sway: 3,
+    glow: { blur: 8, color: "rgba(255,140,0,0.22)" },
     embers: 1,
-    glow: { blur: 6, color: "rgba(255,193,7,0.25)" },
+    outer: ["#FFB347", "#FF6A00"],
+    inner: ["#FFD28C", "#FF9D2E"],
+    core: "#FFF2B3",
+    emberColor: "#FFE380",
   },
   HIGH: {
     scale: 1,
     flicker: 0.9,
-    sway: 1.8,
-    rotate: 4,
+    flickerScale: 0.04,
+    sway: 4,
+    glow: { blur: 10, color: "rgba(255,90,0,0.28)" },
     embers: 2,
-    glow: { blur: 10, color: "rgba(255,106,0,0.35)" },
+    outer: ["#FF9D2E", "#FF4600"],
+    inner: ["#FFC46D", "#FF7A1A"],
+    core: "#FFF2B3",
+    emberColor: "#FFE380",
   },
   ULTRA: {
     scale: 1.15,
     flicker: 0.75,
-    sway: 1.5,
-    rotate: 5,
+    flickerScale: 0.05,
+    sway: 5,
+    glow: { blur: 14, color: "rgba(255,70,0,0.35)" },
     embers: 3,
-    glow: { blur: 14, color: "rgba(255,106,0,0.35)" },
+    outer: ["#FFB000", "#FF2D00"],
+    inner: ["#FFD166", "#FF6600"],
+    core: "#FFF2B3",
+    emberColor: "#FFE380",
+    flare: true,
   },
   EXTREME: {
     scale: 1.2,
     flicker: 0.7,
-    sway: 1.4,
-    rotate: 6,
-    embers: 1,
+    flickerScale: 0.05,
+    sway: 6,
     glow: {
       blur: 14,
       color: "rgba(76,178,255,0.45)",
+      extra: " drop-shadow(0 0 8px rgba(255,59,59,0.55))",
     },
+    embers: 1,
+    outer: ["#4CB2FF", "#2E7BEF"],
+    inner: ["#FF5A5A", "#FFA1A1"],
+    core: "#FFFFFF",
+    emberColor: "#B3E5FF",
+    flare: true,
   },
 };
 
@@ -82,40 +112,79 @@ export function EnergyFlame({
   className,
   monochrome = false,
 }: EnergyFlameProps) {
+  const id = useId();
   const cfg = levelConfig[level];
-  const outerColor = monochrome
-    ? colors.grayLight
-    : level === "EXTREME"
-    ? `url(#grad)`
-    : colors.emberOrange;
-  const innerColor = monochrome
-    ? colors.grayDark
-    : level === "EXTREME"
-    ? colors.coreRed
-    : level === "LOW"
-    ? colors.amber
-    : level === "MEDIUM"
-    ? colors.yellow
-    : colors.amber;
 
-  const glowColor = monochrome
-    ? colors.gemPurple
-    : cfg.glow?.color;
+  const containerStyle: CSSProperties = { width: size, height: size };
 
-  const containerStyle: CSSProperties = {
-    width: size,
-    height: size,
-  };
+  if (level === "NO") {
+    return (
+      <span
+        aria-label="Energy: NO"
+        role="img"
+        className={clsx("inline-block relative", className)}
+        style={containerStyle}
+      >
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          className="overflow-visible"
+        >
+          <g className="energy-animate">
+            {[0, 1, 2].map((i) => (
+              <circle
+                key={i}
+                cx="12"
+                cy="18"
+                r="3"
+                fill={monochrome ? colors.grayDark : colors.grayLight}
+                style={
+                  {
+                    animation: `energy-smoke-drift ${5 + i}s ease-in-out ${
+                      i * 1.5
+                    }s infinite`,
+                    ["--sx" as string]: `${i % 2 ? 2 : -2}px`,
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </g>
+          <style>{`
+            @keyframes energy-smoke-drift {
+              0% { transform: translate(0,0) scale(0.8); opacity: .5; }
+              100% { transform: translate(var(--sx), -24px) scale(1.1); opacity: 0; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .energy-animate { animation: none !important; }
+            }
+          `}</style>
+        </svg>
+      </span>
+    );
+  }
 
-  const flameStyle: CSSProperties = {
-    transformOrigin: "50% 100%",
-    transform: `scale(${cfg.scale})`,
-    animation:
-      cfg.flicker > 0
-        ? `energy-flame-flicker ${cfg.flicker}s ease-in-out infinite alternate, energy-flame-sway ${cfg.sway}s ease-in-out infinite alternate`
-        : undefined,
-    filter: glowColor ? `drop-shadow(0 0 ${cfg.glow?.blur}px ${glowColor})` : undefined,
-  };
+  if (!cfg) return null;
+
+  const outerId = `outer-${id}`;
+  const innerId = `inner-${id}`;
+
+  const outerGrad = monochrome
+    ? { start: colors.grayLight, end: colors.grayDark }
+    : { start: cfg.outer[0], end: cfg.outer[1] };
+  const innerGrad = monochrome
+    ? { start: colors.grayDark, end: "#666666" }
+    : { start: cfg.inner[0], end: cfg.inner[1] };
+  const coreColor = monochrome ? colors.grayLight : cfg.core;
+  const emberColor = monochrome ? colors.grayLight : cfg.emberColor;
+
+  const glowFilter = monochrome
+    ? `drop-shadow(0 0 ${cfg.glow.blur}px ${colors.gemPurple})`
+    : `drop-shadow(0 0 ${cfg.glow.blur}px ${cfg.glow.color})${
+        cfg.glow.extra || ""
+      }`;
+
+  const swayDuration = cfg.flicker * 2;
 
   return (
     <span
@@ -128,79 +197,98 @@ export function EnergyFlame({
         width={size}
         height={size}
         viewBox="0 0 24 24"
-        fill="none"
         className="overflow-visible"
       >
-        {level === "NO" ? (
-          <g className="energy-animate">
-            {[0, 1, 2].map((i) => (
-              <circle
-                key={i}
-                cx="12"
-                cy="18"
-                r="3"
-                fill={monochrome ? colors.grayDark : colors.grayLight}
-                style={{
-                  animation: `energy-smoke-drift 8s ease-in-out ${i * 1.5}s infinite`,
-                } as CSSProperties}
+        <defs>
+          <linearGradient id={outerId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={outerGrad.start} />
+            <stop offset="100%" stopColor={outerGrad.end} />
+          </linearGradient>
+          <linearGradient id={innerId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={innerGrad.start} />
+            <stop offset="100%" stopColor={innerGrad.end} />
+          </linearGradient>
+        </defs>
+        <g
+          style={{
+            transformOrigin: "50% 100%",
+            transform: `scale(${cfg.scale})`,
+            filter: glowFilter,
+          }}
+        >
+          <g
+            className="energy-animate"
+            style={{
+              animation: `energy-flame-sway ${swayDuration}s ease-in-out infinite alternate`,
+            }}
+          >
+            <g
+              className="energy-animate"
+              style={{
+                animation: `energy-flame-flicker ${cfg.flicker}s ease-in-out infinite alternate`,
+              }}
+            >
+              <path
+                d="M12 2C8 6 7 9 7 13c0 4 3 7 5 9 2-2 5-5 5-9 0-4-1-7-5-11z"
+                fill={`url(#${outerId})`}
+                className={cfg.flare ? "energy-animate energy-flare" : undefined}
+                style={
+                  cfg.flare
+                    ? ({
+                        animation: `energy-flare 4s ease-in-out infinite`,
+                      } as CSSProperties)
+                    : undefined
+                }
               />
-            ))}
+              <path
+                d="M12 6c-1.8 2-2.5 4-2.5 6 0 3 2.5 5 2.5 5s2.5-2 2.5-5c0-2-.7-4-2.5-6z"
+                fill={`url(#${innerId})`}
+              />
+              <path
+                d="M12 11c-.8 1-1 2-1 3 0 1.5 1 2.5 1 2.5s1-1 1-2.5c0-1-.2-2-1-3z"
+                fill={coreColor}
+              />
+            </g>
           </g>
-        ) : (
-          <g className="energy-animate" style={flameStyle}>
-            {level === "EXTREME" && !monochrome && (
-              <defs>
-                <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={colors.hotBlue} />
-                  <stop offset="100%" stopColor={colors.sapphire} />
-                </linearGradient>
-              </defs>
-            )}
-            <path
-              d="M12 2C9 4 7 8 7 12c0 5 5 9 5 9s5-4 5-9c0-4-2-8-5-10z"
-              fill={outerColor}
-            />
-            <path
-              d="M12 6c-1.5 1.5-2.5 3.5-2.5 5.5 0 3 2.5 5.5 2.5 5.5s2.5-2.5 2.5-5.5c0-2-1-4-2.5-5.5z"
-              fill={innerColor}
-            />
-            {level === "EXTREME" && !monochrome && (
-              <circle cx="12" cy="11" r="1" fill="#fff" />
-            )}
-            {cfg.embers > 0 && (
-              <g>
-                {[...Array(cfg.embers)].map((_, i) => (
-                  <circle
-                    key={i}
-                    cx="12"
-                    cy="20"
-                    r="0.8"
-                    fill={monochrome ? colors.grayLight : colors.yellow}
-                    style={{
-                      animation: `energy-ember-rise 2s linear ${i * 0.5}s infinite`,
-                    } as CSSProperties}
-                  />
-                ))}
-              </g>
-            )}
-          </g>
-        )}
+          {cfg.embers > 0 && (
+            <g>
+              {Array.from({ length: Math.min(cfg.embers, 3) }).map((_, i) => (
+                <circle
+                  key={i}
+                  cx="12"
+                  cy="20"
+                  r="0.8"
+                  fill={emberColor}
+                  className="energy-animate"
+                  style={
+                    {
+                      animation: `energy-ember-rise ${cfg.flicker + 0.9}s linear ${
+                        i * 0.5
+                      }s infinite`,
+                      ["--dx" as string]: `${i % 2 ? 3 : -3}px`,
+                    } as CSSProperties
+                  }
+                />
+              ))}
+            </g>
+          )}
+        </g>
         <style>{`
           @keyframes energy-flame-flicker {
-            from { transform: scale(0.98); }
-            to { transform: scale(1.02); }
+            0% { transform: scale(${1 - cfg.flickerScale}); }
+            100% { transform: scale(${1 + cfg.flickerScale}); }
           }
           @keyframes energy-flame-sway {
-            from { transform: rotate(-${cfg.rotate}deg); }
-            to { transform: rotate(${cfg.rotate}deg); }
+            0% { transform: rotate(-${cfg.sway}deg); }
+            100% { transform: rotate(${cfg.sway}deg); }
+          }
+          @keyframes energy-flare {
+            0%,95% { filter: brightness(1); }
+            100% { filter: brightness(1.06); }
           }
           @keyframes energy-ember-rise {
-            0% { transform: translateY(0) scale(1); opacity: 0.8; }
-            100% { transform: translateY(-16px) scale(0.5); opacity: 0; }
-          }
-          @keyframes energy-smoke-drift {
-            0% { transform: translateY(0) translateX(0); opacity: 0.5; }
-            100% { transform: translateY(-20px) translateX(-4px); opacity: 0; }
+            0% { transform: translate(0,0); opacity: .8; }
+            100% { transform: translate(var(--dx), -20px); opacity: 0; }
           }
           @media (prefers-reduced-motion: reduce) {
             .energy-animate { animation: none !important; }

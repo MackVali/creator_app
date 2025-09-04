@@ -4,16 +4,16 @@ const levels: EnergyLevel[] = ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"
 
 export default function HelpPage() {
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4">
       <h1 className="text-xl font-semibold">Energy Levels</h1>
-      <div className="grid gap-4">
+      <ul className="mt-4 space-y-4">
         {levels.map((level) => (
-          <div key={level} className="flex items-center gap-3">
+          <li key={level} className="flex items-center gap-3">
             <EnergyFlame level={level} size={32} />
             <span className="capitalize">{level.toLowerCase()}</span>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }
