@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import type { DashboardData } from "@/types/dashboard";
+import CategoryTile from "@/components/skills/CategoryTile";
+import { Button } from "@/components/ui/button";
 
 interface ClientDashboardProps {
   data: DashboardData;
@@ -292,231 +294,30 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
           </div>
         </div>
 
-        {/* Skills Section */}
-        <div style={{ marginBottom: "32px" }}>
-          <h2
-            style={{
-              fontSize: "18px",
-              fontWeight: "900",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              marginBottom: "16px",
-              color: "#E0E0E0",
-              cursor: "pointer",
-            }}
-            onClick={() => (window.location.href = "/skills")}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#BBB")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#E0E0E0")}
-          >
-            SKILLS
-          </h2>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-            }}
-          >
-            {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
-              skillsAndGoals.cats.map((cat) => (
-                <div
-                  key={cat.cat_id}
-                  style={{
-                    background: "#2C2C2C",
-                    borderRadius: "8px",
-                    border: "1px solid #333",
-                    overflow: "hidden",
-                  }}
-                >
-                  {/* Category Header */}
-                  <div
-                    style={{
-                      padding: "16px",
-                      cursor: "pointer",
-                      background: "#2C2C2C",
-                      borderBottom: "1px solid #333",
-                    }}
-                    onClick={() => {
-                      const skillsList = document.getElementById(
-                        `skills-${cat.cat_id}`
-                      );
-                      if (skillsList) {
-                        skillsList.style.display =
-                          skillsList.style.display === "none"
-                            ? "block"
-                            : "none";
-                      }
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "18px",
-                            fontWeight: "500",
-                            color: "#E0E0E0",
-                          }}
-                        >
-                          {cat.cat_name}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#A0A0A0",
-                            background: "#404040",
-                            padding: "4px 8px",
-                            borderRadius: "12px",
-                          }}
-                        >
-                          {cat.skill_count} skills
-                        </div>
-                      </div>
-                      <div style={{ color: "#A0A0A0", fontSize: "20px" }}>
-                        ▼
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Skills List */}
-                  <div
-                    id={`skills-${cat.cat_id}`}
-                    style={{
-                      display: "none",
-                      background: "#252525",
-                      padding: "16px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "12px",
-                      }}
-                    >
-                      {cat.skills && cat.skills.length > 0 ? (
-                        cat.skills.map((skill) => (
-                          <div
-                            key={skill.skill_id}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "12px",
-                              padding: "12px",
-                              background: "#1E1E1E",
-                              borderRadius: "6px",
-                              border: "1px solid #333",
-                            }}
-                          >
-                            {/* Skill Icon */}
-                            <div style={{ fontSize: "20px", flexShrink: "0" }}>
-                              {skill.icon || "💡"}
-                            </div>
-
-                            {/* Skill Name */}
-                            <div style={{ flex: "1", minWidth: "0" }}>
-                              <div
-                                style={{
-                                  fontSize: "14px",
-                                  fontWeight: "500",
-                                  color: "#E0E0E0",
-                                }}
-                              >
-                                {skill.name}
-                              </div>
-                            </div>
-
-                            {/* Level Badge */}
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#A0A0A0",
-                                background: "#404040",
-                                padding: "4px 8px",
-                                borderRadius: "12px",
-                                flexShrink: "0",
-                              }}
-                            >
-                              Lv {skill.level}
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div style={{ width: "80px", flexShrink: "0" }}>
-                              <div
-                                style={{
-                                  width: "100%",
-                                  height: "8px",
-                                  background: "#333",
-                                  borderRadius: "9999px",
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    height: "100%",
-                                    background: "#BBB",
-                                    borderRadius: "9999px",
-                                    transition: "width 0.3s ease-out",
-                                    width: `${skill.progress}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Progress Percentage */}
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#A0A0A0",
-                                width: "48px",
-                                textAlign: "right",
-                                flexShrink: "0",
-                              }}
-                            >
-                              {skill.progress}%
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div
-                          style={{
-                            fontSize: "14px",
-                            color: "#808080",
-                            textAlign: "center",
-                            padding: "16px",
-                          }}
-                        >
-                          No skills in this category
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "32px",
-                  color: "#808080",
-                }}
-              >
-                No skills found. Create your first skill to get started!
+          {/* Skills Section */}
+          <div style={{ marginBottom: "32px" }}>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-base font-semibold text-[#E6E6E6]">Skills</div>
+                <div className="text-xs text-[#A6A6A6]">Quick overview</div>
               </div>
-            )}
+              <Button size="sm" onClick={() => router.push("/skills")}>+ Create</Button>
+            </div>
+            <div
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2"
+              role="grid"
+            >
+              {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
+                skillsAndGoals.cats.map((cat) => (
+                  <CategoryTile key={cat.cat_id} category={cat} />
+                ))
+              ) : (
+                <div className="p-8 text-center text-[#808080]">
+                  No skills found. Create your first skill to get started!
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
         {/* Current Goals Section */}
         <div>

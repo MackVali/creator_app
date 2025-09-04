@@ -5,29 +5,14 @@ import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
-import CategorySection from "@/components/skills/CategorySection";
-import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
+import { Button } from "@/components/ui/button";
+import CategoryTile from "@/components/skills/CategoryTile";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
-
-interface Skill {
-  skill_id: string;
-  cat_id: string;
-  name: string;
-  icon: string;
-  level: number;
-  progress: number;
-}
-
-interface Category {
-  cat_id: string;
-  cat_name: string;
-  skill_count: number;
-  skills: Skill[];
-}
+import type { CatItem as Category } from "@/types/dashboard";
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -229,31 +214,49 @@ export default function DashboardClient() {
 
       <MonumentContainer />
 
-      <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
-        {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <SkillCardSkeleton key={i} />
-            ))}
+      <Section
+        className="mt-1 px-4"
+        title={
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-base font-semibold text-[#E6E6E6]">
+                Skills
+              </div>
+              <div className="text-xs text-[#A6A6A6]">Quick overview</div>
+            </div>
+            <Link href="/skills">
+              <Button size="sm">+ Create</Button>
+            </Link>
           </div>
-        ) : categories.length > 0 ? (
-          <div className="space-y-4">
-            {categories.map((cat) => (
-              <CategorySection
-                key={cat.cat_id}
-                title={cat.cat_name}
-                skillCount={cat.skill_count}
-                skills={cat.skills}
+        }
+      >
+        {loading ? (
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2"
+            role="grid"
+          >
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-24 rounded-2xl bg-gray-800 animate-pulse"
               />
             ))}
           </div>
+        ) : categories.length > 0 ? (
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2"
+            role="grid"
+          >
+            {categories.map((cat) => (
+              <CategoryTile key={cat.cat_id} category={cat} />
+            ))}
+          </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">
+          <div className="py-8 text-center text-gray-500">
             No skills found. Create your first skill to get started!
           </div>
         )}
       </Section>
-
       <Section
         title={<Link href="/goals">Current Goals</Link>}
         className="safe-bottom mt-2 px-4"
