@@ -86,12 +86,11 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
                 <MoreHorizontal className="w-4 h-4" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="bg-[var(--popover)] text-[var(--popover-foreground)]"
-            >
-              <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onSelect={onToggleActive}>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onEdit?.()}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onToggleActive?.()}>
                 {goal.active ? "Mark Inactive" : "Mark Active"}
               </DropdownMenuItem>
             </DropdownMenuContent>
