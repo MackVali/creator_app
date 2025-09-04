@@ -43,46 +43,48 @@ export function GoalsUtilityBar({
 
   return (
     <div className="sticky top-0 z-10 bg-gray-900 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2">
         <input
           value={local}
           onChange={(e) => setLocal(e.target.value)}
           placeholder="Search goals"
-          className="flex-1 min-w-[200px] px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
+          className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
         />
-        <select
-          value={energy}
-          onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
-          className="bg-gray-800 text-sm px-2 py-1 rounded-md"
-        >
-          <option value="All">Energy: All</option>
-          <option value="No">No</option>
-          <option value="Low">Low</option>
-          <option value="Medium">Medium</option>
-          <option value="High">High</option>
-          <option value="Ultra">Ultra</option>
-          <option value="Extreme">Extreme</option>
-        </select>
-        <select
-          value={priority}
-          onChange={(e) => onPriority(e.target.value as PriorityFilter)}
-          className="bg-gray-800 text-sm px-2 py-1 rounded-md"
-        >
-          <option value="All">Priority: All</option>
-          <option value="Low">Low</option>
-          <option value="Medium">Medium</option>
-          <option value="High">High</option>
-        </select>
-        <select
-          value={sort}
-          onChange={(e) => onSort(e.target.value as SortOption)}
-          className="ml-auto bg-gray-800 text-sm px-2 py-1 rounded-md"
-        >
-          <option value="A→Z">A→Z</option>
-          <option value="Due Soon">Due Soon</option>
-          <option value="Progress">Progress</option>
-          <option value="Recently Updated">Recently Updated</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={energy}
+            onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
+            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+          >
+            <option value="All">Energy: All</option>
+            <option value="No">No</option>
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+            <option value="Ultra">Ultra</option>
+            <option value="Extreme">Extreme</option>
+          </select>
+          <select
+            value={priority}
+            onChange={(e) => onPriority(e.target.value as PriorityFilter)}
+            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+          >
+            <option value="All">Priority: All</option>
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+          </select>
+          <select
+            value={sort}
+            onChange={(e) => onSort(e.target.value as SortOption)}
+            className="ml-auto bg-gray-800 text-sm px-2 py-1 rounded-md"
+          >
+            <option value="A→Z">A→Z</option>
+            <option value="Due Soon">Due Soon</option>
+            <option value="Progress">Progress</option>
+            <option value="Recently Updated">Recently Updated</option>
+          </select>
+        </div>
       </div>
     </div>
   );
