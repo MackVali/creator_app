@@ -3,11 +3,11 @@ import { MonumentHeader } from './MonumentHeader';
 import { MonumentGoals } from './MonumentGoals';
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
-export default function MonumentPage({ params }: PageProps) {
-  const { id } = params;
+export default async function MonumentPage({ params }: PageProps) {
+  const { id } = await params;
   return (
     <SharedLayoutBridge>
       <MonumentHeader id={id} />
