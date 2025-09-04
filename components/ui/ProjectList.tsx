@@ -2,12 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { Badge } from "./badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { EmptyState } from "./empty-state";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getGoalById } from "@/lib/queries/goals";
-import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import { Card, CardContent } from "./card";
+import { ProjectCard } from "./ProjectCard";
 
 interface Project {
   id: string;
@@ -106,66 +105,8 @@ export function ProjectList() {
   return (
     <div className="space-y-4">
       {projects.map((project) => (
-        <Card
-          key={project.id}
-          className="hover:bg-gray-800/50 transition-colors"
-        >
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <h3 className="font-medium text-white">{project.name}</h3>
-              <div className="flex items-center gap-2">
-                <FlameEmber
-                  level={project.energy as FlameLevel}
-                  size="sm"
-                />
-                <Badge variant="outline" className="text-xs">
-                  {project.goal_name}
-                </Badge>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Badge variant={getPriorityVariant(project.priority)}>
-                {project.priority}
-              </Badge>
-              <Badge variant={getEnergyVariant(project.energy)}>
-                {project.energy}
-              </Badge>
-              <Badge variant="secondary">{project.stage}</Badge>
-            </div>
-          </CardContent>
-        </Card>
+        <ProjectCard key={project.id} project={project} />
       ))}
     </div>
   );
-}
-
-function getPriorityVariant(
-  priority: string
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (priority) {
-    case "CRITICAL":
-    case "ULTRA-CRITICAL":
-      return "destructive";
-    case "HIGH":
-      return "default";
-    case "MEDIUM":
-      return "secondary";
-    default:
-      return "outline";
-  }
-}
-
-function getEnergyVariant(
-  energy: string
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (energy) {
-    case "EXTREME":
-      return "destructive";
-    case "ULTRA":
-      return "default";
-    case "HIGH":
-      return "secondary";
-    default:
-      return "outline";
-  }
 }
