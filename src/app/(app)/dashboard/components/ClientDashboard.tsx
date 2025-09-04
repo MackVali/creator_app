@@ -1,8 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { DashboardData } from "@/types/dashboard";
-import CategorySection from "@/components/skills/CategorySection";
+import { useState } from "react";
+import type { DashboardData, CatItem } from "@/types/dashboard";
+import CategoryTile from "@/components/skills/CategoryTile";
+import CategoryDrawer from "@/components/skills/CategoryDrawer";
+import { Button } from "@/components/ui/button";
 
 interface ClientDashboardProps {
   data: DashboardData;
@@ -12,6 +15,7 @@ interface ClientDashboardProps {
 export function ClientDashboard({ data }: ClientDashboardProps) {
   const router = useRouter();
   const { userStats, monuments, skillsAndGoals } = data;
+  const [selectedCat, setSelectedCat] = useState<CatItem | null>(null);
 
   // Debug logging
   console.log("🔍 Dashboard Data:", data);
@@ -293,41 +297,36 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
           </div>
         </div>
 
-        {/* Skills Section */}
-        <div style={{ marginBottom: "32px" }}>
-          <h2
-            style={{
-              fontSize: "18px",
-              fontWeight: "900",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              marginBottom: "16px",
-              color: "#E0E0E0",
-              cursor: "pointer",
-            }}
-            onClick={() => (window.location.href = "/skills")}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#BBB")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#E0E0E0")}
-          >
-            SKILLS
-          </h2>
-          <div className="grid grid-cols-5 gap-2">
-            {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
-              skillsAndGoals.cats.map((cat) => (
-                <CategorySection
-                  key={cat.cat_id}
-                  title={cat.cat_name}
-                  skills={cat.skills}
-                  color={cat.color}
-                />
-              ))
-            ) : (
-              <div className="p-8 text-center text-[#808080]">
-                No skills found. Create your first skill to get started!
+          {/* Skills Section */}
+          <div style={{ marginBottom: "32px" }}>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <div className="text-base font-semibold text-[#E6E6E6]">Skills</div>
+                <div className="text-xs text-[#A6A6A6]">Quick overview</div>
               </div>
-            )}
+              <Button size="sm" onClick={() => router.push("/skills")}>+ Create</Button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2" role="grid">
+              {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
+                skillsAndGoals.cats.map((cat) => (
+                  <CategoryTile
+                    key={cat.cat_id}
+                    category={cat}
+                    onClick={() => setSelectedCat(cat)}
+                  />
+                ))
+              ) : (
+                <div className="p-8 text-center text-[#808080]">
+                  No skills found. Create your first skill to get started!
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+          <CategoryDrawer
+            category={selectedCat}
+            open={!!selectedCat}
+            onClose={() => setSelectedCat(null)}
+          />
 
         {/* Current Goals Section */}
         <div>

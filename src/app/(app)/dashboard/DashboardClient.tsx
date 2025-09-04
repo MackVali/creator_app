@@ -5,29 +5,15 @@ import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
-import CategorySection from "@/components/skills/CategorySection";
+import { Button } from "@/components/ui/button";
+import CategoryTile from "@/components/skills/CategoryTile";
+import CategoryDrawer from "@/components/skills/CategoryDrawer";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
-
-interface Skill {
-  skill_id: string;
-  cat_id: string;
-  name: string;
-  icon: string;
-  level: number;
-  progress: number;
-}
-
-interface Category {
-  cat_id: string;
-  cat_name: string;
-  skill_count: number;
-  skills: Skill[];
-  color?: string | null;
-}
+import type { SkillItem as Skill, CatItem as Category } from "@/types/dashboard";
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -78,6 +64,7 @@ export default function DashboardClient() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCat, setSelectedCat] = useState<Category | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -210,24 +197,38 @@ export default function DashboardClient() {
 
       <MonumentContainer />
 
-      <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
+      <Section
+        className="mt-1 px-4"
+        title={
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-base font-semibold text-[#E6E6E6]">
+                Skills
+              </div>
+              <div className="text-xs text-[#A6A6A6]">Quick overview</div>
+            </div>
+            <Link href="/skills">
+              <Button size="sm">+ Create</Button>
+            </Link>
+          </div>
+        }
+      >
         {loading ? (
-          <div className="grid grid-cols-5 gap-2">
-            {Array.from({ length: 5 }).map((_, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2" role="grid">
+            {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
-                className="h-24 rounded-lg bg-gray-800 animate-pulse"
+                className="h-24 rounded-2xl bg-gray-800 animate-pulse"
               />
             ))}
           </div>
         ) : categories.length > 0 ? (
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2" role="grid">
             {categories.map((cat) => (
-              <CategorySection
+              <CategoryTile
                 key={cat.cat_id}
-                title={cat.cat_name}
-                skills={cat.skills}
-                color={cat.color}
+                category={cat}
+                onClick={() => setSelectedCat(cat)}
               />
             ))}
           </div>
@@ -237,6 +238,11 @@ export default function DashboardClient() {
           </div>
         )}
       </Section>
+      <CategoryDrawer
+        category={selectedCat}
+        open={!!selectedCat}
+        onClose={() => setSelectedCat(null)}
+      />
 
       <Section
         title={<Link href="/goals">Current Goals</Link>}
