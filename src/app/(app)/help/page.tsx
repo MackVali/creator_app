@@ -1,4 +1,4 @@
-import { EnergyFlame, EnergyLevel } from "@/components/ui/EnergyFlame";
+import { FlameEmber, EnergyLevel } from "@/components/ui/FlameEmber";
 
 const levels: EnergyLevel[] = ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"];
 
@@ -9,7 +9,7 @@ export default function HelpPage() {
       <ul className="mt-4 space-y-4">
         {levels.map((level) => (
           <li key={level} className="flex items-center gap-3">
-            <EnergyFlame level={level} size={32} />
+            <FlameEmber level={level} size="lg" />
             <span className="capitalize">{level.toLowerCase()}</span>
           </li>
         ))}

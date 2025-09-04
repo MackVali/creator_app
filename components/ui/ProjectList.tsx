@@ -7,7 +7,7 @@ import { Card, CardContent } from "./card";
 import { EmptyState } from "./empty-state";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getGoalById } from "@/lib/queries/goals";
-import { EnergyFlame, EnergyLevel } from "@/components/ui/EnergyFlame";
+import { FlameEmber, EnergyLevel } from "@/components/ui/FlameEmber";
 
 interface Project {
   id: string;
@@ -115,7 +115,7 @@ export function ProjectList() {
             <div className="relative mb-2">
               <h3 className="font-medium text-white pr-12">{project.name}</h3>
               <div className="absolute top-0 right-0 flex items-center gap-2 pointer-events-none">
-                <EnergyFlame level={project.energy as EnergyLevel} />
+                <FlameEmber level={project.energy as EnergyLevel} />
                 <Badge variant="outline" className="text-xs pointer-events-auto">
                   {project.goal_name}
                 </Badge>

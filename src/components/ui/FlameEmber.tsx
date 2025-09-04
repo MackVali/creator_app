@@ -9,25 +9,24 @@ export type EnergyLevel =
   | "ULTRA"
   | "EXTREME";
 
-interface EnergyFlameProps {
+interface FlameEmberProps {
   level: EnergyLevel;
-  size?: number;
+  size?: "sm" | "md" | "lg";
   className?: string;
-  monochrome?: boolean;
 }
 
-const colors = {
-  gemPurple: "#9966CC",
-  grayLight: "#D0D0D0",
-  grayDark: "#A6A6A6",
+const sizeMap = {
+  sm: 16,
+  md: 24,
+  lg: 32,
 };
 
 interface FlameConfig {
   scale: number;
   flicker: number; // seconds
   flickerScale: number;
-  sway: number; // degrees
-  glow: { blur: number; color: string; extra?: string };
+  tilt: number; // degrees
+  glow: { blur: number; color: string; extra?: string; min: number; max: number };
   embers: number;
   outer: [string, string];
   inner: [string, string];
@@ -39,83 +38,84 @@ interface FlameConfig {
 const levelConfig: Record<EnergyLevel, FlameConfig | null> = {
   NO: null,
   LOW: {
-    scale: 16 / 24,
+    scale: 0.6,
     flicker: 1.2,
-    flickerScale: 0.02,
-    sway: 2,
-    glow: { blur: 6, color: "rgba(255,193,7,0.18)" },
+    flickerScale: 0.05,
+    tilt: 2,
+    glow: { blur: 6, color: "rgba(255,193,7,0.25)", min: 0.7, max: 1 },
     embers: 0,
-    outer: ["#FFC66D", "#FF8A3D"],
-    inner: ["#FFE0A3", "#FFC66D"],
-    core: "#FFF2B3",
+    outer: ["#FFC107", "#FF6A00"],
+    inner: ["#FFE380", "#FFC107"],
+    core: "#FFE380",
     emberColor: "#FFE380",
   },
   MEDIUM: {
-    scale: 18 / 24,
-    flicker: 1.05,
-    flickerScale: 0.03,
-    sway: 3,
-    glow: { blur: 8, color: "rgba(255,140,0,0.22)" },
+    scale: 0.75,
+    flicker: 1.5,
+    flickerScale: 0.1,
+    tilt: 4,
+    glow: { blur: 6, color: "rgba(255,193,7,0.25)", min: 0.5, max: 0.8 },
     embers: 1,
-    outer: ["#FFB347", "#FF6A00"],
-    inner: ["#FFD28C", "#FF9D2E"],
-    core: "#FFF2B3",
+    outer: ["#FFC107", "#FF6A00"],
+    inner: ["#FFE380", "#FFC107"],
+    core: "#FFE380",
     emberColor: "#FFE380",
   },
   HIGH: {
     scale: 1,
-    flicker: 0.9,
-    flickerScale: 0.04,
-    sway: 4,
-    glow: { blur: 10, color: "rgba(255,90,0,0.28)" },
+    flicker: 1,
+    flickerScale: 0.15,
+    tilt: 6,
+    glow: { blur: 10, color: "rgba(255,106,0,0.35)", min: 0.5, max: 0.9 },
     embers: 2,
-    outer: ["#FF9D2E", "#FF4600"],
-    inner: ["#FFC46D", "#FF7A1A"],
-    core: "#FFF2B3",
+    outer: ["#FFC107", "#FF6A00"],
+    inner: ["#FFE380", "#FFC107"],
+    core: "#FFE380",
     emberColor: "#FFE380",
   },
   ULTRA: {
     scale: 1.15,
-    flicker: 0.75,
-    flickerScale: 0.05,
-    sway: 5,
-    glow: { blur: 14, color: "rgba(255,70,0,0.35)" },
+    flicker: 0.7,
+    flickerScale: 0.2,
+    tilt: 8,
+    glow: { blur: 14, color: "rgba(255,106,0,0.35)", min: 0.6, max: 1 },
     embers: 3,
-    outer: ["#FFB000", "#FF2D00"],
-    inner: ["#FFD166", "#FF6600"],
-    core: "#FFF2B3",
+    outer: ["#FFC107", "#FF6A00"],
+    inner: ["#FFE380", "#FFC107"],
+    core: "#FFE380",
     emberColor: "#FFE380",
-    flare: true,
   },
   EXTREME: {
     scale: 1.2,
-    flicker: 0.7,
-    flickerScale: 0.05,
-    sway: 6,
+    flicker: 0.5,
+    flickerScale: 0.3,
+    tilt: 12,
     glow: {
       blur: 14,
       color: "rgba(76,178,255,0.45)",
-      extra: " drop-shadow(0 0 8px rgba(255,59,59,0.55))",
+      extra: " drop-shadow(0 0 6px rgba(255,59,59,0.6))",
+      min: 0.4,
+      max: 1,
     },
-    embers: 1,
+    embers: 3,
     outer: ["#4CB2FF", "#2E7BEF"],
-    inner: ["#FF5A5A", "#FFA1A1"],
+    inner: ["#FF3B3B", "#FF3B3B"],
     core: "#FFFFFF",
     emberColor: "#B3E5FF",
     flare: true,
   },
 };
 
-export function EnergyFlame({
+export function FlameEmber({
   level,
-  size = 24,
+  size = "md",
   className,
-  monochrome = false,
-}: EnergyFlameProps) {
+}: FlameEmberProps) {
   const id = useId();
   const cfg = levelConfig[level];
+  const px = sizeMap[size];
 
-  const containerStyle: CSSProperties = { width: size, height: size };
+  const containerStyle: CSSProperties = { width: px, height: px };
 
   if (level === "NO") {
     return (
@@ -126,22 +126,23 @@ export function EnergyFlame({
         style={containerStyle}
       >
         <svg
-          width={size}
-          height={size}
+          width={px}
+          height={px}
           viewBox="0 0 24 24"
           className="overflow-visible"
         >
-          <g className="energy-animate">
+          <circle cx="12" cy="18" r="2" fill="#555555" />
+          <g className="ember-animate">
             {[0, 1, 2].map((i) => (
               <circle
                 key={i}
                 cx="12"
                 cy="18"
                 r="3"
-                fill={monochrome ? colors.grayDark : colors.grayLight}
+                fill="#D0D0D0"
                 style={
                   {
-                    animation: `energy-smoke-drift ${5 + i}s ease-in-out ${
+                    animation: `ember-smoke ${5 + i}s ease-in-out ${
                       i * 1.5
                     }s infinite`,
                     ["--sx" as string]: `${i % 2 ? 2 : -2}px`,
@@ -151,12 +152,12 @@ export function EnergyFlame({
             ))}
           </g>
           <style>{`
-            @keyframes energy-smoke-drift {
+            @keyframes ember-smoke {
               0% { transform: translate(0,0) scale(0.8); opacity: .5; }
               100% { transform: translate(var(--sx), -24px) scale(1.1); opacity: 0; }
             }
             @media (prefers-reduced-motion: reduce) {
-              .energy-animate { animation: none !important; }
+              .ember-animate { animation: none !important; }
             }
           `}</style>
         </svg>
@@ -169,22 +170,16 @@ export function EnergyFlame({
   const outerId = `outer-${id}`;
   const innerId = `inner-${id}`;
 
-  const outerGrad = monochrome
-    ? { start: colors.grayLight, end: colors.grayDark }
-    : { start: cfg.outer[0], end: cfg.outer[1] };
-  const innerGrad = monochrome
-    ? { start: colors.grayDark, end: "#666666" }
-    : { start: cfg.inner[0], end: cfg.inner[1] };
-  const coreColor = monochrome ? colors.grayLight : cfg.core;
-  const emberColor = monochrome ? colors.grayLight : cfg.emberColor;
+  const outerGrad = { start: cfg.outer[0], end: cfg.outer[1] };
+  const innerGrad = { start: cfg.inner[0], end: cfg.inner[1] };
+  const coreColor = cfg.core;
+  const emberColor = cfg.emberColor;
 
-  const glowFilter = monochrome
-    ? `drop-shadow(0 0 ${cfg.glow.blur}px ${colors.gemPurple})`
-    : `drop-shadow(0 0 ${cfg.glow.blur}px ${cfg.glow.color})${
-        cfg.glow.extra || ""
-      }`;
-  // Slow down sway relative to flicker to give a more premium, gentle motion
-  const swayDuration = cfg.flicker * 4;
+  const glowFilter = `drop-shadow(0 0 ${cfg.glow.blur}px ${cfg.glow.color})${
+    cfg.glow.extra || ""
+  }`;
+  // Slow down tilt relative to flicker to give a more premium, gentle motion
+  const tiltDuration = cfg.flicker * 4;
 
   return (
     <span
@@ -194,8 +189,8 @@ export function EnergyFlame({
       style={containerStyle}
     >
       <svg
-        width={size}
-        height={size}
+        width={px}
+        height={px}
         viewBox="0 0 24 24"
         className="overflow-visible"
       >
@@ -210,36 +205,40 @@ export function EnergyFlame({
           </linearGradient>
         </defs>
         <g
+          className="ember-animate"
           style={{
             transformOrigin: "50% 100%",
             transform: `scale(${cfg.scale})`,
             filter: glowFilter,
+            animation: `ember-glow ${cfg.flicker * 2}s ease-in-out infinite`,
           }}
         >
           <g
-          className="energy-animate"
-          style={{
-            transformOrigin: "50% 100%",
-            animation: `energy-flame-sway ${swayDuration}s ease-in-out infinite`,
-            animationDelay: `-${swayDuration / 2}s`,
-          }}
-        >
+            className="ember-animate"
+            style={{
+              transformOrigin: "50% 100%",
+              animation: `ember-tilt ${tiltDuration}s ease-in-out infinite`,
+              animationDelay: `-${tiltDuration / 2}s`,
+              ["--tilt" as string]: `${cfg.tilt}deg`,
+            }}
+          >
             <g
-              className="energy-animate"
+              className="ember-animate"
               style={{
                 transformOrigin: "50% 100%",
-                animation: `energy-flame-flicker ${cfg.flicker}s ease-in-out infinite`,
+                animation: `ember-flicker ${cfg.flicker}s ease-in-out infinite`,
                 animationDelay: `-${cfg.flicker / 3}s`,
+                ["--flicker" as string]: cfg.flickerScale,
               }}
             >
               <path
                 d="M12 2C8 6 7 9 7 13c0 4 3 7 5 9 2-2 5-5 5-9 0-4-1-7-5-11z"
                 fill={`url(#${outerId})`}
-                className={cfg.flare ? "energy-animate energy-flare" : undefined}
+                className={cfg.flare ? "ember-animate ember-flare" : undefined}
                 style={
                   cfg.flare
                     ? ({
-                        animation: `energy-flare 4s ease-in-out infinite`,
+                        animation: `ember-flare 4s ease-in-out infinite`,
                       } as CSSProperties)
                     : undefined
                 }
@@ -263,10 +262,10 @@ export function EnergyFlame({
                   cy="20"
                   r="0.8"
                   fill={emberColor}
-                  className="energy-animate"
+                  className="ember-animate"
                   style={
                     {
-                      animation: `energy-ember-rise ${cfg.flicker + 0.9}s linear ${
+                      animation: `ember-rise ${cfg.flicker + 0.9}s linear ${
                         i * 0.5
                       }s infinite`,
                       ["--dx" as string]: `${i % 2 ? 3 : -3}px`,
@@ -278,25 +277,29 @@ export function EnergyFlame({
           )}
         </g>
         <style>{`
-          @keyframes energy-flame-flicker {
-            0%,100% { transform: scale(${1 - cfg.flickerScale}); }
-            50% { transform: scale(${1 + cfg.flickerScale}); }
+          @keyframes ember-flicker {
+            0%,100% { transform: scaleY(calc(1 - var(--flicker))); }
+            50% { transform: scaleY(calc(1 + var(--flicker))); }
           }
-          @keyframes energy-flame-sway {
-            0% { transform: rotate(-${cfg.sway}deg); }
-            50% { transform: rotate(${cfg.sway}deg); }
-            100% { transform: rotate(-${cfg.sway}deg); }
+          @keyframes ember-tilt {
+            0% { transform: rotate(calc(var(--tilt) * -1)); }
+            50% { transform: rotate(var(--tilt)); }
+            100% { transform: rotate(calc(var(--tilt) * -1)); }
           }
-          @keyframes energy-flare {
+          @keyframes ember-flare {
             0%,95% { filter: brightness(1); }
             100% { filter: brightness(1.06); }
           }
-          @keyframes energy-ember-rise {
+          @keyframes ember-rise {
             0% { transform: translate(0,0); opacity: .8; }
             100% { transform: translate(var(--dx), -20px); opacity: 0; }
           }
+          @keyframes ember-glow {
+            0%,100% { opacity: ${cfg.glow.min}; }
+            50% { opacity: ${cfg.glow.max}; }
+          }
           @media (prefers-reduced-motion: reduce) {
-            .energy-animate { animation: none !important; }
+            .ember-animate { animation: none !important; }
           }
         `}</style>
       </svg>
