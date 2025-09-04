@@ -20,7 +20,7 @@ const child = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.18, ease: [0.25, 1, 0.5, 1] },
+    transition: { duration: 0.18, ease: [0.25, 1, 0.5, 1] as [number, number, number, number] },
   },
 };
 
