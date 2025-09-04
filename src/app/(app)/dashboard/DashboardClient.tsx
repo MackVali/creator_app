@@ -5,29 +5,14 @@ import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
-import CategorySection from "@/components/skills/CategorySection";
 import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
+import CatCarousel from "@/components/skills/CatCarousel";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
+import type { CatItem } from "@/types/dashboard";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
-
-interface Skill {
-  skill_id: string;
-  cat_id: string;
-  name: string;
-  icon: string;
-  level: number;
-  progress: number;
-}
-
-interface Category {
-  cat_id: string;
-  cat_name: string;
-  skill_count: number;
-  skills: Skill[];
-}
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -92,7 +77,7 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
 }
 
 export default function DashboardClient() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<CatItem[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -237,16 +222,7 @@ export default function DashboardClient() {
             ))}
           </div>
         ) : categories.length > 0 ? (
-          <div className="space-y-4">
-            {categories.map((cat) => (
-              <CategorySection
-                key={cat.cat_id}
-                title={cat.cat_name}
-                skillCount={cat.skill_count}
-                skills={cat.skills}
-              />
-            ))}
-          </div>
+          <CatCarousel cats={categories} />
         ) : (
           <div className="text-center py-8 text-gray-500">
             No skills found. Create your first skill to get started!
