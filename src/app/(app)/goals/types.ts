@@ -10,6 +10,7 @@ export interface Project {
   status: "Todo" | "In-Progress" | "Done" | "Active";
   progress: number; // 0-100
   dueDate?: string;
+  energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   tasks: Task[];
 }
 

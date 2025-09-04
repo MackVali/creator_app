@@ -169,6 +169,7 @@ export default function DashboardClient() {
         name: p.name,
         status,
         progress,
+        energy: mapEnergy(p.energy),
         tasks,
       };
       const list = projectsByGoal.get(p.goal_id) || [];
