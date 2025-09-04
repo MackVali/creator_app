@@ -11,13 +11,21 @@ interface CatCarouselProps {
 
 export function CatCarousel({ cats }: CatCarouselProps) {
   const [index, setIndex] = useState(0);
-  const [height, setHeight] = useState(256);
+  const [height, setHeight] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const total = cats.length;
 
   useEffect(() => {
-    if (cardRef.current) {
-      setHeight(cardRef.current.offsetHeight);
+    const el = cardRef.current;
+    if (!el) return;
+
+    const updateHeight = () => setHeight(el.scrollHeight);
+    updateHeight();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(updateHeight);
+      observer.observe(el);
+      return () => observer.disconnect();
     }
   }, [index, cats]);
 
@@ -46,7 +54,7 @@ export function CatCarousel({ cats }: CatCarouselProps) {
         <motion.div
           key={cats[index].cat_id}
           ref={cardRef}
-          className="absolute inset-0"
+          className="absolute top-0 left-0 w-full"
           drag="x"
           dragConstraints={{ left: 0, right: 0 }}
           onDragEnd={handleDragEnd}
@@ -62,7 +70,7 @@ export function CatCarousel({ cats }: CatCarouselProps) {
       {stack.map(({ cat, position }) => (
         <motion.div
           key={cat.cat_id}
-          className="absolute inset-0 pointer-events-none"
+          className="absolute top-0 left-0 w-full pointer-events-none"
           style={{
             transform: `translateX(${position * 32}px) translateY(${-position * 4}px)` ,
             zIndex: -position,
