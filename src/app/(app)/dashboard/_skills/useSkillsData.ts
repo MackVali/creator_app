@@ -36,16 +36,24 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const { data, error } = await supabase
     .from("skills")
-    .select("id,name,icon,level,xp_percent,cat_id")
+    .select("id,name,icon,level,progress,cat_id")
     .eq("user_id", userId)
     .order("name", { ascending: true });
   if (error) throw error;
-  return (data ?? []).map((s) => ({
+  type SkillRow = {
+    id: string;
+    name: string | null;
+    icon: string | null;
+    level: number | null;
+    progress: number | null;
+    cat_id: string | null;
+  };
+  return ((data as SkillRow[] | null) ?? []).map((s) => ({
     id: s.id,
     name: s.name || "Unnamed",
     emoji: s.icon,
     level: s.level ?? 1,
-    xpPercent: s.xp_percent ?? 0,
+    xpPercent: s.progress ?? 0,
     category_id: s.cat_id,
   }));
 }
