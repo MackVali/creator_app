@@ -7,13 +7,12 @@ import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import { Button } from "@/components/ui/button";
 import CategoryTile from "@/components/skills/CategoryTile";
-import CategoryDrawer from "@/components/skills/CategoryDrawer";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
-import type { SkillItem as Skill, CatItem as Category } from "@/types/dashboard";
+import type { CatItem as Category } from "@/types/dashboard";
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -64,7 +63,6 @@ export default function DashboardClient() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCat, setSelectedCat] = useState<Category | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -214,7 +212,7 @@ export default function DashboardClient() {
         }
       >
         {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" role="grid">
+          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" role="grid">
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
@@ -223,13 +221,9 @@ export default function DashboardClient() {
             ))}
           </div>
         ) : categories.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" role="grid">
+          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" role="grid">
             {categories.map((cat) => (
-              <CategoryTile
-                key={cat.cat_id}
-                category={cat}
-                onClick={() => setSelectedCat(cat)}
-              />
+              <CategoryTile key={cat.cat_id} category={cat} />
             ))}
           </div>
         ) : (
@@ -238,12 +232,6 @@ export default function DashboardClient() {
           </div>
         )}
       </Section>
-      <CategoryDrawer
-        category={selectedCat}
-        open={!!selectedCat}
-        onClose={() => setSelectedCat(null)}
-      />
-
       <Section
         title={<Link href="/goals">Current Goals</Link>}
         className="safe-bottom mt-2 px-4"

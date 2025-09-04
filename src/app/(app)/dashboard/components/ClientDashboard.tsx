@@ -1,10 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import type { DashboardData, CatItem } from "@/types/dashboard";
+import type { DashboardData } from "@/types/dashboard";
 import CategoryTile from "@/components/skills/CategoryTile";
-import CategoryDrawer from "@/components/skills/CategoryDrawer";
 import { Button } from "@/components/ui/button";
 
 interface ClientDashboardProps {
@@ -15,7 +13,6 @@ interface ClientDashboardProps {
 export function ClientDashboard({ data }: ClientDashboardProps) {
   const router = useRouter();
   const { userStats, monuments, skillsAndGoals } = data;
-  const [selectedCat, setSelectedCat] = useState<CatItem | null>(null);
 
   // Debug logging
   console.log("🔍 Dashboard Data:", data);
@@ -306,14 +303,10 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               </div>
               <Button size="sm" onClick={() => router.push("/skills")}>+ Create</Button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" role="grid">
+            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" role="grid">
               {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
                 skillsAndGoals.cats.map((cat) => (
-                  <CategoryTile
-                    key={cat.cat_id}
-                    category={cat}
-                    onClick={() => setSelectedCat(cat)}
-                  />
+                  <CategoryTile key={cat.cat_id} category={cat} />
                 ))
               ) : (
                 <div className="p-8 text-center text-[#808080]">
@@ -322,11 +315,6 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               )}
             </div>
           </div>
-          <CategoryDrawer
-            category={selectedCat}
-            open={!!selectedCat}
-            onClose={() => setSelectedCat(null)}
-          />
 
         {/* Current Goals Section */}
         <div>
