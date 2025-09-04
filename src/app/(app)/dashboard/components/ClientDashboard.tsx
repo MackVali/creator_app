@@ -303,7 +303,10 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
               </div>
               <Button size="sm" onClick={() => router.push("/skills")}>+ Create</Button>
             </div>
-            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2" role="grid">
+            <div
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2"
+              role="grid"
+            >
               {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
                 skillsAndGoals.cats.map((cat) => (
                   <CategoryTile key={cat.cat_id} category={cat} />
