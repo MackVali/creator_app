@@ -34,14 +34,28 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
         className="flex items-center justify-center"
       >
         <div
-          className={`flex flex-col items-center gap-1 rounded-md px-3 py-1 text-xs transition-colors ${
-            isActive
-              ? "border border-gray-700 bg-gray-800/60 text-white shadow-[0_0_8px_#9966CC]"
-              : "hover:text-white"
+          className={`flex flex-col items-center gap-1 px-3 py-1 text-xs transition-colors ${
+            isActive ? "text-white" : "hover:text-white"
           }`}
         >
-          {item.icon}
-          <span>{item.label}</span>
+          <div
+            className={
+              isActive
+                ? "drop-shadow-[0_0_4px_rgba(255,255,255,0.6)]"
+                : undefined
+            }
+          >
+            {item.icon}
+          </div>
+          <span
+            className={
+              isActive
+                ? "drop-shadow-[0_0_4px_rgba(255,255,255,0.6)]"
+                : undefined
+            }
+          >
+            {item.label}
+          </span>
         </div>
       </a>
     );
