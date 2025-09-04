@@ -153,6 +153,7 @@ export default function GoalsPage() {
             name: p.name,
             status,
             progress,
+            energy: p.energy as Project["energy"],
             tasks,
           };
           const list = projectsByGoal.get(p.goal_id) || [];

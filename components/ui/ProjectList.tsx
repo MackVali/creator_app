@@ -3,17 +3,18 @@
 import { useState, useEffect } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "./badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./card";
+import { Card, CardContent } from "./card";
 import { EmptyState } from "./empty-state";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getGoalById } from "@/lib/queries/goals";
+import { EnergyFlame, EnergyLevel } from "@/components/ui/EnergyFlame";
 
 interface Project {
   id: string;
   name: string;
   goal_id: string;
   priority: string;
-  energy: string;
+  energy: EnergyLevel;
   stage: string;
   created_at: string;
 }
@@ -110,11 +111,14 @@ export function ProjectList() {
           className="hover:bg-gray-800/50 transition-colors"
         >
           <CardContent className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <h3 className="font-medium text-white">{project.name}</h3>
-              <Badge variant="outline" className="text-xs">
-                {project.goal_name}
-              </Badge>
+            <div className="relative mb-2">
+              <h3 className="font-medium text-white pr-12">{project.name}</h3>
+              <div className="absolute top-0 right-0 flex items-center gap-2 pointer-events-none">
+                <EnergyFlame level={project.energy as EnergyLevel} />
+                <Badge variant="outline" className="text-xs pointer-events-auto">
+                  {project.goal_name}
+                </Badge>
+              </div>
             </div>
             <div className="flex gap-2">
               <Badge variant={getPriorityVariant(project.priority)}>

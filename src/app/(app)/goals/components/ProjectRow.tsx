@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { EnergyFlame } from "@/components/ui/EnergyFlame";
 import type { Project } from "../types";
 
 interface ProjectRowProps {
@@ -31,6 +32,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
       >
         <div className="flex items-center gap-2">
           <span className="text-sm">{project.name}</span>
+          <EnergyFlame level={project.energy} size={16} />
           <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor}`}>
             {project.status}
           </span>
