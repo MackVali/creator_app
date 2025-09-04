@@ -275,6 +275,7 @@ export default function GoalsPage() {
   const handleEdit = (goal: Goal) => {
     setEditing(goal);
     setDrawer(true);
+    router.push(`/goals?edit=${goal.id}`);
   };
 
   const handleToggleActive = async (goal: Goal) => {

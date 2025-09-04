@@ -15,7 +15,7 @@ interface ProgressRingProps {
 }
 
 export function ProgressRing({
-  size = 28,
+  size = 22,
   stroke = 3,
   percent,
   className,
@@ -28,7 +28,7 @@ export function ProgressRing({
     <svg
       width={size}
       height={size}
-      className={["text-accent", className].filter(Boolean).join(" ")}
+      className={className}
       viewBox={`0 0 ${size} ${size}`}
     >
       <circle
