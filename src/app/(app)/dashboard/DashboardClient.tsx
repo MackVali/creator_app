@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
-import CategorySection from "@/components/skills/CategorySection";
 import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
+import CatCarousel from "@/components/skills/CatCarousel";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -237,16 +237,7 @@ export default function DashboardClient() {
             ))}
           </div>
         ) : categories.length > 0 ? (
-          <div className="space-y-4">
-            {categories.map((cat) => (
-              <CategorySection
-                key={cat.cat_id}
-                title={cat.cat_name}
-                skillCount={cat.skill_count}
-                skills={cat.skills}
-              />
-            ))}
-          </div>
+          <CatCarousel cats={categories} />
         ) : (
           <div className="text-center py-8 text-gray-500">
             No skills found. Create your first skill to get started!
