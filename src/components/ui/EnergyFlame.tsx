@@ -183,8 +183,8 @@ export function EnergyFlame({
     : `drop-shadow(0 0 ${cfg.glow.blur}px ${cfg.glow.color})${
         cfg.glow.extra || ""
       }`;
-
-  const swayDuration = cfg.flicker * 2;
+  // Slow down sway relative to flicker to give a more premium, gentle motion
+  const swayDuration = cfg.flicker * 4;
 
   return (
     <span
@@ -217,13 +217,13 @@ export function EnergyFlame({
           }}
         >
           <g
-            className="energy-animate"
-            style={{
-              transformOrigin: "50% 100%",
-              animation: `energy-flame-sway ${swayDuration}s ease-in-out infinite`,
-              animationDelay: `-${cfg.flicker / 2}s`,
-            }}
-          >
+          className="energy-animate"
+          style={{
+            transformOrigin: "50% 100%",
+            animation: `energy-flame-sway ${swayDuration}s ease-in-out infinite`,
+            animationDelay: `-${swayDuration / 2}s`,
+          }}
+        >
             <g
               className="energy-animate"
               style={{
