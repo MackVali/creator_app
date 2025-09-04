@@ -42,7 +42,7 @@ export function GoalsUtilityBar({
   }, [local, onSearch]);
 
   return (
-    <div className="sticky top-0 z-10 bg-gray-900 px-4 py-3">
+    <div className="sticky top-0 z-10 bg-gray-900 px-3 py-3 sm:px-4">
       <div className="flex flex-col gap-2">
         <input
           value={local}
@@ -50,7 +50,7 @@ export function GoalsUtilityBar({
           placeholder="Search goals"
           className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
         />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <select
             value={energy}
             onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
