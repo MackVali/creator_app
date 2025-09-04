@@ -1,11 +1,12 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { fetchMonument } from '@/lib/monuments';
 import { useMonumentView } from '@/app/state/useMonumentView';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { getMonumentIcon } from '@/lib/monumentIcons';
 
 interface MonumentHeaderProps {
   id: string;
@@ -17,19 +18,24 @@ interface MonumentHeaderProps {
  */
 export function MonumentHeader({ id }: MonumentHeaderProps) {
   const router = useRouter();
-  const snapshot = useMonumentView((s) => s.last);
+  const snapshot = useMonumentView((s) => s.snaps[id]);
+  const prefersReduced = useReducedMotion();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
   const { data } = useQuery({
     queryKey: ['monument', id],
     queryFn: () => fetchMonument(id),
-    initialData: snapshot && snapshot.id === id ? snapshot : undefined,
+    initialData: snapshot,
+    staleTime: 30_000,
   });
 
   useEffect(() => {
+    titleRef.current?.focus();
     return () => {
-      // clear snapshot when leaving
-      useMonumentView.getState().clear();
+      snapshot?.origin?.focus();
+      useMonumentView.getState().clear(id);
     };
-  }, []);
+  }, [id, snapshot]);
 
   const handleBack = () => router.back();
 
@@ -41,15 +47,19 @@ export function MonumentHeader({ id }: MonumentHeaderProps) {
       <motion.div
         layoutId={`monument:${id}:surface`}
         className="absolute inset-0"
-        style={{ backgroundColor: data?.color || '#fff' }}
-        transition={{ type: 'spring', stiffness: 420, damping: 38, mass: 0.9 }}
+        style={{ backgroundColor: data?.color || '#fff', willChange: 'transform, opacity' }}
+        transition={prefersReduced ? { duration: 0.12 } : { type: 'spring', stiffness: 420, damping: 38, mass: 0.9 }}
       />
       <div className="relative z-10 p-4">
-        <button onClick={handleBack} className="mb-2 text-sm">Back</button>
+        <button onClick={handleBack} className="mb-2 text-sm">
+          Back
+        </button>
         <motion.div layoutId={`monument:${id}:icon`} className="text-4xl">
-          {data?.icon}
+          {getMonumentIcon(data?.iconKey || snapshot?.iconKey || 'default')}
         </motion.div>
         <motion.h1
+          ref={titleRef}
+          tabIndex={-1}
           layoutId={`monument:${id}:title`}
           className="mt-2 text-2xl font-bold"
         >

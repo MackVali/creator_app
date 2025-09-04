@@ -299,7 +299,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                 id={key.toLowerCase()}
                 title={key}
                 color="#2C2C2C"
-                icon={<span>🏔️</span>}
+                iconKey="mountain"
                 progress={0}
               />
             ))}

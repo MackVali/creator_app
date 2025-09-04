@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { fetchGoals, type Goal } from '@/lib/monuments';
 
@@ -15,25 +15,28 @@ const parent = {
   },
 };
 
-const child = {
-  hidden: { opacity: 0, y: 12 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.18, ease: [0.25, 1, 0.5, 1] as [number, number, number, number] },
-  },
-};
-
-/**
- * Staggered reveal list of goals for a monument. Only the first few
- * goals are shown initially to keep the transition light.
- */
 export function MonumentGoals({ id }: MonumentGoalsProps) {
-  const { data } = useQuery({ queryKey: ['monumentGoals', id], queryFn: () => fetchGoals(id) });
+  const prefersReduced = useReducedMotion();
+  const { data } = useQuery({
+    queryKey: ['monumentGoals', id],
+    queryFn: () => fetchGoals(id),
+    staleTime: 30_000,
+  });
+
+  const child = prefersReduced
+    ? { hidden: { opacity: 0 }, show: { opacity: 1, transition: { duration: 0.12 } } }
+    : {
+        hidden: { opacity: 0, y: 12 },
+        show: {
+          opacity: 1,
+          y: 0,
+          transition: { duration: 0.18, ease: [0.25, 1, 0.5, 1] as [number, number, number, number] },
+        },
+      };
 
   return (
     <motion.section
-      variants={parent}
+      variants={prefersReduced ? undefined : parent}
       initial="hidden"
       animate="show"
       className="p-4 space-y-2"

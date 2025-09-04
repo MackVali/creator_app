@@ -1,31 +1,35 @@
 'use client';
 
 import { create } from 'zustand';
-import type { ReactNode } from 'react';
 
 export interface MonumentSnapshot {
   id: string;
   title: string;
   color: string;
   progress: number;
-  icon: ReactNode;
+  iconKey: string;
+  origin?: HTMLElement;
 }
 
 interface MonumentViewState {
-  last?: MonumentSnapshot;
-  setSnapshot: (snap: MonumentSnapshot) => void;
-  clear: () => void;
+  snaps: Record<string, MonumentSnapshot>;
+  warm: (snap: MonumentSnapshot) => void;
+  clear: (id: string) => void;
 }
 
 /**
- * Small Zustand store that remembers the most recently opened
- * monument card. During navigation we paint the detail page from
- * this snapshot instantly while the real data is fetched in the
- * background.
+ * Tiny store that keeps snapshots of monuments so the overlay header
+ * can paint instantly while live data loads in the background.
  */
 export const useMonumentView = create<MonumentViewState>((set) => ({
-  last: undefined,
-  setSnapshot: (snap) => set({ last: snap }),
-  clear: () => set({ last: undefined }),
+  snaps: {},
+  warm: (snap) =>
+    set((s) => ({ snaps: { ...s.snaps, [snap.id]: snap } })),
+  clear: (id) =>
+    set((s) => {
+      const snaps = { ...s.snaps };
+      delete snaps[id];
+      return { snaps };
+    }),
 }));
 
