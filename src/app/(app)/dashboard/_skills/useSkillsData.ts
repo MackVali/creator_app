@@ -6,6 +6,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 export interface Category {
   id: string;
   name: string;
+  color_hex?: string | null;
   order?: number | null;
 }
 
@@ -23,11 +24,11 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const { data, error } = await supabase
     .from("cats")
-    .select("id,name")
+    .select("id,name,color_hex")
     .eq("user_id", userId)
     .order("name", { ascending: true });
   if (error) throw error;
-  return (data ?? []).map((c) => ({ id: c.id, name: c.name }));
+  return (data ?? []).map((c) => ({ id: c.id, name: c.name, color_hex: c.color_hex }));
 }
 
 export async function fetchSkills(userId: string): Promise<Skill[]> {
@@ -35,7 +36,7 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const { data, error } = await supabase
     .from("skills")
-    .select("id,name,icon,level,cat_id")
+    .select("id,name,icon,level,xp_percent,cat_id")
     .eq("user_id", userId)
     .order("name", { ascending: true });
   if (error) throw error;
@@ -44,7 +45,7 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     name: s.name || "Unnamed",
     emoji: s.icon,
     level: s.level ?? 1,
-    xpPercent: 0,
+    xpPercent: s.xp_percent ?? 0,
     category_id: s.cat_id,
   }));
 }
@@ -68,7 +69,9 @@ export function useSkillsData() {
       try {
         const supabase = getSupabaseBrowser();
         if (!supabase) throw new Error("Supabase client not available");
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user) throw new Error("No user");
         const [cats, skills] = await Promise.all([
           fetchCategories(user.id),
@@ -89,3 +92,4 @@ export function useSkillsData() {
 }
 
 export default useSkillsData;
+

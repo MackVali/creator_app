@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, type PanInfo, useReducedMotion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-import SkillCategoryCard from "./SkillCategoryCard";
+import CategoryCard from "./CategoryCard";
 import useSkillsData from "./useSkillsData";
-import { deriveInitialIndex, computeNextIndex } from "./carouselUtils";
+import { deriveInitialIndex, computeNextIndex, shouldPreventScroll } from "./carouselUtils";
 
 export default function SkillsCarousel() {
   const { categories, skillsByCategory, isLoading } = useSkillsData();
@@ -14,12 +13,25 @@ export default function SkillsCarousel() {
   const search = useSearchParams();
   const prefersReducedMotion = useReducedMotion();
   const [activeIndex, setActiveIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [cardWidth, setCardWidth] = useState(0);
+  const touchStart = useRef({ x: 0, y: 0 });
+  const dragging = useRef(false);
 
   useEffect(() => {
     if (categories.length === 0) return;
     const initialId = search.get("cat") || undefined;
     setActiveIndex(deriveInitialIndex(categories, initialId));
   }, [categories, search]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => setCardWidth(el.clientWidth);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
   const changeIndex = (idx: number) => {
     if (idx < 0 || idx >= categories.length) return;
@@ -39,36 +51,62 @@ export default function SkillsCarousel() {
     if (next !== activeIndex) changeIndex(next);
   };
 
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStart.current = { x: t.clientX, y: t.clientY };
+    dragging.current = false;
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    const dx = t.clientX - touchStart.current.x;
+    const dy = t.clientY - touchStart.current.y;
+    if (!dragging.current && shouldPreventScroll(dx, dy)) {
+      dragging.current = true;
+    }
+    if (dragging.current) {
+      e.preventDefault();
+    }
+  };
+
+  const onTouchEnd = () => {
+    dragging.current = false;
+  };
+
   const cards = useMemo(() => {
     return categories.map((cat, idx) => {
       const offset = idx - activeIndex;
       const isActive = offset === 0;
+      const x = cardWidth * 0.86 * offset;
       const animate = prefersReducedMotion
         ? {
-            x: offset * 40,
+            x,
             opacity: isActive ? 1 : 0.6,
             zIndex: categories.length - Math.abs(offset),
           }
         : {
-            x: offset * 40,
+            x,
             scale: isActive ? 1 : 0.92,
             opacity: isActive ? 1 : 0.6,
-            filter: isActive ? "blur(0px)" : "blur(2px)",
+            filter: isActive ? "blur(0px)" : "blur(1.5px)",
             y: isActive ? 0 : 6,
             zIndex: categories.length - Math.abs(offset),
           };
       return (
         <motion.div
           key={cat.id}
-          className="absolute inset-0 flex items-stretch"
+          className="absolute inset-0"
           style={{ pointerEvents: isActive ? "auto" : "none" }}
           animate={animate}
-          transition={{ type: "spring", stiffness: 420, damping: 36, mass: 0.9 }}
+          transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.9 }}
           drag={isActive ? "x" : false}
           dragConstraints={{ left: 0, right: 0 }}
           onDragEnd={handleDragEnd}
+          onTouchStart={isActive ? onTouchStart : undefined}
+          onTouchMove={isActive ? onTouchMove : undefined}
+          onTouchEnd={isActive ? onTouchEnd : undefined}
         >
-          <SkillCategoryCard
+          <CategoryCard
             category={cat}
             skills={skillsByCategory[cat.id] || []}
             active={isActive}
@@ -76,23 +114,14 @@ export default function SkillsCarousel() {
         </motion.div>
       );
     });
-  }, [categories, activeIndex, skillsByCategory, prefersReducedMotion]);
+  }, [categories, activeIndex, skillsByCategory, prefersReducedMotion, cardWidth]);
 
   if (isLoading) {
     return <div className="py-8 text-center text-zinc-400">Loading...</div>;
   }
 
   if (categories.length === 0) {
-    return (
-      <div className="text-center py-8 text-zinc-400">
-        No skills yet
-        <div className="mt-2">
-          <Link href="/skills" className="text-zinc-200 underline">
-            Add Skill
-          </Link>
-        </div>
-      </div>
-    );
+    return <div className="text-center py-8 text-zinc-400">No skills yet</div>;
   }
 
   return (
@@ -110,7 +139,9 @@ export default function SkillsCarousel() {
           "linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)",
       }}
     >
-      <div className="relative h-[60vh]">{cards}</div>
+      <div ref={containerRef} className="relative min-h-[62vh]">
+        {cards}
+      </div>
       <div className="flex justify-center gap-2 mt-4" role="tablist">
         {categories.map((cat, idx) => (
           <button
@@ -119,7 +150,7 @@ export default function SkillsCarousel() {
             aria-selected={idx === activeIndex}
             aria-label={`Go to ${cat.name}`}
             className={`h-2 w-2 rounded-full ${
-              idx === activeIndex ? "bg-zinc-200" : "bg-zinc-700"
+              idx === activeIndex ? "scale-110 bg-white" : "bg-white/40"
             }`}
             onClick={() => changeIndex(idx)}
           />
@@ -128,3 +159,4 @@ export default function SkillsCarousel() {
     </div>
   );
 }
+

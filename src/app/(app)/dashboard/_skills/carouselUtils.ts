@@ -23,3 +23,8 @@ export function computeNextIndex(
   }
   return activeIndex;
 }
+
+export function shouldPreventScroll(dx: number, dy: number) {
+  return Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy);
+}
+
