@@ -13,82 +13,125 @@ interface EnergyFlameProps {
 }
 
 interface LevelConfig {
-  scaleX: number;
-  scaleY: number;
+  scale: number; // overall scale of flame group
   flickerDur: number; // seconds
-  flickerScale: number; // scale at flicker peak
-  flickerBright: number; // brightness at flicker peak
+  flickerMin: number;
+  flickerMax: number;
+  flickerBright: number;
   sway: number; // degrees
-  swayDur: number; // seconds
   emberDur?: number; // seconds
-  glow: string;
+  glow: string; // css drop-shadow string
+  flareDur?: number; // seconds
+  blur: number; // px
 }
 
 const LEVEL_CONFIG: Record<EnergyLevel, LevelConfig> = {
   NO: {
-    scaleX: 1,
-    scaleY: 1,
+    scale: 1,
     flickerDur: 0,
-    flickerScale: 1,
+    flickerMin: 1,
+    flickerMax: 1,
     flickerBright: 1,
     sway: 0,
-    swayDur: 0,
     glow: "none",
+    blur: 0,
   },
   LOW: {
-    scaleX: 0.4,
-    scaleY: 0.5,
+    scale: 0.67,
     flickerDur: 1.2,
-    flickerScale: 0.98,
-    flickerBright: 1.03,
+    flickerMin: 0.98,
+    flickerMax: 1.02,
+    flickerBright: 1.02,
     sway: 2,
-    swayDur: 2.4,
-    glow: "drop-shadow(0 0 6px rgba(255,193,7,0.25))",
+    glow: "drop-shadow(0 0 6px rgba(255,193,7,0.18))",
+    blur: 2,
   },
   MEDIUM: {
-    scaleX: 0.65,
-    scaleY: 0.75,
-    flickerDur: 1.1,
-    flickerScale: 0.96,
-    flickerBright: 1.05,
+    scale: 0.75,
+    flickerDur: 1.05,
+    flickerMin: 0.97,
+    flickerMax: 1.03,
+    flickerBright: 1.04,
     sway: 3,
-    swayDur: 2.2,
-    emberDur: 2.5,
-    glow: "drop-shadow(0 0 6px rgba(255,193,7,0.25))",
+    emberDur: 2.2,
+    glow: "drop-shadow(0 0 8px rgba(255,140,0,0.22))",
+    blur: 3,
   },
   HIGH: {
-    scaleX: 0.9,
-    scaleY: 1.05,
+    scale: 1,
     flickerDur: 0.9,
-    flickerScale: 0.94,
-    flickerBright: 1.07,
+    flickerMin: 0.96,
+    flickerMax: 1.04,
+    flickerBright: 1.05,
     sway: 4,
-    swayDur: 1.8,
-    emberDur: 1.8,
-    glow: "drop-shadow(0 0 10px rgba(255,106,0,0.35))",
+    emberDur: 1.6,
+    glow: "drop-shadow(0 0 10px rgba(255,90,0,0.28))",
+    blur: 4,
   },
   ULTRA: {
-    scaleX: 1,
-    scaleY: 1.15,
+    scale: 1.15,
     flickerDur: 0.75,
-    flickerScale: 0.92,
-    flickerBright: 1.08,
+    flickerMin: 0.95,
+    flickerMax: 1.05,
+    flickerBright: 1.06,
     sway: 5,
-    swayDur: 1.5,
     emberDur: 1,
-    glow: "drop-shadow(0 0 14px rgba(255,106,0,0.35))",
+    glow: "drop-shadow(0 0 14px rgba(255,70,0,0.35))",
+    flareDur: 4,
+    blur: 5,
   },
   EXTREME: {
-    scaleX: 1.05,
-    scaleY: 1.2,
+    scale: 1.2,
     flickerDur: 0.7,
-    flickerScale: 0.9,
-    flickerBright: 1.1,
+    flickerMin: 0.95,
+    flickerMax: 1.05,
+    flickerBright: 1.07,
     sway: 6,
-    swayDur: 1.4,
-    emberDur: 2,
+    emberDur: 1.2,
     glow:
-      "drop-shadow(0 0 14px rgba(76,178,255,0.45)) drop-shadow(0 0 6px rgba(255,59,59,0.6))",
+      "drop-shadow(0 0 14px rgba(76,178,255,0.45)) drop-shadow(0 0 8px rgba(255,59,59,0.55))",
+    flareDur: 4,
+    blur: 6,
+  },
+};
+
+interface LevelColors {
+  outer: [string, string];
+  inner: [string, string];
+  core: string;
+  ember: string;
+}
+
+const LEVEL_COLORS: Record<Exclude<EnergyLevel, "NO">, LevelColors> = {
+  LOW: {
+    outer: ["#FFC66D", "#FF8A3D"],
+    inner: ["#FFE0A3", "#FFC66D"],
+    core: "#FFF2B3",
+    ember: "#FFE3A1",
+  },
+  MEDIUM: {
+    outer: ["#FFB347", "#FF6A00"],
+    inner: ["#FFD87A", "#FF9A3D"],
+    core: "#FFF2B3",
+    ember: "#FFE380",
+  },
+  HIGH: {
+    outer: ["#FF9D2E", "#FF4600"],
+    inner: ["#FFBE73", "#FF7A1A"],
+    core: "#FFF2B3",
+    ember: "#FFE380",
+  },
+  ULTRA: {
+    outer: ["#FFB000", "#FF2D00"],
+    inner: ["#FFD166", "#FF7A1A"],
+    core: "#FFF2B3",
+    ember: "#FFE380",
+  },
+  EXTREME: {
+    outer: ["#4CB2FF", "#2E7BEF"],
+    inner: ["#FF5A5A", "#FFA1A1"],
+    core: "#FFFFFF",
+    ember: "#E6F4FF",
   },
 };
 
@@ -101,20 +144,36 @@ export function EnergyFlame({
   const id = React.useId();
   const cfg = LEVEL_CONFIG[level];
 
+  const colors =
+    level === "NO"
+      ? null
+      : LEVEL_COLORS[level as Exclude<EnergyLevel, "NO">];
+
   const outerFill = monochrome
     ? "#A6A6A6"
-    : level === "EXTREME"
-    ? `url(#outerGradient-${id})`
-    : "#FF6A00";
+    : colors
+    ? `url(#outer-${id})`
+    : "#000";
   const innerFill = monochrome
     ? "#D0D0D0"
-    : level === "EXTREME"
-    ? "#FF3B3B"
-    : "#FFC107";
-  const coreFill = monochrome ? "#F2F2F2" : "#FFE380";
+    : colors
+    ? `url(#inner-${id})`
+    : "#000";
+  const coreFill = monochrome
+    ? "#F2F2F2"
+    : colors
+    ? colors.core
+    : "#000";
+
+  const emberFill = monochrome
+    ? "#D0D0D0"
+    : colors
+    ? colors.ember
+    : "#000";
+
   const glowFilter = monochrome
-    ? "drop-shadow(0 0 10px rgba(153,102,204,0.45))"
-    : cfg.glow;
+    ? `blur(${cfg.blur}px) drop-shadow(0 0 10px rgba(153,102,204,0.45))`
+    : `blur(${cfg.blur}px) ${cfg.glow}`;
 
   return (
     <div
@@ -126,23 +185,38 @@ export function EnergyFlame({
         viewBox="0 0 24 24"
         width={size}
         height={size}
-        className="energy-flame"
         style={{ overflow: "visible" }}
       >
-        <defs>
-          {level === "EXTREME" && !monochrome && (
-            <linearGradient id={`outerGradient-${id}`} x1="12" y1="2" x2="12" y2="22">
-              <stop offset="0%" stopColor="#4CB2FF" />
-              <stop offset="100%" stopColor="#2E7BEF" />
+        {level !== "NO" && !monochrome && colors && (
+          <defs>
+            <linearGradient
+              id={`outer-${id}`}
+              x1="12"
+              y1="2"
+              x2="12"
+              y2="22"
+            >
+              <stop offset="0%" stopColor={colors.outer[0]} />
+              <stop offset="100%" stopColor={colors.outer[1]} />
             </linearGradient>
-          )}
-        </defs>
+            <linearGradient
+              id={`inner-${id}`}
+              x1="12"
+              y1="7"
+              x2="12"
+              y2="20"
+            >
+              <stop offset="0%" stopColor={colors.inner[0]} />
+              <stop offset="100%" stopColor={colors.inner[1]} />
+            </linearGradient>
+          </defs>
+        )}
 
         {level !== "NO" && (
           <g
             className="flame-group"
             style={{
-              transform: `scaleX(${cfg.scaleX}) scaleY(${cfg.scaleY})`,
+              transform: `scale(${cfg.scale})`,
               transformOrigin: "center bottom",
               filter: glowFilter,
             }}
@@ -151,30 +225,37 @@ export function EnergyFlame({
               className="sway"
               style={{
                 transformOrigin: "center bottom",
-                // CSS custom property for angle and duration
                 "--sway-angle": `${cfg.sway}deg`,
-                "--sway-duration": `${cfg.swayDur}s`,
+                "--sway-duration": `${cfg.flickerDur * 2}s`,
               } as React.CSSProperties}
             >
               <g
-                className={clsx("flicker", { flare: level === "ULTRA" })}
+                className={clsx("flicker", {
+                  flare: level === "ULTRA" || level === "EXTREME",
+                })}
                 style={{
                   "--flicker-duration": `${cfg.flickerDur}s`,
-                  "--flicker-scale": cfg.flickerScale,
+                  "--flicker-min": cfg.flickerMin,
+                  "--flicker-max": cfg.flickerMax,
                   "--flicker-bright": cfg.flickerBright,
+                  ...(cfg.flareDur && { "--flare-duration": `${cfg.flareDur}s` }),
                 } as React.CSSProperties}
               >
-                {level !== "LOW" && (
-                  <path
-                    d="M12.9633 2.28579C12.8416 2.12249 12.6586 2.01575 12.4565 1.9901C12.2545 1.96446 12.0506 2.02211 11.8919 2.14981C10.0218 3.65463 8.7174 5.83776 8.35322 8.32637C7.69665 7.85041 7.11999 7.27052 6.6476 6.61081C6.51764 6.42933 6.3136 6.31516 6.09095 6.29934C5.8683 6.28353 5.65017 6.36771 5.49587 6.529C3.95047 8.14442 3 10.3368 3 12.7497C3 17.7202 7.02944 21.7497 12 21.7497C16.9706 21.7497 21 17.7202 21 12.7497C21 9.08876 18.8143 5.93999 15.6798 4.53406C14.5706 3.99256 13.6547 3.21284 12.9633 2.28579Z"
-                    fill={outerFill}
-                  />
-                )}
+                {/* Outer lobe */}
                 <path
-                  d="M15.75 14.25C15.75 16.3211 14.0711 18 12 18C9.92893 18 8.25 16.3211 8.25 14.25C8.25 13.8407 8.31559 13.4467 8.43682 13.0779C9.06529 13.5425 9.78769 13.8874 10.5703 14.0787C10.7862 12.6779 11.4866 11.437 12.4949 10.5324C14.3321 10.7746 15.75 12.3467 15.75 14.25Z"
-                  fill={level === "LOW" ? outerFill : innerFill}
+                  d="M12 2C9 5 9.5 9 8 12C6.5 15 7 18 12 22C17 18 17.5 15 16 12C14.5 9 15 5 12 2Z"
+                  fill={outerFill}
                 />
-                <circle cx="12" cy="15" r="1.5" fill={coreFill} />
+                {/* Inner lobe */}
+                <path
+                  d="M12 7C10.5 9.5 11 11.5 10 14C9.5 16 10 18 12 20C14 18 14.5 16 14 14C13 11.5 13.5 9.5 12 7Z"
+                  fill={innerFill}
+                />
+                {/* Core */}
+                <path
+                  d="M12 14C11.6 15 11.8 16 12 17C12.2 16 12.4 15 12 14Z"
+                  fill={coreFill}
+                />
               </g>
             </g>
           </g>
@@ -186,12 +267,13 @@ export function EnergyFlame({
               <circle
                 key={i}
                 cx="12"
-                cy="16"
+                cy="18"
                 r="2"
                 className="smoke"
                 style={{
-                  "--smoke-duration": `${8 + i * 2}s`,
+                  "--smoke-duration": `${4 + i * 1.5}s`,
                   "--smoke-delay": `${i * 1.5}s`,
+                  "--smoke-x": `${i === 1 ? -2 : 2}px`,
                 } as React.CSSProperties}
                 fill="#A6A6A6"
                 opacity="0.6"
@@ -203,19 +285,20 @@ export function EnergyFlame({
         {level !== "NO" && cfg.emberDur && (
           <g
             className="embers"
-            style={{
-              "--ember-duration": `${cfg.emberDur}s`,
-            } as React.CSSProperties}
+            style={{ "--ember-duration": `${cfg.emberDur}s` } as React.CSSProperties}
           >
             {[0, 1, 2].map((i) => (
               <circle
                 key={i}
                 cx="12"
                 cy="19"
-                r="0.7"
+                r="0.8"
                 className="ember"
-                style={{ animationDelay: `${i * (cfg.emberDur! / 3)}s` }}
-                fill={monochrome ? "#D0D0D0" : "#FFE380"}
+                style={{
+                  animationDelay: `${(i * cfg.emberDur) / 3}s`,
+                  "--ember-x": `${i % 2 === 0 ? 2 : -3}px`,
+                } as React.CSSProperties}
+                fill={emberFill}
               />
             ))}
           </g>
@@ -229,7 +312,7 @@ export function EnergyFlame({
           animation: flameFlicker var(--flicker-duration) ease-in-out infinite;
         }
         .flare {
-          animation: flarePulse 4s ease-in-out infinite;
+          animation: flarePulse var(--flare-duration) ease-in-out infinite;
         }
         .ember {
           animation: emberRise var(--ember-duration) linear infinite;
@@ -239,29 +322,57 @@ export function EnergyFlame({
           animation-delay: var(--smoke-delay);
         }
         @keyframes flameFlicker {
-          0%, 100% { transform: scale(1); filter: brightness(1); }
-          50% { transform: scale(var(--flicker-scale)); filter: brightness(var(--flicker-bright)); }
+          0%,100% {
+            transform: scale(var(--flicker-min));
+            filter: brightness(1);
+          }
+          50% {
+            transform: scale(var(--flicker-max));
+            filter: brightness(var(--flicker-bright));
+          }
         }
         @keyframes flameSway {
-          0%, 100% { transform: rotate(0deg); }
-          50% { transform: rotate(var(--sway-angle)); }
+          0%,100% {
+            transform: rotate(calc(var(--sway-angle) * -1));
+          }
+          50% {
+            transform: rotate(var(--sway-angle));
+          }
         }
         @keyframes flarePulse {
-          0%, 95%, 100% { opacity: 1; }
-          97% { opacity: 1.05; }
+          0%,95%,100% {
+            filter: brightness(1);
+          }
+          97% {
+            filter: brightness(1.06);
+          }
         }
         @keyframes emberRise {
-          0% { opacity: 0; transform: translateY(0) scale(1); }
-          10% { opacity: 1; }
-          100% { opacity: 0; transform: translateY(-12px) scale(0.5); }
+          0% {
+            opacity: 0.8;
+            transform: translate(0,0) scale(1);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(var(--ember-x), -20px) scale(0.3);
+          }
         }
         @keyframes smokeDrift {
-          0% { opacity: 0; transform: translate(0,0) scale(0.8); }
-          10% { opacity: 0.6; }
-          100% { opacity: 0; transform: translate(2px,-14px) scale(1.4); }
+          0% {
+            opacity: 0.5;
+            transform: translate(0,0) scale(0.8);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(var(--smoke-x), -24px) scale(1.1);
+          }
         }
         @media (prefers-reduced-motion: reduce) {
-          .sway, .flicker, .ember, .smoke, .flare {
+          .sway,
+          .flicker,
+          .flare,
+          .ember,
+          .smoke {
             animation: none !important;
           }
         }
@@ -271,3 +382,4 @@ export function EnergyFlame({
 }
 
 export type { EnergyLevel, EnergyFlameProps };
+
