@@ -56,11 +56,12 @@ export function ProjectList() {
       const projectsData = await getProjectsForUser(user.id);
 
       // Enrich projects with goal names
-      const projectsWithGoals = await Promise.all(
+      const projectsWithGoals: ProjectWithGoal[] = await Promise.all(
         projectsData.map(async (project) => {
           const goal = await getGoalById(project.goal_id);
           return {
             ...project,
+            energy: project.energy as EnergyLevel,
             goal_name: goal?.name || "Unknown Goal",
           };
         })
