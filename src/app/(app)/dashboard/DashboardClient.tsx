@@ -9,25 +9,10 @@ import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
 import CatCarousel from "@/components/skills/CatCarousel";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
+import type { CatItem } from "@/types/dashboard";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
-
-interface Skill {
-  skill_id: string;
-  cat_id: string;
-  name: string;
-  icon: string;
-  level: number;
-  progress: number;
-}
-
-interface Category {
-  cat_id: string;
-  cat_name: string;
-  skill_count: number;
-  skills: Skill[];
-}
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -92,7 +77,7 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
 }
 
 export default function DashboardClient() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<CatItem[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
 
