@@ -13,8 +13,11 @@ interface EnergyFlameProps {
 }
 
 interface LevelConfig {
-  scale: number;
+  scaleX: number;
+  scaleY: number;
   flickerDur: number; // seconds
+  flickerScale: number; // scale at flicker peak
+  flickerBright: number; // brightness at flicker peak
   sway: number; // degrees
   swayDur: number; // seconds
   emberDur?: number; // seconds
@@ -23,46 +26,64 @@ interface LevelConfig {
 
 const LEVEL_CONFIG: Record<EnergyLevel, LevelConfig> = {
   NO: {
-    scale: 1,
+    scaleX: 1,
+    scaleY: 1,
     flickerDur: 0,
+    flickerScale: 1,
+    flickerBright: 1,
     sway: 0,
     swayDur: 0,
     glow: "none",
   },
   LOW: {
-    scale: 0.6,
+    scaleX: 0.4,
+    scaleY: 0.5,
     flickerDur: 1.2,
+    flickerScale: 0.98,
+    flickerBright: 1.03,
     sway: 2,
     swayDur: 2.4,
     glow: "drop-shadow(0 0 6px rgba(255,193,7,0.25))",
   },
   MEDIUM: {
-    scale: 0.75,
+    scaleX: 0.65,
+    scaleY: 0.75,
     flickerDur: 1.1,
+    flickerScale: 0.96,
+    flickerBright: 1.05,
     sway: 3,
     swayDur: 2.2,
     emberDur: 2.5,
     glow: "drop-shadow(0 0 6px rgba(255,193,7,0.25))",
   },
   HIGH: {
-    scale: 1,
+    scaleX: 0.9,
+    scaleY: 1.05,
     flickerDur: 0.9,
+    flickerScale: 0.94,
+    flickerBright: 1.07,
     sway: 4,
     swayDur: 1.8,
     emberDur: 1.8,
     glow: "drop-shadow(0 0 10px rgba(255,106,0,0.35))",
   },
   ULTRA: {
-    scale: 1.15,
+    scaleX: 1,
+    scaleY: 1.15,
     flickerDur: 0.75,
+    flickerScale: 0.92,
+    flickerBright: 1.08,
     sway: 5,
     swayDur: 1.5,
     emberDur: 1,
     glow: "drop-shadow(0 0 14px rgba(255,106,0,0.35))",
   },
   EXTREME: {
-    scale: 1.2,
+    scaleX: 1.05,
+    scaleY: 1.2,
     flickerDur: 0.7,
+    flickerScale: 0.9,
+    flickerBright: 1.1,
     sway: 6,
     swayDur: 1.4,
     emberDur: 2,
@@ -106,6 +127,7 @@ export function EnergyFlame({
         width={size}
         height={size}
         className="energy-flame"
+        style={{ overflow: "visible" }}
       >
         <defs>
           {level === "EXTREME" && !monochrome && (
@@ -120,7 +142,7 @@ export function EnergyFlame({
           <g
             className="flame-group"
             style={{
-              transform: `scale(${cfg.scale})`,
+              transform: `scaleX(${cfg.scaleX}) scaleY(${cfg.scaleY})`,
               transformOrigin: "center bottom",
               filter: glowFilter,
             }}
@@ -135,20 +157,22 @@ export function EnergyFlame({
               } as React.CSSProperties}
             >
               <g
-                className={clsx("flicker", {
-                  flare: level === "ULTRA",
-                })}
+                className={clsx("flicker", { flare: level === "ULTRA" })}
                 style={{
                   "--flicker-duration": `${cfg.flickerDur}s`,
+                  "--flicker-scale": cfg.flickerScale,
+                  "--flicker-bright": cfg.flickerBright,
                 } as React.CSSProperties}
               >
-                <path
-                  d="M12.9633 2.28579C12.8416 2.12249 12.6586 2.01575 12.4565 1.9901C12.2545 1.96446 12.0506 2.02211 11.8919 2.14981C10.0218 3.65463 8.7174 5.83776 8.35322 8.32637C7.69665 7.85041 7.11999 7.27052 6.6476 6.61081C6.51764 6.42933 6.3136 6.31516 6.09095 6.29934C5.8683 6.28353 5.65017 6.36771 5.49587 6.529C3.95047 8.14442 3 10.3368 3 12.7497C3 17.7202 7.02944 21.7497 12 21.7497C16.9706 21.7497 21 17.7202 21 12.7497C21 9.08876 18.8143 5.93999 15.6798 4.53406C14.5706 3.99256 13.6547 3.21284 12.9633 2.28579Z"
-                  fill={outerFill}
-                />
+                {level !== "LOW" && (
+                  <path
+                    d="M12.9633 2.28579C12.8416 2.12249 12.6586 2.01575 12.4565 1.9901C12.2545 1.96446 12.0506 2.02211 11.8919 2.14981C10.0218 3.65463 8.7174 5.83776 8.35322 8.32637C7.69665 7.85041 7.11999 7.27052 6.6476 6.61081C6.51764 6.42933 6.3136 6.31516 6.09095 6.29934C5.8683 6.28353 5.65017 6.36771 5.49587 6.529C3.95047 8.14442 3 10.3368 3 12.7497C3 17.7202 7.02944 21.7497 12 21.7497C16.9706 21.7497 21 17.7202 21 12.7497C21 9.08876 18.8143 5.93999 15.6798 4.53406C14.5706 3.99256 13.6547 3.21284 12.9633 2.28579Z"
+                    fill={outerFill}
+                  />
+                )}
                 <path
                   d="M15.75 14.25C15.75 16.3211 14.0711 18 12 18C9.92893 18 8.25 16.3211 8.25 14.25C8.25 13.8407 8.31559 13.4467 8.43682 13.0779C9.06529 13.5425 9.78769 13.8874 10.5703 14.0787C10.7862 12.6779 11.4866 11.437 12.4949 10.5324C14.3321 10.7746 15.75 12.3467 15.75 14.25Z"
-                  fill={innerFill}
+                  fill={level === "LOW" ? outerFill : innerFill}
                 />
                 <circle cx="12" cy="15" r="1.5" fill={coreFill} />
               </g>
@@ -215,8 +239,8 @@ export function EnergyFlame({
           animation-delay: var(--smoke-delay);
         }
         @keyframes flameFlicker {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(0.98); }
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(var(--flicker-scale)); filter: brightness(var(--flicker-bright)); }
         }
         @keyframes flameSway {
           0%, 100% { transform: rotate(0deg); }
