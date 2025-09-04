@@ -7,7 +7,7 @@ import { Card, CardContent } from "./card";
 import { EmptyState } from "./empty-state";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getGoalById } from "@/lib/queries/goals";
-import { FlameEmber, EnergyLevel } from "@/components/ui/FlameEmber";
+import FlameEmber, { type EnergyLevel } from "@/components/FlameEmber";
 
 interface Project {
   id: string;

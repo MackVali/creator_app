@@ -1,4 +1,4 @@
-import { FlameEmber, EnergyLevel } from "@/components/ui/FlameEmber";
+import FlameEmber, { type EnergyLevel } from "@/components/FlameEmber";
 
 const levels: EnergyLevel[] = ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"];
 

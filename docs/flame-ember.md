@@ -5,7 +5,7 @@ This app exposes a `FlameEmber` React component that renders an animated flame i
 ## ProjectCard Integration Example
 
 ```tsx
-import { FlameEmber } from "@/components/ui/FlameEmber";
+import FlameEmber from "@/components/FlameEmber";
 
 function ProjectCard({ project }) {
   return (

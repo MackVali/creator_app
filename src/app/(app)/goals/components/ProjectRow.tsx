@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { FlameEmber } from "@/components/ui/FlameEmber";
+import FlameEmber from "@/components/FlameEmber";
 import type { Project } from "../types";
 
 interface ProjectRowProps {
