@@ -42,14 +42,14 @@ export function GoalsUtilityBar({
   }, [local, onSearch]);
 
   return (
-    <div className="sticky top-0 z-10 bg-gray-900 px-4 py-3 space-y-2">
-      <input
-        value={local}
-        onChange={(e) => setLocal(e.target.value)}
-        placeholder="Search goals"
-        className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
-      />
+    <div className="sticky top-0 z-10 bg-gray-900 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          placeholder="Search goals"
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
+        />
         <select
           value={energy}
           onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
