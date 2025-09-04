@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type { DashboardData } from "@/types/dashboard";
+import MonumentCard from "./MonumentCard";
 
 interface ClientDashboardProps {
   data: DashboardData;
@@ -289,6 +290,19 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                 {monuments.Pinnacle}
               </div>
             </div>
+          </div>
+          {/* Actual monument cards rendered with shared-element transitions */}
+          <div className="mt-6 grid grid-cols-2 gap-4">
+            {Object.keys(monuments).map((key) => (
+              <MonumentCard
+                key={key}
+                id={key.toLowerCase()}
+                title={key}
+                color="#2C2C2C"
+                icon={<span>🏔️</span>}
+                progress={0}
+              />
+            ))}
           </div>
         </div>
 
