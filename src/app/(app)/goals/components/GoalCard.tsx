@@ -87,8 +87,10 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onClick={onToggleActive}>
+              <DropdownMenuItem onSelect={() => onEdit?.()}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onToggleActive?.()}>
                 {goal.active ? "Mark Inactive" : "Mark Active"}
               </DropdownMenuItem>
             </DropdownMenuContent>
