@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Project } from "../types";
-import { FlameEmber, type EnergyLevel } from "@/components/ui/FlameEmber";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
 interface ProjectRowProps {
   project: Project;
@@ -26,7 +26,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
         <div className="flex items-center gap-2">
           <span className="text-sm">{project.name}</span>
           <FlameEmber
-            level={project.energy.toUpperCase() as EnergyLevel}
+            level={project.energy.toUpperCase() as FlameLevel}
             size="sm"
           />
         </div>

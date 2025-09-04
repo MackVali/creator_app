@@ -1,9 +1,7 @@
 "use client";
 
-import { FlameEmber } from "@/components/ui";
-import type { EnergyLevel } from "@/components/ui/FlameEmber";
-
-const LEVELS: EnergyLevel[] = [
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+const LEVELS: FlameLevel[] = [
   "NO",
   "LOW",
   "MEDIUM",
