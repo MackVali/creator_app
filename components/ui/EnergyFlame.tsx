@@ -295,7 +295,7 @@ export function EnergyFlame({
                 r="0.8"
                 className="ember"
                 style={{
-                  animationDelay: `${(i * cfg.emberDur) / 3}s`,
+                  animationDelay: `${(i * cfg.emberDur!) / 3}s`,
                   "--ember-x": `${i % 2 === 0 ? 2 : -3}px`,
                 } as React.CSSProperties}
                 fill={emberFill}
