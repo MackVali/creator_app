@@ -2,32 +2,17 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
-import CategorySection from "@/components/skills/CategorySection";
-import { SkillCardSkeleton } from "@/components/skills/SkillCardSkeleton";
+import TabsSkills from "./_skills/TabsSkills";
 import { GoalCard } from "../goals/components/GoalCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
 
-interface Skill {
-  skill_id: string;
-  cat_id: string;
-  name: string;
-  icon: string;
-  level: number;
-  progress: number;
-}
-
-interface Category {
-  cat_id: string;
-  cat_name: string;
-  skill_count: number;
-  skills: Skill[];
-}
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -92,21 +77,28 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
 }
 
 export default function DashboardClient() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const router = useRouter();
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingGoals, setLoadingGoals] = useState(true);
 
   useEffect(() => {
-    fetchDashboardData();
+    loadGoals();
   }, []);
 
   const loadGoals = async () => {
+    setLoadingGoals(true);
     const supabase = getSupabaseBrowser();
-    if (!supabase) return;
+    if (!supabase) {
+      setLoadingGoals(false);
+      return;
+    }
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setLoadingGoals(false);
+      return;
+    }
 
     let goalsData: Awaited<ReturnType<typeof getGoalsForUser>> = [];
     try {
@@ -206,20 +198,7 @@ export default function DashboardClient() {
       .filter((g) => g.active);
 
     setGoals(realGoals);
-  };
-
-  const fetchDashboardData = async () => {
-    try {
-      const response = await fetch("/api/dashboard");
-      const data = await response.json();
-
-      setCategories(data.skillsAndGoals?.cats || []);
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      await loadGoals();
-      setLoading(false);
-    }
+    setLoadingGoals(false);
   };
 
   return (
@@ -229,35 +208,14 @@ export default function DashboardClient() {
       <MonumentContainer />
 
       <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
-        {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <SkillCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : categories.length > 0 ? (
-          <div className="space-y-4">
-            {categories.map((cat) => (
-              <CategorySection
-                key={cat.cat_id}
-                title={cat.cat_name}
-                skillCount={cat.skill_count}
-                skills={cat.skills}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            No skills found. Create your first skill to get started!
-          </div>
-        )}
+        <TabsSkills />
       </Section>
 
       <Section
         title={<Link href="/goals">Current Goals</Link>}
         className="safe-bottom mt-2 px-4"
       >
-        {loading ? (
+        {loadingGoals ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-24 bg-gray-800 animate-pulse rounded" />
@@ -266,7 +224,11 @@ export default function DashboardClient() {
         ) : goals.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {goals.map((goal) => (
-              <GoalCard key={goal.id} goal={goal} />
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                onEdit={() => router.push(`/goals?edit=${goal.id}`)}
+              />
             ))}
           </div>
         ) : (

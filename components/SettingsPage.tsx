@@ -23,19 +23,19 @@ export default function SettingsPage() {
   const initials = getInitials(profile?.name || null, email);
 
   return (
-    <div className="bg-[#1E1E1E] min-h-screen text-[#E6E6E6]">
-      <header className="sticky top-0 z-10 backdrop-blur bg-[#1E1E1E]/80 border-b border-[#353535]">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+      <header className="sticky top-0 z-10 backdrop-blur bg-[var(--bg)]/80 border-b border-white/10">
         <div className="flex items-center gap-3 px-4 py-3">
           <button
             aria-label="Go back"
             onClick={() => router.push("/dashboard")}
-            className="text-2xl text-[#E6E6E6] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="text-2xl text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
           >
             ←
           </button>
           <div>
             <h1 className="font-bold text-lg">Settings</h1>
-            <p className="text-sm text-[#A6A6A6]">
+            <p className="text-sm text-[var(--muted)]">
               Manage your account and preferences
             </p>
           </div>
@@ -53,7 +53,7 @@ export default function SettingsPage() {
                   className="h-12 w-12 rounded-full object-cover"
                 />
               ) : (
-                <div className="h-12 w-12 rounded-full bg-[#353535] flex items-center justify-center text-lg">
+                <div className="h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-lg">
                   {initials}
                 </div>
               )
@@ -62,7 +62,7 @@ export default function SettingsPage() {
               <div>
                 <p className="font-medium">{profile?.name || email || "User"}</p>
                 {email && (
-                  <p className="text-sm text-[#A6A6A6]">{email}</p>
+                  <p className="text-sm text-[var(--muted)]">{email}</p>
                 )}
               </div>
             }
@@ -129,7 +129,7 @@ export default function SettingsPage() {
             ariaLabel="App version"
             left="ℹ️"
             label="App Version"
-            right={<span className="text-[#A6A6A6]">v1.0.0</span>}
+            right={<span className="text-[var(--muted)]">v1.0.0</span>}
           />
         </SectionCard>
       </main>
@@ -138,7 +138,7 @@ export default function SettingsPage() {
 }
 
 function Chevron() {
-  return <span className="text-[#A6A6A6]">›</span>;
+  return <span className="text-[var(--muted)]">›</span>;
 }
 
 type SectionCardProps = {
@@ -148,9 +148,9 @@ type SectionCardProps = {
 
 function SectionCard({ title, children }: SectionCardProps) {
   return (
-    <section className="bg-[#242424] border border-[#353535] rounded-2xl overflow-hidden">
-      <h2 className="px-4 py-3 font-semibold">{title}</h2>
-      <div className="divide-y divide-[#353535]">{children}</div>
+    <section className="card overflow-hidden">
+      <h2 className="px-4 py-3 font-semibold inner-hair">{title}</h2>
+      <div className="divide-y divide-white/5">{children}</div>
     </section>
   );
 }
@@ -169,11 +169,11 @@ function Row({ left, label, right, ariaLabel, onClick }: RowProps) {
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className="w-full flex items-center justify-between h-14 px-4 text-left transition-all duration-[160ms] hover:bg-[#2B2B2B] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+      className="w-full flex items-center justify-between h-14 px-4 text-left transition-all duration-200 hover:bg-white/5 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
     >
       <div className="flex items-center gap-4">
         <span className="text-xl">{left}</span>
-        <span className="text-[#E6E6E6]">{label}</span>
+        <span className="text-[var(--text)]">{label}</span>
       </div>
       {right}
     </button>
@@ -194,7 +194,7 @@ function ToggleSwitch({ checked, onChange, ariaLabel }: ToggleSwitchProps) {
       aria-label={ariaLabel}
       onClick={onChange}
       className={`w-12 h-7 rounded-full p-1 transition-colors duration-200 ${
-        checked ? "bg-[#9966CC]" : "bg-[#353535]"
+        checked ? "bg-[var(--accent)]" : "bg-white/10"
       }`}
     >
       <span
