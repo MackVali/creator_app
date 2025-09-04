@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { EmptyState } from "./empty-state";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getGoalById } from "@/lib/queries/goals";
+import { EnergyFlame, type EnergyLevel } from "./EnergyFlame";
 
 interface Project {
   id: string;
@@ -112,9 +113,15 @@ export function ProjectList() {
           <CardContent className="p-4">
             <div className="flex items-start justify-between mb-2">
               <h3 className="font-medium text-white">{project.name}</h3>
-              <Badge variant="outline" className="text-xs">
-                {project.goal_name}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <EnergyFlame
+                  level={project.energy as EnergyLevel}
+                  size={20}
+                />
+                <Badge variant="outline" className="text-xs">
+                  {project.goal_name}
+                </Badge>
+              </div>
             </div>
             <div className="flex gap-2">
               <Badge variant={getPriorityVariant(project.priority)}>

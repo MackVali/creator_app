@@ -20,6 +20,7 @@ export { Fab } from "./Fab";
 export { CreateSheet } from "./CreateSheet";
 export { QuickPeek } from "./QuickPeek";
 export { MobileNav } from "../mobile-nav";
+export { EnergyFlame } from "./EnergyFlame";
 
 // New UX components
 export {
