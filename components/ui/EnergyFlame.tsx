@@ -190,7 +190,7 @@ export function EnergyFlame({
                 cy="19"
                 r="0.7"
                 className="ember"
-                style={{ animationDelay: `${i * (cfg.emberDur / 3)}s` }}
+                style={{ animationDelay: `${i * (cfg.emberDur! / 3)}s` }}
                 fill={monochrome ? "#D0D0D0" : "#FFE380"}
               />
             ))}
