@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 export default function ClientProviders({
@@ -20,6 +20,12 @@ export default function ClientProviders({
         },
       })
   );
+
+  useEffect(() => {
+    const handler = (e: TouchEvent) => e.touches.length > 1 && e.preventDefault();
+    document.addEventListener("touchmove", handler, { passive: false });
+    return () => document.removeEventListener("touchmove", handler);
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
