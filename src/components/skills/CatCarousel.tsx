@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, type PanInfo } from "framer-motion";
 import type { CatItem } from "@/types/dashboard";
 import { CatCard } from "@/components/ui/CatCard";
@@ -11,7 +11,15 @@ interface CatCarouselProps {
 
 export function CatCarousel({ cats }: CatCarouselProps) {
   const [index, setIndex] = useState(0);
+  const [height, setHeight] = useState(256);
+  const cardRef = useRef<HTMLDivElement>(null);
   const total = cats.length;
+
+  useEffect(() => {
+    if (cardRef.current) {
+      setHeight(cardRef.current.offsetHeight);
+    }
+  }, [index, cats]);
 
   const paginate = (newIndex: number) => {
     const next = (newIndex + total) % total;
@@ -33,10 +41,11 @@ export function CatCarousel({ cats }: CatCarouselProps) {
   if (total === 0) return null;
 
   return (
-    <div className="relative h-64 w-full overflow-visible">
+    <div className="relative w-full overflow-visible" style={{ height }}>
       <AnimatePresence initial={false}>
         <motion.div
           key={cats[index].cat_id}
+          ref={cardRef}
           className="absolute inset-0"
           drag="x"
           dragConstraints={{ left: 0, right: 0 }}
