@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
+import { EnergyFlame } from "@/components/ui/EnergyFlame";
 import type { Goal } from "../types";
 import { ProjectsDropdown } from "./ProjectsDropdown";
 import {
@@ -76,26 +77,29 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
             className={`w-5 h-5 ml-2 transition-transform ${open ? "rotate-180" : ""}`}
           />
         </button>
-        <div className="absolute top-2 right-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                aria-label="Goal actions"
-                className="p-1 rounded bg-gray-700"
+        <div className="absolute top-2 right-2 flex items-center gap-2 pointer-events-none">
+          <EnergyFlame level={goal.energy} />
+          <div className="pointer-events-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label="Goal actions"
+                  className="p-1 rounded bg-gray-700"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="bg-[#2C2C2C] border-[#333] text-white"
               >
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="bg-[#2C2C2C] border-[#333] text-white"
-            >
-              <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onClick={onToggleActive}>
-                {goal.active ? "Mark Inactive" : "Mark Active"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onClick={onToggleActive}>
+                  {goal.active ? "Mark Inactive" : "Mark Active"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
       <ProjectsDropdown

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Badge } from "../../../components/ui/badge";
 import { Card, CardContent } from "../../../components/ui/card";
 import { Trophy, Target } from "lucide-react";
+import { EnergyFlame } from "./EnergyFlame";
 import type { GoalItem } from "@/types/dashboard";
 
 interface GoalCardProps {
@@ -56,16 +57,19 @@ export function GoalCard({ goal, showLink = false }: GoalCardProps) {
     <Card className="h-full hover:bg-gray-800/50 transition-colors">
       <CardContent className="p-4">
         {/* Header with title and optional monument icon */}
-        <div className="flex items-start justify-between mb-3">
-          <h3 className="font-medium text-white text-sm leading-tight flex-1 pr-2">
+        <div className="relative mb-3">
+          <h3 className="font-medium text-white text-sm leading-tight pr-12">
             {goal.name}
           </h3>
-          <div className="flex-shrink-0">
-            {goal.monument_id ? (
-              <Trophy className="w-4 h-4 text-yellow-500" />
-            ) : (
-              <Target className="w-4 h-4 text-gray-500" />
-            )}
+          <div className="absolute top-0 right-0 flex items-center gap-2 pointer-events-none">
+            <EnergyFlame level={goal.energy} />
+            <div className="pointer-events-auto">
+              {goal.monument_id ? (
+                <Trophy className="w-4 h-4 text-yellow-500" />
+              ) : (
+                <Target className="w-4 h-4 text-gray-500" />
+              )}
+            </div>
           </div>
         </div>
 

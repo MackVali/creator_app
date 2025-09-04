@@ -178,6 +178,7 @@ export default function GoalsPage() {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
+            energy: g.energy as Goal["energy"],
             progress,
             status,
             active: g.active ?? status === "Active",
