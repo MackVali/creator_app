@@ -42,6 +42,23 @@ function mapPriority(priority: string): Goal["priority"] {
   }
 }
 
+function mapEnergy(energy: string): Goal["energy"] {
+  switch (energy) {
+    case "LOW":
+      return "Low";
+    case "MEDIUM":
+      return "Medium";
+    case "HIGH":
+      return "High";
+    case "ULTRA":
+      return "Ultra";
+    case "EXTREME":
+      return "Extreme";
+    default:
+      return "No";
+  }
+}
+
 function projectStageToStatus(stage: string): Project["status"] {
   switch (stage) {
     case "RESEARCH":
@@ -178,6 +195,7 @@ export default function DashboardClient() {
           id: g.id,
           title: g.name,
           priority: mapPriority(g.priority),
+          energy: mapEnergy(g.energy),
           progress,
           status,
           active: g.active ?? status === "Active",
