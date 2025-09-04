@@ -310,7 +310,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
           >
             SKILLS
           </h2>
-          <div className="flex flex-wrap gap-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {skillsAndGoals.cats && skillsAndGoals.cats.length > 0 ? (
               skillsAndGoals.cats.map((cat) => {
                 const color = cat.color || "#353535";
@@ -318,36 +318,32 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                 return (
                   <div
                     key={cat.cat_id}
-                    className="w-full sm:w-1/2 md:w-1/3 lg:w-1/5"
+                    className="rounded-lg border p-2"
+                    style={{ borderColor: color, backgroundColor: bg }}
                   >
-                    <div
-                      className="rounded-lg border p-2"
-                      style={{ borderColor: color, backgroundColor: bg }}
-                    >
-                      <div className="mb-2 text-center text-sm font-semibold text-[#E6E6E6] truncate">
-                        {cat.cat_name}
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {cat.skills && cat.skills.length > 0 ? (
-                          cat.skills.map((skill) => (
-                            <div
-                              key={skill.skill_id}
-                              className="flex items-center gap-2 rounded px-2 py-1 text-[#E6E6E6] hover:bg-[#2B2B2B] active:scale-[0.98] transition transform"
-                            >
-                              <span className="text-base">
-                                {skill.icon || "💡"}
-                              </span>
-                              <span className="truncate text-sm">
-                                {skill.name}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-center text-xs text-[#808080]">
-                            No skills
+                    <div className="mb-2 text-center text-sm font-semibold text-[#E6E6E6] truncate">
+                      {cat.cat_name}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {cat.skills && cat.skills.length > 0 ? (
+                        cat.skills.map((skill) => (
+                          <div
+                            key={skill.skill_id}
+                            className="flex items-center gap-2 rounded px-2 py-1 text-[#E6E6E6] hover:bg-[#2B2B2B] active:scale-[0.98] transition transform"
+                          >
+                            <span className="text-base">
+                              {skill.icon || "💡"}
+                            </span>
+                            <span className="truncate text-sm">
+                              {skill.name}
+                            </span>
                           </div>
-                        )}
-                      </div>
+                        ))
+                      ) : (
+                        <div className="text-center text-xs text-[#808080]">
+                          No skills
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

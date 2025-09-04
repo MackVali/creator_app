@@ -212,27 +212,23 @@ export default function DashboardClient() {
 
       <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
         {loading ? (
-          <div className="flex flex-wrap gap-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
-                className="h-24 w-full rounded-lg bg-gray-800 animate-pulse sm:w-1/2 md:w-1/3 lg:w-1/5"
+                className="h-24 rounded-lg bg-gray-800 animate-pulse"
               />
             ))}
           </div>
         ) : categories.length > 0 ? (
-          <div className="flex flex-wrap gap-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {categories.map((cat) => (
-              <div
+              <CategorySection
                 key={cat.cat_id}
-                className="w-full sm:w-1/2 md:w-1/3 lg:w-1/5"
-              >
-                <CategorySection
-                  title={cat.cat_name}
-                  skills={cat.skills}
-                  color={cat.color}
-                />
-              </div>
+                title={cat.cat_name}
+                skills={cat.skills}
+                color={cat.color}
+              />
             ))}
           </div>
         ) : (
