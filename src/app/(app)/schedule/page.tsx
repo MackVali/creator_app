@@ -182,10 +182,10 @@ export default function SchedulePage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-6 text-zinc-100">
-        <div className="relative">
-          <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
-          <div className="absolute right-0 top-0 flex gap-2">
+      <div className="space-y-4 text-zinc-100">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold tracking-tight">Schedule</h1>
+          <div className="flex gap-2">
             <Link href="/tasks">
               <Button
                 size="sm"
@@ -211,31 +211,28 @@ export default function SchedulePage() {
               </Button>
             </Link>
           </div>
-          <p className="text-muted-foreground">
-            Plan and manage your time
-          </p>
         </div>
+        <p className="text-sm text-muted-foreground">Plan and manage your time</p>
 
         <div className="flex gap-2">
-          {(['month','week','day','focus'] as const).map(v => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`flex-1 h-11 rounded-md text-sm capitalize ${view===v ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-zinc-400'}`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex justify-center">
+          <div className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs">
+            {(['month','week','day','focus'] as const).map(v => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`flex-1 h-9 rounded-md capitalize ${view===v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
           <div className="flex rounded-full bg-zinc-900 p-1 text-xs">
             {(['TASK','PROJECT'] as const).map(m => (
               <button
                 key={m}
                 onClick={() => setPlanning(m)}
                 aria-label={`Switch to ${m === 'TASK' ? 'task' : 'project'} planning`}
-                className={`h-11 rounded-full px-4 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+                className={`h-9 rounded-full px-3 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
               >
                 {m === 'TASK' ? 'Tasks' : 'Projects'}
               </button>
