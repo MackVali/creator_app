@@ -3,7 +3,7 @@
 
 -- Create the skills_by_cats_v view
 CREATE OR REPLACE VIEW public.skills_by_cats_v AS
-SELECT 
+SELECT
   c.id as cat_id,
   c.name as cat_name,
   c.user_id,
@@ -19,7 +19,6 @@ SELECT
   ) FILTER (WHERE s.id IS NOT NULL) as skills
 FROM public.cats c
 LEFT JOIN public.skills s ON c.id = s.cat_id
-WHERE c.user_id = auth.uid()
 GROUP BY c.id, c.name, c.user_id
 ORDER BY c.name;
 
