@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import colors from "tailwindcss/colors";
 
 export default {
   content: [
@@ -6,4 +7,11 @@ export default {
     "./src/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
   ],
+  theme: {
+    extend: {
+      colors: {
+        blue: colors.stone,
+      },
+    },
+  },
 } satisfies Config;
