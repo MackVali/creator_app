@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { motion, Reorder } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
 import SkillRow from "./SkillRow";
@@ -31,6 +31,8 @@ export default function CategoryCard({ category, skills, active }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
+  const [localSkills, setLocalSkills] = useState(skills);
+  const dragging = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -39,6 +41,9 @@ export default function CategoryCard({ category, skills, active }: Props) {
   useEffect(() => {
     setOrderValue(category.order ?? 0);
   }, [category.order]);
+  useEffect(() => {
+    setLocalSkills(skills);
+  }, [skills]);
 
   const bg = color;
   const on = getOnColor(bg);
@@ -144,8 +149,14 @@ export default function CategoryCard({ category, skills, active }: Props) {
             </div>
           )}
         </header>
-        <div className="flex-1 overflow-y-auto overscroll-contain flex flex-col gap-2 pt-3 pb-4">
-          {skills.length === 0 ? (
+        <Reorder.Group
+          axis="y"
+          values={localSkills}
+          onReorder={setLocalSkills}
+          as="div"
+          className="flex-1 overflow-y-auto overscroll-contain flex flex-col gap-2 pt-3 pb-4"
+        >
+          {localSkills.length === 0 ? (
             <div className="text-sm" style={{ color: on }}>
               No skills yet
               <div className="mt-2">
@@ -155,11 +166,37 @@ export default function CategoryCard({ category, skills, active }: Props) {
               </div>
             </div>
           ) : (
-            skills.map((s) => (
-              <SkillRow key={s.id} skill={s} onColor={on} trackColor={track} fillColor={fill} />
+            localSkills.map((s) => (
+              <Reorder.Item
+                key={s.id}
+                value={s}
+                as="div"
+                className="cursor-grab"
+                onDragStart={() => {
+                  dragging.current = true;
+                }}
+                onDragEnd={() => {
+                  setTimeout(() => {
+                    dragging.current = false;
+                  }, 0);
+                }}
+                onClickCapture={(e) => {
+                  if (dragging.current) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
+              >
+                <SkillRow
+                  skill={s}
+                  onColor={on}
+                  trackColor={track}
+                  fillColor={fill}
+                />
+              </Reorder.Item>
             ))
           )}
-        </div>
+        </Reorder.Group>
       </motion.div>
     </motion.div>
   );
