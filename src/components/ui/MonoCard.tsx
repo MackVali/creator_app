@@ -2,15 +2,15 @@ import React from "react";
 
 export function MonoCard({emoji,title,value}:{emoji:string;title:string;value:number;}){
   return (
-    <div className="card snap-start w-[120px] h-[140px] p-3 flex-none flex flex-col items-center justify-between mr-3">
+    <div className="mr-3 flex h-[140px] w-[120px] flex-none snap-start flex-col items-center justify-between rounded-lg border border-border bg-card p-3 text-texthi transition-colors duration-150 hover:-translate-y-px hover:bg-cardho focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border">
       <div
-        className="w-12 h-12 rounded-full bg-[#0c0f14] border border-white/10 grid place-items-center text-2xl"
+        className="grid h-12 w-12 place-items-center rounded-full bg-pill text-2xl text-icon"
         aria-hidden="true"
       >
         {emoji}
       </div>
-      <div className="text-sm font-semibold text-center mt-2">{title}</div>
-      <div className="text-lg font-extrabold text-[#cfd6dd]">{value}</div>
+      <div className="mt-2 text-center text-sm font-medium">{title}</div>
+      <div className="text-lg font-extrabold">{value}</div>
     </div>
   );
 }

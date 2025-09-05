@@ -5,17 +5,17 @@ export function LevelBanner({
 }:{level?:number; current?:number; total?:number;}){
   const pct = Math.max(0, Math.min(100, Math.round((current/total)*100)));
   return (
-    <div className="card mx-4 mt-4 p-4">
-      <div className="mb-3">
-        <div className="font-extrabold text-[18px] tracking-wide">LEVEL {level}</div>
+    <div className="mx-4 mt-4 rounded-lg border border-border bg-panel p-6 shadow-soft">
+      <div className="mb-4 text-[12.5px] font-semibold uppercase tracking-section text-textmed md:text-[13px]">
+        LEVEL {level}
       </div>
       <div className="relative">
-        <div className="h-[12px] w-full rounded-full bg-[#0c0f14] inner-hair" />
+        <div className="h-[10px] w-full rounded-full bg-track" />
         <div
-          className="absolute left-0 top-0 h-[12px] rounded-full bg-gradient-to-r from-gray-700 to-gray-900"
+          className="absolute left-0 top-0 h-[10px] rounded-full bg-fill"
           style={{ width: `${pct}%` }}
         />
-        <div className="absolute right-1 -top-6 text-[11px] px-2 py-[2px] rounded-full bg-[#0c0f14] border border-white/10">
+        <div className="absolute right-0 -top-6 rounded-md bg-card px-2 py-1 text-[11.5px] text-textmed">
           {current} / {total}
         </div>
       </div>

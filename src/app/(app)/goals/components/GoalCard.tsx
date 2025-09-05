@@ -29,51 +29,46 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
     }
   };
 
-  const priorityColor =
-    goal.priority === "High"
-      ? "bg-red-600"
-      : goal.priority === "Medium"
-      ? "bg-yellow-600"
-      : "bg-green-600";
+  const priorityColor = "bg-pill text-textmed";
 
   return (
-    <div className="bg-gray-800 rounded-lg shadow text-left">
+    <div className="rounded-lg border border-border bg-card text-left">
       <div className="relative">
         <button
           onClick={toggle}
           aria-expanded={open}
           aria-controls={`goal-${goal.id}`}
-          className="w-full flex items-start justify-between p-4 active:scale-95 transition-transform motion-safe:duration-150 motion-reduce:transform-none"
+          className="flex w-full items-start justify-between p-4 transition-colors duration-150 hover:bg-cardho active:scale-95 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border motion-reduce:transform-none"
         >
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              {goal.emoji && <span className="text-xl" aria-hidden>{goal.emoji}</span>}
-              <span id={`goal-${goal.id}-label`} className="font-medium truncate">
+              {goal.emoji && <span className="text-xl text-icon" aria-hidden>{goal.emoji}</span>}
+              <span id={`goal-${goal.id}-label`} className="truncate font-medium text-texthi">
                 {goal.title}
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-gray-300">
-              <div className="w-10 h-2 bg-gray-700 rounded-full overflow-hidden">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-textmed">
+              <div className="h-2 w-10 overflow-hidden rounded-full bg-track">
                 <div
-                  className="h-full bg-blue-500"
+                  className="h-full bg-fill"
                   style={{ width: `${goal.progress}%` }}
                 />
               </div>
               {goal.dueDate && (
-                <span className="px-2 py-0.5 bg-gray-700 rounded-full">
+                <span className="rounded-full bg-pill px-2 py-0.5">
                   {new Date(goal.dueDate).toLocaleDateString()}
                 </span>
               )}
-              <span className={`px-2 py-0.5 rounded-full ${priorityColor}`}>
+              <span className={`rounded-full px-2 py-0.5 ${priorityColor}`}>
                 {goal.priority}
               </span>
-              <span className="px-2 py-0.5 bg-gray-700 rounded-full">
+              <span className="rounded-full bg-pill px-2 py-0.5">
                 {goal.projects.length} projects
               </span>
             </div>
           </div>
           <ChevronDown
-            className={`w-5 h-5 ml-2 transition-transform ${open ? "rotate-180" : ""}`}
+            className={`ml-2 h-5 w-5 transition-transform text-icon ${open ? "rotate-180" : ""}`}
           />
         </button>
         <div className="absolute top-2 right-2">
@@ -81,9 +76,9 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
             <DropdownMenuTrigger asChild>
               <button
                 aria-label="Goal actions"
-                className="p-1 rounded bg-gray-700"
+                className="rounded bg-pill p-1 text-icon hover:bg-cardho focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border"
               >
-                <MoreHorizontal className="w-4 h-4" />
+                <MoreHorizontal className="h-4 w-4" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
