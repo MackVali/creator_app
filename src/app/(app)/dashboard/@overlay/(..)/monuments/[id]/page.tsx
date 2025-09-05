@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect } from 'react';
+import { use, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { MonumentHeader } from '@/app/(app)/monuments/[id]/MonumentHeader';
 import { MonumentGoals } from '@/app/(app)/monuments/[id]/MonumentGoals';
 
-// `params` may arrive as a Promise; accept both shapes.
 interface PageProps {
-  params: { id: string } | Promise<{ id: string }>;
+  params: Promise<{ id: string }>;
 }
 
 export default function MonumentOverlayPage({ params }: PageProps) {
-  const paramObj = params as { id: string };
-  const id = paramObj.id;
+  const { id } = use(params);
   const router = useRouter();
   const prefersReduced = useReducedMotion();
   const close = () => router.back();

@@ -1,11 +1,9 @@
-import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context';
+import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 
 export function transitionLink(router: AppRouterInstance, href: string) {
   const navigate = () => router.push(href);
-  // @ts-expect-error experimental API
-  if (typeof document !== 'undefined' && document.startViewTransition) {
-    // @ts-expect-error experimental API
-    document.startViewTransition(() => navigate());
+  if (typeof document !== 'undefined' && 'startViewTransition' in document) {
+    (document as unknown as { startViewTransition: (cb: () => void) => void }).startViewTransition(() => navigate());
   } else {
     navigate();
   }
