@@ -24,6 +24,15 @@ import {
   projectWeight,
 } from '@/lib/scheduler/weight'
 
+const WINDOW_ENERGY_COLORS: Record<string, string> = {
+  NO: '#808080', // grey
+  LOW: '#00AEEF', // gem blue
+  MEDIUM: '#8B4513', // bark brown
+  HIGH: '#FF8A00', // gem orange
+  ULTRA: '#E0115F', // ruby red
+  EXTREME: '#9966CC', // gem purple
+}
+
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [view, setView] = useState<'month' | 'week' | 'day' | 'focus'>('day')
@@ -262,12 +271,13 @@ export default function SchedulePage() {
                 const endMin = timeToMin(w.end_local)
                 const top = (startMin - startHour * 60) * pxPerMin
                 const height = (endMin - startMin) * pxPerMin
+                const color = WINDOW_ENERGY_COLORS[w.energy] ?? WINDOW_ENERGY_COLORS.NO
                 return (
                   <div
                     key={w.id}
                     aria-label={w.label}
-                    className="absolute left-0 right-0 rounded-md border border-zinc-700 bg-zinc-800"
-                    style={{ top, height, opacity: 0.25 }}
+                    className="pointer-events-none absolute left-0 right-0 rounded-md"
+                    style={{ top, height, backgroundColor: color, opacity: 0.35 }}
                   />
                 )
               })}
