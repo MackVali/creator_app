@@ -31,7 +31,7 @@ export default function TopNav() {
   }, [supabase]);
 
   return (
-    <nav className="w-full flex items-center justify-between px-4 py-2 bg-gray-900 text-white">
+    <nav className="w-full flex items-center justify-between px-4 py-2 bg-[#A1AAB5] text-black">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
