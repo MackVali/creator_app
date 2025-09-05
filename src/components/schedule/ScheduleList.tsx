@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactElement } from "react";
 import {
   LucideFeather,
   LucideUtensils,
@@ -28,7 +28,7 @@ type EventItem = {
   accent?: "none" | "blue" | "violet" | "pink"; // optional thin ring color
 };
 
-const ICONS: Record<EventItem["icon"], JSX.Element> = {
+const ICONS: Record<EventItem["icon"], ReactElement> = {
   meditate: <LucideFlower size={18} />,
   write: <LucideFeather size={18} />,
   lunch: <LucideUtensils size={18} />,
