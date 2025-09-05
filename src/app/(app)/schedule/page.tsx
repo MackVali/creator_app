@@ -24,6 +24,21 @@ import {
   projectWeight,
 } from '@/lib/scheduler/weight'
 
+const WINDOW_ENERGY_GRADIENTS: Record<string, string> = {
+  // grey
+  NO: 'linear-gradient(to bottom, rgba(153,153,153,0.0875), rgba(128,128,128,0.0875) 50%, rgba(102,102,102,0.0875))',
+  // gem blue
+  LOW: 'linear-gradient(to bottom, rgba(51,190,242,0.0875), rgba(0,174,239,0.0875) 50%, rgba(0,139,191,0.0875))',
+  // bark brown
+  MEDIUM: 'linear-gradient(to bottom, rgba(162,106,66,0.0875), rgba(139,69,19,0.0875) 50%, rgba(111,55,15,0.0875))',
+  // gem orange
+  HIGH: 'linear-gradient(to bottom, rgba(255,161,51,0.0875), rgba(255,138,0,0.0875) 50%, rgba(204,110,0,0.0875))',
+  // ruby red
+  ULTRA: 'linear-gradient(to bottom, rgba(230,65,127,0.0875), rgba(224,17,95,0.0875) 50%, rgba(179,13,76,0.0875))',
+  // gem purple
+  EXTREME: 'linear-gradient(to bottom, rgba(173,133,214,0.0875), rgba(153,102,204,0.0875) 50%, rgba(122,81,163,0.0875))',
+}
+
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [view, setView] = useState<'month' | 'week' | 'day' | 'focus'>('day')
@@ -262,12 +277,14 @@ export default function SchedulePage() {
                 const endMin = timeToMin(w.end_local)
                 const top = (startMin - startHour * 60) * pxPerMin
                 const height = (endMin - startMin) * pxPerMin
+                const gradient =
+                  WINDOW_ENERGY_GRADIENTS[w.energy] ?? WINDOW_ENERGY_GRADIENTS.NO
                 return (
                   <div
                     key={w.id}
                     aria-label={w.label}
-                    className="absolute left-0 right-0 rounded-md border border-zinc-700 bg-zinc-800"
-                    style={{ top, height, opacity: 0.25 }}
+                    className="pointer-events-none absolute left-0 right-0 rounded-md"
+                    style={{ top, height, background: gradient }}
                   />
                 )
               })}
