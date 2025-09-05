@@ -1,5 +1,14 @@
--- Migration to add the skills_by_cats_v view after remote schema is applied
--- This assumes the cats table and skills table with uuid IDs exist from remote schema
+-- Migration to add color/order columns and recreate skills_by_cats_v view
+
+-- Ensure cats table includes color and sort order columns
+ALTER TABLE public.cats
+  ADD COLUMN IF NOT EXISTS color_hex text,
+  ADD COLUMN IF NOT EXISTS sort_order integer;
+
+-- Optional: seed sort_order for existing rows
+UPDATE public.cats
+   SET sort_order = id
+ WHERE sort_order IS NULL;
 
 -- Create the skills_by_cats_v view
 CREATE OR REPLACE VIEW public.skills_by_cats_v AS

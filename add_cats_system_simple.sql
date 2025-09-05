@@ -1,18 +1,21 @@
 -- Simple SQL script to add CATS system to existing database
 -- Run this directly in your Supabase SQL editor
 
--- 1. Create cats table
-CREATE TABLE IF NOT EXISTS public.cats (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  color_hex text NULL,
-  sort_order integer NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(user_id, name)
-);
+  -- 1. Create cats table
+  CREATE TABLE IF NOT EXISTS public.cats (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(user_id, name)
+  );
 
--- 2. Add cat_id to skills table (if it doesn't exist)
+  -- 2. Ensure new optional columns exist
+  ALTER TABLE public.cats
+    ADD COLUMN IF NOT EXISTS color_hex text,
+    ADD COLUMN IF NOT EXISTS sort_order integer;
+
+  -- 3. Add cat_id to skills table (if it doesn't exist)
 DO $$ 
 BEGIN
   IF NOT EXISTS (
@@ -23,10 +26,10 @@ BEGIN
   END IF;
 END $$;
 
--- 3. Enable RLS on cats table
+  -- 4. Enable RLS on cats table
 ALTER TABLE public.cats ENABLE ROW LEVEL SECURITY;
 
--- 4. Create RLS policies for cats
+  -- 5. Create RLS policies for cats
 DROP POLICY IF EXISTS "select my cats" ON public.cats;
 CREATE POLICY "select my cats" ON public.cats FOR SELECT USING (auth.uid() = user_id);
 
@@ -39,7 +42,7 @@ CREATE POLICY "update my cats" ON public.cats FOR UPDATE USING (auth.uid() = use
 DROP POLICY IF EXISTS "delete my cats" ON public.cats;
 CREATE POLICY "delete my cats" ON public.cats FOR DELETE USING (auth.uid() = user_id);
 
--- 5. Create new view for skills grouped by categories
+  -- 6. Create new view for skills grouped by categories
 DROP VIEW IF EXISTS public.skills_by_cats_v CASCADE;
 CREATE VIEW public.skills_by_cats_v AS
 SELECT
@@ -63,17 +66,17 @@ LEFT JOIN public.skills s ON c.id = s.cat_id
 GROUP BY c.id, c.name, c.user_id, c.color_hex, c.sort_order
 ORDER BY c.sort_order NULLS LAST, c.name;
 
--- 6. Grant permissions on new view
+  -- 7. Grant permissions on new view
 GRANT SELECT ON public.skills_by_cats_v TO authenticated;
 
--- 7. Insert default 'General' category for existing users
+  -- 8. Insert default 'General' category for existing users
 INSERT INTO public.cats (user_id, name)
 SELECT DISTINCT user_id, 'General' as name
 FROM public.skills
 WHERE user_id IS NOT NULL
 ON CONFLICT (user_id, name) DO NOTHING;
 
--- 8. Update existing skills to use the 'General' category
+  -- 9. Update existing skills to use the 'General' category
 UPDATE public.skills 
 SET cat_id = (
   SELECT id FROM public.cats 
@@ -81,7 +84,7 @@ SET cat_id = (
 )
 WHERE cat_id IS NULL AND user_id IS NOT NULL;
 
--- 9. Update skills_progress_v to include category information
+  -- 10. Update skills_progress_v to include category information
 DROP VIEW IF EXISTS public.skills_progress_v CASCADE;
 CREATE VIEW public.skills_progress_v AS
 SELECT 
@@ -96,5 +99,5 @@ SELECT
 FROM public.skills s
 LEFT JOIN public.cats c ON s.cat_id = c.id;
 
--- 10. Grant permissions on updated view
+  -- 11. Grant permissions on updated view
 GRANT SELECT ON public.skills_progress_v TO authenticated;

@@ -92,6 +92,11 @@ CREATE TABLE IF NOT EXISTS public.content_cards (
 ### Step 2: Add missing columns
 
 ```sql
+-- Ensure cats table has color/order fields
+ALTER TABLE IF EXISTS public.cats
+  ADD COLUMN IF NOT EXISTS color_hex text,
+  ADD COLUMN IF NOT EXISTS sort_order integer;
+
 -- Add updated_at columns to existing tables
 ALTER TABLE IF EXISTS public.goals ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE IF EXISTS public.projects ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
@@ -107,7 +112,7 @@ ADD COLUMN IF NOT EXISTS name text,
 ADD COLUMN IF NOT EXISTS dob date,
 ADD COLUMN IF NOT EXISTS city text,
 ADD COLUMN IF NOT EXISTS bio text,
-ADD COLUMN IF NOT EXISTS avatar_url text;
+  ADD COLUMN IF NOT EXISTS avatar_url text;
 ```
 
 ### Step 3: Create triggers and functions
