@@ -1,7 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  serverExternalPackages: ["@supabase/supabase-js", "@supabase/ssr"],
+  serverExternalPackages: [
+    "@supabase/supabase-js",
+    "@supabase/ssr",
+    "@supabase/realtime-js",
+  ],
   images: {
     remotePatterns: [
       { hostname: "i.pravatar.cc" },
