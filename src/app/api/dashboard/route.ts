@@ -38,7 +38,7 @@ export async function GET() {
       .from("cats")
       .select("id,name,user_id,color_hex,sort_order")
       .eq("user_id", user.id)
-      .order("sort_order", { ascending: true, nullsLast: true }),
+      .order("sort_order", { ascending: true, nullsFirst: false }),
   ]);
 
   // Debug logging for development
@@ -79,7 +79,7 @@ export async function GET() {
     return {
       ...skill,
       cat_name: category?.name || "Uncategorized",
-      cat_color_hex: category?.color_hex || null,
+      cat_color_hex: category?.color_hex || '#000000',
     };
   });
 
@@ -137,7 +137,7 @@ export async function GET() {
           cat_name: catName,
           user_id: skill.user_id,
           skill_count: 0,
-          color_hex: catId ? skill.cat_color_hex : null,
+          color_hex: catId ? skill.cat_color_hex || '#000000' : null,
           skills: [],
         };
       }
@@ -183,7 +183,7 @@ export async function GET() {
         cat_name: cat.name,
         user_id: cat.user_id,
         skill_count: 0,
-        color_hex: cat.color_hex || null,
+        color_hex: cat.color_hex || '#000000',
         order: cat.sort_order ?? null,
         skills: [],
       };

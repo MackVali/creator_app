@@ -60,9 +60,16 @@ ALTER TABLE public.cats
   ADD COLUMN IF NOT EXISTS color_hex  text,
   ADD COLUMN IF NOT EXISTS sort_order integer;
 
+ALTER TABLE public.cats
+  ALTER COLUMN color_hex SET DEFAULT '#000000';
+
 UPDATE public.cats
    SET sort_order = id
  WHERE sort_order IS NULL;
+
+UPDATE public.cats
+   SET color_hex = '#000000'
+ WHERE color_hex IS NULL;
 
 DROP VIEW IF EXISTS public.skills_by_cats_v;
 
@@ -99,7 +106,7 @@ CREATE TABLE IF NOT EXISTS public.cats (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     user_id uuid NOT NULL,
     name text NOT NULL,
-    color_hex text,
+    color_hex text DEFAULT '#000000',
     sort_order integer
 );
 
@@ -136,6 +143,13 @@ CREATE TABLE IF NOT EXISTS public.content_cards (
 ALTER TABLE IF EXISTS public.cats
   ADD COLUMN IF NOT EXISTS color_hex text,
   ADD COLUMN IF NOT EXISTS sort_order integer;
+
+ALTER TABLE IF EXISTS public.cats
+  ALTER COLUMN color_hex SET DEFAULT '#000000';
+
+UPDATE public.cats
+   SET color_hex = '#000000'
+ WHERE color_hex IS NULL;
 
 -- Add updated_at columns to existing tables
 ALTER TABLE IF EXISTS public.goals ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();

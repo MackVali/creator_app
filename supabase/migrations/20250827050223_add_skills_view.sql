@@ -10,6 +10,14 @@ UPDATE public.cats
    SET sort_order = id
  WHERE sort_order IS NULL;
 
+-- Set default color and backfill existing rows
+ALTER TABLE public.cats
+  ALTER COLUMN color_hex SET DEFAULT '#000000';
+
+UPDATE public.cats
+   SET color_hex = '#000000'
+ WHERE color_hex IS NULL;
+
 -- Create the skills_by_cats_v view
 CREATE OR REPLACE VIEW public.skills_by_cats_v AS
 SELECT

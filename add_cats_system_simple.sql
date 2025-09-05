@@ -15,6 +15,14 @@
     ADD COLUMN IF NOT EXISTS color_hex text,
     ADD COLUMN IF NOT EXISTS sort_order integer;
 
+  -- Set default color and backfill missing values
+  ALTER TABLE public.cats
+    ALTER COLUMN color_hex SET DEFAULT '#000000';
+
+  UPDATE public.cats
+     SET color_hex = '#000000'
+   WHERE color_hex IS NULL;
+
   -- 3. Add cat_id to skills table (if it doesn't exist)
 DO $$ 
 BEGIN
