@@ -20,6 +20,8 @@ interface DebugData {
     name: string;
     user_id: string;
     created_at?: string | null;
+    color_hex?: string | null;
+    sort_order?: number | null;
   }>;
   firstThreeSkills: Array<{
     id: string;
