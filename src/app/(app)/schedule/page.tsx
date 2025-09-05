@@ -24,13 +24,13 @@ import {
   projectWeight,
 } from '@/lib/scheduler/weight'
 
-const WINDOW_ENERGY_COLORS: Record<string, string> = {
-  NO: '#808080', // grey
-  LOW: '#00AEEF', // gem blue
-  MEDIUM: '#8B4513', // bark brown
-  HIGH: '#FF8A00', // gem orange
-  ULTRA: '#E0115F', // ruby red
-  EXTREME: '#9966CC', // gem purple
+const WINDOW_ENERGY_GRADIENTS: Record<string, string> = {
+  NO: 'linear-gradient(to bottom, #808080, #666666)', // grey
+  LOW: 'linear-gradient(to bottom, #00AEEF, #008BBF)', // gem blue
+  MEDIUM: 'linear-gradient(to bottom, #8B4513, #6F370F)', // bark brown
+  HIGH: 'linear-gradient(to bottom, #FF8A00, #CC6E00)', // gem orange
+  ULTRA: 'linear-gradient(to bottom, #E0115F, #B30D4C)', // ruby red
+  EXTREME: 'linear-gradient(to bottom, #9966CC, #7A51A3)', // gem purple
 }
 
 export default function SchedulePage() {
@@ -271,13 +271,14 @@ export default function SchedulePage() {
                 const endMin = timeToMin(w.end_local)
                 const top = (startMin - startHour * 60) * pxPerMin
                 const height = (endMin - startMin) * pxPerMin
-                const color = WINDOW_ENERGY_COLORS[w.energy] ?? WINDOW_ENERGY_COLORS.NO
+                const gradient =
+                  WINDOW_ENERGY_GRADIENTS[w.energy] ?? WINDOW_ENERGY_GRADIENTS.NO
                 return (
                   <div
                     key={w.id}
                     aria-label={w.label}
                     className="pointer-events-none absolute left-0 right-0 rounded-md"
-                    style={{ top, height, backgroundColor: color, opacity: 0.175 }}
+                    style={{ top, height, background: gradient, opacity: 0.0875 }}
                   />
                 )
               })}
