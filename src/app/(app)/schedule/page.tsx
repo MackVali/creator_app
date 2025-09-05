@@ -277,7 +277,7 @@ export default function SchedulePage() {
                     key={w.id}
                     aria-label={w.label}
                     className="pointer-events-none absolute left-0 right-0 rounded-md"
-                    style={{ top, height, backgroundColor: color, opacity: 0.35 }}
+                    style={{ top, height, backgroundColor: color, opacity: 0.175 }}
                   />
                 )
               })}
