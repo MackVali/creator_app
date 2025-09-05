@@ -35,3 +35,12 @@ export async function updateCatOrder(catId: string, order: number) {
     .eq("id", catId);
   if (error) throw error;
 }
+
+export async function updateCatsOrder(
+  orders: { id: string; sort_order: number }[]
+) {
+  const sb = getSupabaseBrowser();
+  if (!sb) throw new Error("Supabase client not available");
+  const { error } = await sb.from("cats").upsert(orders);
+  if (error) throw error;
+}

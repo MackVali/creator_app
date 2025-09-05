@@ -1,14 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, type PanInfo, useReducedMotion } from "framer-motion";
+import {
+  motion,
+  type PanInfo,
+  useReducedMotion,
+  Reorder,
+} from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import CategoryCard from "./CategoryCard";
-import useSkillsData from "./useSkillsData";
+import useSkillsData, { type Category } from "./useSkillsData";
+import { updateCatsOrder } from "@/lib/data/cats";
 import { deriveInitialIndex, computeNextIndex, shouldPreventScroll } from "./carouselUtils";
 
 export default function SkillsCarousel() {
-  const { categories, skillsByCategory, isLoading } = useSkillsData();
+  const { categories: fetchedCats, skillsByCategory, isLoading } = useSkillsData();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [reordering, setReordering] = useState(false);
   const router = useRouter();
   const search = useSearchParams();
   const prefersReducedMotion = useReducedMotion();
@@ -17,6 +25,10 @@ export default function SkillsCarousel() {
   const [cardWidth, setCardWidth] = useState(0);
   const touchStart = useRef({ x: 0, y: 0 });
   const dragging = useRef(false);
+
+  useEffect(() => {
+    setCategories(fetchedCats);
+  }, [fetchedCats]);
 
   useEffect(() => {
     if (categories.length === 0) return;
@@ -74,6 +86,7 @@ export default function SkillsCarousel() {
   };
 
   const cards = useMemo(() => {
+    if (reordering) return [];
     return categories.map((cat, idx) => {
       const offset = idx - activeIndex;
       if (Math.abs(offset) > 3) return null;
@@ -122,11 +135,24 @@ export default function SkillsCarousel() {
             category={cat}
             skills={skillsByCategory[cat.id] || []}
             active={isActive}
+            onStartReorder={() => setReordering(true)}
           />
         </motion.div>
       );
     });
-  }, [categories, activeIndex, skillsByCategory, prefersReducedMotion, cardWidth]);
+  }, [categories, activeIndex, skillsByCategory, prefersReducedMotion, cardWidth, reordering]);
+
+  const handleSaveOrder = async () => {
+    try {
+      await updateCatsOrder(
+        categories.map((c, idx) => ({ id: c.id, sort_order: idx }))
+      );
+    } catch (e) {
+      console.error("Failed to save cat order", e);
+    } finally {
+      setReordering(false);
+    }
+  };
 
   if (isLoading) {
     return <div className="py-8 text-center text-zinc-400">Loading...</div>;
@@ -134,6 +160,38 @@ export default function SkillsCarousel() {
 
   if (categories.length === 0) {
     return <div className="text-center py-8 text-zinc-400">No skills yet</div>;
+  }
+
+  if (reordering) {
+    return (
+      <div className="px-3 sm:px-4">
+        <Reorder.Group
+          axis="y"
+          values={categories}
+          onReorder={setCategories}
+          className="flex flex-col gap-4"
+        >
+          {categories.map((cat) => (
+            <Reorder.Item key={cat.id} value={cat}>
+              <CategoryCard
+                category={cat}
+                skills={skillsByCategory[cat.id] || []}
+                active
+                reordering
+              />
+            </Reorder.Item>
+          ))}
+        </Reorder.Group>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="underline" onClick={() => setReordering(false)}>
+            Cancel
+          </button>
+          <button className="underline" onClick={handleSaveOrder}>
+            Save
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

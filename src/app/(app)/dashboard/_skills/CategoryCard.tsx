@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor } from "@/lib/data/cats";
 import SkillRow from "./SkillRow";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -23,22 +22,24 @@ interface Props {
   category: Category;
   skills: Skill[];
   active: boolean;
+  onStartReorder?: () => void;
+  reordering?: boolean;
 }
 
-export default function CategoryCard({ category, skills, active }: Props) {
+export default function CategoryCard({
+  category,
+  skills,
+  active,
+  onStartReorder,
+  reordering = false,
+}: Props) {
   const [color, setColor] = useState(category.color_hex || "#000000");
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [orderOpen, setOrderOpen] = useState(false);
-  const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
-  const router = useRouter();
 
   useEffect(() => {
     setColor(category.color_hex || "#000000");
   }, [category.color_hex]);
-  useEffect(() => {
-    setOrderValue(category.order ?? 0);
-  }, [category.order]);
 
   const bg = color;
   const on = getOnColor(bg);
@@ -57,23 +58,11 @@ export default function CategoryCard({ category, skills, active }: Props) {
     }
   };
 
-  const handleOrderSave = async () => {
-    try {
-      await updateCatOrder(category.id, orderValue);
-      router.refresh();
-    } catch (e) {
-      console.error("Failed to update category order", e);
-    } finally {
-      setOrderOpen(false);
-      setMenuOpen(false);
-    }
-  };
-
   return (
     <motion.div
       layout
-      className="absolute inset-0 rounded-3xl border border-black/10 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.8)] p-3 sm:p-4 flex flex-col"
-      style={{ backgroundColor: bg, color: on, pointerEvents: active ? "auto" : "none" }}
+      className={`${reordering ? "" : "absolute inset-0"} rounded-3xl border border-black/10 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.8)] p-3 sm:p-4 flex flex-col`}
+      style={{ backgroundColor: bg, color: on, pointerEvents: active || reordering ? "auto" : "none" }}
       initial={false}
       animate={active ? "active" : "inactive"}
       variants={{
@@ -91,20 +80,26 @@ export default function CategoryCard({ category, skills, active }: Props) {
         className="flex-1 flex flex-col overflow-hidden"
       >
         <header className="flex items-center justify-between mb-2 relative">
-          <button
-            className="font-bold"
-            style={{ color: on }}
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            {category.name}
-          </button>
+          {reordering ? (
+            <span className="font-bold" style={{ color: on }}>
+              {category.name}
+            </span>
+          ) : (
+            <button
+              className="font-bold"
+              style={{ color: on }}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              {category.name}
+            </button>
+          )}
           <span
             className="text-xs rounded-xl px-2 py-0.5"
             style={{ backgroundColor: track, color: on }}
           >
             {skills.length}
           </span>
-          {menuOpen && (
+          {menuOpen && !reordering && (
             <div className="absolute left-0 top-full mt-1 z-10 rounded-md bg-white/90 p-2 text-sm text-black shadow">
               {pickerOpen ? (
                 <input
@@ -113,18 +108,6 @@ export default function CategoryCard({ category, skills, active }: Props) {
                   onChange={(e) => handleColorChange(e.target.value)}
                   className="h-24 w-24 p-0 border-0 bg-transparent"
                 />
-              ) : orderOpen ? (
-                <div className="flex flex-col gap-2">
-                  <input
-                    type="number"
-                    value={orderValue}
-                    onChange={(e) => setOrderValue(parseInt(e.target.value, 10))}
-                    className="w-20 p-1 border border-black/20 rounded"
-                  />
-                  <button className="underline" onClick={handleOrderSave}>
-                    Save order
-                  </button>
-                </div>
               ) : (
                 <>
                   <button
@@ -133,33 +116,46 @@ export default function CategoryCard({ category, skills, active }: Props) {
                   >
                     Change cat color
                   </button>
-                  <button
-                    className="underline block text-left mt-1"
-                    onClick={() => setOrderOpen(true)}
-                  >
-                    Change order
-                  </button>
+                  {onStartReorder && (
+                    <button
+                      className="underline block text-left mt-1"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onStartReorder();
+                      }}
+                    >
+                      Change order
+                    </button>
+                  )}
                 </>
               )}
             </div>
           )}
         </header>
-        <div className="flex-1 overflow-y-auto overscroll-contain flex flex-col gap-2 pt-3 pb-4">
-          {skills.length === 0 ? (
-            <div className="text-sm" style={{ color: on }}>
-              No skills yet
-              <div className="mt-2">
-                <Link href="/skills" className="underline">
-                  Add Skill
-                </Link>
+        {!reordering && (
+          <div className="flex-1 overflow-y-auto overscroll-contain flex flex-col gap-2 pt-3 pb-4">
+            {skills.length === 0 ? (
+              <div className="text-sm" style={{ color: on }}>
+                No skills yet
+                <div className="mt-2">
+                  <Link href="/skills" className="underline">
+                    Add Skill
+                  </Link>
+                </div>
               </div>
-            </div>
-          ) : (
-            skills.map((s) => (
-              <SkillRow key={s.id} skill={s} onColor={on} trackColor={track} fillColor={fill} />
-            ))
-          )}
-        </div>
+            ) : (
+              skills.map((s) => (
+                <SkillRow
+                  key={s.id}
+                  skill={s}
+                  onColor={on}
+                  trackColor={track}
+                  fillColor={fill}
+                />
+              ))
+            )}
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );
