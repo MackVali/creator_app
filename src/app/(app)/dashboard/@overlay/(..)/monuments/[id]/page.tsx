@@ -3,12 +3,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { use } from 'react';
 import useMonumentView from '@/app/state/useMonumentView';
 
-interface PageProps { params: { id: string } }
-
-export default function MonumentOverlayPage({ params }: PageProps) {
-  const { id } = params;
+export default function MonumentOverlayPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
   const router = useRouter();
   const snap = useMonumentView((s) => s.getSnapshot(id));
   const { data } = useQuery({
