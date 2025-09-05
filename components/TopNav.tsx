@@ -43,7 +43,7 @@ export default function TopNav() {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="bg-[#1C1F22] border-[#2F343A] text-[#E6E6E6]"
+          className="bg-[#222224] border-[#2F343A] text-[#E6E6E6]"
         >
           <DropdownMenuItem asChild>
             <Link href="/analytics">Analytics</Link>

@@ -195,7 +195,7 @@ export default function ProfileEditPage() {
   return (
     <div className="min-h-screen bg-[#0F0F12] text-zinc-100">
       {/* Header */}
-      <div className="bg-[#15161A] border-b border-white/5">
+      <div className="bg-[#222224] border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -215,7 +215,7 @@ export default function ProfileEditPage() {
 
       {/* Form */}
       <div className="max-w-2xl mx-auto px-4 py-8">
-        <Card className="shadow-xl border border-white/5 bg-[#15161A]">
+        <Card className="shadow-xl border border-white/5 bg-[#222224]">
           <CardHeader>
             <CardTitle className="text-center text-2xl">Update Your Profile</CardTitle>
             <p className="text-center text-zinc-400">

@@ -31,7 +31,7 @@ export function QuickPeek({ event, isOpen, onClose, onEdit, onDelete, onMarkDone
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-      <div className="bg-[#17181C] rounded-t-3xl w-full max-w-md mx-4 mb-6 p-6 border border-white/5 shadow-2xl">
+      <div className="bg-[#222224] rounded-t-3xl w-full max-w-md mx-4 mb-6 p-6 border border-white/5 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-white/6 flex items-center justify-center">

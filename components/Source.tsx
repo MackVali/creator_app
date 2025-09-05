@@ -336,7 +336,7 @@ function SearchBox({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Search"
-      className="ml-auto px-3 py-1.5 rounded-md bg-[#1C1F22] text-sm border border-[#2F343A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9966CC]"
+      className="ml-auto px-3 py-1.5 rounded-md bg-[#222224] text-sm border border-[#2F343A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9966CC]"
     />
   )
 }
@@ -376,7 +376,7 @@ function CatalogCard({
   const [menu, setMenu] = useState(false)
   return (
     <div
-      className="relative bg-[#1C1F22] border border-[#2F343A] rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-[#9966CC] transition-transform hover:scale-[1.02]"
+      className="relative bg-[#222224] border border-[#2F343A] rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-[#9966CC] transition-transform hover:scale-[1.02]"
     >
       {item.thumbnail ? (
         <img
@@ -421,7 +421,7 @@ function CatalogCard({
             {menu && (
               <div className="absolute right-0 mt-1 w-36 bg-[#22262A] border border-[#2F343A] rounded-md z-20 text-xs">
                 <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
+                  className="block w-full text-left px-3 py-2 hover:bg-[#222224]"
                   onClick={() => {
                     setMenu(false)
                     onEdit(item)
@@ -430,7 +430,7 @@ function CatalogCard({
                   Edit
                 </button>
                 <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
+                  className="block w-full text-left px-3 py-2 hover:bg-[#222224]"
                   onClick={() => {
                     setMenu(false)
                     onDuplicate(item)
@@ -439,7 +439,7 @@ function CatalogCard({
                   Duplicate
                 </button>
                 <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
+                  className="block w-full text-left px-3 py-2 hover:bg-[#222224]"
                   onClick={() => {
                     setMenu(false)
                     onToggleStatus(item)
@@ -448,7 +448,7 @@ function CatalogCard({
                   {item.status === "draft" ? "Publish" : "Move to Draft"}
                 </button>
                 <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22] text-[#E8C268]"
+                  className="block w-full text-left px-3 py-2 hover:bg-[#222224] text-[#E8C268]"
                   onClick={() => {
                     setMenu(false)
                     onDelete(item)
@@ -502,7 +502,7 @@ function Drawer({
   return (
     <div
       className="fixed inset-0 bg-black/50 flex justify-end" role="dialog" aria-modal>
-      <div className="w-full max-w-sm h-full overflow-y-auto bg-[#1C1F22] border-l border-[#2F343A] p-4 space-y-4">
+      <div className="w-full max-w-sm h-full overflow-y-auto bg-[#222224] border-l border-[#2F343A] p-4 space-y-4">
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-semibold">
             {draft ? "Edit" : "New"} {type === "service" ? "Service" : "Product"}
@@ -519,14 +519,14 @@ function Drawer({
             <input
               value={item.title}
               onChange={(e) => update("title", e.target.value)}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full px-2 py-1 rounded-md bg-[#222224] border border-[#2F343A]"
             />
           </FieldRow>
           <FieldRow label="Description">
             <textarea
               value={item.description}
               onChange={(e) => update("description", e.target.value)}
-              className="w-full h-24 px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full h-24 px-2 py-1 rounded-md bg-[#222224] border border-[#2F343A]"
             />
           </FieldRow>
           <FieldRow label="Price (USD)">
@@ -534,7 +534,7 @@ function Drawer({
               type="number"
               value={item.price}
               onChange={(e) => update("price", parseFloat(e.target.value))}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full px-2 py-1 rounded-md bg-[#222224] border border-[#2F343A]"
             />
           </FieldRow>
           {type === "service" && (
@@ -543,7 +543,7 @@ function Drawer({
                 type="number"
                 value={item.durationMins || ""}
                 onChange={(e) => update("durationMins", parseInt(e.target.value))}
-                className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+                className="w-full px-2 py-1 rounded-md bg-[#222224] border border-[#2F343A]"
               />
             </FieldRow>
           )}
@@ -554,14 +554,14 @@ function Drawer({
                   type="number"
                   value={item.inventory || 0}
                   onChange={(e) => update("inventory", parseInt(e.target.value))}
-                  className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+                  className="w-full px-2 py-1 rounded-md bg-[#222224] border border-[#2F343A]"
                 />
               </FieldRow>
               <FieldRow label="SKU">
                 <input
                   value={item.sku || ""}
                   onChange={(e) => update("sku", e.target.value)}
-                  className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+                  className="w-full px-2 py-1 rounded-md bg-[#222224] border border-[#2F343A]"
                 />
               </FieldRow>
             </>
@@ -570,7 +570,7 @@ function Drawer({
             <select
               value={item.status}
               onChange={(e) => update("status", e.target.value)}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full px-2 py-1 rounded-md bg-[#222224] border border-[#2F343A]"
             >
               <option value="draft">Draft</option>
               <option value="published">Published</option>
@@ -618,7 +618,7 @@ function PreviewSheet({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex justify-center items-end" role="dialog" aria-modal>
-      <div className="w-full max-w-md bg-[#1C1F22] border-t border-[#2F343A] p-4 rounded-t-lg space-y-4">
+      <div className="w-full max-w-md bg-[#222224] border-t border-[#2F343A] p-4 rounded-t-lg space-y-4">
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-semibold">Preview</h2>
           <button onClick={onClose} aria-label="Close">✕</button>
@@ -662,7 +662,7 @@ function ConfirmDelete({
 }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center" role="dialog" aria-modal>
-      <div className="bg-[#1C1F22] border border-[#2F343A] rounded-md p-4 w-72 space-y-4 text-sm">
+      <div className="bg-[#222224] border border-[#2F343A] rounded-md p-4 w-72 space-y-4 text-sm">
         <p>Delete this item? This action cannot be undone.</p>
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="px-3 py-1.5 rounded-md bg-[#22262A]">
@@ -696,7 +696,7 @@ function EmptyState({ onCreate }: { onCreate(): void }) {
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse bg-[#1C1F22] border border-[#2F343A] rounded-md h-48" />
+    <div className="animate-pulse bg-[#222224] border border-[#2F343A] rounded-md h-48" />
   )
 }
 
@@ -712,7 +712,7 @@ function InsightsRow() {
 
 function StatChip({ label, value }: { label: string; value: number }) {
   return (
-    <div className="px-3 py-1 bg-[#1C1F22] border border-[#2F343A] rounded-md">
+    <div className="px-3 py-1 bg-[#222224] border border-[#2F343A] rounded-md">
       <span className="text-[#A6A6A6] mr-1">{label}</span>
       <span>{value}</span>
     </div>

@@ -36,7 +36,7 @@ export function CreateSheet({ isOpen, onClose, selectedTime }: CreateSheetProps)
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-      <div className="bg-[#17181C] rounded-t-3xl w-full max-w-md mx-4 mb-6 p-6 border border-white/5 shadow-2xl">
+      <div className="bg-[#222224] rounded-t-3xl w-full max-w-md mx-4 mb-6 p-6 border border-white/5 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-zinc-200">
             {selectedTime ? `Add at ${selectedTime.hour > 12 ? selectedTime.hour - 12 : selectedTime.hour}${selectedTime.hour >= 12 ? 'PM' : 'AM'}` : 'Create New'}
