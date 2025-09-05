@@ -25,12 +25,18 @@ import {
 } from '@/lib/scheduler/weight'
 
 const WINDOW_ENERGY_GRADIENTS: Record<string, string> = {
-  NO: 'linear-gradient(to bottom, #808080, #666666)', // grey
-  LOW: 'linear-gradient(to bottom, #00AEEF, #008BBF)', // gem blue
-  MEDIUM: 'linear-gradient(to bottom, #8B4513, #6F370F)', // bark brown
-  HIGH: 'linear-gradient(to bottom, #FF8A00, #CC6E00)', // gem orange
-  ULTRA: 'linear-gradient(to bottom, #E0115F, #B30D4C)', // ruby red
-  EXTREME: 'linear-gradient(to bottom, #9966CC, #7A51A3)', // gem purple
+  // grey
+  NO: 'linear-gradient(to bottom, rgba(153,153,153,0.0875), rgba(128,128,128,0.0875) 50%, rgba(102,102,102,0.0875))',
+  // gem blue
+  LOW: 'linear-gradient(to bottom, rgba(51,190,242,0.0875), rgba(0,174,239,0.0875) 50%, rgba(0,139,191,0.0875))',
+  // bark brown
+  MEDIUM: 'linear-gradient(to bottom, rgba(162,106,66,0.0875), rgba(139,69,19,0.0875) 50%, rgba(111,55,15,0.0875))',
+  // gem orange
+  HIGH: 'linear-gradient(to bottom, rgba(255,161,51,0.0875), rgba(255,138,0,0.0875) 50%, rgba(204,110,0,0.0875))',
+  // ruby red
+  ULTRA: 'linear-gradient(to bottom, rgba(230,65,127,0.0875), rgba(224,17,95,0.0875) 50%, rgba(179,13,76,0.0875))',
+  // gem purple
+  EXTREME: 'linear-gradient(to bottom, rgba(173,133,214,0.0875), rgba(153,102,204,0.0875) 50%, rgba(122,81,163,0.0875))',
 }
 
 export default function SchedulePage() {
@@ -278,7 +284,7 @@ export default function SchedulePage() {
                     key={w.id}
                     aria-label={w.label}
                     className="pointer-events-none absolute left-0 right-0 rounded-md"
-                    style={{ top, height, background: gradient, opacity: 0.0875 }}
+                    style={{ top, height, background: gradient }}
                   />
                 )
               })}
