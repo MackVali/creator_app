@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { updateCatColor } from "@/lib/data/cats";
+import { useRouter } from "next/navigation";
+import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
 import SkillRow from "./SkillRow";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -28,10 +29,16 @@ export default function CategoryCard({ category, skills, active }: Props) {
   const [color, setColor] = useState(category.color_hex || "#0B0B0F");
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
+  const router = useRouter();
 
   useEffect(() => {
     setColor(category.color_hex || "#0B0B0F");
   }, [category.color_hex]);
+  useEffect(() => {
+    setOrderValue(category.order ?? 0);
+  }, [category.order]);
 
   const bg = color;
   const on = getOnColor(bg);
@@ -46,6 +53,18 @@ export default function CategoryCard({ category, skills, active }: Props) {
       console.error("Failed to update category color", e);
     } finally {
       setPickerOpen(false);
+      setMenuOpen(false);
+    }
+  };
+
+  const handleOrderSave = async () => {
+    try {
+      await updateCatOrder(category.id, orderValue);
+      router.refresh();
+    } catch (e) {
+      console.error("Failed to update category order", e);
+    } finally {
+      setOrderOpen(false);
       setMenuOpen(false);
     }
   };
@@ -94,13 +113,33 @@ export default function CategoryCard({ category, skills, active }: Props) {
                   onChange={(e) => handleColorChange(e.target.value)}
                   className="h-24 w-24 p-0 border-0 bg-transparent"
                 />
+              ) : orderOpen ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="number"
+                    value={orderValue}
+                    onChange={(e) => setOrderValue(parseInt(e.target.value, 10))}
+                    className="w-20 p-1 border border-black/20 rounded"
+                  />
+                  <button className="underline" onClick={handleOrderSave}>
+                    Save order
+                  </button>
+                </div>
               ) : (
-                <button
-                  className="underline"
-                  onClick={() => setPickerOpen(true)}
-                >
-                  Change cat color
-                </button>
+                <>
+                  <button
+                    className="underline block text-left"
+                    onClick={() => setPickerOpen(true)}
+                  >
+                    Change cat color
+                  </button>
+                  <button
+                    className="underline block text-left mt-1"
+                    onClick={() => setOrderOpen(true)}
+                  >
+                    Change order
+                  </button>
+                </>
               )}
             </div>
           )}

@@ -24,20 +24,22 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const { data, error } = await supabase
     .from("cats")
-    .select("id,name,color_hex")
+    .select("id,name,color_hex,sort_order")
     .eq("user_id", userId)
+    .order("sort_order", { ascending: true, nullsLast: true })
     .order("name", { ascending: true });
   if (error) {
     // Try again without optional color column; if still failing, return empty list
     const fallback = await supabase
       .from("cats")
-      .select("id,name")
+      .select("id,name,sort_order")
       .eq("user_id", userId)
+      .order("sort_order", { ascending: true, nullsLast: true })
       .order("name", { ascending: true });
     if (fallback.error) return [];
-    return (fallback.data ?? []).map((c) => ({ id: c.id, name: c.name }));
+    return (fallback.data ?? []).map((c) => ({ id: c.id, name: c.name, order: c.sort_order }));
   }
-  return (data ?? []).map((c) => ({ id: c.id, name: c.name, color_hex: c.color_hex }));
+  return (data ?? []).map((c) => ({ id: c.id, name: c.name, color_hex: c.color_hex, order: c.sort_order }));
 }
 
 export async function fetchSkills(userId: string): Promise<Skill[]> {
