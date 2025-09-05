@@ -266,8 +266,8 @@ export default function SchedulePage() {
                   <div
                     key={w.id}
                     aria-label={w.label}
-                    className="absolute left-0 right-0 rounded-md border border-zinc-700 bg-zinc-800"
-                    style={{ top, height, opacity: 0.25 }}
+                    className="absolute left-0 w-0.5 bg-zinc-700"
+                    style={{ top, height, opacity: 0.5 }}
                   />
                 )
               })}
