@@ -24,3 +24,14 @@ html,body{ background:var(--bg); color:var(--text); font-weight:600; touch-actio
 .safe-bottom{ padding-bottom:calc(env(safe-area-inset-bottom,16px) + 12px); }
 .scroll-snap{ scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; touch-action:pan-x; }
 .snap-start{ scroll-snap-align:start; }
+
+/* glossy light at top of cards */
+.card-gloss::after{
+  content:"";
+  position:absolute; inset:0;
+  background:linear-gradient(to bottom, rgba(255,255,255,.06), rgba(255,255,255,0) 42%);
+  border-radius:inherit; pointer-events:none;
+}
+
+/* compact filter pills */
+.pill { height: 28px; padding: 0 .7rem; font-size: .8rem; }

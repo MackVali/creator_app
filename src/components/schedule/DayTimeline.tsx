@@ -66,20 +66,20 @@ export function DayTimeline({
         }}
       />
 
+      {children}
+
       {hours.map((h) => {
         const top = (h - startHour) * 60 * pxPerMin;
         return (
           <div
             key={h}
-            className="absolute left-0 w-16 pr-2 text-right text-xs text-gray-400"
+            className="pointer-events-none absolute left-0 z-10 w-16 pr-2 text-right text-xs text-gray-400"
             style={{ top }}
           >
             {formatHour(h)}
           </div>
         );
       })}
-
-      {children}
 
       {showNowLine && (
         <>
@@ -97,7 +97,7 @@ export function DayTimeline({
               top: nowTop,
               height: 2,
               backgroundColor: GEM_PURPLE,
-              boxShadow: `0 0 8px ${GEM_PURPLE}`,
+              boxShadow: `0 0 12px ${GEM_PURPLE}, 0 0 4px ${GEM_PURPLE}`,
             }}
           />
           <div
