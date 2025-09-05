@@ -16,6 +16,8 @@ export interface Skill {
 export interface Category {
   id: string;
   name: string;
+  color_hex?: string | null;
+  sort_order?: number | null;
 }
 
 interface SkillDrawerProps {

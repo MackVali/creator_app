@@ -7,7 +7,7 @@ export interface Category {
   id: string;
   name: string;
   color_hex?: string | null;
-  order?: number | null;
+  sort_order?: number | null;
 }
 
 export interface Skill {
@@ -24,8 +24,9 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const { data, error } = await supabase
     .from("cats")
-    .select("id,name,color_hex")
+    .select("id,name,color_hex,sort_order")
     .eq("user_id", userId)
+    .order("sort_order", { ascending: true, nullsLast: true })
     .order("name", { ascending: true });
   if (error) {
     // Try again without optional color column; if still failing, return empty list
@@ -37,7 +38,12 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
     if (fallback.error) return [];
     return (fallback.data ?? []).map((c) => ({ id: c.id, name: c.name }));
   }
-  return (data ?? []).map((c) => ({ id: c.id, name: c.name, color_hex: c.color_hex }));
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    color_hex: c.color_hex,
+    sort_order: c.sort_order,
+  }));
 }
 
 export async function fetchSkills(userId: string): Promise<Skill[]> {

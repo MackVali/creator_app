@@ -7,7 +7,7 @@ export async function getCatsForUser(userId: string) {
   
   const { data, error } = await sb
     .from("cats")
-    .select("id,name,created_at")
+    .select("id,name,color_hex,sort_order,created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   

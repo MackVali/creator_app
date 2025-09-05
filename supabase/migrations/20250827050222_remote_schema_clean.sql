@@ -21,6 +21,8 @@ create table "public"."cats" (
   "id" uuid not null default gen_random_uuid(),
   "user_id" uuid not null,
   "name" text not null,
+  "color_hex" text,
+  "sort_order" integer,
   "created_at" timestamp with time zone not null default now()
 );
 

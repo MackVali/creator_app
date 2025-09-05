@@ -106,7 +106,10 @@ function SkillsPageContent() {
 
         const [skillRows, cats, mons] = await Promise.all([
           getSkillsForUser(user.id),
-          supabase.from("cats").select("id,name").eq("user_id", user.id),
+          supabase
+            .from("cats")
+            .select("id,name,color_hex,sort_order")
+            .eq("user_id", user.id),
           supabase.from("monuments").select("id,title").eq("user_id", user.id),
         ]);
 
@@ -125,6 +128,8 @@ function SkillsPageContent() {
         const catList: Category[] = (cats.data || []).map((c) => ({
           id: c.id,
           name: c.name,
+          color_hex: c.color_hex,
+          sort_order: c.sort_order,
         }));
         setCategories(catList);
 

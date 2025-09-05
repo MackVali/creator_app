@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS public.cats (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name text NOT NULL,
+  color_hex text,
+  sort_order integer,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(user_id, name)
 );
@@ -40,10 +42,12 @@ CREATE POLICY "delete my cats" ON public.cats FOR DELETE USING (auth.uid() = use
 -- 5. Create new view for skills grouped by categories
 DROP VIEW IF EXISTS public.skills_by_cats_v CASCADE;
 CREATE VIEW public.skills_by_cats_v AS
-SELECT 
+SELECT
   c.id as cat_id,
   c.name as cat_name,
   c.user_id,
+  c.color_hex,
+  c.sort_order,
   COUNT(s.id) as skill_count,
   ARRAY_AGG(
     json_build_object(
@@ -56,8 +60,9 @@ SELECT
   ) FILTER (WHERE s.id IS NOT NULL) as skills
 FROM public.cats c
 LEFT JOIN public.skills s ON c.id = s.cat_id
-GROUP BY c.id, c.name, c.user_id
-ORDER BY c.name;
+WHERE c.user_id = auth.uid()
+GROUP BY c.id, c.name, c.user_id, c.color_hex, c.sort_order
+ORDER BY c.sort_order NULLS LAST, c.name;
 
 -- 6. Grant permissions on new view
 GRANT SELECT ON public.skills_by_cats_v TO authenticated;
@@ -80,14 +85,16 @@ WHERE cat_id IS NULL AND user_id IS NOT NULL;
 -- 9. Update skills_progress_v to include category information
 DROP VIEW IF EXISTS public.skills_progress_v CASCADE;
 CREATE VIEW public.skills_progress_v AS
-SELECT 
-  s.user_id, 
-  s.id as skill_id, 
-  s.name, 
+SELECT
+  s.user_id,
+  s.id as skill_id,
+  s.name,
   COALESCE(s.icon, '💡') as icon,
   COALESCE(s.level, 1) as level,
   s.cat_id,
   c.name as cat_name,
+  c.color_hex,
+  c.sort_order,
   GREATEST(0, LEAST(100, COALESCE(s.progress, 0)))::int as progress
 FROM public.skills s
 LEFT JOIN public.cats c ON s.cat_id = c.id;
