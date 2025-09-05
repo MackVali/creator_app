@@ -35,13 +35,13 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
       >
         <div
           className={`flex flex-col items-center gap-1 px-3 py-1 text-xs transition-colors ${
-            isActive ? "text-white" : "hover:text-white"
+            isActive ? "text-black" : "hover:text-black"
           }`}
         >
           <div
             className={
               isActive
-                ? "drop-shadow-[0_0_4px_rgba(255,255,255,0.6)]"
+                ? "drop-shadow-[0_0_4px_rgba(0,0,0,0.6)]"
                 : undefined
             }
           >
@@ -50,7 +50,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
           <span
             className={
               isActive
-                ? "drop-shadow-[0_0_4px_rgba(255,255,255,0.6)]"
+                ? "drop-shadow-[0_0_4px_rgba(0,0,0,0.6)]"
                 : undefined
             }
           >
@@ -63,7 +63,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
 
   const mid = Math.ceil(items.length / 2);
   return (
-    <nav className="w-full bg-gray-900 text-gray-400">
+    <nav className="w-full bg-[#A1AAB5] text-gray-800">
       <div
         className="grid h-16 items-center"
         style={{
