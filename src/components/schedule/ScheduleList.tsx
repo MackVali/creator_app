@@ -1,25 +1,42 @@
 "use client";
-import { useMemo } from "react";
-import { LucideFeather, LucideUtensils, LucideBriefcase, LucideDumbbell, LucideBookOpen, LucideClapperboard, LucideFlower } from "lucide-react";
+import { useMemo, ReactNode } from "react";
+import {
+  Feather,
+  Utensils,
+  Briefcase,
+  Dumbbell,
+  BookOpen,
+  Clapperboard,
+  Flower,
+} from "lucide-react";
 
-type Row = { id:string; hour:string; items: EventItem[] };
+type Row = { id: string; hour: string; items: EventItem[] };
 type EventItem = {
   id: string;
   title: string;
-  icon: "meditate"|"write"|"lunch"|"meeting"|"design"|"work"|"gym"|"read"|"movie";
-  accent?: "none"|"blue"|"violet"|"pink"; // optional thin ring color
+  icon:
+    | "meditate"
+    | "write"
+    | "lunch"
+    | "meeting"
+    | "design"
+    | "work"
+    | "gym"
+    | "read"
+    | "movie";
+  accent?: "none" | "blue" | "violet" | "pink"; // optional thin ring color
 };
 
-const ICONS: Record<EventItem["icon"], JSX.Element> = {
-  meditate: <LucideFlower size={18} />,
-  write: <LucideFeather size={18} />,
-  lunch: <LucideUtensils size={18} />,
-  meeting: <LucideBriefcase size={18} />,
-  design: <LucideBriefcase size={18} />,
-  work: <LucideBriefcase size={18} />,
-  gym: <LucideDumbbell size={18} />,
-  read: <LucideBookOpen size={18} />,
-  movie: <LucideClapperboard size={18} />,
+const ICONS: Record<EventItem["icon"], ReactNode> = {
+  meditate: <Flower size={18} />,
+  write: <Feather size={18} />,
+  lunch: <Utensils size={18} />,
+  meeting: <Briefcase size={18} />,
+  design: <Briefcase size={18} />,
+  work: <Briefcase size={18} />,
+  gym: <Dumbbell size={18} />,
+  read: <BookOpen size={18} />,
+  movie: <Clapperboard size={18} />,
 };
 
 export default function ScheduleList(){
