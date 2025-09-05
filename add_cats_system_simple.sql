@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS public.cats (
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
+  color_hex text DEFAULT '#000000'::text,
+  sort_order integer,
   UNIQUE(user_id, name)
 );
 
@@ -40,10 +42,12 @@ CREATE POLICY "delete my cats" ON public.cats FOR DELETE USING (auth.uid() = use
 -- 5. Create new view for skills grouped by categories
 DROP VIEW IF EXISTS public.skills_by_cats_v CASCADE;
 CREATE VIEW public.skills_by_cats_v AS
-SELECT 
+SELECT
   c.id as cat_id,
   c.name as cat_name,
   c.user_id,
+  c.color_hex,
+  c.sort_order,
   COUNT(s.id) as skill_count,
   ARRAY_AGG(
     json_build_object(
@@ -56,8 +60,8 @@ SELECT
   ) FILTER (WHERE s.id IS NOT NULL) as skills
 FROM public.cats c
 LEFT JOIN public.skills s ON c.id = s.cat_id
-GROUP BY c.id, c.name, c.user_id
-ORDER BY c.name;
+GROUP BY c.id, c.name, c.user_id, c.color_hex, c.sort_order
+ORDER BY c.sort_order NULLS LAST, c.name;
 
 -- 6. Grant permissions on new view
 GRANT SELECT ON public.skills_by_cats_v TO authenticated;

@@ -79,7 +79,7 @@ export async function GET() {
     return {
       ...skill,
       cat_name: category?.name || "Uncategorized",
-      cat_color_hex: category?.color_hex || null,
+      cat_color_hex: category?.color_hex || "#000000",
     };
   });
 
@@ -137,7 +137,7 @@ export async function GET() {
           cat_name: catName,
           user_id: skill.user_id,
           skill_count: 0,
-          color_hex: catId ? skill.cat_color_hex : null,
+          color_hex: catId ? skill.cat_color_hex || "#000000" : "#000000",
           skills: [],
         };
       }
@@ -175,7 +175,11 @@ export async function GET() {
     // Check if this CAT has skills in the skillsByCategory
     const catSkills = skillsByCategory[cat.id];
     if (catSkills) {
-      return { ...catSkills, order: cat.sort_order ?? null }; // Return CAT with its skills
+      return {
+        ...catSkills,
+        color_hex: cat.color_hex || catSkills.color_hex || "#000000",
+        order: cat.sort_order ?? null,
+      }; // Return CAT with its skills
     } else {
       // CAT exists but has no skills
       return {
@@ -183,7 +187,7 @@ export async function GET() {
         cat_name: cat.name,
         user_id: cat.user_id,
         skill_count: 0,
-        color_hex: cat.color_hex || null,
+        color_hex: cat.color_hex || "#000000",
         order: cat.sort_order ?? null,
         skills: [],
       };
