@@ -1,7 +1,7 @@
 "use client"
 
-import { CheckCircle, Edit, Trash2, X } from 'lucide-react'
-import { ScheduleItem } from '@/lib/mock/schedule'
+import { CheckCircle, Edit, Trash2, X, Calendar } from 'lucide-react'
+import { ScheduleItem } from '@/lib/schedule/repo'
 import { scheduleIcons } from '@/lib/icons'
 
 interface QuickPeekProps {
@@ -16,7 +16,7 @@ interface QuickPeekProps {
 export function QuickPeek({ event, isOpen, onClose, onEdit, onDelete, onMarkDone }: QuickPeekProps) {
   if (!isOpen || !event) return null
 
-  const Icon = scheduleIcons[event.icon]
+  const Icon = event.icon ? scheduleIcons[event.icon] : Calendar
   
   const formatTime = (isoString: string) => {
     const date = new Date(isoString)
@@ -27,7 +27,7 @@ export function QuickPeek({ event, isOpen, onClose, onEdit, onDelete, onMarkDone
     })
   }
 
-  const timeRange = `${formatTime(event.start)} - ${formatTime(event.end)}`
+  const timeRange = `${formatTime(event.start_time)} - ${formatTime(event.end_time)}`
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">

@@ -1,66 +1,60 @@
 "use client";
 
-import { useMemo, type ReactElement } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Calendar } from "lucide-react";
+import { scheduleIcons, ScheduleIconName } from "@/lib/icons";
 import {
-  LucideFeather,
-  LucideUtensils,
-  LucideBriefcase,
-  LucideDumbbell,
-  LucideBookOpen,
-  LucideClapperboard,
-  LucideFlower,
-} from "lucide-react";
+  fetchScheduleItems,
+  type ScheduleItem,
+} from "@/lib/schedule/repo";
+import { ScheduleEmptyState } from "@/components/ui/empty-state";
 
-type Row = { id: string; hour: string; items: EventItem[] };
-type EventItem = {
-  id: string;
-  title: string;
-  icon:
-    | "meditate"
-    | "write"
-    | "lunch"
-    | "meeting"
-    | "design"
-    | "work"
-    | "gym"
-    | "read"
-    | "movie";
-  accent?: "none" | "blue" | "violet" | "pink"; // optional thin ring color
-};
+type Row = { hour: string; items: ScheduleItem[] };
 
-const ICONS: Record<EventItem["icon"], ReactElement> = {
-  meditate: <LucideFlower size={18} />,
-  write: <LucideFeather size={18} />,
-  lunch: <LucideUtensils size={18} />,
-  meeting: <LucideBriefcase size={18} />,
-  design: <LucideBriefcase size={18} />,
-  work: <LucideBriefcase size={18} />,
-  gym: <LucideDumbbell size={18} />,
-  read: <LucideBookOpen size={18} />,
-  movie: <LucideClapperboard size={18} />,
-};
+function formatHour(iso: string) {
+  const date = new Date(iso);
+  const h = date.getHours();
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12} ${ampm}`;
+}
 
 export default function ScheduleList() {
-  const rows: Row[] = useMemo(
-    () => [
-      { id: "h7", hour: "7 AM", items: [{ id: "r1", title: "Meditate", icon: "meditate" }] },
-      { id: "h8", hour: "8 AM", items: [{ id: "r2", title: "Work", icon: "work" }] },
-      { id: "h12a", hour: "12 AM", items: [{ id: "r3", title: "Write Article", icon: "write" }] },
-      { id: "h12p", hour: "12 PM", items: [{ id: "r4", title: "Lunch", icon: "lunch" }] },
-      { id: "h1p", hour: "1 PM", items: [{ id: "r5", title: "Meeting", icon: "meeting" }] },
-      { id: "h4p", hour: "4 PM", items: [{ id: "r6", title: "Design Logo", icon: "design" }] },
-      { id: "h5p", hour: "5 PM", items: [{ id: "r7", title: "Work", icon: "work" }] },
-      { id: "h7p", hour: "7 PM", items: [{ id: "r8", title: "Gym", icon: "gym" }] },
-      { id: "h8p", hour: "8 PM", items: [{ id: "r9", title: "Read", icon: "read" }] },
-      { id: "h9p", hour: "9 PM", items: [{ id: "r10", title: "Watch Movie", icon: "movie" }] },
-    ],
-    []
-  );
+  const [items, setItems] = useState<ScheduleItem[]>([]);
+
+  useEffect(() => {
+    fetchScheduleItems().then(setItems).catch(console.error);
+  }, []);
+
+  const rows: Row[] = useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    for (const item of items) {
+      const hour = formatHour(item.start_time);
+      const arr = map.get(hour) || [];
+      arr.push(item);
+      map.set(hour, arr);
+    }
+    return Array.from(map.entries())
+      .sort(
+        (a, b) =>
+          new Date(a[1][0].start_time).getTime() -
+          new Date(b[1][0].start_time).getTime(),
+      )
+      .map(([hour, items]) => ({ hour, items }));
+  }, [items]);
+
+  if (items.length === 0) {
+    return (
+      <div className="px-3 pb-24">
+        <ScheduleEmptyState />
+      </div>
+    );
+  }
 
   return (
     <div className="px-3 pb-24">
       {rows.map((row) => (
-        <div key={row.id} className="flex gap-3">
+        <div key={row.hour} className="flex gap-3">
           {/* left rail hour */}
           <div className="w-14 shrink-0 text-[11px] text-white/45 pt-5 text-right">
             {row.hour}
@@ -78,7 +72,7 @@ export default function ScheduleList() {
   );
 }
 
-function EventBar({ item }: { item: EventItem }) {
+function EventBar({ item }: { item: ScheduleItem }) {
   const ring =
     item.accent === "blue"
       ? "ring-1 ring-sky-400/40"
@@ -87,6 +81,8 @@ function EventBar({ item }: { item: EventItem }) {
       : item.accent === "pink"
       ? "ring-1 ring-pink-400/40"
       : "ring-1 ring-white/8";
+
+  const Icon = item.icon ? scheduleIcons[item.icon as ScheduleIconName] : Calendar;
 
   return (
     <div
@@ -106,7 +102,7 @@ function EventBar({ item }: { item: EventItem }) {
       <div className="relative flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-full bg-black/20 border border-white/5 grid place-items-center text-white/80">
-            {ICONS[item.icon]}
+            <Icon size={18} />
           </div>
           <div className="text-[16px] font-medium tracking-tight">{item.title}</div>
         </div>
