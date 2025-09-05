@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { use } from 'react';
 import useMonumentView from '@/app/state/useMonumentView';
+import { SectionHeader } from '@/components/ui/content-card';
+import { FilteredSkillsGrid } from '@/components/skills/FilteredSkillsGrid';
 
 export default function MonumentOverlayPage({
   params,
@@ -47,6 +49,10 @@ export default function MonumentOverlayPage({
           <motion.h1 layoutId={`monument:${id}:title`} className="text-xl font-bold">
             {header?.title}
           </motion.h1>
+          <div className="mt-4 space-y-4">
+            <SectionHeader title="Related Skills" />
+            <FilteredSkillsGrid monumentId={id} />
+          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>
