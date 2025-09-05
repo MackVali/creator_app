@@ -8,7 +8,7 @@ SELECT
   c.id AS cat_id,
   c.name AS cat_name,
   c.user_id,
-  c.color_hex,
+  COALESCE(c.color_hex, '#000000') AS color_hex,
   c.sort_order,
   COUNT(s.id) AS skill_count,
   ARRAY_AGG(
