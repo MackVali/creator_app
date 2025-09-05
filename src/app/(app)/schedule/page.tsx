@@ -41,6 +41,10 @@ export default function SchedulePage() {
   const [unplaced, setUnplaced] = useState<
     ReturnType<typeof placeByEnergyWeight>['unplaced']
   >([])
+  const [taskPlacements, setTaskPlacements] = useState<
+    ReturnType<typeof placeByEnergyWeight>['placements']
+  >([])
+  const [expandedProject, setExpandedProject] = useState<string | null>(null)
   const touchStartX = useRef<number | null>(null)
 
   const startHour = 0
@@ -133,15 +137,23 @@ export default function SchedulePage() {
     planning === 'TASK' ? taskMap[id] : projectMap[id]
 
   useEffect(() => {
+    if (planning !== 'PROJECT') setExpandedProject(null)
+  }, [planning])
+
+  useEffect(() => {
     function run() {
       if (windows.length === 0) return
       const date = currentDate
-      const result =
-        planning === 'TASK'
-          ? placeByEnergyWeight(weightedTasks, windows, date)
-          : placeByEnergyWeight(projectItems, windows, date)
-      setPlacements(result.placements)
-      setUnplaced(result.unplaced)
+      const taskResult = placeByEnergyWeight(weightedTasks, windows, date)
+      const projectResult = placeByEnergyWeight(projectItems, windows, date)
+      setTaskPlacements(taskResult.placements)
+      if (planning === 'TASK') {
+        setPlacements(taskResult.placements)
+        setUnplaced(taskResult.unplaced)
+      } else {
+        setPlacements(projectResult.placements)
+        setUnplaced(projectResult.unplaced)
+      }
     }
     run()
     const id = setInterval(run, 5 * 60 * 1000)
@@ -287,11 +299,24 @@ export default function SchedulePage() {
                 const top = (startMin - startHour * 60) * pxPerMin
                 const height =
                   ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
+                const expanded =
+                  planning === 'PROJECT' && expandedProject === item.id
+                const relatedTasks = expanded
+                  ? taskPlacements.filter(
+                      tp => taskMap[tp.taskId]?.project_id === item.id
+                    )
+                  : []
                 return (
                   <div
                     key={p.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                    className="group absolute left-2 right-2 overflow-hidden rounded-md border-2 border-zinc-700/60 bg-gradient-to-br from-zinc-800/90 to-zinc-900/90 p-2 text-xs text-white shadow-xl backdrop-blur-sm transition-transform active:scale-95"
+                    onClick={() =>
+                      planning === 'PROJECT' &&
+                      setExpandedProject(prev =>
+                        prev === item.id ? null : item.id
+                      )
+                    }
+                    className="group absolute left-2 right-2 rounded-md border-2 border-zinc-700 bg-gradient-to-br from-zinc-800 to-zinc-900 p-2 text-xs text-white shadow-xl transition-transform active:scale-95"
                     style={{ top, height }}
                   >
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent opacity-0 transition-opacity group-hover:opacity-20" />
@@ -306,9 +331,16 @@ export default function SchedulePage() {
                           <span className="truncate text-sm font-medium">
                             {item.name}
                           </span>
-                          <span className="text-zinc-400">
-                            {item.duration_min}m
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-zinc-400">
+                              {item.duration_min}m
+                            </span>
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-700 text-[#9966CC]"
+                              onClick={e => e.stopPropagation()}
+                            />
+                          </div>
                         </div>
                         <div className="mb-1 mt-1 h-1 w-full rounded bg-zinc-700">
                           <div
@@ -319,6 +351,37 @@ export default function SchedulePage() {
                         {planning === 'PROJECT' && 'taskCount' in item && (
                           <div className="text-[10px] text-zinc-400">
                             {item.taskCount} tasks
+                          </div>
+                        )}
+                        {expanded && relatedTasks.length > 0 && (
+                          <div className="relative mt-2 h-6 w-full rounded bg-zinc-800">
+                            {relatedTasks.map(tp => {
+                              const task = taskMap[tp.taskId]
+                              if (!task) return null
+                              const taskStart =
+                                tp.start.getHours() * 60 + tp.start.getMinutes()
+                              const left =
+                                ((taskStart - startMin) / item.duration_min) * 100
+                              const width =
+                                (task.duration_min / item.duration_min) * 100
+                              return (
+                                <div
+                                  key={tp.taskId}
+                                  title={task.name}
+                                  className="absolute top-1 h-4 rounded bg-[#9966CC]"
+                                  style={{
+                                    left: `${left}%`,
+                                    width: `${width}%`,
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="absolute right-0 top-0 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded border-zinc-600 bg-zinc-700 text-[#9966CC]"
+                                    onClick={e => e.stopPropagation()}
+                                  />
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
                       </div>
@@ -345,12 +408,18 @@ export default function SchedulePage() {
                   <li
                     key={u.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item?.name ?? u.taskId} unplaced: ${reason}`}
-                    className="group relative rounded-md border-2 border-zinc-700/60 bg-gradient-to-br from-zinc-800/90 to-zinc-900/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm transition-transform active:scale-95"
+                    className="group relative rounded-md border-2 border-zinc-700 bg-gradient-to-br from-zinc-800 to-zinc-900 p-3 text-xs text-white shadow-lg transition-transform active:scale-95"
                   >
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent opacity-0 transition-opacity group-hover:opacity-20" />
-                    <div className="relative flex justify-between">
+                    <div className="relative flex items-center justify-between">
                       <span>{item?.name ?? u.taskId}</span>
-                      <span className="text-zinc-400">{reason}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-400">{reason}</span>
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-700 text-[#9966CC]"
+                        />
+                      </div>
                     </div>
                   </li>
                 )

@@ -66,20 +66,20 @@ export function DayTimeline({
         }}
       />
 
+      {children}
+
       {hours.map((h) => {
         const top = (h - startHour) * 60 * pxPerMin;
         return (
           <div
             key={h}
-            className="absolute left-0 w-16 pr-2 text-right text-xs text-gray-400"
+            className="pointer-events-none absolute left-0 z-10 w-16 pr-2 text-right text-xs text-gray-400"
             style={{ top }}
           >
             {formatHour(h)}
           </div>
         );
       })}
-
-      {children}
 
       {showNowLine && (
         <>
