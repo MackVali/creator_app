@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
 
 export const GEM_PURPLE = "#9966CC";
@@ -57,13 +57,18 @@ export function DayTimeline({
       {hours.map(h => {
         const top = (h - startHour) * 60 * pxPerMin
         return (
-          <div
-            key={h}
-            className="absolute left-0 w-16 pr-2 text-right text-xs text-zinc-500"
-            style={{ top }}
-          >
-            {formatHour(h)}
-          </div>
+          <Fragment key={h}>
+            <div
+              className="pointer-events-none absolute left-16 right-0 border-t border-zinc-800"
+              style={{ top }}
+            />
+            <div
+              className="absolute left-0 w-16 pr-2 text-right text-xs text-zinc-500"
+              style={{ top }}
+            >
+              {formatHour(h)}
+            </div>
+          </Fragment>
         )
       })}
 
