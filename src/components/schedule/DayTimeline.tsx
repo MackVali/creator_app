@@ -55,15 +55,6 @@ export function DayTimeline({
         className="relative w-full pl-16 bg-black overflow-hidden"
         style={{ height: `${timelineHeight}px` }}
       >
-        <div
-          className="pointer-events-none absolute inset-0 z-0 opacity-10"
-          style={{
-            background:
-              "linear-gradient(90deg, rgba(63,63,70,1) 25%, rgba(39,39,42,1) 50%, rgba(63,63,70,1) 75%)",
-            backgroundSize: "200% 100%",
-            animation: "wave 8s linear infinite",
-          }}
-        />
         {hours.map(h => {
           const top = (h - startHour) * 60 * pxPerMin
           return (
@@ -119,16 +110,6 @@ export function DayTimeline({
           </>
         )}
       </div>
-      <style jsx global>{`
-        @keyframes wave {
-          0% {
-            background-position: 0% 0%;
-          }
-          100% {
-            background-position: 200% 0%;
-          }
-        }
-      `}</style>
     </>
   );
 }
