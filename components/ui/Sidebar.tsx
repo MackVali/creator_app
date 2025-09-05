@@ -28,7 +28,7 @@ export function Sidebar() {
   const pathname = usePathname()
 
   return (
-    <div className="w-16 md:w-64 bg-[#15161A] border-r border-white/5 flex-shrink-0">
+    <div className="w-16 md:w-64 bg-[#222224] border-r border-white/5 flex-shrink-0">
       <div className="p-4">
         <div className="text-center md:text-left mb-8">
           <h1 className="text-xl font-bold text-zinc-200 hidden md:block">Premium</h1>

@@ -35,7 +35,7 @@ export default function TopNav() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="h-11 w-11 p-2 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="h-11 w-11 p-2 hover:text-purple-400 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
             aria-label="Open menu"
           >
             <Menu className="h-6 w-6" />
@@ -43,7 +43,7 @@ export default function TopNav() {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="bg-[#1C1F22] border-[#2F343A] text-[#E6E6E6]"
+          className="bg-[#222224] border-[#2F343A] text-[#E6E6E6]"
         >
           <DropdownMenuItem asChild>
             <Link href="/analytics">Analytics</Link>

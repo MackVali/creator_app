@@ -8,7 +8,7 @@
 }
 
 :root{
-  --bg:#0f1115; --surface:#171a21; --surface-2:#1c2028;
+  --bg:#0f1115; --surface:#222224; --surface-2:#222224;
   --text:#e6e7ea; --muted:#9aa3ad; --accent:#6ea8ff;
   --radius:16px; --radius-sm:12px;
   --popover:var(--surface); --popover-foreground:var(--text);

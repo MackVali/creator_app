@@ -10,7 +10,7 @@ interface SkillPillProps {
 export function SkillPill({ icon: Icon, name, value }: SkillPillProps) {
   return (
     <div className="group hover:translate-y-[-2px] transition-all duration-200">
-      <div className="bg-[#15161A] rounded-2xl shadow-[0_8px_24px_rgba(0,0,0,0.45)] border border-white/5 p-4">
+      <div className="bg-[#222224] rounded-2xl shadow-[0_8px_24px_rgba(0,0,0,0.45)] border border-white/5 p-4">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center flex-shrink-0">
             <Icon className="w-5 h-5 text-white/70" aria-hidden="true" />

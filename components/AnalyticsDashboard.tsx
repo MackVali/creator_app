@@ -355,7 +355,7 @@ export default function AnalyticsDashboard() {
         </div>
         <div className="flex justify-end">
           <button
-            className="h-11 px-4 bg-[#1C1F22] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="h-11 px-4 bg-[#222224] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
             onClick={() =>
               setSkillsView(skillsView === "grid" ? "list" : "grid")
             }
@@ -448,7 +448,7 @@ export default function AnalyticsDashboard() {
         ) : (
           <>
             <ActivityTimeline events={activity} />
-            <button className="h-11 px-4 bg-[#1C1F22] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]">
+            <button className="h-11 px-4 bg-[#222224] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]">
               Show more
             </button>
           </>
@@ -496,7 +496,7 @@ function DateRangeSelector({
   return (
     <select
       aria-label="Select date range"
-      className="bg-[#1C1F22] border border-[#2F343A] rounded px-2 text-sm h-11 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+      className="bg-[#222224] border border-[#2F343A] rounded px-2 text-sm h-11 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
       value={value}
       onChange={(e) =>
         onChange(e.target.value as "7d" | "30d" | "90d" | "custom")
@@ -515,7 +515,7 @@ function KpiCard({ kpi }: { kpi: Kpi }) {
   const deltaColor = kpi.delta >= 0 ? "text-[#6DD3A8]" : "text-[#E8C268]";
   return (
     <button
-      className="h-24 min-w-[160px] p-4 bg-[#1C1F22] rounded shadow text-left focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+      className="h-24 min-w-[160px] p-4 bg-[#222224] rounded shadow text-left focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
       aria-label={kpi.label}
       onClick={() => {}}
     >
@@ -544,7 +544,7 @@ function SkillCard({
   return (
     <div
       className={classNames(
-        "bg-[#1C1F22] p-4 rounded",
+        "bg-[#222224] p-4 rounded",
         view === "grid" ? "flex flex-col items-center" : "flex items-center space-x-4"
       )}
     >
@@ -581,7 +581,7 @@ function BarChart({ data }: { data: number[] }) {
   const max = Math.max(...data);
   return (
     <div
-      className="flex items-end h-40 space-x-2 bg-[#1C1F22] p-4 rounded"
+      className="flex items-end h-40 space-x-2 bg-[#222224] p-4 rounded"
       aria-label="Tasks completed per period"
     >
       {data.map((v, i) => (
@@ -598,7 +598,7 @@ function BarChart({ data }: { data: number[] }) {
 function ProjectCard({ project }: { project: Project }) {
   return (
     <div
-      className="bg-[#1C1F22] p-4 rounded space-y-2"
+      className="bg-[#222224] p-4 rounded space-y-2"
       aria-label={`${project.title} progress`}
     >
       <div className="font-semibold">{project.title}</div>
@@ -621,7 +621,7 @@ function MonumentCard({ monument }: { monument: Monument }) {
   const offset = circumference - (monument.progress / 100) * circumference;
   return (
     <div
-      className="bg-[#1C1F22] p-4 rounded flex flex-col items-center"
+      className="bg-[#222224] p-4 rounded flex flex-col items-center"
       aria-label={`${monument.title} progress`}
     >
       <svg width="40" height="40">
@@ -720,7 +720,7 @@ function StreakCalendar({
           key={d}
           className={classNames(
             "w-8 h-8 border border-[#2F343A] rounded",
-            completed.includes(d) ? "bg-[#9966CC]" : "bg-[#1C1F22]"
+            completed.includes(d) ? "bg-[#9966CC]" : "bg-[#222224]"
           )}
         />
       ))}
@@ -738,7 +738,7 @@ function EmptyState({
   return (
     <div className="flex flex-col items-center space-y-2" aria-label="Empty state">
       <div className="text-[#A6A6A6]">{title}</div>
-      <button className="h-11 px-4 bg-[#1C1F22] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]">
+      <button className="h-11 px-4 bg-[#222224] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]">
         {cta}
       </button>
     </div>
