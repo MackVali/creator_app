@@ -92,7 +92,7 @@ export default function CategoryCard({ category, skills, active }: Props) {
       >
         <header className="flex items-center justify-between mb-2 relative">
           <button
-            className="font-semibold"
+            className="font-bold"
             style={{ color: on }}
             onClick={() => setMenuOpen((o) => !o)}
           >
