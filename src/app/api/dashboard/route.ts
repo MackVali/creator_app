@@ -34,7 +34,11 @@ export async function GET() {
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
-    supabase.from("cats").select("id,name,user_id").eq("user_id", user.id),
+    supabase
+      .from("cats")
+      .select("id,name,user_id,color_hex,sort_order")
+      .eq("user_id", user.id)
+      .order("sort_order", { ascending: true, nullsLast: true }),
   ]);
 
   // Debug logging for development
@@ -64,12 +68,18 @@ export async function GET() {
   // Join the data manually
   const skillsData = (skillsResponse ?? []).map((skill: SkillRow) => {
     const category = catsResponse.data?.find(
-      (cat: { id: string; name: string; user_id: string }) =>
-        cat.id === skill.cat_id
+      (cat: {
+        id: string;
+        name: string;
+        user_id: string;
+        color_hex?: string | null;
+        sort_order?: number | null;
+      }) => cat.id === skill.cat_id
     );
     return {
       ...skill,
       cat_name: category?.name || "Uncategorized",
+      cat_color_hex: category?.color_hex || null,
     };
   });
 
@@ -113,7 +123,10 @@ export async function GET() {
 
   // Group skills by category for the frontend
   const skillsByCategory = skillsData.reduce(
-    (acc: Record<string, CatItem>, skill: SkillRow & { cat_name: string }) => {
+    (
+      acc: Record<string, CatItem>,
+      skill: SkillRow & { cat_name: string; cat_color_hex: string | null }
+    ) => {
       const catId = skill.cat_id;
       const catName = catId ? skill.cat_name : "Uncategorized";
       const key = catId || "uncategorized";
@@ -124,6 +137,7 @@ export async function GET() {
           cat_name: catName,
           user_id: skill.user_id,
           skill_count: 0,
+          color_hex: catId ? skill.cat_color_hex : null,
           skills: [],
         };
       }
@@ -148,14 +162,20 @@ export async function GET() {
   }
 
   // Always include all CATs, even if they have no skills
-  const allCats = catsResponse.data || [];
+  const allCats = (catsResponse.data || []) as {
+    id: string;
+    name: string;
+    user_id: string;
+    color_hex?: string | null;
+    sort_order?: number | null;
+  }[];
 
   // Create a complete list of CATs with their skills (or empty skills array)
   const catsOut = allCats.map((cat) => {
     // Check if this CAT has skills in the skillsByCategory
     const catSkills = skillsByCategory[cat.id];
     if (catSkills) {
-      return catSkills; // Return CAT with its skills
+      return { ...catSkills, order: cat.sort_order ?? null }; // Return CAT with its skills
     } else {
       // CAT exists but has no skills
       return {
@@ -163,6 +183,8 @@ export async function GET() {
         cat_name: cat.name,
         user_id: cat.user_id,
         skill_count: 0,
+        color_hex: cat.color_hex || null,
+        order: cat.sort_order ?? null,
         skills: [],
       };
     }
@@ -171,8 +193,16 @@ export async function GET() {
   // Add uncategorized skills if they exist
   const uncategorizedCat = skillsByCategory["uncategorized"];
   if (uncategorizedCat) {
-    catsOut.push(uncategorizedCat);
+    catsOut.push({ ...uncategorizedCat, order: null });
   }
+
+  // Sort cats by order then name
+  catsOut.sort((a: CatItem, b: CatItem) => {
+    const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return a.cat_name.localeCompare(b.cat_name);
+  });
 
   const goalsOut = (goals ?? []) as GoalItem[];
 

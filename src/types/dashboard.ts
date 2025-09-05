@@ -17,6 +17,8 @@ export type CatItem = {
   cat_name: string;
   user_id: string;
   skill_count: number;
+  color_hex?: string | null;
+  order?: number | null;
   skills: SkillItem[];
 };
 
