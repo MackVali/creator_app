@@ -7,6 +7,7 @@ import {
   fetchScheduleItems,
   type ScheduleItem,
 } from "@/lib/schedule/repo";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { ScheduleEmptyState } from "@/components/ui/empty-state";
 
 type Row = { hour: string; items: ScheduleItem[] };
@@ -24,6 +25,24 @@ export default function ScheduleList() {
 
   useEffect(() => {
     fetchScheduleItems().then(setItems).catch(console.error);
+
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel("schedule_items_updates")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "schedule_items" },
+        () => {
+          fetchScheduleItems().then(setItems).catch(console.error);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const rows: Row[] = useMemo(() => {
