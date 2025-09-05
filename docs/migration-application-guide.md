@@ -50,6 +50,46 @@ Click "Run" to execute all the SQL statements.
 
 If you prefer to apply the migration manually or encounter issues with the bulk approach:
 
+### Quick view refresh
+
+If your database already contains the `cats` and `skills` tables and you simply need
+to add color/order support and rebuild the view, run the following snippet in the SQL editor:
+
+```sql
+ALTER TABLE public.cats
+  ADD COLUMN IF NOT EXISTS color_hex  text,
+  ADD COLUMN IF NOT EXISTS sort_order integer;
+
+UPDATE public.cats
+   SET sort_order = id
+ WHERE sort_order IS NULL;
+
+DROP VIEW IF EXISTS public.skills_by_cats_v;
+
+CREATE VIEW public.skills_by_cats_v AS
+SELECT
+    c.id         AS cat_id,
+    c.name       AS cat_name,
+    c.user_id,
+    c.color_hex,
+    c.sort_order,
+    COUNT(s.id)  AS skill_count,
+    COALESCE(
+      json_agg(
+        json_build_object(
+          'id',   s.id,
+          'name', s.name,
+          'desc', s.description
+        ) ORDER BY s.id
+      ) FILTER (WHERE s.id IS NOT NULL),
+      '[]'
+    ) AS skills
+FROM public.cats c
+LEFT JOIN public.skills s ON s.cat_id = c.id
+GROUP BY c.id
+ORDER BY c.sort_order NULLS LAST, c.id;
+```
+
 ### Step 1: Create missing tables
 
 ```sql
