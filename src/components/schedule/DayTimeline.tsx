@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
 
 export const GEM_PURPLE = "#9966CC";
@@ -23,7 +23,6 @@ export function DayTimeline({
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
-  const startMinuteOffset = (startHour - Math.floor(startHour)) * 60;
 
   useEffect(() => {
     if (!isSameDay(date, new Date())) {
@@ -51,71 +50,67 @@ export function DayTimeline({
   }
 
   return (
-    <div
-      className="relative w-full pl-16"
-      style={{ height: `${timelineHeight}px` }}
-    >
+    <>
       <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `
-            repeating-linear-gradient(to bottom, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent ${5 * pxPerMin}px),
-            repeating-linear-gradient(to bottom, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 2px, transparent 2px, transparent ${60 * pxPerMin}px)
-          `,
-          backgroundPositionY: `-${startMinuteOffset * pxPerMin}px`,
-        }}
-      />
+        className="relative w-full pl-16 bg-black overflow-hidden"
+        style={{ height: `${timelineHeight}px` }}
+      >
+        {hours.map(h => {
+          const top = (h - startHour) * 60 * pxPerMin
+          return (
+            <Fragment key={h}>
+              <div
+                className="pointer-events-none absolute left-16 right-0 border-t border-zinc-800"
+                style={{ top }}
+              />
+              <div
+                className="absolute left-0 w-16 pr-2 text-right text-xs text-zinc-500"
+                style={{ top }}
+              >
+                {formatHour(h)}
+              </div>
+            </Fragment>
+          )
+        })}
 
-      {hours.map((h) => {
-        const top = (h - startHour) * 60 * pxPerMin;
-        return (
-          <div
-            key={h}
-            className="absolute left-0 w-16 pr-2 text-right text-xs text-gray-400"
-            style={{ top }}
-          >
-            {formatHour(h)}
-          </div>
-        );
-      })}
+        {children}
 
-      {children}
-
-      {showNowLine && (
-        <>
-          <div
-            className="absolute left-0 right-0 pointer-events-none"
-            style={{
-              top: nowTop - 10,
-              height: 20,
-              background: `linear-gradient(to bottom, rgba(153, 102, 204, 0) 0%, rgba(153, 102, 204, 0.4) 50%, rgba(153, 102, 204, 0) 100%)`,
-            }}
-          />
-          <div
-            className="absolute left-0 right-0"
-            style={{
-              top: nowTop,
-              height: 2,
-              backgroundColor: GEM_PURPLE,
-              boxShadow: `0 0 8px ${GEM_PURPLE}`,
-            }}
-          />
-          <div
-            className="absolute flex items-center gap-1 text-xs text-white"
-            style={{ top: nowTop - 8, left: 4 }}
-          >
-            <Clock className="h-3 w-3" />
-            <span>Now</span>
-          </div>
-          <div
-            className="absolute right-0 text-xs text-white pr-2"
-            style={{ top: nowTop - 8 }}
-          >
-            {formatTime(nowMinutes! + startHour * 60)}
-          </div>
-        </>
-      )}
-    </div>
+        {showNowLine && (
+          <>
+            <div
+              className="absolute left-0 right-0 pointer-events-none"
+              style={{
+                top: nowTop - 10,
+                height: 20,
+                background: `linear-gradient(to bottom, rgba(153, 102, 204, 0) 0%, rgba(153, 102, 204, 0.4) 50%, rgba(153, 102, 204, 0) 100%)`,
+              }}
+            />
+            <div
+              className="absolute left-0 right-0"
+              style={{
+                top: nowTop,
+                height: 2,
+                backgroundColor: GEM_PURPLE,
+                boxShadow: `0 0 8px ${GEM_PURPLE}`,
+              }}
+            />
+            <div
+              className="absolute flex items-center gap-1 text-xs text-white"
+              style={{ top: nowTop - 8, left: 4 }}
+            >
+              <Clock className="h-3 w-3" />
+              <span>Now</span>
+            </div>
+            <div
+              className="absolute right-0 text-xs text-white pr-2"
+              style={{ top: nowTop - 8 }}
+            >
+              {formatTime(nowMinutes! + startHour * 60)}
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
