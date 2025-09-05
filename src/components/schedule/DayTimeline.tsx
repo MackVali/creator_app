@@ -23,7 +23,6 @@ export function DayTimeline({
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
-  const startMinuteOffset = (startHour - Math.floor(startHour)) * 60;
 
   useEffect(() => {
     if (!isSameDay(date, new Date())) {
@@ -55,28 +54,17 @@ export function DayTimeline({
       className="relative w-full pl-16"
       style={{ height: `${timelineHeight}px` }}
     >
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `
-            repeating-linear-gradient(to bottom, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent ${5 * pxPerMin}px),
-            repeating-linear-gradient(to bottom, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 2px, transparent 2px, transparent ${60 * pxPerMin}px)
-          `,
-          backgroundPositionY: `-${startMinuteOffset * pxPerMin}px`,
-        }}
-      />
-
-      {hours.map((h) => {
-        const top = (h - startHour) * 60 * pxPerMin;
+      {hours.map(h => {
+        const top = (h - startHour) * 60 * pxPerMin
         return (
           <div
             key={h}
-            className="absolute left-0 w-16 pr-2 text-right text-xs text-gray-400"
+            className="absolute left-0 w-16 pr-2 text-right text-xs text-zinc-500"
             style={{ top }}
           >
             {formatHour(h)}
           </div>
-        );
+        )
       })}
 
       {children}

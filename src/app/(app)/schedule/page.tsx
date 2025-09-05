@@ -8,6 +8,7 @@ import { MonthView } from '@/components/schedule/MonthView'
 import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import { Button } from '@/components/ui/button'
+import { Circle } from 'lucide-react'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -181,7 +182,7 @@ export default function SchedulePage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-6">
+      <div className="space-y-6 text-zinc-100">
         <div className="relative">
           <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
           <div className="absolute right-0 top-0 flex gap-2">
@@ -247,7 +248,7 @@ export default function SchedulePage() {
         </div>
 
         <div
-          className="relative h-[600px] overflow-y-auto rounded-lg border bg-neutral-950"
+          className="relative h-[600px] overflow-y-auto rounded-xl border border-zinc-800 bg-[#1b1b1d]"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
@@ -268,8 +269,8 @@ export default function SchedulePage() {
                   <div
                     key={w.id}
                     aria-label={w.label}
-                    className="absolute left-0 right-0 rounded border border-zinc-700 bg-zinc-900"
-                    style={{ top, height, opacity: 0.3 }}
+                    className="absolute left-0 right-0 rounded-md border border-zinc-700 bg-zinc-800"
+                    style={{ top, height, opacity: 0.25 }}
                   />
                 )
               })}
@@ -285,37 +286,21 @@ export default function SchedulePage() {
                   <div
                     key={p.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                    className="absolute left-2 right-2 overflow-hidden rounded-2xl border border-[#353535] bg-[#242424] p-2 text-xs text-white"
+                    className="absolute left-2 right-2 flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-white"
                     style={{ top, height }}
                   >
-                    <div className="relative h-full w-full">
-                      <div
-                        className={`absolute left-0 top-0 h-full w-1 ${
-                          planning === 'TASK' ? 'bg-[#9966CC]' : 'bg-zinc-500'
-                        }`}
-                      />
-                      <div className="ml-2 flex h-full flex-col justify-between">
-                        <div className="flex items-center justify-between">
-                          <span className="truncate text-sm font-medium">
-                            {item.name}
-                          </span>
-                          <span className="text-zinc-400">
-                            {item.duration_min}m
-                          </span>
-                        </div>
-                        <div className="mb-1 mt-1 h-1 w-full rounded bg-zinc-700">
-                          <div
-                            className="h-full rounded bg-[#9966CC]"
-                            style={{ width: '0%' }}
-                          />
-                        </div>
+                    <div className="flex flex-col">
+                      <span className="truncate text-sm font-medium">
+                        {item.name}
+                      </span>
+                      <div className="text-xs text-zinc-400">
+                        {item.duration_min}m
                         {planning === 'PROJECT' && 'taskCount' in item && (
-                          <div className="text-[10px] text-zinc-400">
-                            {item.taskCount} tasks
-                          </div>
+                          <span> · {item.taskCount} tasks</span>
                         )}
                       </div>
                     </div>
+                    <Circle className="h-4 w-4 flex-shrink-0 text-zinc-500" />
                   </div>
                 )
               })}
@@ -338,12 +323,10 @@ export default function SchedulePage() {
                   <li
                     key={u.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item?.name ?? u.taskId} unplaced: ${reason}`}
-                    className="rounded-2xl border border-[#353535] bg-[#242424] p-3 text-xs text-white"
+                    className="flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-sm text-white"
                   >
-                    <div className="flex justify-between">
-                      <span>{item?.name ?? u.taskId}</span>
-                      <span className="text-zinc-400">{reason}</span>
-                    </div>
+                    <span>{item?.name ?? u.taskId}</span>
+                    <span className="text-zinc-400">{reason}</span>
                   </li>
                 )
               })}
