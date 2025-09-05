@@ -97,7 +97,7 @@ export function DayTimeline({
               top: nowTop,
               height: 2,
               backgroundColor: GEM_PURPLE,
-              boxShadow: `0 0 8px ${GEM_PURPLE}`,
+              boxShadow: `0 0 12px ${GEM_PURPLE}, 0 0 4px ${GEM_PURPLE}`,
             }}
           />
           <div

@@ -22,6 +22,7 @@ import {
   taskWeight,
   projectWeight,
 } from '@/lib/scheduler/weight'
+import { Filter } from 'lucide-react'
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -30,6 +31,7 @@ export default function SchedulePage() {
     if (typeof window === 'undefined') return 'TASK'
     return (localStorage.getItem('planning-mode') as 'TASK' | 'PROJECT') || 'TASK'
   })
+  const [filtersActive, setFiltersActive] = useState(false)
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [windows, setWindows] = useState<WindowLite[]>([])
@@ -216,11 +218,15 @@ export default function SchedulePage() {
         </div>
 
         <div className="flex gap-2">
-          {(['month','week','day','focus'] as const).map(v => (
+          {(['month', 'week', 'day', 'focus'] as const).map(v => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`flex-1 h-11 rounded-md text-sm capitalize ${view===v ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-zinc-400'}`}
+              className={`relative flex-1 rounded-full px-3 py-1.5 text-xs capitalize transition-colors ${
+                view === v
+                  ? "bg-zinc-800 text-white after:absolute after:left-2 after:right-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-[#9966CC] after:content-['']"
+                  : 'border border-zinc-700/40 bg-zinc-900/60 text-zinc-400 hover:bg-zinc-800/60'
+              }`}
             >
               {v}
             </button>
@@ -247,7 +253,7 @@ export default function SchedulePage() {
         </div>
 
         <div
-          className="relative h-[600px] overflow-y-auto rounded-lg border bg-neutral-950"
+          className="relative h-[600px] overflow-y-auto bg-[#0f0f12]"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
@@ -268,7 +274,7 @@ export default function SchedulePage() {
                   <div
                     key={w.id}
                     aria-label={w.label}
-                    className="absolute left-0 right-0 rounded border border-zinc-700 bg-zinc-900"
+                    className="absolute left-0 right-0 rounded-md bg-zinc-800/50"
                     style={{ top, height, opacity: 0.3 }}
                   />
                 )
@@ -285,9 +291,10 @@ export default function SchedulePage() {
                   <div
                     key={p.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                    className="absolute left-2 right-2 overflow-hidden rounded-2xl border border-[#353535] bg-[#242424] p-2 text-xs text-white"
+                    className="group absolute left-2 right-2 overflow-hidden rounded-md border-2 border-zinc-700/60 bg-gradient-to-br from-zinc-800/90 to-zinc-900/90 p-2 text-xs text-white shadow-xl backdrop-blur-sm transition-transform active:scale-95"
                     style={{ top, height }}
                   >
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent opacity-0 transition-opacity group-hover:opacity-20" />
                     <div className="relative h-full w-full">
                       <div
                         className={`absolute left-0 top-0 h-full w-1 ${
@@ -338,9 +345,10 @@ export default function SchedulePage() {
                   <li
                     key={u.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item?.name ?? u.taskId} unplaced: ${reason}`}
-                    className="rounded-2xl border border-[#353535] bg-[#242424] p-3 text-xs text-white"
+                    className="group relative rounded-md border-2 border-zinc-700/60 bg-gradient-to-br from-zinc-800/90 to-zinc-900/90 p-3 text-xs text-white shadow-lg backdrop-blur-sm transition-transform active:scale-95"
                   >
-                    <div className="flex justify-between">
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent opacity-0 transition-opacity group-hover:opacity-20" />
+                    <div className="relative flex justify-between">
                       <span>{item?.name ?? u.taskId}</span>
                       <span className="text-zinc-400">{reason}</span>
                     </div>
@@ -350,6 +358,13 @@ export default function SchedulePage() {
             </ul>
           </div>
         )}
+        <button
+          aria-label="Toggle filters"
+          onClick={() => setFiltersActive(prev => !prev)}
+          className={`fixed bottom-6 right-6 z-20 rounded-full border border-zinc-600/40 bg-zinc-800/60 p-3 backdrop-blur-md shadow-lg transition ${filtersActive ? 'animate-pulse' : 'hover:bg-zinc-700/60'}`}
+        >
+          <Filter className="h-5 w-5 text-white" />
+        </button>
       </div>
     </ProtectedRoute>
   )
