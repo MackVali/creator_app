@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
+import { FilteredSkillsGrid } from "@/components/skills/FilteredSkillsGrid";
 import {
   ContentCard,
   PageHeader,
@@ -153,6 +154,11 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
         <span className="text-sm text-gray-400">Charging</span>
         <ProgressBarGradient value={mockProgress} height={8} />
       </ContentCard>
+
+      <section className="space-y-4">
+        <SectionHeader title="Related Skills" />
+        <FilteredSkillsGrid monumentId={id} />
+      </section>
 
       <section className="space-y-4">
         <SectionHeader title="Related Goals" />
