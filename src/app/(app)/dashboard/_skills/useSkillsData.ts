@@ -39,7 +39,12 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
     if (fallback.error) return [];
     return (fallback.data ?? []).map((c) => ({ id: c.id, name: c.name, order: c.sort_order }));
   }
-  return (data ?? []).map((c) => ({ id: c.id, name: c.name, color_hex: c.color_hex, order: c.sort_order }));
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    color_hex: c.color_hex || "#000000",
+    order: c.sort_order,
+  }));
 }
 
 export async function fetchSkills(userId: string): Promise<Skill[]> {

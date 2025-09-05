@@ -13,7 +13,10 @@ export async function getCatsForUser(userId: string) {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as CatRow[];
+  return (data ?? []).map((c) => ({
+    ...c,
+    color_hex: c.color_hex || "#000000",
+  })) as CatRow[];
 }
 
 export async function updateCatColor(catId: string, color: string) {

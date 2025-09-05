@@ -21,7 +21,9 @@ create table "public"."cats" (
   "id" uuid not null default gen_random_uuid(),
   "user_id" uuid not null,
   "name" text not null,
-  "created_at" timestamp with time zone not null default now()
+  "created_at" timestamp with time zone not null default now(),
+  "color_hex" text default '#000000'::text,
+  "sort_order" integer
 );
 
 alter table "public"."cats" enable row level security;
