@@ -169,7 +169,7 @@ export default function ProfileEditPage() {
     return (
       <div className="min-h-screen bg-[#0F0F12] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
           <p className="text-zinc-400">Loading profile...</p>
         </div>
       </div>
@@ -183,7 +183,7 @@ export default function ProfileEditPage() {
           <p className="text-red-400 mb-4">{error}</p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
           >
             Back to Dashboard
           </button>
@@ -285,7 +285,7 @@ export default function ProfileEditPage() {
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="flex items-center space-x-2">
-                  <User className="h-4 w-4 text-blue-600" />
+                  <User className="h-4 w-4 text-purple-600" />
                   <span>Full Name</span>
                 </Label>
                 <Input
@@ -371,7 +371,7 @@ export default function ProfileEditPage() {
                 <Button
                   type="submit"
                   disabled={saving}
-                  className="w-full h-14 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+                  className="w-full h-14 bg-gradient-to-r from-purple-600 to-purple-600 hover:from-purple-700 hover:to-purple-700 text-white text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
                 >
                   {saving ? (
                     <div className="flex items-center space-x-2">

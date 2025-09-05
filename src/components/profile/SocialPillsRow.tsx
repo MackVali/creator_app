@@ -32,7 +32,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     twitter: {
       icon: Twitter,
-      color: "bg-blue-400",
+      color: "bg-purple-400",
       label: "Twitter",
     },
     youtube: {
@@ -47,7 +47,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     linkedin: {
       icon: Linkedin,
-      color: "bg-blue-700",
+      color: "bg-purple-700",
       label: "LinkedIn",
     },
     email: {
@@ -57,7 +57,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     website: {
       icon: Globe,
-      color: "bg-blue-500",
+      color: "bg-purple-500",
       label: "Website",
     },
     github: {

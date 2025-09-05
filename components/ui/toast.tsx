@@ -95,7 +95,7 @@ function Toast({
       case "warning":
         return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
       case "info":
-        return <Info className="h-5 w-5 text-blue-500" />;
+        return <Info className="h-5 w-5 text-purple-500" />;
     }
   };
 
@@ -108,7 +108,7 @@ function Toast({
       case "warning":
         return "border-yellow-200 bg-yellow-50";
       case "info":
-        return "border-blue-200 bg-blue-50";
+        return "border-purple-200 bg-purple-50";
     }
   };
 
@@ -129,7 +129,7 @@ function Toast({
           {toast.action && (
             <button
               onClick={toast.action.onClick}
-              className="text-sm font-medium text-blue-600 hover:text-blue-500"
+              className="text-sm font-medium text-purple-600 hover:text-purple-500"
             >
               {toast.action.label}
             </button>

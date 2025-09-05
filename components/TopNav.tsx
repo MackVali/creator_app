@@ -35,7 +35,7 @@ export default function TopNav() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="h-11 w-11 p-2 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="h-11 w-11 p-2 hover:text-purple-400 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
             aria-label="Open menu"
           >
             <Menu className="h-6 w-6" />

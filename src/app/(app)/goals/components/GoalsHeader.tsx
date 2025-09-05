@@ -15,7 +15,7 @@ export function GoalsHeader({ onCreate }: GoalsHeaderProps) {
       </div>
       <button
         onClick={onCreate}
-        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 px-3 py-2 rounded-md text-sm"
+        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 active:bg-purple-700 px-3 py-2 rounded-md text-sm"
       >
         <Plus className="w-4 h-4" /> Create Goal
       </button>
