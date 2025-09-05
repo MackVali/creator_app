@@ -266,9 +266,17 @@ export default function SchedulePage() {
                   <div
                     key={w.id}
                     aria-label={w.label}
-                    className="absolute left-0 w-0.5 bg-zinc-700"
-                    style={{ top, height, opacity: 0.5 }}
-                  />
+                    className="absolute left-0 flex"
+                    style={{ top, height }}
+                  >
+                    <div className="w-0.5 bg-zinc-700 opacity-50" />
+                    <span
+                      className="ml-1 text-[10px] text-zinc-500"
+                      style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+                    >
+                      {w.label}
+                    </span>
+                  </div>
                 )
               })}
               {placements.map(p => {
