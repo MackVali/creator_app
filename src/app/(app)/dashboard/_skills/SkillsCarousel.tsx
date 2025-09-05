@@ -38,7 +38,7 @@ export default function SkillsCarousel() {
     setActiveIndex(idx);
     const params = new URLSearchParams(search);
     params.set("cat", categories[idx].id);
-    router.replace(`?${params.toString()}`);
+    router.replace(`?${params.toString()}`, { scroll: false });
   };
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {

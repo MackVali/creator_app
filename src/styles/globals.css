@@ -13,7 +13,7 @@
   --radius:16px; --radius-sm:12px;
   --popover:var(--surface); --popover-foreground:var(--text);
 }
-html,body{ background:var(--bg); color:var(--text); font-weight:600; }
+html,body{ background:var(--bg); color:var(--text); font-weight:600; touch-action:pan-y; overflow-x:hidden; }
 .section{ padding:20px 16px 8px; }
 .h-label{ letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--muted); font-size:12px; }
 .card{ background:linear-gradient(180deg,var(--surface),var(--surface-2));
@@ -22,5 +22,5 @@ html,body{ background:var(--bg); color:var(--text); font-weight:600; }
        border:1px solid rgba(255,255,255,.06); }
 .inner-hair{ box-shadow:0 1px 0 rgba(255,255,255,.04) inset; }
 .safe-bottom{ padding-bottom:calc(env(safe-area-inset-bottom,16px) + 12px); }
-.scroll-snap{ scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+.scroll-snap{ scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; touch-action:pan-x; }
 .snap-start{ scroll-snap-align:start; }
