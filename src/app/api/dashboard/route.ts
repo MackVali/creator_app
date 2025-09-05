@@ -42,28 +42,14 @@ export async function GET() {
   ]);
 
   // Debug logging for development
-  if (process.env.NODE_ENV !== "production") {
-    console.debug(
-      "🔍 Debug: skills response length:",
-      skillsResponse?.length || 0
-    );
-    console.debug(
-      "🔍 Debug: skills response data:",
-      skillsResponse
-    );
-    console.debug(
-      "🔍 Debug: cats response length:",
-      catsResponse.data?.length || 0
-    );
-    console.debug(
-      "🔍 Debug: cats response data:",
-      catsResponse.data
-    );
-    console.debug(
-      "🔍 Debug: user ID:",
-      user.id
-    );
-  }
+  // (commented out to avoid noisy production logs)
+  // if (process.env.NODE_ENV !== "production") {
+  //   console.debug("🔍 Debug: skills response length:", skillsResponse?.length || 0);
+  //   console.debug("🔍 Debug: skills response data:", skillsResponse);
+  //   console.debug("🔍 Debug: cats response length:", catsResponse.data?.length || 0);
+  //   console.debug("🔍 Debug: cats response data:", catsResponse.data);
+  //   console.debug("🔍 Debug: user ID:", user.id);
+  // }
 
   // Join the data manually
   const skillsData = (skillsResponse ?? []).map((skill: SkillRow) => {
@@ -84,9 +70,9 @@ export async function GET() {
   });
 
   // Debug skillsData
-  if (process.env.NODE_ENV !== "production") {
-    console.debug("🔍 Debug: skillsData after mapping:", skillsData);
-  }
+  // if (process.env.NODE_ENV !== "production") {
+  //   console.debug("🔍 Debug: skillsData after mapping:", skillsData);
+  // }
 
   const [{ data: stats }, { data: monuments }, { data: goals }] =
     await Promise.all([
@@ -157,9 +143,9 @@ export async function GET() {
   );
 
   // Debug skillsByCategory
-  if (process.env.NODE_ENV !== "production") {
-    console.debug("🔍 Debug: skillsByCategory after grouping:", skillsByCategory);
-  }
+  // if (process.env.NODE_ENV !== "production") {
+  //   console.debug("🔍 Debug: skillsByCategory after grouping:", skillsByCategory);
+  // }
 
   // Always include all CATs, even if they have no skills
   const allCats = (catsResponse.data || []) as {
@@ -207,10 +193,10 @@ export async function GET() {
   const goalsOut = (goals ?? []) as GoalItem[];
 
   // Debug logging
-  console.log("🔍 Raw skills data:", skillsData);
-  console.log("🔍 All CATs:", allCats);
-  console.log("🔍 Skills by category:", skillsByCategory);
-  console.log("🔍 Final CATs output:", catsOut);
+  // console.log("🔍 Raw skills data:", skillsData);
+  // console.log("🔍 All CATs:", allCats);
+  // console.log("🔍 Skills by category:", skillsByCategory);
+  // console.log("🔍 Final CATs output:", catsOut);
 
   return NextResponse.json({
     stats: statsOut,
