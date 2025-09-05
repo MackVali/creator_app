@@ -38,36 +38,36 @@ export function SkillRow({ skill }: SkillRowProps) {
   };
 
   return (
-    <div className="flex items-center gap-3 p-3 bg-[#1E1E1E] rounded-md border border-[#333] hover:bg-[#252525] transition-colors">
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-cardho">
       {/* Skill Icon */}
-      <div className="text-xl flex-shrink-0">
+      <div className="flex-shrink-0 text-xl text-icon">
         {getSkillIcon(skill.name, skill.icon)}
       </div>
-      
+
       {/* Skill Name */}
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-[#E0E0E0] truncate">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-texthi">
           {skill.name}
         </div>
       </div>
-      
+
       {/* Level Badge */}
-      <div className="text-xs text-[#A0A0A0] bg-[#404040] px-2 py-1 rounded-full flex-shrink-0">
+      <div className="flex-shrink-0 rounded-full bg-pill px-2 py-1 text-xs text-textmed">
         Lv {skill.level}
       </div>
-      
+
       {/* Progress Bar */}
       <div className="w-20 flex-shrink-0">
-        <div className="w-full h-2 bg-[#333] rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-[#BBB] rounded-full transition-all duration-300"
+        <div className="h-2 w-full overflow-hidden rounded-full bg-track">
+          <div
+            className="h-full rounded-full bg-fill transition-all duration-300"
             style={{ width: `${skill.progress}%` }}
           />
         </div>
       </div>
-      
+
       {/* Progress Percentage */}
-      <div className="text-xs text-[#A0A0A0] w-12 text-right flex-shrink-0">
+      <div className="w-12 flex-shrink-0 text-right text-xs text-textmed">
         {skill.progress}%
       </div>
     </div>

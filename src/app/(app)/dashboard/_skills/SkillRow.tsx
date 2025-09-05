@@ -10,51 +10,37 @@ export function computeWidth(percent: number) {
 
 interface Props {
   skill: Skill;
-  onColor: string;
-  trackColor: string;
-  fillColor: string;
 }
 
-export default function SkillRow({ skill, onColor, trackColor, fillColor }: Props) {
+export default function SkillRow({ skill }: Props) {
   const showLevel = skill.level !== null && skill.level !== undefined;
   const showProgress = skill.xpPercent !== null && skill.xpPercent !== undefined;
 
   return (
     <Link
       href={`/skills/${skill.id}`}
-      className="rounded-2xl bg-black/15 border border-black/20 px-3 py-2.5 flex items-center gap-3 active:scale-[.98] transition-transform"
-      style={{ color: onColor }}
+      className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-texthi transition-colors duration-150 hover:bg-cardho active:scale-[.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border"
     >
-      <div className="size-9 rounded-xl bg-black/25 flex items-center justify-center text-lg">
+      <div className="flex size-9 items-center justify-center rounded-full bg-pill text-lg text-icon">
         {skill.emoji || ""}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium truncate" style={{ color: onColor }}>
-          {skill.name}
-        </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium">{skill.name}</div>
         {showLevel && (
-          <div
-            className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-lg border border-white/15 bg-white/8"
-            style={{ color: onColor }}
-          >
+          <div className="mt-1 inline-block rounded-lg border border-border bg-pill px-1.5 py-0.5 text-[10px] text-textmed">
             Lv {skill.level}
           </div>
         )}
       </div>
       {showProgress && (
-        <div className="flex items-center gap-2 min-w-[36%]">
-          <div
-            className="flex-1 h-2 rounded-full overflow-hidden"
-            style={{ backgroundColor: trackColor }}
-          >
+        <div className="min-w-[36%] flex items-center gap-2">
+          <div className="flex-1 h-2 overflow-hidden rounded-full bg-track">
             <div
-              className="h-full rounded-full transition-[width] duration-200"
-              style={{ width: computeWidth(skill.xpPercent as number), backgroundColor: fillColor }}
+              className="h-full rounded-full bg-fill transition-[width] duration-200"
+              style={{ width: computeWidth(skill.xpPercent as number) }}
             />
           </div>
-          <span className="text-xs" style={{ color: onColor }}>
-            {skill.xpPercent}%
-          </span>
+          <span className="text-xs text-textmed">{skill.xpPercent}%</span>
         </div>
       )}
     </Link>

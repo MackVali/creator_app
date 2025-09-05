@@ -17,26 +17,26 @@ export function CatCard({ cat }: CatCardProps) {
   };
 
   return (
-    <div className="bg-[#2C2C2C] rounded-lg border border-[#333] overflow-hidden">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
       {/* Category Header */}
-      <div 
-        className="p-4 cursor-pointer hover:bg-[#353535] transition-colors"
+      <div
+        className="cursor-pointer p-4 transition-colors hover:bg-cardho"
         onClick={toggleExpanded}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="text-lg font-medium text-[#E0E0E0]">
+            <div className="text-lg font-medium text-texthi">
               {cat.cat_name}
             </div>
-            <div className="text-sm text-[#A0A0A0] bg-[#404040] px-2 py-1 rounded-full">
+            <div className="rounded-full bg-pill px-2 py-1 text-sm text-textmed">
               {cat.skill_count} skills
             </div>
           </div>
-          <div className="text-[#A0A0A0]">
+          <div className="text-icon">
             {isExpanded ? (
-              <ChevronDown className="w-5 h-5" />
+              <ChevronDown className="h-5 w-5" />
             ) : (
-              <ChevronRight className="w-5 h-5" />
+              <ChevronRight className="h-5 w-5" />
             )}
           </div>
         </div>
@@ -44,14 +44,14 @@ export function CatCard({ cat }: CatCardProps) {
 
       {/* Skills List */}
       {isExpanded && (
-        <div className="border-t border-[#333] bg-[#252525]">
-          <div className="p-4 space-y-3">
+        <div className="border-t border-border bg-panel">
+          <div className="space-y-3 p-4">
             {cat.skills && cat.skills.length > 0 ? (
               cat.skills.map((skill) => (
                 <SkillRow key={skill.skill_id} skill={skill} />
               ))
             ) : (
-              <div className="text-sm text-[#808080] text-center py-2">
+              <div className="py-2 text-center text-sm text-textmed">
                 No skills in this category
               </div>
             )}

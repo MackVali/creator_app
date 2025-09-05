@@ -5,18 +5,16 @@ export function SkillPill({
 }:{emoji?:string; title:string; pct?:number;}){
   const w = Math.max(0, Math.min(100, pct));
   return (
-    <div className="card rounded-full px-4 py-3 mb-3">
+    <div className="mb-3 rounded-lg border border-border bg-card p-4">
       <div className="flex items-center gap-3">
-        <div
-          className="w-9 h-9 rounded-full bg-[#0c0f14] border border-white/10 grid place-items-center text-[15px]"
-        >
+        <div className="grid h-9 w-9 place-items-center rounded-full bg-pill text-icon">
           {emoji}
         </div>
         <div className="flex-1">
-          <div className="font-semibold">{title}</div>
-          <div className="mt-1 h-[6px] rounded-full bg-[#0c0f14]">
+          <div className="text-[15px] font-medium text-texthi">{title}</div>
+          <div className="mt-1 h-2 rounded-full bg-track">
             <div
-              className="h-[6px] rounded-full bg-gradient-to-r from-gray-700 to-gray-900"
+              className="h-2 rounded-full bg-fill"
               style={{ width: `${w}%` }}
             />
           </div>
