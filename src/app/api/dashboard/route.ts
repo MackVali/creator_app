@@ -38,7 +38,7 @@ export async function GET() {
       .from("cats")
       .select("id,name,user_id,color_hex,sort_order")
       .eq("user_id", user.id)
-      .order("sort_order", { ascending: true, nullsLast: true }),
+      .order("sort_order", { ascending: true, nullsFirst: false }),
   ]);
 
   // Debug logging for development

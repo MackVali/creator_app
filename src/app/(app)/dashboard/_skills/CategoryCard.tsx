@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion, Reorder } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
 import SkillRow from "./SkillRow";
@@ -31,7 +31,7 @@ export default function CategoryCard({ category, skills, active }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
-  const [localSkills, setLocalSkills] = useState(skills);
+  const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const dragging = useRef(false);
   const router = useRouter();
 
@@ -42,7 +42,7 @@ export default function CategoryCard({ category, skills, active }: Props) {
     setOrderValue(category.order ?? 0);
   }, [category.order]);
   useEffect(() => {
-    setLocalSkills(skills);
+    setLocalSkills([...skills]);
   }, [skills]);
 
   const bg = color;
@@ -180,7 +180,7 @@ export default function CategoryCard({ category, skills, active }: Props) {
                     dragging.current = false;
                   }, 0);
                 }}
-                onClickCapture={(e) => {
+                onClickCapture={(e: MouseEvent) => {
                   if (dragging.current) {
                     e.preventDefault();
                     e.stopPropagation();
