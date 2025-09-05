@@ -2,12 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
-import { MonumentContainer } from "@/components/ui/MonumentContainer";
-import SkillsCarousel from "./_skills/SkillsCarousel";
-import { GoalCard } from "../goals/components/GoalCard";
+import MonumentsRow from "@/components/ui/MonumentsRow";
+import { SkillPill } from "@/components/ui/SkillPill";
+import useSkillsData from "./_skills/useSkillsData";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
@@ -77,9 +76,11 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
 }
 
 export default function DashboardClient() {
-  const router = useRouter();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loadingGoals, setLoadingGoals] = useState(true);
+  const { skillsByCategory, isLoading: loadingSkills } = useSkillsData();
+
+  const skills = Object.values(skillsByCategory).flat();
 
   useEffect(() => {
     loadGoals();
@@ -203,37 +204,45 @@ export default function DashboardClient() {
   };
 
   return (
-    <main className="pb-20">
+    <main className="px-4 py-gaplg pb-20 flex flex-col gap-gaplg">
       <LevelBanner level={80} current={3200} total={4000} />
 
-      <MonumentContainer />
-
-      <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
-        <SkillsCarousel />
+      <Section title="Monuments">
+        <MonumentsRow />
       </Section>
 
-      <Section
-        title={<Link href="/goals">Current Goals</Link>}
-        className="safe-bottom mt-2 px-4"
-      >
-        {loadingGoals ? (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-24 bg-gray-800 animate-pulse rounded" />
-            ))}
-          </div>
-        ) : goals.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {goals.map((goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                onEdit={() => router.push(`/goals?edit=${goal.id}`)}
+      <Section title={<Link href="/skills">Skills</Link>}>
+        {loadingSkills ? (
+          <div className="text-center text-textmed">Loading...</div>
+        ) : skills.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-gaplg">
+            {skills.slice(0, 6).map((s) => (
+              <SkillPill
+                key={s.id}
+                emoji={s.emoji || "✦"}
+                title={s.name}
+                pct={s.xpPercent || 0}
               />
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">No active goals.</div>
+          <div className="text-textmed">No skills yet</div>
+        )}
+      </Section>
+
+      <Section title={<Link href="/goals">Current Goals</Link>} className="safe-bottom">
+        {loadingGoals ? (
+          <div className="text-center text-textmed">Loading...</div>
+        ) : goals.length > 0 ? (
+          <div className="bg-card rounded-lg border border-border p-5">
+            <ul className="list-disc pl-5 space-y-1 text-texthi text-[14.5px] leading-[1.6] marker:text-textmed">
+              {goals.map((goal) => (
+                <li key={goal.id}>{goal.title}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="text-textmed text-[14.5px]">No active goals.</div>
         )}
       </Section>
     </main>

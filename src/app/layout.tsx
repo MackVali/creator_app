@@ -21,7 +21,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="flex min-h-screen flex-col">
+      <body className="flex min-h-screen flex-col bg-bg text-texthi font-ui">
         <ErrorBoundary>
           <AuthProvider>
             <ClientProviders>
