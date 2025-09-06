@@ -223,7 +223,7 @@ export default function WindowsPolishedUI({
 // HeaderBar
 function HeaderBar({ onNew }: { onNew: () => void }) {
   return (
-    <header className="bg-[#1C1F22] px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+    <header className="bg-[#222224] px-4 py-3 flex items-center justify-between sticky top-0 z-20">
       <div>
         <h1 className="text-lg font-semibold">Windows</h1>
         <p className="text-sm text-[#A6A6A6]">Manage your scheduling windows</p>
@@ -276,7 +276,7 @@ function FiltersBar({
     { key: "inactive", label: "Inactive" },
   ]
   return (
-    <div className="sticky top-[72px] z-10 backdrop-blur bg-[#1C1F22]/95 px-4 py-2 space-y-2">
+    <div className="sticky top-[72px] z-10 backdrop-blur bg-[#222224]/95 px-4 py-2 space-y-2">
       <div className="flex gap-2">
         {statusOptions.map((o) => (
           <button
@@ -416,7 +416,7 @@ function WindowCard({
   return (
     <div
       ref={cardRef}
-      className="bg-[#1C1F22] border border-[#2F343A] rounded-xl p-4 flex justify-between hover:bg-[#22262A] transition-colors"
+      className="bg-[#222224] border border-[#2F343A] rounded-xl p-4 flex justify-between hover:bg-[#22262A] transition-colors"
     >
       <div className="space-y-2">
         <div className="flex items-center gap-2">
@@ -472,7 +472,7 @@ function WindowCard({
           ⋯
         </button>
         {menu && (
-          <div className="absolute right-0 mt-2 w-32 bg-[#1C1F22] border border-[#2F343A] rounded-md z-10">
+          <div className="absolute right-0 mt-2 w-32 bg-[#222224] border border-[#2F343A] rounded-md z-10">
             <button
               className="w-full text-left px-3 py-2 text-sm hover:bg-[#22262A]"
               onClick={() => {
@@ -562,7 +562,7 @@ function Drawer({
       className="fixed inset-0 bg-black/50 flex justify-end" 
       role="dialog" aria-modal="true"
     >
-      <div className="w-full max-w-md h-full bg-[#1C1F22] p-4 overflow-y-auto">
+      <div className="w-full max-w-md h-full bg-[#222224] p-4 overflow-y-auto">
         <h2 className="text-lg font-semibold mb-4">
           {initial ? "Edit Window" : "New Window"}
         </h2>
@@ -695,7 +695,7 @@ function ConfirmSheet({
   }, [onCancel])
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end" role="dialog" aria-modal="true">
-      <div className="w-full bg-[#1C1F22] p-4 rounded-t-xl">
+      <div className="w-full bg-[#222224] p-4 rounded-t-xl">
         <p className="mb-4">Delete window? {item.name} {item.start} — {item.end}</p>
         <div className="flex justify-end gap-2">
           <button
@@ -737,7 +737,7 @@ function LoadingSkeleton() {
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="h-32 bg-gradient-to-r from-[#1C1F22] to-[#22262A] rounded-xl"
+          className="h-32 bg-gradient-to-r from-[#222224] to-[#22262A] rounded-xl"
         />
       ))}
     </div>

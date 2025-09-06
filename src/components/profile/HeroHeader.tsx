@@ -52,7 +52,7 @@ export default function HeroHeader({
             style={{ backgroundImage: `url(${profile.banner_url})` }}
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-[#1E293B] via-[#111827] to-[#0B1220]" />
+          <div className="w-full h-full bg-gradient-to-br from-[#1E293B] via-[#222224] to-[#0B1220]" />
         )}
 
         {/* Overlay gradient for better text readability */}
@@ -109,7 +109,7 @@ export default function HeroHeader({
               {profile.name || profile.username}
             </h1>
             {profile.verified && (
-              <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+              <div className="w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center">
                 <svg
                   className="w-3 h-3 text-white"
                   fill="currentColor"

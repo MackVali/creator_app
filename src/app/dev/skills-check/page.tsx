@@ -116,20 +116,20 @@ export default function SkillsCheckPage() {
         </table>
       </div>
 
-      <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-        <h3 className="text-lg font-medium text-blue-900 mb-2">Summary</h3>
-        <p className="text-blue-700">
+      <div className="mt-6 p-4 bg-purple-50 rounded-lg">
+        <h3 className="text-lg font-medium text-purple-900 mb-2">Summary</h3>
+        <p className="text-purple-700">
           Total skills: <strong>{skills.length}</strong>
         </p>
-        <p className="text-blue-700">
+        <p className="text-purple-700">
           Skills with icons:{" "}
           <strong>{skills.filter((s) => s.icon).length}</strong>
         </p>
-        <p className="text-blue-700">
+        <p className="text-purple-700">
           Skills with names:{" "}
           <strong>{skills.filter((s) => s.name).length}</strong>
         </p>
-        <p className="text-blue-700">
+        <p className="text-purple-700">
           Skills with categories:{" "}
           <strong>{skills.filter((s) => s.cat_id).length}</strong>
         </p>

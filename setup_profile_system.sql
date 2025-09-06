@@ -56,7 +56,7 @@ INSERT INTO public.profile_themes (name, primary_color, secondary_color, accent_
   ('Ocean Blue', '#3B82F6', '#1E40AF', '#8B5CF6', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 'Inter'),
   ('Sunset', '#F59E0B', '#DC2626', '#EC4899', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', 'Inter'),
   ('Forest', '#10B981', '#059669', '#84CC16', 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', 'Inter'),
-  ('Midnight', '#1F2937', '#111827', '#8B5CF6', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 'Inter')
+  ('Midnight', '#1F2937', '#222224', '#8B5CF6', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 'Inter')
 ON CONFLICT (name) DO NOTHING;
 
 -- 6. Create indexes for performance

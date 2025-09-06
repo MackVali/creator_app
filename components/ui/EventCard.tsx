@@ -33,7 +33,7 @@ export function EventCard({ title, start, end, icon, muted = false, onClick, sty
       onClick={onClick}
       style={style}
       className={`
-        absolute left-0 right-0 bg-[#17181C] rounded-2xl border border-white/5 
+        absolute left-0 right-0 bg-[#222224] rounded-2xl border border-white/5 
         shadow-[0_8px_24px_rgba(0,0,0,0.35)] px-5 py-4
         hover:translate-y-[-1px] hover:shadow-[0_10px_28px_rgba(0,0,0,0.45)] 
         transition-transform cursor-pointer

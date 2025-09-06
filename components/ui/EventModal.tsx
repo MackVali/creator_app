@@ -756,7 +756,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 (eventType === "PROJECT" && !formData.goal_id) ||
                 (eventType === "TASK" && !formData.project_id)
               }
-              className="flex-1 bg-blue-600 hover:bg-blue-700 h-10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-purple-600 hover:bg-purple-700 h-10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Creating..." : `Create ${eventType}`}
             </Button>

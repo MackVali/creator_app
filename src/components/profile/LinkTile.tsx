@@ -90,7 +90,7 @@ export default function LinkTile({
         <div
           className="
           absolute inset-0 
-          bg-gradient-to-t from-blue-500/10 to-transparent
+          bg-gradient-to-t from-purple-500/10 to-transparent
           opacity-0 group-hover:opacity-100
           transition-opacity duration-200
         "
