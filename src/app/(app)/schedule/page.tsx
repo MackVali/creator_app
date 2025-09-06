@@ -291,7 +291,7 @@ export default function SchedulePage() {
                   <div
                     key={p.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                    className="absolute left-2 right-2 flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-white"
+                    className="absolute left-16 right-2 flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-white"
                     style={{ top, height }}
                   >
                     <div className="flex flex-col">
