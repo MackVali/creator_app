@@ -1,11 +1,18 @@
-"use client";
+import SharedLayoutBridge from '@/app/components/transition/SharedLayoutBridge';
+import { MonumentHeader } from './MonumentHeader';
+import { MonumentGoals } from './MonumentGoals';
 
-import { useParams } from "next/navigation";
-import { MonumentDetail } from "@/components/monuments/MonumentDetail";
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
 
-export default function MonumentDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
-  return <MonumentDetail id={id} />;
+export default async function MonumentPage({ params }: PageProps) {
+  const { id } = await params;
+  return (
+    <SharedLayoutBridge>
+      <MonumentHeader id={id} />
+      <MonumentGoals id={id} />
+    </SharedLayoutBridge>
+  );
 }
 
