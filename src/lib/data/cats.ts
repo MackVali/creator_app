@@ -9,7 +9,7 @@ export async function getCatsForUser(userId: string) {
     .from("cats")
     .select("id,name,user_id,created_at,color_hex,sort_order")
     .eq("user_id", userId)
-    .order("sort_order", { ascending: true, nullsLast: true })
+    .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
 
   if (error) throw error;

@@ -38,7 +38,7 @@ export async function GET() {
       .from("cats")
       .select("id,name,user_id,color_hex,sort_order")
       .eq("user_id", user.id)
-      .order("sort_order", { ascending: true, nullsLast: true }),
+      .order("sort_order", { ascending: true, nullsFirst: false }),
   ]);
 
   // Debug logging for development
@@ -197,7 +197,11 @@ export async function GET() {
   // Add uncategorized skills if they exist
   const uncategorizedCat = skillsByCategory["uncategorized"];
   if (uncategorizedCat) {
-    catsOut.push({ ...uncategorizedCat, order: null });
+    catsOut.push({
+      ...uncategorizedCat,
+      color_hex: uncategorizedCat.color_hex || "#000000",
+      order: null,
+    });
   }
 
   // Sort cats by order then name
