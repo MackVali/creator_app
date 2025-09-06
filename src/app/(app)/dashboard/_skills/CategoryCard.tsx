@@ -26,7 +26,7 @@ interface Props {
 }
 
 export default function CategoryCard({ category, skills, active }: Props) {
-  const [color, setColor] = useState(category.color_hex || "#0B0B0F");
+  const [color, setColor] = useState(category.color_hex || "#000000");
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
@@ -36,7 +36,7 @@ export default function CategoryCard({ category, skills, active }: Props) {
   const router = useRouter();
 
   useEffect(() => {
-    setColor(category.color_hex || "#0B0B0F");
+    setColor(category.color_hex || "#000000");
   }, [category.color_hex]);
   useEffect(() => {
     setOrderValue(category.order ?? 0);
