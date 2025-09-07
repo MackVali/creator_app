@@ -16,13 +16,8 @@ import {
   type WindowLite,
 } from '@/lib/scheduler/repo'
 import { placeByEnergyWeight } from '@/lib/scheduler/placer'
-import { ENERGY } from '@/lib/scheduler/config'
-import {
-  TaskLite,
-  ProjectLite,
-  taskWeight,
-  projectWeight,
-} from '@/lib/scheduler/weight'
+import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
+import { buildProjectItems } from '@/lib/scheduler/projects'
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -76,45 +71,10 @@ export default function SchedulePage() {
     [tasks]
   )
 
-  const projectItems = useMemo(() => {
-    type Energy = (typeof ENERGY.LIST)[number]
-    const items: (
-      ProjectLite & {
-        name: string
-        duration_min: number
-        energy: Energy | null
-        weight: number
-        taskCount: number
-      }
-    )[] = []
-    for (const p of projects) {
-      const related = tasks.filter(t => t.project_id === p.id)
-      if (related.length === 0) continue
-      const duration_min = related.reduce((sum, t) => sum + t.duration_min, 0)
-      const energy = related.reduce<Energy | null>((acc, t) => {
-        if (!t.energy) return acc
-        const current = t.energy as Energy
-        if (!acc) return current
-        return ENERGY.LIST.indexOf(current) > ENERGY.LIST.indexOf(acc)
-          ? current
-          : acc
-      }, null)
-      const relatedWeightSum = related.reduce(
-        (sum, t) => sum + taskWeight(t),
-        0
-      )
-      const weight = projectWeight(p, relatedWeightSum)
-      items.push({
-        ...p,
-        name: p.name ?? '',
-        duration_min,
-        energy,
-        weight,
-        taskCount: related.length,
-      })
-    }
-    return items
-  }, [projects, tasks])
+  const projectItems = useMemo(
+    () => buildProjectItems(projects, tasks),
+    [projects, tasks]
+  )
 
   const taskMap = useMemo(() => {
     const map: Record<string, typeof weightedTasks[number]> = {}
