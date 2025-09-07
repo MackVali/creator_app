@@ -1,7 +1,8 @@
 export const ENERGY = {
-  // TODO: replace with full energy tiers
-  LIST: ["LOW", "MEDIUM", "HIGH"], // placeholder values
+  LIST: ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"],
 } as const;
+
+export type Energy = (typeof ENERGY.LIST)[number];
 
 export const TASK_PRIORITY_WEIGHT = {
   NO: 0,

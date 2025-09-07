@@ -1,5 +1,5 @@
 import type { TaskLite } from "./weight";
-import { ENERGY } from "./config";
+import { ENERGY, type Energy } from "./config";
 
 export type WindowLite = {
   id: string;
@@ -27,10 +27,6 @@ function parseTime(date: Date, time: string): Date {
   return d;
 }
 
-function energyIndex(level: string | null | undefined): number {
-  const idx = (ENERGY.LIST as readonly string[]).indexOf(level ?? "");
-  return idx === -1 ? ENERGY.LIST.length : idx;
-}
 
 export function genSlotsForWindow(
   win: WindowLite,
@@ -106,15 +102,31 @@ export function placeByEnergyWeight(
   }[] = [];
   const unplaced: { taskId: string; reason: string }[] = [];
 
+  const energyIdx = (e?: string | null) =>
+    ENERGY.LIST.indexOf((e ?? "").toUpperCase() as Energy);
   const sortedTasks = [...tasks].sort((a, b) => {
-    const diff = b.weight - a.weight;
-    return diff !== 0 ? diff : a.id.localeCompare(b.id);
+    const energyDiff = energyIdx(b.energy) - energyIdx(a.energy);
+    if (energyDiff !== 0) return energyDiff;
+    const weightDiff = b.weight - a.weight;
+    return weightDiff !== 0 ? weightDiff : a.id.localeCompare(b.id);
   });
 
   for (const task of sortedTasks) {
-    const candidates = windowsSorted.filter(
-      (w) => energyIndex(task.energy) <= energyIndex(w.energy)
-    );
+    const taskEnergyIdx = energyIdx(task.energy);
+    if (taskEnergyIdx === -1) {
+      unplaced.push({ taskId: task.id, reason: "no-window" });
+      continue;
+    }
+    const candidates = windowsSorted
+      .filter((w) => energyIdx(w.energy) >= taskEnergyIdx)
+      .sort((a, b) => {
+        const eDiff = energyIdx(a.energy) - energyIdx(b.energy);
+        if (eDiff !== 0) return eDiff;
+        const aStart = parseTime(date, a.start_local).getTime();
+        const bStart = parseTime(date, b.start_local).getTime();
+        if (aStart !== bStart) return aStart - bStart;
+        return a.id.localeCompare(b.id);
+      });
     if (candidates.length === 0) {
       unplaced.push({ taskId: task.id, reason: "no-window" });
       continue;
