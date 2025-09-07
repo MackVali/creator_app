@@ -35,7 +35,7 @@ export function buildProjectItems(
         return ENERGY.LIST.indexOf(current) > ENERGY.LIST.indexOf(acc)
           ? current
           : acc
-      }, null) ?? DEFAULT_PROJECT_ENERGY
+      }, norm(p.energy)) ?? DEFAULT_PROJECT_ENERGY
     const relatedWeightSum = related.reduce(
       (sum, t) => sum + taskWeight(t),
       0

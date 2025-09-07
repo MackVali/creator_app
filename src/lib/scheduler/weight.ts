@@ -21,6 +21,7 @@ export type ProjectLite = {
   name?: string;
   priority: string;
   stage: string;
+  energy?: string | null;
 };
 
 export type GoalLite = {

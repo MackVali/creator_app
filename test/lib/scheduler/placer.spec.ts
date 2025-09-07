@@ -41,7 +41,7 @@ describe("placeByEnergyWeight", () => {
       { id: "wH", label: "High", energy: "HIGH", start_local: "10:00", end_local: "11:00" },
     ];
     const projects: ProjectLite[] = [
-      { id: "p1", name: "Proj", priority: "LOW", stage: "RESEARCH" },
+      { id: "p1", name: "Proj", priority: "LOW", stage: "RESEARCH", energy: null },
     ];
     const tasks: TaskLite[] = [
       { id: "t1", name: "T", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "high", project_id: "p1" },
@@ -50,6 +50,21 @@ describe("placeByEnergyWeight", () => {
     const result = placeByEnergyWeight(items, windows, date);
     expect(result.placements).toHaveLength(1);
     expect(result.placements[0]).toMatchObject({ taskId: "p1", windowId: "wH" });
+  });
+
+  it("places project by its own energy when it has no tasks", () => {
+    const date = new Date("2024-01-01T00:00:00");
+    const windows: WindowLite[] = [
+      { id: "wN", label: "No", energy: "NO", start_local: "09:00", end_local: "10:00" },
+      { id: "wU", label: "Ultra", energy: "ULTRA", start_local: "10:00", end_local: "11:00" },
+    ];
+    const projects: ProjectLite[] = [
+      { id: "p1", name: "Proj", priority: "LOW", stage: "RESEARCH", energy: "ULTRA" },
+    ];
+    const items = buildProjectItems(projects, []);
+    const result = placeByEnergyWeight(items, windows, date);
+    expect(result.placements).toHaveLength(1);
+    expect(result.placements[0]).toMatchObject({ taskId: "p1", windowId: "wU" });
   });
 });
 

@@ -9,7 +9,7 @@ import type { ProjectLite, TaskLite } from '../../../src/lib/scheduler/weight'
 describe('buildProjectItems', () => {
   it('includes projects even without tasks', () => {
     const projects: ProjectLite[] = [
-      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH' },
+      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH', energy: null },
     ]
     const tasks: TaskLite[] = []
     const items = buildProjectItems(projects, tasks)
@@ -25,7 +25,7 @@ describe('buildProjectItems', () => {
 
   it('aggregates related tasks', () => {
     const projects: ProjectLite[] = [
-      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH' },
+      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH', energy: null },
     ]
     const tasks: TaskLite[] = [
       {
@@ -59,7 +59,7 @@ describe('buildProjectItems', () => {
 
   it('handles task energy case-insensitively', () => {
     const projects: ProjectLite[] = [
-      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH' },
+      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH', energy: null },
     ]
     const tasks: TaskLite[] = [
       {
@@ -83,6 +83,25 @@ describe('buildProjectItems', () => {
     ]
     const items = buildProjectItems(projects, tasks)
     expect(items[0].energy).toBe('HIGH')
+  })
+
+  it('uses project energy when higher than related tasks', () => {
+    const projects: ProjectLite[] = [
+      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH', energy: 'ULTRA' },
+    ]
+    const tasks: TaskLite[] = [
+      {
+        id: 't1',
+        name: 'T1',
+        priority: 'LOW',
+        stage: 'Prepare',
+        duration_min: 30,
+        energy: 'LOW',
+        project_id: 'p1',
+      },
+    ]
+    const items = buildProjectItems(projects, tasks)
+    expect(items[0].energy).toBe('ULTRA')
   })
 })
 
