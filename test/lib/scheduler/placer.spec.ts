@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { placeByEnergyWeight, type WindowLite } from "../../../src/lib/scheduler/placer";
+import { buildProjectItems } from "../../../src/lib/scheduler/projects";
+import type { ProjectLite, TaskLite } from "../../../src/lib/scheduler/weight";
 
 describe("placeByEnergyWeight", () => {
   it("falls back to lower-energy tasks when no equal energy task exists", () => {
@@ -30,6 +32,24 @@ describe("placeByEnergyWeight", () => {
     const result = placeByEnergyWeight(tasks, windows, date);
     expect(result.placements).toHaveLength(0);
     expect(result.unplaced).toEqual([{ taskId: "t1", reason: "no-window" }]);
+  });
+
+  it("places projects into matching-energy windows", () => {
+    const date = new Date("2024-01-01T00:00:00");
+    const windows: WindowLite[] = [
+      { id: "wL", label: "Low", energy: "LOW", start_local: "09:00", end_local: "10:00" },
+      { id: "wH", label: "High", energy: "HIGH", start_local: "10:00", end_local: "11:00" },
+    ];
+    const projects: ProjectLite[] = [
+      { id: "p1", name: "Proj", priority: "LOW", stage: "RESEARCH" },
+    ];
+    const tasks: TaskLite[] = [
+      { id: "t1", name: "T", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "high", project_id: "p1" },
+    ];
+    const items = buildProjectItems(projects, tasks);
+    const result = placeByEnergyWeight(items, windows, date);
+    expect(result.placements).toHaveLength(1);
+    expect(result.placements[0]).toMatchObject({ taskId: "p1", windowId: "wH" });
   });
 });
 

@@ -23,10 +23,14 @@ export function buildProjectItems(
     const duration_min =
       related.reduce((sum, t) => sum + t.duration_min, 0) ||
       DEFAULT_PROJECT_DURATION_MIN
+    const norm = (e?: string | null): Energy | null => {
+      const up = (e ?? '').toUpperCase()
+      return ENERGY.LIST.includes(up as Energy) ? (up as Energy) : null
+    }
     const energy =
       related.reduce<Energy | null>((acc, t) => {
-        if (!t.energy) return acc
-        const current = t.energy as Energy
+        const current = norm(t.energy)
+        if (!current) return acc
         if (!acc) return current
         return ENERGY.LIST.indexOf(current) > ENERGY.LIST.indexOf(acc)
           ? current
