@@ -2,6 +2,8 @@ export const ENERGY = {
   LIST: ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"],
 } as const;
 
+export type Energy = (typeof ENERGY.LIST)[number];
+
 export const TASK_PRIORITY_WEIGHT = {
   NO: 0,
   LOW: 1,

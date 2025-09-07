@@ -1,5 +1,5 @@
 import type { TaskLite } from "./weight";
-import { ENERGY } from "./config";
+import { ENERGY, type Energy } from "./config";
 
 export type WindowLite = {
   id: string;
@@ -102,8 +102,8 @@ export function placeByEnergyWeight(
   }[] = [];
   const unplaced: { taskId: string; reason: string }[] = [];
 
-  const energyIdx = (e?: string) =>
-    ENERGY.LIST.indexOf((e ?? "").toUpperCase());
+  const energyIdx = (e?: string | null) =>
+    ENERGY.LIST.indexOf((e ?? "").toUpperCase() as Energy);
   const sortedTasks = [...tasks].sort((a, b) => {
     const energyDiff = energyIdx(b.energy) - energyIdx(a.energy);
     if (energyDiff !== 0) return energyDiff;
