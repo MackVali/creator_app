@@ -9,7 +9,6 @@ import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { Button } from '@/components/ui/button'
-import { Circle } from 'lucide-react'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -273,7 +272,14 @@ export default function SchedulePage() {
                         )}
                       </div>
                     </div>
-                    <Circle className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+                    {item.skill_icon && (
+                      <span
+                        className="ml-2 text-lg leading-none flex-shrink-0"
+                        aria-hidden
+                      >
+                        {item.skill_icon}
+                      </span>
+                    )}
                     <FlameEmber
                       level={(item.energy as FlameLevel) || 'NO'}
                       size="sm"

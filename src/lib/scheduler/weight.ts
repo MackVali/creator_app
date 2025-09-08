@@ -14,6 +14,8 @@ export type TaskLite = {
   duration_min: number;
   energy: string | null;
   project_id?: string | null;
+  skill_id?: string | null;
+  skill_icon?: string | null;
 };
 
 export type ProjectLite = {
