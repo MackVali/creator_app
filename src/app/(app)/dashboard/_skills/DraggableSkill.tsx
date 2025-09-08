@@ -1,7 +1,12 @@
 "use client";
 
 import { Reorder, useDragControls } from "framer-motion";
-import { useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import {
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import SkillRow from "./SkillRow";
 import type { Skill } from "./useSkillsData";
 
@@ -25,6 +30,7 @@ export default function DraggableSkill({
   const controls = useDragControls();
   const [ready, setReady] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startEvent = useRef<PointerEvent | null>(null);
 
   const clear = () => {
     if (timer.current) {
@@ -41,32 +47,41 @@ export default function DraggableSkill({
       dragListener={false}
       dragControls={controls}
       className="cursor-grab"
-      onPointerDown={() => {
+      onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
+        startEvent.current = e.nativeEvent;
         timer.current = setTimeout(() => {
           setReady(true);
         }, 3000);
       }}
-      onPointerMove={(e: PointerEvent<HTMLDivElement>) => {
-        if (ready && !dragging.current) {
-          controls.start(e);
+      onPointerMove={() => {
+        if (ready && !dragging.current && startEvent.current) {
+          controls.start(startEvent.current);
           dragging.current = true;
           onDragStateChange?.(true);
           setReady(false);
         }
       }}
-      onPointerUp={clear}
-      onPointerLeave={clear}
+      onPointerUp={() => {
+        clear();
+        startEvent.current = null;
+      }}
+      onPointerLeave={() => {
+        clear();
+        startEvent.current = null;
+      }}
       onDragEnd={() => {
         dragging.current = false;
         onDragStateChange?.(false);
         clear();
+        startEvent.current = null;
       }}
-      onClickCapture={(e: MouseEvent) => {
+      onClickCapture={(e: ReactMouseEvent) => {
         if (dragging.current) {
           e.preventDefault();
           e.stopPropagation();
         }
       }}
+      onContextMenu={(e) => e.preventDefault()}
       animate={ready ? { rotate: [-2, 2, -2, 2, 0] } : { rotate: 0 }}
       transition={
         ready ? { duration: 0.3, repeat: Infinity, repeatType: "mirror" } : undefined
