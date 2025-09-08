@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { motion, Reorder } from "framer-motion";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
-import SkillRow from "./SkillRow";
+import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
 function getOnColor(hex: string) {
@@ -167,33 +167,14 @@ export default function CategoryCard({ category, skills, active }: Props) {
             </div>
           ) : (
             localSkills.map((s) => (
-              <Reorder.Item
+              <DraggableSkill
                 key={s.id}
-                value={s}
-                as="div"
-                className="cursor-grab"
-                onDragStart={() => {
-                  dragging.current = true;
-                }}
-                onDragEnd={() => {
-                  setTimeout(() => {
-                    dragging.current = false;
-                  }, 0);
-                }}
-                onClickCapture={(e: MouseEvent) => {
-                  if (dragging.current) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
-              >
-                <SkillRow
-                  skill={s}
-                  onColor={on}
-                  trackColor={track}
-                  fillColor={fill}
-                />
-              </Reorder.Item>
+                skill={s}
+                dragging={dragging}
+                onColor={on}
+                trackColor={track}
+                fillColor={fill}
+              />
             ))
           )}
         </Reorder.Group>
