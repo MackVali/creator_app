@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react"
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber"
 
 // Utility to join class names conditionally
 function classNames(...classes: Array<string | false | null | undefined>) {
@@ -449,8 +450,16 @@ function WindowCard({
           </p>
           <TimelineMini start={startPct} end={endPct} />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {item.energy && <EnergyChip energy={item.energy} label={item.energy} active={false} onClick={() => {}} />}
+        <div className="flex gap-2 flex-wrap items-center">
+          {item.energy && (
+            <span className="px-2 h-6 rounded-md bg-[#22262A] text-xs flex items-center gap-1">
+              <FlameEmber
+                level={item.energy.toUpperCase() as FlameLevel}
+                size="sm"
+              />
+              <span className="capitalize">{item.energy}</span>
+            </span>
+          )}
           {item.location && (
             <span className="px-2 h-6 rounded-md bg-[#22262A] text-xs flex items-center">
               {item.location}
