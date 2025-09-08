@@ -123,9 +123,9 @@ export default function DraftSchedulerPage() {
 
   async function handleLoad() {
     try {
-      const weekday = new Date().getDay();
+      const now = new Date();
       const [ws, ts, pm] = await Promise.all([
-        fetchWindowsForDate(weekday),
+        fetchWindowsForDate(now),
         fetchReadyTasks(),
         fetchProjectsMap(),
       ]);

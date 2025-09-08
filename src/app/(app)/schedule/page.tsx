@@ -47,9 +47,8 @@ export default function SchedulePage() {
   useEffect(() => {
     async function load() {
       try {
-        const weekday = currentDate.getDay()
         const [ws, ts, pm] = await Promise.all([
-          fetchWindowsForDate(weekday),
+          fetchWindowsForDate(currentDate),
           fetchReadyTasks(),
           fetchProjectsMap(),
         ])

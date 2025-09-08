@@ -7,6 +7,7 @@ export type WindowLite = {
   energy: string;
   start_local: string;
   end_local: string;
+  fromPrevDay?: boolean;
 };
 
 export type Slot = {
@@ -33,13 +34,22 @@ export function genSlotsForWindow(
   date: Date,
   slotMinutes = 5
 ): Slot[] {
-  const start = parseTime(date, win.start_local);
-  const end = parseTime(date, win.end_local);
+  const base = win.fromPrevDay
+    ? addMin(date, -24 * 60)
+    : date;
+  const start = parseTime(base, win.start_local);
+  let end = parseTime(win.fromPrevDay ? date : base, win.end_local);
+  if (end <= start) end = addMin(end, 24 * 60);
+
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = addMin(dayStart, 24 * 60);
+
+  let cursor = start < dayStart ? new Date(dayStart) : new Date(start);
   const slots: Slot[] = [];
-  let cursor = new Date(start);
   while (true) {
     const next = addMin(cursor, slotMinutes);
-    if (next > end) break;
+    if (next > end || next > dayEnd) break;
     slots.push({
       windowId: win.id,
       start: new Date(cursor),
@@ -81,9 +91,11 @@ export function placeByEnergyWeight(
   windows: WindowLite[],
   date: Date
 ) {
+  const startTime = (w: WindowLite) =>
+    parseTime(w.fromPrevDay ? addMin(date, -24 * 60) : date, w.start_local).getTime();
   const windowsSorted = [...windows].sort((a, b) => {
-    const aStart = parseTime(date, a.start_local).getTime();
-    const bStart = parseTime(date, b.start_local).getTime();
+    const aStart = startTime(a);
+    const bStart = startTime(b);
     if (aStart !== bStart) return aStart - bStart;
     return a.id.localeCompare(b.id);
   });
@@ -122,8 +134,8 @@ export function placeByEnergyWeight(
       .sort((a, b) => {
         const eDiff = energyIdx(a.energy) - energyIdx(b.energy);
         if (eDiff !== 0) return eDiff;
-        const aStart = parseTime(date, a.start_local).getTime();
-        const bStart = parseTime(date, b.start_local).getTime();
+        const aStart = startTime(a);
+        const bStart = startTime(b);
         if (aStart !== bStart) return aStart - bStart;
         return a.id.localeCompare(b.id);
       });
