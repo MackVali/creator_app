@@ -18,6 +18,7 @@ import {
 import { placeByEnergyWeight } from '@/lib/scheduler/placer'
 import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
+import { windowRect } from '@/lib/scheduler/windowRect'
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -134,11 +135,6 @@ export default function SchedulePage() {
     })
   }
 
-  function timeToMin(t: string) {
-    const [h = 0, m = 0] = t.split(':').map(Number)
-    return h * 60 + m
-  }
-
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
@@ -217,10 +213,7 @@ export default function SchedulePage() {
               pxPerMin={pxPerMin}
             >
               {windows.map(w => {
-                const startMin = timeToMin(w.start_local)
-                const endMin = timeToMin(w.end_local)
-                const top = (startMin - startHour * 60) * pxPerMin
-                const height = (endMin - startMin) * pxPerMin
+                const { top, height } = windowRect(w, startHour, pxPerMin)
                 return (
                   <div
                     key={w.id}
