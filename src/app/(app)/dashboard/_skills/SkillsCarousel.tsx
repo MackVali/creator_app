@@ -1,15 +1,14 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import CategoryCard from "./CategoryCard";
 import useSkillsData from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
+
+const ANGLE_STEP = 20; // degrees between cards
+const RADIUS = 380; // translateZ distance
+const OPACITY_K = 0.35;
 
 export default function SkillsCarousel() {
   const { categories, skillsByCategory, isLoading } = useSkillsData();
@@ -17,88 +16,119 @@ export default function SkillsCarousel() {
   const search = useSearchParams();
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const rotation = useRef(0);
+  const [tick, setTick] = useState(0); // trigger re-render on rotation
   const [activeIndex, setActiveIndex] = useState(0);
-  const raf = useRef<number | null>(null);
+  const animRef = useRef<number | null>(null);
+  const wheelTimeout = useRef<number | null>(null);
+  const pointerState = useRef<{
+    id: number;
+    lastX: number;
+    velocity: number;
+  } | null>(null);
 
-  // scroll to initial category
   useEffect(() => {
     if (categories.length === 0) return;
     const initialId = search.get("cat") || undefined;
     const idx = deriveInitialIndex(categories, initialId);
     setActiveIndex(idx);
-    const el = cardRefs.current[idx];
-    const container = containerRef.current;
-    if (el && container) {
-      container.scrollTo({
-        left: el.offsetLeft - container.clientWidth / 2 + el.clientWidth / 2,
-      });
-    }
   }, [categories, search]);
 
-  const updateActiveFromScroll = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const center = container.scrollLeft + container.clientWidth / 2;
-    let closest = 0;
-    let min = Infinity;
-    cardRefs.current.forEach((card, idx) => {
-      if (!card) return;
-      const cardCenter = card.offsetLeft + card.clientWidth / 2;
-      const dist = Math.abs(center - cardCenter);
-      if (dist < min) {
-        min = dist;
-        closest = idx;
+  const scheduleRender = () => setTick((t) => t + 1);
+
+  const clampIndex = (idx: number) =>
+    Math.min(Math.max(idx, 0), categories.length - 1);
+
+  const animateTo = (target: number) => {
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    const start = rotation.current;
+    const diff = target - start;
+    const duration = 200;
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      rotation.current = start + diff * eased;
+      scheduleRender();
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(step);
       }
-    });
-    if (closest !== activeIndex) {
-      setActiveIndex(closest);
-      const params = new URLSearchParams(search);
-      params.set("cat", categories[closest].id);
-      router.replace(`?${params.toString()}`, { scroll: false });
-    }
-  }, [activeIndex, categories, router, search]);
-
-  // passive scroll listener
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const handler = () => {
-      if (raf.current !== null) cancelAnimationFrame(raf.current);
-      raf.current = requestAnimationFrame(updateActiveFromScroll);
     };
-    container.addEventListener("scroll", handler, { passive: true });
-    return () => container.removeEventListener("scroll", handler);
-  }, [updateActiveFromScroll]);
+    animRef.current = requestAnimationFrame(step);
+  };
 
-  // recalc on resize
-  useEffect(() => {
-    const onResize = () => updateActiveFromScroll();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [updateActiveFromScroll]);
-
-  const scrollToIdx = (idx: number) => {
-    if (idx < 0 || idx >= categories.length) return;
-    const container = containerRef.current;
-    const card = cardRefs.current[idx];
-    if (!container || !card) return;
-    container.scrollTo({
-      left: card.offsetLeft - container.clientWidth / 2 + card.clientWidth / 2,
-      behavior: "smooth",
-    });
-    setActiveIndex(idx);
+  const snapToClosest = () => {
+    const offsetSteps = Math.round(rotation.current / ANGLE_STEP);
+    const nextIdx = clampIndex(activeIndex - offsetSteps);
+    rotation.current -= offsetSteps * ANGLE_STEP;
+    setActiveIndex(nextIdx);
     const params = new URLSearchParams(search);
-    params.set("cat", categories[idx].id);
+    params.set("cat", categories[nextIdx].id);
     router.replace(`?${params.toString()}`, { scroll: false });
+    animateTo(0);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    pointerState.current = {
+      id: e.pointerId,
+      lastX: e.clientX,
+      velocity: 0,
+    };
+    containerRef.current?.setPointerCapture(e.pointerId);
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointerState.current || !containerRef.current) return;
+    const dx = e.clientX - pointerState.current.lastX;
+    pointerState.current.lastX = e.clientX;
+    pointerState.current.velocity = dx;
+    const width = containerRef.current.clientWidth;
+    rotation.current += (dx / width) * ANGLE_STEP;
+    scheduleRender();
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointerState.current || !containerRef.current) return;
+    const width = containerRef.current.clientWidth;
+    rotation.current +=
+      (pointerState.current.velocity / width) * ANGLE_STEP * 4;
+    pointerState.current = null;
+    snapToClosest();
+    containerRef.current?.releasePointerCapture(e.pointerId);
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!containerRef.current) return;
+    const width = containerRef.current.clientWidth;
+    const delta = (e.deltaY || e.deltaX) / width * ANGLE_STEP;
+    rotation.current += delta;
+    scheduleRender();
+    if (wheelTimeout.current !== null) {
+      window.clearTimeout(wheelTimeout.current);
+    }
+    wheelTimeout.current = window.setTimeout(snapToClosest, 80);
+  };
+
+  const rotateToIdx = (idx: number) => {
+    const clamped = clampIndex(idx);
+    const deltaSteps = clamped - activeIndex;
+    setActiveIndex(clamped);
+    const params = new URLSearchParams(search);
+    params.set("cat", categories[clamped].id);
+    router.replace(`?${params.toString()}`, { scroll: false });
+    rotation.current = -deltaSteps * ANGLE_STEP;
+    animateTo(0);
   };
 
   const handleKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "ArrowLeft") {
       e.preventDefault();
-      scrollToIdx(activeIndex - 1);
+      rotateToIdx(activeIndex - 1);
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      scrollToIdx(activeIndex + 1);
+      rotateToIdx(activeIndex + 1);
     } else if (e.key === "Enter") {
       e.preventDefault();
       cardRefs.current[activeIndex]?.querySelector("button")?.click();
@@ -113,38 +143,70 @@ export default function SkillsCarousel() {
     return <div className="text-center py-8 text-zinc-400">No skills yet</div>;
   }
 
+  const rangeStart =
+    categories.length > 30 ? Math.max(0, activeIndex - 5) : 0;
+  const rangeEnd =
+    categories.length > 30
+      ? Math.min(categories.length, activeIndex + 6)
+      : categories.length;
+
   return (
     <div className="relative">
       <div
         ref={containerRef}
-        className="flex gap-4 px-4 overflow-x-auto snap-x snap-mandatory scroll-smooth"
+        className="relative h-[62vh] overflow-hidden outline-none"
         role="region"
         aria-roledescription="carousel"
         aria-label="Skill categories"
         tabIndex={0}
         onKeyDown={handleKey}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onWheel={handleWheel}
         style={{
+          perspective: "1000px",
           maskImage:
             "linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)",
         }}
       >
-        {categories.map((cat, idx) => (
-          <div
-            key={cat.id}
-            ref={(el) => {
-              cardRefs.current[idx] = el;
-            }}
-            className="snap-center shrink-0 w-[86%] sm:w-[74%] lg:w-[56%] h-[62vh]"
-            role="group"
-            aria-label={`Category ${idx + 1} of ${categories.length}`}
-          >
-            <CategoryCard
-              category={cat}
-              skills={skillsByCategory[cat.id] || []}
-              active={idx === activeIndex}
-            />
-          </div>
-        ))}
+        <div className="absolute inset-0" style={{ transformStyle: "preserve-3d" }}>
+          {categories.slice(rangeStart, rangeEnd).map((cat, i) => {
+            const idx = rangeStart + i;
+            const theta = (idx - activeIndex) * ANGLE_STEP + rotation.current;
+            const rad = (theta * Math.PI) / 180;
+            const scale = 1 - 0.06 * Math.abs(Math.sin(rad));
+            const opacity = Math.min(
+              1,
+              Math.max(0.35, 1 - OPACITY_K * Math.abs(Math.sin(rad)))
+            );
+            const zIndex = 1000 - Math.abs(theta);
+            return (
+              <div
+                key={cat.id}
+                ref={(el) => {
+                  cardRefs.current[idx] = el;
+                }}
+                className="absolute top-1/2 left-1/2 w-[86%] sm:w-[74%] lg:w-[56%] h-full"
+                role="group"
+                aria-label={`Category ${idx + 1} of ${categories.length}`}
+                style={{
+                  transform: `translate(-50%, -50%) rotateY(${theta}deg) translateZ(${RADIUS}px) scale(${scale})`,
+                  opacity,
+                  zIndex,
+                  willChange: "transform, opacity",
+                }}
+              >
+                <CategoryCard
+                  category={cat}
+                  skills={skillsByCategory[cat.id] || []}
+                  active={idx === activeIndex}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
       <div className="mt-4 flex justify-center gap-2" role="tablist">
         {categories.map((cat, idx) => (
@@ -156,11 +218,12 @@ export default function SkillsCarousel() {
             className={`h-1.5 w-1.5 rounded-full ${
               idx === activeIndex ? "bg-white" : "bg-white/40"
             }`}
-            onClick={() => scrollToIdx(idx)}
+            onClick={() => rotateToIdx(idx)}
           />
         ))}
       </div>
     </div>
   );
 }
+
 
