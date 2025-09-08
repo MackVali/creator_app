@@ -1,8 +1,6 @@
-import {
-  createBrowserClient,
-  createServerClient,
-  type CookieOptions,
-} from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
+import type { CookieOptions } from "@supabase/ssr/dist/module/types";
+import { createServerClient } from "@supabase/ssr/dist/module/createServerClient";
 
 function getEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -22,7 +20,7 @@ function getEnv() {
 export function getSupabaseBrowser() {
   const { url, key } = getEnv();
   if (!url || !key) return null;
-  return createBrowserClient(url, key);
+  return createClient(url, key);
 }
 
 export function getSupabaseServer(cookies: {
