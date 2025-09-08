@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -250,12 +250,17 @@ export default function SchedulePage() {
                   ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
                 const catColor = (item as { cat_color_hex?: string }).cat_color_hex || '#3b82f6'
                 const progress = (item as { progress?: number }).progress ?? 0
+                const style: CSSProperties & { '--cat': string } = {
+                  top,
+                  height,
+                  '--cat': catColor,
+                }
                 return (
                   <div
                     key={p.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
                     className="absolute left-16 right-2 flex items-center justify-between rounded-xl px-3 py-2 text-white card3d"
-                    style={{ top, height, '--cat': catColor }}
+                    style={style}
                   >
                     <div className="flex flex-col">
                       <span className="truncate text-sm font-medium">
