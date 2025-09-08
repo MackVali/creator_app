@@ -77,15 +77,15 @@ export default function CategoryCard({ category, skills, active }: Props) {
   return (
     <motion.div
       layout
-      className="absolute inset-0 rounded-3xl border border-black/10 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.8)] p-3 sm:p-4 flex flex-col"
-      style={{ backgroundColor: bg, color: on, pointerEvents: active ? "auto" : "none" }}
-      initial={false}
-      animate={active ? "active" : "inactive"}
-      variants={{
-        active: { scale: 1, opacity: 1, filter: "blur(0px)", y: 0 },
-        inactive: { scale: 0.92, opacity: 0.6, filter: "blur(1.5px)", y: 6 },
+      className="h-full rounded-3xl border border-black/10 p-3 sm:p-4 flex flex-col shadow-md"
+      style={{ backgroundColor: bg, color: on }}
+      animate={{
+        scale: active ? 1.02 : 1,
+        boxShadow: active
+          ? "0 12px 24px rgba(0,0,0,0.25)"
+          : "0 4px 12px rgba(0,0,0,0.15)",
       }}
-      transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.9 }}
+      transition={{ type: "spring", stiffness: 260, damping: 30 }}
     >
       <motion.div
         key={category.id}
