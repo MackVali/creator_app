@@ -11,6 +11,7 @@ interface Props {
   onColor: string;
   trackColor: string;
   fillColor: string;
+  onDragStateChange?: (dragging: boolean) => void;
 }
 
 export default function DraggableSkill({
@@ -19,6 +20,7 @@ export default function DraggableSkill({
   onColor,
   trackColor,
   fillColor,
+  onDragStateChange,
 }: Props) {
   const controls = useDragControls();
   const [ready, setReady] = useState(false);
@@ -48,6 +50,7 @@ export default function DraggableSkill({
         if (ready && !dragging.current) {
           controls.start(e);
           dragging.current = true;
+          onDragStateChange?.(true);
           setReady(false);
         }
       }}
@@ -55,6 +58,7 @@ export default function DraggableSkill({
       onPointerLeave={clear}
       onDragEnd={() => {
         dragging.current = false;
+        onDragStateChange?.(false);
         clear();
       }}
       onClickCapture={(e: MouseEvent) => {

@@ -23,9 +23,15 @@ interface Props {
   category: Category;
   skills: Skill[];
   active: boolean;
+  onSkillDrag: (dragging: boolean) => void;
 }
 
-export default function CategoryCard({ category, skills, active }: Props) {
+export default function CategoryCard({
+  category,
+  skills,
+  active,
+  onSkillDrag,
+}: Props) {
   const [color, setColor] = useState(category.color_hex || "#000000");
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -174,6 +180,7 @@ export default function CategoryCard({ category, skills, active }: Props) {
                 onColor={on}
                 trackColor={track}
                 fillColor={fill}
+                onDragStateChange={onSkillDrag}
               />
             ))
           )}

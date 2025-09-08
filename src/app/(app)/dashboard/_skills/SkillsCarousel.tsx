@@ -17,7 +17,8 @@ export default function SkillsCarousel() {
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [cardWidth, setCardWidth] = useState(0);
   const touchStart = useRef({ x: 0, y: 0 });
-  const dragging = useRef(false);
+  const swiping = useRef(false);
+  const [skillDragging, setSkillDragging] = useState(false);
 
   useEffect(() => {
     if (categories.length === 0) return;
@@ -53,25 +54,28 @@ export default function SkillsCarousel() {
   };
 
   const onTouchStart = (e: React.TouchEvent) => {
+    if (skillDragging) return;
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY };
-    dragging.current = false;
+    swiping.current = false;
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
+    if (skillDragging) return;
     const t = e.touches[0];
     const dx = t.clientX - touchStart.current.x;
     const dy = t.clientY - touchStart.current.y;
-    if (!dragging.current && shouldPreventScroll(dx, dy)) {
-      dragging.current = true;
+    if (!swiping.current && shouldPreventScroll(dx, dy)) {
+      swiping.current = true;
     }
-    if (dragging.current) {
+    if (swiping.current) {
       e.preventDefault();
     }
   };
 
   const onTouchEnd = () => {
-    dragging.current = false;
+    if (skillDragging) return;
+    swiping.current = false;
   };
 
   const cards = useMemo(() => {
@@ -117,22 +121,30 @@ export default function SkillsCarousel() {
           style={{ pointerEvents: isActive ? "auto" : "none" }}
           animate={animate}
           transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.9 }}
-          drag={isActive ? "x" : false}
+          drag={isActive && !skillDragging ? "x" : false}
           dragConstraints={{ left: 0, right: 0 }}
           onDragEnd={handleDragEnd}
-          onTouchStart={isActive ? onTouchStart : undefined}
-          onTouchMove={isActive ? onTouchMove : undefined}
-          onTouchEnd={isActive ? onTouchEnd : undefined}
+          onTouchStart={isActive && !skillDragging ? onTouchStart : undefined}
+          onTouchMove={isActive && !skillDragging ? onTouchMove : undefined}
+          onTouchEnd={isActive && !skillDragging ? onTouchEnd : undefined}
         >
           <CategoryCard
             category={cat}
             skills={skillsByCategory[cat.id] || []}
             active={isActive}
+            onSkillDrag={setSkillDragging}
           />
         </motion.div>
       );
     });
-  }, [categories, activeIndex, skillsByCategory, prefersReducedMotion, cardWidth]);
+  }, [
+    categories,
+    activeIndex,
+    skillsByCategory,
+    prefersReducedMotion,
+    cardWidth,
+    skillDragging,
+  ]);
 
   if (isLoading) {
     return <div className="py-8 text-center text-zinc-400">Loading...</div>;
