@@ -64,7 +64,7 @@ export async function fetchWindowsForDate(date: Date): Promise<WindowLite[]> {
     .filter(crosses)
     .map((w) => ({ ...w, fromPrevDay: true }));
 
-  return ([...(today ?? []), ...prevCross] as WindowLite[]) ?? [];
+  return [...(today ?? []), ...prevCross] as WindowLite[];
 }
 
 export async function fetchProjectsMap(): Promise<

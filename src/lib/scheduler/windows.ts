@@ -20,14 +20,18 @@ export async function getWindowsForDate(date: Date, userId: string) {
     .contains("days", [prevWeekday]);
   if (err1 || err2) throw err1 ?? err2;
 
-  const crosses = (w: WindowRow) => {
+  const crosses = (w: Pick<WindowRow, "start_local" | "end_local">) => {
     const [sh = 0, sm = 0] = (w.start_local || "0:0").split(":").map(Number);
     const [eh = 0, em = 0] = (w.end_local || "0:0").split(":").map(Number);
     return eh < sh || (eh === sh && em < sm);
   };
 
-  const prevCross = (prev ?? []).filter(crosses).map((w) => ({ ...w, fromPrevDay: true }));
-  return ([...(today ?? []), ...prevCross] as (WindowRow & { fromPrevDay?: boolean })[]);
+  const prevCross = (prev ?? [])
+    .filter(crosses)
+    .map((w) => ({ ...w, fromPrevDay: true }));
+  return [...(today ?? []), ...prevCross] as (
+    WindowRow & { fromPrevDay?: boolean }
+  )[];
 }
 
 export interface Slot {

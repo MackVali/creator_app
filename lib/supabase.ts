@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { CookieOptions } from "@supabase/ssr/dist/module/types";
-import { createServerClient } from "@supabase/ssr/dist/module/createServerClient";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 function getEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
