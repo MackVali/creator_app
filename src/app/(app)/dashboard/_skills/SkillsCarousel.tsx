@@ -18,7 +18,7 @@ export default function SkillsCarousel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const raf = useRef<number>();
+  const raf = useRef<number | null>(null);
 
   // scroll to initial category
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function SkillsCarousel() {
     const container = containerRef.current;
     if (!container) return;
     const handler = () => {
-      if (raf.current) cancelAnimationFrame(raf.current);
+      if (raf.current !== null) cancelAnimationFrame(raf.current);
       raf.current = requestAnimationFrame(updateActiveFromScroll);
     };
     container.addEventListener("scroll", handler, { passive: true });
@@ -131,7 +131,9 @@ export default function SkillsCarousel() {
         {categories.map((cat, idx) => (
           <div
             key={cat.id}
-            ref={(el) => (cardRefs.current[idx] = el)}
+            ref={(el) => {
+              cardRefs.current[idx] = el;
+            }}
             className="snap-center shrink-0 w-[86%] sm:w-[74%] lg:w-[56%] h-[62vh]"
             role="group"
             aria-label={`Category ${idx + 1} of ${categories.length}`}
