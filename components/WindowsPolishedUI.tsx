@@ -568,7 +568,7 @@ function Drawer({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex justify-end" 
+      className="fixed inset-0 z-[60] bg-black/50 flex justify-end"
       role="dialog" aria-modal="true"
     >
       <div className="w-full max-w-md h-full bg-[#1C1F22] p-4 overflow-y-auto">
@@ -703,7 +703,11 @@ function ConfirmSheet({
     return () => document.removeEventListener("keydown", onKey)
   }, [onCancel])
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-end" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-[60] bg-black/50 flex items-end"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="w-full bg-[#1C1F22] p-4 rounded-t-xl">
         <p className="mb-4">Delete window? {item.name} {item.start} — {item.end}</p>
         <div className="flex justify-end gap-2">
