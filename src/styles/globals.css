@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./tokens.css";
 
 /* custom layers/utilities can go below */
 @layer utilities {
