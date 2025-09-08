@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { motion, Reorder } from "framer-motion";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
-import SkillRow from "./SkillRow";
+import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
 function getOnColor(hex: string) {
@@ -23,9 +23,15 @@ interface Props {
   category: Category;
   skills: Skill[];
   active: boolean;
+  onSkillDrag: (dragging: boolean) => void;
 }
 
-export default function CategoryCard({ category, skills, active }: Props) {
+export default function CategoryCard({
+  category,
+  skills,
+  active,
+  onSkillDrag,
+}: Props) {
   const [color, setColor] = useState(category.color_hex || "#000000");
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -77,15 +83,15 @@ export default function CategoryCard({ category, skills, active }: Props) {
   return (
     <motion.div
       layout
-      className="absolute inset-0 rounded-3xl border border-black/10 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.8)] p-3 sm:p-4 flex flex-col"
-      style={{ backgroundColor: bg, color: on, pointerEvents: active ? "auto" : "none" }}
-      initial={false}
-      animate={active ? "active" : "inactive"}
-      variants={{
-        active: { scale: 1, opacity: 1, filter: "blur(0px)", y: 0 },
-        inactive: { scale: 0.92, opacity: 0.6, filter: "blur(1.5px)", y: 6 },
+      className="h-full rounded-3xl border border-black/10 p-3 sm:p-4 flex flex-col shadow-md"
+      style={{ backgroundColor: bg, color: on }}
+      animate={{
+        scale: active ? 1.02 : 1,
+        boxShadow: active
+          ? "0 12px 24px rgba(0,0,0,0.25)"
+          : "0 4px 12px rgba(0,0,0,0.15)",
       }}
-      transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.9 }}
+      transition={{ type: "spring", stiffness: 260, damping: 30 }}
     >
       <motion.div
         key={category.id}
@@ -167,33 +173,15 @@ export default function CategoryCard({ category, skills, active }: Props) {
             </div>
           ) : (
             localSkills.map((s) => (
-              <Reorder.Item
+              <DraggableSkill
                 key={s.id}
-                value={s}
-                as="div"
-                className="cursor-grab"
-                onDragStart={() => {
-                  dragging.current = true;
-                }}
-                onDragEnd={() => {
-                  setTimeout(() => {
-                    dragging.current = false;
-                  }, 0);
-                }}
-                onClickCapture={(e: MouseEvent) => {
-                  if (dragging.current) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
-              >
-                <SkillRow
-                  skill={s}
-                  onColor={on}
-                  trackColor={track}
-                  fillColor={fill}
-                />
-              </Reorder.Item>
+                skill={s}
+                dragging={dragging}
+                onColor={on}
+                trackColor={track}
+                fillColor={fill}
+                onDragStateChange={onSkillDrag}
+              />
             ))
           )}
         </Reorder.Group>
