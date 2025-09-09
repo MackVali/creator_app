@@ -34,6 +34,19 @@ describe("placeByEnergyWeight", () => {
     expect(result.unplaced).toEqual([{ taskId: "t1", reason: "no-window" }]);
   });
 
+  it("places tasks into previous day's window slots after midnight", () => {
+    const date = new Date("2024-01-02T00:00:00");
+    const windows: WindowLite[] = [
+      { id: "w1", label: "Night", energy: "LOW", start_local: "22:00", end_local: "02:00", fromPrevDay: true },
+    ];
+    const tasks = [
+      { id: "t1", name: "T", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "LOW", weight: 1 },
+    ];
+    const result = placeByEnergyWeight(tasks, windows, date);
+    expect(result.placements).toHaveLength(1);
+    expect(result.placements[0].start.getHours()).toBe(0);
+  });
+
   it("places projects into matching-energy windows", () => {
     const date = new Date("2024-01-01T00:00:00");
     const windows: WindowLite[] = [

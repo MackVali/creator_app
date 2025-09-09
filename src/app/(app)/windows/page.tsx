@@ -45,51 +45,108 @@ export default function WindowsPage() {
     void load();
   }, [load]);
 
-  async function handleCreate(item: WindowItem) {
-    if (!supabase) return;
+  async function handleCreate(item: WindowItem): Promise<boolean> {
+    if (!supabase) return false;
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) return false;
 
+    const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
     const payload = {
       user_id: user.id,
       label: item.name,
-      days: item.days.map((d) => DAY_LABELS.indexOf(d)),
+      days: baseDays,
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
     };
 
-    const { data: inserted, error } = await supabase
-      .from("windows")
-      .insert(payload)
-      .select("id")
-      .single();
+    const [sh, sm] = item.start.split(":").map(Number);
+    const [eh, em] = item.end.split(":").map(Number);
+    const crosses = eh < sh || (eh === sh && em < sm);
 
-    const id = inserted?.id ?? item.id;
-    if (!error) {
-      setWindows((prev) => [...(prev ?? []), { ...item, id }]);
+    try {
+      if (!crosses) {
+        const { data: inserted, error } = await supabase
+          .from("windows")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (error) throw error;
+        const id = inserted?.id ?? item.id;
+        setWindows((prev) => [...(prev ?? []), { ...item, id }]);
+      } else {
+        const nextDays = baseDays.map((d) => (d + 1) % 7);
+        const firstPayload = { ...payload, end_local: "23:59" };
+        const secondPayload = {
+          ...payload,
+          days: nextDays,
+          start_local: "00:00",
+          end_local: item.end,
+        };
+        const { data: first, error: err1 } = await supabase
+          .from("windows")
+          .insert(firstPayload)
+          .select("id")
+          .single();
+        if (err1) throw err1;
+        const { data: second, error: err2 } = await supabase
+          .from("windows")
+          .insert(secondPayload)
+          .select("id")
+          .single();
+        if (err2) throw err2;
+        setWindows((prev) => [
+          ...(prev ?? []),
+          { ...item, id: first?.id ?? "", end: "23:59" },
+          {
+            ...item,
+            id: second?.id ?? "",
+            start: "00:00",
+            days: nextDays.map((d) => DAY_LABELS[d]),
+          },
+        ]);
+      }
+      return true;
+    } catch (err) {
+      throw err;
     }
   }
 
-  async function handleEdit(id: string, item: WindowItem) {
-    if (!supabase) return;
+  async function handleEdit(id: string, item: WindowItem): Promise<boolean> {
+    if (!supabase) return false;
+
+    const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
+    const [sh, sm] = item.start.split(":").map(Number);
+    const [eh, em] = item.end.split(":").map(Number);
+    const crosses = eh < sh || (eh === sh && em < sm);
+
+    if (crosses) {
+      const { error: delErr } = await supabase
+        .from("windows")
+        .delete()
+        .eq("id", id);
+      if (delErr) throw delErr;
+      setWindows((prev) => prev?.filter((w) => w.id !== id));
+      await handleCreate(item);
+      return true;
+    }
 
     const payload = {
       label: item.name,
-      days: item.days.map((d) => DAY_LABELS.indexOf(d)),
+      days: baseDays,
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
     };
 
     const { error } = await supabase.from("windows").update(payload).eq("id", id);
-    if (!error) {
-      setWindows((prev) =>
-        prev?.map((w) => (w.id === id ? { ...item, id } : w))
-      );
-    }
+    if (error) throw error;
+    setWindows((prev) =>
+      prev?.map((w) => (w.id === id ? { ...item, id } : w))
+    );
+    return true;
   }
 
   async function handleDelete(id: string) {

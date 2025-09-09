@@ -1,14 +1,14 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { MonthView } from '@/components/schedule/MonthView'
 import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
+import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { Button } from '@/components/ui/button'
-import { Circle } from 'lucide-react'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -18,6 +18,7 @@ import {
 import { placeByEnergyWeight } from '@/lib/scheduler/placer'
 import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
+import { windowRect } from '@/lib/scheduler/windowRect'
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -47,9 +48,8 @@ export default function SchedulePage() {
   useEffect(() => {
     async function load() {
       try {
-        const weekday = currentDate.getDay()
         const [ws, ts, pm] = await Promise.all([
-          fetchWindowsForDate(weekday),
+          fetchWindowsForDate(currentDate),
           fetchReadyTasks(),
           fetchProjectsMap(),
         ])
@@ -135,11 +135,6 @@ export default function SchedulePage() {
     })
   }
 
-  function timeToMin(t: string) {
-    const [h = 0, m = 0] = t.split(':').map(Number)
-    return h * 60 + m
-  }
-
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
@@ -218,10 +213,7 @@ export default function SchedulePage() {
               pxPerMin={pxPerMin}
             >
               {windows.map(w => {
-                const startMin = timeToMin(w.start_local)
-                const endMin = timeToMin(w.end_local)
-                const top = (startMin - startHour * 60) * pxPerMin
-                const height = (endMin - startMin) * pxPerMin
+                const { top, height } = windowRect(w, startHour, pxPerMin)
                 return (
                   <div
                     key={w.id}
@@ -247,25 +239,48 @@ export default function SchedulePage() {
                 const top = (startMin - startHour * 60) * pxPerMin
                 const height =
                   ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
+                const catColor = (item as { cat_color_hex?: string }).cat_color_hex || '#3b82f6'
+                const progress = (item as { progress?: number }).progress ?? 0
+                const style: CSSProperties & { '--cat': string } = {
+                  top,
+                  height,
+                  '--cat': catColor,
+                }
                 return (
                   <div
                     key={p.taskId}
                     aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                    className="absolute left-16 right-2 flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-white"
-                    style={{ top, height }}
+                    className="absolute left-16 right-2 flex items-center justify-between rounded-xl px-3 py-2 text-white card3d"
+                    style={style}
                   >
                     <div className="flex flex-col">
                       <span className="truncate text-sm font-medium">
                         {item.name}
                       </span>
-                      <div className="text-xs text-zinc-400">
+                      <div className="text-xs text-zinc-200/70">
                         {item.duration_min}m
                         {planning === 'PROJECT' && 'taskCount' in item && (
                           <span> · {item.taskCount} tasks</span>
                         )}
                       </div>
                     </div>
-                    <Circle className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+                    {item.skill_icon && (
+                      <span
+                        className="ml-2 text-lg leading-none flex-shrink-0"
+                        aria-hidden
+                      >
+                        {item.skill_icon}
+                      </span>
+                    )}
+                    <FlameEmber
+                      level={(item.energy as FlameLevel) || 'NO'}
+                      size="sm"
+                      className="absolute -top-1 -right-1"
+                    />
+                    <div
+                      className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                      style={{ width: `${progress}%` }}
+                    />
                   </div>
                 )
               })}

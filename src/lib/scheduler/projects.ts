@@ -11,6 +11,7 @@ export type ProjectItem = ProjectLite & {
   energy: Energy
   weight: number
   taskCount: number
+  skill_icon?: string | null
 }
 
 export function buildProjectItems(
@@ -41,6 +42,7 @@ export function buildProjectItems(
       0
     )
     const weight = projectWeight(p, relatedWeightSum)
+    const skill_icon = related.find(t => t.skill_icon)?.skill_icon ?? null
     items.push({
       ...p,
       name: p.name ?? '',
@@ -48,6 +50,7 @@ export function buildProjectItems(
       energy,
       weight,
       taskCount: related.length,
+      skill_icon,
     })
   }
   return items

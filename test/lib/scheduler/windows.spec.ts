@@ -26,5 +26,26 @@ describe("genSlots", () => {
       Array.from({ length: 12 }, (_, i) => i)
     );
   });
+
+  it("handles windows crossing midnight from previous day", () => {
+    const date = new Date("2023-01-02T00:00:00");
+    const windows: (WindowRow & { fromPrevDay?: boolean })[] = [
+      {
+        id: "w1",
+        created_at: "",
+        user_id: "u1",
+        label: "Night",
+        days: [1],
+        start_local: "22:00",
+        end_local: "02:00",
+        energy: "NO",
+        fromPrevDay: true,
+      },
+    ];
+    const slots = genSlots(date, windows);
+    expect(slots).toHaveLength(24);
+    expect(slots[0].start.getHours()).toBe(0);
+    expect(slots[slots.length - 1].end.getHours()).toBe(2);
+  });
 });
 
