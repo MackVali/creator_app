@@ -5,10 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import {
-  getMonumentNotes,
-  saveMonumentNotes,
-} from "@/lib/monumentNotesStorage";
+import { getNote, upsertNote } from "@/lib/monumentNotesStore";
 import type { MonumentNote } from "@/lib/types/monument-note";
 
 export default function MonumentNotePage() {
@@ -19,32 +16,37 @@ export default function MonumentNotePage() {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [pinned, setPinned] = useState(false);
+  const [tags, setTags] = useState("");
 
   useEffect(() => {
-    const notes = getMonumentNotes(monumentId);
-    const note = notes.find((n) => n.id === noteId);
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-    }
+    if (noteId === "new") return;
+    getNote(monumentId, noteId).then((note) => {
+      if (note) {
+        setTitle(note.title);
+        setContent(note.content);
+        setPinned(note.pinned ?? false);
+        setTags(note.tags?.join(",") ?? "");
+      }
+    });
   }, [monumentId, noteId]);
 
-  const onSave = () => {
-    const notes = getMonumentNotes(monumentId);
-    const existingIndex = notes.findIndex((n) => n.id === noteId);
-    const newId = existingIndex >= 0 ? noteId : Date.now().toString();
+  const onSave = async () => {
+    const id = noteId === "new" ? crypto.randomUUID() : noteId;
+    const tagArray = tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
     const newNote: MonumentNote = {
-      id: newId,
+      id,
       monumentId,
       title,
       content,
+      pinned,
+      tags: tagArray,
+      updatedAt: new Date().toISOString(),
     };
-    if (existingIndex >= 0) {
-      notes[existingIndex] = newNote;
-    } else {
-      notes.push(newNote);
-    }
-    saveMonumentNotes(monumentId, notes);
+    await upsertNote(monumentId, newNote);
     router.push(`/monuments/${monumentId}`);
   };
 
@@ -61,6 +63,20 @@ export default function MonumentNotePage() {
         placeholder="Write your note..."
         className="min-h-[300px]"
       />
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant={pinned ? "secondary" : "outline"}
+          onClick={() => setPinned((p) => !p)}
+        >
+          {pinned ? "Unpin" : "Pin"}
+        </Button>
+        <Input
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="tags (comma separated)"
+        />
+      </div>
       <Button onClick={onSave}>Save</Button>
     </main>
   );

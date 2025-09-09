@@ -3,4 +3,8 @@ export type MonumentNote = {
   monumentId: string;
   title: string;
   content: string;
+  pinned?: boolean;
+  tags?: string[];
+  updatedAt: string;
+  synced?: boolean;
 };

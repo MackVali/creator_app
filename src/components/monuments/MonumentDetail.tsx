@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { GoalsPanel } from "./GoalsPanel";
-import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
+import { NotesPanel } from "./NotesPanel";
 import { MonumentDetailLayout, SectionShell } from "./MonumentDetailLayout";
 import { MonumentHero } from "./MonumentHero";
 import { MilestonesPanel } from "./MilestonesPanel";
@@ -115,7 +115,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
       }
       notes={
         <SectionShell title="Notes">
-          <MonumentNotesGrid monumentId={id} />
+          <NotesPanel monumentId={id} />
         </SectionShell>
       }
       activity={
