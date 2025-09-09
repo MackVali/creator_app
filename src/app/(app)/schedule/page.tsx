@@ -68,19 +68,19 @@ export default function SchedulePage() {
     () => (initialDate ? new Date(initialDate) : new Date())
   )
   const [view, setView] = useState<ScheduleView>(initialView)
-  const [planning, setPlanning] = useState<'TASK' | 'PROJECT'>(() => {
-    if (typeof window === 'undefined') return 'TASK'
-    return (localStorage.getItem('planning-mode') as 'TASK' | 'PROJECT') || 'TASK'
-  })
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [windows, setWindows] = useState<WindowLite[]>([])
   const [placements, setPlacements] = useState<
     ReturnType<typeof placeByEnergyWeight>['placements']
   >([])
+  const [taskPlacements, setTaskPlacements] = useState<
+    ReturnType<typeof placeByEnergyWeight>['placements']
+  >([])
   const [unplaced, setUnplaced] = useState<
     ReturnType<typeof placeByEnergyWeight>['unplaced']
   >([])
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
 
@@ -94,10 +94,6 @@ export default function SchedulePage() {
     params.set('date', currentDate.toISOString().slice(0, 10))
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [view, currentDate, router, pathname])
-
-  useEffect(() => {
-    localStorage.setItem('planning-mode', planning)
-  }, [planning])
 
   useEffect(() => {
     async function load() {
@@ -147,7 +143,7 @@ export default function SchedulePage() {
     const map: Record<string, FlameLevel> = {}
     for (const p of placements) {
       const key = p.start.toISOString().slice(0, 10)
-      const item = planning === 'TASK' ? taskMap[p.taskId] : projectMap[p.taskId]
+      const item = projectMap[p.taskId]
       const level = (item?.energy?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
       if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
@@ -155,10 +151,18 @@ export default function SchedulePage() {
       }
     }
     return map
-  }, [placements, planning, taskMap, projectMap])
+  }, [placements, projectMap])
 
-  const getItem = (id: string) =>
-    planning === 'TASK' ? taskMap[id] : projectMap[id]
+  const taskPlacementsByProject = useMemo(() => {
+    const map: Record<string, ReturnType<typeof placeByEnergyWeight>['placements']> = {}
+    for (const tp of taskPlacements) {
+      const t = taskMap[tp.taskId]
+      const pid = t?.project_id
+      if (!pid) continue
+      ;(map[pid] ||= []).push(tp)
+    }
+    return map
+  }, [taskPlacements, taskMap])
 
   function navigate(next: ScheduleView) {
     if (navLock.current) return
@@ -190,17 +194,16 @@ export default function SchedulePage() {
     function run() {
       if (windows.length === 0) return
       const date = currentDate
-      const result =
-        planning === 'TASK'
-          ? placeByEnergyWeight(weightedTasks, windows, date)
-          : placeByEnergyWeight(projectItems, windows, date)
-      setPlacements(result.placements)
-      setUnplaced(result.unplaced)
+      const projResult = placeByEnergyWeight(projectItems, windows, date)
+      setPlacements(projResult.placements)
+      setUnplaced(projResult.unplaced)
+      const taskResult = placeByEnergyWeight(weightedTasks, windows, date)
+      setTaskPlacements(taskResult.placements)
     }
     run()
     const id = setInterval(run, 5 * 60 * 1000)
     return () => clearInterval(id)
-  }, [planning, weightedTasks, projectItems, windows, currentDate])
+  }, [weightedTasks, projectItems, windows, currentDate])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -242,20 +245,6 @@ export default function SchedulePage() {
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
 
         <div className="space-y-2">
-          <div className="flex justify-end">
-            <div className="flex rounded-full bg-zinc-900 p-1 text-xs">
-              {(['TASK', 'PROJECT'] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setPlanning(m)}
-                  aria-label={`Switch to ${m === 'TASK' ? 'task' : 'project'} planning`}
-                  className={`h-9 rounded-full px-3 capitalize ${planning === m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
-                >
-                  {m === 'TASK' ? 'Tasks' : 'Projects'}
-                </button>
-              ))}
-            </div>
-          </div>
           <EnergyPager
             activeIndex={{ year: 0, day: 1, focus: 2 }[view]}
             className="justify-center"
@@ -307,62 +296,125 @@ export default function SchedulePage() {
                       </div>
                     )
                   })}
-                  {placements.map((p, i) => {
-                    const item = getItem(p.taskId)
-                    if (!item) return null
+                  {placements.flatMap((p, i) => {
+                    const item = projectMap[p.taskId]
+                    if (!item) return []
                     const startMin =
                       p.start.getHours() * 60 + p.start.getMinutes()
                     const top = (startMin - startHour * 60) * pxPerMin
                     const height =
                       ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
-                    const progress = (item as { progress?: number }).progress ?? 0
-                    const style: CSSProperties = {
-                      top,
-                      height,
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
-                      outlineOffset: '-1px',
-                    }
-                    return (
-                      <motion.div
-                        key={p.taskId}
-                        aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
-                        style={style}
-                        initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-                        animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-                        transition={prefersReducedMotion ? undefined : { delay: i * 0.02 }}
-                      >
-                        <div className="flex flex-col">
-                          <span className="truncate text-sm font-medium">
-                            {item.name}
-                          </span>
-                          <div className="text-xs text-zinc-200/70">
-                            {item.duration_min}m
-                            {planning === 'PROJECT' && 'taskCount' in item && (
-                              <span> · {item.taskCount} tasks</span>
-                            )}
+                    const isExpanded = expandedProjects.has(p.taskId)
+                    const renderProject = () => {
+                      const style: CSSProperties = {
+                        top,
+                        height,
+                        boxShadow: 'var(--elev-card)',
+                        outline: '1px solid var(--event-border)',
+                        outlineOffset: '-1px',
+                      }
+                      return (
+                        <motion.div
+                          key={p.taskId}
+                          aria-label={`Project ${item.name}`}
+                          onClick={() => {
+                            const tasksForProj = taskPlacementsByProject[p.taskId] || []
+                            if (tasksForProj.length === 0) return
+                            setExpandedProjects(prev => {
+                              const next = new Set(prev)
+                              if (next.has(p.taskId)) next.delete(p.taskId)
+                              else next.add(p.taskId)
+                              return next
+                            })
+                          }}
+                          className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
+                          style={style}
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                          animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                          transition={prefersReducedMotion ? undefined : { delay: i * 0.02 }}
+                        >
+                          <div className="flex flex-col">
+                            <span className="truncate text-sm font-medium">
+                              {item.name}
+                            </span>
+                            <div className="text-xs text-zinc-200/70">
+                              {item.duration_min}m
+                              {'taskCount' in item && (
+                                <span> · {item.taskCount} tasks</span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        {item.skill_icon && (
-                          <span
-                            className="ml-2 text-lg leading-none flex-shrink-0"
-                            aria-hidden
-                          >
-                            {item.skill_icon}
-                          </span>
-                        )}
-                        <FlameEmber
-                          level={(item.energy as FlameLevel) || 'NO'}
-                          size="sm"
-                          className="absolute -top-1 -right-1"
-                        />
-                        <div
-                          className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </motion.div>
-                    )
+                          {item.skill_icon && (
+                            <span
+                              className="ml-2 text-lg leading-none flex-shrink-0"
+                              aria-hidden
+                            >
+                              {item.skill_icon}
+                            </span>
+                          )}
+                          <FlameEmber
+                            level={(item.energy as FlameLevel) || 'NO'}
+                            size="sm"
+                            className="absolute -top-1 -right-1"
+                          />
+                        </motion.div>
+                      )
+                    }
+                    if (!isExpanded) return renderProject()
+                    const taskPs = taskPlacementsByProject[p.taskId] || []
+                    return taskPs.map(tp => {
+                      const tItem = taskMap[tp.taskId]
+                      if (!tItem) return null
+                      const tStartMin =
+                        tp.start.getHours() * 60 + tp.start.getMinutes()
+                      const tTop = (tStartMin - startHour * 60) * pxPerMin
+                      const tHeight =
+                        ((tp.end.getTime() - tp.start.getTime()) / 60000) * pxPerMin
+                      const style: CSSProperties = {
+                        top: tTop,
+                        height: tHeight,
+                        boxShadow: 'var(--elev-card)',
+                        outline: '1px solid var(--event-border)',
+                        outlineOffset: '-1px',
+                      }
+                      const progress = (tItem as { progress?: number }).progress ?? 0
+                      return (
+                        <motion.div
+                          key={tp.taskId}
+                          aria-label={`Task ${tItem.name}`}
+                          className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
+                          style={style}
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                          animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                        >
+                          <div className="flex flex-col">
+                            <span className="truncate text-sm font-medium">
+                              {tItem.name}
+                            </span>
+                            <div className="text-xs text-zinc-200/70">
+                              {tItem.duration_min}m
+                            </div>
+                          </div>
+                          {tItem.skill_icon && (
+                            <span
+                              className="ml-2 text-lg leading-none flex-shrink-0"
+                              aria-hidden
+                            >
+                              {tItem.skill_icon}
+                            </span>
+                          )}
+                          <FlameEmber
+                            level={(tItem.energy as FlameLevel) || 'NO'}
+                            size="sm"
+                            className="absolute -top-1 -right-1"
+                          />
+                          <div
+                            className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </motion.div>
+                      )
+                    })
                   })}
                 </DayTimeline>
               </ScheduleViewShell>
@@ -380,7 +432,7 @@ export default function SchedulePage() {
             <h2 className="text-sm font-semibold text-zinc-200">Unplaced</h2>
             <ul className="space-y-2">
               {unplaced.map(u => {
-                const item = getItem(u.taskId)
+                const item = projectMap[u.taskId]
                 const reason =
                   u.reason === 'no-window'
                     ? 'No window fits'
@@ -388,7 +440,7 @@ export default function SchedulePage() {
                 return (
                   <li
                     key={u.taskId}
-                    aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item?.name ?? u.taskId} unplaced: ${reason}`}
+                    aria-label={`Project ${item?.name ?? u.taskId} unplaced: ${reason}`}
                     className="flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-sm text-white"
                   >
                     <span>{item?.name ?? u.taskId}</span>
