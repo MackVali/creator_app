@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { SectionHeader } from "@/components/ui/content-card";
+import { ContentCard, SectionHeader } from "@/components/ui/content-card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface SectionShellProps {
@@ -10,9 +10,17 @@ interface SectionShellProps {
 
 export function SectionShell({ title, children, loading = false }: SectionShellProps) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <SectionHeader title={title} />
-      {loading ? <Skeleton className="h-32 w-full rounded-lg" /> : children}
+      {loading ? (
+        <ContentCard padding="sm" shadow="sm">
+          <Skeleton className="h-32 w-full" />
+        </ContentCard>
+      ) : (
+        <ContentCard padding="sm" shadow="sm">
+          {children}
+        </ContentCard>
+      )}
     </section>
   );
 }
@@ -33,7 +41,7 @@ export function MonumentDetailLayout({
   activity,
 }: MonumentDetailLayoutProps) {
   return (
-    <main className="p-4 space-y-8">
+    <main className="p-3 md:p-4 space-y-3 md:space-y-4">
       {hero}
       {milestones}
       {goals}

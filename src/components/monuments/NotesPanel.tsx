@@ -49,7 +49,7 @@ export function NotesPanel({ monumentId }: NotesPanelProps) {
   const others = notes.filter((n) => !n.pinned);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="space-y-2">
         <Textarea
           value={content}

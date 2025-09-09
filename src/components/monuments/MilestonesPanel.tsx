@@ -168,13 +168,13 @@ export function MilestonesPanel({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="space-y-2">
         {milestones.map((m) => (
           <div
             key={m.id}
-            className={`flex items-center justify-between rounded-md border border-zinc-700 px-3 py-2 ${
-              m.done ? "bg-zinc-800 animate-pulse" : ""
+            className={`flex items-center justify-between rounded-md border px-3 py-2 shadow-sm ${
+              m.done ? "animate-pulse bg-card" : "bg-card"
             }`}
           >
             <label className="flex items-center gap-2">

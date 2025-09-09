@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { spring } from "@/lib/motion";
 
 interface ChargingRingProps {
   value: number;
@@ -15,6 +16,13 @@ export function ChargingRing({ value, size = 80, strokeWidth = 8 }: ChargingRing
 
   return (
     <svg width={size} height={size} className="text-zinc-700">
+      <defs>
+        <linearGradient id="energyGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#ff7e1b" />
+          <stop offset="50%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#a855f7" />
+        </linearGradient>
+      </defs>
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -27,13 +35,13 @@ export function ChargingRing({ value, size = 80, strokeWidth = 8 }: ChargingRing
         cx={size / 2}
         cy={size / 2}
         r={radius}
-        stroke="var(--accent)"
+        stroke="url(#energyGradient)"
         strokeWidth={strokeWidth}
         fill="transparent"
         strokeDasharray={circumference}
         strokeDashoffset={offset}
         style={{ transform: "rotate(-90deg)", transformOrigin: "50% 50%" }}
-        transition={{ duration: 0.5 }}
+        transition={spring}
       />
       <text
         x="50%"

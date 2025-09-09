@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { MonumentDetail } from "@/components/monuments/MonumentDetail";
+import { spring } from "@/lib/motion";
 
 export interface Monument {
   id: string;
@@ -38,7 +39,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             key={m.id}
             layoutId={`card-${m.id}`}
             onClick={() => setActiveId(m.id)}
-            className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+            className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-zinc-800"
           >
             <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
               {m.emoji}
@@ -62,14 +63,14 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
+            transition={spring}
           >
             <motion.div
-              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-zinc-900 shadow-xl"
+              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl border bg-zinc-900 shadow-xl"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25, ease: "easeInOut" }}
+              transition={spring}
             >
               <button
                 onClick={() => setActiveId(null)}
