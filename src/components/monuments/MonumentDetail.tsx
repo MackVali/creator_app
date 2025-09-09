@@ -7,6 +7,7 @@ import { NotesPanel } from "./NotesPanel";
 import { MonumentDetailLayout, SectionShell } from "./MonumentDetailLayout";
 import { MonumentHero } from "./MonumentHero";
 import { MilestonesPanel } from "./MilestonesPanel";
+import { ActivityPanel } from "./ActivityPanel";
 
 interface Monument {
   id: string;
@@ -120,7 +121,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
       }
       activity={
         <SectionShell title="Activity">
-          <p className="text-sm text-muted-foreground">No activity yet</p>
+          <ActivityPanel monumentId={id} />
         </SectionShell>
       }
     />

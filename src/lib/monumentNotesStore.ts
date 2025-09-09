@@ -139,6 +139,15 @@ export async function syncNotes(monumentId: string): Promise<void> {
       updated_at: note.updatedAt,
     });
     if (!error) {
+      try {
+        await supabase.from("monument_activity").insert({
+          monument_id: monumentId,
+          type: "note_added",
+          details: { note_id: note.id },
+        });
+      } catch (err) {
+        console.error("Failed logging note activity", err);
+      }
       note.synced = true;
     }
   }

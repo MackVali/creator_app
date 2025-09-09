@@ -84,6 +84,15 @@ export function MilestonesPanel({
           .update({ charge: newCharge })
           .eq("id", monumentId);
         onProgressChange?.(newCharge);
+        try {
+          await supabase.from("monument_activity").insert({
+            monument_id: monumentId,
+            type: "charge_update",
+            details: { charge: newCharge },
+          });
+        } catch (err) {
+          console.error("Failed logging charge activity", err);
+        }
       } catch (err) {
         console.error("Failed updating monument charge", err);
       }
@@ -92,7 +101,7 @@ export function MilestonesPanel({
         try {
           await supabase.from("monument_activity").insert({
             monument_id: monumentId,
-            type: "milestone_complete",
+            type: "milestone_done",
             details: { milestone_id: m.id },
           });
         } catch (err) {
