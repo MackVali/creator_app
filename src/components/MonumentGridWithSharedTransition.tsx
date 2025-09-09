@@ -65,12 +65,11 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             transition={{ duration: 0.2, ease: "easeInOut" }}
           >
             <motion.div
-              layoutId={`card-${selected.id}`}
               className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-zinc-900 shadow-xl"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25, ease: "easeInOut", layout: { duration: 0.25 } }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
             >
               <button
                 onClick={() => setActiveId(null)}
@@ -88,4 +87,3 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
 }
 
 export default MonumentGridWithSharedTransition;
-

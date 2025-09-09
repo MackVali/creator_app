@@ -1,17 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
-import {
-  ContentCard,
-  PageHeader,
-  SectionHeader,
-} from "@/components/ui/content-card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ProgressBarGradient } from "@/components/skills/ProgressBarGradient";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
+import { MonumentDetailLayout, SectionShell } from "./MonumentDetailLayout";
+import { MonumentHero } from "./MonumentHero";
 
 interface Monument {
   id: string;
@@ -72,27 +66,13 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
 
   if (loading) {
     return (
-      <main className="p-4 space-y-8">
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-3/4" />
-          <Skeleton className="h-4 w-1/3" />
-        </div>
-        <ContentCard className="flex flex-col items-center space-y-4">
-          <Skeleton className="h-16 w-16 rounded-full" />
-          <div className="w-full max-w-sm space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-2 w-full" />
-          </div>
-        </ContentCard>
-        <div className="space-y-4">
-          <Skeleton className="h-6 w-32" />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 rounded-lg" />
-            ))}
-          </div>
-        </div>
-      </main>
+      <MonumentDetailLayout
+        hero={<MonumentHero id={id} loading />}
+        milestones={<SectionShell title="Milestones" loading />}
+        goals={<SectionShell title="Goals" loading />}
+        notes={<SectionShell title="Notes" loading />}
+        activity={<SectionShell title="Activity" loading />}
+      />
     );
   }
 
@@ -100,7 +80,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     return (
       <main className="p-4">
         <div className="text-center py-12">
-          <h1 className="text-2xl font-semibold text-red-400 mb-2">
+          <h1 className="mb-2 text-2xl font-semibold text-red-400">
             {error || "Monument not found"}
           </h1>
           <p className="text-gray-400">
@@ -113,59 +93,33 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     );
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
   const mockProgress = 65;
 
   return (
-    <main className="p-4 space-y-8">
-      <PageHeader
-        title={
-          <div className="flex items-center gap-3">
-            <span
-              className="text-4xl"
-              role="img"
-              aria-label={`Monument: ${monument.title}`}
-            >
-              {monument.emoji || "\uD83D\uDDFC\uFE0F"}
-            </span>
-            {monument.title}
-          </div>
-        }
-        description={`Created ${formatDate(monument.created_at)}`}
-      >
-        <Link
-          href={`/monuments/${id}/edit`}
-          className="inline-block rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-black"
-        >
-          Edit Monument
-        </Link>
-      </PageHeader>
-
-      <ContentCard className="max-w-md mx-auto w-full space-y-2 text-center">
-        <span className="text-sm text-gray-400">Charging</span>
-        <ProgressBarGradient value={mockProgress} height={8} />
-      </ContentCard>
-
-      <section className="space-y-4">
-        <SectionHeader title="Related Goals" />
-        <FilteredGoalsGrid entity="monument" id={id} />
-      </section>
-
-      <section className="space-y-4">
-        <SectionHeader title="Notes" />
-        <MonumentNotesGrid monumentId={id} />
-      </section>
-    </main>
+    <MonumentDetailLayout
+      hero={<MonumentHero id={id} monument={monument} progress={mockProgress} />}
+      milestones={
+        <SectionShell title="Milestones">
+          <p className="text-sm text-muted-foreground">No milestones yet</p>
+        </SectionShell>
+      }
+      goals={
+        <SectionShell title="Goals">
+          <FilteredGoalsGrid entity="monument" id={id} />
+        </SectionShell>
+      }
+      notes={
+        <SectionShell title="Notes">
+          <MonumentNotesGrid monumentId={id} />
+        </SectionShell>
+      }
+      activity={
+        <SectionShell title="Activity">
+          <p className="text-sm text-muted-foreground">No activity yet</p>
+        </SectionShell>
+      }
+    />
   );
 }
 
 export default MonumentDetail;
-
