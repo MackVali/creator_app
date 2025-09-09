@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -21,6 +22,11 @@ import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import EnergyPager from '@/components/schedule/EnergyPager'
 import {
+  getChildView,
+  getParentView,
+  type ScheduleView,
+} from '@/components/schedule/viewUtils'
+import {
   fetchReadyTasks,
   fetchWindowsForDate,
   fetchProjectsMap,
@@ -30,7 +36,6 @@ import { placeByEnergyWeight } from '@/lib/scheduler/placer'
 import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
-import { ENERGY, type Energy } from '@/lib/scheduler/config'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -48,9 +53,22 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
 }
 
 export default function SchedulePage() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const prefersReducedMotion = useReducedMotion()
-  const [currentDate, setCurrentDate] = useState(new Date())
-  const [view, setView] = useState<'year' | 'month' | 'week' | 'day' | 'focus'>('year')
+
+  const initialViewParam = searchParams.get('view') as ScheduleView | null
+  const initialView: ScheduleView = initialViewParam &&
+    ['year', 'month', 'week', 'day', 'focus'].includes(initialViewParam)
+      ? initialViewParam
+      : 'year'
+  const initialDate = searchParams.get('date')
+
+  const [currentDate, setCurrentDate] = useState(
+    () => (initialDate ? new Date(initialDate) : new Date())
+  )
+  const [view, setView] = useState<ScheduleView>(initialView)
   const [planning, setPlanning] = useState<'TASK' | 'PROJECT'>(() => {
     if (typeof window === 'undefined') return 'TASK'
     return (localStorage.getItem('planning-mode') as 'TASK' | 'PROJECT') || 'TASK'
@@ -64,12 +82,19 @@ export default function SchedulePage() {
   const [unplaced, setUnplaced] = useState<
     ReturnType<typeof placeByEnergyWeight>['unplaced']
   >([])
-  const [dayEnergyMap, setDayEnergyMap] = useState<Record<string, FlameLevel>>({})
   const touchStartX = useRef<number | null>(null)
+  const navLock = useRef(false)
 
   const startHour = 0
   const pxPerMin = 2
   const year = currentDate.getFullYear()
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    params.set('view', view)
+    params.set('date', currentDate.toISOString().slice(0, 10))
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [view, currentDate, router, pathname])
 
   useEffect(() => {
     localStorage.setItem('planning-mode', planning)
@@ -96,50 +121,6 @@ export default function SchedulePage() {
     load()
   }, [currentDate])
 
-  useEffect(() => {
-    async function loadEnergies() {
-      try {
-        const base = new Date(year, 0, 1)
-        const sunday = new Date(base)
-        sunday.setDate(base.getDate() - base.getDay())
-        const weekPromises: Promise<WindowLite[]>[] = []
-        for (let i = 0; i < 7; i++) {
-          const d = new Date(sunday)
-          d.setDate(sunday.getDate() + i)
-          weekPromises.push(fetchWindowsForDate(d))
-        }
-        const weekly = await Promise.all(weekPromises)
-        const byDow: Record<number, WindowLite[]> = {}
-        weekly.forEach((wins, i) => {
-          byDow[i] = wins
-        })
-        const map: Record<string, FlameLevel> = {}
-        for (let m = 0; m < 12; m++) {
-          const days = new Date(year, m + 1, 0).getDate()
-          for (let d = 1; d <= days; d++) {
-            const date = new Date(year, m, d)
-            const dow = date.getDay()
-            const wins = byDow[dow] || []
-            let top: FlameLevel = 'NO'
-            for (const w of wins) {
-              const e = (w.energy || 'NO').toUpperCase() as Energy
-              if (ENERGY.LIST.indexOf(e) > ENERGY.LIST.indexOf(top as Energy)) {
-                top = e as FlameLevel
-              }
-            }
-            if (top !== 'NO') {
-              map[date.toISOString().slice(0, 10)] = top
-            }
-          }
-        }
-        setDayEnergyMap(map)
-      } catch (e) {
-        console.error(e)
-        setDayEnergyMap({})
-      }
-    }
-    loadEnergies()
-  }, [year])
 
   const weightedTasks = useMemo(
     () => tasks.map(t => ({ ...t, weight: taskWeight(t) })),
@@ -166,19 +147,29 @@ export default function SchedulePage() {
   const getItem = (id: string) =>
     planning === 'TASK' ? taskMap[id] : projectMap[id]
 
+  function navigate(next: ScheduleView) {
+    if (navLock.current) return
+    navLock.current = true
+    setView(next)
+    setTimeout(() => {
+      navLock.current = false
+    }, 300)
+  }
+
   function handleBack() {
-    setView(v => {
-      if (v === 'focus') return 'day'
-      if (v === 'day') return 'week'
-      if (v === 'week') return 'month'
-      if (v === 'month') return 'year'
-      return v
-    })
+    const parent = getParentView(view)
+    if (parent !== view) navigate(parent)
+  }
+
+  function handleDrillDown(date: Date) {
+    const next = getChildView(view, date)
+    setCurrentDate(next.date)
+    if (next.view !== view) navigate(next.view)
   }
 
   const handleToday = () => {
     setCurrentDate(new Date())
-    setView('day')
+    navigate('day')
   }
 
 
@@ -229,45 +220,23 @@ export default function SchedulePage() {
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
-        <ScheduleTopBar year={year} onBack={handleBack} onToday={handleToday} />
+        <ScheduleTopBar
+          year={year}
+          onBack={handleBack}
+          onToday={handleToday}
+          canGoBack={view !== 'year'}
+        />
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
 
         <div className="space-y-2">
-          <div className="flex gap-2">
-            <div
-              role="tablist"
-              className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs"
-            >
-              {(['year', 'month', 'week', 'day', 'focus'] as const).map(v => (
-                <button
-                  key={v}
-                  role="tab"
-                  aria-selected={view === v}
-                  onClick={() => setView(v)}
-                  className={`relative flex-1 h-11 rounded-md capitalize ${view === v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
-                >
-                  {v}
-                  {view === v && (
-                    <motion.span
-                      layoutId="view-underline"
-                      className="absolute left-1 right-1 bottom-0 h-0.5 rounded-full bg-[var(--accent)]"
-                      transition={
-                        prefersReducedMotion
-                          ? { duration: 0 }
-                          : { type: 'spring', bounce: 0, duration: 0.2 }
-                      }
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
+          <div className="flex justify-end">
             <div className="flex rounded-full bg-zinc-900 p-1 text-xs">
-              {(['TASK','PROJECT'] as const).map(m => (
+              {(['TASK', 'PROJECT'] as const).map(m => (
                 <button
                   key={m}
                   onClick={() => setPlanning(m)}
                   aria-label={`Switch to ${m === 'TASK' ? 'task' : 'project'} planning`}
-                  className={`h-9 rounded-full px-3 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+                  className={`h-9 rounded-full px-3 capitalize ${planning === m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
                 >
                   {m === 'TASK' ? 'Tasks' : 'Projects'}
                 </button>
@@ -292,13 +261,7 @@ export default function SchedulePage() {
           <AnimatePresence mode="wait" initial={false}>
             {view === 'year' && (
               <ScheduleViewShell key="year">
-                <YearView
-                  selectedDate={currentDate}
-                  onSelectDate={d => {
-                    setCurrentDate(d)
-                    setView('month')
-                  }}
-                />
+                <YearView selectedDate={currentDate} onSelectDate={handleDrillDown} />
               </ScheduleViewShell>
             )}
             {view === 'month' && (
@@ -306,10 +269,7 @@ export default function SchedulePage() {
                 <MonthView
                   date={currentDate}
                   selectedDate={currentDate}
-                  onSelectDate={d => {
-                    setCurrentDate(d)
-                    setView('day')
-                  }}
+                  onSelectDate={handleDrillDown}
                 />
               </ScheduleViewShell>
             )}
@@ -318,10 +278,7 @@ export default function SchedulePage() {
                 <WeekView
                   date={currentDate}
                   selectedDate={currentDate}
-                  onSelectDate={d => {
-                    setCurrentDate(d)
-                    setView('day')
-                  }}
+                  onSelectDate={handleDrillDown}
                 />
               </ScheduleViewShell>
             )}

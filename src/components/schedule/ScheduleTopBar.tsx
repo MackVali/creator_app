@@ -25,9 +25,10 @@ interface ScheduleTopBarProps {
   year: number;
   onBack: () => void;
   onToday: () => void;
+  canGoBack?: boolean;
 }
 
-export function ScheduleTopBar({ year, onBack, onToday }: ScheduleTopBarProps) {
+export function ScheduleTopBar({ year, onBack, onToday, canGoBack = true }: ScheduleTopBarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -44,7 +45,7 @@ export function ScheduleTopBar({ year, onBack, onToday }: ScheduleTopBarProps) {
 
   return (
     <header className="flex items-center justify-between px-4 h-12 bg-[var(--surface-elevated)] border-b border-[var(--hairline)]">
-      <button onClick={onBack} className="p-2">
+      <button onClick={onBack} disabled={!canGoBack} className="p-2 disabled:opacity-30">
         <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
       </button>
       <button className="text-[16px] font-semibold text-[var(--text-primary)]">
