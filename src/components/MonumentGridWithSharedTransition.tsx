@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { MonumentDetail } from "@/components/monuments/MonumentDetail";
 
@@ -22,11 +23,14 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
   useEffect(() => {
     if (activeId) {
       document.body.style.overflow = "hidden";
+      document.body.classList.add("detail-overlay-open");
     } else {
       document.body.style.overflow = "";
+      document.body.classList.remove("detail-overlay-open");
     }
     return () => {
       document.body.style.overflow = "";
+      document.body.classList.remove("detail-overlay-open");
     };
   }, [activeId]);
 
@@ -58,7 +62,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
         {selected && (
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -66,19 +70,52 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
           >
             <motion.div
               layoutId={`card-${selected.id}`}
-              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-zinc-900 shadow-xl"
+              className="relative flex h-full w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-white/10 bg-gradient-to-b from-zinc-900 to-zinc-950 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.25, ease: "easeInOut", layout: { duration: 0.25 } }}
             >
-              <button
-                onClick={() => setActiveId(null)}
-                className="absolute right-4 top-4 z-10 rounded-md bg-zinc-800 px-3 py-1 text-sm"
-              >
-                Close
-              </button>
-              <MonumentDetail id={selected.id} />
+              <div className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-zinc-800 to-zinc-700 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <motion.div layoutId={`emoji-${selected.id}`} className="text-2xl">
+                    {selected.emoji}
+                  </motion.div>
+                  <motion.h2
+                    layoutId={`title-${selected.id}`}
+                    className="text-lg font-semibold"
+                  >
+                    {selected.title}
+                  </motion.h2>
+                </div>
+                <button
+                  onClick={() => setActiveId(null)}
+                  className="rounded-md bg-zinc-800/80 px-3 py-1 text-sm shadow hover:bg-zinc-700"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 p-4">
+                <span className="rounded-full border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)]">
+                  Streak 0
+                </span>
+                <Link
+                  href={`/monuments/${selected.id}/edit`}
+                  className="rounded-full border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)] transition-colors hover:bg-[var(--accent)] hover:text-black"
+                >
+                  Edit
+                </Link>
+                <button className="rounded-full border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)] transition-colors hover:bg-[var(--accent)] hover:text-black">
+                  +Milestone
+                </button>
+                <button className="rounded-full border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)] transition-colors hover:bg-[var(--accent)] hover:text-black">
+                  +Goal
+                </button>
+                <button className="rounded-full border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)] transition-colors hover:bg-[var(--accent)] hover:text-black">
+                  +Note
+                </button>
+              </div>
+              <MonumentDetail id={selected.id} showHeader={false} />
             </motion.div>
           </motion.div>
         )}
