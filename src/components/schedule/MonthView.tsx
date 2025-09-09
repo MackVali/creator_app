@@ -21,6 +21,8 @@ interface MonthViewProps {
   onSelectDate?: (date: Date) => void;
   /** Include leading/trailing days from adjacent months */
   showAdjacentMonths?: boolean;
+  /** Display the month name label on the first day */
+  showMonthLabel?: boolean;
 }
 
 type Cell = { day: number; offset: number } | null;
@@ -32,6 +34,7 @@ export function MonthView({
   selectedDate,
   onSelectDate,
   showAdjacentMonths = true,
+  showMonthLabel = true,
 }: MonthViewProps) {
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -124,6 +127,7 @@ export function MonthView({
             events={events}
             selectedDate={selectedDate}
             onSelectDate={onSelectDate}
+            showMonthLabel={showMonthLabel}
           />
         ))}
         <div style={{ height: (weeks.length - range.end) * rowHeight }} />
@@ -157,6 +161,7 @@ interface WeekRowProps {
   events?: Record<string, number>;
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
+  showMonthLabel?: boolean;
 }
 
 const WeekRow = React.memo(function WeekRow({
@@ -167,6 +172,7 @@ const WeekRow = React.memo(function WeekRow({
   events,
   selectedDate,
   onSelectDate,
+  showMonthLabel,
 }: WeekRowProps) {
   return (
     <div className="relative grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] snap-start min-h-[48px] after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-px after:bg-[var(--hairline)] last:after:hidden">
@@ -183,6 +189,7 @@ const WeekRow = React.memo(function WeekRow({
           events={events}
           selectedDate={selectedDate}
           onSelectDate={onSelectDate}
+          showMonthLabel={showMonthLabel}
         />
       ))}
     </div>
@@ -197,6 +204,7 @@ interface DayCellProps {
   events?: Record<string, number>;
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
+  showMonthLabel?: boolean;
 }
 
 const DayCell = React.memo(function DayCell({
@@ -207,6 +215,7 @@ const DayCell = React.memo(function DayCell({
   events,
   selectedDate,
   onSelectDate,
+  showMonthLabel,
 }: DayCellProps) {
   const dayDate = useMemo(
     () => (cell ? new Date(year, month + cell.offset, cell.day) : null),
@@ -259,7 +268,7 @@ const DayCell = React.memo(function DayCell({
         !inMonth && !isSelected && !isToday && "text-[var(--text-muted)]"
       )}
     >
-      {cell.day === 1 && (
+      {cell.day === 1 && showMonthLabel && (
         <span className="absolute left-0 -top-5 text-[16px] font-semibold text-[var(--text-primary)]">
           {dayDate.toLocaleDateString(undefined, { month: "short" })}
         </span>
