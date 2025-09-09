@@ -291,19 +291,19 @@ export default function SchedulePage() {
                     const top = (startMin - startHour * 60) * pxPerMin
                     const height =
                       ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
-                    const catColor =
-                      (item as { cat_color_hex?: string }).cat_color_hex || '#3b82f6'
                     const progress = (item as { progress?: number }).progress ?? 0
-                    const style: CSSProperties & { '--cat': string } = {
+                    const style: CSSProperties = {
                       top,
                       height,
-                      '--cat': catColor,
+                      boxShadow: 'var(--elev-card)',
+                      outline: '1px solid var(--event-border)',
+                      outlineOffset: '-1px',
                     }
                     return (
                       <div
                         key={p.taskId}
                         aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-xl px-3 py-2 text-white card3d"
+                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
                         style={style}
                       >
                         <div className="flex flex-col">
