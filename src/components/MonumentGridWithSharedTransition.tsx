@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { MonumentDetail } from "@/components/monuments/MonumentDetail";
+import { spring } from "@/lib/motion";
 
 export interface Monument {
   id: string;
@@ -22,11 +23,14 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
   useEffect(() => {
     if (activeId) {
       document.body.style.overflow = "hidden";
+      document.body.classList.add("hide-bottom-nav");
     } else {
       document.body.style.overflow = "";
+      document.body.classList.remove("hide-bottom-nav");
     }
     return () => {
       document.body.style.overflow = "";
+      document.body.classList.remove("hide-bottom-nav");
     };
   }, [activeId]);
 
@@ -38,7 +42,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             key={m.id}
             layoutId={`card-${m.id}`}
             onClick={() => setActiveId(m.id)}
-            className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+            className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-zinc-800"
           >
             <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
               {m.emoji}
@@ -58,27 +62,20 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
         {selected && (
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
+            transition={{ duration: 0.2 }}
           >
             <motion.div
-              layoutId={`card-${selected.id}`}
-              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-zinc-900 shadow-xl"
+              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl border border-[var(--accent)]/40 bg-gradient-to-b from-zinc-900 to-zinc-950 shadow-[0_0_12px_var(--accent)]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25, ease: "easeInOut", layout: { duration: 0.25 } }}
+              transition={spring}
             >
-              <button
-                onClick={() => setActiveId(null)}
-                className="absolute right-4 top-4 z-10 rounded-md bg-zinc-800 px-3 py-1 text-sm"
-              >
-                Close
-              </button>
-              <MonumentDetail id={selected.id} />
+              <MonumentDetail id={selected.id} onClose={() => setActiveId(null)} />
             </motion.div>
           </motion.div>
         )}
@@ -88,4 +85,3 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
 }
 
 export default MonumentGridWithSharedTransition;
-

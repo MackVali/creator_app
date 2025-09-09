@@ -16,7 +16,7 @@ export default function BottomNav() {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50">
+    <div className="bottom-nav fixed bottom-0 left-0 right-0 z-50">
       <div className="relative">
         <BottomBarNav
           items={items}
