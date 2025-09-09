@@ -2,9 +2,11 @@
 
 import { MonthView } from "./MonthView";
 import { useEffect, useRef } from "react";
+import type { FlameLevel } from "@/components/FlameEmber";
 
 interface YearViewProps {
   events?: Record<string, number>;
+  energies?: Record<string, FlameLevel>;
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
 }
@@ -12,7 +14,7 @@ interface YearViewProps {
 /**
  * Scrollable list of months centered on the current month.
  */
-export function YearView({ events, selectedDate, onSelectDate }: YearViewProps) {
+export function YearView({ events, energies, selectedDate, onSelectDate }: YearViewProps) {
   const today = new Date();
   const pastMonths = 10 * 12;
   const futureMonths = 10 * 12;
@@ -43,6 +45,7 @@ export function YearView({ events, selectedDate, onSelectDate }: YearViewProps) 
           <MonthView
             date={date}
             events={events}
+            energies={energies}
             selectedDate={selectedDate}
             onSelectDate={onSelectDate}
             showAdjacentMonths={false}
