@@ -14,11 +14,9 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
-import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
-import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import EnergyPager from '@/components/schedule/EnergyPager'
 import {
@@ -60,8 +58,8 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
-  const initialView: ScheduleView = initialViewParam &&
-    ['year', 'month', 'week', 'day', 'focus'].includes(initialViewParam)
+  const initialView: ScheduleView =
+    initialViewParam && ['year', 'day', 'focus'].includes(initialViewParam)
       ? initialViewParam
       : 'year'
   const initialDate = searchParams.get('date')
@@ -259,7 +257,7 @@ export default function SchedulePage() {
             </div>
           </div>
           <EnergyPager
-            activeIndex={{ year: 0, month: 1, week: 2, day: 3, focus: 4 }[view]}
+            activeIndex={{ year: 0, day: 1, focus: 2 }[view]}
             className="justify-center"
           />
         </div>
@@ -278,25 +276,6 @@ export default function SchedulePage() {
               <ScheduleViewShell key="year">
                 <YearView
                   energies={dayEnergies}
-                  selectedDate={currentDate}
-                  onSelectDate={handleDrillDown}
-                />
-              </ScheduleViewShell>
-            )}
-            {view === 'month' && (
-              <ScheduleViewShell key="month">
-                <MonthView
-                  date={currentDate}
-                  energies={dayEnergies}
-                  selectedDate={currentDate}
-                  onSelectDate={handleDrillDown}
-                />
-              </ScheduleViewShell>
-            )}
-            {view === 'week' && (
-              <ScheduleViewShell key="week">
-                <WeekView
-                  date={currentDate}
                   selectedDate={currentDate}
                   onSelectDate={handleDrillDown}
                 />
