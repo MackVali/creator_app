@@ -1,7 +1,15 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import Link from 'next/link'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { MonthView } from '@/components/schedule/MonthView'
@@ -19,6 +27,21 @@ import { placeByEnergyWeight } from '@/lib/scheduler/placer'
 import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
+
+function ScheduleViewShell({ children }: { children: ReactNode }) {
+  const prefersReducedMotion = useReducedMotion()
+  if (prefersReducedMotion) return <div>{children}</div>
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.98 }}
+      transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+    >
+      {children}
+    </motion.div>
+  )
+}
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -204,89 +227,106 @@ export default function SchedulePage() {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
-          {view === 'month' && <MonthView date={currentDate} />}
-          {view === 'week' && <WeekView date={currentDate} />}
-          {view === 'day' && (
-            <DayTimeline
-              date={currentDate}
-              startHour={startHour}
-              pxPerMin={pxPerMin}
-            >
-              {windows.map(w => {
-                const { top, height } = windowRect(w, startHour, pxPerMin)
-                return (
-                  <div
-                    key={w.id}
-                    aria-label={w.label}
-                    className="absolute left-0 flex"
-                    style={{ top, height }}
-                  >
-                    <div className="w-0.5 bg-zinc-700 opacity-50" />
-                    <span
-                      className="ml-1 text-[10px] text-zinc-500"
-                      style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-                    >
-                      {w.label}
-                    </span>
-                  </div>
-                )
-              })}
-              {placements.map(p => {
-                const item = getItem(p.taskId)
-                if (!item) return null
-                const startMin =
-                  p.start.getHours() * 60 + p.start.getMinutes()
-                const top = (startMin - startHour * 60) * pxPerMin
-                const height =
-                  ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
-                const catColor = (item as { cat_color_hex?: string }).cat_color_hex || '#3b82f6'
-                const progress = (item as { progress?: number }).progress ?? 0
-                const style: CSSProperties & { '--cat': string } = {
-                  top,
-                  height,
-                  '--cat': catColor,
-                }
-                return (
-                  <div
-                    key={p.taskId}
-                    aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                    className="absolute left-16 right-2 flex items-center justify-between rounded-xl px-3 py-2 text-white card3d"
-                    style={style}
-                  >
-                    <div className="flex flex-col">
-                      <span className="truncate text-sm font-medium">
-                        {item.name}
-                      </span>
-                      <div className="text-xs text-zinc-200/70">
-                        {item.duration_min}m
-                        {planning === 'PROJECT' && 'taskCount' in item && (
-                          <span> · {item.taskCount} tasks</span>
-                        )}
-                      </div>
-                    </div>
-                    {item.skill_icon && (
-                      <span
-                        className="ml-2 text-lg leading-none flex-shrink-0"
-                        aria-hidden
+          <AnimatePresence mode="wait" initial={false}>
+            {view === 'month' && (
+              <ScheduleViewShell key="month">
+                <MonthView date={currentDate} />
+              </ScheduleViewShell>
+            )}
+            {view === 'week' && (
+              <ScheduleViewShell key="week">
+                <WeekView date={currentDate} />
+              </ScheduleViewShell>
+            )}
+            {view === 'day' && (
+              <ScheduleViewShell key="day">
+                <DayTimeline
+                  date={currentDate}
+                  startHour={startHour}
+                  pxPerMin={pxPerMin}
+                >
+                  {windows.map(w => {
+                    const { top, height } = windowRect(w, startHour, pxPerMin)
+                    return (
+                      <div
+                        key={w.id}
+                        aria-label={w.label}
+                        className="absolute left-0 flex"
+                        style={{ top, height }}
                       >
-                        {item.skill_icon}
-                      </span>
-                    )}
-                    <FlameEmber
-                      level={(item.energy as FlameLevel) || 'NO'}
-                      size="sm"
-                      className="absolute -top-1 -right-1"
-                    />
-                    <div
-                      className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                )
-              })}
-            </DayTimeline>
-          )}
-          {view === 'focus' && <FocusTimeline />}
+                        <div className="w-0.5 bg-zinc-700 opacity-50" />
+                        <span
+                          className="ml-1 text-[10px] text-zinc-500"
+                          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+                        >
+                          {w.label}
+                        </span>
+                      </div>
+                    )
+                  })}
+                  {placements.map(p => {
+                    const item = getItem(p.taskId)
+                    if (!item) return null
+                    const startMin =
+                      p.start.getHours() * 60 + p.start.getMinutes()
+                    const top = (startMin - startHour * 60) * pxPerMin
+                    const height =
+                      ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
+                    const catColor =
+                      (item as { cat_color_hex?: string }).cat_color_hex || '#3b82f6'
+                    const progress = (item as { progress?: number }).progress ?? 0
+                    const style: CSSProperties & { '--cat': string } = {
+                      top,
+                      height,
+                      '--cat': catColor,
+                    }
+                    return (
+                      <div
+                        key={p.taskId}
+                        aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
+                        className="absolute left-16 right-2 flex items-center justify-between rounded-xl px-3 py-2 text-white card3d"
+                        style={style}
+                      >
+                        <div className="flex flex-col">
+                          <span className="truncate text-sm font-medium">
+                            {item.name}
+                          </span>
+                          <div className="text-xs text-zinc-200/70">
+                            {item.duration_min}m
+                            {planning === 'PROJECT' && 'taskCount' in item && (
+                              <span> · {item.taskCount} tasks</span>
+                            )}
+                          </div>
+                        </div>
+                        {item.skill_icon && (
+                          <span
+                            className="ml-2 text-lg leading-none flex-shrink-0"
+                            aria-hidden
+                          >
+                            {item.skill_icon}
+                          </span>
+                        )}
+                        <FlameEmber
+                          level={(item.energy as FlameLevel) || 'NO'}
+                          size="sm"
+                          className="absolute -top-1 -right-1"
+                        />
+                        <div
+                          className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    )
+                  })}
+                </DayTimeline>
+              </ScheduleViewShell>
+            )}
+            {view === 'focus' && (
+              <ScheduleViewShell key="focus">
+                <FocusTimeline />
+              </ScheduleViewShell>
+            )}
+          </AnimatePresence>
         </div>
 
         {unplaced.length > 0 && (
