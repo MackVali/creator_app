@@ -44,6 +44,7 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
 }
 
 export default function SchedulePage() {
+  const prefersReducedMotion = useReducedMotion()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [view, setView] = useState<'month' | 'week' | 'day' | 'focus'>('day')
   const [planning, setPlanning] = useState<'TASK' | 'PROJECT'>(() => {
@@ -194,13 +195,24 @@ export default function SchedulePage() {
 
         <div className="flex gap-2">
           <div className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs">
-            {(['month','week','day','focus'] as const).map(v => (
+            {(['month', 'week', 'day', 'focus'] as const).map(v => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`flex-1 h-9 rounded-md capitalize ${view===v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+                className={`relative flex-1 h-11 rounded-md capitalize ${view === v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
               >
                 {v}
+                {view === v && (
+                  <motion.span
+                    layoutId="view-underline"
+                    className="absolute left-1 right-1 bottom-0 h-0.5 rounded-full bg-[var(--accent)]"
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0 }
+                        : { type: 'spring', bounce: 0, duration: 0.2 }
+                    }
+                  />
+                )}
               </button>
             ))}
           </div>
