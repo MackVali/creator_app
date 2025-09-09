@@ -199,6 +199,16 @@ export default function SchedulePage() {
                 Windows
               </Button>
             </Link>
+            <Button
+              size="sm"
+              onClick={() => {
+                setCurrentDate(new Date())
+                setView('day')
+              }}
+              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+            >
+              Today
+            </Button>
           </div>
         </div>
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
@@ -263,12 +273,27 @@ export default function SchedulePage() {
           <AnimatePresence mode="wait" initial={false}>
             {view === 'month' && (
               <ScheduleViewShell key="month">
-                <MonthView date={currentDate} eventCounts={monthEventCounts} />
+                <MonthView
+                  date={currentDate}
+                  selectedDate={currentDate}
+                  eventCounts={monthEventCounts}
+                  onSelectDate={d => {
+                    setCurrentDate(d)
+                    setView('day')
+                  }}
+                />
               </ScheduleViewShell>
             )}
             {view === 'week' && (
               <ScheduleViewShell key="week">
-                <WeekView date={currentDate} />
+                <WeekView
+                  date={currentDate}
+                  selectedDate={currentDate}
+                  onSelectDate={d => {
+                    setCurrentDate(d)
+                    setView('day')
+                  }}
+                />
               </ScheduleViewShell>
             )}
             {view === 'day' && (

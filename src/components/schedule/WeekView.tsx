@@ -1,14 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface WeekViewProps {
   date?: Date;
+  selectedDate?: Date;
+  onSelectDate?: (date: Date) => void;
 }
 
-export function WeekView({ date = new Date() }: WeekViewProps) {
+export function WeekView({
+  date = new Date(),
+  selectedDate,
+  onSelectDate,
+}: WeekViewProps) {
   const start = useMemo(() => {
     const s = new Date(date);
     const day = s.getDay();
@@ -70,12 +77,29 @@ export function WeekView({ date = new Date() }: WeekViewProps) {
         {formatRange(start, end)}
       </div>
       <div className="grid grid-cols-7 text-center mb-2">
-        {days.map((d) => (
-          <div key={d.toISOString()}>
-            <div className="font-medium">{dayNames[d.getDay()]}</div>
-            <div>{d.getDate()}</div>
-          </div>
-        ))}
+        {days.map((d) => {
+          const isToday = isSameDay(d, new Date())
+          const isSelected = selectedDate && isSameDay(d, selectedDate)
+          return (
+            <button
+              key={d.toISOString()}
+              type="button"
+              onClick={() => onSelectDate?.(d)}
+              aria-current={isSelected ? 'date' : undefined}
+              className={cn(
+                'rounded-md py-1 px-2 flex flex-col items-center justify-center text-center',
+                isSelected
+                  ? 'bg-[var(--accent)] text-black'
+                  : isToday
+                    ? 'bg-zinc-800'
+                    : undefined
+              )}
+            >
+              <div className="font-medium">{dayNames[d.getDay()]}</div>
+              <div>{d.getDate()}</div>
+            </button>
+          )
+        })}
       </div>
       <div
         className="relative w-full pl-16 bg-black overflow-hidden"
@@ -133,4 +157,12 @@ function formatHour(h: number) {
   const suffix = normalized >= 12 ? "PM" : "AM";
   const hour12 = normalized % 12 === 0 ? 12 : normalized % 12;
   return `${hour12} ${suffix}`;
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
 }

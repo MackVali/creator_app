@@ -1,5 +1,7 @@
 "use client";
 
+import { cn } from "@/lib/utils";
+
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface MonthViewProps {
@@ -9,9 +11,18 @@ interface MonthViewProps {
    * Used to render a tiny density indicator for each day.
    */
   eventCounts?: Record<string, number>;
+  /** The currently selected day to highlight */
+  selectedDate?: Date;
+  /** Callback when a day is selected */
+  onSelectDate?: (date: Date) => void;
 }
 
-export function MonthView({ date = new Date(), eventCounts }: MonthViewProps) {
+export function MonthView({
+  date = new Date(),
+  eventCounts,
+  selectedDate,
+  onSelectDate,
+}: MonthViewProps) {
   const year = date.getFullYear();
   const month = date.getMonth();
   const first = new Date(year, month, 1);
@@ -44,14 +55,25 @@ export function MonthView({ date = new Date(), eventCounts }: MonthViewProps) {
                 className="h-12 border border-gray-800/40 p-1 text-center"
               />
             )
-          const key = new Date(year, month, day)
-            .toISOString()
-            .slice(0, 10)
+          const dayDate = new Date(year, month, day)
+          const key = dayDate.toISOString().slice(0, 10)
           const count = Math.min(4, eventCounts?.[key] ?? 0)
+          const isToday = isSameDay(dayDate, new Date())
+          const isSelected = selectedDate && isSameDay(dayDate, selectedDate)
           return (
-            <div
+            <button
               key={i}
-              className="h-12 border border-gray-800/40 p-1 text-center flex flex-col items-center justify-center"
+              type="button"
+              onClick={() => onSelectDate?.(dayDate)}
+              aria-current={isSelected ? 'date' : undefined}
+              className={cn(
+                'h-12 border border-gray-800/40 p-1 text-center flex flex-col items-center justify-center focus:outline-none',
+                isSelected
+                  ? 'bg-[var(--accent)] text-black rounded-md'
+                  : isToday
+                    ? 'bg-zinc-800 rounded-md'
+                    : undefined
+              )}
             >
               <div>{day}</div>
               {eventCounts && (
@@ -64,10 +86,18 @@ export function MonthView({ date = new Date(), eventCounts }: MonthViewProps) {
                   ))}
                 </div>
               )}
-            </div>
+            </button>
           )
         })}
       </div>
     </div>
   );
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
 }
