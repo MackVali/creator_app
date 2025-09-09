@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react"
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber"
+import { useToastHelpers } from "@/components/ui/toast"
 
 // Utility to join class names conditionally
 function classNames(...classes: Array<string | false | null | undefined>) {
@@ -22,8 +23,8 @@ export interface WindowItem {
 
 interface Props {
   windows?: WindowItem[]
-  onCreate?(data: WindowItem): void
-  onEdit?(id: string, data: WindowItem): void
+  onCreate?(data: WindowItem): Promise<unknown>
+  onEdit?(id: string, data: WindowItem): Promise<unknown>
   onDelete?(id: string): void
 }
 
@@ -80,6 +81,7 @@ export default function WindowsPolishedUI({
 }: Props) {
   const [list, setList] = useState<WindowItem[] | undefined>(windows)
   const [loading, setLoading] = useState(!windows)
+  const toast = useToastHelpers()
 
   useEffect(() => {
     if (!windows) {
@@ -145,21 +147,33 @@ export default function WindowsPolishedUI({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<WindowItem | null>(null)
 
-  function handleSave(data: WindowItem) {
-    if (editing) {
-      onEdit?.(editing.id, data)
-      if (!onEdit) {
-        setList((prev) =>
-          prev?.map((w) => (w.id === editing.id ? { ...data, id: editing.id } : w))
-        )
+  async function handleSave(data: WindowItem) {
+    try {
+      if (editing) {
+        if (onEdit) {
+          const ok = await onEdit(editing.id, data)
+          if (ok === false) throw new Error("save failed")
+        } else {
+          setList((prev) =>
+            prev?.map((w) =>
+              w.id === editing.id ? { ...data, id: editing.id } : w
+            )
+          )
+        }
+      } else {
+        const newItem = { ...data, id: Date.now().toString() }
+        if (onCreate) {
+          const ok = await onCreate(newItem)
+          if (ok === false) throw new Error("save failed")
+        } else {
+          setList((prev) => (prev ? [...prev, newItem] : [newItem]))
+        }
       }
-    } else {
-      const newItem = { ...data, id: Date.now().toString() }
-      onCreate?.(newItem)
-      if (!onCreate) setList((prev) => (prev ? [...prev, newItem] : [newItem]))
+      setDrawerOpen(false)
+      setEditing(null)
+    } catch (e) {
+      toast.error("Failed to save window")
     }
-    setDrawerOpen(false)
-    setEditing(null)
   }
 
   function handleDelete(id: string) {
