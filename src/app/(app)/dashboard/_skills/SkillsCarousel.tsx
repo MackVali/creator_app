@@ -1,132 +1,61 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, type PanInfo, useReducedMotion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import CategoryCard from "./CategoryCard";
 import useSkillsData from "./useSkillsData";
-import { deriveInitialIndex, computeNextIndex, shouldPreventScroll } from "./carouselUtils";
+import { deriveInitialIndex } from "./carouselUtils";
 
 export default function SkillsCarousel() {
   const { categories, skillsByCategory, isLoading } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
-  const prefersReducedMotion = useReducedMotion();
+  const trackRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [cardWidth, setCardWidth] = useState(0);
-  const touchStart = useRef({ x: 0, y: 0 });
-  const dragging = useRef(false);
+  const [skillDragging, setSkillDragging] = useState(false);
 
   useEffect(() => {
     if (categories.length === 0) return;
     const initialId = search.get("cat") || undefined;
-    setActiveIndex(deriveInitialIndex(categories, initialId));
+    const idx = deriveInitialIndex(categories, initialId);
+    setActiveIndex(idx);
+    const el = cardRefs.current[idx];
+    el?.scrollIntoView({ behavior: "instant", inline: "center" });
   }, [categories, search]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const measure = () => setCardWidth(el.clientWidth);
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
 
   const changeIndex = (idx: number) => {
     if (idx < 0 || idx >= categories.length) return;
+    cardRefs.current[idx]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     setActiveIndex(idx);
     const params = new URLSearchParams(search);
     params.set("cat", categories[idx].id);
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
-  const handleDragEnd = (_: unknown, info: PanInfo) => {
-    const next = computeNextIndex(
-      activeIndex,
-      info.offset.x,
-      info.velocity.x,
-      categories.length
-    );
-    if (next !== activeIndex) changeIndex(next);
-  };
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touchStart.current = { x: t.clientX, y: t.clientY };
-    dragging.current = false;
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    const dx = t.clientX - touchStart.current.x;
-    const dy = t.clientY - touchStart.current.y;
-    if (!dragging.current && shouldPreventScroll(dx, dy)) {
-      dragging.current = true;
-    }
-    if (dragging.current) {
-      e.preventDefault();
-    }
-  };
-
-  const onTouchEnd = () => {
-    dragging.current = false;
-  };
-
-  const cards = useMemo(() => {
-    return categories.map((cat, idx) => {
-      const offset = idx - activeIndex;
-      if (Math.abs(offset) > 3) return null;
-      const isActive = offset === 0;
-
-      const PEEK = 48;
-      const GAP = 8;
-      let x = 0;
-      if (offset > 0) {
-        x = cardWidth - PEEK * offset - GAP * (offset - 1);
-      } else if (offset < 0) {
-        const n = Math.abs(offset);
-        x = -cardWidth + PEEK * n + GAP * (n - 1);
-      }
-
-      const depth = categories.length - Math.abs(offset);
-      const animate = prefersReducedMotion
-        ? {
-            x,
-            opacity: isActive ? 1 : 0.6 - Math.abs(offset) * 0.1,
-            zIndex: depth,
-          }
-        : {
-            x,
-            scale: isActive ? 1 : 1 - Math.min(Math.abs(offset) * 0.08, 0.24),
-            opacity: isActive ? 1 : 0.6 - Math.abs(offset) * 0.1,
-            filter: isActive ? "blur(0px)" : "blur(1.5px)",
-            y: isActive ? 0 : 6,
-            zIndex: depth,
-          };
-      return (
-        <motion.div
-          key={cat.id}
-          className="absolute inset-0"
-          style={{ pointerEvents: isActive ? "auto" : "none" }}
-          animate={animate}
-          transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.9 }}
-          drag={isActive ? "x" : false}
-          dragConstraints={{ left: 0, right: 0 }}
-          onDragEnd={handleDragEnd}
-          onTouchStart={isActive ? onTouchStart : undefined}
-          onTouchMove={isActive ? onTouchMove : undefined}
-          onTouchEnd={isActive ? onTouchEnd : undefined}
-        >
-          <CategoryCard
-            category={cat}
-            skills={skillsByCategory[cat.id] || []}
-            active={isActive}
-          />
-        </motion.div>
-      );
-    });
-  }, [categories, activeIndex, skillsByCategory, prefersReducedMotion, cardWidth]);
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const { scrollLeft, offsetWidth } = el;
+      const center = scrollLeft + offsetWidth / 2;
+      let closest = 0;
+      let min = Infinity;
+      cardRefs.current.forEach((child, idx) => {
+        if (!child) return;
+        const middle = child.offsetLeft + child.offsetWidth / 2;
+        const dist = Math.abs(center - middle);
+        if (dist < min) {
+          min = dist;
+          closest = idx;
+        }
+      });
+      setActiveIndex(closest);
+    };
+    onScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [categories]);
 
   if (isLoading) {
     return <div className="py-8 text-center text-zinc-400">Loading...</div>;
@@ -138,21 +67,53 @@ export default function SkillsCarousel() {
 
   return (
     <div
-      className="relative px-3 sm:px-4"
+      className="relative"
       role="region"
       aria-roledescription="carousel"
+      aria-label="Skill categories"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "ArrowLeft") changeIndex(activeIndex - 1);
         if (e.key === "ArrowRight") changeIndex(activeIndex + 1);
-      }}
-      style={{
-        maskImage:
-          "linear-gradient(to right, transparent, black 48px, black calc(100% - 48px), transparent)",
+        if (e.key === "Enter") {
+          cardRefs.current[activeIndex]?.querySelector("button")?.click();
+        }
       }}
     >
-      <div ref={containerRef} className="relative min-h-[62vh]">
-        {cards}
+      <div
+        ref={trackRef}
+        className={`flex gap-4 overflow-x-auto overflow-y-hidden scroll-smooth snap-x px-4 ${
+          skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
+        }`}
+        style={{
+          maskImage:
+            "linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent)",
+        }}
+      >
+        {categories.map((cat, idx) => {
+          if (categories.length > 20 && Math.abs(idx - activeIndex) > 5) {
+            return <div key={cat.id} className="snap-center shrink-0 w-[86vw] sm:w-[74vw] lg:w-[56vw]" />;
+          }
+          const isActive = idx === activeIndex;
+          return (
+            <div
+              key={cat.id}
+              ref={(el) => {
+                cardRefs.current[idx] = el;
+              }}
+              role="group"
+              aria-label={`Category ${idx + 1} of ${categories.length}`}
+              className="snap-center shrink-0 w-[86vw] sm:w-[74vw] lg:w-[56vw]"
+            >
+              <CategoryCard
+                category={cat}
+                skills={skillsByCategory[cat.id] || []}
+                active={isActive}
+                onSkillDrag={setSkillDragging}
+              />
+            </div>
+          );
+        })}
       </div>
       <div className="flex justify-center gap-2 mt-4" role="tablist">
         {categories.map((cat, idx) => (
