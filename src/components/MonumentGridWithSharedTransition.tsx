@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
+import { X } from "lucide-react";
 import { MonumentDetail } from "@/components/monuments/MonumentDetail";
 
 export interface Monument {
@@ -53,7 +54,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             >
               {m.title}
             </motion.h3>
-            <p className="mt-0.5 text-[9px] text-zinc-500">{m.stats}</p>
+            <p className="mt-0.5 text-[9px] text-[var(--muted)]">{m.stats}</p>
           </motion.button>
         ))}
       </div>
@@ -66,17 +67,17 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
+            transition={{ duration: 0.15 }}
           >
             <motion.div
               layoutId={`card-${selected.id}`}
-              className="relative flex h-full w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-white/10 bg-gradient-to-b from-zinc-900 to-zinc-950 shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+              className="relative flex h-full w-full max-w-md flex-col overflow-y-auto rounded-2xl ring-1 ring-[var(--accent)]/40 bg-gradient-to-b from-[var(--surface)] to-[var(--surface-2)] shadow-[0_0_20px_var(--accent)/30]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25, ease: "easeInOut", layout: { duration: 0.25 } }}
+              transition={{ type: "spring", stiffness: 500, damping: 40 }}
             >
-              <div className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-zinc-800 to-zinc-700 px-4 py-3">
+              <div className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-[var(--surface)] to-[var(--surface-2)] px-4 py-3 ring-1 ring-inset ring-[var(--accent)]/40">
                 <div className="flex items-center gap-2">
                   <motion.div layoutId={`emoji-${selected.id}`} className="text-2xl">
                     {selected.emoji}
@@ -90,12 +91,13 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
                 </div>
                 <button
                   onClick={() => setActiveId(null)}
-                  className="rounded-md bg-zinc-800/80 px-3 py-1 text-sm shadow hover:bg-zinc-700"
+                  aria-label="Close"
+                  className="rounded-md bg-zinc-800/80 p-2 text-white shadow hover:bg-zinc-700"
                 >
-                  Close
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="flex flex-wrap justify-center gap-2 p-4">
+              <div className="flex flex-nowrap items-center justify-center gap-2 overflow-x-auto p-4">
                 <span className="rounded-full border border-[var(--accent)] px-3 py-1 text-sm text-[var(--accent)]">
                   Streak 0
                 </span>

@@ -16,7 +16,7 @@ export default function BottomNav() {
   ];
 
   return (
-    <div className="bottom-nav fixed bottom-0 left-0 right-0 z-50 transition-transform">
+    <div className="bottom-nav fixed bottom-0 left-0 right-0 z-50 transition-transform duration-300">
       <div className="relative">
         <BottomBarNav
           items={items}
