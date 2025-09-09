@@ -1,16 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import FlameEmber, { type FlameLevel } from "../FlameEmber";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface MonthViewProps {
   date?: Date;
-  /**
-   * Optional map of ISO date (yyyy-mm-dd) to event counts.
-   * Used to render a tiny density indicator for each day.
-   */
-  eventCounts?: Record<string, number>;
+  /** Map of ISO date (yyyy-mm-dd) to highest energy level for that day */
+  energyMap?: Record<string, FlameLevel>;
   /** The currently selected day to highlight */
   selectedDate?: Date;
   /** Callback when a day is selected */
@@ -19,7 +17,7 @@ interface MonthViewProps {
 
 export function MonthView({
   date = new Date(),
-  eventCounts,
+  energyMap,
   selectedDate,
   onSelectDate,
 }: MonthViewProps) {
@@ -57,7 +55,7 @@ export function MonthView({
             )
           const dayDate = new Date(year, month, day)
           const key = dayDate.toISOString().slice(0, 10)
-          const count = Math.min(4, eventCounts?.[key] ?? 0)
+          const level = energyMap?.[key]
           const isToday = isSameDay(dayDate, new Date())
           const isSelected = selectedDate && isSameDay(dayDate, selectedDate)
           return (
@@ -76,15 +74,8 @@ export function MonthView({
               )}
             >
               <div>{day}</div>
-              {eventCounts && (
-                <div className="mt-1 flex gap-0.5">
-                  {Array.from({ length: count }).map((_, j) => (
-                    <span
-                      key={j}
-                      className="h-1 w-1 rounded-full bg-zinc-500"
-                    />
-                  ))}
-                </div>
+              {level && level !== "NO" && (
+                <FlameEmber level={level} size="sm" className="mt-1" />
               )}
             </button>
           )
