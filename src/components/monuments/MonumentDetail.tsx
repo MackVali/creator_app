@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
+import { GoalsPanel } from "./GoalsPanel";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 import { MonumentDetailLayout, SectionShell } from "./MonumentDetailLayout";
 import { MonumentHero } from "./MonumentHero";
@@ -110,7 +110,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
       }
       goals={
         <SectionShell title="Goals">
-          <FilteredGoalsGrid entity="monument" id={id} />
+          <GoalsPanel monumentId={id} />
         </SectionShell>
       }
       notes={

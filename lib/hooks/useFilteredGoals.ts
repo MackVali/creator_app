@@ -40,11 +40,12 @@ export function useFilteredGoals({
         // Direct query for monument goals
         const { data, error } = await supabase
           .from("goals")
-          .select("id,name,priority,energy,monument_id,created_at")
+          .select(
+            "id,name,priority,energy,monument_id,created_at,status,progress,next_action_due"
+          )
           .eq("user_id", (await supabase.auth.getUser()).data.user?.id)
           .eq("monument_id", id)
-          .order("priority", { ascending: false })
-          .order("created_at", { ascending: false })
+          .order("next_action_due", { ascending: true, nullsFirst: false })
           .limit(limit);
 
         if (error) throw error;
@@ -118,11 +119,12 @@ export function useFilteredGoals({
           const goalIdsArray = Array.from(goalIds);
           const { data: goalsDataResult, error: goalsError } = await supabase
             .from("goals")
-            .select("id,name,priority,energy,monument_id,created_at")
+            .select(
+              "id,name,priority,energy,monument_id,created_at,status,progress,next_action_due"
+            )
             .eq("user_id", userId)
             .in("id", goalIdsArray)
-            .order("priority", { ascending: false })
-            .order("created_at", { ascending: false })
+            .order("next_action_due", { ascending: true, nullsFirst: false })
             .limit(limit);
 
           if (goalsError) throw goalsError;
