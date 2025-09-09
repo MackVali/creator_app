@@ -74,6 +74,7 @@ export function MonthView({
               const isToday = isSameDay(dayDate, new Date());
               const isSelected = selectedDate && isSameDay(dayDate, selectedDate);
               const isWeekend = dayDate.getDay() === 0 || dayDate.getDay() === 6;
+              const dotOpacity = isWeekend ? 0.85 : 1;
               return (
                 <button
                   key={j}
@@ -92,15 +93,19 @@ export function MonthView({
                 >
                   <div>{day}</div>
                   {count > 0 && (
-                    <div className="mt-1 flex gap-[2px]">
+                    <div className="mt-1 flex gap-[4px] justify-center">
                       {Array.from({ length: Math.min(count, 3) }).map((_, k) => (
                         <span
                           key={k}
-                          className="w-1 h-1 rounded-full bg-[var(--dot)]"
+                          className="rounded-full bg-[var(--dot)] w-[3px] h-[3px]"
+                          style={{ opacity: dotOpacity }}
                         />
                       ))}
                       {count > 3 && (
-                        <span className="w-1 h-1 rounded-full bg-[var(--dot)] opacity-30" />
+                        <span
+                          className="rounded-full bg-[var(--dot)] w-[3px] h-[3px]"
+                          style={{ opacity: dotOpacity * 0.3 }}
+                        />
                       )}
                     </div>
                   )}
