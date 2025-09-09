@@ -24,3 +24,4 @@ html,body{ background:var(--bg); color:var(--text); font-weight:600; touch-actio
 .safe-bottom{ padding-bottom:calc(env(safe-area-inset-bottom,16px) + 12px); }
 .scroll-snap{ scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; touch-action:pan-x; }
 .snap-start{ scroll-snap-align:start; }
+body.hide-bottom-nav .bottom-nav{ display:none; }

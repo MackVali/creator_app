@@ -19,9 +19,10 @@ interface Monument {
 
 interface MonumentDetailProps {
   id: string;
+  onClose?: () => void;
 }
 
-export function MonumentDetail({ id }: MonumentDetailProps) {
+export function MonumentDetail({ id, onClose }: MonumentDetailProps) {
   const [monument, setMonument] = useState<Monument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   if (loading) {
     return (
       <MonumentDetailLayout
-        hero={<MonumentHero id={id} loading />}
+        hero={<MonumentHero id={id} loading onClose={onClose} />}
         milestones={<SectionShell title="Milestones" loading />}
         goals={<SectionShell title="Goals" loading />}
         notes={<SectionShell title="Notes" loading />}
@@ -100,7 +101,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
 
   return (
     <MonumentDetailLayout
-      hero={<MonumentHero id={id} monument={monument} progress={progress} />}
+      hero={<MonumentHero id={id} monument={monument} progress={progress} onClose={onClose} />}
       milestones={
         <SectionShell title="Milestones">
           <MilestonesPanel

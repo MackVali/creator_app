@@ -17,9 +17,10 @@ interface MonumentHeroProps {
   monument?: Monument;
   progress?: number;
   loading?: boolean;
+  onClose?: () => void;
 }
 
-export function MonumentHero({ id, monument, progress = 0, loading = false }: MonumentHeroProps) {
+export function MonumentHero({ id, monument, progress = 0, loading = false, onClose }: MonumentHeroProps) {
   const [glow, setGlow] = useState(false);
   const prev = useRef(progress);
 
@@ -36,9 +37,17 @@ export function MonumentHero({ id, monument, progress = 0, loading = false }: Mo
     return (
       <motion.div
         layoutId={`card-${id}`}
-        className="flex flex-col items-center space-y-2 rounded-lg border bg-card p-4 shadow-sm"
+        className="relative flex flex-col items-center space-y-2 rounded-lg border border-[var(--accent)]/40 bg-gradient-to-b from-zinc-800 to-zinc-950 p-4 shadow-[0_0_12px_var(--accent)]"
         transition={spring}
       >
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute right-3 top-3 rounded-md border border-[var(--accent)]/40 bg-black/50 px-2 py-1 text-sm shadow-sm hover:bg-black/70"
+          >
+            Close
+          </button>
+        )}
         <motion.div layoutId={`emoji-${id}`} transition={spring}>
           <Skeleton className="h-16 w-16 rounded-full" />
         </motion.div>
@@ -59,9 +68,17 @@ export function MonumentHero({ id, monument, progress = 0, loading = false }: Mo
   return (
     <motion.div
       layoutId={`card-${id}`}
-      className="flex flex-col items-center space-y-2 rounded-lg border bg-card p-4 text-center shadow-sm"
+      className="relative flex flex-col items-center space-y-2 rounded-lg border border-[var(--accent)]/40 bg-gradient-to-b from-zinc-800 to-zinc-950 p-4 text-center shadow-[0_0_12px_var(--accent)]"
       transition={spring}
     >
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="absolute right-3 top-3 rounded-md border border-[var(--accent)]/40 bg-black/50 px-2 py-1 text-sm shadow-sm hover:bg-black/70"
+        >
+          Close
+        </button>
+      )}
       <div className="flex items-center gap-3">
         <motion.div layoutId={`emoji-${id}`} className="text-5xl" transition={spring}>
           {monument.emoji || "\uD83D\uDDFC\uFE0F"}
@@ -81,23 +98,23 @@ export function MonumentHero({ id, monument, progress = 0, loading = false }: Mo
       >
         <ChargingRing value={progress} />
       </motion.div>
-      <div className="rounded-full border bg-card px-2 py-1 text-xs font-medium shadow-sm">
-        +3 day streak
-      </div>
-      <div className="flex flex-wrap justify-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <div className="rounded-full border border-[var(--accent)]/40 px-2 py-1 text-xs font-medium shadow-sm">
+          +3 day streak
+        </div>
         <Link
           href={`/monuments/${id}/edit`}
-          className="rounded-md border bg-[var(--accent)] px-3 py-1 text-sm font-semibold text-black shadow-sm"
+          className="rounded-md border border-[var(--accent)]/40 px-3 py-1 text-sm shadow-sm hover:bg-[var(--accent)]/10"
         >
           Edit
         </Link>
-        <button className="rounded-md border bg-card px-3 py-1 text-sm shadow-sm">
+        <button className="rounded-md border border-[var(--accent)]/40 px-3 py-1 text-sm shadow-sm hover:bg-[var(--accent)]/10">
           +Milestone
         </button>
-        <button className="rounded-md border bg-card px-3 py-1 text-sm shadow-sm">
+        <button className="rounded-md border border-[var(--accent)]/40 px-3 py-1 text-sm shadow-sm hover:bg-[var(--accent)]/10">
           +Goal
         </button>
-        <button className="rounded-md border bg-card px-3 py-1 text-sm shadow-sm">
+        <button className="rounded-md border border-[var(--accent)]/40 px-3 py-1 text-sm shadow-sm hover:bg-[var(--accent)]/10">
           +Note
         </button>
       </div>
