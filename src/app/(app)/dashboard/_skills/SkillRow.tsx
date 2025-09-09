@@ -23,6 +23,8 @@ export default function SkillRow({ skill, onColor, trackColor, fillColor }: Prop
     <Link
       href={`/skills/${skill.id}`}
       className="rounded-2xl bg-black/15 border border-black/20 px-3 py-2.5 flex items-center gap-3 active:scale-[.98] transition-transform"
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
       style={{ color: onColor }}
     >
       <div className="size-9 rounded-xl bg-black/25 flex items-center justify-center text-lg">
