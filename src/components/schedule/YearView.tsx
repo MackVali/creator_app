@@ -35,6 +35,7 @@ export function YearView({ events, selectedDate, onSelectDate }: YearViewProps) 
             events={events}
             selectedDate={selectedDate}
             onSelectDate={onSelectDate}
+            showAdjacentMonths={false}
           />
         </div>
       ))}
