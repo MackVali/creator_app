@@ -21,11 +21,14 @@ export function FocusTimeline({ children }: FocusTimelineProps) {
 
   const enhancedChildren = Children.map(children, child => {
     if (!isValidElement(child)) return child;
-    const existingStyle = child.props.style as CSSProperties | undefined;
-    return cloneElement(child, {
-      className: cn(child.props.className, "px-3 py-2"),
-      style: { ...existingStyle, boxShadow: "var(--elev-overlay)" },
-    });
+    const props = child.props as { className?: string; style?: CSSProperties };
+    return cloneElement(
+      child as React.ReactElement<{ className?: string; style?: CSSProperties }>,
+      {
+        className: cn(props.className, "px-3 py-2"),
+        style: { ...props.style, boxShadow: "var(--elev-overlay)" },
+      }
+    );
   });
 
   return (
