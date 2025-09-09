@@ -1,11 +1,10 @@
 "use client";
 
 import { MonthView } from "./MonthView";
-import type { FlameLevel } from "../FlameEmber";
 import { useEffect, useRef } from "react";
 
 interface YearViewProps {
-  energyMap?: Record<string, FlameLevel>;
+  events?: Record<string, number>;
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
 }
@@ -13,7 +12,7 @@ interface YearViewProps {
 /**
  * Scrollable list of months centered on the current month.
  */
-export function YearView({ energyMap, selectedDate, onSelectDate }: YearViewProps) {
+export function YearView({ events, selectedDate, onSelectDate }: YearViewProps) {
   const today = new Date();
   const months = Array.from({ length: 25 }, (_, i) =>
     new Date(today.getFullYear(), today.getMonth() - 12 + i, 1)
@@ -33,9 +32,10 @@ export function YearView({ energyMap, selectedDate, onSelectDate }: YearViewProp
         >
           <MonthView
             date={date}
-            energyMap={energyMap}
+            events={events}
             selectedDate={selectedDate}
             onSelectDate={onSelectDate}
+            showAdjacentMonths={false}
           />
         </div>
       ))}
