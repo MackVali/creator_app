@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import React, {
   useCallback,
   useEffect,
@@ -15,12 +16,16 @@ interface MonthViewProps {
   date?: Date;
   /** Map of ISO date (yyyy-mm-dd) to number of events for that day */
   events?: Record<string, number>;
+  /** Map of ISO date (yyyy-mm-dd) to highest energy level */
+  energies?: Record<string, FlameLevel>;
   /** The currently selected day to highlight */
   selectedDate?: Date;
   /** Callback when a day is selected */
   onSelectDate?: (date: Date) => void;
   /** Include leading/trailing days from adjacent months */
   showAdjacentMonths?: boolean;
+  /** Display the month name label on the first day */
+  showMonthLabel?: boolean;
 }
 
 type Cell = { day: number; offset: number } | null;
@@ -29,9 +34,11 @@ type Week = { days: Cell[]; weekNumber: number };
 export function MonthView({
   date = new Date(),
   events,
+  energies,
   selectedDate,
   onSelectDate,
   showAdjacentMonths = true,
+  showMonthLabel = true,
 }: MonthViewProps) {
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -122,8 +129,10 @@ export function MonthView({
             month={month}
             today={today}
             events={events}
+            energies={energies}
             selectedDate={selectedDate}
             onSelectDate={onSelectDate}
+            showMonthLabel={showMonthLabel}
           />
         ))}
         <div style={{ height: (weeks.length - range.end) * rowHeight }} />
@@ -155,8 +164,10 @@ interface WeekRowProps {
   month: number;
   today: Date;
   events?: Record<string, number>;
+  energies?: Record<string, FlameLevel>;
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
+  showMonthLabel?: boolean;
 }
 
 const WeekRow = React.memo(function WeekRow({
@@ -165,8 +176,10 @@ const WeekRow = React.memo(function WeekRow({
   month,
   today,
   events,
+  energies,
   selectedDate,
   onSelectDate,
+  showMonthLabel,
 }: WeekRowProps) {
   return (
     <div className="relative grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] snap-start min-h-[48px] after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-px after:bg-[var(--hairline)] last:after:hidden">
@@ -181,8 +194,10 @@ const WeekRow = React.memo(function WeekRow({
           month={month}
           today={today}
           events={events}
+          energies={energies}
           selectedDate={selectedDate}
           onSelectDate={onSelectDate}
+          showMonthLabel={showMonthLabel}
         />
       ))}
     </div>
@@ -195,8 +210,10 @@ interface DayCellProps {
   month: number;
   today: Date;
   events?: Record<string, number>;
+  energies?: Record<string, FlameLevel>;
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
+  showMonthLabel?: boolean;
 }
 
 const DayCell = React.memo(function DayCell({
@@ -205,8 +222,10 @@ const DayCell = React.memo(function DayCell({
   month,
   today,
   events,
+  energies,
   selectedDate,
   onSelectDate,
+  showMonthLabel,
 }: DayCellProps) {
   const dayDate = useMemo(
     () => (cell ? new Date(year, month + cell.offset, cell.day) : null),
@@ -214,6 +233,7 @@ const DayCell = React.memo(function DayCell({
   );
   const key = dayDate ? dayDate.toISOString().slice(0, 10) : "";
   const count = key && events ? events[key] ?? 0 : 0;
+  const energy = key && energies ? energies[key] : undefined;
   const isToday = dayDate ? isSameDay(dayDate, today) : false;
   const isSelected =
     dayDate && selectedDate ? isSameDay(dayDate, selectedDate) : false;
@@ -259,7 +279,7 @@ const DayCell = React.memo(function DayCell({
         !inMonth && !isSelected && !isToday && "text-[var(--text-muted)]"
       )}
     >
-      {cell.day === 1 && (
+      {cell.day === 1 && showMonthLabel && (
         <span className="absolute left-0 -top-5 text-[16px] font-semibold text-[var(--text-primary)]">
           {dayDate.toLocaleDateString(undefined, { month: "short" })}
         </span>
@@ -273,7 +293,14 @@ const DayCell = React.memo(function DayCell({
             "ring-1 ring-[var(--accent-red)] ring-opacity-40"
         )}
       >
-        {cell.day}
+        <span>{cell.day}</span>
+        {energy && energy !== "NO" && (
+          <FlameEmber
+            level={energy}
+            size="sm"
+            className="ml-1 scale-[0.5] origin-left"
+          />
+        )}
       </div>
       {dots}
     </button>

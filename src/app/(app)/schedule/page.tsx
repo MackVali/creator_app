@@ -36,6 +36,7 @@ import { placeByEnergyWeight } from '@/lib/scheduler/placer'
 import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
+import { ENERGY } from '@/lib/scheduler/config'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -143,6 +144,20 @@ export default function SchedulePage() {
     for (const p of projectItems) map[p.id] = p
     return map
   }, [projectItems])
+
+  const dayEnergies = useMemo(() => {
+    const map: Record<string, FlameLevel> = {}
+    for (const p of placements) {
+      const key = p.start.toISOString().slice(0, 10)
+      const item = planning === 'TASK' ? taskMap[p.taskId] : projectMap[p.taskId]
+      const level = (item?.energy?.toUpperCase() as FlameLevel) || 'NO'
+      const current = map[key]
+      if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
+        map[key] = level
+      }
+    }
+    return map
+  }, [placements, planning, taskMap, projectMap])
 
   const getItem = (id: string) =>
     planning === 'TASK' ? taskMap[id] : projectMap[id]
@@ -261,13 +276,18 @@ export default function SchedulePage() {
           <AnimatePresence mode="wait" initial={false}>
             {view === 'year' && (
               <ScheduleViewShell key="year">
-                <YearView selectedDate={currentDate} onSelectDate={handleDrillDown} />
+                <YearView
+                  energies={dayEnergies}
+                  selectedDate={currentDate}
+                  onSelectDate={handleDrillDown}
+                />
               </ScheduleViewShell>
             )}
             {view === 'month' && (
               <ScheduleViewShell key="month">
                 <MonthView
                   date={currentDate}
+                  energies={dayEnergies}
                   selectedDate={currentDate}
                   onSelectDate={handleDrillDown}
                 />
