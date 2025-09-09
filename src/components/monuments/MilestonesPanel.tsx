@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AutoSplitModal } from "./AutoSplitModal";
+import confetti from "canvas-confetti";
 
 interface Milestone {
   id: string;
@@ -31,6 +32,9 @@ export function MilestonesPanel({
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [showSplit, setShowSplit] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDate, setEditDate] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +102,7 @@ export function MilestonesPanel({
       }
 
       if (updated.done) {
+        confetti({ particleCount: 40, spread: 45, origin: { y: 0.6 } });
         try {
           await supabase.from("monument_activity").insert({
             monument_id: monumentId,
@@ -109,6 +114,34 @@ export function MilestonesPanel({
         }
       }
     }
+  }
+
+  function startEdit(m: Milestone) {
+    setEditingId(m.id);
+    setEditTitle(m.title);
+    setEditDate(m.target_date ? m.target_date.slice(0, 10) : "");
+  }
+
+  async function saveEdit(id: string) {
+    if (!supabase) return;
+    const { error } = await supabase
+      .from("monument_milestones")
+      .update({ title: editTitle, target_date: editDate || null })
+      .eq("id", id);
+    if (error) {
+      console.error("Failed to update milestone", error);
+    } else {
+      setMilestones((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...m, title: editTitle, target_date: editDate || null } : m
+        )
+      );
+    }
+    setEditingId(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
   }
 
   async function addMilestone() {
@@ -170,25 +203,71 @@ export function MilestonesPanel({
   return (
     <div className="space-y-2">
       <div className="space-y-2">
+        {milestones.length === 0 && (
+          <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No milestones yet.
+          </div>
+        )}
         {milestones.map((m) => (
           <div
             key={m.id}
-            className={`flex items-center justify-between rounded-md border px-3 py-2 shadow-sm ${
-              m.done ? "animate-pulse bg-card" : "bg-card"
-            }`}
+            className={`relative flex items-center justify-between rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 shadow-inner`}
           >
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={m.done}
-                onChange={() => toggleDone(m)}
+            <div className="absolute inset-x-0 bottom-0 h-0.5 bg-zinc-700">
+              <div
+                className={`h-full bg-[var(--accent)] transition-all duration-300 ${
+                  m.done ? "w-full" : "w-0"
+                }`}
               />
-              <span>{m.title}</span>
-            </label>
-            {m.target_date && (
-              <span className="text-xs text-muted-foreground">
-                {new Date(m.target_date).toLocaleDateString()}
-              </span>
+            </div>
+            {editingId === m.id ? (
+              <div className="flex w-full items-center justify-between gap-2">
+                <Input
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="h-8 flex-1"
+                />
+                <Input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="h-8 w-32"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => saveEdit(m.id)}
+                  disabled={!editTitle.trim()}
+                >
+                  Save
+                </Button>
+                <Button size="sm" variant="ghost" onClick={cancelEdit}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={m.done}
+                    onChange={() => toggleDone(m)}
+                  />
+                  <span
+                    className="cursor-pointer"
+                    onClick={() => startEdit(m)}
+                  >
+                    {m.title}
+                  </span>
+                </label>
+                <span
+                  className="cursor-pointer text-xs text-muted-foreground"
+                  onClick={() => startEdit(m)}
+                >
+                  {m.target_date
+                    ? new Date(m.target_date).toLocaleDateString()
+                    : "No date"}
+                </span>
+              </>
             )}
           </div>
         ))}
