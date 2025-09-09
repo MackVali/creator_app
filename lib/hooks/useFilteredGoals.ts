@@ -40,16 +40,24 @@ export function useFilteredGoals({
         // Direct query for monument goals
         const { data, error } = await supabase
           .from("goals")
-          .select(
-            "id,name,priority,energy,monument_id,created_at,status,progress,next_action_due"
-          )
+          .select("*")
           .eq("user_id", (await supabase.auth.getUser()).data.user?.id)
           .eq("monument_id", id)
           .order("next_action_due", { ascending: true, nullsFirst: false })
           .limit(limit);
 
         if (error) throw error;
-        goalsData = data || [];
+        goalsData = (data || []).map((g: Partial<GoalItem>) => ({
+          id: g.id!,
+          name: g.name!,
+          priority: g.priority!,
+          energy: g.energy!,
+          monument_id: g.monument_id,
+          created_at: g.created_at!,
+          status: g.status ?? "Active",
+          progress: g.progress ?? 0,
+          next_action_due: g.next_action_due ?? null,
+        }));
       } else if (entity === "skill") {
         // Complex query for skill goals via project_skills and tasks
         const userId = (await supabase.auth.getUser()).data.user?.id;
@@ -119,16 +127,24 @@ export function useFilteredGoals({
           const goalIdsArray = Array.from(goalIds);
           const { data: goalsDataResult, error: goalsError } = await supabase
             .from("goals")
-            .select(
-              "id,name,priority,energy,monument_id,created_at,status,progress,next_action_due"
-            )
+            .select("*")
             .eq("user_id", userId)
             .in("id", goalIdsArray)
             .order("next_action_due", { ascending: true, nullsFirst: false })
             .limit(limit);
 
           if (goalsError) throw goalsError;
-          goalsData = goalsDataResult || [];
+          goalsData = (goalsDataResult || []).map((g: Partial<GoalItem>) => ({
+            id: g.id!,
+            name: g.name!,
+            priority: g.priority!,
+            energy: g.energy!,
+            monument_id: g.monument_id,
+            created_at: g.created_at!,
+            status: g.status ?? "Active",
+            progress: g.progress ?? 0,
+            next_action_due: g.next_action_due ?? null,
+          }));
         }
       }
 
