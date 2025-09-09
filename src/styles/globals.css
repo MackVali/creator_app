@@ -50,3 +50,5 @@ html,body{ background:var(--bg); color:var(--text); font-weight:600; touch-actio
   from{background-position:200% 0;}
   to{background-position:-200% 0;}
 }
+
+body.modal-open [data-bottom-nav] { display: none !important; }

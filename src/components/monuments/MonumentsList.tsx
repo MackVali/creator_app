@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { MonumentsEmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export interface Monument {
   id: string;
@@ -54,7 +55,13 @@ export function MonumentsList({
   }, [supabase, limit]);
 
   if (loading) {
-    return <p className="text-sm text-[var(--muted)]">Loading…</p>;
+    return (
+      <div className="grid grid-cols-4 gap-1">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="aspect-square w-full rounded-2xl bg-[#111520]" />
+        ))}
+      </div>
+    );
   }
 
   if (monuments.length === 0) {

@@ -105,7 +105,6 @@ export function GoalList() {
   if (goals.length === 0) {
     return (
       <EmptyState
-        variant="goals"
         title="No goals yet"
         description="Start by creating your first goal to track your progress."
       />

@@ -1,23 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
-import {
-  ContentCard,
-  PageHeader,
-  SectionHeader,
-} from "@/components/ui/content-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ProgressBarGradient } from "@/components/skills/ProgressBarGradient";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import MilestonesPanel from "./MilestonesPanel";
+import ActivityPanel from "./ActivityPanel";
+import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 
 interface Monument {
   id: string;
   title: string;
   emoji: string | null;
-  created_at: string;
 }
 
 interface MonumentDetailProps {
@@ -29,41 +28,37 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
+  const router = useRouter();
+  const noteInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!supabase || !id) return;
-
       setLoading(true);
       setError(null);
-
       try {
         await supabase.auth.getSession();
         const { data, error } = await supabase
           .from("monuments")
-          .select("id,title,emoji,created_at")
+          .select("id,title,emoji")
           .eq("id", id)
           .single();
-
         if (!cancelled) {
           if (error) {
-            console.error("Error fetching monument:", error);
             setError("Failed to load monument");
           } else {
             setMonument(data);
           }
           setLoading(false);
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) {
-          console.error("Error loading monument:", err);
           setError("Failed to load monument");
           setLoading(false);
         }
       }
     }
-
     load();
     return () => {
       cancelled = true;
@@ -72,26 +67,24 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
 
   if (loading) {
     return (
-      <main className="p-4 space-y-8">
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-3/4" />
-          <Skeleton className="h-4 w-1/3" />
-        </div>
-        <ContentCard className="flex flex-col items-center space-y-4">
-          <Skeleton className="h-16 w-16 rounded-full" />
-          <div className="w-full max-w-sm space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-2 w-full" />
+      <main className="p-4 flex flex-col gap-4 sm:gap-5">
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 sm:p-5">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-14 w-14 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-5 w-1/2" />
+              <Skeleton className="h-4 w-1/3" />
+            </div>
           </div>
-        </ContentCard>
-        <div className="space-y-4">
-          <Skeleton className="h-6 w-32" />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 rounded-lg" />
-            ))}
+          <div className="mt-4 flex gap-2">
+            <Skeleton className="h-8 w-20" />
+            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-24" />
           </div>
-        </div>
+        </Card>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-32 rounded-2xl" />
+        ))}
       </main>
     );
   }
@@ -99,73 +92,71 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   if (error || !monument) {
     return (
       <main className="p-4">
-        <div className="text-center py-12">
-          <h1 className="text-2xl font-semibold text-red-400 mb-2">
-            {error || "Monument not found"}
-          </h1>
-          <p className="text-gray-400">
-            {error
-              ? "Please try again later."
-              : "This monument doesn't exist or you don't have access to it."}
-          </p>
-        </div>
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center">
+          <p className="text-[#A7B0BD]">{error || "Monument not found"}</p>
+        </Card>
       </main>
     );
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+  const handleCreateMilestone = () => {
+    console.log("Milestone creation coming soon");
   };
 
-  const mockProgress = 65;
+  const handleAddMilestone = () => {
+    document
+      .getElementById("monument-milestones")
+      ?.scrollIntoView({ behavior: "smooth" });
+    handleCreateMilestone();
+  };
+
+  const handleAutoSplit = () => {
+    console.log("Auto Split coming soon");
+  };
+
+  const handleAddNote = () => {
+    noteInputRef.current?.scrollIntoView({ behavior: "smooth" });
+    noteInputRef.current?.focus();
+  };
+
+  const handleCreateGoal = () => {
+    router.push("/goals/new");
+  };
 
   return (
-    <main className="p-4 space-y-8">
-      <PageHeader
-        title={
-          <div className="flex items-center gap-3">
-            <span
-              className="text-4xl"
-              role="img"
-              aria-label={`Monument: ${monument.title}`}
-            >
-              {monument.emoji || "\uD83D\uDDFC\uFE0F"}
-            </span>
-            {monument.title}
+    <main className="p-4 flex flex-col gap-4 sm:gap-5">
+      <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 sm:p-5 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+        <div className="flex items-center gap-4">
+          <span className="text-5xl" role="img" aria-label={`Monument: ${monument.title}`}>
+            {monument.emoji || "\uD83D\uDDFC\uFE0F"}
+          </span>
+          <div className="flex flex-col">
+            <h2 className="text-[#E7ECF2] font-bold">{monument.title}</h2>
+            <Badge variant="outline" className="mt-1 self-start px-2 py-0">
+              0 day streak
+            </Badge>
           </div>
-        }
-        description={`Created ${formatDate(monument.created_at)}`}
-      >
-        <Link
-          href={`/monuments/${id}/edit`}
-          className="inline-block rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-black"
-        >
-          Edit Monument
-        </Link>
-      </PageHeader>
+        </div>
+        <p className="mt-3 text-[#A7B0BD]">Not charging yet.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button asChild>
+            <Link href={`/monuments/${id}/edit`}>Edit</Link>
+          </Button>
+          <Button variant="outline" onClick={handleAddMilestone} aria-label="Add milestone">+ Milestone</Button>
+          <Button variant="outline" onClick={handleAddNote} aria-label="Add note">+ Note</Button>
+        </div>
+      </Card>
 
-      <ContentCard className="max-w-md mx-auto w-full space-y-2 text-center">
-        <span className="text-sm text-gray-400">Charging</span>
-        <ProgressBarGradient value={mockProgress} height={8} />
-      </ContentCard>
-
-      <section className="space-y-4">
-        <SectionHeader title="Related Goals" />
-        <FilteredGoalsGrid entity="monument" id={id} />
-      </section>
-
-      <section className="space-y-4">
-        <SectionHeader title="Notes" />
-        <MonumentNotesGrid monumentId={id} />
-      </section>
+      <MilestonesPanel onAdd={handleCreateMilestone} onAutoSplit={handleAutoSplit} />
+      <FilteredGoalsGrid
+        entity="monument"
+        id={id}
+        onCreateGoal={handleCreateGoal}
+      />
+      <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
+      <ActivityPanel />
     </main>
   );
 }
 
 export default MonumentDetail;
-
