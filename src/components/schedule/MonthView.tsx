@@ -75,7 +75,11 @@ export function MonthView({
             >
               <div>{day}</div>
               {level && level !== "NO" && (
-                <FlameEmber level={level} size="sm" className="mt-1" />
+                <FlameEmber
+                  level={level}
+                  size="sm"
+                  className="mt-1 scale-50"
+                />
               )}
             </button>
           )

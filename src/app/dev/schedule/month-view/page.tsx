@@ -9,7 +9,7 @@ export default function MonthViewPreview() {
   const month = now.getMonth();
   const pad = (n: number) => String(n).padStart(2, "0");
   const d = (day: number) => `${year}-${pad(month + 1)}-${pad(day)}`;
-  const dayEnergyMap: Record<string, FlameLevel> = {
+  const energyMap: Record<string, FlameLevel> = {
     [d(2)]: "LOW",
     [d(5)]: "MEDIUM",
     [d(12)]: "HIGH",
@@ -17,7 +17,7 @@ export default function MonthViewPreview() {
   };
   return (
     <div className="p-4 text-white">
-      <MonthView date={now} dayEnergyMap={dayEnergyMap} />
+      <MonthView date={now} energyMap={energyMap} />
     </div>
   );
 }
