@@ -63,9 +63,9 @@ export function MonthView({
   }
 
   return (
-    <div className="text-[11px] text-[var(--text-muted)]">
+    <div className="text-[11px]">
       <div
-        className="relative grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] text-center mb-[6px] after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-px after:bg-[var(--hairline)]"
+        className="relative grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] text-center mb-[6px] text-[var(--text-muted)] after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-px after:bg-[var(--hairline)]"
       >
         <div />
         {dayNames.map((d) => (
@@ -100,11 +100,7 @@ export function MonthView({
                   onClick={() => onSelectDate?.(dayDate)}
                   aria-current={isSelected ? "date" : undefined}
                   className={cn(
-                    "relative flex flex-col items-center justify-center min-h-[48px] focus:outline-none",
-                    isSelected &&
-                      "rounded-md bg-[var(--accent-red)] text-white shadow-inner",
-                    !isSelected && isToday &&
-                      "ring-1 ring-[var(--accent-red)] ring-opacity-50",
+                    "relative flex flex-col items-center justify-center min-h-[48px] focus:outline-none text-[var(--text-primary)]",
                     isWeekend && !isSelected &&
                       "text-[var(--weekend-dim)]",
                     !inMonth && !isSelected && !isToday &&
@@ -116,7 +112,17 @@ export function MonthView({
                       {dayDate.toLocaleDateString(undefined, { month: "short" })}
                     </span>
                   )}
-                  <div>{cell.day}</div>
+                  <div
+                    className={cn(
+                      "flex items-center justify-center rounded-md h-6 min-w-[24px] px-1",
+                      isSelected &&
+                        "bg-[var(--accent-red)] text-[var(--surface)] shadow-[inset_0_-1px_1px_rgba(0,0,0,0.4)]",
+                      !isSelected && isToday &&
+                        "ring-1 ring-[var(--accent-red)] ring-opacity-40",
+                    )}
+                  >
+                    {cell.day}
+                  </div>
                   {count > 0 && (
                     <div className="mt-1 flex gap-[4px] justify-center">
                       {Array.from({ length: Math.min(count, 3) }).map((_, k) => (
