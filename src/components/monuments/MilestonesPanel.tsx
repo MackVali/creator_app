@@ -58,6 +58,7 @@ export function MilestonesPanel({
   }, [supabase, monumentId]);
 
   async function toggleDone(m: Milestone) {
+    if (!supabase) return;
     const updated = { ...m, done: !m.done };
     setMilestones((prev) =>
       prev.map((mi) => (mi.id === m.id ? updated : mi))
@@ -102,6 +103,7 @@ export function MilestonesPanel({
   }
 
   async function addMilestone() {
+    if (!supabase) return;
     const { data, error } = await supabase
       .from("monument_milestones")
       .insert({
@@ -120,7 +122,8 @@ export function MilestonesPanel({
     setAdding(false);
   }
 
-  function handleSplit(count: number, targetDate: Date) {
+  async function handleSplit(count: number, targetDate: Date) {
+    if (!supabase) return;
     const today = new Date();
     const diff = targetDate.getTime() - today.getTime();
     const step = Math.floor(diff / count);
@@ -130,13 +133,19 @@ export function MilestonesPanel({
       order_index: milestones.length + i,
       target_date: new Date(today.getTime() + step * (i + 1)).toISOString(),
     }));
-    supabase
-      .from("monument_milestones")
-      .insert(inserts)
-      .then(({ data }) => {
-        if (data) setMilestones((prev) => [...prev, ...data]);
-      })
-      .catch((err) => console.error("Failed autosplitting", err));
+    try {
+      const { data, error } = await supabase
+        .from("monument_milestones")
+        .insert(inserts)
+        .select();
+      if (error) {
+        console.error("Failed autosplitting", error);
+        return;
+      }
+      if (data) setMilestones((prev) => [...prev, ...data]);
+    } catch (err) {
+      console.error("Failed autosplitting", err);
+    }
   }
 
   if (loading) {
