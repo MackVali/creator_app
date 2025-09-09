@@ -1,5 +1,7 @@
 "use client"
 
+export const runtime = 'nodejs'
+
 import {
   useEffect,
   useMemo,
@@ -12,10 +14,10 @@ import Link from 'next/link'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
-import { MonthView } from '@/components/schedule/MonthView'
 import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
+import { YearView } from '@/components/schedule/YearView'
 import EnergyPager from '@/components/schedule/EnergyPager'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,6 +30,7 @@ import { placeByEnergyWeight } from '@/lib/scheduler/placer'
 import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
+import { ENERGY, type Energy } from '@/lib/scheduler/config'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -47,7 +50,7 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
 export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [view, setView] = useState<'month' | 'week' | 'day' | 'focus'>('day')
+  const [view, setView] = useState<'month' | 'week' | 'day' | 'focus'>('month')
   const [planning, setPlanning] = useState<'TASK' | 'PROJECT'>(() => {
     if (typeof window === 'undefined') return 'TASK'
     return (localStorage.getItem('planning-mode') as 'TASK' | 'PROJECT') || 'TASK'
@@ -61,10 +64,12 @@ export default function SchedulePage() {
   const [unplaced, setUnplaced] = useState<
     ReturnType<typeof placeByEnergyWeight>['unplaced']
   >([])
+  const [dayEnergyMap, setDayEnergyMap] = useState<Record<string, FlameLevel>>({})
   const touchStartX = useRef<number | null>(null)
 
   const startHour = 0
   const pxPerMin = 2
+  const year = currentDate.getFullYear()
 
   useEffect(() => {
     localStorage.setItem('planning-mode', planning)
@@ -91,6 +96,51 @@ export default function SchedulePage() {
     load()
   }, [currentDate])
 
+  useEffect(() => {
+    async function loadEnergies() {
+      try {
+        const base = new Date(year, 0, 1)
+        const sunday = new Date(base)
+        sunday.setDate(base.getDate() - base.getDay())
+        const weekPromises: Promise<WindowLite[]>[] = []
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(sunday)
+          d.setDate(sunday.getDate() + i)
+          weekPromises.push(fetchWindowsForDate(d))
+        }
+        const weekly = await Promise.all(weekPromises)
+        const byDow: Record<number, WindowLite[]> = {}
+        weekly.forEach((wins, i) => {
+          byDow[i] = wins
+        })
+        const map: Record<string, FlameLevel> = {}
+        for (let m = 0; m < 12; m++) {
+          const days = new Date(year, m + 1, 0).getDate()
+          for (let d = 1; d <= days; d++) {
+            const date = new Date(year, m, d)
+            const dow = date.getDay()
+            const wins = byDow[dow] || []
+            let top: FlameLevel = 'NO'
+            for (const w of wins) {
+              const e = (w.energy || 'NO').toUpperCase() as Energy
+              if (ENERGY.LIST.indexOf(e) > ENERGY.LIST.indexOf(top as Energy)) {
+                top = e as FlameLevel
+              }
+            }
+            if (top !== 'NO') {
+              map[date.toISOString().slice(0, 10)] = top
+            }
+          }
+        }
+        setDayEnergyMap(map)
+      } catch (e) {
+        console.error(e)
+        setDayEnergyMap({})
+      }
+    }
+    loadEnergies()
+  }, [year])
+
   const weightedTasks = useMemo(
     () => tasks.map(t => ({ ...t, weight: taskWeight(t) })),
     [tasks]
@@ -116,14 +166,6 @@ export default function SchedulePage() {
   const getItem = (id: string) =>
     planning === 'TASK' ? taskMap[id] : projectMap[id]
 
-  const monthEventCounts = useMemo(() => {
-    const counts: Record<string, number> = {}
-    for (const p of placements) {
-      const key = p.start.toISOString().slice(0, 10)
-      counts[key] = (counts[key] ?? 0) + 1
-    }
-    return counts
-  }, [placements])
 
   useEffect(() => {
     function run() {
@@ -199,6 +241,16 @@ export default function SchedulePage() {
                 Windows
               </Button>
             </Link>
+            <Button
+              size="sm"
+              onClick={() => {
+                setCurrentDate(new Date())
+                setView('day')
+              }}
+              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+            >
+              Today
+            </Button>
           </div>
         </div>
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
@@ -263,12 +315,26 @@ export default function SchedulePage() {
           <AnimatePresence mode="wait" initial={false}>
             {view === 'month' && (
               <ScheduleViewShell key="month">
-                <MonthView date={currentDate} eventCounts={monthEventCounts} />
+                <YearView
+                  energyMap={dayEnergyMap}
+                  selectedDate={currentDate}
+                  onSelectDate={d => {
+                    setCurrentDate(d)
+                    setView('day')
+                  }}
+                />
               </ScheduleViewShell>
             )}
             {view === 'week' && (
               <ScheduleViewShell key="week">
-                <WeekView date={currentDate} />
+                <WeekView
+                  date={currentDate}
+                  selectedDate={currentDate}
+                  onSelectDate={d => {
+                    setCurrentDate(d)
+                    setView('day')
+                  }}
+                />
               </ScheduleViewShell>
             )}
             {view === 'day' && (
