@@ -116,6 +116,15 @@ export default function SchedulePage() {
   const getItem = (id: string) =>
     planning === 'TASK' ? taskMap[id] : projectMap[id]
 
+  const monthEventCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const p of placements) {
+      const key = p.start.toISOString().slice(0, 10)
+      counts[key] = (counts[key] ?? 0) + 1
+    }
+    return counts
+  }, [placements])
+
   useEffect(() => {
     function run() {
       if (windows.length === 0) return
@@ -249,7 +258,7 @@ export default function SchedulePage() {
           <AnimatePresence mode="wait" initial={false}>
             {view === 'month' && (
               <ScheduleViewShell key="month">
-                <MonthView date={currentDate} />
+                <MonthView date={currentDate} eventCounts={monthEventCounts} />
               </ScheduleViewShell>
             )}
             {view === 'week' && (
