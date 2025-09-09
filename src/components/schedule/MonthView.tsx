@@ -64,7 +64,9 @@ export function MonthView({
 
   return (
     <div className="text-[11px] text-[var(--text-muted)]">
-      <div className="grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] text-center mb-1">
+      <div
+        className="relative grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] text-center mb-[6px] after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-px after:bg-[var(--hairline)]"
+      >
         <div />
         {dayNames.map((d) => (
           <div key={d} className="tracking-wide">
@@ -76,14 +78,13 @@ export function MonthView({
         {weeks.map((week, i) => (
           <div
             key={i}
-            className="grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] snap-start min-h-[48px]"
+            className="relative grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] snap-start min-h-[48px] after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-px after:bg-[var(--hairline)] last:after:hidden"
           >
             <div className="flex items-center justify-center text-[var(--accent-red)]">
               {week.weekNumber}
             </div>
             {week.days.map((cell, j) => {
-              if (!cell)
-                return <div key={j} className="min-h-[48px] border border-[var(--hairline)]" />;
+              if (!cell) return <div key={j} className="min-h-[48px]" />;
               const dayDate = new Date(year, month + cell.offset, cell.day);
               const key = dayDate.toISOString().slice(0, 10);
               const count = events?.[key] ?? 0;
@@ -99,9 +100,9 @@ export function MonthView({
                   onClick={() => onSelectDate?.(dayDate)}
                   aria-current={isSelected ? "date" : undefined}
                   className={cn(
-                    "relative flex flex-col items-center justify-center border border-[var(--hairline)] min-h-[48px] rounded-md focus:outline-none",
+                    "relative flex flex-col items-center justify-center min-h-[48px] focus:outline-none",
                     isSelected &&
-                      "bg-[var(--accent-red)] text-white shadow-inner",
+                      "rounded-md bg-[var(--accent-red)] text-white shadow-inner",
                     !isSelected && isToday &&
                       "ring-1 ring-[var(--accent-red)] ring-opacity-50",
                     isWeekend && !isSelected &&

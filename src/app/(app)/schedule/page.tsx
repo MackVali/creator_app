@@ -254,7 +254,7 @@ export default function SchedulePage() {
         </div>
 
         <div
-          className="relative rounded-xl border border-zinc-800 bg-[#1b1b1d]"
+          className="relative bg-[var(--surface)]"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
