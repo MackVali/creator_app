@@ -6,12 +6,14 @@ import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 import { MonumentDetailLayout, SectionShell } from "./MonumentDetailLayout";
 import { MonumentHero } from "./MonumentHero";
+import { MilestonesPanel } from "./MilestonesPanel";
 
 interface Monument {
   id: string;
   title: string;
   emoji: string | null;
   created_at: string;
+  charge: number | null;
 }
 
 interface MonumentDetailProps {
@@ -22,6 +24,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   const [monument, setMonument] = useState<Monument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
   const supabase = getSupabaseBrowser();
 
   useEffect(() => {
@@ -36,7 +39,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
         await supabase.auth.getSession();
         const { data, error } = await supabase
           .from("monuments")
-          .select("id,title,emoji,created_at")
+          .select("id,title,emoji,created_at,charge")
           .eq("id", id)
           .single();
 
@@ -46,6 +49,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
             setError("Failed to load monument");
           } else {
             setMonument(data);
+            setProgress(data.charge ?? 0);
           }
           setLoading(false);
         }
@@ -93,14 +97,15 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     );
   }
 
-  const mockProgress = 65;
-
   return (
     <MonumentDetailLayout
-      hero={<MonumentHero id={id} monument={monument} progress={mockProgress} />}
+      hero={<MonumentHero id={id} monument={monument} progress={progress} />}
       milestones={
         <SectionShell title="Milestones">
-          <p className="text-sm text-muted-foreground">No milestones yet</p>
+          <MilestonesPanel
+            monumentId={id}
+            onProgressChange={(p) => setProgress(p)}
+          />
         </SectionShell>
       }
       goals={
