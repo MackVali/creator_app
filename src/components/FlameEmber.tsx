@@ -1,3 +1,4 @@
+"use client";
 import React from "react";
 
 export type FlameLevel = "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
