@@ -28,9 +28,12 @@ import {
   fetchReadyTasks,
   fetchWindowsForDate,
   fetchProjectsMap,
-  type WindowLite,
+  type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
-import { placeByEnergyWeight } from '@/lib/scheduler/placer'
+import {
+  placeByEnergyWeight,
+  type WindowLite as PlacerWindow,
+} from '@/lib/scheduler/placer'
 import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
@@ -70,11 +73,8 @@ export default function SchedulePage() {
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
-  const [windows, setWindows] = useState<WindowLite[]>([])
+  const [windows, setWindows] = useState<RepoWindow[]>([])
   const [placements, setPlacements] = useState<
-    ReturnType<typeof placeByEnergyWeight>['placements']
-  >([])
-  const [taskPlacements, setTaskPlacements] = useState<
     ReturnType<typeof placeByEnergyWeight>['placements']
   >([])
   const [unplaced, setUnplaced] = useState<
@@ -155,14 +155,21 @@ export default function SchedulePage() {
 
   const taskPlacementsByProject = useMemo(() => {
     const map: Record<string, ReturnType<typeof placeByEnergyWeight>['placements']> = {}
-    for (const tp of taskPlacements) {
-      const t = taskMap[tp.taskId]
-      const pid = t?.project_id
-      if (!pid) continue
-      ;(map[pid] ||= []).push(tp)
+    for (const p of placements) {
+      const tasksForProj = weightedTasks.filter(t => t.project_id === p.taskId)
+      if (tasksForProj.length === 0) continue
+      const proj = projectMap[p.taskId]
+      const win: PlacerWindow = {
+        id: p.taskId,
+        label: proj?.name ?? '',
+        energy: proj?.energy ?? '',
+        start_local: p.start.toTimeString().slice(0, 5),
+        end_local: p.end.toTimeString().slice(0, 5),
+      }
+      map[p.taskId] = placeByEnergyWeight(tasksForProj, [win], p.start).placements
     }
     return map
-  }, [taskPlacements, taskMap])
+  }, [placements, weightedTasks, projectMap])
 
   function navigate(next: ScheduleView) {
     if (navLock.current) return
@@ -197,13 +204,11 @@ export default function SchedulePage() {
       const projResult = placeByEnergyWeight(projectItems, windows, date)
       setPlacements(projResult.placements)
       setUnplaced(projResult.unplaced)
-      const taskResult = placeByEnergyWeight(weightedTasks, windows, date)
-      setTaskPlacements(taskResult.placements)
     }
     run()
     const id = setInterval(run, 5 * 60 * 1000)
     return () => clearInterval(id)
-  }, [weightedTasks, projectItems, windows, currentDate])
+  }, [projectItems, windows, currentDate])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
