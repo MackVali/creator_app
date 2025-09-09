@@ -316,7 +316,6 @@ export default function SchedulePage() {
             {view === 'month' && (
               <ScheduleViewShell key="month">
                 <YearView
-                  energyMap={dayEnergyMap}
                   selectedDate={currentDate}
                   onSelectDate={d => {
                     setCurrentDate(d)
