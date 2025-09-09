@@ -389,6 +389,13 @@ export default function SchedulePage() {
                           aria-label={`Task ${tItem.name}`}
                           className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
                           style={style}
+                          onClick={() =>
+                            setExpandedProjects(prev => {
+                              const next = new Set(prev)
+                              next.delete(p.taskId)
+                              return next
+                            })
+                          }
                           initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                           animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                         >
