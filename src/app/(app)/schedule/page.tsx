@@ -10,7 +10,6 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
-import Link from 'next/link'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -18,8 +17,9 @@ import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
+import { MonthView } from '@/components/schedule/MonthView'
+import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import EnergyPager from '@/components/schedule/EnergyPager'
-import { Button } from '@/components/ui/button'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -50,7 +50,7 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
 export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [view, setView] = useState<'month' | 'week' | 'day' | 'focus'>('month')
+  const [view, setView] = useState<'year' | 'month' | 'week' | 'day' | 'focus'>('year')
   const [planning, setPlanning] = useState<'TASK' | 'PROJECT'>(() => {
     if (typeof window === 'undefined') return 'TASK'
     return (localStorage.getItem('planning-mode') as 'TASK' | 'PROJECT') || 'TASK'
@@ -166,6 +166,21 @@ export default function SchedulePage() {
   const getItem = (id: string) =>
     planning === 'TASK' ? taskMap[id] : projectMap[id]
 
+  function handleBack() {
+    setView(v => {
+      if (v === 'focus') return 'day'
+      if (v === 'day') return 'week'
+      if (v === 'week') return 'month'
+      if (v === 'month') return 'year'
+      return v
+    })
+  }
+
+  const handleToday = () => {
+    setCurrentDate(new Date())
+    setView('day')
+  }
+
 
   useEffect(() => {
     function run() {
@@ -214,45 +229,7 @@ export default function SchedulePage() {
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight">Schedule</h1>
-          <div className="flex gap-2">
-            <Link href="/tasks">
-              <Button
-                size="sm"
-                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-              >
-                Tasks
-              </Button>
-            </Link>
-            <Link href="/schedule/draft">
-              <Button
-                size="sm"
-                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-              >
-                Draft
-              </Button>
-            </Link>
-            <Link href="/windows">
-              <Button
-                size="sm"
-                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-              >
-                Windows
-              </Button>
-            </Link>
-            <Button
-              size="sm"
-              onClick={() => {
-                setCurrentDate(new Date())
-                setView('day')
-              }}
-              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-            >
-              Today
-            </Button>
-          </div>
-        </div>
+        <ScheduleTopBar year={year} onBack={handleBack} onToday={handleToday} />
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
 
         <div className="space-y-2">
@@ -261,7 +238,7 @@ export default function SchedulePage() {
               role="tablist"
               className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs"
             >
-              {(['month', 'week', 'day', 'focus'] as const).map(v => (
+              {(['year', 'month', 'week', 'day', 'focus'] as const).map(v => (
                 <button
                   key={v}
                   role="tab"
@@ -298,7 +275,7 @@ export default function SchedulePage() {
             </div>
           </div>
           <EnergyPager
-            activeIndex={{ month: 0, week: 1, day: 2, focus: 3 }[view]}
+            activeIndex={{ year: 0, month: 1, week: 2, day: 3, focus: 4 }[view]}
             className="justify-center"
           />
         </div>
@@ -313,9 +290,21 @@ export default function SchedulePage() {
           onTouchEnd={handleTouchEnd}
         >
           <AnimatePresence mode="wait" initial={false}>
+            {view === 'year' && (
+              <ScheduleViewShell key="year">
+                <YearView
+                  selectedDate={currentDate}
+                  onSelectDate={d => {
+                    setCurrentDate(d)
+                    setView('month')
+                  }}
+                />
+              </ScheduleViewShell>
+            )}
             {view === 'month' && (
               <ScheduleViewShell key="month">
-                <YearView
+                <MonthView
+                  date={currentDate}
                   selectedDate={currentDate}
                   onSelectDate={d => {
                     setCurrentDate(d)
