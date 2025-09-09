@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
 import { MonumentDetail } from "@/components/monuments/MonumentDetail";
 
 export interface Monument {
@@ -19,14 +20,21 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
   const [activeId, setActiveId] = useState<string | null>(null);
   const selected = monuments.find((m) => m.id === activeId) || null;
 
+  const previousFocus = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (activeId) {
+      previousFocus.current = document.activeElement as HTMLElement;
       document.body.style.overflow = "hidden";
+      document.body.classList.add("modal-open");
     } else {
       document.body.style.overflow = "";
+      document.body.classList.remove("modal-open");
+      previousFocus.current?.focus();
     }
     return () => {
       document.body.style.overflow = "";
+      document.body.classList.remove("modal-open");
     };
   }, [activeId]);
 
@@ -58,7 +66,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
         {selected && (
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -66,18 +74,23 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
           >
             <motion.div
               layoutId={`card-${selected.id}`}
-              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-zinc-900 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-[#0B0E13] shadow-xl"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25, ease: "easeInOut", layout: { duration: 0.25 } }}
+              transition={{ type: "spring", stiffness: 500, damping: 40, mass: 0.9 }}
             >
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label="Close detail"
                 onClick={() => setActiveId(null)}
-                className="absolute right-4 top-4 z-10 rounded-md bg-zinc-800 px-3 py-1 text-sm"
+                className="absolute right-4 top-4 z-10"
               >
                 Close
-              </button>
+              </Button>
               <MonumentDetail id={selected.id} />
             </motion.div>
           </motion.div>
