@@ -16,6 +16,7 @@ import { MonthView } from '@/components/schedule/MonthView'
 import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
+import EnergyPager from '@/components/schedule/EnergyPager'
 import { Button } from '@/components/ui/button'
 import {
   fetchReadyTasks,
@@ -193,41 +194,47 @@ export default function SchedulePage() {
         </div>
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
 
-        <div className="flex gap-2">
-          <div className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs">
-            {(['month', 'week', 'day', 'focus'] as const).map(v => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`relative flex-1 h-11 rounded-md capitalize ${view === v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
-              >
-                {v}
-                {view === v && (
-                  <motion.span
-                    layoutId="view-underline"
-                    className="absolute left-1 right-1 bottom-0 h-0.5 rounded-full bg-[var(--accent)]"
-                    transition={
-                      prefersReducedMotion
-                        ? { duration: 0 }
-                        : { type: 'spring', bounce: 0, duration: 0.2 }
-                    }
-                  />
-                )}
-              </button>
-            ))}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <div className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs">
+              {(['month', 'week', 'day', 'focus'] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`relative flex-1 h-11 rounded-md capitalize ${view === v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+                >
+                  {v}
+                  {view === v && (
+                    <motion.span
+                      layoutId="view-underline"
+                      className="absolute left-1 right-1 bottom-0 h-0.5 rounded-full bg-[var(--accent)]"
+                      transition={
+                        prefersReducedMotion
+                          ? { duration: 0 }
+                          : { type: 'spring', bounce: 0, duration: 0.2 }
+                      }
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-full bg-zinc-900 p-1 text-xs">
+              {(['TASK','PROJECT'] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setPlanning(m)}
+                  aria-label={`Switch to ${m === 'TASK' ? 'task' : 'project'} planning`}
+                  className={`h-9 rounded-full px-3 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+                >
+                  {m === 'TASK' ? 'Tasks' : 'Projects'}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex rounded-full bg-zinc-900 p-1 text-xs">
-            {(['TASK','PROJECT'] as const).map(m => (
-              <button
-                key={m}
-                onClick={() => setPlanning(m)}
-                aria-label={`Switch to ${m === 'TASK' ? 'task' : 'project'} planning`}
-                className={`h-9 rounded-full px-3 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
-              >
-                {m === 'TASK' ? 'Tasks' : 'Projects'}
-              </button>
-            ))}
-          </div>
+          <EnergyPager
+            activeIndex={{ month: 0, week: 1, day: 2, focus: 3 }[view]}
+            className="justify-center"
+          />
         </div>
 
         <div className="text-center text-sm text-gray-200">
