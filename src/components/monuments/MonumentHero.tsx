@@ -36,7 +36,7 @@ export function MonumentHero({ id, monument, progress = 0, loading = false }: Mo
     return (
       <motion.div
         layoutId={`card-${id}`}
-        className="flex flex-col items-center space-y-3 rounded-lg border bg-card p-4 shadow-sm"
+        className="flex flex-col items-center space-y-2 rounded-lg border bg-card p-4 shadow-sm"
         transition={spring}
       >
         <motion.div layoutId={`emoji-${id}`} transition={spring}>
@@ -59,7 +59,7 @@ export function MonumentHero({ id, monument, progress = 0, loading = false }: Mo
   return (
     <motion.div
       layoutId={`card-${id}`}
-      className="flex flex-col items-center space-y-3 rounded-lg border bg-card p-4 text-center shadow-sm"
+      className="flex flex-col items-center space-y-2 rounded-lg border bg-card p-4 text-center shadow-sm"
       transition={spring}
     >
       <div className="flex items-center gap-3">

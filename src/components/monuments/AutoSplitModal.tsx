@@ -29,12 +29,12 @@ export function AutoSplitModal({ onClose, onSubmit }: AutoSplitModalProps) {
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
           transition={spring}
-          className="space-y-3"
+          className="space-y-2"
         >
           <SheetHeader>
             <SheetTitle>Auto Split Milestones</SheetTitle>
           </SheetHeader>
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="flex items-center gap-2">
               <label className="w-24 text-sm">Count</label>
               <Input

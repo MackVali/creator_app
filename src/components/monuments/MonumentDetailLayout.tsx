@@ -10,8 +10,8 @@ interface SectionShellProps {
 
 export function SectionShell({ title, children, loading = false }: SectionShellProps) {
   return (
-    <section className="space-y-3">
-      <SectionHeader title={title} />
+    <section className="space-y-2">
+      <SectionHeader title={title} className="mb-2" />
       {loading ? (
         <ContentCard padding="sm" shadow="sm">
           <Skeleton className="h-32 w-full" />
@@ -41,7 +41,7 @@ export function MonumentDetailLayout({
   activity,
 }: MonumentDetailLayoutProps) {
   return (
-    <main className="p-3 md:p-4 space-y-3 md:space-y-4">
+    <main className="p-2 md:p-3 space-y-2 md:space-y-3">
       {hero}
       {milestones}
       {goals}
