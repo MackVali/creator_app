@@ -3,7 +3,6 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -12,12 +11,15 @@ import Link from 'next/link'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
+import { DayPager } from '@/components/schedule/DayPager'
 import { MonthView } from '@/components/schedule/MonthView'
 import { WeekView } from '@/components/schedule/WeekView'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import EnergyPager from '@/components/schedule/EnergyPager'
 import { Button } from '@/components/ui/button'
+import { CollapsingLargeTitle } from '@/components/schedule/CollapsingLargeTitle'
+import { SegmentedControlIOS } from '@/components/schedule/SegmentedControlIOS'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -61,10 +63,26 @@ export default function SchedulePage() {
   const [unplaced, setUnplaced] = useState<
     ReturnType<typeof placeByEnergyWeight>['unplaced']
   >([])
-  const touchStartX = useRef<number | null>(null)
+  const [scrollY, setScrollY] = useState(0)
+
+  const viewOrder: readonly ('month' | 'week' | 'day' | 'focus')[] = [
+    'month',
+    'week',
+    'day',
+    'focus',
+  ]
 
   const startHour = 0
   const pxPerMin = 2
+
+  useEffect(() => {
+    function handle() {
+      setScrollY(window.scrollY)
+    }
+    handle()
+    window.addEventListener('scroll', handle, { passive: true })
+    return () => window.removeEventListener('scroll', handle)
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('planning-mode', planning)
@@ -141,24 +159,6 @@ export default function SchedulePage() {
     return () => clearInterval(id)
   }, [planning, weightedTasks, projectItems, windows, currentDate])
 
-  function handleTouchStart(e: React.TouchEvent) {
-    touchStartX.current = e.touches[0].clientX
-  }
-
-  function handleTouchEnd(e: React.TouchEvent) {
-    if (view !== 'day') return
-    if (touchStartX.current === null) return
-    const diff = e.changedTouches[0].clientX - touchStartX.current
-    const threshold = 50
-    if (Math.abs(diff) > threshold) {
-      setCurrentDate(prev => {
-        const d = new Date(prev)
-        d.setDate(prev.getDate() + (diff < 0 ? 1 : -1))
-        return d
-      })
-    }
-    touchStartX.current = null
-  }
 
   function formatFullDate(d: Date) {
     return d.toLocaleDateString(undefined, {
@@ -171,76 +171,59 @@ export default function SchedulePage() {
 
   return (
     <ProtectedRoute>
+      <CollapsingLargeTitle
+        title="Schedule"
+        scrollY={scrollY}
+        rightSlot={
+          <SegmentedControlIOS
+            segments={["Month", "Week", "Day", "Focus"]}
+            value={viewOrder.indexOf(view)}
+            onChange={(i) => setView(viewOrder[i])}
+          />
+        }
+      />
       <div className="space-y-4 text-zinc-100">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight">Schedule</h1>
-          <div className="flex gap-2">
-            <Link href="/tasks">
-              <Button
-                size="sm"
-                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-              >
-                Tasks
-              </Button>
-            </Link>
-            <Link href="/schedule/draft">
-              <Button
-                size="sm"
-                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-              >
-                Draft
-              </Button>
-            </Link>
-            <Link href="/windows">
-              <Button
-                size="sm"
-                className="bg-gray-800 text-gray-100 hover:bg-gray-700"
-              >
-                Windows
-              </Button>
-            </Link>
-          </div>
+        <div className="flex justify-end gap-2">
+          <Link href="/tasks">
+            <Button
+              size="sm"
+              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+            >
+              Tasks
+            </Button>
+          </Link>
+          <Link href="/schedule/draft">
+            <Button
+              size="sm"
+              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+            >
+              Draft
+            </Button>
+          </Link>
+          <Link href="/windows">
+            <Button
+              size="sm"
+              className="bg-gray-800 text-gray-100 hover:bg-gray-700"
+            >
+              Windows
+            </Button>
+          </Link>
         </div>
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
 
         <div className="space-y-2">
-          <div className="flex gap-2">
-            <div
-              role="tablist"
-              className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs"
-            >
-              {(['month', 'week', 'day', 'focus'] as const).map(v => (
-                <button
-                  key={v}
-                  role="tab"
-                  aria-selected={view === v}
-                  onClick={() => setView(v)}
-                  className={`relative flex-1 h-11 rounded-md capitalize ${view === v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
-                >
-                  {v}
-                  {view === v && (
-                    <motion.span
-                      layoutId="view-underline"
-                      className="absolute left-1 right-1 bottom-0 h-0.5 rounded-full bg-[var(--accent)]"
-                      transition={
-                        prefersReducedMotion
-                          ? { duration: 0 }
-                          : { type: 'spring', bounce: 0, duration: 0.2 }
-                      }
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
+          <div className="flex justify-end">
             <div className="flex rounded-full bg-zinc-900 p-1 text-xs">
-              {(['TASK','PROJECT'] as const).map(m => (
+              {(["TASK", "PROJECT"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setPlanning(m)}
-                  aria-label={`Switch to ${m === 'TASK' ? 'task' : 'project'} planning`}
-                  className={`h-9 rounded-full px-3 capitalize ${planning===m ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
+                  aria-label={`Switch to ${m === "TASK" ? "task" : "project"} planning`}
+                  className={`h-9 rounded-full px-3 capitalize ${
+                    planning === m ? "bg-zinc-800 text-white" : "text-zinc-400"
+                  }`}
                 >
-                  {m === 'TASK' ? 'Tasks' : 'Projects'}
+                  {m === "TASK" ? "Tasks" : "Projects"}
                 </button>
               ))}
             </div>
@@ -252,112 +235,112 @@ export default function SchedulePage() {
         </div>
 
         <div className="text-center text-sm text-gray-200">
-          {formatFullDate(view === 'focus' ? new Date() : currentDate)}
+          {formatFullDate(view === "focus" ? new Date() : currentDate)}
         </div>
 
         <div
           className="relative rounded-xl border border-zinc-800 bg-[#1b1b1d]"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
         >
           <AnimatePresence mode="wait" initial={false}>
-            {view === 'month' && (
+            {view === "month" && (
               <ScheduleViewShell key="month">
                 <MonthView date={currentDate} eventCounts={monthEventCounts} />
               </ScheduleViewShell>
             )}
-            {view === 'week' && (
+            {view === "week" && (
               <ScheduleViewShell key="week">
                 <WeekView date={currentDate} />
               </ScheduleViewShell>
             )}
-            {view === 'day' && (
+            {view === "day" && (
               <ScheduleViewShell key="day">
-                <DayTimeline
-                  date={currentDate}
-                  startHour={startHour}
-                  pxPerMin={pxPerMin}
-                >
-                  {windows.map(w => {
-                    const { top, height } = windowRect(w, startHour, pxPerMin)
-                    return (
-                      <div
-                        key={w.id}
-                        aria-label={w.label}
-                        className="absolute left-0 flex"
-                        style={{ top, height }}
-                      >
-                        <div className="w-0.5 bg-zinc-700 opacity-50" />
-                        <span
-                          className="ml-1 text-[10px] text-zinc-500"
-                          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-                        >
-                          {w.label}
-                        </span>
-                      </div>
-                    )
-                  })}
-                  {placements.map((p, i) => {
-                    const item = getItem(p.taskId)
-                    if (!item) return null
-                    const startMin =
-                      p.start.getHours() * 60 + p.start.getMinutes()
-                    const top = (startMin - startHour * 60) * pxPerMin
-                    const height =
-                      ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
-                    const progress = (item as { progress?: number }).progress ?? 0
-                    const style: CSSProperties = {
-                      top,
-                      height,
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
-                      outlineOffset: '-1px',
-                    }
-                    return (
-                      <motion.div
-                        key={p.taskId}
-                        aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
-                        style={style}
-                        initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-                        animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-                        transition={prefersReducedMotion ? undefined : { delay: i * 0.02 }}
-                      >
-                        <div className="flex flex-col">
-                          <span className="truncate text-sm font-medium">
-                            {item.name}
-                          </span>
-                          <div className="text-xs text-zinc-200/70">
-                            {item.duration_min}m
-                            {planning === 'PROJECT' && 'taskCount' in item && (
-                              <span> · {item.taskCount} tasks</span>
-                            )}
-                          </div>
-                        </div>
-                        {item.skill_icon && (
-                          <span
-                            className="ml-2 text-lg leading-none flex-shrink-0"
-                            aria-hidden
+                <DayPager
+                  currentDate={currentDate}
+                  onChangeDate={setCurrentDate}
+                  renderDay={(d) => (
+                    <DayTimeline date={d} startHour={startHour} pxPerMin={pxPerMin}>
+                      {windows.map((w) => {
+                        const { top, height } = windowRect(w, startHour, pxPerMin)
+                        return (
+                          <div
+                            key={w.id}
+                            aria-label={w.label}
+                            className="absolute left-0 flex"
+                            style={{ top, height }}
                           >
-                            {item.skill_icon}
-                          </span>
-                        )}
-                        <FlameEmber
-                          level={(item.energy as FlameLevel) || 'NO'}
-                          size="sm"
-                          className="absolute -top-1 -right-1"
-                        />
-                        <div
-                          className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </motion.div>
-                    )
-                  })}
-                </DayTimeline>
+                            <div className="w-0.5 bg-zinc-700 opacity-50" />
+                            <span
+                              className="ml-1 text-[10px] text-zinc-500"
+                              style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+                            >
+                              {w.label}
+                            </span>
+                          </div>
+                        )
+                      })}
+                      {placements.map((p, i) => {
+                        const item = getItem(p.taskId)
+                        if (!item) return null
+                        const startMin =
+                          p.start.getHours() * 60 + p.start.getMinutes()
+                        const top = (startMin - startHour * 60) * pxPerMin
+                        const height =
+                          ((p.end.getTime() - p.start.getTime()) / 60000) * pxPerMin
+                        const progress = (item as { progress?: number }).progress ?? 0
+                        const style: CSSProperties = {
+                          top,
+                          height,
+                          boxShadow: "var(--elev-card)",
+                          outline: "1px solid var(--event-border)",
+                          outlineOffset: "-1px",
+                        }
+                        return (
+                          <motion.div
+                            key={p.taskId}
+                            aria-label={`${planning === "TASK" ? "Task" : "Project"} ${item.name}`}
+                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
+                            style={style}
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                            animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                            transition={prefersReducedMotion ? undefined : { delay: i * 0.02 }}
+                          >
+                            <div className="flex flex-col">
+                              <span className="truncate text-sm font-medium">
+                                {item.name}
+                              </span>
+                              <div className="text-xs text-zinc-200/70">
+                                {item.duration_min}m
+                                {planning === "PROJECT" && "taskCount" in item && (
+                                  <span> · {item.taskCount} tasks</span>
+                                )}
+                              </div>
+                            </div>
+                            {item.skill_icon && (
+                              <span
+                                className="ml-2 text-lg leading-none flex-shrink-0"
+                                aria-hidden
+                              >
+                                {item.skill_icon}
+                              </span>
+                            )}
+                            <FlameEmber
+                              level={(item.energy as FlameLevel) || "NO"}
+                              size="sm"
+                              className="absolute -top-1 -right-1"
+                            />
+                            <div
+                              className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </motion.div>
+                        )
+                      })}
+                    </DayTimeline>
+                  )}
+                />
               </ScheduleViewShell>
             )}
-            {view === 'focus' && (
+            {view === "focus" && (
               <ScheduleViewShell key="focus">
                 <FocusTimeline />
               </ScheduleViewShell>
@@ -369,16 +352,16 @@ export default function SchedulePage() {
           <div className="space-y-2">
             <h2 className="text-sm font-semibold text-zinc-200">Unplaced</h2>
             <ul className="space-y-2">
-              {unplaced.map(u => {
+              {unplaced.map((u) => {
                 const item = getItem(u.taskId)
                 const reason =
-                  u.reason === 'no-window'
-                    ? 'No window fits'
-                    : 'No slot available'
+                  u.reason === "no-window"
+                    ? "No window fits"
+                    : "No slot available"
                 return (
                   <li
                     key={u.taskId}
-                    aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item?.name ?? u.taskId} unplaced: ${reason}`}
+                    aria-label={`${planning === "TASK" ? "Task" : "Project"} ${item?.name ?? u.taskId} unplaced: ${reason}`}
                     className="flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-sm text-white"
                   >
                     <span>{item?.name ?? u.taskId}</span>
