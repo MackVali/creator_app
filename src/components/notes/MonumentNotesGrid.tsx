@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, FormEvent } from "react";
+import { useEffect, useState, useRef, FormEvent, type Ref, type MutableRefObject } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,12 +13,22 @@ import { MonumentNoteCard } from "./MonumentNoteCard";
 
 interface MonumentNotesGridProps {
   monumentId: string;
+  inputRef?: Ref<HTMLTextAreaElement>;
 }
 
-export function MonumentNotesGrid({ monumentId }: MonumentNotesGridProps) {
+export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridProps) {
   const [notes, setNotes] = useState<MonumentNote[]>([]);
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!inputRef) return;
+    if (typeof inputRef === "function") {
+      inputRef(textareaRef.current);
+    } else {
+      (inputRef as MutableRefObject<HTMLTextAreaElement | null>).current = textareaRef.current;
+    }
+  }, [inputRef]);
 
   useEffect(() => {
     setNotes(getMonumentNotes(monumentId));
@@ -62,7 +72,7 @@ export function MonumentNotesGrid({ monumentId }: MonumentNotesGridProps) {
           className="resize-none overflow-hidden rounded-2xl border border-white/5 bg-[#111520] p-3 text-sm text-[#E7ECF2] placeholder-[#A7B0BD]"
         />
         <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={!draft.trim()}>
+          <Button type="submit" size="sm" disabled={!draft.trim()} aria-label="Save note">
             Save
           </Button>
         </div>
@@ -79,7 +89,7 @@ export function MonumentNotesGrid({ monumentId }: MonumentNotesGridProps) {
           ))}
         </div>
       ) : (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4">
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
           <p className="text-[#A7B0BD]">No notes yet. Capture your first thought here.</p>
         </Card>
       )}

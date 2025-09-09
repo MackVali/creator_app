@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 import { MonumentDetail } from "@/components/monuments/MonumentDetail";
 
 export interface Monument {
@@ -76,7 +77,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
               layoutId={`card-${selected.id}`}
               role="dialog"
               aria-modal="true"
-              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl bg-[#0B0E13] shadow-xl"
+              className="relative h-full w-full max-w-md overflow-y-auto rounded-2xl border border-white/5 bg-[#0B0E13] shadow-[0_6px_24px_rgba(0,0,0,0.35)]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -84,12 +85,12 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             >
               <Button
                 variant="secondary"
-                size="sm"
+                size="icon"
                 aria-label="Close detail"
                 onClick={() => setActiveId(null)}
                 className="absolute right-4 top-4 z-10"
               >
-                Close
+                <X className="h-4 w-4" />
               </Button>
               <MonumentDetail id={selected.id} />
             </motion.div>

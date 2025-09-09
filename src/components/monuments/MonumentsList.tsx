@@ -58,7 +58,7 @@ export function MonumentsList({
     return (
       <div className="grid grid-cols-4 gap-1">
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="aspect-square w-full" />
+          <Skeleton key={i} className="aspect-square w-full rounded-2xl bg-[#111520]" />
         ))}
       </div>
     );

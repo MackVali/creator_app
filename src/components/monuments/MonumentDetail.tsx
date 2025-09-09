@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
@@ -27,6 +28,8 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
+  const router = useRouter();
+  const noteInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +99,30 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     );
   }
 
+  const handleCreateMilestone = () => {
+    console.log("Milestone creation coming soon");
+  };
+
+  const handleAddMilestone = () => {
+    document
+      .getElementById("monument-milestones")
+      ?.scrollIntoView({ behavior: "smooth" });
+    handleCreateMilestone();
+  };
+
+  const handleAutoSplit = () => {
+    console.log("Auto Split coming soon");
+  };
+
+  const handleAddNote = () => {
+    noteInputRef.current?.scrollIntoView({ behavior: "smooth" });
+    noteInputRef.current?.focus();
+  };
+
+  const handleCreateGoal = () => {
+    router.push("/goals/new");
+  };
+
   return (
     <main className="p-4 flex flex-col gap-4 sm:gap-5">
       <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 sm:p-5 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
@@ -115,14 +142,18 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
           <Button asChild>
             <Link href={`/monuments/${id}/edit`}>Edit</Link>
           </Button>
-          <Button variant="outline" onClick={() => {}}>+ Milestone</Button>
-          <Button variant="outline" onClick={() => {}}>+ Note</Button>
+          <Button variant="outline" onClick={handleAddMilestone} aria-label="Add milestone">+ Milestone</Button>
+          <Button variant="outline" onClick={handleAddNote} aria-label="Add note">+ Note</Button>
         </div>
       </Card>
 
-      <MilestonesPanel onAdd={() => {}} onAutoSplit={() => {}} />
-      <FilteredGoalsGrid entity="monument" id={id} onCreateGoal={() => {}} />
-      <MonumentNotesGrid monumentId={id} />
+      <MilestonesPanel onAdd={handleCreateMilestone} onAutoSplit={handleAutoSplit} />
+      <FilteredGoalsGrid
+        entity="monument"
+        id={id}
+        onCreateGoal={handleCreateGoal}
+      />
+      <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
       <ActivityPanel />
     </main>
   );

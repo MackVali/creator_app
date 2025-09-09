@@ -18,7 +18,7 @@ function GridSkeleton() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-32 rounded-lg" />
+        <Skeleton key={i} className="h-32 rounded-2xl bg-[#111520]" />
       ))}
     </div>
   );
@@ -36,6 +36,7 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
             key={f}
             variant={active === f ? "default" : "outline"}
             className="px-3 py-1 cursor-pointer"
+            aria-label={`Show ${f} goals`}
             onClick={() => setActive(f)}
           >
             {f}
@@ -51,7 +52,7 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
           <p className="text-sm text-gray-400">{error}</p>
         </div>
       ) : !goals || goals.length === 0 ? (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4">
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
           <p className="text-[#A7B0BD] mb-4">No goals linked to this monument.</p>
           <Button variant="outline" onClick={onCreateGoal}>+ Goal</Button>
         </Card>
