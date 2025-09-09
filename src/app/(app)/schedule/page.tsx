@@ -66,6 +66,13 @@ export default function SchedulePage() {
   const [scrollY, setScrollY] = useState(0)
   const touchStartX = useRef<number | null>(null)
 
+  const viewOrder: readonly ('month' | 'week' | 'day' | 'focus')[] = [
+    'month',
+    'week',
+    'day',
+    'focus',
+  ]
+
   const startHour = 0
   const pxPerMin = 2
 
@@ -189,8 +196,8 @@ export default function SchedulePage() {
         rightSlot={
           <SegmentedControlIOS
             segments={["Month", "Week", "Day", "Focus"]}
-            value={{ month: 0, week: 1, day: 2, focus: 3 }[view]}
-            onChange={(i) => setView(["month", "week", "day", "focus"][i])}
+            value={viewOrder.indexOf(view)}
+            onChange={(i) => setView(viewOrder[i])}
           />
         }
       />

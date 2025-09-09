@@ -46,7 +46,9 @@ export function SegmentedControlIOS({
       {segments.map((label, i) => (
         <button
           key={label}
-          ref={(el) => (refs.current[i] = el)}
+          ref={(el) => {
+            refs.current[i] = el
+          }}
           type="button"
           role="tab"
           aria-selected={value === i}
