@@ -3,8 +3,6 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
 
-export const GEM_PURPLE = "#9966CC";
-
 interface DayTimelineProps {
   startHour?: number;
   endHour?: number;
@@ -78,21 +76,8 @@ export function DayTimeline({
         {showNowLine && (
           <>
             <div
-              className="absolute left-0 right-0 pointer-events-none"
-              style={{
-                top: nowTop - 10,
-                height: 20,
-                background: `linear-gradient(to bottom, rgba(153, 102, 204, 0) 0%, rgba(153, 102, 204, 0.4) 50%, rgba(153, 102, 204, 0) 100%)`,
-              }}
-            />
-            <div
-              className="absolute left-0 right-0"
-              style={{
-                top: nowTop,
-                height: 2,
-                backgroundColor: GEM_PURPLE,
-                boxShadow: `0 0 8px ${GEM_PURPLE}`,
-              }}
+              className="now-line absolute left-0 right-0"
+              style={{ top: nowTop }}
             />
             <div
               className="absolute flex items-center gap-1 text-xs text-white"
