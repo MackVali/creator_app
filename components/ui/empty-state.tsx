@@ -97,6 +97,18 @@ export function MonumentsEmptyState({ onAction }: { onAction?: () => void }) {
   )
 }
 
+export function MilestonesEmptyState({ onAction }: { onAction?: () => void }) {
+  return (
+    <EmptyState
+      title="No milestones yet"
+      description="Break your monument into milestones to track progress."
+      variant="monuments"
+      actionLabel="Add Milestone"
+      onAction={onAction}
+    />
+  )
+}
+
 export function ScheduleEmptyState({ onAction }: { onAction?: () => void }) {
   return (
     <EmptyState
