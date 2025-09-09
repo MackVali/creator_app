@@ -12,6 +12,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProgressBarGradient } from "@/components/skills/ProgressBarGradient";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
+import { MilestonesPanel } from "@/components/monuments/MilestonesPanel";
 
 interface Monument {
   id: string;
@@ -22,13 +23,15 @@ interface Monument {
 
 interface MonumentDetailProps {
   id: string;
+  showHeader?: boolean;
 }
 
-export function MonumentDetail({ id }: MonumentDetailProps) {
+export function MonumentDetail({ id, showHeader = true }: MonumentDetailProps) {
   const [monument, setMonument] = useState<Monument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
+  const [chargeGlow, setChargeGlow] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,33 +129,49 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
 
   return (
     <main className="p-4 space-y-8">
-      <PageHeader
-        title={
-          <div className="flex items-center gap-3">
-            <span
-              className="text-4xl"
-              role="img"
-              aria-label={`Monument: ${monument.title}`}
-            >
-              {monument.emoji || "\uD83D\uDDFC\uFE0F"}
-            </span>
-            {monument.title}
-          </div>
-        }
-        description={`Created ${formatDate(monument.created_at)}`}
-      >
-        <Link
-          href={`/monuments/${id}/edit`}
-          className="inline-block rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-black"
+      {showHeader && (
+        <PageHeader
+          title={
+            <div className="flex items-center gap-3">
+              <span
+                className="text-4xl"
+                role="img"
+                aria-label={`Monument: ${monument.title}`}
+              >
+                {monument.emoji || "\uD83D\uDDFC\uFE0F"}
+              </span>
+              {monument.title}
+            </div>
+          }
+          description={`Created ${formatDate(monument.created_at)}`}
         >
-          Edit Monument
-        </Link>
-      </PageHeader>
+          <Link
+            href={`/monuments/${id}/edit`}
+            className="inline-block rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-black"
+          >
+            Edit Monument
+          </Link>
+        </PageHeader>
+      )}
 
-      <ContentCard className="max-w-md mx-auto w-full space-y-2 text-center">
+      <ContentCard
+        className={`max-w-md mx-auto w-full space-y-2 text-center transition-shadow ${
+          chargeGlow ? "ring-2 ring-[var(--accent)] shadow-[0_0_8px_var(--accent)]" : ""
+        }`}
+      >
         <span className="text-sm text-gray-400">Charging</span>
         <ProgressBarGradient value={mockProgress} height={8} />
       </ContentCard>
+
+      <section className="space-y-4">
+        <SectionHeader title="Milestones" />
+        <MilestonesPanel
+          onMilestoneComplete={() => {
+            setChargeGlow(true);
+            setTimeout(() => setChargeGlow(false), 1200);
+          }}
+        />
+      </section>
 
       <section className="space-y-4">
         <SectionHeader title="Related Goals" />
