@@ -19,19 +19,22 @@ const LEVELS: FlameLevel[] = [
 
 export function EnergyPager({ activeIndex, className }: EnergyPagerProps) {
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div
+      aria-label="Energy levels"
+      className={cn('flex items-center gap-2', className)}
+    >
       {LEVELS.map((level, i) => (
         <div
           key={level}
           aria-current={i === activeIndex ? 'true' : undefined}
           title={level}
-          className='relative'
+          className="relative"
           style={{ width: 18, height: 18 * 1.2 }}
         >
           <FlameEmber
             level={level}
-            size='sm'
-            className='absolute inset-0 origin-top-left scale-[0.75]'
+            size="sm"
+            className="absolute inset-0 origin-top-left scale-[0.75]"
           />
         </div>
       ))}

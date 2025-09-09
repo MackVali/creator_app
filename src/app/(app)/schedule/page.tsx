@@ -205,10 +205,15 @@ export default function SchedulePage() {
 
         <div className="space-y-2">
           <div className="flex gap-2">
-            <div className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs">
+            <div
+              role="tablist"
+              className="flex flex-1 rounded-md bg-zinc-900 p-1 text-xs"
+            >
               {(['month', 'week', 'day', 'focus'] as const).map(v => (
                 <button
                   key={v}
+                  role="tab"
+                  aria-selected={view === v}
                   onClick={() => setView(v)}
                   className={`relative flex-1 h-11 rounded-md capitalize ${view === v ? 'bg-zinc-800 text-white' : 'text-zinc-400'}`}
                 >
@@ -292,7 +297,7 @@ export default function SchedulePage() {
                       </div>
                     )
                   })}
-                  {placements.map(p => {
+                  {placements.map((p, i) => {
                     const item = getItem(p.taskId)
                     if (!item) return null
                     const startMin =
@@ -309,11 +314,14 @@ export default function SchedulePage() {
                       outlineOffset: '-1px',
                     }
                     return (
-                      <div
+                      <motion.div
                         key={p.taskId}
                         aria-label={`${planning === 'TASK' ? 'Task' : 'Project'} ${item.name}`}
                         className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
                         style={style}
+                        initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                        animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                        transition={prefersReducedMotion ? undefined : { delay: i * 0.02 }}
                       >
                         <div className="flex flex-col">
                           <span className="truncate text-sm font-medium">
@@ -343,7 +351,7 @@ export default function SchedulePage() {
                           className="absolute left-0 bottom-0 h-[3px] bg-white/30"
                           style={{ width: `${progress}%` }}
                         />
-                      </div>
+                      </motion.div>
                     )
                   })}
                 </DayTimeline>
