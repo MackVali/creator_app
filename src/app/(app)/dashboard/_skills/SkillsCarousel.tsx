@@ -82,8 +82,8 @@ export default function SkillsCarousel() {
     >
       <div
         ref={trackRef}
-        className={`flex gap-4 overflow-x-auto scroll-smooth snap-x px-4 ${
-          skillDragging ? "snap-none touch-none" : "snap-mandatory"
+        className={`flex gap-4 overflow-x-auto overflow-y-hidden scroll-smooth snap-x px-4 ${
+          skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
         }`}
         style={{
           maskImage:
