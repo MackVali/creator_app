@@ -67,11 +67,11 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
   return (
     <nav className="w-full bg-gray-900 text-gray-400">
       <div className="grid h-16 w-full grid-cols-[1fr_3.5rem_1fr] items-center">
-        <div className="flex h-full items-center justify-evenly">
+        <div className="flex h-full min-w-0 items-center justify-evenly">
           {leftItems.map(renderItem)}
         </div>
         <div />
-        <div className="flex h-full items-center justify-evenly">
+        <div className="flex h-full min-w-0 items-center justify-evenly">
           {rightItems.map(renderItem)}
         </div>
       </div>
