@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import MilestonesPanel from "./MilestonesPanel";
+import MilestonesPanel, { MilestonesPanelHandle } from "./MilestonesPanel";
 import ActivityPanel from "./ActivityPanel";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
@@ -30,6 +30,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   const supabase = getSupabaseBrowser();
   const router = useRouter();
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
+  const milestonesRef = useRef<MilestonesPanelHandle>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,7 +101,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   }
 
   const handleCreateMilestone = () => {
-    console.log("Milestone creation coming soon");
+    milestonesRef.current?.addMilestone();
   };
 
   const handleAddMilestone = () => {
@@ -147,7 +148,11 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
         </div>
       </Card>
 
-      <MilestonesPanel onAdd={handleCreateMilestone} onAutoSplit={handleAutoSplit} />
+      <MilestonesPanel
+        ref={milestonesRef}
+        monumentId={id}
+        onAutoSplit={handleAutoSplit}
+      />
       <FilteredGoalsGrid
         entity="monument"
         id={id}
