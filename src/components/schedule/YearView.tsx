@@ -30,7 +30,7 @@ export function YearView({
   const virtualizer = useVirtualizer({
     count: totalYears,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 420,
+    estimateSize: () => 460,
     overscan: 2,
   });
 

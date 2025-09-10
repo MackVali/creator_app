@@ -31,7 +31,7 @@ export function MiniMonth({ year, month, selectedDate, onSelect }: MiniMonthProp
       type="button"
       onClick={() => onSelect?.(date)}
       className="text-center text-[10px] p-1 rounded hover:bg-[var(--surface)]"
-    >
+      >
       <div
         className={cn(
           "mb-1",
@@ -44,7 +44,7 @@ export function MiniMonth({ year, month, selectedDate, onSelect }: MiniMonthProp
         {cells.map((d, i) => (
           <div
             key={i}
-            className="h-4 w-4 flex items-center justify-center"
+            className="h-3 w-3 flex items-center justify-center"
           >
             {d ?? ""}
           </div>
