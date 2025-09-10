@@ -17,6 +17,7 @@ import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { FocusTimeline } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
+import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import EnergyPager from '@/components/schedule/EnergyPager'
 import {
@@ -62,7 +63,7 @@ export default function SchedulePage() {
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
-    initialViewParam && ['year', 'day', 'focus'].includes(initialViewParam)
+    initialViewParam && ['year', 'month', 'day', 'focus'].includes(initialViewParam)
       ? initialViewParam
       : 'year'
   const initialDate = searchParams.get('date')
@@ -251,7 +252,7 @@ export default function SchedulePage() {
 
         <div className="space-y-2">
           <EnergyPager
-            activeIndex={{ year: 0, day: 1, focus: 2 }[view]}
+            activeIndex={{ year: 0, month: 1, day: 2, focus: 3 }[view]}
             className="justify-center"
           />
         </div>
@@ -269,6 +270,16 @@ export default function SchedulePage() {
             {view === 'year' && (
               <ScheduleViewShell key="year">
                 <YearView
+                  energies={dayEnergies}
+                  selectedDate={currentDate}
+                  onSelectDate={handleDrillDown}
+                />
+              </ScheduleViewShell>
+            )}
+            {view === 'month' && (
+              <ScheduleViewShell key="month">
+                <MonthView
+                  date={currentDate}
                   energies={dayEnergies}
                   selectedDate={currentDate}
                   onSelectDate={handleDrillDown}
