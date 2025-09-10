@@ -39,7 +39,7 @@ export function YearView({
   }, [virtualizer, currentIndex]);
 
   return (
-    <div ref={parentRef} className="max-h-[70vh] overflow-y-auto p-2">
+    <div ref={parentRef} className="max-h-[70vh] overflow-y-auto">
       <div
         style={{
           height: virtualizer.getTotalSize(),
@@ -53,13 +53,13 @@ export function YearView({
             <div
               key={item.key}
               ref={virtualizer.measureElement}
-              className="absolute top-0 left-0 w-full mb-4"
+              className="absolute top-0 left-0 w-full px-2 pb-6"
               style={{ transform: `translateY(${item.start}px)` }}
             >
-              <h2 className="px-2 text-lg font-semibold text-[var(--text-primary)] mb-2">
+              <h2 className="mb-2 text-lg font-semibold text-[var(--text-primary)]">
                 {year}
               </h2>
-              <div className="grid grid-cols-3 gap-2 px-2">
+              <div className="grid grid-cols-3 gap-2">
                 {Array.from({ length: 12 }).map((_, m) => (
                   <MiniMonth
                     key={m}
