@@ -16,7 +16,10 @@ export default function BottomNav() {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50" data-bottom-nav>
+    <div
+      className="fixed inset-x-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)] bg-gray-900 text-gray-400"
+      data-bottom-nav
+    >
       <div className="relative">
         <BottomBarNav
           items={items}

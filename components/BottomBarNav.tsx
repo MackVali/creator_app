@@ -63,7 +63,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
 
   const mid = Math.ceil(items.length / 2);
   return (
-    <nav className="w-full bg-gray-900 text-gray-400">
+    <nav className="w-full">
       <div
         className="grid h-16 items-center"
         style={{
