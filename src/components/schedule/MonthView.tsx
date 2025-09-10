@@ -123,17 +123,18 @@ function MonthGrid({
     const startWeekday = first.getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const cells: Cell[] = [];
-    const prevMonthDays = new Date(year, month, 0).getDate();
 
+    // Fill leading days with empty cells to keep weeks separate
     for (let i = startWeekday - 1; i >= 0; i--) {
-      cells.push({ day: prevMonthDays - i, offset: -1 });
+      cells.push(null);
     }
+    // Add all days of the current month
     for (let d = 1; d <= daysInMonth; d++) {
       cells.push({ day: d, offset: 0 });
     }
-    let nextDay = 1;
+    // Fill trailing days with empty cells
     while (cells.length % 7 !== 0) {
-      cells.push({ day: nextDay++, offset: 1 });
+      cells.push(null);
     }
     const weeks: Week[] = [];
     for (let i = 0; i < cells.length; i += 7) {
