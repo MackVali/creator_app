@@ -48,11 +48,11 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
             {item.icon}
           </div>
           <span
-            className={
+            className={`font-bold uppercase ${
               isActive
                 ? "drop-shadow-[0_0_4px_rgba(255,255,255,0.6)]"
-                : undefined
-            }
+                : ""
+            }`}
           >
             {item.label}
           </span>
