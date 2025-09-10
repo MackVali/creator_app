@@ -1,7 +1,8 @@
-import { cn } from "@/lib/utils";
+"use client";
+import Dither from "./Dither";
 
 interface DitherBackgroundProps {
-  /** Optional additional classes to override colors or size */
+  /** Optional wrapper className */
   className?: string;
 }
 
@@ -9,11 +10,19 @@ export default function DitherBackground({ className }: DitherBackgroundProps) {
   return (
     <div
       aria-hidden="true"
-      className={cn(
-        "pointer-events-none fixed inset-0 -z-10 h-full w-full [background-size:8px_8px] bg-[radial-gradient(circle_at_1px_1px,theme(colors.neutral.200)_1px,transparent_0)] dark:bg-[radial-gradient(circle_at_1px_1px,theme(colors.neutral.800)_1px,transparent_0)]",
-        className
-      )}
-    />
+      className={`pointer-events-none fixed inset-0 -z-10 h-full w-full ${className ?? ""}`.trim()}
+    >
+      <Dither
+        waveColor={[0.5, 0.5, 0.5]}
+        disableAnimation={false}
+        enableMouseInteraction={true}
+        mouseRadius={0.3}
+        colorNum={4}
+        waveAmplitude={0.3}
+        waveFrequency={3}
+        waveSpeed={0.05}
+      />
+    </div>
   );
 }
 
