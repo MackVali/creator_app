@@ -31,7 +31,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
             onNavigate(item.href);
           }
         }}
-        className="flex items-center justify-center"
+        className="flex flex-1 min-w-0 items-center justify-center"
       >
         <div
           className={`flex flex-col items-center gap-1 px-3 py-1 text-xs transition-colors ${
@@ -62,20 +62,18 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
   };
 
   const mid = Math.ceil(items.length / 2);
+  const leftItems = items.slice(0, mid);
+  const rightItems = items.slice(mid);
   return (
     <nav className="w-full bg-gray-900 text-gray-400">
-      <div
-        className="grid h-16 w-full items-center"
-        style={{
-          gridTemplateColumns: `repeat(${mid},1fr) 3.5rem repeat(${items.length - mid},1fr)`,
-        }}
-      >
-        {items.map((item, idx) => (
-          <React.Fragment key={item.key}>
-            {idx === mid ? <div /> : null}
-            {renderItem(item)}
-          </React.Fragment>
-        ))}
+      <div className="grid h-16 w-full grid-cols-[1fr_3.5rem_1fr] items-center">
+        <div className="flex h-full items-center justify-evenly">
+          {leftItems.map(renderItem)}
+        </div>
+        <div />
+        <div className="flex h-full items-center justify-evenly">
+          {rightItems.map(renderItem)}
+        </div>
       </div>
     </nav>
   );
