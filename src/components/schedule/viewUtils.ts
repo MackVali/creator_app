@@ -1,10 +1,12 @@
-export type ScheduleView = 'year' | 'day' | 'focus';
+export type ScheduleView = 'year' | 'month' | 'day' | 'focus';
 
 export function getParentView(view: ScheduleView): ScheduleView {
   switch (view) {
     case 'focus':
       return 'day';
     case 'day':
+      return 'month';
+    case 'month':
       return 'year';
     default:
       return view;
@@ -17,6 +19,8 @@ export function getChildView(
 ): { view: ScheduleView; date: Date } {
   switch (view) {
     case 'year':
+      return { view: 'month', date: payload };
+    case 'month':
       return { view: 'day', date: payload };
     case 'day':
       return { view: 'focus', date: payload };
@@ -24,3 +28,4 @@ export function getChildView(
       return { view, date: payload };
   }
 }
+
