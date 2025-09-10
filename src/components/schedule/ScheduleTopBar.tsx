@@ -44,7 +44,9 @@ export function ScheduleTopBar({ year, onBack, onToday, canGoBack = true }: Sche
   ];
 
   return (
-    <header className="flex items-center justify-between px-4 h-12 bg-[var(--surface-elevated)] border-b border-[var(--hairline)]">
+    <header
+      className="relative flex items-center justify-between px-4 min-h-[calc(3rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] bg-[var(--surface-elevated)] after:content-[''] after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-[var(--hairline)]"
+    >
       <button onClick={onBack} disabled={!canGoBack} className="p-2 disabled:opacity-30">
         <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
       </button>
@@ -64,7 +66,10 @@ export function ScheduleTopBar({ year, onBack, onToday, canGoBack = true }: Sche
               <Plus className="h-5 w-5 text-[var(--accent-red)]" />
             </button>
           </SheetTrigger>
-          <SheetContent side="bottom" className="bg-[var(--surface-elevated)] rounded-t-xl p-4">
+          <SheetContent
+            side="bottom"
+            className="bg-[var(--surface-elevated)] rounded-t-xl p-4 pb-[env(safe-area-inset-bottom)]"
+          >
             <div className="grid gap-2">
               {actions.map(({ label, icon: Icon, onClick }) => (
                 <button
@@ -73,7 +78,7 @@ export function ScheduleTopBar({ year, onBack, onToday, canGoBack = true }: Sche
                     onClick();
                     setOpen(false);
                   }}
-                  className="flex items-center gap-3 p-3 rounded-md bg-white/5 hover:bg-white/10 text-[var(--text-primary)]"
+                  className="flex items-center gap-3 p-3 rounded-md bg-white/10 hover:bg-white/20 text-[var(--text-primary)]"
                 >
                   <Icon className="h-5 w-5 text-[var(--accent-red)]" />
                   <span>{label}</span>

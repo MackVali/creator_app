@@ -9,6 +9,8 @@ export const viewport = {
 };
 
 import "./globals.css";
+import "@/styles/theme.css";
+import DitherBackground from "@/components/ui/DitherBackground";
 import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import AuthProvider from "@/components/auth/AuthProvider";
@@ -20,8 +22,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="flex min-h-screen flex-col">
+    <html lang="en" className="dark">
+      <body className="bg-[var(--surface)] text-[var(--text-primary)] antialiased flex min-h-screen flex-col">
+        <DitherBackground parallax={true} tint={true} />
         <ErrorBoundary>
           <AuthProvider>
             <ClientProviders>

@@ -1,0 +1,29 @@
+:root {
+  --surface: #0E0E10;
+  --surface-elevated: #151517;
+  --text-primary: #EFEFF2;
+  --text-muted: #9A9AA2;
+  --accent-red: #FF453A;
+  --accent: var(--accent-red);
+  --hairline: rgba(255,255,255,0.08);
+  --dot: rgba(200,200,205,0.85);
+  --weekend-dim: rgba(255,255,255,0.4);
+  --bg: var(--surface);
+  --surface-2: var(--surface-elevated);
+  --text: var(--text-primary);
+  --muted: var(--text-muted);
+  --radius: 16px;
+  --radius-sm: 12px;
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  /* Dither controls */
+  --dither-fg: rgba(255,255,255,0.09);
+  --dither-bg: var(--surface);
+  --dither-size: 8px;
+  --dither-opacity: 1;
+}
+
+html.dark {
+  --dither-fg: rgba(255,255,255,0.09);
+  --dither-bg: #0E0E10;
+}

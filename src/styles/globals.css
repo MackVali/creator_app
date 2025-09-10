@@ -8,27 +8,6 @@
   }
 }
 
-:root{
-  /* calendar design tokens */
-  --surface:#0E0E10;
-  --surface-elevated:#151517;
-  --text-primary:#EFEFF2;
-  --text-muted:#9A9AA2;
-  --accent-red:#FF453A;
-  --hairline:rgba(255,255,255,0.08);
-  --dot:rgba(200,200,205,0.85);
-  /* Weekend day numbers use a lighter gray for better readability */
-  --weekend-dim:rgba(255,255,255,0.4);
-
-  /* existing aliases */
-  --bg:var(--surface);
-  --surface-2:var(--surface-elevated);
-  --text:var(--text-primary);
-  --muted:var(--text-muted);
-  --accent:#6ea8ff;
-  --radius:16px; --radius-sm:12px;
-  --popover:var(--surface); --popover-foreground:var(--text);
-}
 html,body{ background:var(--bg); color:var(--text); font-weight:600; touch-action:pan-y; overflow-x:hidden; }
 .section{ padding:20px 16px 8px; }
 .h-label{ letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--muted); font-size:12px; }
