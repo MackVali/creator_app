@@ -27,7 +27,7 @@ export default function TasksPage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-6 p-4 text-zinc-100">
+      <div className="space-y-6 p-4 text-zinc-100 bg-[var(--surface)]">
         <div className="relative">
           <h1 className="text-3xl font-bold tracking-tight">Tasks</h1>
           <Link href="/schedule">
@@ -47,7 +47,7 @@ export default function TasksPage() {
           {tasks.map((t) => (
             <li
               key={t.id}
-              className="rounded-md border border-zinc-800 bg-zinc-900 p-2"
+              className="rounded-md border border-zinc-800 bg-[var(--surface-2)] p-2"
             >
               <div className="flex justify-between text-sm">
                 <span>{t.name}</span>
