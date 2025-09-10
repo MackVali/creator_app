@@ -12,6 +12,7 @@ import "./globals.css";
 import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import AuthProvider from "@/components/auth/AuthProvider";
+import DitherBackground from "@/components/ui/DitherBackground";
 import React from "react";
 
 export default function RootLayout({
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col">
+        <DitherBackground />
         <ErrorBoundary>
           <AuthProvider>
             <ClientProviders>
