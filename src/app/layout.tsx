@@ -22,7 +22,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="flex min-h-screen flex-col">
+      <body className="relative z-0 flex min-h-screen flex-col">
         <DitherBackground />
         <ErrorBoundary>
           <AuthProvider>
