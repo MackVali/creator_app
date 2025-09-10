@@ -257,7 +257,6 @@ const DayCell = React.memo(function DayCell({
   const isWeekend = dayDate
     ? dayDate.getDay() === 0 || dayDate.getDay() === 6
     : false;
-  const inMonth = cell ? cell.offset === 0 : false;
   const dotOpacity = isWeekend ? 0.85 : 1;
 
   const dots = useMemo(() => {
@@ -285,7 +284,7 @@ const DayCell = React.memo(function DayCell({
     return <div className="mt-1 flex justify-center gap-[4px]">{items}</div>;
   }, [count, dotOpacity]);
 
-  if (!cell || !dayDate) return <div className="min-h-[48px]" />;
+  if (!cell || !dayDate || cell.offset !== 0) return <div className="min-h-[48px]" />;
 
   return (
     <button
@@ -294,8 +293,7 @@ const DayCell = React.memo(function DayCell({
       aria-current={isSelected ? "date" : undefined}
       className={cn(
         "relative flex min-h-[48px] flex-col items-center justify-center text-[var(--text-primary)] focus:outline-none",
-        isWeekend && !isSelected && "text-[var(--weekend-dim)]",
-        !inMonth && !isSelected && !isToday && "text-[var(--text-muted)]"
+        isWeekend && !isSelected && "text-[var(--weekend-dim)]"
       )}
     >
       <div
