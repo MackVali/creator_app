@@ -65,7 +65,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
   return (
     <nav className="w-full bg-gray-900 text-gray-400">
       <div
-        className="grid h-16 items-center"
+        className="grid h-16 w-full items-center"
         style={{
           gridTemplateColumns: `repeat(${mid},1fr) 3.5rem repeat(${items.length - mid},1fr)`,
         }}
