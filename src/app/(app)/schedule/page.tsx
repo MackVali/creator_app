@@ -397,7 +397,7 @@ export default function SchedulePage() {
                               <motion.div
                                 key={tp.taskId}
                                 aria-label={`Task ${tItem.name}`}
-                                className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
+                                className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
                                 style={tStyle}
                                 onClick={() =>
                                   setExpandedProjects(prev => {
