@@ -23,12 +23,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-[var(--surface)] text-[var(--text-primary)] antialiased flex min-h-screen flex-col">
+      <body className="relative text-[var(--text-primary)] antialiased flex min-h-screen flex-col">
         <DitherBackground parallax={true} tint={true} />
         <ErrorBoundary>
           <AuthProvider>
             <ClientProviders>
-              <main className="flex-1">{children}</main>
+              <main className="relative z-10 flex-1">{children}</main>
             </ClientProviders>
           </AuthProvider>
         </ErrorBoundary>

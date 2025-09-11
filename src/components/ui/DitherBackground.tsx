@@ -46,7 +46,7 @@ export default function DitherBackground({
     <div
       ref={ref}
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 -z-50"
+      className="pointer-events-none fixed inset-0 z-0"
       style={{
         // Layer A: dither grid (radial dots in a square lattice)
         background:
