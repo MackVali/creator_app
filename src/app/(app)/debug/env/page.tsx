@@ -126,7 +126,7 @@ export default function DebugEnvPage() {
         {/* Quick Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-gray-800 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-400">Environment</h3>
+            <h3 className="font-semibold text-accent">Environment</h3>
             <p className="text-2xl font-bold">{envInfo.environment}</p>
           </div>
           <div className="bg-gray-800 p-4 rounded-lg">
@@ -143,7 +143,7 @@ export default function DebugEnvPage() {
         <div className="space-y-6">
           {/* Build Information */}
           <div className="bg-gray-800 p-6 rounded-lg">
-            <h2 className="text-xl font-bold mb-4 text-blue-400">
+            <h2 className="text-xl font-bold mb-4 text-accent">
               🚀 Build Information
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -286,7 +286,7 @@ export default function DebugEnvPage() {
         <div className="mt-8 flex flex-wrap gap-4">
           <button
             onClick={() => window.location.reload()}
-            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold"
+            className="bg-primary hover:bg-primary/90 px-4 py-2 rounded-lg font-semibold text-primary-foreground"
           >
             🔄 Refresh Data
           </button>

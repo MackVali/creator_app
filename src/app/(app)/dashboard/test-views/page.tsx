@@ -126,8 +126,8 @@ export default async function TestViewsPage() {
           </li>
         </ul>
 
-        <div className="mt-4 p-4 bg-blue-900/20 rounded-lg border border-blue-500/30">
-          <div className="text-blue-300 text-sm">
+        <div className="mt-4 p-4 bg-accent/20 rounded-lg border border-accent/30">
+          <div className="text-accent text-sm">
             <strong>Note:</strong> This page must be accessed by an
             authenticated user to properly test RLS policies. If you see
             authentication errors, ensure you&apos;re logged in.

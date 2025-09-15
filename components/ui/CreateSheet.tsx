@@ -10,10 +10,10 @@ interface CreateSheetProps {
 }
 
 const createActions = [
-  { name: 'Add Goal', icon: Target, href: '/goals/new', color: 'bg-blue-500' },
-  { name: 'Add Project', icon: FolderOpen, href: '/projects/new', color: 'bg-purple-500' },
-  { name: 'Add Task', icon: CheckSquare, href: '/tasks/new', color: 'bg-green-500' },
-  { name: 'Add Habit', icon: Repeat, href: '/habits/new', color: 'bg-orange-500' }
+  { name: 'Add Goal', icon: Target, href: '/goals/new', color: 'bg-primary' },
+  { name: 'Add Project', icon: FolderOpen, href: '/projects/new', color: 'bg-accent' },
+  { name: 'Add Task', icon: CheckSquare, href: '/tasks/new', color: 'bg-primary/80' },
+  { name: 'Add Habit', icon: Repeat, href: '/habits/new', color: 'bg-accent/80' }
 ]
 
 export function CreateSheet({ isOpen, onClose, selectedTime }: CreateSheetProps) {

@@ -22,7 +22,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
   const platformConfig = {
     instagram: {
       icon: Instagram,
-      color: "bg-gradient-to-r from-purple-500 to-pink-500",
+      color: "bg-gradient-to-r from-highlight to-primary",
       label: "Instagram",
     },
     x: {
@@ -32,12 +32,12 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     twitter: {
       icon: Twitter,
-      color: "bg-blue-400",
+      color: "bg-accent",
       label: "Twitter",
     },
     youtube: {
       icon: Youtube,
-      color: "bg-red-600",
+      color: "bg-primary",
       label: "YouTube",
     },
     tiktok: {
@@ -47,17 +47,17 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     linkedin: {
       icon: Linkedin,
-      color: "bg-blue-700",
+      color: "bg-primary",
       label: "LinkedIn",
     },
     email: {
       icon: Mail,
-      color: "bg-gray-600",
+      color: "bg-surface-elevated",
       label: "Email",
     },
     website: {
       icon: Globe,
-      color: "bg-blue-500",
+      color: "bg-accent",
       label: "Website",
     },
     github: {
@@ -67,7 +67,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     discord: {
       icon: MessageCircle,
-      color: "bg-indigo-600",
+      color: "bg-accent",
       label: "Discord",
     },
   };

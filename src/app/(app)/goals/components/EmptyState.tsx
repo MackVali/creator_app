@@ -13,7 +13,7 @@ export function EmptyState({ onCreate }: EmptyStateProps) {
       <p className="text-gray-400">No goals yet</p>
       <button
         onClick={onCreate}
-        className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-md text-sm"
+        className="bg-primary hover:bg-primary/90 px-4 py-2 rounded-md text-sm text-primary-foreground"
       >
         Create Goal
       </button>

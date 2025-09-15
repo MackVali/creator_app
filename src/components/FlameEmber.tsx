@@ -186,10 +186,10 @@ function LevelFlame({ level, profile, palette }: { level: FlameLevel; profile: P
   );
 }
 
-/** ————— ULTRA: Blue outer, red middle, white highlights ————— */
+/** ————— ULTRA: Monochrome outer, red middle, white highlights ————— */
 function UltraFlameBlue() {
   return (
-    <svg viewBox="0 0 100 120" width="100%" height="100%" role="img" aria-label="Ultra energy flame (blue/red)">
+    <svg viewBox="0 0 100 120" width="100%" height="100%" role="img" aria-label="Ultra energy flame (monochrome)">
       <defs>
         {/* Soft glow */}
         <filter id="glowUltra" x="-40%" y="-40%" width="180%" height="180%">
@@ -197,10 +197,10 @@ function UltraFlameBlue() {
           <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
         </filter>
 
-        {/* Blue outer gradient */}
+        {/* Monochrome outer gradient */}
         <linearGradient id="outerBlue" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"  stopColor="#2196f3"/>
-          <stop offset="100%" stopColor="#0d47a1"/>
+          <stop offset="0%"  stopColor="#6b6b72"/>
+          <stop offset="100%" stopColor="#1f1f24"/>
         </linearGradient>
 
         {/* Red middle swirl */}
@@ -234,7 +234,7 @@ function UltraFlameBlue() {
              C59,27 57,34 58,39 C63,38 68,40 71,45
              C74,49 74,56 72,60 C80,64 84,70 84,79
              C84,92 73,110 50,114 Z"
-          stroke="#e3f2fd" strokeWidth="1.2" opacity="0.95"
+          stroke="#e5e5ea" strokeWidth="1.2" opacity="0.95"
         />
 
         {/* Middle red swirl */}
@@ -272,16 +272,16 @@ function UltraFlameBlue() {
           fill="#ffffff" opacity="0.55"
         />
 
-        {/* Optional tiny side nubs (blue) */}
-        <path className="nub" fill="#1976d2" d="M28,86 C26,85 25,83 26,81 C27,79 30,78 32,79 C31,82 30,84 28,86 Z" />
-        <path className="nub" fill="#1976d2" d="M76,86 C78,85 79,83 78,81 C77,79 74,78 72,79 C73,82 74,84 76,86 Z" />
+        {/* Optional tiny side nubs (monochrome) */}
+        <path className="nub" fill="#52525b" d="M28,86 C26,85 25,83 26,81 C27,79 30,78 32,79 C31,82 30,84 28,86 Z" />
+        <path className="nub" fill="#52525b" d="M76,86 C78,85 79,83 78,81 C77,79 74,78 72,79 C73,82 74,84 76,86 Z" />
       </g>
 
-      {/* Light blue specks (whispy) outside flame */}
+      {/* Soft grey specks (wispy) outside flame */}
       <g className="specks" filter="url(#speckBlurUltra)">
-        <circle className="speck" cx="34" cy="24" r="1.8" fill="#bbdefb" />
-        <circle className="speck d1" cx="68" cy="21" r="1.6" fill="#e3f2fd" />
-        <circle className="speck d2" cx="57" cy="18" r="1.4" fill="#cfe8ff" />
+        <circle className="speck" cx="34" cy="24" r="1.8" fill="#dcdce1" />
+        <circle className="speck d1" cx="68" cy="21" r="1.6" fill="#f1f1f4" />
+        <circle className="speck d2" cx="57" cy="18" r="1.4" fill="#e5e5ea" />
       </g>
 
       <style>{`

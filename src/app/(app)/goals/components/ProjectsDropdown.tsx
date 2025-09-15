@@ -39,7 +39,7 @@ export function ProjectsDropdown({
               value={100}
               className="mb-2"
               trackClass="bg-gray-700"
-              barClass="bg-blue-500 animate-pulse"
+              barClass="bg-primary animate-pulse"
             />
           ) : projects.length > 0 ? (
             <div className="space-y-2">
@@ -50,12 +50,12 @@ export function ProjectsDropdown({
           ) : (
             <div className="text-sm text-gray-400">
               No projects linked yet
-              <button className="ml-2 text-blue-400">Add Project</button>
+              <button className="ml-2 text-accent">Add Project</button>
             </div>
           )}
           <Link
             href="/projects"
-            className="mt-3 inline-block text-xs text-blue-400"
+            className="mt-3 inline-block text-xs text-accent"
           >
             View all projects
           </Link>

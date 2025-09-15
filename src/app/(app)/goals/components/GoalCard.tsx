@@ -55,7 +55,7 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
             <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-gray-300">
               <div className="w-10 h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500"
+                  className="h-full bg-primary"
                   style={{ width: `${goal.progress}%` }}
                 />
               </div>
