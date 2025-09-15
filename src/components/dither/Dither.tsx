@@ -298,6 +298,7 @@ export default function Dither({
 }) {
   return (
     <Canvas
+      aria-hidden="true"
       className={styles.ditherContainer}
       camera={{ position: [0, 0, 6] }}
       dpr={window.devicePixelRatio}
