@@ -23,7 +23,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col">
-        <Dither />
         <ErrorBoundary>
           <AuthProvider>
             <ClientProviders>
@@ -31,6 +30,7 @@ export default function RootLayout({
             </ClientProviders>
           </AuthProvider>
         </ErrorBoundary>
+        <Dither />
       </body>
     </html>
   );
