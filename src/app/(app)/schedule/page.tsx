@@ -29,6 +29,9 @@ import {
   fetchReadyTasks,
   fetchWindowsForDate,
   fetchProjectsMap,
+  fetchSchedulePlacements,
+  syncSchedulePlacements,
+  type SchedulePlacement,
   type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
 import {
@@ -75,13 +78,20 @@ export default function SchedulePage() {
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [windows, setWindows] = useState<RepoWindow[]>([])
-  const [placements, setPlacements] = useState<
-    ReturnType<typeof placeByEnergyWeight>['placements']
-  >([])
+  type Placement = ReturnType<typeof placeByEnergyWeight>['placements'][number]
+
+  const [placements, setPlacements] = useState<Placement[]>([])
   const [unplaced, setUnplaced] = useState<
     ReturnType<typeof placeByEnergyWeight>['unplaced']
   >([])
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  type LoadErrorKey = 'windows' | 'tasks' | 'projects' | 'schedule'
+  const [loadErrors, setLoadErrors] = useState<
+    Partial<Record<LoadErrorKey, string>
+  >({})
+  const [dataReady, setDataReady] = useState(false)
+  const [storedPlacements, setStoredPlacements] = useState<SchedulePlacement[]>([])
+  const [storedPlacementsLoaded, setStoredPlacementsLoaded] = useState(false)
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
 
@@ -97,25 +107,58 @@ export default function SchedulePage() {
   }, [view, currentDate, router, pathname])
 
   useEffect(() => {
+    let cancelled = false
+    setDataReady(false)
+    setStoredPlacementsLoaded(false)
+
     async function load() {
+      const nextErrors: Partial<Record<LoadErrorKey, string>> = {}
+
       try {
-        const [ws, ts, pm] = await Promise.all([
-          fetchWindowsForDate(currentDate),
-          fetchReadyTasks(),
-          fetchProjectsMap(),
-        ])
-        setWindows(ws)
-        setTasks(ts)
-        setProjects(Object.values(pm))
-      } catch (e) {
-        console.error(e)
-        setWindows([])
-        setTasks([])
-        setProjects([])
+        const ws = await fetchWindowsForDate(currentDate)
+        if (!cancelled) setWindows(ws)
+      } catch (err) {
+        console.error('Failed to load schedule windows', err)
+        nextErrors.windows = 'Unable to load schedule windows.'
+      }
+
+      try {
+        const ts = await fetchReadyTasks()
+        if (!cancelled) setTasks(ts)
+      } catch (err) {
+        console.error('Failed to load ready tasks', err)
+        nextErrors.tasks = 'Unable to load ready tasks.'
+      }
+
+      try {
+        const pm = await fetchProjectsMap()
+        if (!cancelled) setProjects(Object.values(pm))
+      } catch (err) {
+        console.error('Failed to load projects', err)
+        nextErrors.projects = 'Unable to load projects.'
+      }
+
+      try {
+        const saved = await fetchSchedulePlacements(currentDate)
+        if (!cancelled) setStoredPlacements(saved)
+      } catch (err) {
+        console.error('Failed to load saved schedule placements', err)
+        nextErrors.schedule = 'Unable to load saved schedule placements.'
+      }
+
+      if (!cancelled) {
+        setLoadErrors(nextErrors)
+        setStoredPlacementsLoaded(true)
+        setDataReady(true)
       }
     }
-    load()
-  }, [currentDate])
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentDate, setLoadErrors])
 
 
   const weightedTasks = useMemo(
@@ -199,17 +242,126 @@ export default function SchedulePage() {
 
 
   useEffect(() => {
-    function run() {
-      if (windows.length === 0) return
+    let cancelled = false
+
+    async function run() {
+      if (!dataReady || !storedPlacementsLoaded) return
+      if (projectItems.length === 0 || windows.length === 0) return
+      if (loadErrors.schedule) return
+
       const date = currentDate
       const projResult = placeByEnergyWeight(projectItems, windows, date)
-      setPlacements(projResult.placements)
-      setUnplaced(projResult.unplaced)
+      const computedPlacements = projResult.placements
+      const computedMap = new Map(computedPlacements.map(p => [p.taskId, p]))
+      const validStored = storedPlacements.filter(p => projectMap[p.taskId])
+      const storedMap = new Map(validStored.map(p => [p.taskId, p]))
+
+      const merged: Placement[] = []
+      for (const stored of validStored) {
+        const computed = computedMap.get(stored.taskId)
+        if (computed) {
+          merged.push({
+            ...computed,
+            start: stored.start,
+            end: stored.end,
+            windowId: stored.windowId ?? computed.windowId ?? `${stored.taskId}-stored`,
+          })
+        } else {
+          const project = projectMap[stored.taskId]
+          if (!project) continue
+          merged.push({
+            taskId: stored.taskId,
+            windowId: stored.windowId ?? `${stored.taskId}-stored`,
+            start: stored.start,
+            end: stored.end,
+            weight: project.weight,
+          })
+        }
+      }
+
+      for (const placement of computedPlacements) {
+        if (storedMap.has(placement.taskId)) continue
+        merged.push(placement)
+      }
+
+      merged.sort((a, b) => a.start.getTime() - b.start.getTime())
+
+      const filteredUnplaced = projResult.unplaced.filter(
+        item => !storedMap.has(item.taskId)
+      )
+
+      if (!cancelled) {
+        setPlacements(merged)
+        setUnplaced(filteredUnplaced)
+      }
+
+      const storedHasSameTasks =
+        storedPlacements.length === merged.length &&
+        merged.every(p => storedMap.has(p.taskId))
+      const storedTimesMatch =
+        storedPlacements.length === merged.length &&
+        merged.every(p => {
+          const stored = storedMap.get(p.taskId)
+          return (
+            stored &&
+            stored.start.getTime() === p.start.getTime() &&
+            stored.end.getTime() === p.end.getTime()
+          )
+        })
+
+      if (storedHasSameTasks && storedTimesMatch) return
+
+      try {
+        const persisted = await syncSchedulePlacements(
+          date,
+          merged.map(p => ({
+            taskId: p.taskId,
+            windowId: storedMap.get(p.taskId)?.windowId ?? computedMap.get(p.taskId)?.windowId ?? null,
+            start: p.start,
+            end: p.end,
+            title: projectMap[p.taskId]?.name ?? 'Scheduled work',
+          })),
+          storedPlacements
+        )
+        if (!cancelled) {
+          setStoredPlacements(persisted)
+          setLoadErrors(prev => {
+            if (!prev.schedule) return prev
+            const next = { ...prev }
+            delete next.schedule
+            return next
+          })
+        }
+      } catch (err) {
+        if (cancelled) return
+        console.error('Failed to persist schedule placements', err)
+        setLoadErrors(prev => ({
+          ...prev,
+          schedule: 'Failed to save schedule placements.',
+        }))
+      }
     }
-    run()
-    const id = setInterval(run, 5 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [projectItems, windows, currentDate])
+
+    void run()
+    const id = setInterval(() => {
+      void run()
+    }, 5 * 60 * 1000)
+
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [
+    projectItems,
+    windows,
+    currentDate,
+    projectMap,
+    storedPlacements,
+    storedPlacementsLoaded,
+    dataReady,
+    loadErrors.schedule,
+    setLoadErrors,
+  ])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -248,6 +400,19 @@ export default function SchedulePage() {
           onToday={handleToday}
           canGoBack={view !== 'year'}
         />
+        {Object.entries(loadErrors)
+          .filter(([, message]) => message)
+          .map(([key, message]) => (
+            <div
+              key={key}
+              className="rounded-md border border-red-500/40 bg-red-900/20 p-3 text-sm text-red-200"
+            >
+              <p className="font-medium text-red-100">
+                We couldn&apos;t update part of the schedule data.
+              </p>
+              <p className="mt-1 text-red-200/90">{message}</p>
+            </div>
+          ))}
         <p className="text-sm text-muted-foreground">Plan and manage your time</p>
 
         <div className="space-y-2">
