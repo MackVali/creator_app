@@ -22,6 +22,12 @@ interface GoalsUtilityBarProps {
   onPriority(p: PriorityFilter): void;
   sort: SortOption;
   onSort(s: SortOption): void;
+  monuments: { id: string; title: string }[];
+  monument: string;
+  onMonument(id: string): void;
+  skills: { id: string; name: string }[];
+  skill: string;
+  onSkill(id: string): void;
 }
 
 export function GoalsUtilityBar({
@@ -33,6 +39,12 @@ export function GoalsUtilityBar({
   onPriority,
   sort,
   onSort,
+  monuments,
+  monument,
+  onMonument,
+  skills,
+  skill,
+  onSkill,
 }: GoalsUtilityBarProps) {
   const [local, setLocal] = useState(search);
 
@@ -50,7 +62,7 @@ export function GoalsUtilityBar({
           placeholder="Search goals"
           className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
         />
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
           <select
             value={energy}
             onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
@@ -73,6 +85,30 @@ export function GoalsUtilityBar({
             <option value="Low">Low</option>
             <option value="Medium">Medium</option>
             <option value="High">High</option>
+          </select>
+          <select
+            value={monument}
+            onChange={(e) => onMonument(e.target.value)}
+            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+          >
+            <option value="All">Monument: All</option>
+            {monuments.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title}
+              </option>
+            ))}
+          </select>
+          <select
+            value={skill}
+            onChange={(e) => onSkill(e.target.value)}
+            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+          >
+            <option value="All">Skill: All</option>
+            {skills.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
           </select>
           <select
             value={sort}

@@ -26,4 +26,7 @@ export interface Goal {
   active: boolean;
   updatedAt: string;
   projects: Project[];
+  monumentId?: string | null;
+  /** Associated skill IDs */
+  skills?: string[];
 }
