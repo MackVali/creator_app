@@ -33,7 +33,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
         <div className="flex items-center gap-2">
           <div className="w-16 h-2 bg-gray-700 rounded-full overflow-hidden">
             <div
-              className="h-full bg-blue-500"
+              className="h-full bg-gray-200"
               style={{ width: `${project.progress}%` }}
             />
           </div>

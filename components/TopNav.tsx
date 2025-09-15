@@ -31,11 +31,11 @@ export default function TopNav() {
   }, [supabase]);
 
   return (
-    <nav className="w-full flex items-center justify-between px-4 py-2 bg-gray-900 text-white">
+    <nav className="w-full flex items-center justify-between px-4 py-2 bg-black/80 text-white border-b border-white/10 backdrop-blur">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="h-11 w-11 p-2 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="h-11 w-11 p-2 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
             aria-label="Open menu"
           >
             <Menu className="h-6 w-6" />
@@ -43,7 +43,7 @@ export default function TopNav() {
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="bg-[#1C1F22] border-[#2F343A] text-[#E6E6E6]"
+          className="bg-[#111111] border-[#2A2A2A] text-[#E6E6E6]"
         >
           <DropdownMenuItem asChild>
             <Link href="/analytics">Analytics</Link>

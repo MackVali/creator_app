@@ -35,7 +35,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
       >
         <div
           className={`flex flex-col items-center gap-1 px-3 py-1 text-xs transition-colors ${
-            isActive ? "text-white" : "hover:text-white"
+            isActive ? "text-gray-100" : "text-gray-400 hover:text-gray-200"
           }`}
         >
           <div
@@ -65,7 +65,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
   const leftItems = items.slice(0, mid);
   const rightItems = items.slice(mid);
   return (
-    <nav className="w-full bg-gray-900 text-gray-400">
+    <nav className="w-full bg-black/80 text-gray-400 border-t border-white/10 backdrop-blur">
       <div className="grid h-16 w-full grid-cols-[1fr_3.5rem_1fr] items-center">
         <div className="flex h-full min-w-0 items-center justify-evenly">
           {leftItems.map(renderItem)}
