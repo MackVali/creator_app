@@ -24,7 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="relative text-[var(--text-primary)] antialiased flex min-h-screen flex-col">
-        <DitherBackground parallax={true} tint={true} />
+        <DitherBackground parallax tint intensity={1} />
         <ErrorBoundary>
           <AuthProvider>
             <ClientProviders>

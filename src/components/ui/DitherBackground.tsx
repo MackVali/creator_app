@@ -11,7 +11,13 @@ import { useEffect, useRef } from "react";
 export default function DitherBackground({
   parallax = true,
   tint = false,
-}: { parallax?: boolean; tint?: boolean }) {
+  intensity = 1,
+}: {
+  parallax?: boolean;
+  tint?: boolean;
+  /** multiplier for parallax depth */
+  intensity?: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,7 +32,7 @@ export default function DitherBackground({
     const onScroll = () => {
       const y = window.scrollY || document.documentElement.scrollTop || 0;
       // small subpixel translate for depth; keep very subtle for iOS GPU
-      const t = Math.min(20, y * 0.03); // clamp
+      const t = Math.min(60 * intensity, y * 0.1 * intensity); // clamp
       el.style.transform = `translate3d(0, ${t}px, 0)`;
     };
     const queued = () => {
@@ -40,7 +46,7 @@ export default function DitherBackground({
       cancelAnimationFrame(raf);
       window.removeEventListener("scroll", queued);
     };
-  }, [parallax]);
+  }, [parallax, intensity]);
 
   return (
     <div
