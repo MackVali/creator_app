@@ -29,15 +29,15 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
     }
   };
 
-  const priorityColor =
+  const priorityStyles =
     goal.priority === "High"
-      ? "bg-red-600"
+      ? "bg-gray-200 text-gray-900"
       : goal.priority === "Medium"
-      ? "bg-yellow-600"
-      : "bg-green-600";
+      ? "bg-gray-400 text-gray-900"
+      : "bg-gray-600 text-gray-100";
 
   return (
-    <div className="bg-gray-800 rounded-lg shadow text-left">
+    <div className="rounded-lg border border-white/10 bg-black/70 shadow text-left">
       <div className="relative">
         <button
           onClick={toggle}
@@ -55,7 +55,7 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
             <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-gray-300">
               <div className="w-10 h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500"
+                  className="h-full bg-gray-200"
                   style={{ width: `${goal.progress}%` }}
                 />
               </div>
@@ -64,7 +64,7 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
                   {new Date(goal.dueDate).toLocaleDateString()}
                 </span>
               )}
-              <span className={`px-2 py-0.5 rounded-full ${priorityColor}`}>
+              <span className={`px-2 py-0.5 rounded-full ${priorityStyles}`}>
                 {goal.priority}
               </span>
               <span className="px-2 py-0.5 bg-gray-700 rounded-full">

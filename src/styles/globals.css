@@ -10,10 +10,10 @@
 
 :root{
   /* calendar design tokens */
-  --surface:#0E0E10;
-  --surface-elevated:#151517;
-  --text-primary:#EFEFF2;
-  --text-muted:#9A9AA2;
+  --surface:#050505;
+  --surface-elevated:#111111;
+  --text-primary:#F5F5F5;
+  --text-muted:#A3A3A3;
   --accent-red:#FF453A;
   --hairline:rgba(255,255,255,0.08);
   --dot:rgba(200,200,205,0.85);
@@ -25,7 +25,7 @@
   --surface-2:var(--surface-elevated);
   --text:var(--text-primary);
   --muted:var(--text-muted);
-  --accent:#6ea8ff;
+  --accent:#8E8E8E;
   --radius:16px; --radius-sm:12px;
   --popover:var(--surface); --popover-foreground:var(--text);
 }
