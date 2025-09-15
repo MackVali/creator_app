@@ -62,11 +62,11 @@ export function GoalsUtilityBar({
           placeholder="Search goals"
           className="w-full px-3 py-2 rounded-md bg-gray-800 text-sm focus:outline-none"
         />
-        <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
           <select
             value={energy}
             onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
-            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+            className="w-full bg-gray-800 text-sm px-2 py-1 rounded-md"
           >
             <option value="All">Energy: All</option>
             <option value="No">No</option>
@@ -79,7 +79,7 @@ export function GoalsUtilityBar({
           <select
             value={priority}
             onChange={(e) => onPriority(e.target.value as PriorityFilter)}
-            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+            className="w-full bg-gray-800 text-sm px-2 py-1 rounded-md"
           >
             <option value="All">Priority: All</option>
             <option value="Low">Low</option>
@@ -89,7 +89,7 @@ export function GoalsUtilityBar({
           <select
             value={monument}
             onChange={(e) => onMonument(e.target.value)}
-            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+            className="w-full bg-gray-800 text-sm px-2 py-1 rounded-md"
           >
             <option value="All">Monument: All</option>
             {monuments.map((m) => (
@@ -101,7 +101,7 @@ export function GoalsUtilityBar({
           <select
             value={skill}
             onChange={(e) => onSkill(e.target.value)}
-            className="bg-gray-800 text-sm px-2 py-1 rounded-md"
+            className="w-full bg-gray-800 text-sm px-2 py-1 rounded-md"
           >
             <option value="All">Skill: All</option>
             {skills.map((s) => (
@@ -113,7 +113,7 @@ export function GoalsUtilityBar({
           <select
             value={sort}
             onChange={(e) => onSort(e.target.value as SortOption)}
-            className="ml-auto bg-gray-800 text-sm px-2 py-1 rounded-md"
+            className="w-full bg-gray-800 text-sm px-2 py-1 rounded-md"
           >
             <option value="A→Z">A→Z</option>
             <option value="Due Soon">Due Soon</option>
