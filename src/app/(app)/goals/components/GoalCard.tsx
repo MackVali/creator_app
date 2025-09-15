@@ -37,7 +37,7 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
       : "bg-gray-600 text-gray-100";
 
   return (
-    <div className="rounded-lg border border-white/10 bg-black/70 shadow text-left">
+    <div className="rounded-lg border border-white/10 bg-neutral-900/90 shadow text-left">
       <div className="relative">
         <button
           onClick={toggle}
