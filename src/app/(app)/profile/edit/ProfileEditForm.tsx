@@ -270,7 +270,7 @@ export default function ProfileEditForm({
                     {initials}
                   </AvatarFallback>
                 </Avatar>
-                <label className="absolute bottom-0 right-0 bg-blue-600 text-white rounded-full p-2 cursor-pointer hover:bg-blue-700 transition-colors">
+                <label className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-2 cursor-pointer hover:bg-primary/90 transition-colors">
                   <Camera className="h-4 w-4" />
                   <input
                     type="file"

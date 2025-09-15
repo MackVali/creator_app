@@ -98,7 +98,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
       <DropdownMenuTrigger asChild>
         <button
           onClick={handleAvatarClick}
-          className="h-8 w-8 rounded-full overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="h-8 w-8 rounded-full overflow-hidden hover:ring-2 hover:ring-accent transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent"
           data-testid="topnav-avatar"
         >
           <Avatar className="h-8 w-8">

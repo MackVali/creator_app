@@ -404,25 +404,25 @@ export function getPlatformIcon(platform: string): string {
 
 export function getPlatformColor(platform: string): string {
   const platformColors: Record<string, string> = {
-    instagram: "bg-gradient-to-r from-purple-500 to-pink-500",
-    facebook: "bg-blue-600",
-    twitter: "bg-blue-400",
+    instagram: "bg-gradient-to-r from-highlight to-primary",
+    facebook: "bg-primary",
+    twitter: "bg-accent",
     x: "bg-black",
-    linkedin: "bg-blue-700",
-    youtube: "bg-red-600",
+    linkedin: "bg-primary",
+    youtube: "bg-primary",
     tiktok: "bg-black",
-    email: "bg-gray-600",
-    website: "bg-blue-500",
-    github: "bg-gray-800",
-    discord: "bg-indigo-600",
-    snapchat: "bg-yellow-400",
-    pinterest: "bg-red-500",
-    reddit: "bg-orange-500",
-    twitch: "bg-purple-600",
-    spotify: "bg-green-500",
-    apple: "bg-gray-900",
-    google: "bg-blue-500",
+    email: "bg-surface-elevated",
+    website: "bg-accent",
+    github: "bg-surface",
+    discord: "bg-accent",
+    snapchat: "bg-accent",
+    pinterest: "bg-accent",
+    reddit: "bg-accent",
+    twitch: "bg-accent",
+    spotify: "bg-accent",
+    apple: "bg-surface",
+    google: "bg-primary",
   };
 
-  return platformColors[platform.toLowerCase()] || "bg-gray-600";
+  return platformColors[platform.toLowerCase()] || "bg-primary";
 }

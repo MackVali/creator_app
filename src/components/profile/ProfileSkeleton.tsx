@@ -31,7 +31,7 @@ export function ProfileSkeleton() {
           <div className="text-center mb-3">
             <div className="flex items-center justify-center space-x-2 mb-1">
               <div className="w-32 h-8 bg-white/20 rounded animate-pulse" />
-              <div className="w-5 h-5 rounded-full bg-blue-500 animate-pulse" />
+              <div className="w-5 h-5 rounded-full bg-accent animate-pulse" />
             </div>
             <div className="w-24 h-6 bg-white/20 rounded animate-pulse mx-auto" />
           </div>

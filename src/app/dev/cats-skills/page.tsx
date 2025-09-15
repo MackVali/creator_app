@@ -125,7 +125,7 @@ export default function CatsSkillsDebugPage() {
   }
 
   return (
-    <div className="p-6 text-white max-w-4xl mx-auto">
+    <div className="p-6 text-surface-foreground max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-6">CATs & Skills Debug</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -134,7 +134,7 @@ export default function CatsSkillsDebugPage() {
           <h2 className="text-xl font-semibold mb-4">Summary</h2>
           <div className="space-y-2">
             <div>User ID: <code className="text-sm bg-slate-700 px-2 py-1 rounded">{debugData.userId}</code></div>
-            <div>Total CATs: <span className="text-2xl font-bold text-blue-400">{debugData.catsCount}</span></div>
+            <div>Total CATs: <span className="text-2xl font-bold text-accent">{debugData.catsCount}</span></div>
             <div>Total Skills: <span className="text-2xl font-bold text-green-400">{debugData.skillsCount}</span></div>
             <div>Uncategorized Skills: <span className="text-2xl font-bold text-yellow-400">{debugData.uncategorizedSkillsCount}</span></div>
           </div>
@@ -175,7 +175,7 @@ export default function CatsSkillsDebugPage() {
       <div className="mt-6 text-center">
         <button
           onClick={fetchDebugData}
-          className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-medium"
+          className="bg-primary hover:bg-primary/90 px-6 py-3 rounded-lg font-medium text-primary-foreground"
         >
           Refresh Data
         </button>

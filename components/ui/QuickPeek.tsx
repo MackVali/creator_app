@@ -68,10 +68,10 @@ export function QuickPeek({ event, isOpen, onClose, onEdit, onDelete, onMarkDone
           
           <button
             onClick={onEdit}
-            className="w-full flex items-center gap-3 p-3 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 transition-colors text-left"
+            className="w-full flex items-center gap-3 p-3 rounded-xl bg-accent/10 hover:bg-accent/20 border border-accent/20 transition-colors text-left"
           >
-            <Edit className="w-5 h-5 text-blue-400" />
-            <span className="text-blue-400 font-medium">Edit</span>
+            <Edit className="w-5 h-5 text-accent" />
+            <span className="text-accent font-medium">Edit</span>
           </button>
           
           <button

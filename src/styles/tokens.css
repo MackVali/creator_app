@@ -8,7 +8,7 @@
     --radius-xl: 20px;
     --event-bg: var(--surface-2);
     --event-border: rgba(255,255,255,.08);
-    --timeline-now: var(--accent, #A020F0);
+    --timeline-now: var(--accent, #8E8E93);
     --noise-texture: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='3' height='3' viewBox='0 0 3 3'%3E%3Crect width='1' height='1' fill='rgba(255,255,255,0.15)'/%3E%3Crect x='1' y='2' width='1' height='1' fill='rgba(255,255,255,0.15)'/%3E%3Crect x='2' y='1' width='1' height='1' fill='rgba(255,255,255,0.15)'/%3E%3C/svg%3E");
   }
 }

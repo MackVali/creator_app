@@ -130,7 +130,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   const displayCards = contentCards.length > 0 ? contentCards : defaultContentCards;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-highlight/40 via-highlight/20 to-white">
       {/* Top Navigation Bar */}
       <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="flex items-center justify-between px-4 py-3">
@@ -161,12 +161,12 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
       <div className="max-w-md mx-auto px-4 py-6">
         <Card className="overflow-hidden shadow-xl border-0">
           {/* Background Image Section */}
-          <div 
-            className="relative h-48 bg-gradient-to-br from-blue-600 to-purple-700"
+          <div
+            className="relative h-48 bg-gradient-to-br from-primary to-accent"
             style={{
-              background: profile.banner_url 
+              background: profile.banner_url
                 ? `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url(${profile.banner_url})`
-                : `linear-gradient(135deg, ${profile.theme_color || '#3B82F6'} 0%, ${profile.accent_color || '#8B5CF6'} 100%)`,
+                : `linear-gradient(135deg, ${profile.theme_color || '#2F2F33'} 0%, ${profile.accent_color || '#51515A'} 100%)`,
               backgroundSize: 'cover',
               backgroundPosition: 'center'
             }}
@@ -180,7 +180,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
               <div className="flex items-center space-x-2 mb-2">
                 <h1 className="text-2xl font-bold">{profile.name || "Your Name"}</h1>
                 {profile.verified && (
-                  <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                  <div className="w-5 h-5 bg-accent rounded-full flex items-center justify-center">
                     <span className="text-xs font-bold text-white">✓</span>
                   </div>
                 )}
@@ -235,13 +235,13 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
               ) : (
                 // Default social icons if none exist
                 [
-                  { platform: "instagram", icon: "📷", color: "bg-gradient-to-r from-purple-500 to-pink-500" },
-                  { platform: "facebook", icon: "📘", color: "bg-blue-600" },
-                  { platform: "twitter", icon: "🐦", color: "bg-blue-400" },
-                  { platform: "linkedin", icon: "💼", color: "bg-blue-700" },
-                  { platform: "youtube", icon: "📺", color: "bg-red-600" },
+                  { platform: "instagram", icon: "📷", color: "bg-gradient-to-r from-highlight to-primary" },
+                  { platform: "facebook", icon: "📘", color: "bg-primary" },
+                  { platform: "twitter", icon: "🐦", color: "bg-accent" },
+                  { platform: "linkedin", icon: "💼", color: "bg-primary" },
+                  { platform: "youtube", icon: "📺", color: "bg-primary" },
                   { platform: "tiktok", icon: "🎵", color: "bg-black" },
-                  { platform: "email", icon: "✉️", color: "bg-gray-600" },
+                  { platform: "email", icon: "✉️", color: "bg-surface-elevated" },
                 ].map((social) => (
                   <div
                     key={social.platform}
@@ -264,21 +264,21 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
                   rel="noopener noreferrer"
                   className="block group"
                 >
-                  <div className="relative overflow-hidden rounded-lg border border-gray-200 hover:border-blue-300 transition-all duration-200 hover:shadow-lg">
+                  <div className="relative overflow-hidden rounded-lg border border-gray-200 hover:border-accent transition-all duration-200 hover:shadow-lg">
                     {item.thumbnail_url ? (
                       <div className="aspect-video bg-cover bg-center" style={{ backgroundImage: `url(${item.thumbnail_url})` }} />
                     ) : (
                       <div className="aspect-video bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
                         <div className="text-center">
-                          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                            <ExternalLink className="h-8 w-8 text-blue-600" />
+                          <div className="w-16 h-16 bg-highlight/40 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <ExternalLink className="h-8 w-8 text-accent" />
                           </div>
                           <p className="text-sm text-gray-500">{item.category || "Link"}</p>
                         </div>
                       </div>
                     )}
                     <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                      <h3 className="font-semibold text-gray-900 group-hover:text-accent transition-colors">
                         {item.title}
                       </h3>
                       {item.description && (
@@ -295,7 +295,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             {/* Add Content Button */}
             <div className="mt-6 text-center">
               <Link href="/profile/edit">
-                <Button variant="outline" className="w-full border-dashed border-2 border-gray-300 hover:border-blue-400 hover:bg-blue-50">
+                <Button variant="outline" className="w-full border-dashed border-2 border-gray-300 hover:border-accent hover:bg-highlight/20">
                   <Plus className="h-5 w-5 mr-2" />
                   Add More Content
                 </Button>
@@ -305,7 +305,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             {/* Edit Profile Button */}
             <div className="mt-8 text-center">
               <Link href="/profile/edit">
-                <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-200">
+                <Button className="bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-200">
                   <Edit3 className="h-5 w-5 mr-2" />
                   Edit Profile
                 </Button>
