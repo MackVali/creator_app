@@ -1,14 +1,30 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import {
+  CheckSquare,
+  FolderKanban,
+  Repeat,
+  Sparkles,
+  Target,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "./button";
 import { Input } from "./input";
 import { Label } from "./label";
 import { Textarea } from "./textarea";
 import { Select, SelectContent, SelectItem } from "./select";
+import { Badge } from "./badge";
 import { useToastHelpers } from "./toast";
+import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser, type Goal } from "@/lib/queries/goals";
 import {
@@ -25,7 +41,186 @@ import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 interface EventModalProps {
   isOpen: boolean;
   onClose: () => void;
-  eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT";
+  eventType: "GOAL" | "PROJECT" | "TASK" | "HABIT" | null;
+}
+
+type ChoiceOption = {
+  value: string;
+  label: string;
+  description?: string;
+};
+
+const PRIORITY_OPTIONS: ChoiceOption[] = [
+  { value: "NO", label: "No Priority", description: "Backlog or nice-to-have." },
+  { value: "LOW", label: "Low", description: "Good to do when time allows." },
+  { value: "MEDIUM", label: "Medium", description: "Important, but not urgent." },
+  { value: "HIGH", label: "High", description: "Time-sensitive and meaningful." },
+  { value: "CRITICAL", label: "Critical", description: "Blocks progress elsewhere." },
+  { value: "ULTRA-CRITICAL", label: "Ultra-Critical", description: "Drop everything else." },
+];
+
+const ENERGY_OPTIONS: ChoiceOption[] = [
+  { value: "NO", label: "No Energy", description: "Light lift or admin work." },
+  { value: "LOW", label: "Low", description: "Can handle even on slow days." },
+  { value: "MEDIUM", label: "Medium", description: "Requires steady focus." },
+  { value: "HIGH", label: "High", description: "Deep work or complex effort." },
+  { value: "ULTRA", label: "Ultra", description: "Demanding, plan carefully." },
+  { value: "EXTREME", label: "Extreme", description: "Only when you are fully charged." },
+];
+
+const PROJECT_STAGE_OPTIONS: ChoiceOption[] = [
+  { value: "RESEARCH", label: "Research", description: "Gather insight and define the edges." },
+  { value: "TEST", label: "Test", description: "Experiment and validate assumptions." },
+  { value: "BUILD", label: "Build", description: "Execute the core of the work." },
+  { value: "REFINE", label: "Refine", description: "Polish and iterate based on feedback." },
+  { value: "RELEASE", label: "Release", description: "Launch, share, or deliver the outcome." },
+];
+
+const TASK_STAGE_OPTIONS: ChoiceOption[] = [
+  { value: "PREPARE", label: "Prepare", description: "Set up or gather what you need." },
+  { value: "PRODUCE", label: "Produce", description: "Do the focused work." },
+  { value: "PERFECT", label: "Perfect", description: "Review, tidy, and ship it." },
+];
+
+const HABIT_TYPE_OPTIONS: ChoiceOption[] = [
+  { value: "HABIT", label: "Habit", description: "Momentum-building routines." },
+  { value: "CHORE", label: "Chore", description: "Maintenance that keeps life running." },
+];
+
+const RECURRENCE_OPTIONS: ChoiceOption[] = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "bi-weekly", label: "Bi-weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "bi-monthly", label: "Bi-monthly" },
+  { value: "yearly", label: "Yearly" },
+];
+
+interface FormState {
+  name: string;
+  description: string;
+  priority: string;
+  energy: string;
+  goal_id: string;
+  project_id: string;
+  monument_id: string;
+  skill_id: string;
+  skill_ids: string[];
+  duration_min: string;
+  effective_duration_min: number;
+  stage: string;
+  type: string;
+  recurrence: string;
+}
+
+const createInitialFormState = (
+  eventType: NonNullable<EventModalProps["eventType"]>
+): FormState => ({
+  name: "",
+  description: "",
+  priority: "NO",
+  energy: "NO",
+  goal_id: "",
+  project_id: "",
+  monument_id: "",
+  skill_id: "",
+  skill_ids: [],
+  duration_min: "",
+  effective_duration_min: 0,
+  stage:
+    eventType === "PROJECT"
+      ? PROJECT_STAGE_OPTIONS[0].value
+      : eventType === "TASK"
+      ? TASK_STAGE_OPTIONS[0].value
+      : "",
+  type: eventType === "HABIT" ? HABIT_TYPE_OPTIONS[0].value : "",
+  recurrence: eventType === "HABIT" ? RECURRENCE_OPTIONS[0].value : "",
+});
+
+type EventMeta = {
+  title: string;
+  badge: string;
+  eyebrow: string;
+  description: string;
+  highlight: string;
+  accent: string;
+  iconBg: string;
+  icon: LucideIcon;
+};
+
+interface FormSectionProps {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}
+
+function FormSection({ title, description, children }: FormSectionProps) {
+  return (
+    <section className="rounded-2xl border border-white/5 bg-white/[0.03] p-5 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.8)]">
+      <div className="space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+          {title}
+        </p>
+        {description ? (
+          <p className="text-sm text-zinc-300">{description}</p>
+        ) : null}
+      </div>
+      <div className="mt-4 space-y-4">{children}</div>
+    </section>
+  );
+}
+
+interface OptionGridProps {
+  value: string;
+  options: ChoiceOption[];
+  onChange: (value: string) => void;
+  className?: string;
+  columnsClassName?: string;
+}
+
+function OptionGrid({
+  value,
+  options,
+  onChange,
+  className,
+  columnsClassName,
+}: OptionGridProps) {
+  const computedColumns = columnsClassName
+    ? columnsClassName
+    : options.length > 4
+    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+    : "grid-cols-1 sm:grid-cols-2";
+
+  return (
+    <div className={cn("grid gap-3", computedColumns, className)}>
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={selected}
+            className={cn(
+              "rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-0",
+              selected
+                ? "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
+                : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
+            )}
+          >
+            <span className="text-sm font-semibold leading-tight">
+              {option.label}
+            </span>
+            {option.description ? (
+              <span className="mt-2 block text-xs leading-snug text-zinc-400">
+                {option.description}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
@@ -37,7 +232,26 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     return () => setMounted(false);
   }, []);
 
+  const resolvedType = eventType ?? "GOAL";
+  const [formData, setFormData] = useState<FormState>(() =>
+    createInitialFormState(resolvedType)
+  );
+
+  // State for dropdown data
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [monuments, setMonuments] = useState<Monument[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !eventType) return;
+    setFormData(createInitialFormState(eventType));
+  }, [eventType, isOpen]);
+
   const loadFormData = useCallback(async () => {
+    if (!eventType) return;
+
     setLoading(true);
     try {
       const supabase = getSupabaseBrowser();
@@ -48,7 +262,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Always load goals (needed for both projects and tasks)
       const goalsData = await getGoalsForUser(user.id);
       setGoals(goalsData);
 
@@ -62,7 +275,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setSkills(skillsData);
       }
 
-      // Load projects if this is a task form
       if (eventType === "TASK") {
         const projectsData = await getProjectsForUser(user.id);
         setProjects(projectsData);
@@ -74,14 +286,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
   }, [eventType]);
 
-  // Load goals and projects when modal opens
   useEffect(() => {
-    if (isOpen && mounted) {
+    if (isOpen && mounted && eventType) {
       loadFormData();
     }
-  }, [isOpen, mounted, loadFormData]);
+  }, [isOpen, mounted, eventType, loadFormData]);
 
-  // Filter projects when goal is selected for tasks
   const handleGoalChange = useCallback(
     async (goalId: string) => {
       setFormData((prev) => ({ ...prev, goal_id: goalId, project_id: "" }));
@@ -98,36 +308,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     [eventType]
   );
 
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    priority: "NO",
-    energy: "NO",
-    goal_id: "",
-    project_id: "",
-    monument_id: "",
-    skill_id: "",
-    skill_ids: [] as string[],
-    duration_min: "",
-    effective_duration_min: 0,
-    stage:
-      eventType === "PROJECT"
-        ? "RESEARCH"
-        : eventType === "TASK"
-        ? "PREPARE"
-        : "",
-    type: eventType === "HABIT" ? "HABIT" : "",
-    recurrence: eventType === "HABIT" ? "daily" : "",
-  });
-
-  // State for dropdown data
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [monuments, setMonuments] = useState<Monument[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  if (!isOpen || !mounted) return null;
+  const toggleSkill = (skillId: string) => {
+    setFormData((prev) => {
+      const exists = prev.skill_ids.includes(skillId);
+      return {
+        ...prev,
+        skill_ids: exists
+          ? prev.skill_ids.filter((id) => id !== skillId)
+          : [...prev.skill_ids, skillId],
+      };
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,7 +344,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
-      // Get current user
       const {
         data: { user },
         error: userError,
@@ -185,7 +375,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         energy: formData.energy,
       };
 
-      // Add description if provided
       if (formData.description.trim()) {
         if (eventType === "GOAL") {
           insertData.why = formData.description.trim();
@@ -194,7 +383,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
       }
 
-      // Add event-specific fields
       if (eventType === "PROJECT") {
         if (!formData.goal_id) {
           alert("Please select a goal for your project");
@@ -223,10 +411,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.duration_min = duration;
       }
 
-      console.log("Inserting data:", insertData);
-
       const { data, error } = await supabase
-        .from(eventType.toLowerCase() + "s") // goals, projects, tasks, habits
+        .from(eventType.toLowerCase() + "s")
         .insert(insertData)
         .select()
         .single();
@@ -253,14 +439,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
       }
 
-      console.log(
-        "Successfully created " + eventType.toLowerCase() + ":",
-        data
-      );
       toast.success("Saved", `${eventType} created successfully`);
       onClose();
-
-      // Refresh the page to show the new goal (temporary solution)
       window.location.reload();
     } catch (error) {
       console.error("Error creating " + eventType.toLowerCase() + ":", error);
@@ -268,483 +448,555 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
   };
 
-  const getModalTitle = () => {
+  const eventMeta: EventMeta = useMemo(() => {
+    const base: Record<NonNullable<EventModalProps["eventType"]>, EventMeta> = {
+      GOAL: {
+        title: "Create New Goal",
+        badge: "Goal",
+        eyebrow: "North Star",
+        description: "Define the outcome you want to drive.",
+        highlight: "Clear goals make it easier to align projects and tasks.",
+        accent: "from-sky-500/25 via-sky-500/10 to-transparent",
+        iconBg: "border-sky-500/40 bg-sky-500/10 text-sky-100",
+        icon: Target,
+      },
+      PROJECT: {
+        title: "Create New Project",
+        badge: "Project",
+        eyebrow: "Initiative",
+        description: "Outline the initiative that advances a goal.",
+        highlight: "Link a goal so work ladders up to your strategy.",
+        accent: "from-purple-500/30 via-purple-500/10 to-transparent",
+        iconBg: "border-purple-500/40 bg-purple-500/10 text-purple-100",
+        icon: FolderKanban,
+      },
+      TASK: {
+        title: "Create New Task",
+        badge: "Task",
+        eyebrow: "Next Action",
+        description: "Break the project into a focused piece of work.",
+        highlight: "Make it small enough to schedule in a single sitting.",
+        accent: "from-emerald-500/25 via-emerald-500/10 to-transparent",
+        iconBg: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+        icon: CheckSquare,
+      },
+      HABIT: {
+        title: "Create New Habit",
+        badge: "Habit",
+        eyebrow: "Rhythm",
+        description: "Design the routine that compounds progress.",
+        highlight: "Consistency beats intensity—keep it small and trackable.",
+        accent: "from-blue-500/25 via-blue-500/10 to-transparent",
+        iconBg: "border-blue-500/40 bg-blue-500/10 text-blue-100",
+        icon: Repeat,
+      },
+    };
+
+    if (!eventType) {
+      return base.GOAL;
+    }
+
+    if (eventType === "HABIT" && formData.type === "CHORE") {
+      return {
+        title: "Create New Chore",
+        badge: "Chore",
+        eyebrow: "Upkeep",
+        description: "Capture recurring maintenance so nothing slips.",
+        highlight: "Chores clear mental clutter—schedule them before they stack.",
+        accent: "from-amber-500/30 via-amber-500/10 to-transparent",
+        iconBg: "border-amber-500/40 bg-amber-500/10 text-amber-100",
+        icon: Sparkles,
+      };
+    }
+
+    return base[eventType];
+  }, [eventType, formData.type]);
+
+  const overviewDescription = useMemo(() => {
     switch (eventType) {
       case "GOAL":
-        return "Create New Goal";
+        return "Give your goal a name and explain why it matters.";
       case "PROJECT":
-        return "Create New Project";
+        return "Summarise what you’re building and the impact you expect.";
       case "TASK":
-        return "Create New Task";
+        return "Describe the specific piece of work you\'ll complete.";
       case "HABIT":
-        return "Create New Habit";
+        return formData.type === "CHORE"
+          ? "Clarify the recurring upkeep so it’s easier to delegate or schedule."
+          : "Spell out the routine you want to reinforce.";
       default:
-        return "Create New Item";
+        return "";
     }
-  };
+  }, [eventType, formData.type]);
 
-  const getPriorityOptions = () => [
-    { value: "NO", label: "No Priority" },
-    { value: "LOW", label: "Low" },
-    { value: "MEDIUM", label: "Medium" },
-    { value: "HIGH", label: "High" },
-    { value: "CRITICAL", label: "Critical" },
-    { value: "ULTRA-CRITICAL", label: "Ultra-Critical" },
-  ];
+  const intensityDescription = useMemo(() => {
+    switch (eventType) {
+      case "GOAL":
+        return "Prioritise the goal and capture the energy it will demand.";
+      case "PROJECT":
+        return "Help future-you schedule this project realistically.";
+      case "TASK":
+        return "Set expectations so the task lands in the right time slot.";
+      case "HABIT":
+        return formData.type === "CHORE"
+          ? "How heavy is this chore when it shows up?"
+          : "Gauge the effort required to stay consistent.";
+      default:
+        return "";
+    }
+  }, [eventType, formData.type]);
 
-  const getEnergyOptions = () => [
-    { value: "NO", label: "No Energy" },
-    { value: "LOW", label: "Low" },
-    { value: "MEDIUM", label: "Medium" },
-    { value: "HIGH", label: "High" },
-    { value: "ULTRA", label: "Ultra" },
-    { value: "EXTREME", label: "Extreme" },
-  ];
+  const submitLabel = loading
+    ? "Creating..."
+    : `Create ${eventMeta.badge}`;
 
-  const getProjectStageOptions = () => [
-    { value: "RESEARCH", label: "Research" },
-    { value: "TEST", label: "Test" },
-    { value: "BUILD", label: "Build" },
-    { value: "REFINE", label: "Refine" },
-    { value: "RELEASE", label: "Release" },
-  ];
+  if (!isOpen || !mounted || !eventType) {
+    return null;
+  }
 
-  const getTaskStageOptions = () => [
-    { value: "PREPARE", label: "Prepare" },
-    { value: "PRODUCE", label: "Produce" },
-    { value: "PERFECT", label: "Perfect" },
-  ];
-
-  const getHabitTypeOptions = () => [
-    { value: "HABIT", label: "Habit" },
-    { value: "CHORE", label: "Chore" },
-  ];
-
-  const getRecurrenceOptions = () => [
-    { value: "daily", label: "Daily" },
-    { value: "weekly", label: "Weekly" },
-    { value: "bi-weekly", label: "Bi-weekly" },
-    { value: "monthly", label: "Monthly" },
-    { value: "bi-monthly", label: "Bi-monthly" },
-    { value: "yearly", label: "Yearly" },
-  ];
-
-  const modalContent = (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-[500px] max-h-[80vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">
-            {getModalTitle()}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-10 backdrop-blur-sm">
+      <div className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-white/10 bg-[#0B1016]/95 shadow-[0_45px_90px_-40px_rgba(15,23,42,0.8)]">
+        <div className="relative overflow-hidden">
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90",
+              eventMeta.accent
+            )}
+          />
+          <div className="relative flex flex-col gap-6 px-8 pb-8 pt-6 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-1 flex-col gap-4">
+              <div className="flex items-center gap-4">
+                <span
+                  className={cn(
+                    "flex h-12 w-12 items-center justify-center rounded-2xl border text-white shadow-inner",
+                    eventMeta.iconBg
+                  )}
+                >
+                  <eventMeta.icon className="h-6 w-6" />
+                </span>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="border-white/20 bg-white/10 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-200"
+                    >
+                      {eventMeta.eyebrow}
+                    </Badge>
+                    <Badge className="bg-white/15 text-xs font-semibold text-white">
+                      {eventMeta.badge}
+                    </Badge>
+                  </div>
+                  <h2 className="text-2xl font-semibold text-white">
+                    {eventMeta.title}
+                  </h2>
+                  <p className="text-sm text-zinc-200">
+                    {eventMeta.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="self-start rounded-full p-2 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="border-t border-white/10 px-8 py-3 text-xs text-zinc-400">
+            {eventMeta.highlight}
+          </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Name */}
-          <div className="space-y-2">
-            <Label htmlFor="name" className="text-white text-sm font-medium">
-              Name
-            </Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              placeholder={`Enter ${eventType.toLowerCase()} name`}
-              className="bg-gray-800 border-gray-600 text-white h-10 text-sm"
-              required
-            />
-          </div>
-
-          {/* Description */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="description"
-              className="text-white text-sm font-medium"
-            >
-              Description (Optional)
-            </Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
-              placeholder={`Describe your ${eventType.toLowerCase()}`}
-              className="bg-gray-800 border-gray-600 text-white text-base"
-              rows={3}
-            />
-          </div>
-
-          {/* Priority */}
-          <div className="space-y-2">
-            <Label
-              htmlFor="priority"
-              className="text-white text-sm font-medium"
-            >
-              Priority
-            </Label>
-            <Select
-              value={formData.priority}
-              onValueChange={(value) =>
-                setFormData({ ...formData, priority: value })
-              }
-            >
-              <SelectContent>
-                {getPriorityOptions().map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Energy */}
-          <div className="space-y-2">
-            <Label htmlFor="energy" className="text-white text-sm font-medium">
-              Energy Level
-            </Label>
-            <Select
-              value={formData.energy}
-              onValueChange={(value) =>
-                setFormData({ ...formData, energy: value })
-              }
-            >
-              <SelectContent>
-                {getEnergyOptions().map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Monument Selection for Goals */}
-          {eventType === "GOAL" && (
-            <div className="space-y-2">
-              <Label
-                htmlFor="monument"
-                className="text-white text-sm font-medium"
-              >
-                Monument
-              </Label>
-              <Select
-                value={formData.monument_id}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, monument_id: value })
-                }
-              >
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {monuments.map((monument) => (
-                    <SelectItem key={monument.id} value={monument.id}>
-                      {monument.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Duration */}
-          {(eventType === "PROJECT" || eventType === "TASK") && (
-            <div className="space-y-2">
-              <Label
-                htmlFor="duration"
-                className="text-white text-sm font-medium"
-              >
-                Duration (minutes)
-              </Label>
-              <Input
-                id="duration"
-                type="number"
-                min={1}
-                value={formData.duration_min}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    duration_min: e.target.value,
-                  })
-                }
-                className="bg-gray-800 border-gray-600 text-white h-10 text-sm"
-                required
-              />
-            </div>
-          )}
-
-          {/* Effective Duration */}
-          {eventType === "PROJECT" && (
-            <div className="space-y-2">
-              <Label
-                htmlFor="effectiveDuration"
-                className="text-white text-sm font-medium"
-              >
-                Effective Duration
-              </Label>
-              <Input
-                id="effectiveDuration"
-                value={formData.effective_duration_min}
-                readOnly
-                className="bg-gray-800 border-gray-600 text-white h-10 text-sm"
-              />
-            </div>
-          )}
-
-          {/* Goal Selection for Projects */}
-          {eventType === "PROJECT" && (
-            <>
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-6 px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
+        >
+          <FormSection title="Overview" description={overviewDescription}>
+            <div className="grid gap-4">
               <div className="space-y-2">
-                <Label
-                  htmlFor="goal"
-                  className="text-white text-sm font-medium"
-                >
-                  Goal <span className="text-red-400">*</span>
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Name
                 </Label>
-                <Select
-                  value={formData.goal_id}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, goal_id: value })
-                  }
-                >
-                  <SelectContent>
-                    {goals.map((goal) => (
-                      <SelectItem key={goal.id} value={goal.id}>
-                        {goal.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {goals.length === 0 && (
-                  <p className="text-sm text-gray-400">
-                    No goals yet. Create a goal first to add projects.
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label
-                  htmlFor="skills"
-                  className="text-white text-sm font-medium"
-                >
-                  Skills
-                </Label>
-                <select
-                  id="skills"
-                  multiple
-                  value={formData.skill_ids}
+                <Input
+                  value={formData.name}
                   onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      skill_ids: Array.from(
-                        e.target.selectedOptions,
-                        (o) => o.value
-                      ),
-                    })
+                    setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full bg-gray-800 border border-gray-600 text-white rounded-md p-2 text-sm"
-                >
-                  {skills.map((skill) => (
-                    <option key={skill.id} value={skill.id}>
-                      {skill.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
+                  className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                  required
+                />
               </div>
-            </>
-          )}
-
-          {/* Goal and Project Selection for Tasks */}
-          {eventType === "TASK" && (
-            <>
               <div className="space-y-2">
-                <Label
-                  htmlFor="goal"
-                  className="text-white text-sm font-medium"
-                >
-                  Goal (for filtering)
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  {eventType === "GOAL" ? "Why this matters" : "Description"}
+                </Label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  placeholder={
+                    eventType === "GOAL"
+                      ? "Capture the motivation or vision for this goal"
+                      : `Describe your ${eventMeta.badge.toLowerCase()}`
+                  }
+                  className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                />
+                <p className="text-xs text-zinc-500">Optional, but recommended.</p>
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection title="Intensity" description={intensityDescription}>
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                  Priority
+                </p>
+                <OptionGrid
+                  value={formData.priority}
+                  options={PRIORITY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, priority: value })
+                  }
+                />
+              </div>
+              <div className="space-y-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                  Energy
+                </p>
+                <OptionGrid
+                  value={formData.energy}
+                  options={ENERGY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, energy: value })
+                  }
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          {eventType === "GOAL" ? (
+            <FormSection
+              title="Connections"
+              description="Link this goal to a monument to celebrate progress."
+            >
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Monument (optional)
                 </Label>
                 <Select
-                  value={formData.goal_id}
-                  onValueChange={handleGoalChange}
-                >
-                  <SelectContent>
-                    <SelectItem value="">All Goals</SelectItem>
-                    {goals.map((goal) => (
-                      <SelectItem key={goal.id} value={goal.id}>
-                        {goal.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label
-                  htmlFor="project"
-                  className="text-white text-sm font-medium"
-                >
-                  Project <span className="text-red-400">*</span>
-                </Label>
-                <Select
-                  value={formData.project_id}
+                  value={formData.monument_id}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, project_id: value })
+                    setFormData({ ...formData, monument_id: value })
                   }
                 >
                   <SelectContent>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.name}
+                    <SelectItem value="">No monument</SelectItem>
+                    {monuments.map((monument) => (
+                      <SelectItem key={monument.id} value={monument.id}>
+                        {monument.title}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {projects.length === 0 && (
-                  <p className="text-sm text-gray-400">
-                    {formData.goal_id
-                      ? "No projects under this goal yet."
-                      : "Select a goal to see available projects."}
+                {monuments.length === 0 ? (
+                  <p className="text-xs text-zinc-500">
+                    You can connect goals to monuments once you’ve created
+                    them.
                   </p>
-                )}
+                ) : null}
               </div>
+            </FormSection>
+          ) : null}
 
-              <div className="space-y-2">
-                <Label
-                  htmlFor="skill"
-                  className="text-white text-sm font-medium"
-                >
-                  Skill
-                </Label>
-                <Select
-                  value={formData.skill_id}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, skill_id: value })
-                  }
-                >
-                  <SelectContent>
-                    {skills.map((skill) => (
-                      <SelectItem key={skill.id} value={skill.id}>
-                        {skill.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          {eventType === "PROJECT" ? (
+            <>
+              <FormSection
+                title="Context"
+                description="Anchor this project to a goal and spotlight the skills involved."
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Goal
+                    </Label>
+                    <Select
+                      value={formData.goal_id}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, goal_id: value })
+                      }
+                    >
+                      <SelectContent>
+                        <SelectItem value="">Select goal...</SelectItem>
+                        {goals.map((goal) => (
+                          <SelectItem key={goal.id} value={goal.id}>
+                            {goal.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {goals.length === 0 ? (
+                      <p className="text-xs text-zinc-500">
+                        Create a goal first to keep projects aligned.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Skills involved
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {skills.length > 0 ? (
+                        skills.map((skill) => {
+                          const selected = formData.skill_ids.includes(
+                            skill.id
+                          );
+                          return (
+                            <button
+                              key={skill.id}
+                              type="button"
+                              onClick={() => toggleSkill(skill.id)}
+                              className={cn(
+                                "rounded-full border px-3 py-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
+                                selected
+                                  ? "border-blue-400/80 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.25)]"
+                                  : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
+                              )}
+                              aria-pressed={selected}
+                            >
+                              {skill.name}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-zinc-500">
+                          Skills will appear here once you’ve added them to
+                          your workspace.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </FormSection>
+
+              <FormSection
+                title="Workflow"
+                description="Capture the time commitment and where this work sits in your pipeline."
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Duration (minutes)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={formData.duration_min}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          duration_min: e.target.value,
+                        })
+                      }
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Effective duration
+                    </Label>
+                    <Input
+                      value={formData.effective_duration_min}
+                      readOnly
+                      className="h-11 cursor-not-allowed rounded-xl border border-white/5 bg-white/[0.02] text-sm text-zinc-500"
+                    />
+                    <p className="text-xs text-zinc-500">
+                      Calculated automatically as the project evolves.
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Stage
+                  </p>
+                  <OptionGrid
+                    value={formData.stage}
+                    options={PROJECT_STAGE_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, stage: value })
+                    }
+                  />
+                </div>
+              </FormSection>
             </>
-          )}
+          ) : null}
 
-          {/* Project Stage */}
-          {eventType === "PROJECT" && (
-            <div className="space-y-4">
-              <Label htmlFor="stage" className="text-white text-lg font-medium">
-                Stage
-              </Label>
-              <Select
-                value={formData.stage}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, stage: value })
-                }
+          {eventType === "TASK" ? (
+            <>
+              <FormSection
+                title="Context"
+                description="Filter by goal and pick the project this task pushes forward."
               >
-                <SelectContent>
-                  {getProjectStageOptions().map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Goal filter
+                    </Label>
+                    <Select
+                      value={formData.goal_id}
+                      onValueChange={handleGoalChange}
+                    >
+                      <SelectContent>
+                        <SelectItem value="">All goals</SelectItem>
+                        {goals.map((goal) => (
+                          <SelectItem key={goal.id} value={goal.id}>
+                            {goal.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-zinc-500">
+                      Selecting a goal narrows the project list.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Project
+                    </Label>
+                    <Select
+                      value={formData.project_id}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, project_id: value })
+                      }
+                    >
+                      <SelectContent>
+                        <SelectItem value="">Select project...</SelectItem>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {projects.length === 0 ? (
+                      <p className="text-xs text-zinc-500">
+                        {formData.goal_id
+                          ? "No projects under this goal yet."
+                          : "Choose a goal to see its projects."}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                    Skill (optional)
+                  </Label>
+                  <Select
+                    value={formData.skill_id}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, skill_id: value })
+                    }
+                  >
+                    <SelectContent>
+                      <SelectItem value="">No specific skill</SelectItem>
+                      {skills.map((skill) => (
+                        <SelectItem key={skill.id} value={skill.id}>
+                          {skill.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </FormSection>
 
-          {/* Task Stage */}
-          {eventType === "TASK" && (
-            <div className="space-y-4">
-              <Label htmlFor="stage" className="text-white text-lg font-medium">
-                Stage
-              </Label>
-              <Select
-                value={formData.stage}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, stage: value })
-                }
+              <FormSection
+                title="Workflow"
+                description="Estimate the effort and mark the stage this task belongs to."
               >
-                <SelectContent>
-                  {getTaskStageOptions().map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Duration (minutes)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={formData.duration_min}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          duration_min: e.target.value,
+                        })
+                      }
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Stage
+                  </p>
+                  <OptionGrid
+                    value={formData.stage}
+                    options={TASK_STAGE_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, stage: value })
+                    }
+                    columnsClassName="grid-cols-1 sm:grid-cols-3"
+                  />
+                </div>
+              </FormSection>
+            </>
+          ) : null}
 
-          {/* Habit Type */}
-          {eventType === "HABIT" && (
-            <div className="space-y-4">
-              <Label htmlFor="type" className="text-white text-lg font-medium">
-                Type
-              </Label>
-              <Select
-                value={formData.type}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, type: value })
-                }
-              >
-                <SelectContent>
-                  {getHabitTypeOptions().map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {eventType === "HABIT" ? (
+            <FormSection
+              title="Rhythm"
+              description="Decide whether this is a habit or chore and how often it repeats."
+            >
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Type
+                  </p>
+                  <OptionGrid
+                    value={formData.type}
+                    options={HABIT_TYPE_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, type: value })
+                    }
+                    columnsClassName="grid-cols-1 sm:grid-cols-2"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Recurrence
+                  </p>
+                  <OptionGrid
+                    value={formData.recurrence}
+                    options={RECURRENCE_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, recurrence: value })
+                    }
+                    columnsClassName="grid-cols-1 sm:grid-cols-3"
+                  />
+                </div>
+              </div>
+            </FormSection>
+          ) : null}
 
-          {/* Habit Recurrence */}
-          {eventType === "HABIT" && (
-            <div className="space-y-4">
-              <Label
-                htmlFor="recurrence"
-                className="text-white text-lg font-medium"
-              >
-                Recurrence
-              </Label>
-              <Select
-                value={formData.recurrence}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, recurrence: value })
-                }
-              >
-                <SelectContent>
-                  {getRecurrenceOptions().map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-4 pt-6">
+          <div className="flex flex-col gap-3 border-t border-white/5 pt-6 sm:flex-row sm:justify-end">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
-              className="flex-1 bg-gray-800 border-gray-600 text-white hover:bg-gray-700 h-10 text-sm"
+              className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white"
             >
               Cancel
             </Button>
@@ -756,15 +1008,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 (eventType === "PROJECT" && !formData.goal_id) ||
                 (eventType === "TASK" && !formData.project_id)
               }
-              className="flex-1 bg-blue-600 hover:bg-blue-700 h-10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Creating..." : `Create ${eventType}`}
+              {submitLabel}
             </Button>
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
-
-  return createPortal(modalContent, document.body);
 }

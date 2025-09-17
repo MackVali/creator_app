@@ -4,6 +4,13 @@ import * as React from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+function getLabelText(children: React.ReactNode): string {
+  return React.Children.toArray(children)
+    .map((child) => (typeof child === "string" ? child : ""))
+    .join(" ")
+    .trim();
+}
+
 interface SelectProps {
   value?: string;
   onValueChange?: (value: string) => void;
@@ -33,19 +40,60 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const handleSelect = (value: string, label: string) => {
-      setSelectedValue(value);
+    const handleSelect = (nextValue: string, label: string) => {
+      setSelectedValue(nextValue);
       setSelectedLabel(label);
       setIsOpen(false);
-      onValueChange?.(value);
+      onValueChange?.(nextValue);
     };
 
+    React.useEffect(() => {
+      setSelectedValue(value || "");
+    }, [value]);
+
+    React.useEffect(() => {
+      if (!value) {
+        setSelectedLabel("");
+        return;
+      }
+
+      const findLabel = (nodes: React.ReactNode): string | null => {
+        let match: string | null = null;
+        React.Children.forEach(nodes, (child) => {
+          if (match || !React.isValidElement(child)) {
+            return;
+          }
+
+          if (child.type === SelectItem && child.props.value === value) {
+            match = getLabelText(child.props.children);
+          } else if (child.props && "children" in child.props) {
+            match = findLabel(child.props.children);
+          }
+        });
+        return match;
+      };
+
+      const derived = findLabel(children);
+      setSelectedLabel(derived || "");
+    }, [children, value]);
+
     return (
-      <div ref={containerRef} className={cn("relative", className)}>
+      <div ref={(node) => {
+        containerRef.current = node;
+        if (typeof ref === "function") {
+          ref(node);
+        } else if (ref) {
+          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }
+      }} className={cn("relative", className)}>
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="flex h-10 w-full items-center justify-between rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white ring-offset-background placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className={cn(
+            "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition",
+            "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
+            isOpen && "border-blue-400/70"
+          )}
         >
           <span className="block truncate">
             {selectedLabel || "Select option..."}
@@ -59,7 +107,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         </button>
 
         {isOpen && (
-          <div className="absolute z-50 mt-1 w-full rounded-md border border-gray-600 bg-gray-800 shadow-lg">
+          <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0f172a] shadow-xl shadow-black/40">
             {React.Children.map(children, (child) => {
               if (React.isValidElement(child) && child.type === SelectContent) {
                 return React.cloneElement(
@@ -105,7 +153,7 @@ interface SelectContentProps {
 
 const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
   ({ children, onSelect, selectedValue }, ref) => (
-    <div ref={ref} className="max-h-60 overflow-auto">
+    <div ref={ref} className="max-h-60 overflow-auto p-1">
       {React.Children.map(children, (child) => {
         if (React.isValidElement(child) && child.type === SelectItem) {
           return React.cloneElement(
@@ -132,19 +180,24 @@ interface SelectItemProps {
 }
 
 const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
-  ({ value, children, onSelect, selectedValue, className }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        "relative flex w-full cursor-default select-none items-center rounded-sm py-2 pl-3 pr-2 text-sm outline-none hover:bg-gray-700 hover:text-white focus:bg-gray-700 focus:text-white data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        selectedValue === value && "bg-gray-700 text-white",
-        className
-      )}
-      onClick={() => onSelect?.(value, children as string)}
-    >
-      {children}
-    </div>
-  )
+  ({ value, children, onSelect, selectedValue, className }, ref) => {
+    const labelText = getLabelText(children);
+
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "flex w-full cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm text-zinc-200 transition hover:bg-white/10 hover:text-white",
+          selectedValue === value &&
+            "bg-blue-500/20 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]",
+          className
+        )}
+        onClick={() => onSelect?.(value, labelText || value)}
+      >
+        {children}
+      </div>
+    );
+  }
 );
 SelectItem.displayName = "SelectItem";
 
