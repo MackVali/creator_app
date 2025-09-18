@@ -75,27 +75,14 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
         key={project.id}
       >
         <div className="flex flex-1 flex-col gap-2">
-          <div className="flex items-start justify-between gap-1">
-            <p className="min-w-0 flex-1 truncate text-xs font-semibold leading-snug">
-              {project.name}
-            </p>
-            <span className="shrink-0 rounded-full bg-slate-900/5 px-1.5 text-[10px] font-semibold text-slate-600">
-              {project.progress}%
+          <p className="min-w-0 whitespace-normal break-words text-xs font-semibold leading-snug">
+            {project.name}
+          </p>
+          <div className="flex items-center justify-between text-[9px] text-slate-500">
+            <span className="min-w-0 truncate capitalize">
+              {project.status.toLowerCase()}
             </span>
-          </div>
-          <div className="space-y-1">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-              <div
-                className="h-full rounded-full bg-slate-900 transition-all duration-300"
-                style={{ width: `${project.progress}%` }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-[9px] text-slate-500">
-              <span className="min-w-0 truncate capitalize">
-                {project.status.toLowerCase()}
-              </span>
-              <span className="shrink-0">{project.tasks?.length ?? 0} tasks</span>
-            </div>
+            <span className="shrink-0">{project.tasks?.length ?? 0} tasks</span>
           </div>
         </div>
         {showOverflow && (
@@ -162,19 +149,7 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
           </span>
         </div>
       </div>
-      <div className="flex w-full max-w-[220px] flex-col gap-2.5 text-left text-slate-200">
-        <div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-700">
-            <div
-              className="h-full rounded-full bg-slate-100 transition-all duration-300"
-              style={{ width: `${goal.progress}%` }}
-            />
-          </div>
-          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
-            <span>Progress</span>
-            <span>{goal.progress}%</span>
-          </div>
-        </div>
+      <div className="flex w-full max-w-[220px] flex-col gap-2 text-left text-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px] text-slate-400">
           {dueDateLabel && (
             <span className="flex items-center gap-1">
