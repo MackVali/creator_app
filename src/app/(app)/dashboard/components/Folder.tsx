@@ -14,9 +14,7 @@ type FolderProps = {
   className?: string;
 };
 
-const MAX_ITEMS = 3;
-
-const paperClasses = [styles.paper1, styles.paper2, styles.paper3];
+const MAX_ITEMS = 5;
 
 const darkenColor = (hex: string, percent: number) => {
   let color = hex.startsWith("#") ? hex.slice(1) : hex;
@@ -38,16 +36,29 @@ const darkenColor = (hex: string, percent: number) => {
   );
 };
 
+const paperColors = [
+  darkenColor("#ffffff", 0.16),
+  darkenColor("#ffffff", 0.1),
+  darkenColor("#ffffff", 0.05),
+  "#ffffff",
+  darkenColor("#ffffff", -0.05),
+];
+
+const computePositions = (count: number) => {
+  if (count <= 0) return [] as number[];
+  if (count === 1) return [0];
+  const start = -(count - 1) / 2;
+  return Array.from({ length: count }, (_, index) => start + index);
+};
+
 export function Folder({
   color = "#5227FF",
   size = 1,
   items = [],
   className,
 }: FolderProps) {
-  const papers = items.slice(0, MAX_ITEMS);
-  while (papers.length < MAX_ITEMS) {
-    papers.push(null);
-  }
+  const visibleItems = items.filter((item) => item != null).slice(0, MAX_ITEMS);
+  const positions = computePositions(visibleItems.length);
 
   const [open, setOpen] = useState(false);
   const [paperOffsets, setPaperOffsets] = useState<PaperOffset[]>(() =>
@@ -55,9 +66,6 @@ export function Folder({
   );
 
   const folderBackColor = darkenColor(color, 0.08);
-  const paper1 = darkenColor("#ffffff", 0.1);
-  const paper2 = darkenColor("#ffffff", 0.05);
-  const paper3 = "#ffffff";
 
   const handleClick = () => {
     setOpen((prev) => {
@@ -93,9 +101,6 @@ export function Folder({
   const folderStyle: CSSProperties = {
     ["--folder-color" as string]: color,
     ["--folder-back-color" as string]: folderBackColor,
-    ["--paper-1" as string]: paper1,
-    ["--paper-2" as string]: paper2,
-    ["--paper-3" as string]: paper3,
   };
 
   const wrapperStyle: CSSProperties = {
@@ -110,27 +115,33 @@ export function Folder({
         onClick={handleClick}
       >
         <div className={styles.folderBack}>
-          {papers.map((item, index) => {
-            const isEmpty = item == null;
-            const magnetStyle: CSSProperties | undefined = open
-              ? {
-                  ["--magnet-x" as string]: `${paperOffsets[index]?.x ?? 0}px`,
-                  ["--magnet-y" as string]: `${paperOffsets[index]?.y ?? 0}px`,
-                }
-              : undefined;
+          {visibleItems.map((item, index) => {
+            const magnetStyle: CSSProperties = {
+              ["--paper-position" as string]: `${positions[index] ?? 0}`,
+              ["--paper-color" as string]:
+                paperColors[index] ?? paperColors[paperColors.length - 1],
+              ["--paper-z" as string]: `${Math.round(
+                MAX_ITEMS - Math.abs(positions[index] ?? 0)
+              )}`,
+              ["--paper-delay" as string]: `${index * 0.04}s`,
+            };
+
+            if (open) {
+              magnetStyle["--magnet-x" as string] = `${
+                paperOffsets[index]?.x ?? 0
+              }px`;
+              magnetStyle["--magnet-y" as string] = `${
+                paperOffsets[index]?.y ?? 0
+              }px`;
+            }
 
             return (
               <div
                 key={index}
-                className={cn(
-                  styles.paper,
-                  paperClasses[index] ?? "",
-                  isEmpty && styles.emptyPaper
-                )}
+                className={styles.paper}
                 onMouseMove={(event) => handlePaperMouseMove(event, index)}
                 onMouseLeave={(event) => handlePaperMouseLeave(event, index)}
                 style={magnetStyle}
-                aria-hidden={isEmpty || undefined}
               >
                 {item}
               </div>
