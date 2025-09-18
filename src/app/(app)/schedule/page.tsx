@@ -39,7 +39,6 @@ import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import { toLocal } from '@/lib/time/tz'
-import { getSupabaseBrowser } from '@/lib/supabase'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -319,46 +318,62 @@ export default function SchedulePage() {
     setLastRunSummary(null)
 
     try {
-      const supabase = getSupabaseBrowser()
-      if (!supabase) {
-        throw new Error('Supabase client not available in this environment.')
-      }
-
       type SchedulerResponse = {
         placed?: unknown[]
         failures?: unknown[]
-        error?: { message?: string } | string | null
+        error?: unknown
+        detail?: unknown
       }
 
-      const { data, error } = await supabase.functions.invoke<SchedulerResponse>(
-        'scheduler_cron',
-        {
-          body: { userId },
+      const response = await fetch('/api/dev/run-scheduler', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+
+      const responseText = await response.text()
+      let payload: SchedulerResponse | null = null
+
+      if (responseText) {
+        try {
+          payload = JSON.parse(responseText) as SchedulerResponse
+        } catch (parseError) {
+          console.warn('Failed to parse scheduler response', parseError)
+          payload = { error: responseText }
         }
-      )
-
-      if (error) {
-        throw new Error(error.message ?? 'Failed to invoke scheduler.')
       }
 
-      if (data && typeof data === 'object' && 'error' in data && data.error) {
-        const message =
-          typeof data.error === 'string'
-            ? data.error
-            : data.error?.message ?? 'Scheduler reported an error.'
-        throw new Error(message)
+      if (!response.ok) {
+        const extractMessage = (value: unknown) => {
+          if (typeof value === 'string') return value
+          if (value && typeof value === 'object') {
+            const maybeMessage = (value as { message?: string }).message
+            if (typeof maybeMessage === 'string' && maybeMessage.trim()) {
+              return maybeMessage
+            }
+          }
+          return null
+        }
+
+        const errorMessage =
+          extractMessage(payload?.error) ??
+          extractMessage(payload?.detail) ??
+          (response.statusText || '').trim()
+
+        throw new Error(
+          errorMessage && errorMessage.length > 0
+            ? errorMessage
+            : `Scheduler request failed with status ${response.status}.`
+        )
       }
 
-      const placedCount = Array.isArray(data?.placed)
-        ? (data?.placed as unknown[]).length
-        : 0
-      const failureCount = Array.isArray(data?.failures)
-        ? (data?.failures as unknown[]).length
-        : 0
+      const placedValue = payload?.placed
+      const failuresValue = payload?.failures
+      const placedItems = Array.isArray(placedValue) ? placedValue : []
+      const failureItems = Array.isArray(failuresValue) ? failuresValue : []
 
       setLastRunSummary({
-        placed: placedCount,
-        failures: failureCount,
+        placed: placedItems.length,
+        failures: failureItems.length,
         ranAt: new Date(),
       })
       setInstancesRefreshToken(prev => prev + 1)
