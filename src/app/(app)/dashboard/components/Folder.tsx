@@ -69,7 +69,7 @@ export function Folder({
     Array.from({ length: MAX_ITEMS }, () => ({ x: 0, y: 0 }))
   );
 
-  const folderBackColor = darkenColor(color, 0.08);
+  const folderBackColor = darkenColor(color, -0.18);
 
   const handleClick = () => {
     setOpen((prev) => {
@@ -155,8 +155,9 @@ export function Folder({
               </div>
             );
           })}
-          {label ? <div className={styles.folderLabel}>{label}</div> : null}
-          <div className={styles.folderFront} />
+          <div className={styles.folderFront}>
+            {label ? <div className={styles.folderLabel}>{label}</div> : null}
+          </div>
           <div className={styles.folderFrontRight} />
         </div>
       </div>

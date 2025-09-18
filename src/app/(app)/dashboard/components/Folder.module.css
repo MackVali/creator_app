@@ -66,7 +66,10 @@
   box-shadow: 0 calc(22px * var(--folder-scale, 1)) calc(42px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.4);
   transform-origin: bottom center;
-  transform: rotateX(0deg);
+  transform-style: preserve-3d;
+  --front-angle: 0deg;
+  --front-shift: 0px;
+  transform: rotateX(var(--front-angle)) translateY(var(--front-shift));
   transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.45s;
   z-index: 5;
 }
@@ -83,6 +86,8 @@
     rgba(255, 255, 255, 0.05)
   );
   opacity: 0.6;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .folderFrontRight {
@@ -96,7 +101,10 @@
   box-shadow: 0 calc(18px * var(--folder-scale, 1)) calc(36px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.32);
   transform-origin: bottom center;
-  transform: rotateX(0deg);
+  transform-style: preserve-3d;
+  --front-right-angle: 0deg;
+  --front-right-shift: 0px;
+  transform: rotateX(var(--front-right-angle)) translateY(var(--front-right-shift));
   transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.45s;
   filter: brightness(1.1);
   z-index: 4;
@@ -105,7 +113,8 @@
 .folderLabel {
   position: absolute;
   inset: auto auto calc(26px * var(--folder-scale, 1)) 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateZ(calc(10px * var(--folder-scale, 1)))
+    rotateX(calc(var(--front-angle, 0deg) * -1));
   max-width: calc(150px * var(--folder-scale, 1));
   padding: calc(6px * var(--folder-scale, 1)) calc(12px * var(--folder-scale, 1));
   border-radius: calc(12px * var(--folder-scale, 1));
@@ -133,6 +142,8 @@
   padding-right: calc(14px * var(--folder-scale, 1));
   padding-left: calc(14px * var(--folder-scale, 1));
   pointer-events: none;
+  transform-origin: center;
+  backface-visibility: hidden;
   text-shadow: 0 calc(1px * var(--folder-scale, 1))
       calc(4px * var(--folder-scale, 1))
       rgba(5, 2, 12, 0.65);
@@ -148,13 +159,15 @@
 }
 
 .open .folderFront {
-  transform: rotateX(-70deg) translateY(calc(6px * var(--folder-scale, 1)));
+  --front-angle: -70deg;
+  --front-shift: calc(6px * var(--folder-scale, 1));
   box-shadow: 0 calc(28px * var(--folder-scale, 1)) calc(48px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.45);
 }
 
 .open .folderFrontRight {
-  transform: rotateX(-58deg) translateY(calc(10px * var(--folder-scale, 1)));
+  --front-right-angle: -58deg;
+  --front-right-shift: calc(10px * var(--folder-scale, 1));
   box-shadow: 0 calc(24px * var(--folder-scale, 1)) calc(42px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.35);
 }
