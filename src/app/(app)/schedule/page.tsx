@@ -210,14 +210,15 @@ export default function SchedulePage() {
     return map
   }, [projectItems])
 
-  const unplacedList = useMemo(
-    () =>
-      Object.entries(unplacedReasons).map(([taskId, reason]) => ({
+  const unplacedList = useMemo(() => {
+    const assignedProjects = new Set(Object.keys(projectAssignments))
+    return Object.entries(unplacedReasons)
+      .filter(([projectId]) => !assignedProjects.has(projectId))
+      .map(([taskId, reason]) => ({
         taskId,
         reason,
-      })),
-    [unplacedReasons],
-  )
+      }))
+  }, [unplacedReasons, projectAssignments])
 
   const dayEnergies = useMemo(() => {
     const map: Record<string, FlameLevel> = {}
@@ -293,8 +294,7 @@ export default function SchedulePage() {
       const cleanedUnplaced: Record<string, UnplacedReason> = {}
       for (const [projectId, reason] of Object.entries(unplacedReasons)) {
         if (!validProjectIds.has(projectId)) continue
-        const assigned = baseAssignments[projectId]
-        if (assigned && assigned !== dateKey) continue
+        if (baseAssignments[projectId]) continue
         cleanedUnplaced[projectId] = reason
       }
 
@@ -317,14 +317,19 @@ export default function SchedulePage() {
       setPlacements(projResult.placements)
 
       const updatedAssignments: Record<string, string> = { ...baseAssignments }
+      const nextUnplaced: Record<string, UnplacedReason> = { ...cleanedUnplaced }
       for (const placement of projResult.placements) {
         updatedAssignments[placement.taskId] = dateKey
+        if (nextUnplaced[placement.taskId]) {
+          delete nextUnplaced[placement.taskId]
+        }
       }
-
-      const nextUnplaced: Record<string, UnplacedReason> = { ...cleanedUnplaced }
       for (const entry of projResult.unplaced) {
         const assigned = updatedAssignments[entry.taskId]
         if (assigned && assigned !== dateKey) continue
+        if (assigned) {
+          delete updatedAssignments[entry.taskId]
+        }
         nextUnplaced[entry.taskId] = entry.reason as UnplacedReason
       }
 
