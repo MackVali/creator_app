@@ -4,6 +4,7 @@ export const runtime = 'nodejs'
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -52,6 +53,54 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
     >
       {children}
     </motion.div>
+  )
+}
+
+function WindowLabel({
+  label,
+  availableHeight,
+}: {
+  label: string
+  availableHeight: number
+}) {
+  const spanRef = useRef<HTMLSpanElement | null>(null)
+  const [shouldWrap, setShouldWrap] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = spanRef.current
+    if (!el) return
+
+    const safeHeight = Number.isFinite(availableHeight)
+      ? Math.max(0, availableHeight)
+      : 0
+
+    if (!label || safeHeight <= 0) {
+      setShouldWrap(prev => (prev ? false : prev))
+      return
+    }
+
+    const previousWhiteSpace = el.style.whiteSpace
+    el.style.whiteSpace = 'nowrap'
+    const measuredHeight = Math.ceil(el.getBoundingClientRect().height)
+    el.style.whiteSpace = previousWhiteSpace
+
+    const nextShouldWrap = measuredHeight - safeHeight > 1
+    setShouldWrap(prev => (prev === nextShouldWrap ? prev : nextShouldWrap))
+  }, [label, availableHeight])
+
+  return (
+    <span
+      ref={spanRef}
+      className="ml-1 text-[10px] leading-none text-zinc-500"
+      style={{
+        writingMode: 'vertical-rl',
+        textOrientation: 'mixed',
+        whiteSpace: shouldWrap ? 'normal' : 'nowrap',
+        wordBreak: 'keep-all',
+      }}
+    >
+      {label}
+    </span>
   )
 }
 
@@ -295,6 +344,8 @@ export default function SchedulePage() {
                 >
                   {windows.map(w => {
                     const { top, height } = windowRect(w, startHour, pxPerMin)
+                    const windowHeightPx =
+                      typeof height === 'number' ? Math.max(0, height) : 0
                     return (
                       <div
                         key={w.id}
@@ -303,12 +354,10 @@ export default function SchedulePage() {
                         style={{ top, height }}
                       >
                         <div className="w-0.5 bg-zinc-700 opacity-50" />
-                        <span
-                          className="ml-1 text-[10px] text-zinc-500"
-                          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-                        >
-                          {w.label}
-                        </span>
+                        <WindowLabel
+                          label={w.label ?? ''}
+                          availableHeight={windowHeightPx}
+                        />
                       </div>
                     )
                   })}
