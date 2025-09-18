@@ -1,11 +1,9 @@
 "use client";
 
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import styles from "./Folder.module.css";
-
-type PaperOffset = { x: number; y: number };
 
 type FolderProps = {
   color?: string;
@@ -46,13 +44,6 @@ const paperColors = [
   darkenColor("#ffffff", -0.05),
 ];
 
-const computePositions = (count: number) => {
-  if (count <= 0) return [] as number[];
-  if (count === 1) return [0];
-  const start = -(count - 1) / 2;
-  return Array.from({ length: count }, (_, index) => start + index);
-};
-
 export function Folder({
   color = "#221042",
   gradient,
@@ -62,46 +53,15 @@ export function Folder({
   className,
 }: FolderProps) {
   const visibleItems = items.filter((item) => item != null).slice(0, MAX_ITEMS);
-  const positions = computePositions(visibleItems.length);
 
   const [open, setOpen] = useState(false);
-  const [paperOffsets, setPaperOffsets] = useState<PaperOffset[]>(() =>
-    Array.from({ length: MAX_ITEMS }, () => ({ x: 0, y: 0 }))
-  );
-  const [paperShift, setPaperShift] = useState(0);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  const panelContentRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
 
   const folderBackColor = darkenColor(color, -0.18);
 
   const handleClick = () => {
-    setOpen((prev) => {
-      if (prev) {
-        setPaperOffsets(Array.from({ length: MAX_ITEMS }, () => ({ x: 0, y: 0 })));
-      }
-      return !prev;
-    });
-  };
-
-  const handlePaperMouseMove = (event: MouseEvent<HTMLDivElement>, index: number) => {
-    if (!open) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const offsetX = (event.clientX - centerX) * 0.15;
-    const offsetY = (event.clientY - centerY) * 0.15;
-    setPaperOffsets((prev) => {
-      const next = [...prev];
-      next[index] = { x: offsetX, y: offsetY };
-      return next;
-    });
-  };
-
-  const handlePaperMouseLeave = (_event: MouseEvent<HTMLDivElement>, index: number) => {
-    setPaperOffsets((prev) => {
-      const next = [...prev];
-      next[index] = { x: 0, y: 0 };
-      return next;
-    });
+    setOpen((prev) => !prev);
   };
 
   const folderStyle: CSSProperties = {
@@ -115,135 +75,69 @@ export function Folder({
 
   const wrapperStyle: CSSProperties = {
     ["--folder-scale" as string]: size,
-    ["--paper-shift" as string]: `${paperShift}px`,
   };
 
   useEffect(() => {
-    if (!open) {
-      setPaperShift(0);
+    const content = panelContentRef.current;
+    if (!content) {
+      setPanelHeight(0);
       return;
     }
 
-    if (typeof window === "undefined") {
+    const updateHeight = () => {
+      setPanelHeight(content.scrollHeight);
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
       return;
     }
 
-    const updateShift = () => {
-      const wrapper = wrapperRef.current;
-      if (!wrapper) {
-        return;
-      }
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
 
-      const papers = wrapper.querySelectorAll<HTMLElement>(`.${styles.paper}`);
-      if (!papers.length) {
-        setPaperShift(0);
-        return;
-      }
-
-      const margin = 24;
-      let minLeft = Number.POSITIVE_INFINITY;
-      let maxRight = Number.NEGATIVE_INFINITY;
-
-      papers.forEach((paper) => {
-        const rect = paper.getBoundingClientRect();
-        if (rect.left < minLeft) {
-          minLeft = rect.left;
-        }
-        if (rect.right > maxRight) {
-          maxRight = rect.right;
-        }
-      });
-
-      const viewportWidth = window.innerWidth;
-      const maxAllowedRight = viewportWidth - margin;
-
-      let nextShift = 0;
-
-      if (minLeft < margin) {
-        nextShift = margin - minLeft;
-      } else if (maxRight > maxAllowedRight) {
-        nextShift = maxAllowedRight - maxRight;
-      }
-
-      setPaperShift((current) =>
-        Math.abs(current - nextShift) < 0.5 ? current : nextShift
-      );
-    };
-
-    let rafId: number | null = null;
-    const scheduleUpdate = () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-      rafId = requestAnimationFrame(updateShift);
-    };
-
-    scheduleUpdate();
-
-    const handleResize = () => scheduleUpdate();
-    window.addEventListener("resize", handleResize);
-
-    let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(() => scheduleUpdate());
-      if (wrapperRef.current) {
-        resizeObserver.observe(wrapperRef.current);
-      }
-    }
+    observer.observe(content);
 
     return () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-      window.removeEventListener("resize", handleResize);
-      resizeObserver?.disconnect();
+      observer.disconnect();
     };
-  }, [open, visibleItems.length]);
+  }, [size, visibleItems.length]);
+
+  const panelStyle: CSSProperties = {
+    ["--panel-height" as string]: open ? `${panelHeight}px` : "0px",
+    ["--panel-opacity" as string]: open ? "1" : "0",
+  };
 
   return (
-    <div
-      ref={wrapperRef}
-      className={cn(styles.wrapper, className)}
-      style={wrapperStyle}
-    >
+    <div className={cn(styles.wrapper, className)} style={wrapperStyle}>
       <div
         className={cn(styles.folder, open && styles.open)}
         style={folderStyle}
         onClick={handleClick}
       >
         <div className={styles.folderBack}>
-          {visibleItems.map((item, index) => {
-            const magnetStyle: CSSProperties = {
-              ["--paper-position" as string]: `${positions[index] ?? 0}`,
-              ["--paper-color" as string]:
-                paperColors[index] ?? paperColors[paperColors.length - 1],
-              ["--paper-z" as string]: `${Math.round(
-                MAX_ITEMS - Math.abs(positions[index] ?? 0)
-              )}`,
-              ["--paper-delay" as string]: `${index * 0.04}s`,
-            };
+          <div
+            className={cn(styles.paperPanel, open && styles.paperPanelOpen)}
+            style={panelStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div ref={panelContentRef} className={styles.paperTrack}>
+              {visibleItems.map((item, index) => {
+                const cardStyle: CSSProperties = {
+                  ["--paper-color" as string]:
+                    paperColors[index] ?? paperColors[paperColors.length - 1],
+                };
 
-            if (open) {
-              magnetStyle["--magnet-x" as string] = `${
-                paperOffsets[index]?.x ?? 0
-              }px`;
-              magnetStyle["--magnet-y" as string] = `${
-                paperOffsets[index]?.y ?? 0
-              }px`;
-            }
-
-            return (
-              <div
-                key={index}
-                className={styles.paper}
-                onMouseMove={(event) => handlePaperMouseMove(event, index)}
-                onMouseLeave={(event) => handlePaperMouseLeave(event, index)}
-                style={magnetStyle}
-              >
-                {item}
-              </div>
-            );
-          })}
+                return (
+                  <div key={index} className={styles.paper} style={cardStyle}>
+                    {item}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           <div className={styles.folderFront}>
             {label ? <div className={styles.folderLabel}>{label}</div> : null}
           </div>

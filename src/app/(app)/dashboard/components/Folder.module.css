@@ -4,7 +4,6 @@
   transform-origin: center;
   overflow: visible;
   --folder-scale: 1;
-  --paper-shift: 0px;
   width: calc(220px * var(--folder-scale, 1));
   height: calc(185px * var(--folder-scale, 1));
 }
@@ -174,54 +173,88 @@
     rgba(15, 23, 42, 0.35);
 }
 
-.paper {
+.paperPanel {
   position: absolute;
-  inset: calc(26px * var(--folder-scale, 1)) calc(26px * var(--folder-scale, 1))
-    calc(30px * var(--folder-scale, 1));
+  left: calc(22px * var(--folder-scale, 1));
+  right: calc(22px * var(--folder-scale, 1));
+  top: calc(26px * var(--folder-scale, 1));
+  max-height: clamp(
+    0px,
+    var(--panel-height, 0px),
+    calc(100% - calc(60px * var(--folder-scale, 1)))
+  );
+  border-radius: clamp(12px, calc(18px * var(--folder-scale, 1)), 24px);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 calc(18px * var(--folder-scale, 1)) calc(38px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+  opacity: var(--panel-opacity, 0);
+  transform: translateY(calc(-6px * var(--folder-scale, 1)));
+  transition: max-height 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.24s ease,
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.34s ease;
   display: flex;
-  flex-direction: column;
-  gap: clamp(6px, calc(12px * var(--folder-scale, 1)), 18px);
-  border-radius: clamp(10px, calc(16px * var(--folder-scale, 1)), 22px);
-  background: var(--paper-color, rgba(255, 255, 255, 0.96));
-  box-shadow: 0 calc(20px * var(--folder-scale, 1)) calc(40px * var(--folder-scale, 1))
-    rgba(15, 23, 42, 0.14);
-  padding: clamp(6px, calc(12px * var(--folder-scale, 1)), 16px);
-  transform: translate3d(0, calc(24px * var(--folder-scale, 1)), 0) scale(0.9);
-  opacity: 0;
+  align-items: stretch;
   pointer-events: none;
-  transition: transform 0.36s ease, opacity 0.36s ease, box-shadow 0.36s ease;
-  color: #1f2937;
-  --magnet-x: 0px;
-  --magnet-y: 0px;
-  --paper-position: 0;
-  --paper-spacing: calc(150px * var(--folder-scale, 1));
-  --paper-base-y: calc(-8px * var(--folder-scale, 1));
-  --paper-scale: 0.74;
-  --paper-z: 2;
-  --paper-delay: 0s;
-  z-index: var(--paper-z);
+  z-index: 2;
 }
 
-.open .paper {
-  opacity: 1;
+.paperPanelOpen {
+  transform: translateY(0);
   pointer-events: auto;
-  transform: translate3d(
-      calc(
-        var(--paper-shift, 0px) + var(--magnet-x) +
-          var(--paper-position) * var(--paper-spacing)
-      ),
-      calc(var(--magnet-y) + var(--paper-base-y)),
-      0
-    )
-    scale(var(--paper-scale));
-  box-shadow: 0 calc(26px * var(--folder-scale, 1)) calc(52px * var(--folder-scale, 1))
-    rgba(15, 23, 42, 0.2);
-  transition-delay: calc(var(--paper-delay) + 0.04s);
+  box-shadow: 0 calc(22px * var(--folder-scale, 1)) calc(46px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.28);
+}
+
+.paperTrack {
+  display: flex;
+  flex: 1;
+  gap: clamp(6px, calc(10px * var(--folder-scale, 1)), 18px);
+  padding: calc(12px * var(--folder-scale, 1))
+    calc(14px * var(--folder-scale, 1))
+    calc(10px * var(--folder-scale, 1));
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+.paperTrack::-webkit-scrollbar {
+  height: calc(6px * var(--folder-scale, 1));
+}
+
+.paperTrack::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.paperTrack::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: calc(999px * var(--folder-scale, 1));
+}
+
+.paper {
+  flex: 0 0 auto;
+  min-width: clamp(74px, calc(168px * var(--folder-scale, 1)), 220px);
+  border-radius: clamp(10px, calc(16px * var(--folder-scale, 1)), 22px);
+  background: var(--paper-color, rgba(255, 255, 255, 0.96));
+  box-shadow: 0 calc(14px * var(--folder-scale, 1)) calc(32px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.16);
+  padding: clamp(6px, calc(12px * var(--folder-scale, 1)), 16px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, calc(9px * var(--folder-scale, 1)), 14px);
+  color: #1f2937;
+  position: relative;
+  scroll-snap-align: start;
+  transition: box-shadow 0.24s ease, transform 0.24s ease;
 }
 
 .paper:hover {
-  box-shadow: 0 calc(30px * var(--folder-scale, 1)) calc(58px * var(--folder-scale, 1))
-    rgba(15, 23, 42, 0.24);
+  box-shadow: 0 calc(18px * var(--folder-scale, 1)) calc(40px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.2);
+  transform: translateY(calc(-2px * var(--folder-scale, 1)));
 }
 
 .paper::after {
@@ -229,7 +262,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  border: calc(1.4px * var(--folder-scale, 1)) solid rgba(15, 23, 42, 0.05);
+  border: calc(1.2px * var(--folder-scale, 1)) solid rgba(15, 23, 42, 0.06);
   pointer-events: none;
 }
 
