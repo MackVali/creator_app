@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSupabaseBrowser } from '../../../lib/supabase'
+import { getSupabaseBrowser } from '@/lib/supabase'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import type { Database } from '../../../types/supabase'
 
 export type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -9,7 +10,16 @@ type Client = SupabaseClient<Database>
 
 async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client
-  const supabase = getSupabaseBrowser()
+
+  if (typeof window === 'undefined') {
+    const supabase = await createServerClient()
+    if (!supabase) {
+      throw new Error('Supabase server client not available')
+    }
+    return supabase as Client
+  }
+
+  const supabase = getSupabaseBrowser?.()
   if (!supabase) throw new Error('Supabase client not available')
   return supabase as Client
 }
@@ -21,13 +31,20 @@ export async function fetchInstancesForRange(
   client?: Client
 ) {
   const supabase = await ensureClient(client)
-  return await supabase
+  const base = supabase
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .lt('start_utc', endUTC)
-    .gt('end_utc', startUTC)
     .neq('status', 'canceled')
+
+  const startParam = startUTC
+  const endParam = endUTC
+
+  return await base
+    .or(
+      `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
+    )
+    .order('start_utc', { ascending: true })
 }
 
 export async function createInstance(
@@ -65,16 +82,18 @@ export async function createInstance(
 
 export async function updateInstanceStatus(
   id: string,
-  status: 'scheduled' | 'completed' | 'missed' | 'canceled',
+  status: 'completed' | 'canceled',
   completedAtUTC?: string,
   client?: Client
 ) {
   const supabase = await ensureClient(client)
+  const completedAt =
+    status === 'completed' ? completedAtUTC ?? new Date().toISOString() : null
   return await supabase
     .from('schedule_instances')
     .update({
       status,
-      completed_at: completedAtUTC ?? null,
+      completed_at: completedAt,
     })
     .eq('id', id)
 }

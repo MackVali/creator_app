@@ -1,4 +1,5 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
@@ -33,8 +34,17 @@ type ScheduleBacklogResult = {
   error?: PostgrestError | null
 }
 
-function ensureClient(client?: Client): Client {
+async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client
+
+  if (typeof window === 'undefined') {
+    const supabase = await createServerClient()
+    if (!supabase) {
+      throw new Error('Supabase server client not available')
+    }
+    return supabase as Client
+  }
+
   throw new Error('Supabase client not available')
 }
 
@@ -43,7 +53,7 @@ export async function markMissedAndQueue(
   now = new Date(),
   client?: Client
 ) {
-  const supabase = ensureClient(client)
+  const supabase = await ensureClient(client)
   const cutoff = new Date(now.getTime() - GRACE_MIN * 60000).toISOString()
   return await supabase
     .from('schedule_instances')
@@ -58,7 +68,7 @@ export async function scheduleBacklog(
   baseDate = new Date(),
   client?: Client
 ): Promise<ScheduleBacklogResult> {
-  const supabase = ensureClient(client)
+  const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [] }
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)

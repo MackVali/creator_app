@@ -23,17 +23,16 @@ serve(async req => {
       Deno.env.get('DENO_ENV_SUPABASE_URL') ??
       Deno.env.get('SUPABASE_URL') ??
       ''
-    const supabaseKey =
+    const serviceRoleKey =
       Deno.env.get('DENO_ENV_SUPABASE_SERVICE_ROLE_KEY') ??
-      Deno.env.get('DENO_ENV_SUPABASE_ANON_KEY') ??
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
       ''
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !serviceRoleKey) {
       return new Response('missing supabase credentials', { status: 500 })
     }
 
-    const supabase = createClient<Database>(supabaseUrl, supabaseKey)
+    const supabase = createClient<Database>(supabaseUrl, serviceRoleKey)
     const now = new Date()
 
     const missedResult = await markMissedAndQueue(supabase, userId, now)
