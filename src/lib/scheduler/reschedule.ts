@@ -1,6 +1,10 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
 import type { Database } from '../../../types/supabase'
-import { fetchBacklogNeedingSchedule, type ScheduleInstance } from './instanceRepo'
+import {
+  fetchBacklogNeedingSchedule,
+  fetchInstancesForRange,
+  type ScheduleInstance,
+} from './instanceRepo'
 import { buildProjectItems } from './projects'
 import {
   fetchReadyTasks,
@@ -81,6 +85,7 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
+  const baseStart = startOfDay(baseDate)
 
   for (const m of missed.data ?? []) {
     const def =
@@ -115,9 +120,75 @@ export async function scheduleBacklog(
     })
   }
 
-  queue.sort((a, b) => b.weight - a.weight)
+  if (queue.length === 0) {
+    const rangeEnd = addDays(baseStart, 28)
+    const future = await fetchInstancesForRange(
+      userId,
+      baseStart.toISOString(),
+      rangeEnd.toISOString(),
+      supabase
+    )
+    if (future.error) {
+      result.error = future.error
+      return result
+    }
 
-  const baseStart = startOfDay(baseDate)
+    const scheduled = new Set<string>()
+    for (const inst of future.data ?? []) {
+      if (inst.status !== 'scheduled') continue
+      scheduled.add(`${inst.source_type}:${inst.source_id}`)
+    }
+
+    const enqueue = (
+      def:
+        | {
+            id: string
+            duration_min: number
+            energy: string | null | undefined
+            weight: number
+          }
+        | null,
+      sourceType: 'PROJECT' | 'TASK'
+    ) => {
+      if (!def) return
+      const duration = Number(def.duration_min ?? 0)
+      if (!Number.isFinite(duration) || duration <= 0) return
+      const key = `${sourceType}:${def.id}`
+      if (scheduled.has(key)) return
+      const energy = (def.energy ?? 'NO').toString().toUpperCase()
+      queue.push({
+        id: def.id,
+        sourceType,
+        duration_min: duration,
+        energy,
+        weight: def.weight ?? 0,
+      })
+    }
+
+    for (const project of projectItems) {
+      enqueue(project, 'PROJECT')
+    }
+
+    for (const task of tasks) {
+      enqueue(
+        {
+          id: task.id,
+          duration_min: task.duration_min,
+          energy: task.energy,
+          weight: taskWeight(task),
+        },
+        'TASK'
+      )
+    }
+  }
+
+  queue.sort((a, b) => {
+    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
+    if (energyDiff !== 0) return energyDiff
+    const weightDiff = b.weight - a.weight
+    if (weightDiff !== 0) return weightDiff
+    return a.id.localeCompare(b.id)
+  })
 
   for (const item of queue) {
     let scheduled = false
