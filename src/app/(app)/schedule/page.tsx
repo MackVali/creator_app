@@ -3,6 +3,7 @@
 export const runtime = 'nodejs'
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -38,6 +39,7 @@ import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import { toLocal } from '@/lib/time/tz'
+import { getSupabaseBrowser } from '@/lib/supabase'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -138,6 +140,13 @@ export default function SchedulePage() {
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  const [instancesRefreshToken, setInstancesRefreshToken] = useState(0)
+  const [isRunningScheduler, setIsRunningScheduler] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [lastRunSummary, setLastRunSummary] = useState<
+    | { placed: number; failures: number; ranAt: Date }
+    | null
+  >(null)
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
 
@@ -297,7 +306,69 @@ export default function SchedulePage() {
       active = false
       clearInterval(id)
     }
-  }, [userId, currentDate])
+  }, [userId, currentDate, instancesRefreshToken])
+
+  const handleRunScheduler = useCallback(async () => {
+    if (!userId) {
+      setRunError('You must be signed in to run the scheduler.')
+      return
+    }
+
+    setIsRunningScheduler(true)
+    setRunError(null)
+    setLastRunSummary(null)
+
+    try {
+      const supabase = getSupabaseBrowser()
+      if (!supabase) {
+        throw new Error('Supabase client not available in this environment.')
+      }
+
+      type SchedulerResponse = {
+        placed?: unknown[]
+        failures?: unknown[]
+        error?: { message?: string } | string | null
+      }
+
+      const { data, error } = await supabase.functions.invoke<SchedulerResponse>(
+        'scheduler_cron',
+        {
+          body: { userId },
+        }
+      )
+
+      if (error) {
+        throw new Error(error.message ?? 'Failed to invoke scheduler.')
+      }
+
+      if (data && typeof data === 'object' && 'error' in data && data.error) {
+        const message =
+          typeof data.error === 'string'
+            ? data.error
+            : data.error?.message ?? 'Scheduler reported an error.'
+        throw new Error(message)
+      }
+
+      const placedCount = Array.isArray(data?.placed)
+        ? (data?.placed as unknown[]).length
+        : 0
+      const failureCount = Array.isArray(data?.failures)
+        ? (data?.failures as unknown[]).length
+        : 0
+
+      setLastRunSummary({
+        placed: placedCount,
+        failures: failureCount,
+        ranAt: new Date(),
+      })
+      setInstancesRefreshToken(prev => prev + 1)
+    } catch (err) {
+      console.error('Failed to trigger scheduler', err)
+      setRunError(err instanceof Error ? err.message : 'Unknown error.')
+    } finally {
+      setIsRunningScheduler(false)
+    }
+  }, [userId])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -326,6 +397,32 @@ export default function SchedulePage() {
           onBack={handleBack}
           onToday={handleToday}
         />
+        <div className="px-4">
+          <button
+            type="button"
+            onClick={handleRunScheduler}
+            disabled={isRunningScheduler || !userId}
+            className="rounded-md bg-[var(--accent-red)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition disabled:opacity-60"
+          >
+            {isRunningScheduler ? 'Running…' : 'Run Scheduler'}
+          </button>
+          {runError ? (
+            <p className="mt-2 text-xs text-red-300" role="alert" aria-live="polite">
+              Failed to run scheduler: {runError}
+            </p>
+          ) : lastRunSummary ? (
+            <p className="mt-2 text-xs text-emerald-300" aria-live="polite">
+              Scheduler ran at {lastRunSummary.ranAt.toLocaleTimeString()} · placed{' '}
+              {lastRunSummary.placed} item{lastRunSummary.placed === 1 ? '' : 's'} and
+              {' '}
+              {lastRunSummary.failures} failure{lastRunSummary.failures === 1 ? '' : 's'}.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-zinc-400" aria-live="polite">
+              Temporary dev control to trigger the auto-scheduler for the current account.
+            </p>
+          )}
+        </div>
         <div
           className="relative bg-[var(--surface)]"
           onTouchStart={handleTouchStart}

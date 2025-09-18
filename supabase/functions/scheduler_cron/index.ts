@@ -13,10 +13,12 @@ const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as cons
 
 serve(async req => {
   try {
-    const { searchParams } = new URL(req.url)
-    const userId = searchParams.get('userId')
+    const userId = await resolveUserId(req)
     if (!userId) {
-      return new Response('missing userId', { status: 400 })
+      return new Response(JSON.stringify({ error: 'missing userId' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      })
     }
 
     const supabaseUrl =
@@ -57,6 +59,32 @@ serve(async req => {
     return new Response('internal error', { status: 500 })
   }
 })
+
+async function resolveUserId(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const fromQuery = searchParams.get('userId')
+  if (fromQuery) return fromQuery
+
+  if (req.method !== 'GET') {
+    const contentType = req.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      try {
+        const body = await req.json()
+        const candidate =
+          typeof body === 'object' && body && 'userId' in body
+            ? (body as { userId?: string }).userId
+            : null
+        if (candidate && typeof candidate === 'string' && candidate.trim()) {
+          return candidate
+        }
+      } catch (error) {
+        console.warn('failed to parse request body for userId', error)
+      }
+    }
+  }
+
+  return null
+}
 
 async function markMissedAndQueue(client: Client, userId: string, now: Date) {
   const cutoff = new Date(now.getTime() - GRACE_MIN * 60_000).toISOString()
