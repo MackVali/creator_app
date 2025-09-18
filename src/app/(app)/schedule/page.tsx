@@ -116,6 +116,8 @@ function utcDayRange(d: Date) {
   return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
+type LoadStatus = 'idle' | 'loading' | 'loaded'
+
 export default function SchedulePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -139,10 +141,15 @@ export default function SchedulePage() {
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
+  const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
+  const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
+  const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
+  const isSchedulingRef = useRef(false)
+  const autoScheduledForRef = useRef<string | null>(null)
 
   const startHour = 0
   const pxPerMin = 2
@@ -160,10 +167,12 @@ export default function SchedulePage() {
       setWindows([])
       setTasks([])
       setProjects([])
+      setMetaStatus('idle')
       return
     }
 
     let active = true
+    setMetaStatus('loading')
 
     async function load() {
       try {
@@ -182,6 +191,9 @@ export default function SchedulePage() {
         setWindows([])
         setTasks([])
         setProjects([])
+      } finally {
+        if (!active) return
+        setMetaStatus('loaded')
       }
     }
 
@@ -442,10 +454,16 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId) {
       setInstances([])
+      setInstancesStatus('idle')
+      loadInstancesRef.current = async () => {}
       return
     }
+
     let active = true
+
     const load = async () => {
+      if (!active) return
+      setInstancesStatus('loading')
       try {
         const { startUTC, endUTC } = utcDayRange(currentDate)
         const { data, error } = await fetchInstancesForRange(
@@ -457,22 +475,96 @@ export default function SchedulePage() {
         if (error) {
           console.error(error)
           setInstances([])
-          return
+        } else {
+          setInstances(data ?? [])
         }
-        setInstances(data ?? [])
       } catch (e) {
         if (!active) return
         console.error(e)
         setInstances([])
+      } finally {
+        if (!active) return
+        setInstancesStatus('loaded')
       }
     }
-    load()
-    const id = setInterval(load, 5 * 60 * 1000)
+
+    loadInstancesRef.current = load
+    void load()
+    const id = setInterval(() => {
+      void load()
+    }, 5 * 60 * 1000)
     return () => {
       active = false
       clearInterval(id)
     }
   }, [userId, currentDate])
+
+  const runScheduler = useCallback(async () => {
+    if (!userId) {
+      console.warn('No user session available for scheduler run')
+      return
+    }
+    if (isSchedulingRef.current) return
+    isSchedulingRef.current = true
+    try {
+      const response = await fetch('/api/scheduler/run', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      if (!response.ok) {
+        let payload: unknown = null
+        try {
+          payload = await response.json()
+        } catch (err) {
+          console.error('Failed to parse scheduler response', err)
+        }
+        console.error('Scheduler run failed', response.status, payload)
+      }
+    } catch (error) {
+      console.error('Failed to run scheduler', error)
+    } finally {
+      isSchedulingRef.current = false
+      try {
+        await loadInstancesRef.current()
+      } catch (error) {
+        console.error('Failed to reload schedule instances', error)
+      }
+    }
+  }, [userId])
+
+  useEffect(() => {
+    autoScheduledForRef.current = null
+  }, [userId, currentDate])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const globalWithScheduler = window as typeof window & {
+      __runScheduler?: () => Promise<void>
+    }
+    globalWithScheduler.__runScheduler = runScheduler
+    return () => {
+      delete globalWithScheduler.__runScheduler
+    }
+  }, [runScheduler])
+
+  useEffect(() => {
+    if (!userId) return
+    if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
+    if (instances.length > 0) return
+    if (isSchedulingRef.current) return
+    const { startUTC } = utcDayRange(currentDate)
+    const key = `${userId}:${startUTC}`
+    if (autoScheduledForRef.current === key) return
+    autoScheduledForRef.current = key
+    void runScheduler()
+  }, [
+    userId,
+    currentDate,
+    metaStatus,
+    instancesStatus,
+    instances.length,
+    runScheduler,
+  ])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
