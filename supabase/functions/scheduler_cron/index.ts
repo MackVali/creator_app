@@ -10,6 +10,7 @@ type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row'
 
 const GRACE_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
+const DEFAULT_PROJECT_DURATION_MIN = 60
 
 serve(async req => {
   try {
@@ -76,12 +77,10 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   const projects = await fetchProjectsMap(client, userId)
   const projectItems = buildProjectItems(Object.values(projects), tasks)
 
-  const taskMap = new Map(tasks.map(task => [task.id, task]))
   const projectMap = new Map(projectItems.map(project => [project.id, project]))
 
   type QueueItem = {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
     duration_min: number
     energy: string
     weight: number
@@ -90,44 +89,84 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   const queue: QueueItem[] = []
 
   for (const instance of missed.data ?? []) {
-    const def =
-      instance.source_type === 'PROJECT'
-        ? projectMap.get(instance.source_id)
-        : taskMap.get(instance.source_id)
+    if (instance.source_type !== 'PROJECT') continue
+    const def = projectMap.get(instance.source_id)
     if (!def) continue
 
     const duration =
-      'duration_min' in def && typeof def.duration_min === 'number'
+      typeof def.duration_min === 'number' && def.duration_min > 0
         ? def.duration_min
         : instance.duration_min ?? 0
     if (!duration) continue
 
-    const resolvedEnergy =
-      ('energy' in def && def.energy)
-        ? String(def.energy)
-        : instance.energy_resolved ?? 'NO'
+    const resolvedEnergy = def.energy ? String(def.energy) : instance.energy_resolved ?? 'NO'
 
     const weight =
       typeof instance.weight_snapshot === 'number'
         ? instance.weight_snapshot
-        : instance.source_type === 'PROJECT'
-          ? (projectMap.get(instance.source_id)?.weight ?? 0)
-          : taskMap.get(instance.source_id)
-            ? taskWeight(taskMap.get(instance.source_id)!)
-            : 0
+        : projectMap.get(instance.source_id)?.weight ?? 0
 
     queue.push({
       id: def.id,
-      sourceType: instance.source_type,
       duration_min: duration,
-      energy: resolvedEnergy ?? 'NO',
+      energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
     })
   }
 
-  queue.sort((a, b) => b.weight - a.weight)
-
   const baseStart = startOfDay(baseDate)
+
+  if (queue.length === 0) {
+    const rangeEnd = addDays(baseStart, 28)
+    const { data: futureData, error: futureError } = await client
+      .from('schedule_instances')
+      .select('*')
+      .eq('user_id', userId)
+      .lt('start_utc', rangeEnd.toISOString())
+      .gt('end_utc', baseStart.toISOString())
+      .neq('status', 'canceled')
+
+    if (futureError) {
+      console.error('fetchInstancesForRange error', futureError)
+      return { placed: [], failures: [], error: futureError }
+    }
+
+    const scheduled = new Set<string>()
+    for (const inst of futureData ?? []) {
+      if (inst.status !== 'scheduled') continue
+      scheduled.add(`${inst.source_type}:${inst.source_id}`)
+    }
+
+    const enqueue = (
+      def:
+        | {
+            id: string
+            duration_min: number
+            energy: string | null | undefined
+            weight: number
+          }
+        | null
+    ) => {
+      if (!def) return
+      const duration = Number(def.duration_min ?? 0)
+      if (!Number.isFinite(duration) || duration <= 0) return
+      const key = `PROJECT:${def.id}`
+      if (scheduled.has(key)) return
+      const energy = (def.energy ?? 'NO').toString().toUpperCase()
+      queue.push({
+        id: def.id,
+        duration_min: duration,
+        energy,
+        weight: def.weight ?? 0,
+      })
+    }
+
+    for (const project of projectItems) {
+      enqueue(project)
+    }
+  }
+
+  queue.sort((a, b) => b.weight - a.weight)
   const placed: ScheduleInstance[] = []
   const failures: { itemId: string; reason: string; detail?: unknown }[] = []
 
@@ -179,6 +218,7 @@ type ProjectLite = {
   priority: string
   stage: string
   energy?: string | null
+  duration_min?: number | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -218,7 +258,7 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
   const { data, error } = await client
     .from('projects')
-    .select('id, name, priority, stage, energy')
+    .select('id, name, priority, stage, energy, duration_min')
     .eq('user_id', userId)
 
   if (error) {
@@ -234,6 +274,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       priority: project.priority ?? 'NO',
       stage: project.stage ?? 'RESEARCH',
       energy: project.energy ?? 'NO',
+      duration_min: project.duration_min ?? null,
     }
   }
   return map
@@ -243,7 +284,15 @@ function buildProjectItems(projects: ProjectLite[], tasks: TaskLite[]): ProjectI
   const items: ProjectItem[] = []
   for (const project of projects) {
     const related = tasks.filter(task => task.project_id === project.id)
-    const duration = related.reduce((sum, task) => sum + task.duration_min, 0) || 60
+    const normalizeDuration = (value?: number | null) => {
+      const numeric = Number(value ?? 0)
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+    }
+
+    const projectDuration = normalizeDuration(project.duration_min)
+    const taskDurationSum = related.reduce((sum, task) => sum + Math.max(task.duration_min, 0), 0)
+    const duration =
+      projectDuration ?? (taskDurationSum > 0 ? taskDurationSum : DEFAULT_PROJECT_DURATION_MIN)
 
     const normalizeEnergy = (value?: string | null) => {
       const upper = (value ?? '').toUpperCase()
@@ -337,7 +386,7 @@ async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
 async function placeItemInWindows(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT' | 'TASK'; duration_min: number; energy: string; weight: number },
+  item: { id: string; duration_min: number; energy: string; weight: number },
   windows: Array<{ id: string; startLocal: Date; endLocal: Date }>
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
@@ -384,7 +433,7 @@ async function placeItemInWindows(
 async function createInstance(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT' | 'TASK'; duration_min: number; energy: string; weight: number },
+  item: { id: string; duration_min: number; energy: string; weight: number },
   windowId: string,
   start: Date,
   durationMin: number
@@ -396,7 +445,7 @@ async function createInstance(
     .from('schedule_instances')
     .insert({
       user_id: userId,
-      source_type: item.sourceType,
+      source_type: 'PROJECT',
       source_id: item.id,
       window_id: windowId,
       start_utc: startUTC,

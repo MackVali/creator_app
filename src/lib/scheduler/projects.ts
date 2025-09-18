@@ -5,6 +5,11 @@ import { taskWeight, projectWeight } from './weight'
 export const DEFAULT_PROJECT_DURATION_MIN = 60
 export const DEFAULT_PROJECT_ENERGY: Energy = 'NO'
 
+const normalizeDuration = (value?: number | null) => {
+  const numeric = Number(value ?? 0)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+}
+
 export type ProjectItem = ProjectLite & {
   name: string
   duration_min: number
@@ -21,9 +26,14 @@ export function buildProjectItems(
   const items: ProjectItem[] = []
   for (const p of projects) {
     const related = tasks.filter(t => t.project_id === p.id)
+    const projectDuration = normalizeDuration(p.duration_min)
+    const tasksDuration = related.reduce(
+      (sum, t) => sum + Math.max(t.duration_min, 0),
+      0
+    )
     const duration_min =
-      related.reduce((sum, t) => sum + t.duration_min, 0) ||
-      DEFAULT_PROJECT_DURATION_MIN
+      projectDuration ??
+      (tasksDuration > 0 ? tasksDuration : DEFAULT_PROJECT_DURATION_MIN)
     const norm = (e?: string | null): Energy | null => {
       const up = (e ?? '').toUpperCase()
       return ENERGY.LIST.includes(up as Energy) ? (up as Energy) : null

@@ -14,7 +14,6 @@ type PlaceParams = {
   userId: string
   item: {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
     duration_min: number
     energy: string
     weight: number
@@ -56,7 +55,6 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
         return await createInstance(
           {
             userId,
-            sourceType: item.sourceType,
             sourceId: item.id,
             windowId: w.id,
             startUTC,
@@ -79,7 +77,6 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       return await createInstance(
         {
           userId,
-          sourceType: item.sourceType,
           sourceId: item.id,
           windowId: w.id,
           startUTC,

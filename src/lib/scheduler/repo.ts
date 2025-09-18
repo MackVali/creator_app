@@ -86,7 +86,7 @@ export async function fetchProjectsMap(
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name, priority, stage, energy');
+    .select('id, name, priority, stage, energy, duration_min');
 
   if (error) throw error;
   const map: Record<string, ProjectLite> = {};
