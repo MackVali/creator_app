@@ -1,11 +1,12 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
   fetchInstancesForRange,
   type ScheduleInstance,
 } from './instanceRepo'
-import { buildProjectItems } from './projects'
+import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -14,8 +15,6 @@ import {
 } from './repo'
 import { placeItemInWindows } from './placement'
 import { ENERGY } from './config'
-import type { TaskLite } from './weight'
-import { taskWeight } from './weight'
 
 type Client = SupabaseClient<Database>
 
@@ -33,8 +32,17 @@ type ScheduleBacklogResult = {
   error?: PostgrestError | null
 }
 
-function ensureClient(client?: Client): Client {
+async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client
+
+  if (typeof window === 'undefined') {
+    const supabase = await createServerClient()
+    if (!supabase) {
+      throw new Error('Supabase server client not available')
+    }
+    return supabase as Client
+  }
+
   throw new Error('Supabase client not available')
 }
 
@@ -43,7 +51,7 @@ export async function markMissedAndQueue(
   now = new Date(),
   client?: Client
 ) {
-  const supabase = ensureClient(client)
+  const supabase = await ensureClient(client)
   const cutoff = new Date(now.getTime() - GRACE_MIN * 60000).toISOString()
   return await supabase
     .from('schedule_instances')
@@ -58,7 +66,7 @@ export async function scheduleBacklog(
   baseDate = new Date(),
   client?: Client
 ): Promise<ScheduleBacklogResult> {
-  const supabase = ensureClient(client)
+  const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [] }
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
@@ -71,34 +79,50 @@ export async function scheduleBacklog(
   const projectsMap = await fetchProjectsMap(supabase)
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
-  const taskMap: Record<string, TaskLite> = {}
-  for (const task of tasks) taskMap[task.id] = task
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
   for (const item of projectItems) projectItemMap[item.id] = item
 
   type QueueItem = {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
+    sourceType: 'PROJECT'
     duration_min: number
     energy: string
     weight: number
+    instanceId?: string | null
   }
 
   const queue: QueueItem[] = []
   const baseStart = startOfDay(baseDate)
 
+  const seenMissedProjects = new Set<string>()
+
   for (const m of missed.data ?? []) {
-    const def =
-      m.source_type === 'PROJECT'
-        ? projectItemMap[m.source_id]
-        : taskMap[m.source_id]
+    if (m.source_type !== 'PROJECT') continue
+    if (seenMissedProjects.has(m.source_id)) {
+      const dedupe = await supabase
+        .from('schedule_instances')
+        .update({ status: 'canceled' })
+        .eq('id', m.id)
+        .select('id, source_id')
+        .single()
+      if (dedupe.error) {
+        result.failures.push({ itemId: m.source_id, reason: 'error', detail: dedupe.error })
+      }
+      continue
+    }
+    seenMissedProjects.add(m.source_id)
+    const def = projectItemMap[m.source_id]
     if (!def) continue
 
-    const duration =
-      'duration_min' in def && typeof def.duration_min === 'number'
-        ? def.duration_min
-        : m.duration_min ?? 0
-    if (!duration) continue
+    let duration = Number(def.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const fallback = Number(m.duration_min ?? 0)
+      if (Number.isFinite(fallback) && fallback > 0) {
+        duration = fallback
+      } else {
+        duration = DEFAULT_PROJECT_DURATION_MIN
+      }
+    }
 
     const resolvedEnergy =
       ('energy' in def && def.energy)
@@ -107,38 +131,37 @@ export async function scheduleBacklog(
     const weight =
       typeof m.weight_snapshot === 'number'
         ? m.weight_snapshot
-        : m.source_type === 'PROJECT'
-          ? (def as { weight?: number }).weight ?? 0
-          : taskWeight(def as TaskLite)
+        : (def as { weight?: number }).weight ?? 0
 
     queue.push({
       id: def.id,
-      sourceType: m.source_type,
+      sourceType: 'PROJECT',
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      instanceId: m.id,
     })
   }
 
+  const queueProjectIds = new Set(queue.map(item => item.id))
+  const rangeEnd = addDays(baseStart, 28)
+  const dedupe = await dedupeScheduledProjects(
+    supabase,
+    userId,
+    baseStart,
+    rangeEnd,
+    queueProjectIds
+  )
+  if (dedupe.error) {
+    result.error = dedupe.error
+    return result
+  }
+  if (dedupe.failures.length > 0) {
+    result.failures.push(...dedupe.failures)
+  }
+  const scheduled = dedupe.scheduled
+
   if (queue.length === 0) {
-    const rangeEnd = addDays(baseStart, 28)
-    const future = await fetchInstancesForRange(
-      userId,
-      baseStart.toISOString(),
-      rangeEnd.toISOString(),
-      supabase
-    )
-    if (future.error) {
-      result.error = future.error
-      return result
-    }
-
-    const scheduled = new Set<string>()
-    for (const inst of future.data ?? []) {
-      if (inst.status !== 'scheduled') continue
-      scheduled.add(`${inst.source_type}:${inst.source_id}`)
-    }
-
     const enqueue = (
       def:
         | {
@@ -147,18 +170,16 @@ export async function scheduleBacklog(
             energy: string | null | undefined
             weight: number
           }
-        | null,
-      sourceType: 'PROJECT' | 'TASK'
+        | null
     ) => {
       if (!def) return
       const duration = Number(def.duration_min ?? 0)
       if (!Number.isFinite(duration) || duration <= 0) return
-      const key = `${sourceType}:${def.id}`
-      if (scheduled.has(key)) return
+      if (scheduled.has(def.id)) return
       const energy = (def.energy ?? 'NO').toString().toUpperCase()
       queue.push({
         id: def.id,
-        sourceType,
+        sourceType: 'PROJECT',
         duration_min: duration,
         energy,
         weight: def.weight ?? 0,
@@ -166,19 +187,7 @@ export async function scheduleBacklog(
     }
 
     for (const project of projectItems) {
-      enqueue(project, 'PROJECT')
-    }
-
-    for (const task of tasks) {
-      enqueue(
-        {
-          id: task.id,
-          duration_min: task.duration_min,
-          energy: task.energy,
-          weight: taskWeight(task),
-        },
-        'TASK'
-      )
+      enqueue(project)
     }
   }
 
@@ -203,6 +212,7 @@ export async function scheduleBacklog(
         windows,
         date: day,
         client: supabase,
+        reuseInstanceId: item.instanceId,
       })
 
       if (!('status' in placed)) {
@@ -229,6 +239,91 @@ export async function scheduleBacklog(
   }
 
   return result
+}
+
+async function dedupeScheduledProjects(
+  supabase: Client,
+  userId: string,
+  baseStart: Date,
+  rangeEnd: Date,
+  projectsToReset: Set<string>
+): Promise<{
+  scheduled: Set<string>
+  failures: ScheduleFailure[]
+  error: PostgrestError | null
+}> {
+  const response = await fetchInstancesForRange(
+    userId,
+    baseStart.toISOString(),
+    rangeEnd.toISOString(),
+    supabase
+  )
+
+  if (response.error) {
+    return {
+      scheduled: new Set<string>(),
+      failures: [],
+      error: response.error,
+    }
+  }
+
+  const keepers = new Map<string, ScheduleInstance>()
+  const extras: ScheduleInstance[] = []
+
+  for (const inst of response.data ?? []) {
+    if (inst.source_type !== 'PROJECT') continue
+
+    if (projectsToReset.has(inst.source_id)) {
+      if (inst.status === 'scheduled') {
+        extras.push(inst)
+      }
+      continue
+    }
+
+    if (inst.status !== 'scheduled') continue
+
+    const existing = keepers.get(inst.source_id)
+    if (!existing) {
+      keepers.set(inst.source_id, inst)
+      continue
+    }
+
+    const existingStart = new Date(existing.start_utc).getTime()
+    const instStart = new Date(inst.start_utc).getTime()
+
+    if (instStart < existingStart) {
+      extras.push(existing)
+      keepers.set(inst.source_id, inst)
+    } else {
+      extras.push(inst)
+    }
+  }
+
+  const failures: ScheduleFailure[] = []
+
+  for (const extra of extras) {
+    const cancel = await supabase
+      .from('schedule_instances')
+      .update({ status: 'canceled' })
+      .eq('id', extra.id)
+      .select('id')
+      .single()
+
+    if (cancel.error) {
+      failures.push({
+        itemId: extra.source_id,
+        reason: 'error',
+        detail: cancel.error,
+      })
+    }
+  }
+
+  const scheduled = new Set<string>()
+  for (const key of keepers.keys()) {
+    scheduled.add(key)
+  }
+
+  return { scheduled, failures, error: null }
 }
 
 async function fetchCompatibleWindowsForItem(

@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import {
   createClient,
+  type PostgrestError,
   type SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2?dts'
 import type { Database } from '../../../types/supabase.ts'
@@ -9,6 +10,7 @@ type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 
 const GRACE_MIN = 60
+const DEFAULT_PROJECT_DURATION_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
 
 serve(async req => {
@@ -23,17 +25,16 @@ serve(async req => {
       Deno.env.get('DENO_ENV_SUPABASE_URL') ??
       Deno.env.get('SUPABASE_URL') ??
       ''
-    const supabaseKey =
+    const serviceRoleKey =
       Deno.env.get('DENO_ENV_SUPABASE_SERVICE_ROLE_KEY') ??
-      Deno.env.get('DENO_ENV_SUPABASE_ANON_KEY') ??
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
       ''
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !serviceRoleKey) {
       return new Response('missing supabase credentials', { status: 500 })
     }
 
-    const supabase = createClient<Database>(supabaseUrl, supabaseKey)
+    const supabase = createClient<Database>(supabaseUrl, serviceRoleKey)
     const now = new Date()
 
     const missedResult = await markMissedAndQueue(supabase, userId, now)
@@ -76,60 +77,116 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   const projects = await fetchProjectsMap(client, userId)
   const projectItems = buildProjectItems(Object.values(projects), tasks)
 
-  const taskMap = new Map(tasks.map(task => [task.id, task]))
   const projectMap = new Map(projectItems.map(project => [project.id, project]))
 
   type QueueItem = {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
+    sourceType: 'PROJECT'
     duration_min: number
     energy: string
     weight: number
+    instanceId?: string | null
   }
 
+  const baseStart = startOfDay(baseDate)
   const queue: QueueItem[] = []
+  const failures: { itemId: string; reason: string; detail?: unknown }[] = []
+  const seenMissedProjects = new Set<string>()
+  const queueProjectIds = new Set<string>()
 
   for (const instance of missed.data ?? []) {
-    const def =
-      instance.source_type === 'PROJECT'
-        ? projectMap.get(instance.source_id)
-        : taskMap.get(instance.source_id)
+    if (instance.source_type !== 'PROJECT') continue
+    if (seenMissedProjects.has(instance.source_id)) {
+      const cancel = await client
+        .from('schedule_instances')
+        .update({ status: 'canceled' })
+        .eq('id', instance.id)
+
+      if (cancel.error) {
+        failures.push({
+          itemId: instance.source_id,
+          reason: 'error',
+          detail: cancel.error,
+        })
+      }
+
+      continue
+    }
+
+    seenMissedProjects.add(instance.source_id)
+    const def = projectMap.get(instance.source_id)
     if (!def) continue
+    queueProjectIds.add(def.id)
 
-    const duration =
-      'duration_min' in def && typeof def.duration_min === 'number'
-        ? def.duration_min
-        : instance.duration_min ?? 0
-    if (!duration) continue
+    let duration = Number(def.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const fallback = Number(instance.duration_min ?? 0)
+      if (Number.isFinite(fallback) && fallback > 0) {
+        duration = fallback
+      } else {
+        duration = DEFAULT_PROJECT_DURATION_MIN
+      }
+    }
 
-    const resolvedEnergy =
-      ('energy' in def && def.energy)
-        ? String(def.energy)
-        : instance.energy_resolved ?? 'NO'
+    const resolvedEnergy = def.energy ? String(def.energy) : instance.energy_resolved ?? 'NO'
 
     const weight =
       typeof instance.weight_snapshot === 'number'
         ? instance.weight_snapshot
-        : instance.source_type === 'PROJECT'
-          ? (projectMap.get(instance.source_id)?.weight ?? 0)
-          : taskMap.get(instance.source_id)
-            ? taskWeight(taskMap.get(instance.source_id)!)
-            : 0
+        : def.weight ?? 0
 
     queue.push({
       id: def.id,
-      sourceType: instance.source_type,
+      sourceType: 'PROJECT',
       duration_min: duration,
-      energy: resolvedEnergy ?? 'NO',
+      energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      instanceId: instance.id,
     })
   }
 
-  queue.sort((a, b) => b.weight - a.weight)
+  const rangeEnd = addDays(baseStart, 28)
+  const dedupe = await dedupeScheduledProjects(
+    client,
+    userId,
+    baseStart,
+    rangeEnd,
+    queueProjectIds
+  )
 
-  const baseStart = startOfDay(baseDate)
+  if (dedupe.error) {
+    return { placed: [], failures, error: dedupe.error }
+  }
+
+  if (dedupe.failures.length > 0) {
+    failures.push(...dedupe.failures)
+  }
+
+  const scheduled = dedupe.scheduled
+
+  if (queue.length === 0) {
+    for (const project of projectItems) {
+      const duration = Number(project.duration_min ?? 0)
+      if (!Number.isFinite(duration) || duration <= 0) continue
+      if (scheduled.has(project.id)) continue
+      const energy = (project.energy ?? 'NO').toString().toUpperCase()
+      queue.push({
+        id: project.id,
+        sourceType: 'PROJECT',
+        duration_min: duration,
+        energy,
+        weight: project.weight ?? 0,
+      })
+    }
+  }
+
+  queue.sort((a, b) => {
+    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
+    if (energyDiff !== 0) return energyDiff
+    return b.weight - a.weight
+  })
+
   const placed: ScheduleInstance[] = []
-  const failures: { itemId: string; reason: string; detail?: unknown }[] = []
 
   for (const item of queue) {
     let scheduled = false
@@ -138,7 +195,13 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
       const windows = await fetchCompatibleWindowsForItem(client, userId, day, item)
       if (windows.length === 0) continue
 
-      const placedInstance = await placeItemInWindows(client, userId, item, windows)
+      const placedInstance = await placeItemInWindows(
+        client,
+        userId,
+        item,
+        windows,
+        item.instanceId
+      )
       if (placedInstance) {
         placed.push(placedInstance)
         scheduled = true
@@ -179,6 +242,7 @@ type ProjectLite = {
   priority: string
   stage: string
   energy?: string | null
+  duration_min?: number | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -218,7 +282,7 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
   const { data, error } = await client
     .from('projects')
-    .select('id, name, priority, stage, energy')
+    .select('id, name, priority, stage, energy, duration_min')
     .eq('user_id', userId)
 
   if (error) {
@@ -234,6 +298,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       priority: project.priority ?? 'NO',
       stage: project.stage ?? 'RESEARCH',
       energy: project.energy ?? 'NO',
+      duration_min: project.duration_min ?? null,
     }
   }
   return map
@@ -243,7 +308,21 @@ function buildProjectItems(projects: ProjectLite[], tasks: TaskLite[]): ProjectI
   const items: ProjectItem[] = []
   for (const project of projects) {
     const related = tasks.filter(task => task.project_id === project.id)
-    const duration = related.reduce((sum, task) => sum + task.duration_min, 0) || 60
+    const projectDuration = Number(project.duration_min ?? 0)
+    let duration = Number.isFinite(projectDuration) && projectDuration > 0
+      ? projectDuration
+      : 0
+
+    if (!duration && related.length > 0) {
+      const relatedDuration = related.reduce((sum, task) => sum + task.duration_min, 0)
+      if (relatedDuration > 0) {
+        duration = relatedDuration
+      }
+    }
+
+    if (!duration) {
+      duration = DEFAULT_PROJECT_DURATION_MIN
+    }
 
     const normalizeEnergy = (value?: string | null) => {
       const upper = (value ?? '').toUpperCase()
@@ -273,6 +352,96 @@ function buildProjectItems(projects: ProjectLite[], tasks: TaskLite[]): ProjectI
     })
   }
   return items
+}
+
+async function fetchInstancesForRange(
+  client: Client,
+  userId: string,
+  startUTC: string,
+  endUTC: string
+) {
+  return await client
+    .from('schedule_instances')
+    .select('*')
+    .eq('user_id', userId)
+    .neq('status', 'canceled')
+    .or(
+      `and(start_utc.gte.${startUTC},start_utc.lt.${endUTC}),and(start_utc.lt.${startUTC},end_utc.gt.${startUTC})`
+    )
+    .order('start_utc', { ascending: true })
+}
+
+async function dedupeScheduledProjects(
+  client: Client,
+  userId: string,
+  baseStart: Date,
+  rangeEnd: Date,
+  projectsToReset: Set<string>
+): Promise<{
+  scheduled: Set<string>
+  failures: { itemId: string; reason: string; detail?: unknown }[]
+  error: PostgrestError | null
+}> {
+  const response = await fetchInstancesForRange(
+    client,
+    userId,
+    baseStart.toISOString(),
+    rangeEnd.toISOString()
+  )
+
+  if (response.error) {
+    return { scheduled: new Set<string>(), failures: [], error: response.error }
+  }
+
+  const keepers = new Map<string, ScheduleInstance>()
+  const extras: ScheduleInstance[] = []
+
+  for (const inst of response.data ?? []) {
+    if (inst.source_type !== 'PROJECT') continue
+
+    if (projectsToReset.has(inst.source_id) && inst.status === 'scheduled') {
+      extras.push(inst)
+      continue
+    }
+
+    if (inst.status !== 'scheduled') continue
+
+    const existing = keepers.get(inst.source_id)
+    if (!existing) {
+      keepers.set(inst.source_id, inst)
+      continue
+    }
+
+    const existingStart = new Date(existing.start_utc).getTime()
+    const instStart = new Date(inst.start_utc).getTime()
+
+    if (instStart < existingStart) {
+      extras.push(existing)
+      keepers.set(inst.source_id, inst)
+    } else {
+      extras.push(inst)
+    }
+  }
+
+  const failures: { itemId: string; reason: string; detail?: unknown }[] = []
+
+  for (const extra of extras) {
+    const { error } = await client
+      .from('schedule_instances')
+      .update({ status: 'canceled' })
+      .eq('id', extra.id)
+
+    if (error) {
+      failures.push({ itemId: extra.source_id, reason: 'error', detail: error })
+    }
+  }
+
+  const scheduled = new Set<string>()
+  for (const key of keepers.keys()) {
+    scheduled.add(key)
+  }
+
+  return { scheduled, failures, error: null }
 }
 
 async function fetchCompatibleWindowsForItem(
@@ -337,8 +506,9 @@ async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
 async function placeItemInWindows(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT' | 'TASK'; duration_min: number; energy: string; weight: number },
-  windows: Array<{ id: string; startLocal: Date; endLocal: Date }>
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  windows: Array<{ id: string; startLocal: Date; endLocal: Date }>,
+  reuseInstanceId?: string | null
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
     const start = new Date(window.startLocal)
@@ -368,35 +538,75 @@ async function placeItemInWindows(
       const blockStart = new Date(block.start_utc)
       const blockEnd = new Date(block.end_utc)
       if (diffMin(cursor, blockStart) >= durMin) {
-        return await createInstance(client, userId, item, window.id, cursor, durMin)
+        return await persistPlacement(
+          client,
+          userId,
+          item,
+          window.id,
+          cursor,
+          durMin,
+          reuseInstanceId
+        )
       }
       if (blockEnd > cursor) cursor = blockEnd
     }
 
     if (diffMin(cursor, end) >= durMin) {
-      return await createInstance(client, userId, item, window.id, cursor, durMin)
+      return await persistPlacement(
+        client,
+        userId,
+        item,
+        window.id,
+        cursor,
+        durMin,
+        reuseInstanceId
+      )
     }
   }
 
   return null
 }
 
-async function createInstance(
+async function persistPlacement(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT' | 'TASK'; duration_min: number; energy: string; weight: number },
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
   windowId: string,
   start: Date,
-  durationMin: number
-) {
+  durationMin: number,
+  reuseInstanceId?: string | null
+): Promise<ScheduleInstance | null> {
   const startUTC = start.toISOString()
   const endUTC = addMin(start, durationMin).toISOString()
 
+  if (reuseInstanceId) {
+    return await rescheduleInstance(client, reuseInstanceId, {
+      windowId,
+      startUTC,
+      endUTC,
+      durationMin,
+      weightSnapshot: item.weight,
+      energyResolved: item.energy,
+    })
+  }
+
+  return await createInstance(client, userId, item, windowId, startUTC, endUTC, durationMin)
+}
+
+async function createInstance(
+  client: Client,
+  userId: string,
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  windowId: string,
+  startUTC: string,
+  endUTC: string,
+  durationMin: number
+) {
   const { data, error } = await client
     .from('schedule_instances')
     .insert({
       user_id: userId,
-      source_type: item.sourceType,
+      source_type: 'PROJECT',
       source_id: item.id,
       window_id: windowId,
       start_utc: startUTC,
@@ -411,6 +621,42 @@ async function createInstance(
 
   if (error) {
     console.error('createInstance error', error)
+    return null
+  }
+
+  return data
+}
+
+async function rescheduleInstance(
+  client: Client,
+  id: string,
+  input: {
+    windowId: string
+    startUTC: string
+    endUTC: string
+    durationMin: number
+    weightSnapshot: number
+    energyResolved: string
+  }
+): Promise<ScheduleInstance | null> {
+  const { data, error } = await client
+    .from('schedule_instances')
+    .update({
+      window_id: input.windowId,
+      start_utc: input.startUTC,
+      end_utc: input.endUTC,
+      duration_min: input.durationMin,
+      status: 'scheduled',
+      weight_snapshot: input.weightSnapshot,
+      energy_resolved: input.energyResolved,
+      completed_at: null,
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+
+  if (error) {
+    console.error('rescheduleInstance error', error)
     return null
   }
 

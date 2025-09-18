@@ -3,6 +3,7 @@
 export const runtime = 'nodejs'
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -32,7 +33,11 @@ import {
   fetchProjectsMap,
   type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
-import { fetchInstancesForRange, type ScheduleInstance } from '@/lib/scheduler/instanceRepo'
+import {
+  fetchInstancesForRange,
+  updateInstanceStatus,
+  type ScheduleInstance,
+} from '@/lib/scheduler/instanceRepo'
 import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
@@ -102,17 +107,16 @@ function WindowLabel({
   )
 }
 
-function startOfDay(date: Date) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+function utcDayRange(d: Date) {
+  const y = d.getUTCFullYear()
+  const m = d.getUTCMonth()
+  const day = d.getUTCDate()
+  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
+  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
+  return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
-function endOfDay(date: Date) {
-  const d = new Date(date)
-  d.setHours(23, 59, 59, 999)
-  return d
-}
+type LoadStatus = 'idle' | 'loading' | 'loaded'
 
 export default function SchedulePage() {
   const router = useRouter()
@@ -137,9 +141,15 @@ export default function SchedulePage() {
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
+  const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
+  const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
+  const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
+  const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
+  const isSchedulingRef = useRef(false)
+  const autoScheduledForRef = useRef<string | null>(null)
 
   const startHour = 0
   const pxPerMin = 2
@@ -153,6 +163,17 @@ export default function SchedulePage() {
   }, [view, currentDate, router, pathname])
 
   useEffect(() => {
+    if (!userId) {
+      setWindows([])
+      setTasks([])
+      setProjects([])
+      setMetaStatus('idle')
+      return
+    }
+
+    let active = true
+    setMetaStatus('loading')
+
     async function load() {
       try {
         const [ws, ts, pm] = await Promise.all([
@@ -160,18 +181,28 @@ export default function SchedulePage() {
           fetchReadyTasks(),
           fetchProjectsMap(),
         ])
+        if (!active) return
         setWindows(ws)
         setTasks(ts)
         setProjects(Object.values(pm))
       } catch (e) {
+        if (!active) return
         console.error(e)
         setWindows([])
         setTasks([])
         setProjects([])
+      } finally {
+        if (!active) return
+        setMetaStatus('loaded')
       }
     }
-    load()
-  }, [currentDate])
+
+    void load()
+
+    return () => {
+      active = false
+    }
+  }, [currentDate, userId])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -283,6 +314,114 @@ export default function SchedulePage() {
     return items
   }, [instances, taskMap, projectInstanceIds])
 
+  const handleInstanceStatusChange = useCallback(
+    async (
+      instanceId: string,
+      status: 'completed' | 'canceled',
+      options?: { projectId?: string }
+    ) => {
+      if (!userId) {
+        console.warn('No user session available for status update')
+        return
+      }
+
+      setPendingInstanceIds(prev => {
+        const next = new Set(prev)
+        next.add(instanceId)
+        return next
+      })
+
+      try {
+        const { error } = await updateInstanceStatus(instanceId, status)
+        if (error) {
+          console.error(error)
+          return
+        }
+
+        setInstances(prev => {
+          const updated = prev.map(inst =>
+            inst.id === instanceId
+              ? {
+                  ...inst,
+                  status,
+                  completed_at:
+                    status === 'completed' ? new Date().toISOString() : null,
+                }
+              : inst
+          )
+          return status === 'canceled'
+            ? updated.filter(inst => inst.id !== instanceId)
+            : updated
+        })
+
+        if (status === 'canceled' && options?.projectId) {
+          setExpandedProjects(prev => {
+            if (!prev.has(options.projectId)) return prev
+            const next = new Set(prev)
+            next.delete(options.projectId)
+            return next
+          })
+        }
+      } catch (error) {
+        console.error(error)
+      } finally {
+        setPendingInstanceIds(prev => {
+          const next = new Set(prev)
+          next.delete(instanceId)
+          return next
+        })
+      }
+    },
+    [userId, setInstances, setExpandedProjects]
+  )
+
+  const handleMarkCompleted = useCallback(
+    (instanceId: string, options?: { projectId?: string }) =>
+      handleInstanceStatusChange(instanceId, 'completed', options),
+    [handleInstanceStatusChange]
+  )
+
+  const handleCancelInstance = useCallback(
+    (instanceId: string, options?: { projectId?: string }) =>
+      handleInstanceStatusChange(instanceId, 'canceled', options),
+    [handleInstanceStatusChange]
+  )
+
+  const renderInstanceActions = (
+    instanceId: string,
+    options?: { projectId?: string }
+  ) => {
+    const pending = pendingInstanceIds.has(instanceId)
+    return (
+      <div className="absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-white/70">
+        <button
+          type="button"
+          className="rounded bg-white/10 px-2 py-0.5 tracking-wide hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={pending}
+          onClick={event => {
+            event.stopPropagation()
+            if (pending) return
+            void handleMarkCompleted(instanceId, options)
+          }}
+        >
+          done
+        </button>
+        <button
+          type="button"
+          className="rounded bg-white/10 px-2 py-0.5 tracking-wide hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={pending}
+          onClick={event => {
+            event.stopPropagation()
+            if (pending) return
+            void handleCancelInstance(instanceId, options)
+          }}
+        >
+          cancel
+        </button>
+      </div>
+    )
+  }
+
   function navigate(next: ScheduleView) {
     if (navLock.current) return
     navLock.current = true
@@ -315,38 +454,117 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId) {
       setInstances([])
+      setInstancesStatus('idle')
+      loadInstancesRef.current = async () => {}
       return
     }
+
     let active = true
+
     const load = async () => {
+      if (!active) return
+      setInstancesStatus('loading')
       try {
-        const start = startOfDay(currentDate)
-        const end = endOfDay(currentDate)
+        const { startUTC, endUTC } = utcDayRange(currentDate)
         const { data, error } = await fetchInstancesForRange(
           userId,
-          start.toISOString(),
-          end.toISOString()
+          startUTC,
+          endUTC
         )
         if (!active) return
         if (error) {
           console.error(error)
           setInstances([])
-          return
+        } else {
+          setInstances(data ?? [])
         }
-        setInstances(data ?? [])
       } catch (e) {
         if (!active) return
         console.error(e)
         setInstances([])
+      } finally {
+        if (!active) return
+        setInstancesStatus('loaded')
       }
     }
-    load()
-    const id = setInterval(load, 5 * 60 * 1000)
+
+    loadInstancesRef.current = load
+    void load()
+    const id = setInterval(() => {
+      void load()
+    }, 5 * 60 * 1000)
     return () => {
       active = false
       clearInterval(id)
     }
   }, [userId, currentDate])
+
+  const runScheduler = useCallback(async () => {
+    if (!userId) {
+      console.warn('No user session available for scheduler run')
+      return
+    }
+    if (isSchedulingRef.current) return
+    isSchedulingRef.current = true
+    try {
+      const response = await fetch('/api/scheduler/run', {
+        method: 'POST',
+        cache: 'no-store',
+      })
+      if (!response.ok) {
+        let payload: unknown = null
+        try {
+          payload = await response.json()
+        } catch (err) {
+          console.error('Failed to parse scheduler response', err)
+        }
+        console.error('Scheduler run failed', response.status, payload)
+      }
+    } catch (error) {
+      console.error('Failed to run scheduler', error)
+    } finally {
+      isSchedulingRef.current = false
+      try {
+        await loadInstancesRef.current()
+      } catch (error) {
+        console.error('Failed to reload schedule instances', error)
+      }
+    }
+  }, [userId])
+
+  useEffect(() => {
+    autoScheduledForRef.current = null
+  }, [userId, currentDate])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const globalWithScheduler = window as typeof window & {
+      __runScheduler?: () => Promise<void>
+    }
+    globalWithScheduler.__runScheduler = runScheduler
+    return () => {
+      delete globalWithScheduler.__runScheduler
+    }
+  }, [runScheduler])
+
+  useEffect(() => {
+    if (!userId) return
+    if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
+    if (instances.length > 0) return
+    if (isSchedulingRef.current) return
+    const { startUTC } = utcDayRange(currentDate)
+    const key = `${userId}:${startUTC}`
+    if (autoScheduledForRef.current === key) return
+    autoScheduledForRef.current = key
+    void runScheduler()
+  }, [
+    userId,
+    currentDate,
+    metaStatus,
+    instancesStatus,
+    instances.length,
+    runScheduler,
+  ])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -402,6 +620,8 @@ export default function SchedulePage() {
             )}
             {view === 'day' && (
               <ScheduleViewShell key="day">
+                {/* source of truth: schedule_instances */}
+                <div className="text-[10px] opacity-60 px-2">data source: schedule_instances</div>
                 <DayTimeline
                   date={currentDate}
                   startHour={startHour}
@@ -475,6 +695,7 @@ export default function SchedulePage() {
                                 : { delay: index * 0.02 }
                             }
                           >
+                            {renderInstanceActions(instance.id, { projectId })}
                             <div className="flex flex-col">
                               <span className="truncate text-sm font-medium">
                                 {project.name}
@@ -523,18 +744,18 @@ export default function SchedulePage() {
                             const progress =
                               (task as { progress?: number }).progress ?? 0
                             return (
-                              <motion.div
-                                key={taskInstance.id}
-                                aria-label={`Task ${task.name}`}
-                                className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                                style={tStyle}
-                                onClick={() =>
-                                  setExpandedProjects(prev => {
-                                    const next = new Set(prev)
-                                    next.delete(projectId)
-                                    return next
-                                  })
-                                }
+                          <motion.div
+                            key={taskInstance.id}
+                            aria-label={`Task ${task.name}`}
+                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                            style={tStyle}
+                            onClick={() =>
+                              setExpandedProjects(prev => {
+                                const next = new Set(prev)
+                                next.delete(projectId)
+                                return next
+                              })
+                            }
                                 initial={
                                   prefersReducedMotion
                                     ? false
@@ -551,6 +772,7 @@ export default function SchedulePage() {
                                     : { opacity: 0, y: 4 }
                                 }
                               >
+                                {renderInstanceActions(taskInstance.id, { projectId })}
                                 <div className="flex flex-col">
                                   <span className="truncate text-sm font-medium">
                                     {task.name}
@@ -615,6 +837,7 @@ export default function SchedulePage() {
                           prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
                         }
                       >
+                        {renderInstanceActions(instance.id)}
                         <div className="flex flex-col">
                           <span className="truncate text-sm font-medium">
                             {task.name}

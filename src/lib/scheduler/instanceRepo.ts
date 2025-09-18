@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSupabaseBrowser } from '../../../lib/supabase'
+import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
 
 export type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -9,7 +9,8 @@ type Client = SupabaseClient<Database>
 
 async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client
-  const supabase = getSupabaseBrowser()
+
+  const supabase = getSupabaseBrowser?.()
   if (!supabase) throw new Error('Supabase client not available')
   return supabase as Client
 }
@@ -21,19 +22,25 @@ export async function fetchInstancesForRange(
   client?: Client
 ) {
   const supabase = await ensureClient(client)
-  return await supabase
+  const base = supabase
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .lt('start_utc', endUTC)
-    .gt('end_utc', startUTC)
     .neq('status', 'canceled')
+
+  const startParam = startUTC
+  const endParam = endUTC
+
+  return await base
+    .or(
+      `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
+    )
+    .order('start_utc', { ascending: true })
 }
 
 export async function createInstance(
   input: {
     userId: string
-    sourceType: 'PROJECT' | 'TASK'
     sourceId: string
     windowId?: string | null
     startUTC: string
@@ -49,7 +56,7 @@ export async function createInstance(
     .from('schedule_instances')
     .insert({
       user_id: input.userId,
-      source_type: input.sourceType,
+      source_type: 'PROJECT',
       source_id: input.sourceId,
       window_id: input.windowId ?? null,
       start_utc: input.startUTC,
@@ -63,18 +70,50 @@ export async function createInstance(
     .single()
 }
 
-export async function updateInstanceStatus(
+export async function rescheduleInstance(
   id: string,
-  status: 'scheduled' | 'completed' | 'missed' | 'canceled',
-  completedAtUTC?: string,
+  input: {
+    windowId?: string | null
+    startUTC: string
+    endUTC: string
+    durationMin: number
+    weightSnapshot: number
+    energyResolved: string
+  },
   client?: Client
 ) {
   const supabase = await ensureClient(client)
   return await supabase
     .from('schedule_instances')
     .update({
+      window_id: input.windowId ?? null,
+      start_utc: input.startUTC,
+      end_utc: input.endUTC,
+      duration_min: input.durationMin,
+      status: 'scheduled',
+      weight_snapshot: input.weightSnapshot,
+      energy_resolved: input.energyResolved,
+      completed_at: null,
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+}
+
+export async function updateInstanceStatus(
+  id: string,
+  status: 'completed' | 'canceled',
+  completedAtUTC?: string,
+  client?: Client
+) {
+  const supabase = await ensureClient(client)
+  const completedAt =
+    status === 'completed' ? completedAtUTC ?? new Date().toISOString() : null
+  return await supabase
+    .from('schedule_instances')
+    .update({
       status,
-      completed_at: completedAtUTC ?? null,
+      completed_at: completedAt,
     })
     .eq('id', id)
 }

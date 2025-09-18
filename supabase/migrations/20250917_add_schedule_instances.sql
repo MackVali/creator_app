@@ -29,22 +29,66 @@ CREATE INDEX IF NOT EXISTS schedule_instances_window_idx
 
 ALTER TABLE public.schedule_instances ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "schedule_instances_select_own" ON public.schedule_instances;
-DROP POLICY IF EXISTS "schedule_instances_insert_own" ON public.schedule_instances;
-DROP POLICY IF EXISTS "schedule_instances_update_own" ON public.schedule_instances;
-DROP POLICY IF EXISTS "schedule_instances_delete_own" ON public.schedule_instances;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'schedule_instances'
+      AND policyname IN (
+        'schedule_instances_select_own',
+        'schedule_instances_insert_own',
+        'schedule_instances_update_own',
+        'schedule_instances_delete_own'
+      )
+  ) THEN
+    EXECUTE 'DROP POLICY IF EXISTS "schedule_instances_select_own" ON public.schedule_instances';
+    EXECUTE 'DROP POLICY IF EXISTS "schedule_instances_insert_own" ON public.schedule_instances';
+    EXECUTE 'DROP POLICY IF EXISTS "schedule_instances_update_own" ON public.schedule_instances';
+    EXECUTE 'DROP POLICY IF EXISTS "schedule_instances_delete_own" ON public.schedule_instances';
+  END IF;
+END
+$$;
 
-CREATE POLICY "schedule_instances_select_own" ON public.schedule_instances
-    FOR SELECT USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'schedule_instances'
+      AND policyname = 'si_select_own'
+  ) THEN
+    EXECUTE 'CREATE POLICY "si_select_own" ON public.schedule_instances FOR SELECT TO authenticated USING (user_id = auth.uid())';
+  END IF;
 
-CREATE POLICY "schedule_instances_insert_own" ON public.schedule_instances
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'schedule_instances'
+      AND policyname = 'si_insert_own'
+  ) THEN
+    EXECUTE 'CREATE POLICY "si_insert_own" ON public.schedule_instances FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid())';
+  END IF;
 
-CREATE POLICY "schedule_instances_update_own" ON public.schedule_instances
-    FOR UPDATE USING (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'schedule_instances'
+      AND policyname = 'si_update_own'
+  ) THEN
+    EXECUTE 'CREATE POLICY "si_update_own" ON public.schedule_instances FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())';
+  END IF;
 
-CREATE POLICY "schedule_instances_delete_own" ON public.schedule_instances
-    FOR DELETE USING (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'schedule_instances'
+      AND policyname = 'si_delete_own'
+  ) THEN
+    EXECUTE 'CREATE POLICY "si_delete_own" ON public.schedule_instances FOR DELETE TO authenticated USING (user_id = auth.uid())';
+  END IF;
+END
+$$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE
     ON public.schedule_instances TO authenticated;

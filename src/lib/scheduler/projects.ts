@@ -21,9 +21,21 @@ export function buildProjectItems(
   const items: ProjectItem[] = []
   for (const p of projects) {
     const related = tasks.filter(t => t.project_id === p.id)
-    const duration_min =
-      related.reduce((sum, t) => sum + t.duration_min, 0) ||
-      DEFAULT_PROJECT_DURATION_MIN
+    const projectDuration = Number(p.duration_min ?? 0)
+    let duration_min = Number.isFinite(projectDuration) && projectDuration > 0
+      ? projectDuration
+      : 0
+
+    if (!duration_min && related.length > 0) {
+      const relatedDuration = related.reduce((sum, t) => sum + t.duration_min, 0)
+      if (relatedDuration > 0) {
+        duration_min = relatedDuration
+      }
+    }
+
+    if (!duration_min) {
+      duration_min = DEFAULT_PROJECT_DURATION_MIN
+    }
     const norm = (e?: string | null): Energy | null => {
       const up = (e ?? '').toUpperCase()
       return ENERGY.LIST.includes(up as Energy) ? (up as Energy) : null
