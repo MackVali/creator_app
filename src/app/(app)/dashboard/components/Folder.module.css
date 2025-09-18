@@ -1,0 +1,238 @@
+.wrapper {
+  display: inline-flex;
+  position: relative;
+  transform-origin: center;
+  overflow: visible;
+  --folder-scale: 1;
+  width: calc(220px * var(--folder-scale, 1));
+  height: calc(185px * var(--folder-scale, 1));
+}
+
+.folder {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  cursor: pointer;
+  perspective: calc(1200px * var(--folder-scale, 1));
+  transform-style: preserve-3d;
+  transition: transform 0.3s ease;
+}
+
+.folder:hover {
+  transform: translateY(calc(-4px * var(--folder-scale, 1)));
+}
+
+.folder:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.folderBack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: calc(22px * var(--folder-scale, 1));
+  background: var(--folder-back-color);
+  box-shadow: 0 calc(22px * var(--folder-scale, 1)) calc(46px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.35);
+  padding: calc(26px * var(--folder-scale, 1)) calc(22px * var(--folder-scale, 1))
+    calc(34px * var(--folder-scale, 1));
+  overflow: visible;
+  transform-style: preserve-3d;
+  z-index: 1;
+}
+
+.folderBack::before {
+  content: "";
+  position: absolute;
+  top: calc(-22px * var(--folder-scale, 1));
+  left: calc(32px * var(--folder-scale, 1));
+  width: calc(70px * var(--folder-scale, 1));
+  height: calc(28px * var(--folder-scale, 1));
+  border-radius: calc(14px * var(--folder-scale, 1))
+    calc(14px * var(--folder-scale, 1)) 0 0;
+  background: var(--folder-back-color);
+  box-shadow: 0 calc(12px * var(--folder-scale, 1)) calc(20px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.2);
+}
+
+.folderFront {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 78%;
+  border-radius: calc(20px * var(--folder-scale, 1));
+  background: var(--folder-gradient, var(--folder-color));
+  box-shadow: 0 calc(22px * var(--folder-scale, 1)) calc(42px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.4);
+  transform-origin: bottom center;
+  transform-style: preserve-3d;
+  --front-angle: 0deg;
+  --front-shift: 0px;
+  transform: rotateX(var(--front-angle)) translateY(var(--front-shift));
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.45s;
+  z-index: 5;
+}
+
+.folderFront::after {
+  content: "";
+  position: absolute;
+  inset: calc(10px * var(--folder-scale, 1)) calc(12px * var(--folder-scale, 1))
+    calc(12px * var(--folder-scale, 1));
+  border-radius: calc(16px * var(--folder-scale, 1));
+  background: linear-gradient(
+    130deg,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0.05)
+  );
+  opacity: 0.6;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.folderFrontRight {
+  position: absolute;
+  right: -12%;
+  bottom: calc(18px * var(--folder-scale, 1));
+  width: 48%;
+  height: 62%;
+  border-radius: calc(18px * var(--folder-scale, 1));
+  background: var(--folder-gradient, var(--folder-color));
+  box-shadow: 0 calc(18px * var(--folder-scale, 1)) calc(36px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.32);
+  transform-origin: bottom center;
+  transform-style: preserve-3d;
+  --front-right-angle: 0deg;
+  --front-right-shift: 0px;
+  transform: rotateX(var(--front-right-angle)) translateY(var(--front-right-shift));
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.45s;
+  filter: brightness(1.1);
+  z-index: 4;
+}
+
+.folderLabel {
+  position: absolute;
+  inset: auto auto calc(26px * var(--folder-scale, 1)) 50%;
+  transform: translateX(-50%) translateZ(calc(10px * var(--folder-scale, 1)))
+    rotateX(calc(var(--front-angle, 0deg) * -1));
+  max-width: clamp(96px, calc(150px * var(--folder-scale, 1)), 190px);
+  padding: clamp(6px, calc(6px * var(--folder-scale, 1)), 12px)
+    clamp(10px, calc(12px * var(--folder-scale, 1)), 18px);
+  border-radius: clamp(10px, calc(12px * var(--folder-scale, 1)), 16px);
+  background: linear-gradient(
+    120deg,
+    rgba(222, 215, 255, 0.22),
+    rgba(111, 76, 204, 0.45)
+  );
+  box-shadow: 0 calc(14px * var(--folder-scale, 1)) calc(30px * var(--folder-scale, 1))
+      rgba(12, 6, 29, 0.55),
+    inset 0 calc(1px * var(--folder-scale, 1)) calc(2px * var(--folder-scale, 1))
+      rgba(255, 255, 255, 0.18);
+  color: #fdf4ff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: clamp(11px, calc(12px * var(--folder-scale, 1)), 15px);
+  text-align: center;
+  line-height: 1.15;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, calc(6px * var(--folder-scale, 1)), 12px);
+  padding-right: clamp(12px, calc(14px * var(--folder-scale, 1)), 18px);
+  padding-left: clamp(12px, calc(14px * var(--folder-scale, 1)), 18px);
+  pointer-events: none;
+  transform-origin: center;
+  backface-visibility: hidden;
+  text-shadow: 0 calc(1px * var(--folder-scale, 1))
+      calc(4px * var(--folder-scale, 1))
+      rgba(5, 2, 12, 0.65);
+}
+
+.folderLabel :global(.folder-label-text) {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.open .folderFront {
+  --front-angle: -70deg;
+  --front-shift: calc(6px * var(--folder-scale, 1));
+  box-shadow: 0 calc(28px * var(--folder-scale, 1)) calc(48px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.45);
+}
+
+.open .folderFrontRight {
+  --front-right-angle: -58deg;
+  --front-right-shift: calc(10px * var(--folder-scale, 1));
+  box-shadow: 0 calc(24px * var(--folder-scale, 1)) calc(42px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.35);
+}
+
+.paper {
+  position: absolute;
+  inset: calc(26px * var(--folder-scale, 1)) calc(26px * var(--folder-scale, 1))
+    calc(30px * var(--folder-scale, 1));
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, calc(12px * var(--folder-scale, 1)), 18px);
+  border-radius: clamp(10px, calc(16px * var(--folder-scale, 1)), 22px);
+  background: var(--paper-color, rgba(255, 255, 255, 0.96));
+  box-shadow: 0 calc(20px * var(--folder-scale, 1)) calc(40px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.14);
+  padding: clamp(6px, calc(12px * var(--folder-scale, 1)), 16px);
+  transform: translate3d(0, calc(24px * var(--folder-scale, 1)), 0) scale(0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.36s ease, opacity 0.36s ease, box-shadow 0.36s ease;
+  color: #1f2937;
+  --magnet-x: 0px;
+  --magnet-y: 0px;
+  --paper-position: 0;
+  --paper-spacing: calc(150px * var(--folder-scale, 1));
+  --paper-base-y: calc(-8px * var(--folder-scale, 1));
+  --paper-scale: 0.74;
+  --paper-z: 2;
+  --paper-delay: 0s;
+  z-index: var(--paper-z);
+}
+
+.open .paper {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(
+      calc(var(--magnet-x) + var(--paper-position) * var(--paper-spacing)),
+      calc(var(--magnet-y) + var(--paper-base-y)),
+      0
+    )
+    scale(var(--paper-scale));
+  box-shadow: 0 calc(26px * var(--folder-scale, 1)) calc(52px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.2);
+  transition-delay: calc(var(--paper-delay) + 0.04s);
+}
+
+.paper:hover {
+  box-shadow: 0 calc(30px * var(--folder-scale, 1)) calc(58px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.24);
+}
+
+.paper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: calc(1.4px * var(--folder-scale, 1)) solid rgba(15, 23, 42, 0.05);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder,
+  .folder * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
