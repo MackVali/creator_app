@@ -1,4 +1,6 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseBrowser } from '../../../lib/supabase';
+import type { Database } from '../../../types/supabase';
 import type { TaskLite, ProjectLite } from './weight';
 
 export type WindowLite = {
@@ -11,9 +13,17 @@ export type WindowLite = {
   fromPrevDay?: boolean;
 };
 
-export async function fetchReadyTasks(): Promise<TaskLite[]> {
+type Client = SupabaseClient<Database>;
+
+function ensureClient(client?: Client): Client {
+  if (client) return client;
   const supabase = getSupabaseBrowser();
   if (!supabase) throw new Error('Supabase client not available');
+  return supabase as Client;
+}
+
+export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
+  const supabase = ensureClient(client);
 
   const { data, error } = await supabase
     .from('tasks')
@@ -35,9 +45,11 @@ export async function fetchReadyTasks(): Promise<TaskLite[]> {
   );
 }
 
-export async function fetchWindowsForDate(date: Date): Promise<WindowLite[]> {
-  const supabase = getSupabaseBrowser();
-  if (!supabase) throw new Error('Supabase client not available');
+export async function fetchWindowsForDate(
+  date: Date,
+  client?: Client
+): Promise<WindowLite[]> {
+  const supabase = ensureClient(client);
 
   const weekday = date.getDay();
   const prevWeekday = (weekday + 6) % 7;
@@ -67,11 +79,10 @@ export async function fetchWindowsForDate(date: Date): Promise<WindowLite[]> {
   return [...(today ?? []), ...prevCross] as WindowLite[];
 }
 
-export async function fetchProjectsMap(): Promise<
-  Record<string, ProjectLite>
-> {
-  const supabase = getSupabaseBrowser();
-  if (!supabase) throw new Error('Supabase client not available');
+export async function fetchProjectsMap(
+  client?: Client
+): Promise<Record<string, ProjectLite>> {
+  const supabase = ensureClient(client);
 
   const { data, error } = await supabase
     .from('projects')

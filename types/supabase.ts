@@ -508,10 +508,63 @@ export interface Database {
           energy?: string;
         };
       };
+      schedule_instances: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          source_type: Database['public']['Enums']['schedule_instance_source_type'];
+          source_id: string;
+          window_id: string | null;
+          start_utc: string;
+          end_utc: string;
+          duration_min: number;
+          status: Database['public']['Enums']['schedule_instance_status'];
+          weight_snapshot: number;
+          energy_resolved: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          source_type: Database['public']['Enums']['schedule_instance_source_type'];
+          source_id: string;
+          window_id?: string | null;
+          start_utc: string;
+          end_utc: string;
+          duration_min: number;
+          status?: Database['public']['Enums']['schedule_instance_status'];
+          weight_snapshot: number;
+          energy_resolved: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          source_type?: Database['public']['Enums']['schedule_instance_source_type'];
+          source_id?: string;
+          window_id?: string | null;
+          start_utc?: string;
+          end_utc?: string;
+          duration_min?: number;
+          status?: Database['public']['Enums']['schedule_instance_status'];
+          weight_snapshot?: number;
+          energy_resolved?: string;
+          completed_at?: string | null;
+        };
+      };
     };
     Views: Record<string, unknown>;
     Functions: Record<string, unknown>;
-    Enums: Record<string, unknown>;
+    Enums: {
+      schedule_instance_source_type: 'PROJECT' | 'TASK';
+      schedule_instance_status: 'scheduled' | 'completed' | 'missed' | 'canceled';
+    };
     CompositeTypes: Record<string, unknown>;
   };
 }
