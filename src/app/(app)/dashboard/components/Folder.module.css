@@ -4,6 +4,7 @@
   transform-origin: center;
   overflow: visible;
   --folder-scale: 1;
+  --paper-shift: 0px;
   width: calc(220px * var(--folder-scale, 1));
   height: calc(185px * var(--folder-scale, 1));
 }
@@ -205,7 +206,10 @@
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(
-      calc(var(--magnet-x) + var(--paper-position) * var(--paper-spacing)),
+      calc(
+        var(--paper-shift, 0px) + var(--magnet-x) +
+          var(--paper-position) * var(--paper-spacing)
+      ),
       calc(var(--magnet-y) + var(--paper-base-y)),
       0
     )

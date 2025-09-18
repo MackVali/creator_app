@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import styles from "./Folder.module.css";
 
@@ -68,6 +68,8 @@ export function Folder({
   const [paperOffsets, setPaperOffsets] = useState<PaperOffset[]>(() =>
     Array.from({ length: MAX_ITEMS }, () => ({ x: 0, y: 0 }))
   );
+  const [paperShift, setPaperShift] = useState(0);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const folderBackColor = darkenColor(color, -0.18);
 
@@ -113,10 +115,97 @@ export function Folder({
 
   const wrapperStyle: CSSProperties = {
     ["--folder-scale" as string]: size,
+    ["--paper-shift" as string]: `${paperShift}px`,
   };
 
+  useEffect(() => {
+    if (!open) {
+      setPaperShift(0);
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const updateShift = () => {
+      const wrapper = wrapperRef.current;
+      if (!wrapper) {
+        return;
+      }
+
+      const papers = wrapper.querySelectorAll<HTMLElement>(`.${styles.paper}`);
+      if (!papers.length) {
+        setPaperShift(0);
+        return;
+      }
+
+      const margin = 24;
+      let minLeft = Number.POSITIVE_INFINITY;
+      let maxRight = Number.NEGATIVE_INFINITY;
+
+      papers.forEach((paper) => {
+        const rect = paper.getBoundingClientRect();
+        if (rect.left < minLeft) {
+          minLeft = rect.left;
+        }
+        if (rect.right > maxRight) {
+          maxRight = rect.right;
+        }
+      });
+
+      const viewportWidth = window.innerWidth;
+      const maxAllowedRight = viewportWidth - margin;
+
+      let nextShift = 0;
+
+      if (minLeft < margin) {
+        nextShift = margin - minLeft;
+      } else if (maxRight > maxAllowedRight) {
+        nextShift = maxAllowedRight - maxRight;
+      }
+
+      setPaperShift((current) =>
+        Math.abs(current - nextShift) < 0.5 ? current : nextShift
+      );
+    };
+
+    let rafId: number | null = null;
+    const scheduleUpdate = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(updateShift);
+    };
+
+    scheduleUpdate();
+
+    const handleResize = () => scheduleUpdate();
+    window.addEventListener("resize", handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => scheduleUpdate());
+      if (wrapperRef.current) {
+        resizeObserver.observe(wrapperRef.current);
+      }
+    }
+
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener("resize", handleResize);
+      resizeObserver?.disconnect();
+    };
+  }, [open, visibleItems.length]);
+
   return (
-    <div className={cn(styles.wrapper, className)} style={wrapperStyle}>
+    <div
+      ref={wrapperRef}
+      className={cn(styles.wrapper, className)}
+      style={wrapperStyle}
+    >
       <div
         className={cn(styles.folder, open && styles.open)}
         style={folderStyle}
