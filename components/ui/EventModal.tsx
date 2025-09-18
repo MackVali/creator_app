@@ -156,7 +156,7 @@ interface FormSectionProps {
 
 function FormSection({ title, description, children }: FormSectionProps) {
   return (
-    <section className="rounded-2xl border border-white/5 bg-white/[0.03] p-5 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.8)]">
+    <section className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.8)] sm:p-5">
       <div className="space-y-1">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
           {title}
@@ -188,37 +188,46 @@ function OptionGrid({
   const computedColumns = columnsClassName
     ? columnsClassName
     : options.length > 4
-    ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-    : "grid-cols-1 sm:grid-cols-2";
+    ? "grid-cols-2 sm:grid-cols-3"
+    : "grid-cols-2 sm:grid-cols-2";
+
+  const selectedOption = options.find((option) => option.value === value);
 
   return (
-    <div className={cn("grid gap-3", computedColumns, className)}>
-      {options.map((option) => {
-        const selected = option.value === value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={selected}
-            className={cn(
-              "rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-0",
-              selected
-                ? "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
-                : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
-            )}
-          >
-            <span className="text-sm font-semibold leading-tight">
-              {option.label}
-            </span>
-            {option.description ? (
-              <span className="mt-2 block text-xs leading-snug text-zinc-400">
-                {option.description}
+    <div className={cn("space-y-2", className)}>
+      <div className={cn("grid gap-2 sm:gap-3", computedColumns)}>
+        {options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={selected}
+              className={cn(
+                "rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-0",
+                selected
+                  ? "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
+                  : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
+              )}
+            >
+              <span className="block text-[13px] font-semibold leading-tight">
+                {option.label}
               </span>
-            ) : null}
-          </button>
-        );
-      })}
+              {option.description ? (
+                <span className="mt-1 hidden text-[11px] leading-snug text-zinc-400 sm:block">
+                  {option.description}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {selectedOption?.description ? (
+        <p className="text-[11px] leading-snug text-zinc-400 sm:hidden">
+          {selectedOption.description}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -555,14 +564,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-10 backdrop-blur-sm">
-      <div className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-white/10 bg-[#0B1016]/95 shadow-[0_45px_90px_-40px_rgba(15,23,42,0.8)]">
-        <div className="relative overflow-hidden">
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90",
-              eventMeta.accent
-            )}
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-4 py-6 backdrop-blur-sm sm:py-10">
+      <div className="flex min-h-full items-start justify-center sm:items-center">
+        <div className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0B1016]/95 shadow-[0_45px_90px_-40px_rgba(15,23,42,0.8)] max-h-[calc(100dvh-2rem)] sm:max-h-[85vh]">
+          <div className="relative flex-none overflow-hidden">
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90",
+                eventMeta.accent
+              )}
           />
           <div className="relative flex flex-col gap-6 px-8 pb-8 pt-6 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-1 flex-col gap-4">
@@ -611,7 +621,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col gap-6 px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
+          className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
         >
           <FormSection title="Overview" description={overviewDescription}>
             <div className="grid gap-4">
@@ -948,7 +958,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     onChange={(value) =>
                       setFormData({ ...formData, stage: value })
                     }
-                    columnsClassName="grid-cols-1 sm:grid-cols-3"
+                    columnsClassName="grid-cols-3"
                   />
                 </div>
               </FormSection>
@@ -971,7 +981,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     onChange={(value) =>
                       setFormData({ ...formData, type: value })
                     }
-                    columnsClassName="grid-cols-1 sm:grid-cols-2"
                   />
                 </div>
                 <div className="space-y-3">
@@ -984,7 +993,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     onChange={(value) =>
                       setFormData({ ...formData, recurrence: value })
                     }
-                    columnsClassName="grid-cols-1 sm:grid-cols-3"
                   />
                 </div>
               </div>
@@ -1015,7 +1023,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           </div>
         </form>
       </div>
-    </div>,
+    </div>
+  </div>,
     document.body
   );
 }
