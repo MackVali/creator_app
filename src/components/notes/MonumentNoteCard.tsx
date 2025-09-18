@@ -16,7 +16,7 @@ export function MonumentNoteCard({ note, monumentId }: MonumentNoteCardProps) {
       className="block h-full"
       aria-label={`Open note ${note.title || "Untitled"}`}
     >
-      <Card className="h-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-slate-900/70">
+      <Card className="h-full overflow-hidden rounded-2xl border border-white/10 bg-gray-900 transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-gray-800">
         <CardContent className="flex h-full flex-col gap-3 p-4">
           <h3 className="text-base font-semibold text-slate-100 line-clamp-2">
             {note.title || "Untitled"}

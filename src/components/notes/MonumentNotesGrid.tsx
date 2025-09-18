@@ -71,7 +71,7 @@ export function MonumentNotesGrid({ monumentId, inputRef, onCountChange }: Monum
     <div className="space-y-4">
       <form
         onSubmit={handleAdd}
-        className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:p-5"
+        className="space-y-3 rounded-2xl border border-white/10 bg-gray-900 p-4 shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:p-5"
       >
         <Textarea
           ref={textareaRef}
@@ -87,7 +87,7 @@ export function MonumentNotesGrid({ monumentId, inputRef, onCountChange }: Monum
             size="sm"
             disabled={!draft.trim()}
             aria-label="Save note"
-            className="border-white/20 text-slate-200 hover:bg-white/10"
+            className="border-white/20 text-slate-200 hover:bg-gray-800"
             variant="outline"
           >
             Save
@@ -106,7 +106,7 @@ export function MonumentNotesGrid({ monumentId, inputRef, onCountChange }: Monum
           ))}
         </div>
       ) : (
-        <Card className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-slate-300 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
+        <Card className="rounded-3xl border border-white/10 bg-gray-950 p-5 text-slate-300 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
           <p>No notes yet. Capture your first thought here.</p>
         </Card>
       )}
