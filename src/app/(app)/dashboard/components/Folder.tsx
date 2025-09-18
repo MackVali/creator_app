@@ -109,6 +109,7 @@ export function Folder({
       >
         <div className={styles.folderBack}>
           {papers.map((item, index) => {
+            const isEmpty = item == null;
             const magnetStyle: CSSProperties | undefined = open
               ? {
                   ["--magnet-x" as string]: `${paperOffsets[index]?.x ?? 0}px`,
@@ -119,10 +120,15 @@ export function Folder({
             return (
               <div
                 key={index}
-                className={cn(styles.paper, paperClasses[index] ?? "")}
+                className={cn(
+                  styles.paper,
+                  paperClasses[index] ?? "",
+                  isEmpty && styles.emptyPaper
+                )}
                 onMouseMove={(event) => handlePaperMouseMove(event, index)}
                 onMouseLeave={(event) => handlePaperMouseLeave(event, index)}
                 style={magnetStyle}
+                aria-hidden={isEmpty || undefined}
               >
                 {item}
               </div>

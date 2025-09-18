@@ -248,7 +248,7 @@ export default function DashboardClient() {
             {Array.from({ length: 3 }).map((_, i) => (
               <div
                 key={i}
-                className="h-[240px] w-[240px] animate-pulse rounded-3xl bg-gray-800/70"
+                className="h-[320px] w-[320px] animate-pulse rounded-3xl bg-gray-800/70"
               />
             ))}
           </div>
