@@ -156,6 +156,15 @@ export default function SchedulePage() {
   }, [view, currentDate, router, pathname])
 
   useEffect(() => {
+    if (!userId) {
+      setWindows([])
+      setTasks([])
+      setProjects([])
+      return
+    }
+
+    let active = true
+
     async function load() {
       try {
         const [ws, ts, pm] = await Promise.all([
@@ -163,18 +172,25 @@ export default function SchedulePage() {
           fetchReadyTasks(),
           fetchProjectsMap(),
         ])
+        if (!active) return
         setWindows(ws)
         setTasks(ts)
         setProjects(Object.values(pm))
       } catch (e) {
+        if (!active) return
         console.error(e)
         setWindows([])
         setTasks([])
         setProjects([])
       }
     }
-    load()
-  }, [currentDate])
+
+    void load()
+
+    return () => {
+      active = false
+    }
+  }, [currentDate, userId])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
