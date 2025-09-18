@@ -8,12 +8,17 @@ import { Fab } from "@/components/ui/Fab";
 export default function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const shouldHideNav = pathname?.startsWith("/schedule");
   const items = [
     { key: "dashboard", label: "Dashboard", href: "/dashboard", icon: <Home className="h-6 w-6" /> },
     { key: "schedule", label: "Schedule", href: "/schedule", icon: <Calendar className="h-6 w-6" /> },
     { key: "friends", label: "Friends", href: "/friends", icon: <Users className="h-6 w-6" /> },
     { key: "source", label: "Source", href: "/source", icon: <DollarSign className="h-6 w-6" /> },
   ];
+
+  if (shouldHideNav) {
+    return null;
+  }
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50" data-bottom-nav>
