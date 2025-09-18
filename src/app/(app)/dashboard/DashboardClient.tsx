@@ -202,6 +202,33 @@ export default function DashboardClient() {
     setLoadingGoals(false);
   };
 
+  const handleToggleActive = async (goal: Goal) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    const nextActive = !goal.active;
+    const status: Goal["status"] = nextActive ? "Active" : "Inactive";
+
+    const { error } = await supabase
+      .from("goals")
+      .update({ active: nextActive, status })
+      .eq("id", goal.id);
+
+    if (error) {
+      console.error("Failed to toggle goal active state:", error);
+      return;
+    }
+
+    setGoals((gs) => {
+      if (nextActive) {
+        return gs.map((g) =>
+          g.id === goal.id ? { ...g, active: nextActive, status } : g
+        );
+      }
+      return gs.filter((g) => g.id !== goal.id);
+    });
+  };
+
   return (
     <main className="pb-20">
       <LevelBanner level={80} current={3200} total={4000} />
@@ -229,6 +256,7 @@ export default function DashboardClient() {
                 key={goal.id}
                 goal={goal}
                 onEdit={() => router.push(`/goals?edit=${goal.id}`)}
+                onToggleActive={() => handleToggleActive(goal)}
               />
             ))}
           </div>
