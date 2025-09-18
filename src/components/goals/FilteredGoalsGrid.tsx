@@ -15,13 +15,17 @@ interface FilteredGoalsGridProps {
   entity: "monument" | "skill";
   id: string;
   onCreateGoal?: () => void;
+  onCountChange?: (count: number) => void;
 }
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-32 rounded-2xl bg-[#111520]" />
+        <Skeleton
+          key={i}
+          className="h-32 rounded-2xl bg-[linear-gradient(135deg,#080808_0%,#141414_55%,#1d1d1d_100%)]"
+        />
       ))}
     </div>
   );
@@ -68,7 +72,7 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
-export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGridProps) {
+export function FilteredGoalsGrid({ entity, id, onCreateGoal, onCountChange }: FilteredGoalsGridProps) {
   const { goals, loading: goalsLoading, error } = useFilteredGoals({ entity, id, limit: 12 });
   const [active, setActive] = useState("Active");
   const [goalFolders, setGoalFolders] = useState<Goal[]>([]);
@@ -79,6 +83,7 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
       if (!goals || goals.length === 0) {
         setGoalFolders([]);
         setProjLoading(false);
+        onCountChange?.(0);
         return;
       }
 
@@ -121,13 +126,14 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
       }));
 
       setGoalFolders(mapped);
+      onCountChange?.(mapped.length);
       setProjLoading(false);
     };
 
     if (!goalsLoading) {
       loadProjects();
     }
-  }, [goals, goalsLoading]);
+  }, [goals, goalsLoading, onCountChange]);
 
   const loading = goalsLoading || projLoading;
 
@@ -155,7 +161,7 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
           <p className="text-sm text-gray-400">{error}</p>
         </div>
       ) : goalFolders.length === 0 ? (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+        <Card className="rounded-2xl border border-white/5 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
           <p className="text-[#A7B0BD] mb-4">No goals linked to this monument.</p>
           <Button variant="outline" onClick={onCreateGoal}>+ Goal</Button>
         </Card>
