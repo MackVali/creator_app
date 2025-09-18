@@ -230,6 +230,11 @@ export default function SchedulePage() {
   }
 
   function handleBack() {
+    if (view === 'year') {
+      router.push('/dashboard')
+      return
+    }
+
     const parent = getParentView(view)
     if (parent !== view) navigate(parent)
   }
@@ -285,7 +290,6 @@ export default function SchedulePage() {
           year={year}
           onBack={handleBack}
           onToday={handleToday}
-          canGoBack={view !== 'year'}
         />
         <div
           className="relative bg-[var(--surface)]"
