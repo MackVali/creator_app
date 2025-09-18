@@ -78,46 +78,73 @@ export async function scheduleBacklog(
 
   type QueueItem = {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
+    sourceType: 'PROJECT'
     duration_min: number
     energy: string
     weight: number
   }
 
   const queue: QueueItem[] = []
+  const enqueuedProjects = new Set<string>()
+  const pushProject = (
+    projectId: string,
+    fallback?: {
+      duration?: number | null
+      energy?: string | null
+      weight?: number | null
+    }
+  ) => {
+    if (!projectId || enqueuedProjects.has(projectId)) return
+    const project = projectItemMap[projectId]
+    const duration = Number(
+      project?.duration_min ?? fallback?.duration ?? 0
+    )
+    if (!Number.isFinite(duration) || duration <= 0) return
+    const energy = (
+      project?.energy ?? fallback?.energy ?? 'NO'
+    )
+      .toString()
+      .toUpperCase()
+    const weight =
+      project?.weight ??
+      (typeof fallback?.weight === 'number' ? fallback.weight : 0)
+
+    queue.push({
+      id: projectId,
+      sourceType: 'PROJECT',
+      duration_min: duration,
+      energy,
+      weight,
+    })
+    enqueuedProjects.add(projectId)
+  }
+
   const baseStart = startOfDay(baseDate)
 
   for (const m of missed.data ?? []) {
-    const def =
-      m.source_type === 'PROJECT'
-        ? projectItemMap[m.source_id]
-        : taskMap[m.source_id]
-    if (!def) continue
+    if (m.source_type === 'PROJECT') {
+      const weight =
+        typeof m.weight_snapshot === 'number' ? m.weight_snapshot : undefined
+      pushProject(m.source_id, {
+        duration: m.duration_min,
+        energy: m.energy_resolved,
+        weight,
+      })
+      continue
+    }
 
-    const duration =
-      'duration_min' in def && typeof def.duration_min === 'number'
-        ? def.duration_min
-        : m.duration_min ?? 0
-    if (!duration) continue
-
-    const resolvedEnergy =
-      ('energy' in def && def.energy)
-        ? String(def.energy)
-        : m.energy_resolved
-    const weight =
-      typeof m.weight_snapshot === 'number'
-        ? m.weight_snapshot
-        : m.source_type === 'PROJECT'
-          ? (def as { weight?: number }).weight ?? 0
-          : taskWeight(def as TaskLite)
-
-    queue.push({
-      id: def.id,
-      sourceType: m.source_type,
-      duration_min: duration,
-      energy: (resolvedEnergy ?? 'NO').toUpperCase(),
-      weight,
-    })
+    if (m.source_type === 'TASK') {
+      const task = taskMap[m.source_id]
+      const projectId = task?.project_id ?? null
+      if (!projectId) continue
+      pushProject(projectId, {
+        duration: projectItemMap[projectId]?.duration_min ?? task?.duration_min,
+        energy: projectItemMap[projectId]?.energy ?? task?.energy,
+        weight:
+          projectItemMap[projectId]?.weight ??
+          (task ? taskWeight(task) : undefined),
+      })
+    }
   }
 
   if (queue.length === 0) {
@@ -133,52 +160,20 @@ export async function scheduleBacklog(
       return result
     }
 
-    const scheduled = new Set<string>()
+    const scheduledProjects = new Set<string>()
     for (const inst of future.data ?? []) {
       if (inst.status !== 'scheduled') continue
-      scheduled.add(`${inst.source_type}:${inst.source_id}`)
-    }
-
-    const enqueue = (
-      def:
-        | {
-            id: string
-            duration_min: number
-            energy: string | null | undefined
-            weight: number
-          }
-        | null,
-      sourceType: 'PROJECT' | 'TASK'
-    ) => {
-      if (!def) return
-      const duration = Number(def.duration_min ?? 0)
-      if (!Number.isFinite(duration) || duration <= 0) return
-      const key = `${sourceType}:${def.id}`
-      if (scheduled.has(key)) return
-      const energy = (def.energy ?? 'NO').toString().toUpperCase()
-      queue.push({
-        id: def.id,
-        sourceType,
-        duration_min: duration,
-        energy,
-        weight: def.weight ?? 0,
-      })
+      if (inst.source_type === 'PROJECT') {
+        scheduledProjects.add(inst.source_id)
+      } else if (inst.source_type === 'TASK') {
+        const projectId = taskMap[inst.source_id]?.project_id ?? null
+        if (projectId) scheduledProjects.add(projectId)
+      }
     }
 
     for (const project of projectItems) {
-      enqueue(project, 'PROJECT')
-    }
-
-    for (const task of tasks) {
-      enqueue(
-        {
-          id: task.id,
-          duration_min: task.duration_min,
-          energy: task.energy,
-          weight: taskWeight(task),
-        },
-        'TASK'
-      )
+      if (scheduledProjects.has(project.id)) continue
+      pushProject(project.id)
     }
   }
 

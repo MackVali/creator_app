@@ -13,10 +13,12 @@ const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as cons
 
 serve(async req => {
   try {
-    const { searchParams } = new URL(req.url)
-    const userId = searchParams.get('userId')
+    const userId = await resolveUserId(req)
     if (!userId) {
-      return new Response('missing userId', { status: 400 })
+      return new Response(JSON.stringify({ error: 'missing userId' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      })
     }
 
     const supabaseUrl =
@@ -58,6 +60,32 @@ serve(async req => {
   }
 })
 
+async function resolveUserId(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const fromQuery = searchParams.get('userId')
+  if (fromQuery) return fromQuery
+
+  if (req.method !== 'GET') {
+    const contentType = req.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      try {
+        const body = await req.json()
+        const candidate =
+          typeof body === 'object' && body && 'userId' in body
+            ? (body as { userId?: string }).userId
+            : null
+        if (candidate && typeof candidate === 'string' && candidate.trim()) {
+          return candidate
+        }
+      } catch (error) {
+        console.warn('failed to parse request body for userId', error)
+      }
+    }
+  }
+
+  return null
+}
+
 async function markMissedAndQueue(client: Client, userId: string, now: Date) {
   const cutoff = new Date(now.getTime() - GRACE_MIN * 60_000).toISOString()
   return await client
@@ -81,48 +109,74 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
 
   type QueueItem = {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
+    sourceType: 'PROJECT'
     duration_min: number
     energy: string
     weight: number
   }
 
   const queue: QueueItem[] = []
-
-  for (const instance of missed.data ?? []) {
-    const def =
-      instance.source_type === 'PROJECT'
-        ? projectMap.get(instance.source_id)
-        : taskMap.get(instance.source_id)
-    if (!def) continue
-
-    const duration =
-      'duration_min' in def && typeof def.duration_min === 'number'
-        ? def.duration_min
-        : instance.duration_min ?? 0
-    if (!duration) continue
-
-    const resolvedEnergy =
-      ('energy' in def && def.energy)
-        ? String(def.energy)
-        : instance.energy_resolved ?? 'NO'
-
+  const enqueuedProjects = new Set<string>()
+  const pushProject = (
+    projectId: string,
+    fallback?: {
+      duration?: number | null
+      energy?: string | null
+      weight?: number | null
+    }
+  ) => {
+    if (!projectId || enqueuedProjects.has(projectId)) return
+    const project = projectMap.get(projectId)
+    const duration = Number(
+      project?.duration_min ?? fallback?.duration ?? 0
+    )
+    if (!Number.isFinite(duration) || duration <= 0) return
+    const energy = (
+      project?.energy ?? fallback?.energy ?? 'NO'
+    )
+      .toString()
+      .toUpperCase()
     const weight =
-      typeof instance.weight_snapshot === 'number'
-        ? instance.weight_snapshot
-        : instance.source_type === 'PROJECT'
-          ? (projectMap.get(instance.source_id)?.weight ?? 0)
-          : taskMap.get(instance.source_id)
-            ? taskWeight(taskMap.get(instance.source_id)!)
-            : 0
+      project?.weight ??
+      (typeof fallback?.weight === 'number' ? fallback.weight : 0)
 
     queue.push({
-      id: def.id,
-      sourceType: instance.source_type,
+      id: projectId,
+      sourceType: 'PROJECT',
       duration_min: duration,
-      energy: resolvedEnergy ?? 'NO',
+      energy,
       weight,
     })
+    enqueuedProjects.add(projectId)
+  }
+
+  for (const instance of missed.data ?? []) {
+    if (instance.source_type === 'PROJECT') {
+      const weight =
+        typeof instance.weight_snapshot === 'number'
+          ? instance.weight_snapshot
+          : undefined
+      pushProject(instance.source_id, {
+        duration: instance.duration_min,
+        energy: instance.energy_resolved,
+        weight,
+      })
+      continue
+    }
+
+    if (instance.source_type === 'TASK') {
+      const task = taskMap.get(instance.source_id)
+      const projectId = task?.project_id ?? null
+      if (!projectId) continue
+      pushProject(projectId, {
+        duration:
+          projectMap.get(projectId)?.duration_min ?? task?.duration_min ?? undefined,
+        energy: projectMap.get(projectId)?.energy ?? task?.energy ?? undefined,
+        weight:
+          projectMap.get(projectId)?.weight ??
+          (task ? taskWeight(task) : undefined),
+      })
+    }
   }
 
   queue.sort((a, b) => b.weight - a.weight)
