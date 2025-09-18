@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
@@ -77,7 +76,6 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
 }
 
 export default function DashboardClient() {
-  const router = useRouter();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loadingGoals, setLoadingGoals] = useState(true);
 
@@ -202,33 +200,6 @@ export default function DashboardClient() {
     setLoadingGoals(false);
   };
 
-  const handleToggleActive = async (goal: Goal) => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) return;
-
-    const nextActive = !goal.active;
-    const status: Goal["status"] = nextActive ? "Active" : "Inactive";
-
-    const { error } = await supabase
-      .from("goals")
-      .update({ active: nextActive, status })
-      .eq("id", goal.id);
-
-    if (error) {
-      console.error("Failed to toggle goal active state:", error);
-      return;
-    }
-
-    setGoals((gs) => {
-      if (nextActive) {
-        return gs.map((g) =>
-          g.id === goal.id ? { ...g, active: nextActive, status } : g
-        );
-      }
-      return gs.filter((g) => g.id !== goal.id);
-    });
-  };
-
   return (
     <main className="pb-20">
       <LevelBanner level={80} current={3200} total={4000} />
@@ -244,23 +215,18 @@ export default function DashboardClient() {
         className="safe-bottom mt-2 px-4"
       >
         {loadingGoals ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3 justify-items-center">
-            {Array.from({ length: 3 }).map((_, i) => (
+          <div className="grid grid-cols-3 justify-items-center gap-4 sm:grid-cols-4 lg:grid-cols-5">
+            {Array.from({ length: 9 }).map((_, i) => (
               <div
                 key={i}
-                className="h-[280px] w-[240px] animate-pulse rounded-3xl bg-gray-800/70"
+                className="h-[140px] w-[110px] animate-pulse rounded-[26px] bg-gray-800/70"
               />
             ))}
           </div>
         ) : goals.length > 0 ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3 justify-items-center">
+          <div className="grid grid-cols-3 justify-items-center gap-4 sm:grid-cols-4 lg:grid-cols-5">
             {goals.map((goal) => (
-              <GoalFolderCard
-                key={goal.id}
-                goal={goal}
-                onEdit={() => router.push(`/goals?edit=${goal.id}`)}
-                onToggleActive={() => handleToggleActive(goal)}
-              />
+              <GoalFolderCard key={goal.id} goal={goal} />
             ))}
           </div>
         ) : (
