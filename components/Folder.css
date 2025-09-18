@@ -1,0 +1,272 @@
+.folder {
+  --folder-size: 1;
+  --folder-color: #5227ff;
+  --folder-back-color: #4621d9;
+  --paper-1: #ffffff;
+  --paper-2: #f6f7ff;
+  --paper-3: #eff1ff;
+  --paper-translate-x: 0px;
+  --paper-translate-y: 0px;
+  position: relative;
+  width: calc(132px * var(--folder-size));
+  height: calc(96px * var(--folder-size));
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  transform-style: preserve-3d;
+  touch-action: manipulation;
+  transition: filter 180ms ease;
+  will-change: transform;
+}
+
+.folder:focus-visible {
+  outline: 2px solid var(--folder-color);
+  outline-offset: calc(4px * var(--folder-size));
+}
+
+.folder[data-reduced-motion="true"] {
+  transition: none;
+}
+
+.folder__back,
+.folder__front,
+.folder__front.right,
+.paper {
+  pointer-events: none;
+}
+
+.folder__back {
+  position: absolute;
+  inset: 0;
+  border-radius: calc(18px * var(--folder-size));
+  background: linear-gradient(160deg, var(--folder-back-color), var(--folder-color));
+  box-shadow: 0 calc(10px * var(--folder-size)) calc(26px * var(--folder-size)) rgba(0, 0, 0, 0.28);
+  will-change: transform;
+}
+
+.folder__back::after {
+  content: "";
+  position: absolute;
+  top: calc(10px * var(--folder-size));
+  left: calc(18px * var(--folder-size));
+  right: calc(26px * var(--folder-size));
+  height: calc(12px * var(--folder-size));
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: calc(12px * var(--folder-size));
+  filter: blur(calc(6px * var(--folder-size)));
+  opacity: 0.6;
+}
+
+.folder__front {
+  position: absolute;
+  left: calc(8px * var(--folder-size));
+  right: calc(24px * var(--folder-size));
+  bottom: calc(6px * var(--folder-size));
+  height: calc(54px * var(--folder-size));
+  border-radius: calc(16px * var(--folder-size)) calc(16px * var(--folder-size))
+    calc(22px * var(--folder-size)) calc(22px * var(--folder-size));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.1)),
+    var(--folder-color);
+  transform-origin: bottom left;
+  transform: rotateX(0deg);
+  box-shadow: 0 calc(6px * var(--folder-size)) calc(12px * var(--folder-size)) rgba(0, 0, 0, 0.24);
+  transition: transform 220ms cubic-bezier(0.18, 0.82, 0.23, 1),
+    box-shadow 220ms ease;
+  will-change: transform;
+}
+
+.folder__front::after {
+  content: "";
+  position: absolute;
+  top: calc(-8px * var(--folder-size));
+  left: calc(12px * var(--folder-size));
+  width: calc(46px * var(--folder-size));
+  height: calc(10px * var(--folder-size));
+  border-radius: calc(10px * var(--folder-size));
+  background: rgba(255, 255, 255, 0.3);
+  filter: blur(calc(8px * var(--folder-size)));
+  opacity: 0.35;
+}
+
+.folder__front.right {
+  position: absolute;
+  top: calc(28px * var(--folder-size));
+  bottom: calc(10px * var(--folder-size));
+  right: calc(4px * var(--folder-size));
+  width: calc(20px * var(--folder-size));
+  border-radius: calc(12px * var(--folder-size));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0.1)),
+    var(--folder-back-color);
+  box-shadow: inset calc(-4px * var(--folder-size)) 0 calc(8px * var(--folder-size))
+    rgba(0, 0, 0, 0.14);
+  transition: transform 220ms cubic-bezier(0.18, 0.82, 0.23, 1);
+  will-change: transform;
+}
+
+.folder__papers {
+  position: absolute;
+  left: calc(18px * var(--folder-size));
+  right: calc(36px * var(--folder-size));
+  bottom: calc(20px * var(--folder-size));
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--folder-size));
+}
+
+.paper {
+  position: relative;
+  z-index: 2;
+  min-height: calc(30px * var(--folder-size));
+  border-radius: calc(10px * var(--folder-size));
+  background: var(--paper-1);
+  box-shadow: 0 calc(6px * var(--folder-size)) calc(16px * var(--folder-size)) rgba(0, 0, 0, 0.18);
+  transform: translate3d(0, calc(18px * var(--folder-size)), 0);
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 200ms ease,
+    opacity 180ms ease;
+  overflow: hidden;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.paper-1 {
+  background: var(--paper-1);
+  z-index: 3;
+}
+
+.paper-2 {
+  background: var(--paper-2);
+  z-index: 2;
+  transform: translate3d(0, calc(24px * var(--folder-size)), 0);
+}
+
+.paper-3 {
+  background: var(--paper-3);
+  z-index: 1;
+  transform: translate3d(0, calc(30px * var(--folder-size)), 0);
+}
+
+.paper__content {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--folder-size));
+  padding: calc(6px * var(--folder-size)) calc(10px * var(--folder-size));
+  font-size: calc(11px * var(--folder-size));
+  font-weight: 500;
+  color: rgba(23, 30, 43, 0.92);
+  line-height: 1.1;
+  width: 100%;
+  overflow: hidden;
+}
+
+.paper__content > * {
+  min-width: 0;
+}
+
+.paper__content svg {
+  width: calc(12px * var(--folder-size));
+  height: calc(12px * var(--folder-size));
+  flex-shrink: 0;
+  color: rgba(59, 66, 81, 0.85);
+}
+
+.paper__content span,
+.paper__content time {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder.open .paper {
+  opacity: 1;
+  transform: translate3d(
+    var(--paper-translate-x),
+    calc(-6px * var(--folder-size) + var(--paper-translate-y)),
+    0
+  );
+}
+
+.folder.open .paper-2 {
+  transform: translate3d(
+    var(--paper-translate-x),
+    calc(-2px * var(--folder-size) + var(--paper-translate-y)),
+    0
+  );
+}
+
+.folder.open .paper-3 {
+  transform: translate3d(
+    var(--paper-translate-x),
+    calc(2px * var(--folder-size) + var(--paper-translate-y)),
+    0
+  );
+}
+
+.folder.open .folder__front {
+  transform: rotateX(-122deg)
+    translate3d(0, calc(-6px * var(--folder-size)), calc(2px * var(--folder-size)));
+  box-shadow: 0 calc(10px * var(--folder-size)) calc(22px * var(--folder-size))
+    rgba(0, 0, 0, 0.28);
+}
+
+.folder.open .folder__front.right {
+  transform: translate3d(calc(-2px * var(--folder-size)), calc(-4px * var(--folder-size)), 0);
+}
+
+.folder[data-pressed="true"] .paper {
+  transform: translate3d(
+    var(--paper-translate-x),
+    calc(-2px * var(--folder-size) + var(--paper-translate-y)),
+    0
+  );
+}
+
+.folder[data-pressed="true"].open .paper {
+  transform: translate3d(
+    var(--paper-translate-x),
+    calc(-8px * var(--folder-size) + var(--paper-translate-y)),
+    0
+  );
+}
+
+.folder[data-pressed="true"].open .paper-2 {
+  transform: translate3d(
+    var(--paper-translate-x),
+    calc(-4px * var(--folder-size) + var(--paper-translate-y)),
+    0
+  );
+}
+
+.folder[data-pressed="true"].open .paper-3 {
+  transform: translate3d(
+    var(--paper-translate-x),
+    calc(-1px * var(--folder-size) + var(--paper-translate-y)),
+    0
+  );
+}
+
+.folder:hover {
+  filter: brightness(1.02);
+}
+
+.folder:active {
+  filter: brightness(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder,
+  .folder__front,
+  .folder__front.right,
+  .paper {
+    transition: none !important;
+  }
+
+  .folder.open .folder__front {
+    transform: rotateX(-110deg);
+  }
+}

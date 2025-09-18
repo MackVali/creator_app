@@ -9,6 +9,7 @@ export const viewport = {
 };
 
 import "./globals.css";
+import "../../components/Folder.css";
 import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import AuthProvider from "@/components/auth/AuthProvider";
