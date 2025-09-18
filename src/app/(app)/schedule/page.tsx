@@ -299,9 +299,13 @@ export default function SchedulePage() {
                       typeof height === 'number' ? Math.max(0, height) : 0
                     const labelLength = Array.from(w.label ?? '').length || 0
                     const approximateCharHeight = 10
+                    const wrapAllowanceMultiplier = 3
+                    const effectiveWindowHeightPx =
+                      windowHeightPx * wrapAllowanceMultiplier
                     const shouldWrap =
-                      windowHeightPx > 0 &&
-                      windowHeightPx < labelLength * approximateCharHeight
+                      effectiveWindowHeightPx > 0 &&
+                      effectiveWindowHeightPx <
+                        labelLength * approximateCharHeight
                     return (
                       <div
                         key={w.id}
@@ -316,6 +320,7 @@ export default function SchedulePage() {
                             writingMode: 'vertical-rl',
                             textOrientation: 'mixed',
                             whiteSpace: shouldWrap ? 'normal' : 'nowrap',
+                            wordBreak: 'keep-all',
                             lineHeight: `${approximateCharHeight}px`,
                           }}
                         >
