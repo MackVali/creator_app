@@ -295,6 +295,13 @@ export default function SchedulePage() {
                 >
                   {windows.map(w => {
                     const { top, height } = windowRect(w, startHour, pxPerMin)
+                    const windowHeightPx =
+                      typeof height === 'number' ? Math.max(0, height) : 0
+                    const labelLength = Array.from(w.label ?? '').length || 0
+                    const approximateCharHeight = 10
+                    const shouldWrap =
+                      windowHeightPx > 0 &&
+                      windowHeightPx < labelLength * approximateCharHeight
                     return (
                       <div
                         key={w.id}
@@ -304,8 +311,13 @@ export default function SchedulePage() {
                       >
                         <div className="w-0.5 bg-zinc-700 opacity-50" />
                         <span
-                          className="ml-1 text-[10px] text-zinc-500"
-                          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+                          className="ml-1 text-[10px] leading-none text-zinc-500"
+                          style={{
+                            writingMode: 'vertical-rl',
+                            textOrientation: 'mixed',
+                            whiteSpace: shouldWrap ? 'normal' : 'nowrap',
+                            lineHeight: `${approximateCharHeight}px`,
+                          }}
                         >
                           {w.label}
                         </span>
