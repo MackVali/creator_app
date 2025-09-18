@@ -12,7 +12,7 @@ import {
   Filter,
   Flame,
   ListChecks,
-  FileText,
+  RefreshCcw,
   PanelsTopLeft,
 } from "lucide-react";
 import {
@@ -38,7 +38,11 @@ export function ScheduleTopBar({ year, onBack, onToday, canGoBack = true }: Sche
     { label: "Filters", icon: Filter, onClick: () => router.push("/schedule/filters") },
     { label: "Energy Showcase", icon: Flame, onClick: () => router.push("/schedule/energy") },
     { label: "Tasks", icon: ListChecks, onClick: () => router.push("/tasks") },
-    { label: "Draft", icon: FileText, onClick: () => router.push("/schedule/draft") },
+    {
+      label: "Scheduler",
+      icon: RefreshCcw,
+      onClick: () => router.push("/schedule/scheduler"),
+    },
     { label: "Windows", icon: PanelsTopLeft, onClick: () => router.push("/windows") },
     { label: "Today", icon: Calendar, onClick: onToday },
   ];
