@@ -7,7 +7,7 @@ import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import SkillsCarousel from "./_skills/SkillsCarousel";
-import { GoalCard } from "../goals/components/GoalCard";
+import { GoalFolderCard } from "./components/GoalFolderCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
@@ -244,15 +244,18 @@ export default function DashboardClient() {
         className="safe-bottom mt-2 px-4"
       >
         {loadingGoals ? (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3 justify-items-center">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-24 bg-gray-800 animate-pulse rounded" />
+              <div
+                key={i}
+                className="h-[240px] w-[240px] animate-pulse rounded-3xl bg-gray-800/70"
+              />
             ))}
           </div>
         ) : goals.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3 justify-items-center">
             {goals.map((goal) => (
-              <GoalCard
+              <GoalFolderCard
                 key={goal.id}
                 goal={goal}
                 onEdit={() => router.push(`/goals?edit=${goal.id}`)}
@@ -261,7 +264,7 @@ export default function DashboardClient() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">No active goals.</div>
+          <div className="py-8 text-center text-gray-500">No active goals.</div>
         )}
       </Section>
     </main>
