@@ -75,7 +75,7 @@ function MilestonesPanelInternal(
   return (
     <Card
       id="monument-milestones"
-      className="rounded-3xl border border-white/10 bg-gray-950 p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6"
+      className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -110,7 +110,7 @@ function MilestonesPanelInternal(
             {milestones.map((m, index) => (
               <li
                 key={m.id}
-                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-gray-900 px-4 py-3 text-sm text-slate-100 transition-colors hover:bg-gray-800"
+                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,#080808_0%,#121212_55%,#1a1a1a_100%)] px-4 py-3 text-sm text-slate-100 transition-colors hover:brightness-110"
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gray-800 text-sm font-semibold text-slate-200">
                   {index + 1}
@@ -120,7 +120,7 @@ function MilestonesPanelInternal(
             ))}
           </ul>
         ) : (
-          <div className="rounded-2xl border border-dashed border-white/15 bg-gray-900 p-4 text-sm text-slate-400">
+          <div className="rounded-2xl border border-dashed border-white/15 bg-[linear-gradient(135deg,#080808_0%,#131313_55%,#1c1c1c_100%)] p-4 text-sm text-slate-400">
             No milestones yet. Add your first milestone to start tracking progress.
           </div>
         )}

@@ -177,7 +177,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     return (
       <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-6xl space-y-6">
-          <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-black p-6 sm:p-8">
+          <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#1c1c1c_100%)] p-6 sm:p-8">
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-start gap-4">
@@ -232,7 +232,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     return (
       <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl">
-          <Card className="rounded-3xl border border-white/10 bg-black p-6 text-center text-slate-200 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
+          <Card className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#1c1c1c_100%)] p-6 text-center text-slate-200 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
             <p>{error || "Monument not found"}</p>
           </Card>
         </div>
@@ -271,8 +271,9 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
           Back to monuments
         </Link>
 
-        <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-black p-6 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-8">
+        <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_52%,#1d1d1d_100%)] p-6 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-8">
           <div className="pointer-events-none absolute inset-0">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(107,114,128,0.25),transparent_58%)]" />
             <div className="absolute left-[-12%] top-1/2 h-72 w-72 -translate-y-1/2 rounded-full bg-gray-700/20 blur-3xl" />
             <div className="absolute right-[-18%] top-[-20%] h-80 w-80 rounded-full bg-gray-600/15 blur-3xl" />
           </div>
@@ -367,7 +368,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
               ].map(({ label, value, description, icon: Icon, accent }) => (
                 <div
                   key={label}
-                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-gray-900 p-4 backdrop-blur"
+                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(140deg,#080808_0%,#121212_55%,#1a1a1a_100%)] p-4 backdrop-blur"
                 >
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-800">
                     <Icon className={`h-5 w-5 ${accent}`} />
@@ -392,7 +393,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
               onMilestonesChange={handleMilestoneCountChange}
             />
 
-            <Card className="rounded-3xl border border-white/10 bg-gray-950 p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
+            <Card className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Linked goals</h2>
@@ -419,7 +420,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
               </div>
             </Card>
 
-            <Card className="rounded-3xl border border-white/10 bg-gray-950 p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
+            <Card className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Notes & reflections</h2>
@@ -447,7 +448,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
           </div>
 
           <div className="space-y-6">
-            <Card className="rounded-3xl border border-white/10 bg-gray-950 p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
+            <Card className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
               <h2 className="text-lg font-semibold text-white">Make this monument meaningful</h2>
               <ul className="mt-4 space-y-3 text-sm text-slate-400">
                 <li className="flex items-start gap-3">
