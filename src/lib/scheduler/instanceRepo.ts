@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '@/lib/supabase'
-import { createClient as createServerClient } from '@/lib/supabase/server'
 import type { Database } from '../../../types/supabase'
 
 export type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -10,14 +9,6 @@ type Client = SupabaseClient<Database>
 
 async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client
-
-  if (typeof window === 'undefined') {
-    const supabase = await createServerClient()
-    if (!supabase) {
-      throw new Error('Supabase server client not available')
-    }
-    return supabase as Client
-  }
 
   const supabase = getSupabaseBrowser?.()
   if (!supabase) throw new Error('Supabase client not available')
