@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import styles from "./Folder.module.css";
 
@@ -102,65 +102,93 @@ export function Folder({
     });
   };
 
-  const folderStyle: CSSProperties = {
-    ["--folder-color" as string]: color,
-    ["--folder-back-color" as string]: folderBackColor,
-  };
+  const folderStyle: CSSProperties = useMemo(() => {
+    const style: CSSProperties = {
+      ["--folder-color" as string]: color,
+      ["--folder-back-color" as string]: folderBackColor,
+    };
 
-  if (gradient) {
-    folderStyle["--folder-gradient" as string] = gradient;
-  }
+    if (gradient) {
+      style["--folder-gradient" as string] = gradient;
+    }
+
+    return style;
+  }, [color, folderBackColor, gradient]);
+
+  const baseScale = size > 0 ? size : 1;
+  const openZoom = Math.min(2.2, Math.max(1, 1 / Math.max(baseScale, 0.1)));
 
   const wrapperStyle: CSSProperties = {
-    ["--folder-scale" as string]: size,
+    ["--folder-scale" as string]: baseScale,
+    ["--folder-open-zoom" as string]: openZoom,
   };
 
+  const renderPaper = (mode: "closed" | "open") =>
+    visibleItems.map((item, index) => {
+      const magnetStyle: CSSProperties = {
+        ["--paper-position" as string]: `${positions[index] ?? 0}`,
+        ["--paper-color" as string]:
+          paperColors[index] ?? paperColors[paperColors.length - 1],
+        ["--paper-z" as string]: `${Math.round(
+          MAX_ITEMS - Math.abs(positions[index] ?? 0)
+        )}`,
+        ["--paper-delay" as string]: `${index * 0.04}s`,
+      };
+
+      if (mode === "open") {
+        magnetStyle["--magnet-x" as string] = `${
+          paperOffsets[index]?.x ?? 0
+        }px`;
+        magnetStyle["--magnet-y" as string] = `${
+          paperOffsets[index]?.y ?? 0
+        }px`;
+      }
+
+      return (
+        <div
+          key={index}
+          className={styles.paper}
+          onMouseMove={
+            mode === "open"
+              ? (event) => handlePaperMouseMove(event, index)
+              : undefined
+          }
+          onMouseLeave={
+            mode === "open"
+              ? (event) => handlePaperMouseLeave(event, index)
+              : undefined
+          }
+          style={magnetStyle}
+        >
+          {item}
+        </div>
+      );
+    });
+
   return (
-    <div className={cn(styles.wrapper, className)} style={wrapperStyle}>
+    <div
+      className={cn(styles.wrapper, open && styles.wrapperOpen, className)}
+      style={wrapperStyle}
+    >
+      {open ? <div className={styles.backdrop} onClick={handleClick} /> : null}
       <div
         className={cn(styles.folder, open && styles.open)}
         style={folderStyle}
         onClick={handleClick}
       >
         <div className={styles.folderBack}>
-          {visibleItems.map((item, index) => {
-            const magnetStyle: CSSProperties = {
-              ["--paper-position" as string]: `${positions[index] ?? 0}`,
-              ["--paper-color" as string]:
-                paperColors[index] ?? paperColors[paperColors.length - 1],
-              ["--paper-z" as string]: `${Math.round(
-                MAX_ITEMS - Math.abs(positions[index] ?? 0)
-              )}`,
-              ["--paper-delay" as string]: `${index * 0.04}s`,
-            };
-
-            if (open) {
-              magnetStyle["--magnet-x" as string] = `${
-                paperOffsets[index]?.x ?? 0
-              }px`;
-              magnetStyle["--magnet-y" as string] = `${
-                paperOffsets[index]?.y ?? 0
-              }px`;
-            }
-
-            return (
-              <div
-                key={index}
-                className={styles.paper}
-                onMouseMove={(event) => handlePaperMouseMove(event, index)}
-                onMouseLeave={(event) => handlePaperMouseLeave(event, index)}
-                style={magnetStyle}
-              >
-                {item}
-              </div>
-            );
-          })}
+          {renderPaper("closed")}
           <div className={styles.folderFront}>
             {label ? <div className={styles.folderLabel}>{label}</div> : null}
           </div>
           <div className={styles.folderFrontRight} />
         </div>
       </div>
+      {open ? (
+        <div className={styles.openPaperContainer}>
+          <div className={styles.openPaperInner}>{renderPaper("open")}</div>
+        </div>
+      ) : null}
     </div>
   );
 }
