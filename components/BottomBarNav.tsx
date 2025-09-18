@@ -65,7 +65,7 @@ export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavPro
   const leftItems = items.slice(0, mid);
   const rightItems = items.slice(mid);
   return (
-    <nav className="w-full bg-gray-900 text-gray-400">
+    <nav className="w-full border-t border-[var(--hairline)] bg-[var(--surface-elevated)] text-[var(--muted)]">
       <div className="grid h-16 w-full grid-cols-[1fr_3.5rem_1fr] items-center">
         <div className="flex h-full min-w-0 items-center justify-evenly">
           {leftItems.map(renderItem)}

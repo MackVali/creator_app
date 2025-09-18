@@ -18,6 +18,8 @@ import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
+import { getMonumentsForUser } from "@/lib/queries/monuments";
+import { getSkillsForUser } from "@/lib/queries/skills";
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -89,6 +91,10 @@ export default function GoalsPage() {
   const [energy, setEnergy] = useState<EnergyFilter>("All");
   const [priority, setPriority] = useState<PriorityFilter>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
+  const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
+  const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
+  const [monument, setMonument] = useState<string>("All");
+  const [skill, setSkill] = useState<string>("All");
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,27 +141,58 @@ export default function GoalsPage() {
           console.error("Error fetching projects:", err);
         }
 
+        const projectIds = projectsData.map((p) => p.id);
+
         let tasksData: {
           id: string;
           project_id: string | null;
           stage: string;
           name: string;
+          skill_id: string | null;
         }[] = [];
         try {
           const tasksRes = await supabase
             .from("tasks")
-            .select("id, project_id, stage, name")
+            .select("id, project_id, stage, name, skill_id")
             .eq("user_id", user.id);
           tasksData = tasksRes.data || [];
         } catch (err) {
           console.error("Error fetching tasks:", err);
         }
 
+        let projectSkills: { project_id: string; skill_id: string | null }[] = [];
+        try {
+          if (projectIds.length > 0) {
+            const { data: psData, error: psError } = await supabase
+              .from("project_skills")
+              .select("project_id, skill_id")
+              .in("project_id", projectIds);
+            if (psError) throw psError;
+            projectSkills = psData || [];
+          }
+        } catch (err) {
+          console.error("Error fetching project skills:", err);
+        }
+
+        let monumentsData: Awaited<ReturnType<typeof getMonumentsForUser>> = [];
+        try {
+          monumentsData = await getMonumentsForUser(user.id);
+        } catch (err) {
+          console.error("Error fetching monuments:", err);
+        }
+
+        let skillsData: Awaited<ReturnType<typeof getSkillsForUser>> = [];
+        try {
+          skillsData = await getSkillsForUser(user.id);
+        } catch (err) {
+          console.error("Error fetching skills:", err);
+        }
+
         const tasksByProject = tasksData.reduce(
           (
             acc: Record<
               string,
-              { id: string; name: string; stage: string }[]
+              { id: string; name: string; stage: string; skill_id: string | null }[]
             >,
             task
           ) => {
@@ -165,30 +202,58 @@ export default function GoalsPage() {
               id: task.id,
               name: task.name,
               stage: task.stage,
+              skill_id: task.skill_id,
             });
             return acc;
           },
           {}
         );
 
+        const skillsByProject: Record<string, Set<string>> = {};
+        projectSkills.forEach((ps) => {
+          if (!skillsByProject[ps.project_id]) {
+            skillsByProject[ps.project_id] = new Set();
+          }
+          if (ps.skill_id) {
+            skillsByProject[ps.project_id].add(ps.skill_id);
+          }
+        });
+
+        Object.entries(tasksByProject).forEach(([pid, tasks]) => {
+          tasks.forEach((t) => {
+            if (t.skill_id) {
+              skillsByProject[pid] = skillsByProject[pid] || new Set();
+              skillsByProject[pid].add(t.skill_id);
+            }
+          });
+        });
+
         const projectsByGoal = new Map<string, Project[]>();
+        const skillsByGoal = new Map<string, Set<string>>();
         projectsData.forEach((p) => {
           const tasks = tasksByProject[p.id] || [];
           const total = tasks.length;
           const done = tasks.filter((t) => t.stage === "PERFECT").length;
           const progress = total ? Math.round((done / total) * 100) : 0;
           const status = projectStageToStatus(p.stage);
-        const proj: Project = {
-          id: p.id,
-          name: p.name,
-          status,
-          progress,
-          energy: mapEnergy(p.energy),
-          tasks,
-        };
+          const proj: Project = {
+            id: p.id,
+            name: p.name,
+            status,
+            progress,
+            energy: mapEnergy(p.energy),
+            tasks,
+          };
           const list = projectsByGoal.get(p.goal_id) || [];
           list.push(proj);
           projectsByGoal.set(p.goal_id, list);
+
+          const projSkills = skillsByProject[p.id];
+          if (projSkills) {
+            const goalSkills = skillsByGoal.get(p.goal_id) || new Set<string>();
+            projSkills.forEach((s) => goalSkills.add(s));
+            skillsByGoal.set(p.goal_id, goalSkills);
+          }
         });
 
         const realGoals: Goal[] = goalsData.map((g) => {
@@ -215,10 +280,14 @@ export default function GoalsPage() {
             active: g.active ?? status === "Active",
             updatedAt: g.created_at,
             projects: projList,
+            monumentId: g.monument_id ?? null,
+            skills: Array.from(skillsByGoal.get(g.id) || []),
           };
         });
 
         setGoals(realGoals);
+        setMonuments(monumentsData);
+        setSkills(skillsData);
       } catch (err) {
         console.error("Error loading goals", err);
       } finally {
@@ -244,6 +313,12 @@ export default function GoalsPage() {
     if (priority !== "All") {
       data = data.filter((g) => g.priority === priority);
     }
+    if (monument !== "All") {
+      data = data.filter((g) => g.monumentId === monument);
+    }
+    if (skill !== "All") {
+      data = data.filter((g) => g.skills?.includes(skill));
+    }
     const sorted = [...data];
     switch (sort) {
       case "A→Z":
@@ -266,7 +341,7 @@ export default function GoalsPage() {
         break;
     }
     return sorted;
-  }, [goals, search, energy, priority, sort]);
+  }, [goals, search, energy, priority, monument, skill, sort]);
 
   const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
 
@@ -304,6 +379,12 @@ export default function GoalsPage() {
           onPriority={setPriority}
           sort={sort}
           onSort={setSort}
+          monuments={monuments}
+          monument={monument}
+          onMonument={setMonument}
+          skills={skills}
+          skill={skill}
+          onSkill={setSkill}
         />
         {loading ? (
           <LoadingSkeleton />

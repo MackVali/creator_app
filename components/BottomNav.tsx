@@ -16,8 +16,11 @@ export default function BottomNav() {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50" data-bottom-nav>
-      <div className="relative">
+    <div
+      className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--surface-elevated)]"
+      data-bottom-nav
+    >
+      <div className="relative pb-[env(safe-area-inset-bottom)]">
         <BottomBarNav
           items={items}
           currentPath={pathname}
