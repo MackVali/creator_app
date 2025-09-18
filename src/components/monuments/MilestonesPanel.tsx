@@ -1,6 +1,14 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useState, useCallback, type Ref } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useState,
+  useCallback,
+  type Ref,
+} from "react";
+
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -72,15 +80,18 @@ function MilestonesPanelInternal(
   return (
     <Card
       id="monument-milestones"
-      className="rounded-2xl border border-white/10 bg-[#0F1623] p-5"
+      className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#101928] via-[#0f1524] to-[#070a13] p-6 shadow-[0_28px_90px_-48px_rgba(10,15,25,0.75)] sm:p-7 gap-0"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.18),_transparent_55%)]" />
+      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-white/60">
             Milestones
           </p>
-          <h3 className="text-lg font-semibold text-white">Break the work down</h3>
-          <p className="text-xs text-white/60">
+          <h3 className="text-lg font-semibold text-white sm:text-xl">
+            Break the work down
+          </h3>
+          <p className="text-xs text-white/70 sm:text-sm">
             Outline the wins that will move this monument forward.
           </p>
         </div>
@@ -90,7 +101,7 @@ function MilestonesPanelInternal(
             variant="outline"
             onClick={handleAdd}
             aria-label="Add milestone"
-            className="rounded-md border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
+            className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
           >
             Add milestone
           </Button>
@@ -99,20 +110,20 @@ function MilestonesPanelInternal(
             variant="outline"
             onClick={onAutoSplit}
             aria-label="Auto split milestones"
-            className="rounded-md border-white/15 bg-transparent text-white/80 hover:border-white/25 hover:bg-white/10"
+            className="rounded-full border-white/10 bg-transparent px-4 text-white/80 backdrop-blur hover:border-white/25 hover:bg-white/10"
           >
             Auto split
           </Button>
         </div>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="relative mt-6 space-y-3">
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, index) => (
               <Skeleton
                 key={index}
-                className="h-12 rounded-lg border border-white/10 bg-white/5"
+                className="h-14 rounded-2xl border border-white/10 bg-white/5"
               />
             ))}
           </div>
@@ -121,9 +132,9 @@ function MilestonesPanelInternal(
             {milestones.map((m, index) => (
               <li
                 key={m.id}
-                className="group flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white transition hover:border-white/20 hover:bg-white/10"
+                className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white transition hover:border-white/25 hover:bg-white/10"
               >
-                <span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold text-white/70">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold tracking-[0.08em] text-white/70 transition group-hover:bg-white/20 group-hover:text-white">
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 <span className="flex-1 text-sm font-medium">{m.title}</span>
@@ -131,9 +142,9 @@ function MilestonesPanelInternal(
             ))}
           </ul>
         ) : (
-          <div className="rounded-xl border border-dashed border-white/10 bg-[#101b2a] px-4 py-5 text-white/70">
+          <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-5 py-6 text-white/70">
             <p className="text-sm font-medium text-white">No milestones yet</p>
-            <p className="mt-1 text-xs text-white/60">
+            <p className="mt-2 text-xs text-white/60">
               Start by adding the first key step for this monument.
             </p>
           </div>
@@ -146,4 +157,3 @@ function MilestonesPanelInternal(
 const MilestonesPanel = forwardRef(MilestonesPanelInternal);
 
 export default MilestonesPanel;
-

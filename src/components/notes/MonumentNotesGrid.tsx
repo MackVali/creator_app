@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef, FormEvent, type Ref, type MutableRefObject } from "react";
+import {
+  useEffect,
+  useState,
+  useRef,
+  FormEvent,
+  type Ref,
+  type MutableRefObject,
+} from "react";
+
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,7 +34,8 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
     if (typeof inputRef === "function") {
       inputRef(textareaRef.current);
     } else {
-      (inputRef as MutableRefObject<HTMLTextAreaElement | null>).current = textareaRef.current;
+      (inputRef as MutableRefObject<HTMLTextAreaElement | null>).current =
+        textareaRef.current;
     }
   }, [inputRef]);
 
@@ -61,15 +70,15 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
   };
 
   return (
-    <div className="space-y-3">
-      <form onSubmit={handleAdd} className="space-y-2">
+    <div className="space-y-4">
+      <form onSubmit={handleAdd} className="space-y-3">
         <Textarea
           ref={textareaRef}
           rows={1}
           value={draft}
           onChange={handleInput}
           placeholder="Quick note..."
-          className="resize-none overflow-hidden rounded-lg border border-white/10 bg-[#101b2a] px-3 py-2 text-sm text-white placeholder:text-white/60 focus-visible:ring-white/20 focus-visible:ring-offset-0"
+          className="resize-none overflow-hidden rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/60 shadow-[0_12px_40px_-24px_rgba(15,23,42,0.9)] backdrop-blur focus-visible:ring-white/30 focus-visible:ring-offset-0"
         />
         <div className="flex justify-end">
           <Button
@@ -77,7 +86,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
             size="sm"
             disabled={!draft.trim()}
             aria-label="Save note"
-            className="rounded-md px-4"
+            className="rounded-full px-5"
           >
             Save note
           </Button>
@@ -85,7 +94,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
       </form>
 
       {hasNotes ? (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {notes.map((note) => (
             <MonumentNoteCard
               key={note.id}
@@ -95,9 +104,9 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           ))}
         </div>
       ) : (
-        <Card className="rounded-2xl border border-white/10 bg-[#101b2a] p-4 text-white/70">
+        <Card className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#101928] via-[#0f1524] to-[#070a13] p-6 text-white/70 shadow-[0_24px_70px_-40px_rgba(10,15,25,0.8)]">
           <p className="text-sm font-medium text-white">No notes yet</p>
-          <p className="mt-1 text-xs text-white/60">
+          <p className="mt-2 text-xs text-white/60">
             Capture your first thought here and keep ideas close at hand.
           </p>
         </Card>
