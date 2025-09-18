@@ -71,7 +71,7 @@ export function MonumentNotesGrid({ monumentId, inputRef, onCountChange }: Monum
     <div className="space-y-4">
       <form
         onSubmit={handleAdd}
-        className="space-y-3 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,#080808_0%,#141414_55%,#1d1d1d_100%)] p-4 shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:p-5"
+        className="space-y-3 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,#080808_0%,#141414_55%,#1d1d1d_100%)] p-4 shadow-[0_32px_96px_rgba(0,0,0,0.5)] sm:p-5"
       >
         <Textarea
           ref={textareaRef}
@@ -106,7 +106,7 @@ export function MonumentNotesGrid({ monumentId, inputRef, onCountChange }: Monum
           ))}
         </div>
       ) : (
-        <Card className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-300 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
+        <Card className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-300 shadow-[0_40px_120px_rgba(0,0,0,0.55)]">
           <p>No notes yet. Capture your first thought here.</p>
         </Card>
       )}

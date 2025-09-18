@@ -75,7 +75,7 @@ function MilestonesPanelInternal(
   return (
     <Card
       id="monument-milestones"
-      className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6"
+      className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(0,0,0,0.55)] sm:p-6"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>

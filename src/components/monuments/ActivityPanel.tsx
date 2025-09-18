@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 
 export default function ActivityPanel() {
   return (
-    <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
+    <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-[linear-gradient(135deg,#050505_0%,#0f0f0f_55%,#191919_100%)] p-5 text-slate-100 shadow-[0_40px_120px_rgba(0,0,0,0.55)] sm:p-6">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute right-[-15%] top-[-30%] h-48 w-48 rounded-full bg-gray-700/20 blur-3xl" />
       </div>
