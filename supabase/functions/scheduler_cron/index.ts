@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import {
   createClient,
+  type PostgrestError,
   type SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2?dts'
 import type { Database } from '../../../types/supabase.ts'
@@ -84,14 +85,38 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     duration_min: number
     energy: string
     weight: number
+    instanceId?: string | null
   }
 
+  const baseStart = startOfDay(baseDate)
   const queue: QueueItem[] = []
+  const failures: { itemId: string; reason: string; detail?: unknown }[] = []
+  const seenMissedProjects = new Set<string>()
+  const queueProjectIds = new Set<string>()
 
   for (const instance of missed.data ?? []) {
     if (instance.source_type !== 'PROJECT') continue
+    if (seenMissedProjects.has(instance.source_id)) {
+      const cancel = await client
+        .from('schedule_instances')
+        .update({ status: 'canceled' })
+        .eq('id', instance.id)
+
+      if (cancel.error) {
+        failures.push({
+          itemId: instance.source_id,
+          reason: 'error',
+          detail: cancel.error,
+        })
+      }
+
+      continue
+    }
+
+    seenMissedProjects.add(instance.source_id)
     const def = projectMap.get(instance.source_id)
     if (!def) continue
+    queueProjectIds.add(def.id)
 
     let duration = Number(def.duration_min ?? 0)
     if (!Number.isFinite(duration) || duration <= 0) {
@@ -116,7 +141,43 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      instanceId: instance.id,
     })
+  }
+
+  const rangeEnd = addDays(baseStart, 28)
+  const dedupe = await dedupeScheduledProjects(
+    client,
+    userId,
+    baseStart,
+    rangeEnd,
+    queueProjectIds
+  )
+
+  if (dedupe.error) {
+    return { placed: [], failures, error: dedupe.error }
+  }
+
+  if (dedupe.failures.length > 0) {
+    failures.push(...dedupe.failures)
+  }
+
+  const scheduled = dedupe.scheduled
+
+  if (queue.length === 0) {
+    for (const project of projectItems) {
+      const duration = Number(project.duration_min ?? 0)
+      if (!Number.isFinite(duration) || duration <= 0) continue
+      if (scheduled.has(project.id)) continue
+      const energy = (project.energy ?? 'NO').toString().toUpperCase()
+      queue.push({
+        id: project.id,
+        sourceType: 'PROJECT',
+        duration_min: duration,
+        energy,
+        weight: project.weight ?? 0,
+      })
+    }
   }
 
   queue.sort((a, b) => {
@@ -125,9 +186,7 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     return b.weight - a.weight
   })
 
-  const baseStart = startOfDay(baseDate)
   const placed: ScheduleInstance[] = []
-  const failures: { itemId: string; reason: string; detail?: unknown }[] = []
 
   for (const item of queue) {
     let scheduled = false
@@ -136,7 +195,13 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
       const windows = await fetchCompatibleWindowsForItem(client, userId, day, item)
       if (windows.length === 0) continue
 
-      const placedInstance = await placeItemInWindows(client, userId, item, windows)
+      const placedInstance = await placeItemInWindows(
+        client,
+        userId,
+        item,
+        windows,
+        item.instanceId
+      )
       if (placedInstance) {
         placed.push(placedInstance)
         scheduled = true
@@ -289,6 +354,96 @@ function buildProjectItems(projects: ProjectLite[], tasks: TaskLite[]): ProjectI
   return items
 }
 
+async function fetchInstancesForRange(
+  client: Client,
+  userId: string,
+  startUTC: string,
+  endUTC: string
+) {
+  return await client
+    .from('schedule_instances')
+    .select('*')
+    .eq('user_id', userId)
+    .neq('status', 'canceled')
+    .or(
+      `and(start_utc.gte.${startUTC},start_utc.lt.${endUTC}),and(start_utc.lt.${startUTC},end_utc.gt.${startUTC})`
+    )
+    .order('start_utc', { ascending: true })
+}
+
+async function dedupeScheduledProjects(
+  client: Client,
+  userId: string,
+  baseStart: Date,
+  rangeEnd: Date,
+  projectsToReset: Set<string>
+): Promise<{
+  scheduled: Set<string>
+  failures: { itemId: string; reason: string; detail?: unknown }[]
+  error: PostgrestError | null
+}> {
+  const response = await fetchInstancesForRange(
+    client,
+    userId,
+    baseStart.toISOString(),
+    rangeEnd.toISOString()
+  )
+
+  if (response.error) {
+    return { scheduled: new Set<string>(), failures: [], error: response.error }
+  }
+
+  const keepers = new Map<string, ScheduleInstance>()
+  const extras: ScheduleInstance[] = []
+
+  for (const inst of response.data ?? []) {
+    if (inst.source_type !== 'PROJECT') continue
+
+    if (projectsToReset.has(inst.source_id) && inst.status === 'scheduled') {
+      extras.push(inst)
+      continue
+    }
+
+    if (inst.status !== 'scheduled') continue
+
+    const existing = keepers.get(inst.source_id)
+    if (!existing) {
+      keepers.set(inst.source_id, inst)
+      continue
+    }
+
+    const existingStart = new Date(existing.start_utc).getTime()
+    const instStart = new Date(inst.start_utc).getTime()
+
+    if (instStart < existingStart) {
+      extras.push(existing)
+      keepers.set(inst.source_id, inst)
+    } else {
+      extras.push(inst)
+    }
+  }
+
+  const failures: { itemId: string; reason: string; detail?: unknown }[] = []
+
+  for (const extra of extras) {
+    const { error } = await client
+      .from('schedule_instances')
+      .update({ status: 'canceled' })
+      .eq('id', extra.id)
+
+    if (error) {
+      failures.push({ itemId: extra.source_id, reason: 'error', detail: error })
+    }
+  }
+
+  const scheduled = new Set<string>()
+  for (const key of keepers.keys()) {
+    scheduled.add(key)
+  }
+
+  return { scheduled, failures, error: null }
+}
+
 async function fetchCompatibleWindowsForItem(
   client: Client,
   userId: string,
@@ -352,7 +507,8 @@ async function placeItemInWindows(
   client: Client,
   userId: string,
   item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
-  windows: Array<{ id: string; startLocal: Date; endLocal: Date }>
+  windows: Array<{ id: string; startLocal: Date; endLocal: Date }>,
+  reuseInstanceId?: string | null
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
     const start = new Date(window.startLocal)
@@ -382,17 +538,59 @@ async function placeItemInWindows(
       const blockStart = new Date(block.start_utc)
       const blockEnd = new Date(block.end_utc)
       if (diffMin(cursor, blockStart) >= durMin) {
-        return await createInstance(client, userId, item, window.id, cursor, durMin)
+        return await persistPlacement(
+          client,
+          userId,
+          item,
+          window.id,
+          cursor,
+          durMin,
+          reuseInstanceId
+        )
       }
       if (blockEnd > cursor) cursor = blockEnd
     }
 
     if (diffMin(cursor, end) >= durMin) {
-      return await createInstance(client, userId, item, window.id, cursor, durMin)
+      return await persistPlacement(
+        client,
+        userId,
+        item,
+        window.id,
+        cursor,
+        durMin,
+        reuseInstanceId
+      )
     }
   }
 
   return null
+}
+
+async function persistPlacement(
+  client: Client,
+  userId: string,
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  windowId: string,
+  start: Date,
+  durationMin: number,
+  reuseInstanceId?: string | null
+): Promise<ScheduleInstance | null> {
+  const startUTC = start.toISOString()
+  const endUTC = addMin(start, durationMin).toISOString()
+
+  if (reuseInstanceId) {
+    return await rescheduleInstance(client, reuseInstanceId, {
+      windowId,
+      startUTC,
+      endUTC,
+      durationMin,
+      weightSnapshot: item.weight,
+      energyResolved: item.energy,
+    })
+  }
+
+  return await createInstance(client, userId, item, windowId, startUTC, endUTC, durationMin)
 }
 
 async function createInstance(
@@ -400,12 +598,10 @@ async function createInstance(
   userId: string,
   item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
   windowId: string,
-  start: Date,
+  startUTC: string,
+  endUTC: string,
   durationMin: number
 ) {
-  const startUTC = start.toISOString()
-  const endUTC = addMin(start, durationMin).toISOString()
-
   const { data, error } = await client
     .from('schedule_instances')
     .insert({
@@ -425,6 +621,42 @@ async function createInstance(
 
   if (error) {
     console.error('createInstance error', error)
+    return null
+  }
+
+  return data
+}
+
+async function rescheduleInstance(
+  client: Client,
+  id: string,
+  input: {
+    windowId: string
+    startUTC: string
+    endUTC: string
+    durationMin: number
+    weightSnapshot: number
+    energyResolved: string
+  }
+): Promise<ScheduleInstance | null> {
+  const { data, error } = await client
+    .from('schedule_instances')
+    .update({
+      window_id: input.windowId,
+      start_utc: input.startUTC,
+      end_utc: input.endUTC,
+      duration_min: input.durationMin,
+      status: 'scheduled',
+      weight_snapshot: input.weightSnapshot,
+      energy_resolved: input.energyResolved,
+      completed_at: null,
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+
+  if (error) {
+    console.error('rescheduleInstance error', error)
     return null
   }
 

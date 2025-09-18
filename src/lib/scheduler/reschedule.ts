@@ -143,26 +143,25 @@ export async function scheduleBacklog(
     })
   }
 
+  const queueProjectIds = new Set(queue.map(item => item.id))
+  const rangeEnd = addDays(baseStart, 28)
+  const dedupe = await dedupeScheduledProjects(
+    supabase,
+    userId,
+    baseStart,
+    rangeEnd,
+    queueProjectIds
+  )
+  if (dedupe.error) {
+    result.error = dedupe.error
+    return result
+  }
+  if (dedupe.failures.length > 0) {
+    result.failures.push(...dedupe.failures)
+  }
+  const scheduled = dedupe.scheduled
+
   if (queue.length === 0) {
-    const rangeEnd = addDays(baseStart, 28)
-    const future = await fetchInstancesForRange(
-      userId,
-      baseStart.toISOString(),
-      rangeEnd.toISOString(),
-      supabase
-    )
-    if (future.error) {
-      result.error = future.error
-      return result
-    }
-
-    const scheduled = new Set<string>()
-    for (const inst of future.data ?? []) {
-      if (inst.status !== 'scheduled') continue
-      if (inst.source_type !== 'PROJECT') continue
-      scheduled.add(inst.source_id)
-    }
-
     const enqueue = (
       def:
         | {
@@ -240,6 +239,91 @@ export async function scheduleBacklog(
   }
 
   return result
+}
+
+async function dedupeScheduledProjects(
+  supabase: Client,
+  userId: string,
+  baseStart: Date,
+  rangeEnd: Date,
+  projectsToReset: Set<string>
+): Promise<{
+  scheduled: Set<string>
+  failures: ScheduleFailure[]
+  error: PostgrestError | null
+}> {
+  const response = await fetchInstancesForRange(
+    userId,
+    baseStart.toISOString(),
+    rangeEnd.toISOString(),
+    supabase
+  )
+
+  if (response.error) {
+    return {
+      scheduled: new Set<string>(),
+      failures: [],
+      error: response.error,
+    }
+  }
+
+  const keepers = new Map<string, ScheduleInstance>()
+  const extras: ScheduleInstance[] = []
+
+  for (const inst of response.data ?? []) {
+    if (inst.source_type !== 'PROJECT') continue
+
+    if (projectsToReset.has(inst.source_id)) {
+      if (inst.status === 'scheduled') {
+        extras.push(inst)
+      }
+      continue
+    }
+
+    if (inst.status !== 'scheduled') continue
+
+    const existing = keepers.get(inst.source_id)
+    if (!existing) {
+      keepers.set(inst.source_id, inst)
+      continue
+    }
+
+    const existingStart = new Date(existing.start_utc).getTime()
+    const instStart = new Date(inst.start_utc).getTime()
+
+    if (instStart < existingStart) {
+      extras.push(existing)
+      keepers.set(inst.source_id, inst)
+    } else {
+      extras.push(inst)
+    }
+  }
+
+  const failures: ScheduleFailure[] = []
+
+  for (const extra of extras) {
+    const cancel = await supabase
+      .from('schedule_instances')
+      .update({ status: 'canceled' })
+      .eq('id', extra.id)
+      .select('id')
+      .single()
+
+    if (cancel.error) {
+      failures.push({
+        itemId: extra.source_id,
+        reason: 'error',
+        detail: cancel.error,
+      })
+    }
+  }
+
+  const scheduled = new Set<string>()
+  for (const key of keepers.keys()) {
+    scheduled.add(key)
+  }
+
+  return { scheduled, failures, error: null }
 }
 
 async function fetchCompatibleWindowsForItem(
