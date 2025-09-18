@@ -61,15 +61,15 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
   };
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={handleAdd} className="space-y-3">
+    <div className="space-y-3">
+      <form onSubmit={handleAdd} className="space-y-2">
         <Textarea
           ref={textareaRef}
           rows={1}
           value={draft}
           onChange={handleInput}
           placeholder="Quick note..."
-          className="resize-none overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/60 focus-visible:ring-white/30 focus-visible:ring-offset-0"
+          className="resize-none overflow-hidden rounded-lg border border-white/10 bg-[#101b2a] px-3 py-2 text-sm text-white placeholder:text-white/60 focus-visible:ring-white/20 focus-visible:ring-offset-0"
         />
         <div className="flex justify-end">
           <Button
@@ -77,7 +77,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
             size="sm"
             disabled={!draft.trim()}
             aria-label="Save note"
-            className="rounded-full px-4"
+            className="rounded-md px-4"
           >
             Save note
           </Button>
@@ -85,7 +85,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
       </form>
 
       {hasNotes ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {notes.map((note) => (
             <MonumentNoteCard
               key={note.id}
@@ -95,9 +95,9 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           ))}
         </div>
       ) : (
-        <Card className="rounded-3xl border border-white/10 bg-white/5 p-5 text-white/70 shadow-[0_18px_48px_rgba(3,7,18,0.35)]">
-          <p className="text-base font-medium text-white">No notes yet</p>
-          <p className="mt-1 text-sm text-white/70">
+        <Card className="rounded-2xl border border-white/10 bg-[#101b2a] p-4 text-white/70">
+          <p className="text-sm font-medium text-white">No notes yet</p>
+          <p className="mt-1 text-xs text-white/60">
             Capture your first thought here and keep ideas close at hand.
           </p>
         </Card>

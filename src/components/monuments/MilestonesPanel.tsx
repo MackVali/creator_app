@@ -72,14 +72,16 @@ function MilestonesPanelInternal(
   return (
     <Card
       id="monument-milestones"
-      className="rounded-3xl border border-white/8 bg-[#101725] px-6 py-6 shadow-[0_18px_48px_rgba(3,7,18,0.55)]"
+      className="rounded-2xl border border-white/10 bg-[#0F1623] p-5"
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-white/60">Milestones</p>
-          <h3 className="text-xl font-semibold text-white">Break the work down</h3>
-          <p className="text-sm text-white/60">
-            Outline the critical wins that will move this monument forward.
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-white/60">
+            Milestones
+          </p>
+          <h3 className="text-lg font-semibold text-white">Break the work down</h3>
+          <p className="text-xs text-white/60">
+            Outline the wins that will move this monument forward.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -88,29 +90,29 @@ function MilestonesPanelInternal(
             variant="outline"
             onClick={handleAdd}
             aria-label="Add milestone"
-            className="rounded-full border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
+            className="rounded-md border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
           >
-            + Milestone
+            Add milestone
           </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={onAutoSplit}
             aria-label="Auto split milestones"
-            className="rounded-full border-white/15 bg-transparent text-white/80 hover:border-white/25 hover:bg-white/10"
+            className="rounded-md border-white/15 bg-transparent text-white/80 hover:border-white/25 hover:bg-white/10"
           >
             Auto split
           </Button>
         </div>
       </div>
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-4 space-y-3">
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, index) => (
               <Skeleton
                 key={index}
-                className="h-14 rounded-2xl border border-white/10 bg-white/5"
+                className="h-12 rounded-lg border border-white/10 bg-white/5"
               />
             ))}
           </div>
@@ -119,20 +121,20 @@ function MilestonesPanelInternal(
             {milestones.map((m, index) => (
               <li
                 key={m.id}
-                className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white transition hover:border-white/20 hover:bg-white/10"
+                className="group flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white transition hover:border-white/20 hover:bg-white/10"
               >
-                <span className="flex size-8 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white/70">
+                <span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold text-white/70">
                   {String(index + 1).padStart(2, "0")}
                 </span>
-                <span className="flex-1 text-base font-medium">{m.title}</span>
+                <span className="flex-1 text-sm font-medium">{m.title}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-6 text-white/70">
-            <p className="text-base font-medium text-white">No milestones yet</p>
-            <p className="mt-1 text-sm text-white/60">
-              Start by adding the key steps that will move this monument forward.
+          <div className="rounded-xl border border-dashed border-white/10 bg-[#101b2a] px-4 py-5 text-white/70">
+            <p className="text-sm font-medium text-white">No milestones yet</p>
+            <p className="mt-1 text-xs text-white/60">
+              Start by adding the first key step for this monument.
             </p>
           </div>
         )}

@@ -13,7 +13,6 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import MilestonesPanel, { MilestonesPanelHandle } from "./MilestonesPanel";
 import ActivityPanel from "./ActivityPanel";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
@@ -74,41 +73,38 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
 
   if (loading) {
     return (
-      <main className="px-4 pb-12 pt-6 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-          <Skeleton className="h-9 w-40 rounded-full bg-white/10" />
-          <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#111520] p-6 sm:p-8">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+      <main className="px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+          <Skeleton className="h-8 w-32 rounded-md bg-white/10" />
+          <div className="rounded-2xl border border-white/10 bg-[#111520] p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-4">
-                <Skeleton className="h-20 w-20 rounded-2xl" />
-                <div className="space-y-3">
-                  <Skeleton className="h-5 w-40" />
-                  <Skeleton className="h-4 w-52" />
-                  <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-16 w-16 rounded-xl" />
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-4 w-36" />
                 </div>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <Skeleton className="h-9 w-32 rounded-full" />
-                <Skeleton className="h-9 w-32 rounded-full" />
-                <Skeleton className="h-9 w-32 rounded-full" />
+              <div className="flex flex-wrap gap-2">
+                <Skeleton className="h-9 w-28 rounded-full" />
+                <Skeleton className="h-9 w-28 rounded-full" />
               </div>
             </div>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
               {Array.from({ length: 3 }).map((_, index) => (
                 <div
                   key={index}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                  className="rounded-xl border border-white/10 bg-white/5 p-3"
                 >
                   <Skeleton className="h-4 w-24" />
-                  <Skeleton className="mt-3 h-5 w-32" />
-                  <Skeleton className="mt-2 h-4 w-3/4" />
+                  <Skeleton className="mt-2 h-4 w-20" />
                 </div>
               ))}
             </div>
           </div>
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <Skeleton className="h-72 rounded-3xl bg-[#111520]" />
-            <Skeleton className="h-72 rounded-3xl bg-[#111520]" />
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            <Skeleton className="h-64 rounded-2xl bg-[#111520]" />
+            <Skeleton className="h-64 rounded-2xl bg-[#111520]" />
           </div>
         </div>
       </main>
@@ -117,15 +113,15 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
 
   if (error || !monument) {
     return (
-      <main className="px-4 pb-12 pt-6 sm:px-6 lg:px-8">
+      <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-3xl">
-          <div className="rounded-3xl border border-white/8 bg-[#111520] p-6 text-center shadow-[0_18px_48px_rgba(3,7,18,0.45)] sm:p-8">
-            <h2 className="text-xl font-semibold text-white">We couldn&apos;t find that monument</h2>
-            <p className="mt-2 text-sm text-[#A7B0BD]">
+          <div className="rounded-2xl border border-white/10 bg-[#111520] p-6 text-center">
+            <h2 className="text-lg font-semibold text-white">We couldn&apos;t find that monument</h2>
+            <p className="mt-2 text-sm text-white/70">
               {error || "The monument you&apos;re looking for may have been removed."}
             </p>
-            <div className="mt-6 flex justify-center">
-              <Button asChild>
+            <div className="mt-5 flex justify-center">
+              <Button asChild size="sm">
                 <Link href="/monuments">Back to Monuments</Link>
               </Button>
             </div>
@@ -181,62 +177,44 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   ] as const;
 
   return (
-    <main className="px-4 pb-12 pt-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="gap-2 rounded-full border border-white/5 bg-white/5 px-3 text-sm text-white/70 hover:border-white/10 hover:bg-white/10 hover:text-white"
-          >
-            <Link href="/monuments">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to monuments
-            </Link>
-          </Button>
-        </div>
+    <main className="px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="w-fit gap-2 rounded-md border border-white/5 bg-white/5 px-3 text-xs font-medium text-white/70 hover:border-white/10 hover:bg-white/10 hover:text-white"
+        >
+          <Link href="/monuments">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back to monuments
+          </Link>
+        </Button>
 
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#101725] via-[#0B1220] to-[#05070F] p-6 shadow-[0_24px_64px_rgba(3,7,18,0.65)] sm:p-8">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 -z-10"
-          >
-            <div className="absolute -top-32 right-10 h-72 w-72 rounded-full bg-[rgba(88,122,255,0.25)] blur-3xl" />
-            <div className="absolute bottom-0 left-0 h-40 w-40 rounded-full bg-[rgba(40,221,180,0.2)] blur-3xl" />
-          </div>
-
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start gap-4">
-                <span
-                  className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/10 text-4xl text-white sm:h-24 sm:w-24 sm:text-5xl"
-                  role="img"
-                  aria-label={`Monument: ${monument.title}`}
-                >
-                  {monument.emoji || "\uD83D\uDDFC\uFE0F"}
-                </span>
-                <div className="flex flex-col gap-3">
-                  <Badge
-                    variant="outline"
-                    className="w-fit rounded-full border-white/25 bg-white/10 px-3 py-1 text-xs uppercase tracking-wide text-white/70"
-                  >
-                    Monument overview
-                  </Badge>
-                  <h1 className="text-3xl font-semibold text-white sm:text-4xl">
-                    {monument.title}
-                  </h1>
-                  <p className="max-w-xl text-sm text-white/70 sm:text-base">
-                    Rally your focus around this monument. Break it into milestones, link supporting goals, and capture notes so future you knows exactly what to do next.
-                  </p>
-                </div>
+        <section className="rounded-2xl border border-white/10 bg-[#0F1623] p-5 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-4">
+              <span
+                className="flex size-16 items-center justify-center rounded-xl bg-white/10 text-3xl text-white"
+                role="img"
+                aria-label={`Monument: ${monument.title}`}
+              >
+                {monument.emoji || "\uD83D\uDDFC\uFE0F"}
+              </span>
+              <div className="space-y-2">
+                <h1 className="text-2xl font-semibold text-white sm:text-3xl">
+                  {monument.title}
+                </h1>
+                <p className="max-w-xl text-sm text-white/60">
+                  Track the milestones, goals, and notes that keep this monument moving forward.
+                </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-3 self-start">
+            <div className="flex flex-wrap gap-2">
               <Button
                 asChild
                 size="sm"
-                className="rounded-full bg-white text-slate-900 hover:bg-white/90"
+                className="rounded-md bg-white px-4 text-slate-900 hover:bg-white/90"
               >
                 <Link href={`/monuments/${id}/edit`}>Edit monument</Link>
               </Button>
@@ -245,70 +223,70 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
                 variant="outline"
                 onClick={handleAddMilestone}
                 aria-label="Add milestone"
-                className="rounded-full border-white/20 bg-white/10 text-white hover:border-white/30 hover:bg-white/20"
+                className="rounded-md border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
               >
-                + Milestone
+                Add milestone
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleAddNote}
                 aria-label="Add note"
-                className="rounded-full border-transparent bg-white/5 text-white hover:border-white/20 hover:bg-white/15"
+                className="rounded-md border-transparent bg-white/5 text-white hover:border-white/20 hover:bg-white/10"
               >
-                Quick note
+                Add note
               </Button>
             </div>
           </div>
 
-          <dl className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <dl className="mt-4 grid gap-3 sm:grid-cols-3">
             {quickFacts.map(({ label, value, description, icon: Icon }) => (
               <div
                 key={label}
-                className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-white"
+                className="rounded-xl border border-white/10 bg-[#101b2a] p-3 text-white"
               >
-                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-white/60">
+                <dt className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-white/60">
                   <Icon className="size-4" aria-hidden="true" />
                   {label}
-                </div>
-                <div className="text-lg font-semibold sm:text-xl">{value}</div>
-                <p className="text-sm text-white/70">{description}</p>
+                </dt>
+                <dd className="mt-1 text-sm font-semibold">{value}</dd>
+                <p className="mt-1 text-xs text-white/60">{description}</p>
               </div>
             ))}
           </dl>
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-          <div className="space-y-6">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="space-y-4">
             <MilestonesPanel
               ref={milestonesRef}
               monumentId={id}
               onAutoSplit={handleAutoSplit}
             />
 
-            <section className="rounded-3xl border border-white/8 bg-[rgba(16,23,37,0.9)] p-6 shadow-[0_18px_48px_rgba(3,7,18,0.55)]">
+            <section className="rounded-2xl border border-white/10 bg-[#0F1623] p-5">
               <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-white/60">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-white/60">
                     Goals
                   </p>
-                  <h2 className="text-xl font-semibold text-white">
-                    Goals connected to this monument
+                  <h2 className="text-lg font-semibold text-white">
+                    Linked goals
                   </h2>
-                  <p className="mt-1 text-sm text-white/60">
-                    Keep related goals in view so you always know what feeds this monument.
+                  <p className="text-xs text-white/60">
+                    Keep related work nearby so it&apos;s easy to connect the dots.
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={handleCreateGoal}
-                  className="rounded-full border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
+                  className="rounded-md border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
                 >
                   New goal
                 </Button>
               </header>
-              <div className="mt-6">
+              <div className="mt-4">
                 <FilteredGoalsGrid
                   entity="monument"
                   id={id}
@@ -318,30 +296,30 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
             </section>
           </div>
 
-          <div className="space-y-6">
-            <section className="rounded-3xl border border-white/8 bg-[#101725] p-6 shadow-[0_18px_48px_rgba(3,7,18,0.55)]">
+          <div className="space-y-4">
+            <section className="rounded-2xl border border-white/10 bg-[#0F1623] p-5">
               <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-white/60">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-white/60">
                     Notes
                   </p>
-                  <h2 className="text-xl font-semibold text-white">
-                    Capture quick ideas and insights
+                  <h2 className="text-lg font-semibold text-white">
+                    Quick captures
                   </h2>
-                  <p className="mt-1 text-sm text-white/60">
-                    Drop thoughts, resources, or learnings as you make progress.
+                  <p className="text-xs text-white/60">
+                    Save ideas, links, and reminders while they&apos;re fresh.
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={handleAddNote}
-                  className="rounded-full border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
+                  className="rounded-md border-white/20 bg-white/5 text-white hover:border-white/30 hover:bg-white/15"
                 >
                   New note
                 </Button>
               </header>
-              <div className="mt-6">
+              <div className="mt-4">
                 <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
               </div>
             </section>
