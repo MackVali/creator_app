@@ -23,7 +23,13 @@ export default function SettingsPage() {
   const initials = getInitials(profile?.name || null, email);
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+    <div
+      className="min-h-screen text-[var(--text)]"
+      style={{
+        backgroundColor: "var(--bg)",
+        backgroundImage: "var(--bg-gradient)",
+      }}
+    >
       <header className="sticky top-0 z-10 backdrop-blur bg-[var(--bg)]/80 border-b border-white/10">
         <div className="flex items-center gap-3 px-4 py-3">
           <button

@@ -28,8 +28,21 @@
   --accent:#8E8E8E;
   --radius:16px; --radius-sm:12px;
   --popover:var(--surface); --popover-foreground:var(--text);
+  --bg-gradient:radial-gradient(120% 120% at 50% 0%, #1c1d22 0%, #0c0d11 48%, #020203 100%);
 }
-html,body{ background:var(--bg); color:var(--text); font-weight:600; touch-action:pan-y; overflow-x:hidden; }
+html,
+body { min-height:100%; }
+html,body{
+  background-color:var(--bg);
+  background-image:var(--bg-gradient);
+  background-attachment:fixed;
+  background-repeat:no-repeat;
+  background-size:cover;
+  color:var(--text);
+  font-weight:600;
+  touch-action:pan-y;
+  overflow-x:hidden;
+}
 .section{ padding:20px 16px 8px; }
 .h-label{ letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--muted); font-size:12px; }
 .card{ background:linear-gradient(180deg,var(--surface),var(--surface-2));
