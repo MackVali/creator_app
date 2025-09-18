@@ -573,51 +573,51 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90",
                 eventMeta.accent
               )}
-          />
-          <div className="relative flex flex-col gap-6 px-8 pb-8 pt-6 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-1 flex-col gap-4">
-              <div className="flex items-center gap-4">
-                <span
-                  className={cn(
-                    "flex h-12 w-12 items-center justify-center rounded-2xl border text-white shadow-inner",
-                    eventMeta.iconBg
-                  )}
-                >
-                  <eventMeta.icon className="h-6 w-6" />
-                </span>
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="border-white/20 bg-white/10 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-200"
-                    >
-                      {eventMeta.eyebrow}
-                    </Badge>
-                    <Badge className="bg-white/15 text-xs font-semibold text-white">
-                      {eventMeta.badge}
-                    </Badge>
+            />
+            <div className="relative flex flex-col gap-2.5 px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-4 sm:pt-3.5">
+              <div className="flex flex-1 flex-col gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-2xl border text-white shadow-inner",
+                      eventMeta.iconBg
+                    )}
+                  >
+                    <eventMeta.icon className="h-5 w-5" />
+                  </span>
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge
+                        variant="outline"
+                        className="border-white/20 bg-white/10 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200"
+                      >
+                        {eventMeta.eyebrow}
+                      </Badge>
+                      <Badge className="bg-white/15 text-[11px] font-semibold text-white">
+                        {eventMeta.badge}
+                      </Badge>
+                    </div>
+                    <h2 className="text-lg font-semibold leading-snug text-white sm:text-xl">
+                      {eventMeta.title}
+                    </h2>
+                    <p className="text-[11px] text-zinc-200 sm:text-sm">
+                      {eventMeta.description}
+                    </p>
                   </div>
-                  <h2 className="text-2xl font-semibold text-white">
-                    {eventMeta.title}
-                  </h2>
-                  <p className="text-sm text-zinc-200">
-                    {eventMeta.description}
-                  </p>
                 </div>
               </div>
+              <button
+                onClick={onClose}
+                className="self-start rounded-full p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
-            <button
-              onClick={onClose}
-              className="self-start rounded-full p-2 text-zinc-400 transition hover:bg-white/10 hover:text-white"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <div className="border-t border-white/10 px-4 py-1.5 text-[11px] text-zinc-400 sm:px-6 sm:py-2">
+              {eventMeta.highlight}
+            </div>
           </div>
-          <div className="border-t border-white/10 px-8 py-3 text-xs text-zinc-400">
-            {eventMeta.highlight}
-          </div>
-        </div>
 
         <form
           onSubmit={handleSubmit}
