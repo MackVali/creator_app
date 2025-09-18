@@ -13,7 +13,7 @@ interface MonumentNoteCardProps {
 export function MonumentNoteCard({ note, monumentId }: MonumentNoteCardProps) {
   return (
     <Link href={`/monuments/${monumentId}/notes/${note.id}`}>
-      <Card className="group h-full rounded-3xl border border-white/10 bg-gradient-to-br from-[#101928] via-[#0f1524] to-[#070a13] text-white shadow-[0_24px_70px_-40px_rgba(10,15,25,0.8)] transition hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_32px_90px_-45px_rgba(10,15,25,0.9)]">
+      <Card className="group h-full rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] text-white shadow-[0_24px_70px_-40px_rgba(0,0,0,0.7)] transition hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_32px_90px_-45px_rgba(0,0,0,0.78)]">
         <CardContent className="flex h-full flex-col gap-3 p-5">
           <div className="space-y-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-white/60">Note</p>

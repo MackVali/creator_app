@@ -76,8 +76,8 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
           <Skeleton className="h-8 w-32 rounded-full bg-white/10" />
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#111520] p-6 shadow-[0_30px_90px_-45px_rgba(15,21,32,0.9)] sm:p-8">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(148,163,255,0.25),_transparent_65%)] opacity-60" />
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#141414] p-6 shadow-[0_30px_90px_-45px_rgba(0,0,0,0.85)] sm:p-8">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_65%)] opacity-60" />
             <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-4">
                 <Skeleton className="h-16 w-16 rounded-2xl bg-white/10" />
@@ -104,8 +104,8 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
             </div>
           </div>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <Skeleton className="h-64 rounded-3xl bg-[#111520]" />
-            <Skeleton className="h-64 rounded-3xl bg-[#111520]" />
+            <Skeleton className="h-64 rounded-3xl bg-[#141414]" />
+            <Skeleton className="h-64 rounded-3xl bg-[#141414]" />
           </div>
         </div>
       </main>
@@ -116,7 +116,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     return (
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-3xl">
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111520] via-[#0b101d] to-[#05070d] p-8 text-center shadow-[0_24px_60px_-30px_rgba(10,15,25,0.8)]">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#080808] via-[#101010] to-[#181818] p-8 text-center shadow-[0_24px_60px_-30px_rgba(0,0,0,0.8)]">
             <h2 className="text-lg font-semibold text-white">We couldn&apos;t find that monument</h2>
             <p className="mt-2 text-sm text-white/70">
               {error || "The monument you&apos;re looking for may have been removed."}
@@ -192,10 +192,10 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
           </Link>
         </Button>
 
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#111a2a] via-[#0f1524] to-[#060910] p-6 shadow-[0_35px_120px_-45px_rgba(6,9,16,0.85)] sm:p-8">
+        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#050505] via-[#0f0f10] to-[#1b1b1d] p-6 shadow-[0_35px_120px_-45px_rgba(0,0,0,0.85)] sm:p-8">
           <div className="absolute inset-0">
-            <div className="absolute inset-x-8 -top-24 h-64 rounded-full bg-[radial-gradient(circle,_rgba(148,163,255,0.35),_transparent_70%)] blur-3xl" />
-            <div className="absolute bottom-0 right-0 h-64 w-64 translate-x-1/3 translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(45,212,191,0.25),_transparent_60%)] blur-3xl" />
+            <div className="absolute inset-x-8 -top-24 h-64 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.22),_transparent_70%)] blur-3xl" />
+            <div className="absolute bottom-0 right-0 h-64 w-64 translate-x-1/3 translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.08),_transparent_60%)] blur-3xl" />
           </div>
           <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-5">
@@ -250,7 +250,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
                 key={label}
                 className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition hover:border-white/20 hover:bg-white/10"
               >
-                <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[radial-gradient(circle,_rgba(148,163,255,0.35),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
+                <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.18),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
                 <dt className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-white/60">
                   <span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/70">
                     <Icon className="size-4" aria-hidden="true" />
@@ -272,8 +272,8 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
               onAutoSplit={handleAutoSplit}
             />
 
-            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#101928] via-[#0f1524] to-[#070a13] p-6 shadow-[0_28px_90px_-48px_rgba(10,15,25,0.75)] sm:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(148,163,255,0.18),_transparent_55%)]" />
+            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
               <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
                   <p className="text-xs font-medium uppercase tracking-wide text-white/60">
@@ -306,8 +306,8 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
           </div>
 
           <div className="space-y-6">
-            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#101928] via-[#0f1524] to-[#070a13] p-6 shadow-[0_28px_90px_-48px_rgba(10,15,25,0.75)] sm:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.14),_transparent_60%)]" />
+            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
               <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
                   <p className="text-xs font-medium uppercase tracking-wide text-white/60">

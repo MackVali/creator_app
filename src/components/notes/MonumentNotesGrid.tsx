@@ -78,7 +78,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           value={draft}
           onChange={handleInput}
           placeholder="Quick note..."
-          className="resize-none overflow-hidden rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/60 shadow-[0_12px_40px_-24px_rgba(15,23,42,0.9)] backdrop-blur focus-visible:ring-white/30 focus-visible:ring-offset-0"
+          className="resize-none overflow-hidden rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/60 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.78)] backdrop-blur focus-visible:ring-white/30 focus-visible:ring-offset-0"
         />
         <div className="flex justify-end">
           <Button
@@ -104,7 +104,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           ))}
         </div>
       ) : (
-        <Card className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#101928] via-[#0f1524] to-[#070a13] p-6 text-white/70 shadow-[0_24px_70px_-40px_rgba(10,15,25,0.8)]">
+        <Card className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 text-white/70 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.7)]">
           <p className="text-sm font-medium text-white">No notes yet</p>
           <p className="mt-2 text-xs text-white/60">
             Capture your first thought here and keep ideas close at hand.
