@@ -116,31 +116,33 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
         </div>
         {projectsToShow.length > 0 ? (
           <div className="flex flex-col gap-2">
-            {projectsToShow.map((project) => (
-              <div
-                key={project.id}
-                className="rounded-lg border border-slate-200 bg-white/80 p-2 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-xs font-semibold text-slate-700">
-                    {project.name}
-                  </p>
-                  <span className="text-[11px] font-medium text-slate-500">
-                    {project.progress}%
-                  </span>
+            <div className="flex gap-2">
+              {projectsToShow.map((project) => (
+                <div
+                  key={project.id}
+                  className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white/80 p-2 shadow-sm"
+                >
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <p className="truncate text-xs font-semibold text-slate-700">
+                      {project.name}
+                    </p>
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {project.progress}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full rounded-full bg-slate-900 transition-all duration-300"
+                      style={{ width: `${project.progress}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                    <span className="inline-block truncate capitalize">{project.status.toLowerCase()}</span>
+                    <span>{project.tasks?.length ?? 0} tasks</span>
+                  </div>
                 </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="h-full rounded-full bg-slate-900 transition-all duration-300"
-                    style={{ width: `${project.progress}%` }}
-                  />
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-                  <span className="capitalize">{project.status.toLowerCase()}</span>
-                  <span>{project.tasks?.length ?? 0} tasks</span>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
             {extraProjects > 0 && (
               <div className="text-[11px] text-slate-500">
                 +{extraProjects} more project{extraProjects === 1 ? "" : "s"}
