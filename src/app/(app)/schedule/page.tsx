@@ -20,7 +20,6 @@ import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
 import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
-import EnergyPager from '@/components/schedule/EnergyPager'
 import {
   getChildView,
   getParentView,
@@ -279,15 +278,6 @@ export default function SchedulePage() {
     touchStartX.current = null
   }
 
-  function formatFullDate(d: Date) {
-    return d.toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  }
-
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
@@ -297,19 +287,6 @@ export default function SchedulePage() {
           onToday={handleToday}
           canGoBack={view !== 'year'}
         />
-        <p className="text-sm text-muted-foreground">Plan and manage your time</p>
-
-        <div className="space-y-2">
-          <EnergyPager
-            activeIndex={{ year: 0, month: 1, day: 2, focus: 3 }[view]}
-            className="justify-center"
-          />
-        </div>
-
-        <div className="text-center text-sm text-gray-200">
-          {formatFullDate(view === 'focus' ? new Date() : currentDate)}
-        </div>
-
         <div
           className="relative bg-[var(--surface)]"
           onTouchStart={handleTouchStart}
