@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import styles from "./Folder.module.css";
 
@@ -53,8 +53,11 @@ export function Folder({
   const visibleItems = items.filter((item) => item != null);
 
   const [open, setOpen] = useState(false);
+  const folderBackRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const panelContentRef = useRef<HTMLDivElement>(null);
   const [panelHeight, setPanelHeight] = useState(0);
+  const [panelShift, setPanelShift] = useState(0);
 
   const folderBackColor = darkenColor(color, 0.12);
 
@@ -75,37 +78,128 @@ export function Folder({
     ["--folder-scale" as string]: size,
   };
 
-  useEffect(() => {
+  const recomputePanelMetrics = useCallback(() => {
     const content = panelContentRef.current;
-    if (!content) {
+
+    if (content) {
+      setPanelHeight(content.scrollHeight);
+    } else {
       setPanelHeight(0);
+    }
+
+    if (!open) {
+      setPanelShift(0);
       return;
     }
 
-    const updateHeight = () => {
-      setPanelHeight(content.scrollHeight);
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const folderBack = folderBackRef.current;
+    const panel = panelRef.current;
+
+    if (!folderBack || !panel) {
+      setPanelShift(0);
+      return;
+    }
+
+    const backRect = folderBack.getBoundingClientRect();
+    const panelWidth = panel.getBoundingClientRect().width;
+    const baseLeft = backRect.left + panel.offsetLeft;
+    const folderCenter = backRect.left + backRect.width / 2;
+
+    const viewportWidth =
+      window.innerWidth || document.documentElement.clientWidth || panelWidth;
+    const desiredLeft = folderCenter - panelWidth / 2;
+    const viewportPadding = 16;
+    const minLeft = viewportPadding;
+    const maxLeft = viewportWidth - panelWidth - viewportPadding;
+
+    let clampedLeft = desiredLeft;
+
+    if (maxLeft < minLeft) {
+      clampedLeft = Math.max((viewportWidth - panelWidth) / 2, 0);
+    } else if (desiredLeft < minLeft) {
+      clampedLeft = minLeft;
+    } else if (desiredLeft > maxLeft) {
+      clampedLeft = maxLeft;
+    }
+
+    setPanelShift(clampedLeft - baseLeft);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    let frame: number | undefined;
+
+    const scheduleMeasurement = () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        recomputePanelMetrics();
+      });
     };
 
-    updateHeight();
+    scheduleMeasurement();
 
-    if (typeof ResizeObserver === "undefined") {
-      return;
+    const content = panelContentRef.current;
+
+    if (content && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => {
+        scheduleMeasurement();
+      });
+
+      observer.observe(content);
+
+      return () => {
+        observer.disconnect();
+
+        if (frame !== undefined) {
+          cancelAnimationFrame(frame);
+        }
+      };
     }
-
-    const observer = new ResizeObserver(() => {
-      updateHeight();
-    });
-
-    observer.observe(content);
 
     return () => {
-      observer.disconnect();
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
     };
-  }, [size, visibleItems.length]);
+  }, [recomputePanelMetrics, size, visibleItems.length]);
+
+  useEffect(() => {
+    if (!open || typeof window === "undefined") {
+      return;
+    }
+
+    const handleResize = () => {
+      recomputePanelMetrics();
+    };
+
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+
+    handleResize();
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
+  }, [open, recomputePanelMetrics]);
+
+  const safePanelShift = Number.isFinite(panelShift) ? panelShift : 0;
 
   const panelStyle: CSSProperties = {
     ["--panel-height" as string]: open ? `${panelHeight}px` : "0px",
     ["--panel-opacity" as string]: open ? "1" : "0",
+    ["--panel-shift" as string]: `${safePanelShift}px`,
   };
 
   return (
@@ -115,8 +209,9 @@ export function Folder({
         style={folderStyle}
         onClick={handleClick}
       >
-        <div className={styles.folderBack}>
+        <div ref={folderBackRef} className={styles.folderBack}>
           <div
+            ref={panelRef}
             className={cn(styles.paperPanel, open && styles.paperPanelOpen)}
             style={panelStyle}
             onClick={(event) => event.stopPropagation()}

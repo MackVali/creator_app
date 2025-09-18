@@ -189,7 +189,11 @@
     rgba(15, 23, 42, 0.22);
   overflow: hidden;
   opacity: var(--panel-opacity, 0);
-  transform: translateY(calc(-6px * var(--folder-scale, 1)));
+  transform: translate3d(
+    var(--panel-shift, 0px),
+    calc(-6px * var(--folder-scale, 1)),
+    0
+  );
   transition: max-height 0.34s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.24s ease,
     transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
@@ -201,7 +205,7 @@
 }
 
 .paperPanelOpen {
-  transform: translateY(0);
+  transform: translate3d(var(--panel-shift, 0px), 0, 0);
   pointer-events: auto;
   box-shadow: 0 calc(22px * var(--folder-scale, 1)) calc(46px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.28);
@@ -211,6 +215,7 @@
   display: flex;
   flex: 1;
   gap: clamp(6px, calc(10px * var(--folder-scale, 1)), 18px);
+  justify-content: center;
   padding: calc(12px * var(--folder-scale, 1))
     calc(14px * var(--folder-scale, 1))
     calc(10px * var(--folder-scale, 1));
