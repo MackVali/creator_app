@@ -103,6 +103,25 @@ function WindowLabel({
   )
 }
 
+const isoDateKey = (date: Date) => date.toISOString().slice(0, 10)
+
+function shallowEqualAssignments(
+  a: Record<string, string>,
+  b: Record<string, string>,
+) {
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false
+  }
+  return true
+}
+
+type UnplacedReason = ReturnType<
+  typeof placeByEnergyWeight
+>['unplaced'][number]['reason']
+
 export default function SchedulePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -126,9 +145,12 @@ export default function SchedulePage() {
   const [placements, setPlacements] = useState<
     ReturnType<typeof placeByEnergyWeight>['placements']
   >([])
-  const [unplaced, setUnplaced] = useState<
-    ReturnType<typeof placeByEnergyWeight>['unplaced']
-  >([])
+  const [unplacedReasons, setUnplacedReasons] = useState<
+    Record<string, UnplacedReason>
+  >({})
+  const [projectAssignments, setProjectAssignments] = useState<
+    Record<string, string>
+  >({})
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
@@ -140,7 +162,7 @@ export default function SchedulePage() {
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', currentDate.toISOString().slice(0, 10))
+    params.set('date', isoDateKey(currentDate))
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [view, currentDate, router, pathname])
 
@@ -188,10 +210,20 @@ export default function SchedulePage() {
     return map
   }, [projectItems])
 
+  const unplacedList = useMemo(() => {
+    const assignedProjects = new Set(Object.keys(projectAssignments))
+    return Object.entries(unplacedReasons)
+      .filter(([projectId]) => !assignedProjects.has(projectId))
+      .map(([taskId, reason]) => ({
+        taskId,
+        reason,
+      }))
+  }, [unplacedReasons, projectAssignments])
+
   const dayEnergies = useMemo(() => {
     const map: Record<string, FlameLevel> = {}
     for (const p of placements) {
-      const key = p.start.toISOString().slice(0, 10)
+      const key = isoDateKey(p.start)
       const item = projectMap[p.taskId]
       const level = (item?.energy?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
@@ -253,16 +285,77 @@ export default function SchedulePage() {
 
   useEffect(() => {
     function run() {
-      if (windows.length === 0) return
-      const date = currentDate
-      const projResult = placeByEnergyWeight(projectItems, windows, date)
+      const dateKey = isoDateKey(currentDate)
+      const todayKey = isoDateKey(new Date())
+      const validProjectIds = new Set(projectItems.map(p => p.id))
+
+      const baseAssignments: Record<string, string> = {}
+      for (const [projectId, assignedDate] of Object.entries(projectAssignments)) {
+        if (!validProjectIds.has(projectId)) continue
+        if (assignedDate < todayKey) continue
+        baseAssignments[projectId] = assignedDate
+      }
+
+      const cleanedUnplaced: Record<string, UnplacedReason> = {}
+      for (const [projectId, reason] of Object.entries(unplacedReasons)) {
+        if (!validProjectIds.has(projectId)) continue
+        if (baseAssignments[projectId]) continue
+        cleanedUnplaced[projectId] = reason
+      }
+
+      if (windows.length === 0) {
+        if (!shallowEqualAssignments(projectAssignments, baseAssignments)) {
+          setProjectAssignments(baseAssignments)
+        }
+        if (!shallowEqualAssignments(unplacedReasons, cleanedUnplaced)) {
+          setUnplacedReasons(cleanedUnplaced)
+        }
+        return
+      }
+
+      const eligibleProjects = projectItems.filter(item => {
+        const assigned = baseAssignments[item.id]
+        return !assigned || assigned === dateKey
+      })
+
+      const projResult = placeByEnergyWeight(eligibleProjects, windows, currentDate)
       setPlacements(projResult.placements)
-      setUnplaced(projResult.unplaced)
+
+      const updatedAssignments: Record<string, string> = { ...baseAssignments }
+      const nextUnplaced: Record<string, UnplacedReason> = { ...cleanedUnplaced }
+      for (const placement of projResult.placements) {
+        updatedAssignments[placement.taskId] = dateKey
+        if (nextUnplaced[placement.taskId]) {
+          delete nextUnplaced[placement.taskId]
+        }
+      }
+      for (const entry of projResult.unplaced) {
+        const assigned = updatedAssignments[entry.taskId]
+        if (assigned && assigned !== dateKey) continue
+        if (assigned) {
+          delete updatedAssignments[entry.taskId]
+        }
+        nextUnplaced[entry.taskId] = entry.reason as UnplacedReason
+      }
+
+      if (!shallowEqualAssignments(unplacedReasons, nextUnplaced)) {
+        setUnplacedReasons(nextUnplaced)
+      }
+
+      if (!shallowEqualAssignments(projectAssignments, updatedAssignments)) {
+        setProjectAssignments(updatedAssignments)
+      }
     }
     run()
     const id = setInterval(run, 5 * 60 * 1000)
     return () => clearInterval(id)
-  }, [projectItems, windows, currentDate])
+  }, [
+    projectItems,
+    windows,
+    currentDate,
+    projectAssignments,
+    unplacedReasons,
+  ])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -506,11 +599,11 @@ export default function SchedulePage() {
           </AnimatePresence>
         </div>
 
-        {unplaced.length > 0 && (
+        {unplacedList.length > 0 && (
           <div className="space-y-2">
             <h2 className="text-sm font-semibold text-zinc-200">Unplaced</h2>
             <ul className="space-y-2">
-              {unplaced.map(u => {
+              {unplacedList.map(u => {
                 const item = projectMap[u.taskId]
                 const reason =
                   u.reason === 'no-window'
