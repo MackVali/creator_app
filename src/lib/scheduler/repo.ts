@@ -86,12 +86,28 @@ export async function fetchProjectsMap(
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name, priority, stage, energy');
+    .select('id, name, priority, stage, energy, duration_min');
 
   if (error) throw error;
   const map: Record<string, ProjectLite> = {};
-  for (const p of data ?? []) {
-    map[p.id] = p as ProjectLite;
+  type ProjectRecord = {
+    id: string;
+    name?: string | null;
+    priority: string;
+    stage: string;
+    energy?: string | null;
+    duration_min?: number | null;
+  };
+
+  for (const p of (data ?? []) as ProjectRecord[]) {
+    map[p.id] = {
+      id: p.id,
+      name: p.name ?? undefined,
+      priority: p.priority,
+      stage: p.stage,
+      energy: p.energy ?? null,
+      duration_min: p.duration_min ?? null,
+    };
   }
   return map;
 }

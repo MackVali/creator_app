@@ -6,7 +6,7 @@ import {
   fetchInstancesForRange,
   type ScheduleInstance,
 } from './instanceRepo'
-import { buildProjectItems } from './projects'
+import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -15,8 +15,6 @@ import {
 } from './repo'
 import { placeItemInWindows } from './placement'
 import { ENERGY } from './config'
-import type { TaskLite } from './weight'
-import { taskWeight } from './weight'
 
 type Client = SupabaseClient<Database>
 
@@ -81,14 +79,12 @@ export async function scheduleBacklog(
   const projectsMap = await fetchProjectsMap(supabase)
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
-  const taskMap: Record<string, TaskLite> = {}
-  for (const task of tasks) taskMap[task.id] = task
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
   for (const item of projectItems) projectItemMap[item.id] = item
 
   type QueueItem = {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
+    sourceType: 'PROJECT'
     duration_min: number
     energy: string
     weight: number
@@ -98,17 +94,19 @@ export async function scheduleBacklog(
   const baseStart = startOfDay(baseDate)
 
   for (const m of missed.data ?? []) {
-    const def =
-      m.source_type === 'PROJECT'
-        ? projectItemMap[m.source_id]
-        : taskMap[m.source_id]
+    if (m.source_type !== 'PROJECT') continue
+    const def = projectItemMap[m.source_id]
     if (!def) continue
 
-    const duration =
-      'duration_min' in def && typeof def.duration_min === 'number'
-        ? def.duration_min
-        : m.duration_min ?? 0
-    if (!duration) continue
+    let duration = Number(def.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const fallback = Number(m.duration_min ?? 0)
+      if (Number.isFinite(fallback) && fallback > 0) {
+        duration = fallback
+      } else {
+        duration = DEFAULT_PROJECT_DURATION_MIN
+      }
+    }
 
     const resolvedEnergy =
       ('energy' in def && def.energy)
@@ -117,13 +115,11 @@ export async function scheduleBacklog(
     const weight =
       typeof m.weight_snapshot === 'number'
         ? m.weight_snapshot
-        : m.source_type === 'PROJECT'
-          ? (def as { weight?: number }).weight ?? 0
-          : taskWeight(def as TaskLite)
+        : (def as { weight?: number }).weight ?? 0
 
     queue.push({
       id: def.id,
-      sourceType: m.source_type,
+      sourceType: 'PROJECT',
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
@@ -146,7 +142,8 @@ export async function scheduleBacklog(
     const scheduled = new Set<string>()
     for (const inst of future.data ?? []) {
       if (inst.status !== 'scheduled') continue
-      scheduled.add(`${inst.source_type}:${inst.source_id}`)
+      if (inst.source_type !== 'PROJECT') continue
+      scheduled.add(inst.source_id)
     }
 
     const enqueue = (
@@ -157,18 +154,16 @@ export async function scheduleBacklog(
             energy: string | null | undefined
             weight: number
           }
-        | null,
-      sourceType: 'PROJECT' | 'TASK'
+        | null
     ) => {
       if (!def) return
       const duration = Number(def.duration_min ?? 0)
       if (!Number.isFinite(duration) || duration <= 0) return
-      const key = `${sourceType}:${def.id}`
-      if (scheduled.has(key)) return
+      if (scheduled.has(def.id)) return
       const energy = (def.energy ?? 'NO').toString().toUpperCase()
       queue.push({
         id: def.id,
-        sourceType,
+        sourceType: 'PROJECT',
         duration_min: duration,
         energy,
         weight: def.weight ?? 0,
@@ -176,19 +171,7 @@ export async function scheduleBacklog(
     }
 
     for (const project of projectItems) {
-      enqueue(project, 'PROJECT')
-    }
-
-    for (const task of tasks) {
-      enqueue(
-        {
-          id: task.id,
-          duration_min: task.duration_min,
-          energy: task.energy,
-          weight: taskWeight(task),
-        },
-        'TASK'
-      )
+      enqueue(project)
     }
   }
 

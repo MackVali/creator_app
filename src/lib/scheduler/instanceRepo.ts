@@ -41,7 +41,6 @@ export async function fetchInstancesForRange(
 export async function createInstance(
   input: {
     userId: string
-    sourceType: 'PROJECT' | 'TASK'
     sourceId: string
     windowId?: string | null
     startUTC: string
@@ -57,7 +56,7 @@ export async function createInstance(
     .from('schedule_instances')
     .insert({
       user_id: input.userId,
-      source_type: input.sourceType,
+      source_type: 'PROJECT',
       source_id: input.sourceId,
       window_id: input.windowId ?? null,
       start_utc: input.startUTC,

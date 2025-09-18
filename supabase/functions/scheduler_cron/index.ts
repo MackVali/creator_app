@@ -9,6 +9,7 @@ type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 
 const GRACE_MIN = 60
+const DEFAULT_PROJECT_DURATION_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
 
 serve(async req => {
@@ -75,12 +76,11 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   const projects = await fetchProjectsMap(client, userId)
   const projectItems = buildProjectItems(Object.values(projects), tasks)
 
-  const taskMap = new Map(tasks.map(task => [task.id, task]))
   const projectMap = new Map(projectItems.map(project => [project.id, project]))
 
   type QueueItem = {
     id: string
-    sourceType: 'PROJECT' | 'TASK'
+    sourceType: 'PROJECT'
     duration_min: number
     energy: string
     weight: number
@@ -89,42 +89,41 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   const queue: QueueItem[] = []
 
   for (const instance of missed.data ?? []) {
-    const def =
-      instance.source_type === 'PROJECT'
-        ? projectMap.get(instance.source_id)
-        : taskMap.get(instance.source_id)
+    if (instance.source_type !== 'PROJECT') continue
+    const def = projectMap.get(instance.source_id)
     if (!def) continue
 
-    const duration =
-      'duration_min' in def && typeof def.duration_min === 'number'
-        ? def.duration_min
-        : instance.duration_min ?? 0
-    if (!duration) continue
+    let duration = Number(def.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      const fallback = Number(instance.duration_min ?? 0)
+      if (Number.isFinite(fallback) && fallback > 0) {
+        duration = fallback
+      } else {
+        duration = DEFAULT_PROJECT_DURATION_MIN
+      }
+    }
 
-    const resolvedEnergy =
-      ('energy' in def && def.energy)
-        ? String(def.energy)
-        : instance.energy_resolved ?? 'NO'
+    const resolvedEnergy = def.energy ? String(def.energy) : instance.energy_resolved ?? 'NO'
 
     const weight =
       typeof instance.weight_snapshot === 'number'
         ? instance.weight_snapshot
-        : instance.source_type === 'PROJECT'
-          ? (projectMap.get(instance.source_id)?.weight ?? 0)
-          : taskMap.get(instance.source_id)
-            ? taskWeight(taskMap.get(instance.source_id)!)
-            : 0
+        : def.weight ?? 0
 
     queue.push({
       id: def.id,
-      sourceType: instance.source_type,
+      sourceType: 'PROJECT',
       duration_min: duration,
-      energy: resolvedEnergy ?? 'NO',
+      energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
     })
   }
 
-  queue.sort((a, b) => b.weight - a.weight)
+  queue.sort((a, b) => {
+    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
+    if (energyDiff !== 0) return energyDiff
+    return b.weight - a.weight
+  })
 
   const baseStart = startOfDay(baseDate)
   const placed: ScheduleInstance[] = []
@@ -178,6 +177,7 @@ type ProjectLite = {
   priority: string
   stage: string
   energy?: string | null
+  duration_min?: number | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -217,7 +217,7 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
   const { data, error } = await client
     .from('projects')
-    .select('id, name, priority, stage, energy')
+    .select('id, name, priority, stage, energy, duration_min')
     .eq('user_id', userId)
 
   if (error) {
@@ -233,6 +233,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       priority: project.priority ?? 'NO',
       stage: project.stage ?? 'RESEARCH',
       energy: project.energy ?? 'NO',
+      duration_min: project.duration_min ?? null,
     }
   }
   return map
@@ -242,7 +243,21 @@ function buildProjectItems(projects: ProjectLite[], tasks: TaskLite[]): ProjectI
   const items: ProjectItem[] = []
   for (const project of projects) {
     const related = tasks.filter(task => task.project_id === project.id)
-    const duration = related.reduce((sum, task) => sum + task.duration_min, 0) || 60
+    const projectDuration = Number(project.duration_min ?? 0)
+    let duration = Number.isFinite(projectDuration) && projectDuration > 0
+      ? projectDuration
+      : 0
+
+    if (!duration && related.length > 0) {
+      const relatedDuration = related.reduce((sum, task) => sum + task.duration_min, 0)
+      if (relatedDuration > 0) {
+        duration = relatedDuration
+      }
+    }
+
+    if (!duration) {
+      duration = DEFAULT_PROJECT_DURATION_MIN
+    }
 
     const normalizeEnergy = (value?: string | null) => {
       const upper = (value ?? '').toUpperCase()
@@ -336,7 +351,7 @@ async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
 async function placeItemInWindows(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT' | 'TASK'; duration_min: number; energy: string; weight: number },
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
   windows: Array<{ id: string; startLocal: Date; endLocal: Date }>
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
@@ -383,7 +398,7 @@ async function placeItemInWindows(
 async function createInstance(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT' | 'TASK'; duration_min: number; energy: string; weight: number },
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
   windowId: string,
   start: Date,
   durationMin: number
@@ -395,7 +410,7 @@ async function createInstance(
     .from('schedule_instances')
     .insert({
       user_id: userId,
-      source_type: item.sourceType,
+      source_type: 'PROJECT',
       source_id: item.id,
       window_id: windowId,
       start_utc: startUTC,
