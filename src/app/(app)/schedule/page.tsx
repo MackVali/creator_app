@@ -103,6 +103,21 @@ function WindowLabel({
   )
 }
 
+const isoDateKey = (date: Date) => date.toISOString().slice(0, 10)
+
+function shallowEqualAssignments(
+  a: Record<string, string>,
+  b: Record<string, string>,
+) {
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false
+  }
+  return true
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -129,6 +144,9 @@ export default function SchedulePage() {
   const [unplaced, setUnplaced] = useState<
     ReturnType<typeof placeByEnergyWeight>['unplaced']
   >([])
+  const [projectAssignments, setProjectAssignments] = useState<
+    Record<string, string>
+  >({})
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
@@ -140,7 +158,7 @@ export default function SchedulePage() {
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', currentDate.toISOString().slice(0, 10))
+    params.set('date', isoDateKey(currentDate))
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [view, currentDate, router, pathname])
 
@@ -191,7 +209,7 @@ export default function SchedulePage() {
   const dayEnergies = useMemo(() => {
     const map: Record<string, FlameLevel> = {}
     for (const p of placements) {
-      const key = p.start.toISOString().slice(0, 10)
+      const key = isoDateKey(p.start)
       const item = projectMap[p.taskId]
       const level = (item?.energy?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
@@ -248,16 +266,46 @@ export default function SchedulePage() {
 
   useEffect(() => {
     function run() {
-      if (windows.length === 0) return
-      const date = currentDate
-      const projResult = placeByEnergyWeight(projectItems, windows, date)
+      const dateKey = isoDateKey(currentDate)
+      const todayKey = isoDateKey(new Date())
+      const validProjectIds = new Set(projectItems.map(p => p.id))
+
+      const baseAssignments: Record<string, string> = {}
+      for (const [projectId, assignedDate] of Object.entries(projectAssignments)) {
+        if (!validProjectIds.has(projectId)) continue
+        if (assignedDate < todayKey) continue
+        baseAssignments[projectId] = assignedDate
+      }
+
+      if (windows.length === 0) {
+        if (!shallowEqualAssignments(projectAssignments, baseAssignments)) {
+          setProjectAssignments(baseAssignments)
+        }
+        return
+      }
+
+      const eligibleProjects = projectItems.filter(item => {
+        const assigned = baseAssignments[item.id]
+        return !assigned || assigned === dateKey
+      })
+
+      const projResult = placeByEnergyWeight(eligibleProjects, windows, currentDate)
       setPlacements(projResult.placements)
       setUnplaced(projResult.unplaced)
+
+      const updatedAssignments: Record<string, string> = { ...baseAssignments }
+      for (const placement of projResult.placements) {
+        updatedAssignments[placement.taskId] = dateKey
+      }
+
+      if (!shallowEqualAssignments(projectAssignments, updatedAssignments)) {
+        setProjectAssignments(updatedAssignments)
+      }
     }
     run()
     const id = setInterval(run, 5 * 60 * 1000)
     return () => clearInterval(id)
-  }, [projectItems, windows, currentDate])
+  }, [projectItems, windows, currentDate, projectAssignments])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
