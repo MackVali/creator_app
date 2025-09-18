@@ -4,8 +4,8 @@
   transform-origin: center;
   overflow: visible;
   --folder-scale: 1;
-  width: calc(220px * var(--folder-scale, 1));
-  height: calc(185px * var(--folder-scale, 1));
+  width: calc(660px * var(--folder-scale, 1));
+  height: calc(278px * var(--folder-scale, 1));
 }
 
 .folder {

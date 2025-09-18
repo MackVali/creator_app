@@ -14,8 +14,6 @@ type FolderProps = {
   className?: string;
 };
 
-const MAX_ITEMS = 5;
-
 const darkenColor = (hex: string, percent: number) => {
   let color = hex.startsWith("#") ? hex.slice(1) : hex;
   if (color.length === 3) {
@@ -45,20 +43,20 @@ const paperColors = [
 ];
 
 export function Folder({
-  color = "#221042",
+  color = "#E5E7EB",
   gradient,
   size = 1,
   items = [],
   label,
   className,
 }: FolderProps) {
-  const visibleItems = items.filter((item) => item != null).slice(0, MAX_ITEMS);
+  const visibleItems = items.filter((item) => item != null);
 
   const [open, setOpen] = useState(false);
   const panelContentRef = useRef<HTMLDivElement>(null);
   const [panelHeight, setPanelHeight] = useState(0);
 
-  const folderBackColor = darkenColor(color, -0.18);
+  const folderBackColor = darkenColor(color, 0.12);
 
   const handleClick = () => {
     setOpen((prev) => !prev);
