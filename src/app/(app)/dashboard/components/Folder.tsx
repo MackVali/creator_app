@@ -9,8 +9,10 @@ type PaperOffset = { x: number; y: number };
 
 type FolderProps = {
   color?: string;
+  gradient?: string;
   size?: number;
   items?: ReactNode[];
+  label?: ReactNode;
   className?: string;
 };
 
@@ -52,9 +54,11 @@ const computePositions = (count: number) => {
 };
 
 export function Folder({
-  color = "#5227FF",
+  color = "#221042",
+  gradient,
   size = 1,
   items = [],
+  label,
   className,
 }: FolderProps) {
   const visibleItems = items.filter((item) => item != null).slice(0, MAX_ITEMS);
@@ -103,6 +107,10 @@ export function Folder({
     ["--folder-back-color" as string]: folderBackColor,
   };
 
+  if (gradient) {
+    folderStyle["--folder-gradient" as string] = gradient;
+  }
+
   const wrapperStyle: CSSProperties = {
     ["--folder-scale" as string]: size,
   };
@@ -147,6 +155,7 @@ export function Folder({
               </div>
             );
           })}
+          {label ? <div className={styles.folderLabel}>{label}</div> : null}
           <div className={styles.folderFront} />
           <div className={styles.folderFrontRight} />
         </div>

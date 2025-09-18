@@ -12,10 +12,13 @@ type GoalFolderCardProps = {
   onToggleActive?: () => void;
 };
 
-const folderColors: Record<Goal["priority"], string> = {
-  High: "#F97316",
-  Medium: "#38BDF8",
-  Low: "#A78BFA",
+const gemstoneGradient =
+  "linear-gradient(140deg, #16092B 0%, #301352 38%, #4C1E78 66%, #9B55F5 100%)";
+
+const folderThemes: Record<Goal["priority"], { base: string; gradient: string }> = {
+  High: { base: "#150828", gradient: gemstoneGradient },
+  Medium: { base: "#16092B", gradient: gemstoneGradient },
+  Low: { base: "#150828", gradient: gemstoneGradient },
 };
 
 const priorityBadgeClasses: Record<Goal["priority"], string> = {
@@ -55,6 +58,7 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
   const updatedAtLabel = formatShortDate(goal.updatedAt);
   const projectsToShow = goal.projects.slice(0, 5);
   const extraProjects = Math.max(goal.projects.length - projectsToShow.length, 0);
+  const theme = folderThemes[goal.priority] ?? folderThemes.High;
 
   const handleEdit = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -74,19 +78,11 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
         className="flex h-full w-full flex-col text-left text-slate-900"
         key={project.id}
       >
-        <div className="flex flex-1 flex-col gap-2">
-          <p className="min-w-0 whitespace-normal break-words text-xs font-semibold leading-snug">
-            {project.name}
-          </p>
-          <div className="flex items-center justify-between text-[9px] text-slate-500">
-            <span className="min-w-0 truncate capitalize">
-              {project.status.toLowerCase()}
-            </span>
-            <span className="shrink-0">{project.tasks?.length ?? 0} tasks</span>
-          </div>
-        </div>
+        <p className="min-w-0 flex-1 whitespace-normal break-words text-xs font-semibold leading-snug">
+          {project.name}
+        </p>
         {showOverflow && (
-          <div className="mt-2 rounded-md bg-slate-100/90 px-2 py-1 text-center text-[9px] font-semibold text-slate-600">
+          <div className="mt-3 rounded-md bg-slate-100/90 px-2 py-1 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-600">
             +{extraProjects} more
           </div>
         )}
@@ -106,22 +102,29 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
           </div>,
         ];
 
+  const folderLabel = (
+    <div className="flex items-center gap-1.5">
+      {goal.emoji ? (
+        <span className="text-lg leading-none" aria-hidden>
+          {goal.emoji}
+        </span>
+      ) : null}
+      <span className="folder-label-text text-[11px] font-semibold uppercase tracking-[0.12em]">
+        {goal.title}
+      </span>
+    </div>
+  );
+
   return (
     <div className="flex w-full max-w-[260px] flex-col items-center gap-4 text-center">
       <Folder
-        color={folderColors[goal.priority]}
+        color={theme.base}
+        gradient={theme.gradient}
         items={folderItems}
         size={0.48}
+        label={folderLabel}
       />
       <div className="flex flex-col items-center gap-1.5">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-100">
-          {goal.emoji && (
-            <span className="text-xl" aria-hidden>
-              {goal.emoji}
-            </span>
-          )}
-          <span className="max-w-[200px] truncate">{goal.title}</span>
-        </div>
         <div className="flex flex-wrap justify-center gap-1.5">
           <span
             className={cn(

@@ -62,7 +62,7 @@
   width: 100%;
   height: 78%;
   border-radius: calc(20px * var(--folder-scale, 1));
-  background: var(--folder-color);
+  background: var(--folder-gradient, var(--folder-color));
   box-shadow: 0 calc(22px * var(--folder-scale, 1)) calc(42px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.4);
   transform-origin: bottom center;
@@ -92,7 +92,7 @@
   width: 48%;
   height: 62%;
   border-radius: calc(18px * var(--folder-scale, 1));
-  background: var(--folder-color);
+  background: var(--folder-gradient, var(--folder-color));
   box-shadow: 0 calc(18px * var(--folder-scale, 1)) calc(36px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.32);
   transform-origin: bottom center;
@@ -100,6 +100,51 @@
   transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.45s;
   filter: brightness(1.1);
   z-index: 4;
+}
+
+.folderLabel {
+  position: absolute;
+  inset: auto auto calc(26px * var(--folder-scale, 1)) 50%;
+  transform: translateX(-50%);
+  max-width: calc(150px * var(--folder-scale, 1));
+  padding: calc(6px * var(--folder-scale, 1)) calc(12px * var(--folder-scale, 1));
+  border-radius: calc(12px * var(--folder-scale, 1));
+  background: linear-gradient(
+    120deg,
+    rgba(222, 215, 255, 0.22),
+    rgba(111, 76, 204, 0.45)
+  );
+  box-shadow: 0 calc(14px * var(--folder-scale, 1)) calc(30px * var(--folder-scale, 1))
+      rgba(12, 6, 29, 0.55),
+    inset 0 calc(1px * var(--folder-scale, 1)) calc(2px * var(--folder-scale, 1))
+      rgba(255, 255, 255, 0.18);
+  color: #fdf4ff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: calc(12px * var(--folder-scale, 1));
+  text-align: center;
+  line-height: 1.15;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(6px * var(--folder-scale, 1));
+  padding-right: calc(14px * var(--folder-scale, 1));
+  padding-left: calc(14px * var(--folder-scale, 1));
+  pointer-events: none;
+  text-shadow: 0 calc(1px * var(--folder-scale, 1))
+      calc(4px * var(--folder-scale, 1))
+      rgba(5, 2, 12, 0.65);
+}
+
+.folderLabel :global(.folder-label-text) {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .open .folderFront {
