@@ -676,7 +676,7 @@ export default function SchedulePage() {
                                 return next
                               })
                             }}
-                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white relative"
+                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
                             style={style}
                             initial={
                               prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -747,7 +747,7 @@ export default function SchedulePage() {
                           <motion.div
                             key={taskInstance.id}
                             aria-label={`Task ${task.name}`}
-                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white relative"
+                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
                             style={tStyle}
                             onClick={() =>
                               setExpandedProjects(prev => {
@@ -825,7 +825,7 @@ export default function SchedulePage() {
                       <motion.div
                         key={instance.id}
                         aria-label={`Task ${task.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white relative"
+                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
                         style={style}
                         initial={
                           prefersReducedMotion ? false : { opacity: 0, y: 4 }
