@@ -6,6 +6,7 @@ import { useProfile } from "@/lib/hooks/useProfile";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,21 +15,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function TopNav() {
+  const pathname = usePathname();
+  const shouldHideNav = pathname?.startsWith("/schedule");
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
 
   useEffect(() => {
+    if (!supabase || shouldHideNav) {
+      return;
+    }
+
     const getUserEmail = async () => {
-      if (supabase) {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        setUserEmail(user?.email || null);
-      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setUserEmail(user?.email || null);
     };
+
     getUserEmail();
-  }, [supabase]);
+  }, [shouldHideNav, supabase]);
+
+  if (shouldHideNav) {
+    return null;
+  }
 
   return (
     <nav className="w-full flex items-center justify-between px-4 py-2 bg-black/80 text-white border-b border-white/10 backdrop-blur">
