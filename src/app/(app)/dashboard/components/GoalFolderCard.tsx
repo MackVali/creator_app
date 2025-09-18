@@ -67,26 +67,35 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
   };
 
   const projectCards: ReactNode[] = projectsToShow.map((project, index) => (
-    <div className="flex h-full flex-col gap-3 text-slate-900" key={project.id}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="truncate text-sm font-semibold leading-tight">{project.name}</p>
-        <span className="text-xs font-semibold text-slate-500">{project.progress}%</span>
+    <div
+      className="flex h-full min-w-0 flex-col gap-2 text-slate-900"
+      key={project.id}
+    >
+      <div className="flex items-start justify-between gap-1">
+        <p className="min-w-0 flex-1 truncate text-[11px] font-semibold leading-snug">
+          {project.name}
+        </p>
+        <span className="shrink-0 text-[10px] font-semibold text-slate-500">
+          {project.progress}%
+        </span>
       </div>
-      <div>
+      <div className="space-y-1">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
           <div
             className="h-full rounded-full bg-slate-900 transition-all duration-300"
             style={{ width: `${project.progress}%` }}
           />
         </div>
-        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-          <span className="inline-block truncate capitalize">{project.status.toLowerCase()}</span>
-          <span>{project.tasks?.length ?? 0} tasks</span>
+        <div className="flex items-center justify-between text-[9px] text-slate-500">
+          <span className="min-w-0 truncate capitalize">
+            {project.status.toLowerCase()}
+          </span>
+          <span className="shrink-0">{project.tasks?.length ?? 0} tasks</span>
         </div>
       </div>
       {index === projectsToShow.length - 1 && extraProjects > 0 && (
-        <div className="mt-auto rounded-md bg-slate-100/80 px-2 py-1 text-[11px] font-semibold text-slate-600">
-          +{extraProjects} more project{extraProjects === 1 ? "" : "s"}
+        <div className="mt-auto rounded-md bg-slate-100/90 px-2 py-1 text-[9px] font-semibold text-slate-600">
+          +{extraProjects} more
         </div>
       )}
     </div>
@@ -99,7 +108,7 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
           (
             <div
               key="empty"
-              className="flex h-full flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white/70 p-4 text-center text-xs font-medium text-slate-500"
+              className="flex h-full flex-col items-center justify-center rounded-lg border border-dashed border-slate-300/70 bg-white/70 p-3 text-center text-[10px] font-medium text-slate-500"
             >
               No projects linked yet.
             </div>
@@ -113,18 +122,22 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
       : projectCards.slice(0, 3);
 
   return (
-    <div className="flex w-full max-w-[360px] flex-col items-center gap-5 text-center">
-      <Folder color={folderColors[goal.priority]} items={folderItems} />
-      <div className="flex flex-col items-center gap-2">
+    <div className="flex w-full max-w-[260px] flex-col items-center gap-4 text-center">
+      <Folder
+        color={folderColors[goal.priority]}
+        items={folderItems}
+        size={0.48}
+      />
+      <div className="flex flex-col items-center gap-1.5">
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-100">
           {goal.emoji && (
             <span className="text-xl" aria-hidden>
               {goal.emoji}
             </span>
           )}
-          <span className="max-w-[280px] truncate">{goal.title}</span>
+          <span className="max-w-[200px] truncate">{goal.title}</span>
         </div>
-        <div className="flex flex-wrap justify-center gap-2">
+        <div className="flex flex-wrap justify-center gap-1.5">
           <span
             className={cn(
               "rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide",
@@ -151,7 +164,7 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
           </span>
         </div>
       </div>
-      <div className="flex w-full max-w-[300px] flex-col gap-3 text-left text-slate-200">
+      <div className="flex w-full max-w-[220px] flex-col gap-2.5 text-left text-slate-200">
         <div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-slate-700">
             <div
@@ -159,12 +172,12 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
               style={{ width: `${goal.progress}%` }}
             />
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400">
+          <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
             <span>Progress</span>
             <span>{goal.progress}%</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 text-[10px] text-slate-400">
           {dueDateLabel && (
             <span className="flex items-center gap-1">
               <CalendarDays className="h-3 w-3 text-slate-500" aria-hidden />
@@ -176,14 +189,14 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
             Updated {updatedAtLabel ?? "—"}
           </span>
         </div>
-        <div className="text-[11px] text-slate-400">
+        <div className="text-[10px] text-slate-400">
           {goal.projects.length > 0 ? (
             <>
               {goal.projects.length} linked project
               {goal.projects.length === 1 ? "" : "s"}
               {extraProjects > 0 && (
                 <>
-                  {" "}• +{extraProjects} more project{extraProjects === 1 ? "" : "s"} not shown
+                  {" "}• +{extraProjects} more not shown
                 </>
               )}
             </>
@@ -192,7 +205,7 @@ export function GoalFolderCard({ goal, onEdit, onToggleActive }: GoalFolderCardP
           )}
         </div>
       </div>
-      <div className="mt-2 flex w-full max-w-[300px] gap-2">
+      <div className="mt-2 flex w-full max-w-[220px] gap-2">
         <button
           type="button"
           onClick={handleEdit}

@@ -98,10 +98,12 @@ export function Folder({
     ["--paper-3" as string]: paper3,
   };
 
-  const scaleStyle: CSSProperties = { transform: `scale(${size})` };
+  const wrapperStyle: CSSProperties = {
+    ["--folder-scale" as string]: size,
+  };
 
   return (
-    <div className={cn(styles.wrapper, className)} style={scaleStyle}>
+    <div className={cn(styles.wrapper, className)} style={wrapperStyle}>
       <div
         className={cn(styles.folder, open && styles.open)}
         style={folderStyle}
