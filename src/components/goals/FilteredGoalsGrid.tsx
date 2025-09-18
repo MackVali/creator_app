@@ -15,6 +15,7 @@ interface FilteredGoalsGridProps {
   entity: "monument" | "skill";
   id: string;
   onCreateGoal?: () => void;
+  onCountChange?: (count: number) => void;
 }
 
 function GridSkeleton() {
@@ -68,7 +69,7 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
-export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGridProps) {
+export function FilteredGoalsGrid({ entity, id, onCreateGoal, onCountChange }: FilteredGoalsGridProps) {
   const { goals, loading: goalsLoading, error } = useFilteredGoals({ entity, id, limit: 12 });
   const [active, setActive] = useState("Active");
   const [goalFolders, setGoalFolders] = useState<Goal[]>([]);
@@ -79,6 +80,7 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
       if (!goals || goals.length === 0) {
         setGoalFolders([]);
         setProjLoading(false);
+        onCountChange?.(0);
         return;
       }
 
@@ -121,13 +123,14 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
       }));
 
       setGoalFolders(mapped);
+      onCountChange?.(mapped.length);
       setProjLoading(false);
     };
 
     if (!goalsLoading) {
       loadProjects();
     }
-  }, [goals, goalsLoading]);
+  }, [goals, goalsLoading, onCountChange]);
 
   const loading = goalsLoading || projLoading;
 

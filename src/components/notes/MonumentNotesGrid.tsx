@@ -14,9 +14,10 @@ import { MonumentNoteCard } from "./MonumentNoteCard";
 interface MonumentNotesGridProps {
   monumentId: string;
   inputRef?: Ref<HTMLTextAreaElement>;
+  onCountChange?: (count: number) => void;
 }
 
-export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridProps) {
+export function MonumentNotesGrid({ monumentId, inputRef, onCountChange }: MonumentNotesGridProps) {
   const [notes, setNotes] = useState<MonumentNote[]>([]);
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -31,8 +32,10 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
   }, [inputRef]);
 
   useEffect(() => {
-    setNotes(getMonumentNotes(monumentId));
-  }, [monumentId]);
+    const loadedNotes = getMonumentNotes(monumentId);
+    setNotes(loadedNotes);
+    onCountChange?.(loadedNotes.length);
+  }, [monumentId, onCountChange]);
 
   useEffect(() => {
     saveMonumentNotes(monumentId, notes);
@@ -55,31 +58,45 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
       title: draft.trim(),
       content: draft.trim(),
     };
-    setNotes([...notes, newNote]);
+    setNotes((prev) => {
+      const updated = [...prev, newNote];
+      onCountChange?.(updated.length);
+      return updated;
+    });
     setDraft("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleAdd} className="space-y-2">
+      <form
+        onSubmit={handleAdd}
+        className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4 shadow-[0_40px_120px_rgba(15,23,42,0.35)] sm:p-5"
+      >
         <Textarea
           ref={textareaRef}
           rows={1}
           value={draft}
           onChange={handleInput}
           placeholder="Quick note..."
-          className="resize-none overflow-hidden rounded-2xl border border-white/5 bg-[#111520] p-3 text-sm text-[#E7ECF2] placeholder-[#A7B0BD]"
+          className="min-h-0 resize-none overflow-hidden border-none bg-transparent p-0 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:ring-0 focus-visible:ring-offset-0"
         />
         <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={!draft.trim()} aria-label="Save note">
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!draft.trim()}
+            aria-label="Save note"
+            className="border-white/20 text-slate-200 hover:bg-white/10"
+            variant="outline"
+          >
             Save
           </Button>
         </div>
       </form>
 
       {hasNotes ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {notes.map((note) => (
             <MonumentNoteCard
               key={note.id}
@@ -89,8 +106,8 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           ))}
         </div>
       ) : (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          <p className="text-[#A7B0BD]">No notes yet. Capture your first thought here.</p>
+        <Card className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-slate-300 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
+          <p>No notes yet. Capture your first thought here.</p>
         </Card>
       )}
     </div>

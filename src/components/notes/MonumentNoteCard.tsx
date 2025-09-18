@@ -11,12 +11,17 @@ interface MonumentNoteCardProps {
 
 export function MonumentNoteCard({ note, monumentId }: MonumentNoteCardProps) {
   return (
-    <Link href={`/monuments/${monumentId}/notes/${note.id}`}>
-      <Card className="h-full hover:bg-gray-800 transition-colors">
-        <CardContent className="p-4">
-          <h3 className="text-lg font-medium text-white truncate">
+    <Link
+      href={`/monuments/${monumentId}/notes/${note.id}`}
+      className="block h-full"
+      aria-label={`Open note ${note.title || "Untitled"}`}
+    >
+      <Card className="h-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-slate-900/70">
+        <CardContent className="flex h-full flex-col gap-3 p-4">
+          <h3 className="text-base font-semibold text-slate-100 line-clamp-2">
             {note.title || "Untitled"}
           </h3>
+          <span className="text-xs font-medium text-slate-500">Open note →</span>
         </CardContent>
       </Card>
     </Link>

@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Edit3,
+  Flame,
+  Flag,
+  Plus,
+  StickyNote as StickyNoteIcon,
+  Target,
+} from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { getMonumentNotes } from "@/lib/monumentNotesStorage";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,14 +33,34 @@ interface MonumentDetailProps {
   id: string;
 }
 
+type MonumentStats = {
+  milestones: number;
+  goals: number;
+  notes: number;
+};
+
 export function MonumentDetail({ id }: MonumentDetailProps) {
   const [monument, setMonument] = useState<Monument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<MonumentStats>({
+    milestones: 0,
+    goals: 0,
+    notes: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
   const supabase = getSupabaseBrowser();
   const router = useRouter();
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
   const milestonesRef = useRef<MilestonesPanelHandle>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,49 +96,155 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     };
   }, [supabase, id]);
 
+  const refreshStats = useCallback(async () => {
+    if (!supabase || !id) {
+      if (isMountedRef.current) {
+        setStats({
+          milestones: 0,
+          goals: 0,
+          notes: getMonumentNotes(id).length,
+        });
+        setStatsLoading(false);
+      }
+      return;
+    }
+    try {
+      await supabase.auth.getSession();
+      const [milestoneResponse, goalResponse] = await Promise.all([
+        supabase
+          .from("milestones")
+          .select("id", { count: "exact", head: true })
+          .eq("monument_id", id),
+        supabase
+          .from("goals")
+          .select("id", { count: "exact", head: true })
+          .eq("monument_id", id),
+      ]);
+
+      if (milestoneResponse.error) {
+        console.error("Failed to load milestone count", milestoneResponse.error);
+      }
+
+      if (goalResponse.error) {
+        console.error("Failed to load goal count", goalResponse.error);
+      }
+
+      if (!isMountedRef.current) return;
+
+      setStats({
+        milestones: milestoneResponse.count ?? 0,
+        goals: goalResponse.count ?? 0,
+        notes: getMonumentNotes(id).length,
+      });
+      setStatsLoading(false);
+    } catch (err) {
+      console.error("Failed to load monument stats", err);
+      if (!isMountedRef.current) return;
+      setStats({
+        milestones: 0,
+        goals: 0,
+        notes: getMonumentNotes(id).length,
+      });
+      setStatsLoading(false);
+    }
+  }, [supabase, id]);
+
+  useEffect(() => {
+    refreshStats();
+  }, [refreshStats]);
+
+  const updateStat = useCallback((key: keyof MonumentStats, value: number) => {
+    setStats((prev) => ({ ...prev, [key]: value }));
+    setStatsLoading(false);
+  }, []);
+
+  const handleMilestoneCountChange = useCallback(
+    (count: number) => updateStat("milestones", count),
+    [updateStat]
+  );
+
+  const handleGoalCountChange = useCallback(
+    (count: number) => updateStat("goals", count),
+    [updateStat]
+  );
+
+  const handleNoteCountChange = useCallback(
+    (count: number) => updateStat("notes", count),
+    [updateStat]
+  );
+
   if (loading) {
     return (
-      <main className="p-4 flex flex-col gap-4 sm:gap-5">
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 sm:p-5">
-          <div className="flex items-center gap-4">
-            <Skeleton className="h-14 w-14 rounded-full" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-5 w-1/2" />
-              <Skeleton className="h-4 w-1/3" />
+      <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl space-y-6">
+          <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/60 p-6 sm:p-8">
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-4">
+                  <Skeleton className="h-16 w-16 rounded-2xl" />
+                  <div className="space-y-3">
+                    <Skeleton className="h-5 w-24" />
+                    <Skeleton className="h-10 w-48" />
+                    <Skeleton className="h-4 w-72" />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Skeleton className="h-9 w-32 rounded-md" />
+                  <Skeleton className="h-9 w-32 rounded-md" />
+                  <Skeleton className="h-9 w-28 rounded-md" />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                  >
+                    <Skeleton className="h-10 w-10 rounded-xl" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-3 w-20" />
+                      <Skeleton className="h-6 w-16" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <div className="space-y-6">
+              <Skeleton className="h-64 rounded-3xl" />
+              <Skeleton className="h-72 rounded-3xl" />
+              <Skeleton className="h-80 rounded-3xl" />
+            </div>
+            <div className="space-y-6">
+              <Skeleton className="h-48 rounded-3xl" />
+              <Skeleton className="h-64 rounded-3xl" />
             </div>
           </div>
-          <div className="mt-4 flex gap-2">
-            <Skeleton className="h-8 w-20" />
-            <Skeleton className="h-8 w-24" />
-            <Skeleton className="h-8 w-24" />
-          </div>
-        </Card>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-32 rounded-2xl" />
-        ))}
+        </div>
       </main>
     );
   }
 
   if (error || !monument) {
     return (
-      <main className="p-4">
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center">
-          <p className="text-[#A7B0BD]">{error || "Monument not found"}</p>
-        </Card>
+      <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl">
+          <Card className="rounded-3xl border border-white/10 bg-slate-950/70 p-6 text-center text-slate-200 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
+            <p>{error || "Monument not found"}</p>
+          </Card>
+        </div>
       </main>
     );
   }
-
-  const handleCreateMilestone = () => {
-    milestonesRef.current?.addMilestone();
-  };
 
   const handleAddMilestone = () => {
     document
       .getElementById("monument-milestones")
       ?.scrollIntoView({ behavior: "smooth" });
-    handleCreateMilestone();
+    void milestonesRef.current?.addMilestone();
   };
 
   const handleAutoSplit = () => {
@@ -125,41 +261,213 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   };
 
   return (
-    <main className="p-4 flex flex-col gap-4 sm:gap-5">
-      <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 sm:p-5 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-        <div className="flex items-center gap-4">
-          <span className="text-5xl" role="img" aria-label={`Monument: ${monument.title}`}>
-            {monument.emoji || "\uD83D\uDDFC\uFE0F"}
-          </span>
-          <div className="flex flex-col">
-            <h2 className="text-[#E7ECF2] font-bold">{monument.title}</h2>
-            <Badge variant="outline" className="mt-1 self-start px-2 py-0">
-              0 day streak
-            </Badge>
+    <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+        <Link
+          href="/monuments"
+          className="group inline-flex w-fit items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-slate-100"
+        >
+          <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+          Back to monuments
+        </Link>
+
+        <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 p-6 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-8">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute left-[-12%] top-1/2 h-72 w-72 -translate-y-1/2 rounded-full bg-emerald-500/15 blur-3xl" />
+            <div className="absolute right-[-18%] top-[-20%] h-80 w-80 rounded-full bg-sky-500/10 blur-3xl" />
+          </div>
+
+          <div className="relative flex flex-col gap-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-4">
+                <span
+                  className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-4xl"
+                  role="img"
+                  aria-label={`Monument: ${monument.title}`}
+                >
+                  {monument.emoji || "\uD83D\uDDFC\uFE0F"}
+                </span>
+                <div className="space-y-3">
+                  <Badge
+                    variant="outline"
+                    className="w-fit rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-slate-200"
+                  >
+                    Monument
+                  </Badge>
+                  <div>
+                    <h1 className="text-3xl font-bold leading-tight text-white sm:text-4xl">
+                      {monument.title}
+                    </h1>
+                    <p className="mt-2 max-w-2xl text-sm text-slate-300">
+                      Craft a space to celebrate progress. Add milestones, link goals, and capture reflections as this monument comes to life.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="secondary" onClick={handleAddMilestone} aria-label="Create milestone">
+                  <Plus className="h-4 w-4" />
+                  Milestone
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddNote}
+                  className="border-white/20 text-slate-200 hover:bg-white/10"
+                  aria-label="Focus note editor"
+                >
+                  <StickyNoteIcon className="h-4 w-4" />
+                  Quick note
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  asChild
+                  className="text-slate-200 hover:bg-white/10 hover:text-white"
+                  aria-label="Edit monument"
+                >
+                  <Link href={`/monuments/${id}/edit`}>
+                    <Edit3 className="h-4 w-4" />
+                    Edit
+                  </Link>
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  label: "Milestones",
+                  value: statsLoading ? "…" : stats.milestones.toString(),
+                  description: "Key steps you’ve defined.",
+                  icon: Flag,
+                  accent: "text-emerald-300",
+                },
+                {
+                  label: "Linked goals",
+                  value: statsLoading ? "…" : stats.goals.toString(),
+                  description: "Initiatives powering this win.",
+                  icon: Target,
+                  accent: "text-sky-300",
+                },
+                {
+                  label: "Notes",
+                  value: statsLoading ? "…" : stats.notes.toString(),
+                  description: "Moments you’ve captured.",
+                  icon: StickyNoteIcon,
+                  accent: "text-amber-300",
+                },
+                {
+                  label: "Momentum streak",
+                  value: "0 days",
+                  description: "Keep logging wins to build momentum.",
+                  icon: Flame,
+                  accent: "text-rose-300",
+                },
+              ].map(({ label, value, description, icon: Icon, accent }) => (
+                <div
+                  key={label}
+                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
+                    <Icon className={`h-5 w-5 ${accent}`} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+                    <p className="text-xl font-semibold text-white">{value}</p>
+                    <p className="text-xs text-slate-400">{description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div className="space-y-6">
+            <MilestonesPanel
+              ref={milestonesRef}
+              monumentId={id}
+              onAutoSplit={handleAutoSplit}
+              onMilestonesChange={handleMilestoneCountChange}
+            />
+
+            <Card className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Linked goals</h2>
+                  <p className="text-sm text-slate-400">Highlight the goals that make this monument real.</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCreateGoal}
+                  className="border-white/20 text-slate-200 hover:bg-white/10"
+                  aria-label="Create goal"
+                >
+                  <Target className="h-4 w-4" />
+                  New goal
+                </Button>
+              </div>
+              <div className="mt-5">
+                <FilteredGoalsGrid
+                  entity="monument"
+                  id={id}
+                  onCreateGoal={handleCreateGoal}
+                  onCountChange={handleGoalCountChange}
+                />
+              </div>
+            </Card>
+
+            <Card className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Notes & reflections</h2>
+                  <p className="text-sm text-slate-400">Capture quick wins, quotes, and takeaways while they’re fresh.</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddNote}
+                  className="border-white/20 text-slate-200 hover:bg-white/10"
+                  aria-label="Scroll to notes"
+                >
+                  <StickyNoteIcon className="h-4 w-4" />
+                  Add note
+                </Button>
+              </div>
+              <div className="mt-5">
+                <MonumentNotesGrid
+                  monumentId={id}
+                  inputRef={noteInputRef}
+                  onCountChange={handleNoteCountChange}
+                />
+              </div>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-slate-100 shadow-[0_40px_120px_rgba(15,23,42,0.45)] sm:p-6">
+              <h2 className="text-lg font-semibold text-white">Make this monument meaningful</h2>
+              <ul className="mt-4 space-y-3 text-sm text-slate-400">
+                <li className="flex items-start gap-3">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  Break big wins into milestones so you can celebrate the steps that matter.
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  Link goals to show where the momentum is coming from and what’s next.
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-300" />
+                  Capture notes to remember how each milestone felt and what you learned.
+                </li>
+              </ul>
+            </Card>
+            <ActivityPanel />
           </div>
         </div>
-        <p className="mt-3 text-[#A7B0BD]">Not charging yet.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button asChild>
-            <Link href={`/monuments/${id}/edit`}>Edit</Link>
-          </Button>
-          <Button variant="outline" onClick={handleAddMilestone} aria-label="Add milestone">+ Milestone</Button>
-          <Button variant="outline" onClick={handleAddNote} aria-label="Add note">+ Note</Button>
-        </div>
-      </Card>
-
-      <MilestonesPanel
-        ref={milestonesRef}
-        monumentId={id}
-        onAutoSplit={handleAutoSplit}
-      />
-      <FilteredGoalsGrid
-        entity="monument"
-        id={id}
-        onCreateGoal={handleCreateGoal}
-      />
-      <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
-      <ActivityPanel />
+      </div>
     </main>
   );
 }
