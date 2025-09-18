@@ -33,7 +33,7 @@ import {
   type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
 import { fetchInstancesForRange, type ScheduleInstance } from '@/lib/scheduler/instanceRepo'
-import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
+import { TaskLite, ProjectLite, taskWeight } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
@@ -177,12 +177,6 @@ export default function SchedulePage() {
     [projects, tasks]
   )
 
-  const taskMap = useMemo(() => {
-    const map: Record<string, TaskLite> = {}
-    for (const t of tasks) map[t.id] = t
-    return map
-  }, [tasks])
-
   const projectMap = useMemo(() => {
     const map: Record<string, typeof projectItems[number]> = {}
     for (const p of projectItems) map[p.id] = p
@@ -223,65 +217,22 @@ export default function SchedulePage() {
         end: Date
       } => value !== null)
       .sort((a, b) => a.start.getTime() - b.start.getTime())
-  }, [instances, projectMap, projectItems])
+  }, [instances, projectMap])
 
-  const projectInstanceIds = useMemo(() => {
-    const set = new Set<string>()
-    for (const item of projectInstances) {
-      set.add(item.project.id)
-    }
-    return set
-  }, [projectInstances])
-
-  const taskInstancesByProject = useMemo(() => {
-    const map: Record<
-      string,
-      Array<{ instance: ScheduleInstance; task: TaskLite; start: Date; end: Date }>
-    > = {}
-    for (const inst of instances) {
-      if (inst.source_type !== 'TASK') continue
-      const task = taskMap[inst.source_id]
-      const projectId = task?.project_id ?? null
-      if (!task || !projectId) continue
-      if (!projectInstanceIds.has(projectId)) continue
+  const tasksByProject = useMemo(() => {
+    const map: Record<string, TaskLite[]> = {}
+    for (const task of tasks) {
+      const projectId = task.project_id
+      if (!projectId) continue
       const bucket = map[projectId] ?? []
-      bucket.push({
-        instance: inst,
-        task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
-      })
+      bucket.push(task)
       map[projectId] = bucket
     }
     for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => a.start.getTime() - b.start.getTime())
+      map[key].sort((a, b) => taskWeight(b) - taskWeight(a))
     }
     return map
-  }, [instances, taskMap, projectInstanceIds])
-
-  const standaloneTaskInstances = useMemo(() => {
-    const items: Array<{
-      instance: ScheduleInstance
-      task: TaskLite
-      start: Date
-      end: Date
-    }> = []
-    for (const inst of instances) {
-      if (inst.source_type !== 'TASK') continue
-      const task = taskMap[inst.source_id]
-      if (!task) continue
-      const projectId = task.project_id ?? undefined
-      if (projectId && projectInstanceIds.has(projectId)) continue
-      items.push({
-        instance: inst,
-        task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
-      })
-    }
-    items.sort((a, b) => a.start.getTime() - b.start.getTime())
-    return items
-  }, [instances, taskMap, projectInstanceIds])
+  }, [tasks])
 
   function navigate(next: ScheduleView) {
     if (navLock.current) return
@@ -433,7 +384,8 @@ export default function SchedulePage() {
                     const height =
                       ((end.getTime() - start.getTime()) / 60000) * pxPerMin
                     const isExpanded = expandedProjects.has(projectId)
-                    const tasksForProject = taskInstancesByProject[projectId] || []
+                    const tasksForProject = tasksByProject[projectId] || []
+                    const hasTasks = tasksForProject.length > 0
                     const style: CSSProperties = {
                       top,
                       height,
@@ -441,21 +393,22 @@ export default function SchedulePage() {
                       outline: '1px solid var(--event-border)',
                       outlineOffset: '-1px',
                     }
+                    const toggleExpansion = () => {
+                      if (!hasTasks) return
+                      setExpandedProjects(prev => {
+                        const next = new Set(prev)
+                        if (next.has(projectId)) next.delete(projectId)
+                        else next.add(projectId)
+                        return next
+                      })
+                    }
                     return (
                       <AnimatePresence key={instance.id} initial={false}>
-                        {!isExpanded || tasksForProject.length === 0 ? (
+                        {!isExpanded || !hasTasks ? (
                           <motion.div
                             key="project"
                             aria-label={`Project ${project.name}`}
-                            onClick={() => {
-                              if (tasksForProject.length === 0) return
-                              setExpandedProjects(prev => {
-                                const next = new Set(prev)
-                                if (next.has(projectId)) next.delete(projectId)
-                                else next.add(projectId)
-                                return next
-                              })
-                            }}
+                            onClick={toggleExpansion}
                             className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
                             style={style}
                             initial={
@@ -507,140 +460,121 @@ export default function SchedulePage() {
                             />
                           </motion.div>
                         ) : (
-                          tasksForProject.map(taskInfo => {
-                            const { instance: taskInstance, task, start, end } = taskInfo
-                            const tStartMin = start.getHours() * 60 + start.getMinutes()
-                            const tTop = (tStartMin - startHour * 60) * pxPerMin
-                            const tHeight =
-                              ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                            const tStyle: CSSProperties = {
-                              top: tTop,
-                              height: tHeight,
-                              boxShadow: 'var(--elev-card)',
-                              outline: '1px solid var(--event-border)',
-                              outlineOffset: '-1px',
+                          <motion.div
+                            key="project-expanded"
+                            aria-label={`Project ${project.name}`}
+                            className="absolute left-16 right-2 flex h-full flex-col justify-start rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
+                            style={style}
+                            initial={
+                              prefersReducedMotion ? false : { opacity: 0, y: 4 }
                             }
-                            const progress =
-                              (task as { progress?: number }).progress ?? 0
-                            return (
-                              <motion.div
-                                key={taskInstance.id}
-                                aria-label={`Task ${task.name}`}
-                                className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                                style={tStyle}
-                                onClick={() =>
-                                  setExpandedProjects(prev => {
-                                    const next = new Set(prev)
-                                    next.delete(projectId)
-                                    return next
-                                  })
-                                }
-                                initial={
-                                  prefersReducedMotion
-                                    ? false
-                                    : { opacity: 0, y: 4 }
-                                }
-                                animate={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : { opacity: 1, y: 0 }
-                                }
-                                exit={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : { opacity: 0, y: 4 }
-                                }
-                              >
-                                <div className="flex flex-col">
-                                  <span className="truncate text-sm font-medium">
-                                    {task.name}
-                                  </span>
-                                  <div className="text-xs text-zinc-200/70">
-                                    {Math.round(
-                                      (end.getTime() - start.getTime()) / 60000
-                                    )}
-                                    m
-                                  </div>
+                            animate={
+                              prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
+                            }
+                            exit={
+                              prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
+                            }
+                            transition={
+                              prefersReducedMotion
+                                ? undefined
+                                : { delay: index * 0.02 }
+                            }
+                          >
+                            <button
+                              type="button"
+                              onClick={toggleExpansion}
+                              className="flex w-full items-center justify-between rounded-md px-1 py-0.5 text-left text-white/90 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                            >
+                              <div className="flex flex-col">
+                                <span className="truncate text-sm font-medium">
+                                  {project.name}
+                                </span>
+                                <div className="text-xs text-zinc-200/70">
+                                  {Math.round(
+                                    (end.getTime() - start.getTime()) / 60000
+                                  )}
+                                  m · {tasksForProject.length} tasks
                                 </div>
-                                {task.skill_icon && (
-                                  <span
-                                    className="ml-2 text-lg leading-none flex-shrink-0"
-                                    aria-hidden
+                              </div>
+                              {project.skill_icon && (
+                                <span
+                                  className="ml-2 text-lg leading-none flex-shrink-0"
+                                  aria-hidden
+                                >
+                                  {project.skill_icon}
+                                </span>
+                              )}
+                              <FlameEmber
+                                level={
+                                  (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                                  'NO'
+                                }
+                                size="sm"
+                                className="ml-2"
+                              />
+                            </button>
+                            <div className="mt-2 flex-1 space-y-2 overflow-y-auto pr-1">
+                              {tasksForProject.map((task, taskIndex) => {
+                                const progress =
+                                  (task as { progress?: number }).progress ?? 0
+                                return (
+                                  <motion.div
+                                    key={task.id}
+                                    className="relative flex items-center justify-between rounded-md bg-white/10 px-3 py-2"
+                                    initial={
+                                      prefersReducedMotion
+                                        ? false
+                                        : { opacity: 0, y: 4 }
+                                    }
+                                    animate={
+                                      prefersReducedMotion
+                                        ? undefined
+                                        : { opacity: 1, y: 0 }
+                                    }
+                                    transition={
+                                      prefersReducedMotion
+                                        ? undefined
+                                        : { delay: taskIndex * 0.02 }
+                                    }
                                   >
-                                    {task.skill_icon}
-                                  </span>
-                                )}
-                                <FlameEmber
-                                  level={(task.energy as FlameLevel) || 'NO'}
-                                  size="sm"
-                                  className="absolute -top-1 -right-1"
-                                />
-                                <div
-                                  className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                                  style={{ width: `${progress}%` }}
-                                />
-                              </motion.div>
-                            )
-                          })
+                                    <div className="flex flex-col">
+                                      <span className="truncate text-xs font-medium">
+                                        {task.name}
+                                      </span>
+                                      <div className="text-[11px] text-zinc-100/70">
+                                        {Math.max(1, Math.round(task.duration_min || 0))}m
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      {task.skill_icon && (
+                                        <span
+                                          className="text-lg leading-none"
+                                          aria-hidden
+                                        >
+                                          {task.skill_icon}
+                                        </span>
+                                      )}
+                                      <FlameEmber
+                                        level={(task.energy as FlameLevel) || 'NO'}
+                                        size="xs"
+                                      />
+                                    </div>
+                                    <div
+                                      className="absolute left-0 bottom-0 h-[2px] bg-white/40"
+                                      style={{ width: `${progress}%` }}
+                                    />
+                                  </motion.div>
+                                )
+                              })}
+                              {tasksForProject.length === 0 && (
+                                <div className="rounded-md bg-white/5 px-3 py-2 text-xs text-zinc-200/70">
+                                  No tasks linked to this project yet.
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
                         )}
                       </AnimatePresence>
-                    )
-                  })}
-                  {standaloneTaskInstances.map(({ instance, task, start, end }) => {
-                    const startMin = start.getHours() * 60 + start.getMinutes()
-                    const top = (startMin - startHour * 60) * pxPerMin
-                    const height =
-                      ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                    const style: CSSProperties = {
-                      top,
-                      height,
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
-                      outlineOffset: '-1px',
-                    }
-                    const progress = (task as { progress?: number }).progress ?? 0
-                    return (
-                      <motion.div
-                        key={instance.id}
-                        aria-label={`Task ${task.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                        style={style}
-                        initial={
-                          prefersReducedMotion ? false : { opacity: 0, y: 4 }
-                        }
-                        animate={
-                          prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
-                        }
-                        exit={
-                          prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
-                        }
-                      >
-                        <div className="flex flex-col">
-                          <span className="truncate text-sm font-medium">
-                            {task.name}
-                          </span>
-                          <div className="text-xs text-zinc-200/70">
-                            {Math.round((end.getTime() - start.getTime()) / 60000)}m
-                          </div>
-                        </div>
-                        {task.skill_icon && (
-                          <span
-                            className="ml-2 text-lg leading-none flex-shrink-0"
-                            aria-hidden
-                          >
-                            {task.skill_icon}
-                          </span>
-                        )}
-                        <FlameEmber
-                          level={(task.energy as FlameLevel) || 'NO'}
-                          size="sm"
-                          className="absolute -top-1 -right-1"
-                        />
-                        <div
-                          className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </motion.div>
                     )
                   })}
                 </DayTimeline>
