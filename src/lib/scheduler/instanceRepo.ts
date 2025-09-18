@@ -70,6 +70,36 @@ export async function createInstance(
     .single()
 }
 
+export async function rescheduleInstance(
+  id: string,
+  input: {
+    windowId?: string | null
+    startUTC: string
+    endUTC: string
+    durationMin: number
+    weightSnapshot: number
+    energyResolved: string
+  },
+  client?: Client
+) {
+  const supabase = await ensureClient(client)
+  return await supabase
+    .from('schedule_instances')
+    .update({
+      window_id: input.windowId ?? null,
+      start_utc: input.startUTC,
+      end_utc: input.endUTC,
+      duration_min: input.durationMin,
+      status: 'scheduled',
+      weight_snapshot: input.weightSnapshot,
+      energy_resolved: input.energyResolved,
+      completed_at: null,
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+}
+
 export async function updateInstanceStatus(
   id: string,
   status: 'completed' | 'canceled',

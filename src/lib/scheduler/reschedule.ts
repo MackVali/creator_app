@@ -88,13 +88,29 @@ export async function scheduleBacklog(
     duration_min: number
     energy: string
     weight: number
+    instanceId?: string | null
   }
 
   const queue: QueueItem[] = []
   const baseStart = startOfDay(baseDate)
 
+  const seenMissedProjects = new Set<string>()
+
   for (const m of missed.data ?? []) {
     if (m.source_type !== 'PROJECT') continue
+    if (seenMissedProjects.has(m.source_id)) {
+      const dedupe = await supabase
+        .from('schedule_instances')
+        .update({ status: 'canceled' })
+        .eq('id', m.id)
+        .select('id, source_id')
+        .single()
+      if (dedupe.error) {
+        result.failures.push({ itemId: m.source_id, reason: 'error', detail: dedupe.error })
+      }
+      continue
+    }
+    seenMissedProjects.add(m.source_id)
     const def = projectItemMap[m.source_id]
     if (!def) continue
 
@@ -123,6 +139,7 @@ export async function scheduleBacklog(
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      instanceId: m.id,
     })
   }
 
@@ -196,6 +213,7 @@ export async function scheduleBacklog(
         windows,
         date: day,
         client: supabase,
+        reuseInstanceId: item.instanceId,
       })
 
       if (!('status' in placed)) {

@@ -1,7 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PostgrestSingleResponse } from '@supabase/supabase-js'
 import type { Database } from '../../../types/supabase'
-import { fetchInstancesForRange, createInstance, type ScheduleInstance } from './instanceRepo'
+import {
+  fetchInstancesForRange,
+  createInstance,
+  rescheduleInstance,
+  type ScheduleInstance,
+} from './instanceRepo'
 import { addMin } from './placer'
 
 type Client = SupabaseClient<Database>
@@ -22,10 +27,11 @@ type PlaceParams = {
   windows: Array<{ id: string; startLocal: Date; endLocal: Date }>
   date: Date
   client?: Client
+  reuseInstanceId?: string | null
 }
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
-  const { userId, item, windows, client } = params
+  const { userId, item, windows, client, reuseInstanceId } = params
   for (const w of windows) {
     const start = new Date(w.startLocal)
     const end = new Date(w.endLocal)
@@ -53,16 +59,14 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       if (diffMin(cursor, blockStart) >= durMin) {
         const startUTC = cursor.toISOString()
         const endUTC = addMin(cursor, durMin).toISOString()
-        return await createInstance(
+        return await persistPlacement(
           {
             userId,
-            sourceId: item.id,
+            item,
             windowId: w.id,
             startUTC,
             endUTC,
-            durationMin: durMin,
-            weightSnapshot: item.weight,
-            energyResolved: item.energy,
+            reuseInstanceId,
           },
           client
         )
@@ -75,16 +79,14 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
     if (diffMin(cursor, end) >= durMin) {
       const startUTC = cursor.toISOString()
       const endUTC = addMin(cursor, durMin).toISOString()
-      return await createInstance(
+      return await persistPlacement(
         {
           userId,
-          sourceId: item.id,
+          item,
           windowId: w.id,
           startUTC,
           endUTC,
-          durationMin: durMin,
-          weightSnapshot: item.weight,
-          energyResolved: item.energy,
+          reuseInstanceId,
         },
         client
       )
@@ -96,4 +98,46 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
 
 function diffMin(a: Date, b: Date) {
   return Math.floor((b.getTime() - a.getTime()) / 60000)
+}
+
+async function persistPlacement(
+  params: {
+    userId: string
+    item: PlaceParams['item']
+    windowId: string
+    startUTC: string
+    endUTC: string
+    reuseInstanceId?: string | null
+  },
+  client?: Client
+) {
+  const { userId, item, windowId, startUTC, endUTC, reuseInstanceId } = params
+  if (reuseInstanceId) {
+    return await rescheduleInstance(
+      reuseInstanceId,
+      {
+        windowId,
+        startUTC,
+        endUTC,
+        durationMin: item.duration_min,
+        weightSnapshot: item.weight,
+        energyResolved: item.energy,
+      },
+      client
+    )
+  }
+
+  return await createInstance(
+    {
+      userId,
+      sourceId: item.id,
+      windowId,
+      startUTC,
+      endUTC,
+      durationMin: item.duration_min,
+      weightSnapshot: item.weight,
+      energyResolved: item.energy,
+    },
+    client
+  )
 }
