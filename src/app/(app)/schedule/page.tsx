@@ -417,7 +417,7 @@ export default function SchedulePage() {
             type="button"
             onClick={handleRunScheduler}
             disabled={isRunningScheduler || !userId}
-            className="rounded-md bg-[var(--accent-red)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition disabled:opacity-60"
+            className="rounded-md bg-lime-500 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-black transition disabled:opacity-60"
           >
             {isRunningScheduler ? 'Running…' : 'Run Scheduler'}
           </button>
