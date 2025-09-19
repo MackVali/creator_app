@@ -181,9 +181,11 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   }
 
   queue.sort((a, b) => {
+    const weightDiff = b.weight - a.weight
+    if (weightDiff !== 0) return weightDiff
     const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
     if (energyDiff !== 0) return energyDiff
-    return b.weight - a.weight
+    return a.id.localeCompare(b.id)
   })
 
   const placed: ScheduleInstance[] = []
@@ -452,11 +454,31 @@ async function fetchCompatibleWindowsForItem(
 ) {
   const windows = await fetchWindowsForDate(client, userId, date)
   const itemIdx = energyIndex(item.energy)
-  const compatible = windows.filter(window => energyIndex(window.energy) >= itemIdx)
+  const compatible = windows
+    .map(window => {
+      const energyIdx = energyIndex(window.energy)
+      return {
+        id: window.id,
+        startLocal: resolveWindowStart(window, date),
+        endLocal: resolveWindowEnd(window, date),
+        energyIdx,
+      }
+    })
+    .filter(window => window.energyIdx >= itemIdx)
+
+  compatible.sort((a, b) => {
+    const aDiff = a.energyIdx - itemIdx
+    const bDiff = b.energyIdx - itemIdx
+    if (aDiff !== bDiff) return aDiff - bDiff
+    const startDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    if (startDiff !== 0) return startDiff
+    return a.id.localeCompare(b.id)
+  })
+
   return compatible.map(window => ({
     id: window.id,
-    startLocal: resolveWindowStart(window, date),
-    endLocal: resolveWindowEnd(window, date),
+    startLocal: window.startLocal,
+    endLocal: window.endLocal,
   }))
 }
 

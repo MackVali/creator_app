@@ -255,10 +255,10 @@ export async function scheduleBacklog(
   }
 
   queue.sort((a, b) => {
-    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
-    if (energyDiff !== 0) return energyDiff
     const weightDiff = b.weight - a.weight
     if (weightDiff !== 0) return weightDiff
+    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
+    if (energyDiff !== 0) return energyDiff
     return a.id.localeCompare(b.id)
   })
 
@@ -429,11 +429,31 @@ async function fetchCompatibleWindowsForItem(
 ) {
   const windows = await fetchWindowsForDate(date, supabase)
   const itemIdx = energyIndex(item.energy)
-  const compatible = windows.filter(w => energyIndex(w.energy) >= itemIdx)
-  return compatible.map(w => ({
-    id: w.id,
-    startLocal: resolveWindowStart(w, date),
-    endLocal: resolveWindowEnd(w, date),
+  const compatible = windows
+    .map(win => {
+      const energyIdx = energyIndex(win.energy)
+      return {
+        id: win.id,
+        startLocal: resolveWindowStart(win, date),
+        endLocal: resolveWindowEnd(win, date),
+        energyIdx,
+      }
+    })
+    .filter(win => win.energyIdx >= itemIdx)
+
+  compatible.sort((a, b) => {
+    const aDiff = a.energyIdx - itemIdx
+    const bDiff = b.energyIdx - itemIdx
+    if (aDiff !== bDiff) return aDiff - bDiff
+    const startDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    if (startDiff !== 0) return startDiff
+    return a.id.localeCompare(b.id)
+  })
+
+  return compatible.map(win => ({
+    id: win.id,
+    startLocal: win.startLocal,
+    endLocal: win.endLocal,
   }))
 }
 
