@@ -93,6 +93,9 @@ export async function scheduleBacklog(
 
   const queue: QueueItem[] = []
   const baseStart = startOfDay(baseDate)
+  const earliestAllowableStart = new Date(
+    Math.max(baseStart.getTime(), baseDate.getTime())
+  )
 
   const seenMissedProjects = new Set<string>()
 
@@ -276,6 +279,7 @@ export async function scheduleBacklog(
         date: day,
         client: supabase,
         reuseInstanceId: item.instanceId,
+        earliestStart: offset === 0 ? earliestAllowableStart : undefined,
       })
 
       if (!('status' in placed)) {

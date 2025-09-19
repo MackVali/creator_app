@@ -23,6 +23,7 @@ describe("scheduleBacklog", () => {
   let instances: ScheduleInstance[];
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
+  let placeItemInWindowsSpy: ReturnType<typeof vi.spyOn>;
 
   const createSupabaseMock = () => {
     let lastEqValue: string | null = null;
@@ -139,10 +140,12 @@ describe("scheduleBacklog", () => {
     ]);
 
     attemptedProjectIds = [];
-    vi.spyOn(placement, "placeItemInWindows").mockImplementation(async ({ item }) => {
-      attemptedProjectIds.push(item.id);
-      return { error: "NO_FIT" as const };
-    });
+    placeItemInWindowsSpy = vi
+      .spyOn(placement, "placeItemInWindows")
+      .mockImplementation(async ({ item }) => {
+        attemptedProjectIds.push(item.id);
+        return { error: "NO_FIT" as const };
+      });
   });
 
   afterEach(() => {
@@ -162,6 +165,119 @@ describe("scheduleBacklog", () => {
     const scheduledProjectIds = new Set(attemptedProjectIds);
     expect(scheduledProjectIds.has("proj-1")).toBe(false);
     expect(scheduledProjectIds.has("proj-2")).toBe(true);
+  });
+
+  it("does not schedule before the earliest allowable start on the first day", async () => {
+    placeItemInWindowsSpy.mockRestore();
+
+    const mockClient = {} as ScheduleBacklogClient;
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    const created: ScheduleInstance[] = [];
+    const createInstanceSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockImplementation(async (input) => {
+        const instance = {
+          id: `inst-created-${created.length + 1}`,
+          user_id: userId,
+          source_id: input.sourceId,
+          source_type: "PROJECT",
+          status: "scheduled",
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          created_at: input.startUTC,
+          updated_at: input.startUTC,
+          note: null,
+          label: null,
+          project_instance_id: null,
+          user_timezone: null,
+          planned_start_utc: null,
+          planned_end_utc: null,
+          backlog_item_id: null,
+          backlog_item_type: null,
+          backlog_item_status: null,
+          backlog_item_name: null,
+          backlog_item_priority: null,
+          backlog_item_stage: null,
+          backlog_item_duration_min: null,
+          backlog_item_energy: null,
+          backlog_item_skill_id: null,
+          backlog_item_skill_icon: null,
+          backlog_item_project_id: null,
+          backlog_item_project_stage: null,
+          backlog_item_project_energy: null,
+          backlog_item_project_priority: null,
+          completed_at: null,
+          created_by: null,
+          updated_by: null,
+          source_duration_min: null,
+          energy_snapshot: null,
+          energy_resolved_snapshot: null,
+          metadata: null,
+        } as ScheduleInstance;
+
+        created.push(instance);
+
+        return {
+          data: instance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        };
+      });
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-mid": {
+        id: "proj-mid",
+        name: "Midday Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async () => [
+      {
+        id: "win-mid",
+        label: "Work",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "17:00",
+        days: [2],
+      },
+    ]);
+
+    const result = await scheduleBacklog(userId, baseDate, mockClient);
+
+    expect(createInstanceSpy).toHaveBeenCalledTimes(1);
+    expect(created).toHaveLength(1);
+    const [createdInstance] = created;
+    const earliestStartMs = baseDate.getTime();
+    expect(new Date(createdInstance.start_utc).getTime()).toBeGreaterThanOrEqual(
+      earliestStartMs
+    );
+    expect(new Date(createdInstance.start_utc).toISOString()).toBe(
+      baseDate.toISOString()
+    );
+
+    expect(result.placed).toHaveLength(1);
+    expect(result.placed[0]).toEqual(createdInstance);
+    expect(new Date(result.placed[0].start_utc).getTime()).toBeGreaterThanOrEqual(
+      earliestStartMs
+    );
   });
 
   it("reuses existing instances when fallback enqueues a project", async () => {
