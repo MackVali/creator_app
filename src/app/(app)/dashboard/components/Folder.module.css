@@ -121,14 +121,14 @@
   border-radius: clamp(10px, calc(12px * var(--folder-scale, 1)), 16px);
   background: linear-gradient(
     120deg,
-    rgba(222, 215, 255, 0.22),
-    rgba(111, 76, 204, 0.45)
+    rgba(243, 244, 246, 0.88),
+    rgba(209, 213, 219, 0.88)
   );
   box-shadow: 0 calc(14px * var(--folder-scale, 1)) calc(30px * var(--folder-scale, 1))
-      rgba(12, 6, 29, 0.55),
+      rgba(15, 23, 42, 0.28),
     inset 0 calc(1px * var(--folder-scale, 1)) calc(2px * var(--folder-scale, 1))
-      rgba(255, 255, 255, 0.18);
-  color: #fdf4ff;
+      rgba(255, 255, 255, 0.32);
+  color: #1f2937;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -147,7 +147,7 @@
   backface-visibility: hidden;
   text-shadow: 0 calc(1px * var(--folder-scale, 1))
       calc(4px * var(--folder-scale, 1))
-      rgba(5, 2, 12, 0.65);
+      rgba(15, 23, 42, 0.16);
 }
 
 .folderLabel :global(.folder-label-text) {
