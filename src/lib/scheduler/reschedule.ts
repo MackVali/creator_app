@@ -1,4 +1,5 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
+import { DateTime } from 'luxon'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import type { Database } from '../../../types/supabase'
 import {
@@ -46,6 +47,22 @@ async function ensureClient(client?: Client): Promise<Client> {
   throw new Error('Supabase client not available')
 }
 
+async function fetchUserTimezone(client: Client, userId: string): Promise<string> {
+  const { data, error } = await client
+    .from('profiles')
+    .select('timezone')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Failed to fetch user timezone', error)
+    return 'UTC'
+  }
+
+  const tz = data?.timezone
+  return typeof tz === 'string' && tz.length > 0 ? tz : 'UTC'
+}
+
 export async function markMissedAndQueue(
   userId: string,
   now = new Date(),
@@ -67,6 +84,7 @@ export async function scheduleBacklog(
   client?: Client
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
+  const timeZone = await fetchUserTimezone(supabase, userId)
   const result: ScheduleBacklogResult = { placed: [], failures: [] }
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
@@ -92,7 +110,7 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
-  const baseStart = startOfDay(baseDate)
+  const baseStart = startOfDay(baseDate, timeZone)
 
   const seenMissedProjects = new Set<string>()
 
@@ -165,7 +183,7 @@ export async function scheduleBacklog(
   }
 
   const initialQueueProjectIds = new Set(queue.map(item => item.id))
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEnd = addDays(baseStart, 28, timeZone)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
@@ -265,8 +283,13 @@ export async function scheduleBacklog(
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(supabase, day, item)
+      const day = addDays(baseStart, offset, timeZone)
+      const windows = await fetchCompatibleWindowsForItem(
+        supabase,
+        day,
+        item,
+        timeZone
+      )
       if (windows.length === 0) continue
 
       const placed = await placeItemInWindows({
@@ -425,15 +448,16 @@ async function dedupeScheduledProjects(
 async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
-  item: { energy: string; duration_min: number }
+  item: { energy: string; duration_min: number },
+  timeZone: string
 ) {
-  const windows = await fetchWindowsForDate(date, supabase)
+  const windows = await fetchWindowsForDate(date, timeZone, supabase)
   const itemIdx = energyIndex(item.energy)
   const compatible = windows.filter(w => energyIndex(w.energy) >= itemIdx)
   return compatible.map(w => ({
     id: w.id,
-    startLocal: resolveWindowStart(w, date),
-    endLocal: resolveWindowEnd(w, date),
+    startLocal: resolveWindowStart(w, date, timeZone),
+    endLocal: resolveWindowEnd(w, date, timeZone),
   }))
 }
 
@@ -443,34 +467,44 @@ function energyIndex(level?: string | null) {
   return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
 }
 
-function resolveWindowStart(win: WindowLite, date: Date) {
+function resolveWindowStart(win: WindowLite, date: Date, timeZone: string) {
   const [hour = 0, minute = 0] = win.start_local.split(':').map(Number)
-  const start = startOfDay(date)
-  if (win.fromPrevDay) start.setDate(start.getDate() - 1)
-  start.setHours(hour, minute, 0, 0)
-  return start
-}
-
-function resolveWindowEnd(win: WindowLite, date: Date) {
-  const [hour = 0, minute = 0] = win.end_local.split(':').map(Number)
-  const base = win.fromPrevDay ? startOfDay(date) : startOfDay(date)
-  const end = new Date(base)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(win, date)
-  if (end <= start) {
-    end.setDate(end.getDate() + 1)
+  let start = DateTime.fromJSDate(date, { zone: 'utc' })
+    .setZone(timeZone)
+    .startOf('day')
+  if (win.fromPrevDay) {
+    start = start.minus({ days: 1 })
   }
-  return end
+  start = start.plus({ hours: hour, minutes: minute })
+  return start.toUTC().toJSDate()
 }
 
-function startOfDay(date: Date) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
+  const [hour = 0, minute = 0] = win.end_local.split(':').map(Number)
+  const endBase = DateTime.fromJSDate(date, { zone: 'utc' })
+    .setZone(timeZone)
+    .startOf('day')
+  const start = DateTime.fromJSDate(resolveWindowStart(win, date, timeZone), { zone: 'utc' })
+    .setZone(timeZone)
+  let end = endBase.plus({ hours: hour, minutes: minute })
+  if (end <= start) {
+    end = end.plus({ days: 1 })
+  }
+  return end.toUTC().toJSDate()
 }
 
-function addDays(date: Date, amount: number) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + amount)
-  return d
+function startOfDay(date: Date, timeZone: string) {
+  return DateTime.fromJSDate(date, { zone: 'utc' })
+    .setZone(timeZone)
+    .startOf('day')
+    .toUTC()
+    .toJSDate()
+}
+
+function addDays(date: Date, amount: number, timeZone: string) {
+  return DateTime.fromJSDate(date, { zone: 'utc' })
+    .setZone(timeZone)
+    .plus({ days: amount })
+    .toUTC()
+    .toJSDate()
 }

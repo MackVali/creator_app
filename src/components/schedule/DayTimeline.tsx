@@ -2,12 +2,14 @@
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
+import { DateTime } from "luxon";
 
 interface DayTimelineProps {
   startHour?: number;
   endHour?: number;
   pxPerMin?: number;
   date?: Date;
+  timeZone: string;
   children?: ReactNode;
 }
 
@@ -16,6 +18,7 @@ export function DayTimeline({
   endHour = 24,
   pxPerMin = 2,
   date = new Date(),
+  timeZone,
   children,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
@@ -23,20 +26,34 @@ export function DayTimeline({
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isSameDay(date, new Date())) {
-      setNowMinutes(null);
-      return;
-    }
-
     function update() {
-      const d = new Date();
-      const minutes = d.getHours() * 60 + d.getMinutes();
+      const zonedNow = DateTime.now().setZone(timeZone);
+      const targetDay = DateTime.fromObject(
+        {
+          year: date.getFullYear(),
+          month: date.getMonth() + 1,
+          day: date.getDate(),
+        },
+        { zone: timeZone }
+      );
+
+      if (!zonedNow.isValid || !targetDay.isValid) {
+        setNowMinutes(null);
+        return;
+      }
+
+      if (!zonedNow.hasSame(targetDay, "day")) {
+        setNowMinutes(null);
+        return;
+      }
+
+      const minutes = zonedNow.hour * 60 + zonedNow.minute;
       setNowMinutes(minutes - startHour * 60);
     }
     update();
     const id = setInterval(update, 30_000);
     return () => clearInterval(id);
-  }, [startHour, date]);
+  }, [startHour, date, timeZone]);
 
   const showNowLine =
     nowMinutes !== null && nowMinutes >= 0 && nowMinutes <= totalMinutes;
@@ -112,12 +129,4 @@ function formatTime(totalMinutes: number) {
   const hour12 = hours % 12 === 0 ? 12 : hours % 12;
   const minuteStr = minutes.toString().padStart(2, "0");
   return `${hour12}:${minuteStr}`;
-}
-
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
 }
