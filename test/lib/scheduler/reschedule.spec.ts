@@ -24,7 +24,7 @@ describe("scheduleBacklog", () => {
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
 
-  const createSupabaseMock = () => {
+  const createSupabaseMock = (timezone: string | null = null) => {
     let lastEqValue: string | null = null;
     const single = vi.fn(async () => ({
       data: { id: lastEqValue },
@@ -39,9 +39,23 @@ describe("scheduleBacklog", () => {
       return { select };
     });
     const update = vi.fn(() => ({ eq }));
-    const from = vi.fn(() => ({ update }));
+    const maybeSingle = vi.fn(async () => ({
+      data: { timezone },
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+    const profileEq = vi.fn(() => ({ maybeSingle }));
+    const profileSelect = vi.fn(() => ({ eq: profileEq }));
+    const from = vi.fn((table: string) => {
+      if (table === "profiles") {
+        return { select: profileSelect };
+      }
+      return { update };
+    });
     const client = { from } as unknown as ScheduleBacklogClient;
-    return { client, update };
+    return { client, update, maybeSingle };
   };
 
   beforeEach(() => {
@@ -150,7 +164,7 @@ describe("scheduleBacklog", () => {
   });
 
   it("skips already scheduled projects when falling back to enqueue all", async () => {
-    const mockClient = {} as ScheduleBacklogClient;
+    const { client: mockClient } = createSupabaseMock();
     await scheduleBacklog(userId, baseDate, mockClient);
 
     expect(fetchInstancesForRangeSpy).toHaveBeenCalledTimes(2);
@@ -162,6 +176,18 @@ describe("scheduleBacklog", () => {
     const scheduledProjectIds = new Set(attemptedProjectIds);
     expect(scheduledProjectIds.has("proj-1")).toBe(false);
     expect(scheduledProjectIds.has("proj-2")).toBe(true);
+  });
+
+  it("fetches windows using the user's timezone", async () => {
+    const tz = "America/New_York";
+    const { client: supabase } = createSupabaseMock(tz);
+
+    await scheduleBacklog(userId, baseDate, supabase);
+
+    const fetchCalls = (repo.fetchWindowsForDate as unknown as vi.Mock).mock.calls;
+    expect(fetchCalls.length).toBeGreaterThan(0);
+    const hasTimezone = fetchCalls.some(([, , options]) => options?.timeZone === tz);
+    expect(hasTimezone).toBe(true);
   });
 
   it("reuses existing instances when fallback enqueues a project", async () => {

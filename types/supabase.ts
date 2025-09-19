@@ -322,18 +322,36 @@ export interface Database {
           created_at: string;
           user_id: string | null;
           username: string;
+          timezone: string | null;
+          name: string | null;
+          bio: string | null;
+          avatar_url: string | null;
+          banner_url: string | null;
+          updated_at: string | null;
         };
         Insert: {
           id?: string;
           created_at?: string;
           user_id?: string | null;
           username: string;
+          timezone?: string | null;
+          name?: string | null;
+          bio?: string | null;
+          avatar_url?: string | null;
+          banner_url?: string | null;
+          updated_at?: string | null;
         };
         Update: {
           id?: string;
           created_at?: string;
           user_id?: string | null;
           username?: string;
+          timezone?: string | null;
+          name?: string | null;
+          bio?: string | null;
+          avatar_url?: string | null;
+          banner_url?: string | null;
+          updated_at?: string | null;
         };
       };
       linked_accounts: {

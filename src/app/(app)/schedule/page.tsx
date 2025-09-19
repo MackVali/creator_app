@@ -12,6 +12,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
+import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -42,7 +43,17 @@ import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
-import { toLocal } from '@/lib/time/tz'
+import { useProfile } from '@/lib/hooks/useProfile'
+import { updateProfileTimezone } from '@/lib/db'
+import {
+  getLocalDateKey,
+  parseDateKey,
+  addDaysToKey,
+  getResolvedTimeZone,
+  formatTimeZoneLabel,
+  getUTCDateRangeForKey,
+  getLocalTimeParts,
+} from '@/lib/time/tz'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -107,13 +118,93 @@ function WindowLabel({
   )
 }
 
-function utcDayRange(d: Date) {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const day = d.getUTCDate()
-  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
-  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
-  return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
+function utcDayRange(dateKey: string, timeZone?: string | null) {
+  return getUTCDateRangeForKey(dateKey, timeZone)
+}
+
+function minutesFromParts(parts: ReturnType<typeof getLocalTimeParts>) {
+  if (
+    !Number.isFinite(parts.hour) ||
+    !Number.isFinite(parts.minute) ||
+    !Number.isFinite(parts.second) ||
+    !Number.isFinite(parts.millisecond)
+  ) {
+    return Number.NaN
+  }
+  return (
+    parts.hour * 60 +
+    parts.minute +
+    parts.second / 60 +
+    parts.millisecond / 60000
+  )
+}
+
+function resolveInstanceTiming(
+  startISO: string,
+  endISO: string,
+  timeZone: string | null,
+  options?: { clampToDay?: { startUTC: string; endUTC: string } },
+): {
+  startDate: Date
+  endDate: Date
+  startMinutes: number
+  durationMinutes: number
+} | null {
+  const startDate = new Date(startISO)
+  const endDate = new Date(endISO)
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return null
+  }
+
+  if (endDate <= startDate) {
+    return null
+  }
+
+  let displayStart = startDate
+  let displayEnd = endDate
+
+  const clamp = options?.clampToDay
+  if (clamp) {
+    const clampStart = new Date(clamp.startUTC)
+    const clampEnd = new Date(clamp.endUTC)
+    const clampValid =
+      !Number.isNaN(clampStart.getTime()) &&
+      !Number.isNaN(clampEnd.getTime()) &&
+      clampEnd > clampStart
+
+    if (clampValid) {
+      if (displayEnd <= clampStart || displayStart >= clampEnd) {
+        return null
+      }
+
+      if (displayStart < clampStart) {
+        displayStart = clampStart
+      }
+
+      if (displayEnd > clampEnd) {
+        displayEnd = clampEnd
+      }
+    }
+  }
+
+  const startMinutes = minutesFromParts(
+    getLocalTimeParts(displayStart.toISOString(), timeZone),
+  )
+  if (!Number.isFinite(startMinutes)) {
+    return null
+  }
+
+  const durationMinutes = (displayEnd.getTime() - displayStart.getTime()) / 60000
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    return null
+  }
+
+  return {
+    startDate: displayStart,
+    endDate: displayEnd,
+    startMinutes,
+    durationMinutes,
+  }
 }
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
@@ -125,6 +216,9 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const { session } = useAuth()
   const userId = session?.user.id ?? null
+  const { profile, loading: profileLoading, refreshProfile } = useProfile()
+
+  const resolvedTimezone = useMemo(() => getResolvedTimeZone(), [])
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -133,9 +227,12 @@ export default function SchedulePage() {
       : 'year'
   const initialDate = searchParams.get('date')
 
-  const [currentDate, setCurrentDate] = useState(
-    () => (initialDate ? new Date(initialDate) : new Date())
-  )
+  const [currentDateKey, setCurrentDateKey] = useState(() => {
+    if (initialDate && /\d{4}-\d{2}-\d{2}/.test(initialDate)) {
+      return initialDate
+    }
+    return getLocalDateKey(new Date().toISOString(), resolvedTimezone)
+  })
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
@@ -153,14 +250,54 @@ export default function SchedulePage() {
 
   const startHour = 0
   const pxPerMin = 2
+  const userTimezone = profile?.timezone ?? null
+  const effectiveTimezone = userTimezone ?? resolvedTimezone ?? null
+  const currentDate = useMemo(
+    () => parseDateKey(currentDateKey, effectiveTimezone),
+    [currentDateKey, effectiveTimezone]
+  )
+  const dayRangeUTC = useMemo(
+    () => utcDayRange(currentDateKey, effectiveTimezone),
+    [currentDateKey, effectiveTimezone]
+  )
   const year = currentDate.getFullYear()
+  const detectedTimezoneLabel = useMemo(
+    () => (resolvedTimezone ? formatTimeZoneLabel(resolvedTimezone) : null),
+    [resolvedTimezone]
+  )
+  const [timezonePromptStatus, setTimezonePromptStatus] = useState<
+    'idle' | 'saving' | 'error'
+  >('idle')
+  const [timezonePromptError, setTimezonePromptError] = useState<string | null>(null)
+  const showTimezonePrompt = !profileLoading && !profile?.timezone
+  const timezonePromptSaving = timezonePromptStatus === 'saving'
+
+  const handleQuickTimezoneApply = useCallback(async () => {
+    if (!resolvedTimezone) return
+    try {
+      setTimezonePromptStatus('saving')
+      setTimezonePromptError(null)
+      const result = await updateProfileTimezone(resolvedTimezone)
+      if (!result.success) {
+        setTimezonePromptStatus('error')
+        setTimezonePromptError(result.error ?? 'Failed to update timezone')
+        return
+      }
+      await refreshProfile()
+      setTimezonePromptStatus('idle')
+    } catch (error) {
+      console.error('Failed to apply detected timezone', error)
+      setTimezonePromptStatus('error')
+      setTimezonePromptError('Failed to update timezone')
+    }
+  }, [resolvedTimezone, refreshProfile])
 
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', currentDate.toISOString().slice(0, 10))
+    params.set('date', currentDateKey)
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
-  }, [view, currentDate, router, pathname])
+  }, [view, currentDateKey, router, pathname])
 
   useEffect(() => {
     if (!userId) {
@@ -176,8 +313,9 @@ export default function SchedulePage() {
 
     async function load() {
       try {
+        const targetDate = parseDateKey(currentDateKey, effectiveTimezone)
         const [ws, ts, pm] = await Promise.all([
-          fetchWindowsForDate(currentDate),
+          fetchWindowsForDate(targetDate, undefined, { timeZone: effectiveTimezone }),
           fetchReadyTasks(),
           fetchProjectsMap(),
         ])
@@ -202,7 +340,7 @@ export default function SchedulePage() {
     return () => {
       active = false
     }
-  }, [currentDate, userId])
+  }, [currentDateKey, effectiveTimezone, userId])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -223,8 +361,7 @@ export default function SchedulePage() {
   const dayEnergies = useMemo(() => {
     const map: Record<string, FlameLevel> = {}
     for (const inst of instances) {
-      const start = toLocal(inst.start_utc)
-      const key = start.toISOString().slice(0, 10)
+      const key = getLocalDateKey(inst.start_utc, effectiveTimezone)
       const level = (inst.energy_resolved?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
       if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
@@ -232,7 +369,7 @@ export default function SchedulePage() {
       }
     }
     return map
-  }, [instances])
+  }, [instances, effectiveTimezone])
 
   const projectInstances = useMemo(() => {
     return instances
@@ -240,21 +377,30 @@ export default function SchedulePage() {
       .map(inst => {
         const project = projectMap[inst.source_id]
         if (!project) return null
+        const timing = resolveInstanceTiming(
+          inst.start_utc,
+          inst.end_utc,
+          effectiveTimezone ?? null,
+          { clampToDay: dayRangeUTC },
+        )
+        if (!timing) return null
         return {
           instance: inst,
           project,
-          start: toLocal(inst.start_utc),
-          end: toLocal(inst.end_utc),
+          startDate: timing.startDate,
+          startMinutes: timing.startMinutes,
+          durationMinutes: timing.durationMinutes,
         }
       })
       .filter((value): value is {
         instance: ScheduleInstance
         project: typeof projectItems[number]
-        start: Date
-        end: Date
+        startDate: Date
+        startMinutes: number
+        durationMinutes: number
       } => value !== null)
-      .sort((a, b) => a.start.getTime() - b.start.getTime())
-  }, [instances, projectMap, projectItems])
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+  }, [instances, projectMap, projectItems, effectiveTimezone, dayRangeUTC])
 
   const projectInstanceIds = useMemo(() => {
     const set = new Set<string>()
@@ -267,7 +413,13 @@ export default function SchedulePage() {
   const taskInstancesByProject = useMemo(() => {
     const map: Record<
       string,
-      Array<{ instance: ScheduleInstance; task: TaskLite; start: Date; end: Date }>
+      Array<{
+        instance: ScheduleInstance
+        task: TaskLite
+        startDate: Date
+        startMinutes: number
+        durationMinutes: number
+      }>
     > = {}
     for (const inst of instances) {
       if (inst.source_type !== 'TASK') continue
@@ -275,27 +427,36 @@ export default function SchedulePage() {
       const projectId = task?.project_id ?? null
       if (!task || !projectId) continue
       if (!projectInstanceIds.has(projectId)) continue
+      const timing = resolveInstanceTiming(
+        inst.start_utc,
+        inst.end_utc,
+        effectiveTimezone ?? null,
+        { clampToDay: dayRangeUTC },
+      )
+      if (!timing) continue
       const bucket = map[projectId] ?? []
       bucket.push({
         instance: inst,
         task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
+        startDate: timing.startDate,
+        startMinutes: timing.startMinutes,
+        durationMinutes: timing.durationMinutes,
       })
       map[projectId] = bucket
     }
     for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => a.start.getTime() - b.start.getTime())
+      map[key].sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
     }
     return map
-  }, [instances, taskMap, projectInstanceIds])
+  }, [instances, taskMap, projectInstanceIds, effectiveTimezone, dayRangeUTC])
 
   const standaloneTaskInstances = useMemo(() => {
     const items: Array<{
       instance: ScheduleInstance
       task: TaskLite
-      start: Date
-      end: Date
+      startDate: Date
+      startMinutes: number
+      durationMinutes: number
     }> = []
     for (const inst of instances) {
       if (inst.source_type !== 'TASK') continue
@@ -303,16 +464,24 @@ export default function SchedulePage() {
       if (!task) continue
       const projectId = task.project_id ?? undefined
       if (projectId && projectInstanceIds.has(projectId)) continue
+      const timing = resolveInstanceTiming(
+        inst.start_utc,
+        inst.end_utc,
+        effectiveTimezone ?? null,
+        { clampToDay: dayRangeUTC },
+      )
+      if (!timing) continue
       items.push({
         instance: inst,
         task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
+        startDate: timing.startDate,
+        startMinutes: timing.startMinutes,
+        durationMinutes: timing.durationMinutes,
       })
     }
-    items.sort((a, b) => a.start.getTime() - b.start.getTime())
+    items.sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
     return items
-  }, [instances, taskMap, projectInstanceIds])
+  }, [instances, taskMap, projectInstanceIds, effectiveTimezone, dayRangeUTC])
 
   const handleInstanceStatusChange = useCallback(
     async (
@@ -443,12 +612,14 @@ export default function SchedulePage() {
 
   function handleDrillDown(date: Date) {
     const next = getChildView(view, date)
-    setCurrentDate(next.date)
+    const dateKey = getLocalDateKey(next.date.toISOString(), effectiveTimezone)
+    setCurrentDateKey(dateKey)
     if (next.view !== view) navigate(next.view)
   }
 
   const handleToday = () => {
-    setCurrentDate(new Date())
+    const todayKey = getLocalDateKey(new Date().toISOString(), effectiveTimezone)
+    setCurrentDateKey(todayKey)
     navigate('day')
   }
   useEffect(() => {
@@ -465,7 +636,7 @@ export default function SchedulePage() {
       if (!active) return
       setInstancesStatus('loading')
       try {
-        const { startUTC, endUTC } = utcDayRange(currentDate)
+        const { startUTC, endUTC } = dayRangeUTC
         const { data, error } = await fetchInstancesForRange(
           userId,
           startUTC,
@@ -497,7 +668,7 @@ export default function SchedulePage() {
       active = false
       clearInterval(id)
     }
-  }, [userId, currentDate])
+  }, [userId, currentDateKey, effectiveTimezone])
 
   const runScheduler = useCallback(async () => {
     if (!userId) {
@@ -534,7 +705,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     autoScheduledForRef.current = null
-  }, [userId, currentDate])
+  }, [userId, currentDateKey, effectiveTimezone])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -552,14 +723,15 @@ export default function SchedulePage() {
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
     if (instances.length > 0) return
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDate)
-    const key = `${userId}:${startUTC}`
+    const { startUTC } = dayRangeUTC
+    const key = `${userId}:${startUTC}:${effectiveTimezone ?? 'none'}`
     if (autoScheduledForRef.current === key) return
     autoScheduledForRef.current = key
     void runScheduler()
   }, [
     userId,
-    currentDate,
+    currentDateKey,
+    effectiveTimezone,
     metaStatus,
     instancesStatus,
     instances.length,
@@ -576,11 +748,8 @@ export default function SchedulePage() {
     const diff = e.changedTouches[0].clientX - touchStartX.current
     const threshold = 50
     if (Math.abs(diff) > threshold) {
-      setCurrentDate(prev => {
-        const d = new Date(prev)
-        d.setDate(prev.getDate() + (diff < 0 ? 1 : -1))
-        return d
-      })
+      const direction = diff < 0 ? 1 : -1
+      setCurrentDateKey(prev => addDaysToKey(prev, direction, effectiveTimezone))
     }
     touchStartX.current = null
   }
@@ -588,10 +757,42 @@ export default function SchedulePage() {
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
+        {showTimezonePrompt && (
+          <div className="mx-4 rounded-md border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <p className="font-semibold">Set your timezone</p>
+            <p className="mt-1 text-xs text-amber-100/80">
+              Save your timezone so projects and windows appear at the right local time.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleQuickTimezoneApply}
+                disabled={!resolvedTimezone || timezonePromptSaving}
+                className="inline-flex items-center justify-center rounded-md bg-amber-400 px-3 py-2 text-xs font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {timezonePromptSaving
+                  ? 'Saving…'
+                  : detectedTimezoneLabel
+                    ? `Use ${detectedTimezoneLabel}`
+                    : 'Detect timezone'}
+              </button>
+              <Link
+                href="/settings"
+                className="inline-flex items-center justify-center rounded-md border border-white/20 px-3 py-2 text-xs font-medium text-[var(--text)] transition hover:bg-white/10"
+              >
+                Open settings
+              </Link>
+              {timezonePromptStatus === 'error' && timezonePromptError && (
+                <span className="text-xs text-red-200">{timezonePromptError}</span>
+              )}
+            </div>
+          </div>
+        )}
         <ScheduleTopBar
           year={year}
           onBack={handleBack}
           onToday={handleToday}
+          canGoBack={view !== 'year'}
         />
         <div
           className="relative bg-[var(--surface)]"
@@ -605,6 +806,7 @@ export default function SchedulePage() {
                   energies={dayEnergies}
                   selectedDate={currentDate}
                   onSelectDate={handleDrillDown}
+                  timeZone={effectiveTimezone}
                 />
               </ScheduleViewShell>
             )}
@@ -615,6 +817,7 @@ export default function SchedulePage() {
                   energies={dayEnergies}
                   selectedDate={currentDate}
                   onSelectDate={handleDrillDown}
+                  timeZone={effectiveTimezone}
                 />
               </ScheduleViewShell>
             )}
@@ -626,6 +829,7 @@ export default function SchedulePage() {
                   date={currentDate}
                   startHour={startHour}
                   pxPerMin={pxPerMin}
+                  timeZone={effectiveTimezone}
                 >
                   {windows.map(w => {
                     const { top, height } = windowRect(w, startHour, pxPerMin)
@@ -646,12 +850,15 @@ export default function SchedulePage() {
                       </div>
                     )
                   })}
-                  {projectInstances.map(({ instance, project, start, end }, index) => {
+                  {projectInstances.map(
+                    ({ instance, project, startMinutes, durationMinutes }, index) => {
                     const projectId = project.id
-                    const startMin = start.getHours() * 60 + start.getMinutes()
-                    const top = (startMin - startHour * 60) * pxPerMin
-                    const height =
-                      ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                    const top = (startMinutes - startHour * 60) * pxPerMin
+                    const height = Math.max(durationMinutes, 0) * pxPerMin
+                    const durationLabel = Math.max(
+                      0,
+                      Math.round(durationMinutes),
+                    )
                     const isExpanded = expandedProjects.has(projectId)
                     const tasksForProject = taskInstancesByProject[projectId] || []
                     const style: CSSProperties = {
@@ -701,10 +908,7 @@ export default function SchedulePage() {
                                 {project.name}
                               </span>
                               <div className="text-xs text-zinc-200/70">
-                                {Math.round(
-                                  (end.getTime() - start.getTime()) / 60000
-                                )}
-                                m
+                                {durationLabel}m
                                 {project.taskCount > 0 && (
                                   <span> · {project.taskCount} tasks</span>
                                 )}
@@ -729,11 +933,19 @@ export default function SchedulePage() {
                           </motion.div>
                         ) : (
                           tasksForProject.map(taskInfo => {
-                            const { instance: taskInstance, task, start, end } = taskInfo
-                            const tStartMin = start.getHours() * 60 + start.getMinutes()
-                            const tTop = (tStartMin - startHour * 60) * pxPerMin
-                            const tHeight =
-                              ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                            const {
+                              instance: taskInstance,
+                              task,
+                              startMinutes: taskStartMinutes,
+                              durationMinutes: taskDurationMinutes,
+                            } = taskInfo
+                            const tTop =
+                              (taskStartMinutes - startHour * 60) * pxPerMin
+                            const tHeight = Math.max(taskDurationMinutes, 0) * pxPerMin
+                            const taskDurationLabel = Math.max(
+                              0,
+                              Math.round(taskDurationMinutes),
+                            )
                             const tStyle: CSSProperties = {
                               top: tTop,
                               height: tHeight,
@@ -744,18 +956,18 @@ export default function SchedulePage() {
                             const progress =
                               (task as { progress?: number }).progress ?? 0
                             return (
-                          <motion.div
-                            key={taskInstance.id}
-                            aria-label={`Task ${task.name}`}
-                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                            style={tStyle}
-                            onClick={() =>
-                              setExpandedProjects(prev => {
-                                const next = new Set(prev)
-                                next.delete(projectId)
-                                return next
-                              })
-                            }
+                              <motion.div
+                                key={taskInstance.id}
+                                aria-label={`Task ${task.name}`}
+                                className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                                style={tStyle}
+                                onClick={() =>
+                                  setExpandedProjects(prev => {
+                                    const next = new Set(prev)
+                                    next.delete(projectId)
+                                    return next
+                                  })
+                                }
                                 initial={
                                   prefersReducedMotion
                                     ? false
@@ -778,10 +990,7 @@ export default function SchedulePage() {
                                     {task.name}
                                   </span>
                                   <div className="text-xs text-zinc-200/70">
-                                    {Math.round(
-                                      (end.getTime() - start.getTime()) / 60000
-                                    )}
-                                    m
+                                    {taskDurationLabel}m
                                   </div>
                                 </div>
                                 {task.skill_icon && (
@@ -808,70 +1017,74 @@ export default function SchedulePage() {
                       </AnimatePresence>
                     )
                   })}
-                  {standaloneTaskInstances.map(({ instance, task, start, end }) => {
-                    const startMin = start.getHours() * 60 + start.getMinutes()
-                    const top = (startMin - startHour * 60) * pxPerMin
-                    const height =
-                      ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                    const style: CSSProperties = {
-                      top,
-                      height,
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
-                      outlineOffset: '-1px',
-                    }
-                    const progress = (task as { progress?: number }).progress ?? 0
-                    return (
-                      <motion.div
-                        key={instance.id}
-                        aria-label={`Task ${task.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                        style={style}
-                        initial={
-                          prefersReducedMotion ? false : { opacity: 0, y: 4 }
-                        }
-                        animate={
-                          prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
-                        }
-                        exit={
-                          prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
-                        }
-                      >
-                        {renderInstanceActions(instance.id)}
-                        <div className="flex flex-col">
-                          <span className="truncate text-sm font-medium">
-                            {task.name}
-                          </span>
-                          <div className="text-xs text-zinc-200/70">
-                            {Math.round((end.getTime() - start.getTime()) / 60000)}m
+                  {standaloneTaskInstances.map(
+                    ({ instance, task, startMinutes, durationMinutes }) => {
+                      const top = (startMinutes - startHour * 60) * pxPerMin
+                      const height = Math.max(durationMinutes, 0) * pxPerMin
+                      const durationLabel = Math.max(
+                        0,
+                        Math.round(durationMinutes),
+                      )
+                      const style: CSSProperties = {
+                        top,
+                        height,
+                        boxShadow: 'var(--elev-card)',
+                        outline: '1px solid var(--event-border)',
+                        outlineOffset: '-1px',
+                      }
+                      const progress = (task as { progress?: number }).progress ?? 0
+                      return (
+                        <motion.div
+                          key={instance.id}
+                          aria-label={`Task ${task.name}`}
+                          className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                          style={style}
+                          initial={
+                            prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                          }
+                          animate={
+                            prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
+                          }
+                          exit={
+                            prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
+                          }
+                        >
+                          {renderInstanceActions(instance.id)}
+                          <div className="flex flex-col">
+                            <span className="truncate text-sm font-medium">
+                              {task.name}
+                            </span>
+                            <div className="text-xs text-zinc-200/70">
+                              {durationLabel}m
+                            </div>
                           </div>
-                        </div>
-                        {task.skill_icon && (
-                          <span
-                            className="ml-2 text-lg leading-none flex-shrink-0"
-                            aria-hidden
-                          >
-                            {task.skill_icon}
-                          </span>
-                        )}
-                        <FlameEmber
-                          level={(task.energy as FlameLevel) || 'NO'}
-                          size="sm"
-                          className="absolute -top-1 -right-1"
-                        />
-                        <div
-                          className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </motion.div>
-                    )
-                  })}
+                          {task.skill_icon && (
+                            <span
+                              className="ml-2 text-lg leading-none flex-shrink-0"
+                              aria-hidden
+                            >
+                              {task.skill_icon}
+                            </span>
+                          )}
+                          <FlameEmber
+                            level={(task.energy as FlameLevel) || 'NO'}
+                            size="sm"
+                            className="absolute -top-1 -right-1"
+                          />
+                          <div
+                            className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </motion.div>
+                      )
+                    }
+                  )}
                 </DayTimeline>
               </ScheduleViewShell>
             )}
             {view === 'focus' && (
               <ScheduleViewShell key="focus">
-                <FocusTimeline />
+                <FocusTimeline timeZone={effectiveTimezone} />
               </ScheduleViewShell>
             )}
           </AnimatePresence>

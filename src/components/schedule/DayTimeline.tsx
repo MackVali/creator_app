@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
+import { toLocal, getLocalDateKey } from "@/lib/time/tz";
 
 interface DayTimelineProps {
   startHour?: number;
@@ -9,6 +10,7 @@ interface DayTimelineProps {
   pxPerMin?: number;
   date?: Date;
   children?: ReactNode;
+  timeZone?: string | null;
 }
 
 export function DayTimeline({
@@ -16,6 +18,7 @@ export function DayTimeline({
   endHour = 24,
   pxPerMin = 2,
   date = new Date(),
+  timeZone,
   children,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
@@ -23,20 +26,23 @@ export function DayTimeline({
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isSameDay(date, new Date())) {
+    const sameDay =
+      getLocalDateKey(date.toISOString(), timeZone) ===
+      getLocalDateKey(new Date().toISOString(), timeZone)
+    if (!sameDay) {
       setNowMinutes(null);
       return;
     }
 
     function update() {
-      const d = new Date();
-      const minutes = d.getHours() * 60 + d.getMinutes();
+      const localNow = toLocal(new Date().toISOString(), timeZone);
+      const minutes = localNow.getHours() * 60 + localNow.getMinutes();
       setNowMinutes(minutes - startHour * 60);
     }
     update();
     const id = setInterval(update, 30_000);
     return () => clearInterval(id);
-  }, [startHour, date]);
+  }, [startHour, date, timeZone]);
 
   const showNowLine =
     nowMinutes !== null && nowMinutes >= 0 && nowMinutes <= totalMinutes;
@@ -114,10 +120,3 @@ function formatTime(totalMinutes: number) {
   return `${hour12}:${minuteStr}`;
 }
 
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
