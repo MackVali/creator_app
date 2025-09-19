@@ -118,7 +118,7 @@ export default function WindowsPolishedUI({
   const [energyFilter, setEnergyFilter] = useState<"all" | Energy>("all")
   const [search, setSearch] = useState("")
   const [searchDebounced, setSearchDebounced] = useState("")
-  const [sort, setSort] = useState<SortOption>("az")
+  const [sort, setSort] = useState<SortOption>("start")
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   useEffect(() => {
@@ -185,7 +185,7 @@ export default function WindowsPolishedUI({
     setSelectedDays(new Set())
     setEnergyFilter("all")
     setSearch("")
-    setSort("az")
+    setSort("start")
   }
 
   const [editing, setEditing] = useState<WindowItem | null>(null)
