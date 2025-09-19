@@ -1,5 +1,6 @@
 "use client";
 
+import { DateTime } from "luxon";
 import { MoreHorizontal } from "lucide-react";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { Badge } from "./badge";
@@ -19,6 +20,7 @@ interface ProjectCardProps {
     priority: string;
     energy: string;
     stage: string;
+    created_at: string;
   };
 }
 
@@ -27,6 +29,11 @@ export function ProjectCard({ project }: ProjectCardProps) {
     // Placeholder for future edit functionality
     console.log("Edit project", project.id);
   };
+
+  const createdAt = DateTime.fromISO(project.created_at);
+  const createdAtLabel = createdAt.isValid
+    ? createdAt.toLocaleString(DateTime.DATETIME_MED_WITH_WEEKDAY)
+    : null;
 
   return (
     <Card className="hover:bg-gray-800/50 transition-colors">
@@ -64,6 +71,11 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </Badge>
           <Badge variant="secondary">{project.stage}</Badge>
         </div>
+        {createdAtLabel && (
+          <p className="mt-2 text-xs text-gray-400">
+            Created {createdAtLabel}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

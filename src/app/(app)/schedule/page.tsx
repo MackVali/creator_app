@@ -276,6 +276,26 @@ function describeSchedulerFailure(
   }
 }
 
+function formatInstanceRange(start: DateTime, end: DateTime): string | null {
+  if (!start.isValid || !end.isValid) return null
+  const sameDay = start.hasSame(end, 'day')
+  const datePart = start.toFormat('ccc, LLL d')
+  const startPart = start.toFormat('h:mm a')
+  const tzName = start.offsetNameShort || start.offsetNameLong || start.zoneName
+
+  if (sameDay) {
+    const endPart = end.toFormat('h:mm a')
+    return tzName
+      ? `${datePart} · ${startPart} – ${endPart} (${tzName})`
+      : `${datePart} · ${startPart} – ${endPart}`
+  }
+
+  const endPart = end.toFormat('ccc, LLL d h:mm a')
+  return tzName
+    ? `${datePart} ${startPart} – ${endPart} (${tzName})`
+    : `${datePart} ${startPart} – ${endPart}`
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -496,6 +516,8 @@ export default function SchedulePage() {
           project,
           start: zonedDateTimeToDate(startZoned),
           end: zonedDateTimeToDate(endZoned),
+          startZoned,
+          endZoned,
         }
       })
       .filter((value): value is {
@@ -503,6 +525,8 @@ export default function SchedulePage() {
         project: ProjectItem
         start: Date
         end: Date
+        startZoned: DateTime
+        endZoned: DateTime
       } => value !== null)
       .sort((a, b) => a.start.getTime() - b.start.getTime())
   }, [instances, projectMap, timeZone])
@@ -1079,19 +1103,21 @@ export default function SchedulePage() {
                       </div>
                     )
                   })}
-                  {projectInstances.map(({ instance, project, start, end }, index) => {
-                    const projectId = project.id
-                    const startMin = start.getHours() * 60 + start.getMinutes()
-                    const top = (startMin - startHour * 60) * pxPerMin
-                    const height =
-                      ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                    const isExpanded = expandedProjects.has(projectId)
-                    const tasksForProject = taskInstancesByProject[projectId] || []
-                    const style: CSSProperties = {
-                      top,
-                      height,
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
+                  {projectInstances.map(
+                    ({ instance, project, start, end, startZoned, endZoned }, index) => {
+                      const projectId = project.id
+                      const startMin = start.getHours() * 60 + start.getMinutes()
+                      const top = (startMin - startHour * 60) * pxPerMin
+                      const height =
+                        ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                      const isExpanded = expandedProjects.has(projectId)
+                      const tasksForProject = taskInstancesByProject[projectId] || []
+                      const timeRangeLabel = formatInstanceRange(startZoned, endZoned)
+                      const style: CSSProperties = {
+                        top,
+                        height,
+                        boxShadow: 'var(--elev-card)',
+                        outline: '1px solid var(--event-border)',
                       outlineOffset: '-1px',
                     }
                     return (
@@ -1133,10 +1159,15 @@ export default function SchedulePage() {
                             }
                           >
                             {renderInstanceActions(instance.id, { projectId })}
-                            <div className="flex flex-col">
+                            <div className="flex flex-col gap-0.5">
                               <span className="truncate text-sm font-medium">
                                 {project.name}
                               </span>
+                              {timeRangeLabel && (
+                                <div className="text-xs text-zinc-200/80">
+                                  {timeRangeLabel}
+                                </div>
+                              )}
                               <div className="text-xs text-zinc-200/70">
                                 {Math.round(
                                   (end.getTime() - start.getTime()) / 60000
