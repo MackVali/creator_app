@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFilteredGoals } from "@/lib/hooks/useFilteredGoals";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
-import { GoalCard as GoalFolder } from "@/app/(app)/goals/components/GoalCard";
+import { GoalFolderCard } from "@/app/(app)/dashboard/components/GoalFolderCard";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 
 interface FilteredGoalsGridProps {
@@ -19,9 +19,12 @@ interface FilteredGoalsGridProps {
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 justify-items-center">
       {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-32 rounded-2xl bg-[#111520]" />
+        <div key={i} className="flex flex-col items-center gap-3">
+          <Skeleton className="h-[140px] w-[120px] rounded-[26px] bg-[#111520]" />
+          <Skeleton className="h-4 w-24 rounded-full bg-[#111520]" />
+        </div>
       ))}
     </div>
   );
@@ -68,6 +71,27 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
+function goalStatusToStatus(status?: string | null): Goal["status"] {
+  switch (status) {
+    case "COMPLETED":
+    case "Completed":
+    case "DONE":
+      return "Completed";
+    case "INACTIVE":
+    case "Inactive":
+      return "Inactive";
+    case "OVERDUE":
+    case "Overdue":
+      return "Overdue";
+    case "ACTIVE":
+    case "Active":
+    case "IN_PROGRESS":
+    case "IN PROGRESS":
+    default:
+      return "Active";
+  }
+}
+
 export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGridProps) {
   const { goals, loading: goalsLoading, error } = useFilteredGoals({ entity, id, limit: 12 });
   const [active, setActive] = useState("Active");
@@ -108,17 +132,22 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
         projectsByGoal[p.goal_id].push(proj);
       });
 
-      const mapped: Goal[] = goals.map((g) => ({
-        id: g.id,
-        title: g.name,
-        priority: mapPriority(g.priority),
-        energy: mapEnergy(g.energy),
-        progress: 0,
-        status: "Active",
-        active: true,
-        updatedAt: g.created_at,
-        projects: projectsByGoal[g.id] || [],
-      }));
+      const mapped: Goal[] = goals.map((g) => {
+        const status = goalStatusToStatus(g.status);
+        return {
+          id: g.id,
+          title: g.name,
+          emoji: g.emoji ?? undefined,
+          dueDate: g.due_date ?? undefined,
+          priority: mapPriority(g.priority),
+          energy: mapEnergy(g.energy),
+          progress: 0,
+          status,
+          active: g.active ?? status === "Active",
+          updatedAt: g.updated_at ?? g.created_at,
+          projects: projectsByGoal[g.id] || [],
+        };
+      });
 
       setGoalFolders(mapped);
       setProjLoading(false);
@@ -130,6 +159,23 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
   }, [goals, goalsLoading]);
 
   const loading = goalsLoading || projLoading;
+
+  const filteredGoalFolders = goalFolders.filter((goal) => {
+    switch (active) {
+      case "Blocked":
+        return goal.status === "Inactive" || goal.status === "Overdue";
+      case "Completed":
+        return goal.status === "Completed";
+      case "Active":
+      default:
+        return goal.status === "Active";
+    }
+  });
+
+  const emptyDescription =
+    entity === "monument"
+      ? "No goals linked to this monument."
+      : "No goals linked to this skill.";
 
   return (
     <div>
@@ -155,14 +201,24 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
           <p className="text-sm text-gray-400">{error}</p>
         </div>
       ) : goalFolders.length === 0 ? (
-        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          <p className="text-[#A7B0BD] mb-4">No goals linked to this monument.</p>
-          <Button variant="outline" onClick={onCreateGoal}>+ Goal</Button>
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-6 text-center shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+          <p className="mb-4 text-sm text-[#A7B0BD]">{emptyDescription}</p>
+          {onCreateGoal ? (
+            <Button variant="outline" onClick={onCreateGoal}>
+              + Goal
+            </Button>
+          ) : null}
+        </Card>
+      ) : filteredGoalFolders.length === 0 ? (
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-6 text-center shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+          <p className="text-sm text-[#A7B0BD]">
+            {`No ${active.toLowerCase()} goals linked to this ${entity === "monument" ? "monument" : "skill"}.`}
+          </p>
         </Card>
       ) : (
-        <div className="flex flex-col gap-4">
-          {goalFolders.map((goal) => (
-            <GoalFolder key={goal.id} goal={goal} />
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 justify-items-center">
+          {filteredGoalFolders.map((goal) => (
+            <GoalFolderCard key={goal.id} goal={goal} />
           ))}
         </div>
       )}

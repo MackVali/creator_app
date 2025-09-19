@@ -24,6 +24,8 @@ export function useFilteredGoals({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
+  const goalSelectFields =
+    "id,name,priority,energy,emoji,monument_id,status,active,due_date,created_at,updated_at";
 
   const fetchGoals = async () => {
     if (!supabase || !id) return;
@@ -40,7 +42,7 @@ export function useFilteredGoals({
         // Direct query for monument goals
         const { data, error } = await supabase
           .from("goals")
-          .select("id,name,priority,energy,monument_id,created_at")
+          .select(goalSelectFields)
           .eq("user_id", (await supabase.auth.getUser()).data.user?.id)
           .eq("monument_id", id)
           .order("priority", { ascending: false })
@@ -118,7 +120,7 @@ export function useFilteredGoals({
           const goalIdsArray = Array.from(goalIds);
           const { data: goalsDataResult, error: goalsError } = await supabase
             .from("goals")
-            .select("id,name,priority,energy,monument_id,created_at")
+            .select(goalSelectFields)
             .eq("user_id", userId)
             .in("id", goalIdsArray)
             .order("priority", { ascending: false })

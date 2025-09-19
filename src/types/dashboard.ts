@@ -27,6 +27,11 @@ export type GoalItem = {
   name: string;
   priority: "NO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "ULTRA-CRITICAL";
   energy: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
+  status?: string | null;
+  active?: boolean | null;
+  emoji?: string | null;
+  due_date?: string | null;
+  updated_at?: string | null;
   monument_id?: string | null;
   created_at: string;
 };
