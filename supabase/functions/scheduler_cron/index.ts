@@ -70,6 +70,7 @@ async function markMissedAndQueue(client: Client, userId: string, now: Date) {
 }
 
 async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
+  const timeZone = await getUserTimezone(client, userId)
   const missed = await fetchMissedInstances(client, userId)
   if (missed.error) return { placed: [], failures: [], error: missed.error }
 
@@ -88,7 +89,7 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     instanceId?: string | null
   }
 
-  const baseStart = startOfDay(baseDate)
+  const baseStart = startOfDay(baseDate, timeZone)
   const queue: QueueItem[] = []
   const failures: { itemId: string; reason: string; detail?: unknown }[] = []
   const seenMissedProjects = new Set<string>()
@@ -145,7 +146,7 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     })
   }
 
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEnd = addDays(baseStart, 28, timeZone)
   const dedupe = await dedupeScheduledProjects(
     client,
     userId,
@@ -191,8 +192,14 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(client, userId, day, item)
+      const day = addDays(baseStart, offset, timeZone)
+      const windows = await fetchCompatibleWindowsForItem(
+        client,
+        userId,
+        day,
+        timeZone,
+        item
+      )
       if (windows.length === 0) continue
 
       const placedInstance = await placeItemInWindows(
@@ -214,6 +221,27 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   }
 
   return { placed, failures, error: null as const }
+}
+
+async function getUserTimezone(client: Client, userId: string): Promise<string> {
+  try {
+    const { data, error } = await client
+      .from('profiles')
+      .select('timezone')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (error) {
+      console.error('getUserTimezone error', error)
+      return 'UTC'
+    }
+
+    const timezone = data?.timezone
+    return typeof timezone === 'string' && timezone.length > 0 ? timezone : 'UTC'
+  } catch (error) {
+    console.error('getUserTimezone unexpected error', error)
+    return 'UTC'
+  }
 }
 
 async function fetchMissedInstances(client: Client, userId: string) {
@@ -448,6 +476,7 @@ async function fetchCompatibleWindowsForItem(
   client: Client,
   userId: string,
   date: Date,
+  timeZone: string,
   item: { energy: string; duration_min: number }
 ) {
   const windows = await fetchWindowsForDate(client, userId, date)
@@ -455,8 +484,8 @@ async function fetchCompatibleWindowsForItem(
   const compatible = windows.filter(window => energyIndex(window.energy) >= itemIdx)
   return compatible.map(window => ({
     id: window.id,
-    startLocal: resolveWindowStart(window, date),
-    endLocal: resolveWindowEnd(window, date),
+    startLocal: resolveWindowStart(window, date, timeZone),
+    endLocal: resolveWindowEnd(window, date, timeZone),
   }))
 }
 
@@ -663,36 +692,174 @@ async function rescheduleInstance(
   return data
 }
 
-function resolveWindowStart(window: WindowRecord, date: Date) {
-  const [hour = 0, minute = 0] = window.start_local.split(':').map(Number)
-  const base = startOfDay(date)
-  if (window.fromPrevDay) base.setDate(base.getDate() - 1)
-  const start = new Date(base)
-  start.setHours(hour, minute, 0, 0)
-  return start
+function resolveWindowStart(
+  window: WindowRecord,
+  date: Date,
+  timeZone: string
+) {
+  const dayParts = getZonedDateTimeParts(date, timeZone)
+  const baseDay = window.fromPrevDay
+    ? shiftDay({ year: dayParts.year, month: dayParts.month, day: dayParts.day }, -1)
+    : { year: dayParts.year, month: dayParts.month, day: dayParts.day }
+  return applyLocalTime(baseDay, window.start_local, timeZone)
 }
 
-function resolveWindowEnd(window: WindowRecord, date: Date) {
-  const [hour = 0, minute = 0] = window.end_local.split(':').map(Number)
-  const end = startOfDay(date)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(window, date)
+function resolveWindowEnd(window: WindowRecord, date: Date, timeZone: string) {
+  const dayParts = getZonedDateTimeParts(date, timeZone)
+  const baseDay = { year: dayParts.year, month: dayParts.month, day: dayParts.day }
+  let end = applyLocalTime(baseDay, window.end_local, timeZone)
+  const start = resolveWindowStart(window, date, timeZone)
   if (end <= start) {
-    end.setDate(end.getDate() + 1)
+    const nextDay = shiftDay(baseDay, 1)
+    end = applyLocalTime(nextDay, window.end_local, timeZone)
   }
   return end
 }
 
-function startOfDay(date: Date) {
-  const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  return copy
+function startOfDay(date: Date, timeZone: string) {
+  const parts = getZonedDateTimeParts(date, timeZone)
+  return zonedTimeToUtc(
+    { year: parts.year, month: parts.month, day: parts.day },
+    timeZone
+  )
 }
 
-function addDays(date: Date, amount: number) {
-  const copy = new Date(date)
-  copy.setDate(copy.getDate() + amount)
-  return copy
+function addDays(date: Date, amount: number, timeZone: string) {
+  const parts = getZonedDateTimeParts(date, timeZone)
+  const shifted = shiftDay(
+    { year: parts.year, month: parts.month, day: parts.day },
+    amount
+  )
+  return zonedTimeToUtc(shifted, timeZone)
+}
+
+type DayParts = { year: number; month: number; day: number }
+
+function shiftDay(base: DayParts, amount: number): DayParts {
+  const reference = new Date(Date.UTC(base.year, base.month - 1, base.day + amount))
+  return {
+    year: reference.getUTCFullYear(),
+    month: reference.getUTCMonth() + 1,
+    day: reference.getUTCDate(),
+  }
+}
+
+function applyLocalTime(base: DayParts, time: string, timeZone: string) {
+  const [hourRaw = 0, minuteRaw = 0] = time.split(':')
+  const hour = Number(hourRaw)
+  const minute = Number(minuteRaw)
+  return zonedTimeToUtc(
+    {
+      year: base.year,
+      month: base.month,
+      day: base.day,
+      hour: Number.isFinite(hour) ? hour : 0,
+      minute: Number.isFinite(minute) ? minute : 0,
+    },
+    timeZone
+  )
+}
+
+type ZonedDateTimeParts = {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+  millisecond: number
+}
+
+const formatterCache = new Map<string, Intl.DateTimeFormat>()
+
+function getFormatter(timeZone: string) {
+  let formatter = formatterCache.get(timeZone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+    formatterCache.set(timeZone, formatter)
+  }
+  return formatter
+}
+
+function toMillis(fractional?: string) {
+  if (!fractional) return 0
+  const normalized = `${fractional}000`.slice(0, 3)
+  const value = Number(normalized)
+  return Number.isFinite(value) ? value : 0
+}
+
+function toNumber(value?: string) {
+  if (!value) return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function getZonedDateTimeParts(date: Date, timeZone: string): ZonedDateTimeParts {
+  const formatter = getFormatter(timeZone)
+  const parts = formatter.formatToParts(date)
+  const record: Record<string, string> = {}
+  for (const part of parts) {
+    if (part.type === 'literal') continue
+    if (record[part.type] === undefined) {
+      record[part.type] = part.value
+    }
+  }
+
+  return {
+    year: toNumber(record.year),
+    month: toNumber(record.month),
+    day: toNumber(record.day),
+    hour: toNumber(record.hour),
+    minute: toNumber(record.minute),
+    second: toNumber(record.second),
+    millisecond: toMillis(record.fractionalSecond),
+  }
+}
+
+function zonedTimeToUtc(
+  fields: {
+    year: number
+    month: number
+    day: number
+    hour?: number
+    minute?: number
+    second?: number
+    millisecond?: number
+  },
+  timeZone: string
+): Date {
+  const {
+    year,
+    month,
+    day,
+    hour = 0,
+    minute = 0,
+    second = 0,
+    millisecond = 0,
+  } = fields
+  const utcMillis = Date.UTC(year, month - 1, day, hour, minute, second, millisecond)
+  const initial = new Date(utcMillis)
+  const actual = getZonedDateTimeParts(initial, timeZone)
+  const actualUtc = Date.UTC(
+    actual.year,
+    actual.month - 1,
+    actual.day,
+    actual.hour,
+    actual.minute,
+    actual.second,
+    actual.millisecond
+  )
+  const diff = utcMillis - actualUtc
+  return new Date(utcMillis + diff)
 }
 
 function addMin(date: Date, minutes: number) {

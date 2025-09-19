@@ -86,6 +86,7 @@ export async function upsertEmptyProfile(user: User) {
         username: user.user_metadata?.username || `user_${user.id.slice(0, 8)}`,
         name: user.user_metadata?.name || null,
         bio: "",
+        timezone: null,
       });
 
       if (error) {

@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { normalizeTimezone } from "@/lib/time/tz";
 
 // Profile schema validation
 export const profileSchema = z.object({
@@ -172,6 +173,43 @@ export async function updateMyProfile(input: ProfileFormData) {
 
     console.error("Error in updateMyProfile:", error);
     return { success: false, error: "An unexpected error occurred" };
+  }
+}
+
+export async function updateMyTimezone(timezoneInput: string | null) {
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
+  if (!supabase) return { success: false, error: "Supabase not initialized" };
+
+  const user = await getCurrentUser();
+  if (!user) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  const normalized = normalizeTimezone(timezoneInput);
+
+  try {
+    await ensureProfile(user.id);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({
+        timezone: normalized,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id)
+      .select("timezone")
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error updating timezone:", error);
+      return { success: false, error: "Failed to update timezone" };
+    }
+
+    return { success: true, timezone: data?.timezone ?? null };
+  } catch (error) {
+    console.error("Error in updateMyTimezone:", error);
+    return { success: false, error: "Failed to update timezone" };
   }
 }
 

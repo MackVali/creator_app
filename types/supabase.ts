@@ -322,18 +322,21 @@ export interface Database {
           created_at: string;
           user_id: string | null;
           username: string;
+          timezone: string | null;
         };
         Insert: {
           id?: string;
           created_at?: string;
           user_id?: string | null;
           username: string;
+          timezone?: string | null;
         };
         Update: {
           id?: string;
           created_at?: string;
           user_id?: string | null;
           username?: string;
+          timezone?: string | null;
         };
       };
       linked_accounts: {
