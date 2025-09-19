@@ -260,7 +260,7 @@ export default function SkillDetailPage() {
                   Related goals
                 </CardTitle>
                 <CardDescription className="text-slate-400">
-                  Connect the projects and goals that move {skill.name} forward.
+                  Explore the goal folders powering {skill.name} and see the projects pushing it forward.
                 </CardDescription>
               </div>
             </CardHeader>

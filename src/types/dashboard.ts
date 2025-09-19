@@ -29,6 +29,8 @@ export type GoalItem = {
   energy: "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
   monument_id?: string | null;
   created_at: string;
+  status?: string | null;
+  active?: boolean | null;
 };
 
 export type DashboardData = {
