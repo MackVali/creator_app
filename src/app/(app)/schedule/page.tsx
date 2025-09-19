@@ -35,6 +35,7 @@ import {
 } from '@/lib/scheduler/repo'
 import {
   fetchInstancesForRange,
+  fetchScheduledProjectIds,
   updateInstanceStatus,
   type ScheduleInstance,
 } from '@/lib/scheduler/instanceRepo'
@@ -141,6 +142,7 @@ export default function SchedulePage() {
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
+  const [scheduledProjectIds, setScheduledProjectIds] = useState<Set<string>>(new Set())
   const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
@@ -167,6 +169,7 @@ export default function SchedulePage() {
       setWindows([])
       setTasks([])
       setProjects([])
+      setScheduledProjectIds(new Set())
       setMetaStatus('idle')
       return
     }
@@ -176,21 +179,24 @@ export default function SchedulePage() {
 
     async function load() {
       try {
-        const [ws, ts, pm] = await Promise.all([
+        const [ws, ts, pm, scheduledIds] = await Promise.all([
           fetchWindowsForDate(currentDate),
           fetchReadyTasks(),
           fetchProjectsMap(),
+          fetchScheduledProjectIds(userId),
         ])
         if (!active) return
         setWindows(ws)
         setTasks(ts)
         setProjects(Object.values(pm))
+        setScheduledProjectIds(new Set(scheduledIds))
       } catch (e) {
         if (!active) return
         console.error(e)
         setWindows([])
         setTasks([])
         setProjects([])
+        setScheduledProjectIds(new Set())
       } finally {
         if (!active) return
         setMetaStatus('loaded')
@@ -280,8 +286,11 @@ export default function SchedulePage() {
   }, [projectInstances])
 
   const unscheduledProjects = useMemo(() => {
-    return projectItems.filter(project => !projectInstanceIds.has(project.id))
-  }, [projectItems, projectInstanceIds])
+    return projectItems.filter(project => {
+      if (scheduledProjectIds.has(project.id)) return false
+      return !projectInstanceIds.has(project.id)
+    })
+  }, [projectItems, projectInstanceIds, scheduledProjectIds])
 
   const unscheduledTaskCount = useMemo(() => {
     return unscheduledProjects.reduce((sum, project) => {

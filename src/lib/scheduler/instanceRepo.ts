@@ -38,6 +38,27 @@ export async function fetchInstancesForRange(
     .order('start_utc', { ascending: true })
 }
 
+export async function fetchScheduledProjectIds(
+  userId: string,
+  client?: Client
+): Promise<string[]> {
+  const supabase = await ensureClient(client)
+  const { data, error } = await supabase
+    .from('schedule_instances')
+    .select('source_id')
+    .eq('user_id', userId)
+    .eq('source_type', 'PROJECT')
+    .in('status', ['scheduled', 'completed', 'missed'])
+
+  if (error) throw error
+
+  const ids = new Set<string>()
+  for (const record of (data ?? []) as Array<Pick<ScheduleInstance, 'source_id'>>) {
+    if (record.source_id) ids.add(record.source_id)
+  }
+  return Array.from(ids)
+}
+
 export async function createInstance(
   input: {
     userId: string
