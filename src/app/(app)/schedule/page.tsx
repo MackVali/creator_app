@@ -44,6 +44,13 @@ import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import { toLocal } from '@/lib/time/tz'
+import {
+  computeTimelinePlacement,
+  formatDateParam,
+  parseDateParam,
+  startOfLocalDay,
+  utcDayRange,
+} from '@/lib/scheduler/dateUtils'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -106,15 +113,6 @@ function WindowLabel({
       {label}
     </span>
   )
-}
-
-function utcDayRange(d: Date) {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const day = d.getUTCDate()
-  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
-  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
-  return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
@@ -266,7 +264,7 @@ export default function SchedulePage() {
   const initialDate = searchParams.get('date')
 
   const [currentDate, setCurrentDate] = useState(
-    () => (initialDate ? new Date(initialDate) : new Date())
+    () => parseDateParam(initialDate) ?? new Date()
   )
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
@@ -288,6 +286,16 @@ export default function SchedulePage() {
   const startHour = 0
   const pxPerMin = 2
   const year = currentDate.getFullYear()
+  const dayStartLocal = useMemo(() => startOfLocalDay(currentDate), [currentDate])
+  const timelineStart = useMemo(() => {
+    const start = new Date(dayStartLocal)
+    start.setHours(start.getHours() + startHour)
+    return start
+  }, [dayStartLocal, startHour])
+  const timelineEnd = useMemo(
+    () => new Date(timelineStart.getTime() + 24 * 60 * 60 * 1000),
+    [timelineStart]
+  )
 
   const refreshScheduledProjectIds = useCallback(async () => {
     if (!userId) return
@@ -302,7 +310,7 @@ export default function SchedulePage() {
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', currentDate.toISOString().slice(0, 10))
+    params.set('date', formatDateParam(currentDate))
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [view, currentDate, router, pathname])
 
@@ -392,7 +400,7 @@ export default function SchedulePage() {
     const map: Record<string, FlameLevel> = {}
     for (const inst of instances) {
       const start = toLocal(inst.start_utc)
-      const key = start.toISOString().slice(0, 10)
+      const key = formatDateParam(start)
       const level = (inst.energy_resolved?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
       if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
@@ -736,6 +744,8 @@ export default function SchedulePage() {
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
         cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timezoneOffset: new Date().getTimezoneOffset() }),
       })
       let payload: unknown = null
       let parseError: unknown = null
@@ -925,10 +935,14 @@ export default function SchedulePage() {
                   })}
                   {projectInstances.map(({ instance, project, start, end }, index) => {
                     const projectId = project.id
-                    const startMin = start.getHours() * 60 + start.getMinutes()
-                    const top = (startMin - startHour * 60) * pxPerMin
-                    const height =
-                      ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                    const { top, height } = computeTimelinePlacement({
+                      start,
+                      end,
+                      timelineStart,
+                      timelineEnd,
+                      pxPerMin,
+                    })
+                    if (height <= 0) return null
                     const isExpanded = expandedProjects.has(projectId)
                     const tasksForProject = taskInstancesByProject[projectId] || []
                     const style: CSSProperties = {
@@ -1034,18 +1048,22 @@ export default function SchedulePage() {
                           >
                             {tasksForProject.map(taskInfo => {
                               const { instance: taskInstance, task, start, end } = taskInfo
-                              const tStartMin =
-                                start.getHours() * 60 + start.getMinutes()
-                              const tTop = (tStartMin - startHour * 60) * pxPerMin
-                              const tHeight =
-                                ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                              const { top: tTop, height: tHeight } =
+                                computeTimelinePlacement({
+                                  start,
+                                  end,
+                                  timelineStart,
+                                  timelineEnd,
+                                  pxPerMin,
+                                })
+                              if (tHeight <= 0) return null
                               const tStyle: CSSProperties = {
                                 top: tTop,
                                 height: tHeight,
-                                boxShadow: 'var(--elev-card)',
-                                outline: '1px solid var(--event-border)',
-                                outlineOffset: '-1px',
-                              }
+                                  boxShadow: 'var(--elev-card)',
+                                  outline: '1px solid var(--event-border)',
+                                  outlineOffset: '-1px',
+                                }
                               const progress =
                                 (task as { progress?: number }).progress ?? 0
                               return (
@@ -1115,10 +1133,14 @@ export default function SchedulePage() {
                     )
                   })}
                   {standaloneTaskInstances.map(({ instance, task, start, end }) => {
-                    const startMin = start.getHours() * 60 + start.getMinutes()
-                    const top = (startMin - startHour * 60) * pxPerMin
-                    const height =
-                      ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                    const { top, height } = computeTimelinePlacement({
+                      start,
+                      end,
+                      timelineStart,
+                      timelineEnd,
+                      pxPerMin,
+                    })
+                    if (height <= 0) return null
                     const style: CSSProperties = {
                       top,
                       height,

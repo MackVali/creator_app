@@ -47,11 +47,12 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
 
 export async function fetchWindowsForDate(
   date: Date,
-  client?: Client
+  client?: Client,
+  timezoneOffsetMinutes?: number
 ): Promise<WindowLite[]> {
   const supabase = ensureClient(client);
 
-  const weekday = date.getDay();
+  const weekday = resolveWeekday(date, timezoneOffsetMinutes);
   const prevWeekday = (weekday + 6) % 7;
 
   const { data: today, error: err1 } = await supabase
@@ -77,6 +78,17 @@ export async function fetchWindowsForDate(
     .map((w) => ({ ...w, fromPrevDay: true }));
 
   return [...(today ?? []), ...prevCross] as WindowLite[];
+}
+
+const MS_PER_MINUTE = 60_000;
+
+function resolveWeekday(date: Date, timezoneOffsetMinutes?: number) {
+  if (typeof timezoneOffsetMinutes !== "number" || !Number.isFinite(timezoneOffsetMinutes)) {
+    return date.getDay();
+  }
+
+  const local = new Date(date.getTime() - timezoneOffsetMinutes * MS_PER_MINUTE);
+  return local.getUTCDay();
 }
 
 export async function fetchProjectsMap(

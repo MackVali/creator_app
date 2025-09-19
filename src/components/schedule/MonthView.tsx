@@ -5,6 +5,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FlameLevel } from "@/components/FlameEmber";
 import FlameEmber from "@/components/FlameEmber";
 import { cn } from "@/lib/utils";
+import { formatDateParam } from "@/lib/scheduler/dateUtils";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -248,7 +249,7 @@ const DayCell = React.memo(function DayCell({
     () => (cell ? new Date(year, month + cell.offset, cell.day) : null),
     [year, month, cell]
   );
-  const key = dayDate ? dayDate.toISOString().slice(0, 10) : "";
+  const key = dayDate ? formatDateParam(dayDate) : "";
   const count = key && events ? events[key] ?? 0 : 0;
   const energy = key && energies ? energies[key] : undefined;
   const isToday = dayDate ? isSameDay(dayDate, today) : false;

@@ -22,6 +22,7 @@ describe("scheduleBacklog", () => {
 
   let instances: ScheduleInstance[];
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
+  let fetchWindowsForDateSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
 
   const createSupabaseMock = () => {
@@ -127,16 +128,18 @@ describe("scheduleBacklog", () => {
         duration_min: 60,
       },
     });
-    vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
-      {
-        id: "win-1",
-        label: "Any",
-        energy: "NO",
-        start_local: "09:00",
-        end_local: "10:00",
-        days: [2],
-      },
-    ]);
+    fetchWindowsForDateSpy = vi
+      .spyOn(repo, "fetchWindowsForDate")
+      .mockResolvedValue([
+        {
+          id: "win-1",
+          label: "Any",
+          energy: "NO",
+          start_local: "09:00",
+          end_local: "10:00",
+          days: [2],
+        },
+      ]);
 
     attemptedProjectIds = [];
     vi.spyOn(placement, "placeItemInWindows").mockImplementation(async ({ item }) => {
@@ -261,5 +264,42 @@ describe("scheduleBacklog", () => {
     expect(updateMock.mock.calls.some((call) => call?.[0]?.status === "canceled")).toBe(
       false,
     );
+  });
+
+  it("passes the timezone offset through to window queries", async () => {
+    const mockClient = {} as ScheduleBacklogClient;
+    const offset = 180;
+
+    await scheduleBacklog(userId, baseDate, mockClient, offset);
+
+    expect(fetchWindowsForDateSpy).toHaveBeenCalled();
+    for (const call of fetchWindowsForDateSpy.mock.calls) {
+      expect(call[2]).toBe(offset);
+    }
+  });
+
+  it("converts window boundaries using the provided timezone offset", async () => {
+    const mockClient = {} as ScheduleBacklogClient;
+    const seen: Array<{ startLocal: Date; endLocal: Date }> = [];
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item, windows }) => {
+        attemptedProjectIds.push(item.id);
+        if (windows.length > 0) {
+          seen.push({
+            startLocal: new Date(windows[0].startLocal),
+            endLocal: new Date(windows[0].endLocal),
+          });
+        }
+        return { error: "NO_FIT" as const };
+      },
+    );
+
+    const timezoneOffsetMinutes = 480; // UTC-8
+    await scheduleBacklog(userId, baseDate, mockClient, timezoneOffsetMinutes);
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0].startLocal.toISOString()).toBe("2024-01-02T17:00:00.000Z");
+    expect(seen[0].endLocal.toISOString()).toBe("2024-01-02T18:00:00.000Z");
   });
 });

@@ -9,6 +9,28 @@ export function localWindowToUTC(dateLocalISO: string): string {
   return localDate.toISOString()
 }
 
+const ISO_DATE_TIME_PARTS =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?)?/
+
 export function toLocal(isoUTC: string): Date {
-  return new Date(isoUTC)
+  if (typeof isoUTC !== 'string') return new Date(isoUTC)
+  const trimmed = isoUTC.trim()
+  const match = trimmed.match(ISO_DATE_TIME_PARTS)
+  if (!match) {
+    return new Date(trimmed)
+  }
+
+  const [, yearStr, monthStr, dayStr, hourStr, minuteStr, secondStr, milliStr] = match
+
+  const year = Number(yearStr)
+  const month = Number(monthStr) - 1
+  const day = Number(dayStr)
+  const hour = Number(hourStr ?? '0')
+  const minute = Number(minuteStr ?? '0')
+  const second = Number(secondStr ?? '0')
+  const millisecond = milliStr
+    ? Number(milliStr.slice(0, 3).padEnd(3, '0'))
+    : 0
+
+  return new Date(year, month, day, hour, minute, second, millisecond)
 }
