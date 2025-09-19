@@ -487,7 +487,7 @@ async function fetchCompatibleWindowsForItem(
   item: { energy: string; duration_min: number },
   timezoneOffsetMinutes: number
 ) {
-  const windows = await fetchWindowsForDate(client, userId, date)
+  const windows = await fetchWindowsForDate(client, userId, date, timezoneOffsetMinutes)
   const itemIdx = energyIndex(item.energy)
   const compatible = windows.filter(window => energyIndex(window.energy) >= itemIdx)
   return compatible.map(window => ({
@@ -507,8 +507,13 @@ type WindowRecord = {
   fromPrevDay?: boolean
 }
 
-async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
-  const weekday = date.getDay()
+async function fetchWindowsForDate(
+  client: Client,
+  userId: string,
+  date: Date,
+  timezoneOffsetMinutes?: number
+) {
+  const weekday = resolveWeekday(date, timezoneOffsetMinutes)
   const prevWeekday = (weekday + 6) % 7
 
   const [{ data: today, error: errToday }, { data: prev, error: errPrev }] = await Promise.all([
@@ -538,6 +543,15 @@ async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
     .map(window => ({ ...window, fromPrevDay: true as const }))
 
   return [...(today ?? []), ...prevCross]
+}
+
+function resolveWeekday(date: Date, timezoneOffsetMinutes?: number) {
+  if (typeof timezoneOffsetMinutes !== 'number' || !Number.isFinite(timezoneOffsetMinutes)) {
+    return date.getDay()
+  }
+
+  const local = new Date(date.getTime() - timezoneOffsetMinutes * MS_PER_MINUTE)
+  return local.getUTCDay()
 }
 
 async function placeItemInWindows(

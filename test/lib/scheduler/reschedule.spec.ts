@@ -22,6 +22,7 @@ describe("scheduleBacklog", () => {
 
   let instances: ScheduleInstance[];
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
+  let fetchWindowsForDateSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
 
   const createSupabaseMock = () => {
@@ -127,16 +128,18 @@ describe("scheduleBacklog", () => {
         duration_min: 60,
       },
     });
-    vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
-      {
-        id: "win-1",
-        label: "Any",
-        energy: "NO",
-        start_local: "09:00",
-        end_local: "10:00",
-        days: [2],
-      },
-    ]);
+    fetchWindowsForDateSpy = vi
+      .spyOn(repo, "fetchWindowsForDate")
+      .mockResolvedValue([
+        {
+          id: "win-1",
+          label: "Any",
+          energy: "NO",
+          start_local: "09:00",
+          end_local: "10:00",
+          days: [2],
+        },
+      ]);
 
     attemptedProjectIds = [];
     vi.spyOn(placement, "placeItemInWindows").mockImplementation(async ({ item }) => {
@@ -261,6 +264,18 @@ describe("scheduleBacklog", () => {
     expect(updateMock.mock.calls.some((call) => call?.[0]?.status === "canceled")).toBe(
       false,
     );
+  });
+
+  it("passes the timezone offset through to window queries", async () => {
+    const mockClient = {} as ScheduleBacklogClient;
+    const offset = 180;
+
+    await scheduleBacklog(userId, baseDate, mockClient, offset);
+
+    expect(fetchWindowsForDateSpy).toHaveBeenCalled();
+    for (const call of fetchWindowsForDateSpy.mock.calls) {
+      expect(call[2]).toBe(offset);
+    }
   });
 
   it("converts window boundaries using the provided timezone offset", async () => {

@@ -437,7 +437,7 @@ async function fetchCompatibleWindowsForItem(
   item: { energy: string; duration_min: number },
   timezoneOffsetMinutes: number
 ) {
-  const windows = await fetchWindowsForDate(date, supabase)
+  const windows = await fetchWindowsForDate(date, supabase, timezoneOffsetMinutes)
   const itemIdx = energyIndex(item.energy)
   const compatible = windows.filter(w => energyIndex(w.energy) >= itemIdx)
   return compatible.map(w => ({
