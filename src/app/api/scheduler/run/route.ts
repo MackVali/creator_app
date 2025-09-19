@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
+import type { Database } from '../../../../../types/supabase'
 
 export const runtime = 'nodejs'
 
@@ -29,7 +31,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'not authenticated' }, { status: 401 })
   }
 
-  let timezoneOffsetMinutes = 0
+  let timezoneOffsetMinutes: number | null = null
+  let hasRequestTimezone = false
   const contentType = request.headers.get('content-type')
   if (contentType && contentType.includes('application/json')) {
     try {
@@ -37,10 +40,27 @@ export async function POST(request: Request) {
       const candidate = body?.timezoneOffset
       if (typeof candidate === 'number' && Number.isFinite(candidate)) {
         timezoneOffsetMinutes = candidate
+        hasRequestTimezone = true
       }
     } catch (error) {
       console.warn('Failed to parse scheduler run payload', error)
     }
+  }
+
+  if (!hasRequestTimezone) {
+    const storedOffset = await fetchStoredTimezoneOffset(supabase, user.id)
+    if (storedOffset !== null) {
+      timezoneOffsetMinutes = storedOffset
+    }
+  }
+
+  const resolvedTimezoneOffset =
+    typeof timezoneOffsetMinutes === 'number' && Number.isFinite(timezoneOffsetMinutes)
+      ? timezoneOffsetMinutes
+      : 0
+
+  if (hasRequestTimezone) {
+    await persistTimezoneOffset(supabase, user.id, resolvedTimezoneOffset)
   }
 
   const now = new Date()
@@ -57,7 +77,7 @@ export async function POST(request: Request) {
     user.id,
     now,
     supabase,
-    timezoneOffsetMinutes
+    resolvedTimezoneOffset
   )
   const status = scheduleResult.error ? 500 : 200
 
@@ -71,6 +91,40 @@ export async function POST(request: Request) {
     },
     { status }
   )
+}
+
+async function fetchStoredTimezoneOffset(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('timezone_offset_minutes')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('Failed to read stored timezone offset', error)
+    return null
+  }
+
+  const raw = data?.timezone_offset_minutes
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null
+}
+
+async function persistTimezoneOffset(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  offset: number
+) {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ timezone_offset_minutes: offset })
+    .eq('user_id', userId)
+
+  if (error) {
+    console.warn('Failed to persist timezone offset', error)
+  }
 }
 
 export async function GET() {
