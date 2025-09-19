@@ -744,6 +744,8 @@ export default function SchedulePage() {
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
         cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timezoneOffset: new Date().getTimezoneOffset() }),
       })
       let payload: unknown = null
       let parseError: unknown = null

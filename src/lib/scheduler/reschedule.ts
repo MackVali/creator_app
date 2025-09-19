@@ -19,6 +19,8 @@ import { ENERGY } from './config'
 type Client = SupabaseClient<Database>
 
 const GRACE_MIN = 60
+const MINUTES_PER_DAY = 24 * 60
+const MS_PER_MINUTE = 60_000
 
 type ScheduleFailure = {
   itemId: string
@@ -64,7 +66,8 @@ export async function markMissedAndQueue(
 export async function scheduleBacklog(
   userId: string,
   baseDate = new Date(),
-  client?: Client
+  client?: Client,
+  timezoneOffsetMinutes = 0
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [] }
@@ -92,7 +95,8 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
-  const baseStart = startOfDay(baseDate)
+  const tzOffset = normalizeTimezoneOffset(timezoneOffsetMinutes)
+  const baseStart = startOfLocalDay(baseDate, tzOffset)
 
   const seenMissedProjects = new Set<string>()
 
@@ -165,7 +169,7 @@ export async function scheduleBacklog(
   }
 
   const initialQueueProjectIds = new Set(queue.map(item => item.id))
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEnd = addLocalDays(baseStart, 28, tzOffset)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
@@ -265,8 +269,13 @@ export async function scheduleBacklog(
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(supabase, day, item)
+      const day = addLocalDays(baseStart, offset, tzOffset)
+      const windows = await fetchCompatibleWindowsForItem(
+        supabase,
+        day,
+        item,
+        tzOffset
+      )
       if (windows.length === 0) continue
 
       const placed = await placeItemInWindows({
@@ -425,15 +434,16 @@ async function dedupeScheduledProjects(
 async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
-  item: { energy: string; duration_min: number }
+  item: { energy: string; duration_min: number },
+  timezoneOffsetMinutes: number
 ) {
   const windows = await fetchWindowsForDate(date, supabase)
   const itemIdx = energyIndex(item.energy)
   const compatible = windows.filter(w => energyIndex(w.energy) >= itemIdx)
   return compatible.map(w => ({
     id: w.id,
-    startLocal: resolveWindowStart(w, date),
-    endLocal: resolveWindowEnd(w, date),
+    startLocal: resolveWindowStart(w, date, timezoneOffsetMinutes),
+    endLocal: resolveWindowEnd(w, date, timezoneOffsetMinutes),
   }))
 }
 
@@ -443,34 +453,58 @@ function energyIndex(level?: string | null) {
   return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
 }
 
-function resolveWindowStart(win: WindowLite, date: Date) {
-  const [hour = 0, minute = 0] = win.start_local.split(':').map(Number)
-  const start = startOfDay(date)
-  if (win.fromPrevDay) start.setDate(start.getDate() - 1)
-  start.setHours(hour, minute, 0, 0)
-  return start
+function resolveWindowStart(
+  win: WindowLite,
+  date: Date,
+  timezoneOffsetMinutes: number
+) {
+  const dayStart = startOfLocalDay(date, timezoneOffsetMinutes)
+  const base = win.fromPrevDay
+    ? addLocalDays(dayStart, -1, timezoneOffsetMinutes)
+    : dayStart
+  const minutes = timeStringToMinutes(win.start_local)
+  return new Date(base.getTime() + minutes * MS_PER_MINUTE)
 }
 
-function resolveWindowEnd(win: WindowLite, date: Date) {
-  const [hour = 0, minute = 0] = win.end_local.split(':').map(Number)
-  const base = win.fromPrevDay ? startOfDay(date) : startOfDay(date)
-  const end = new Date(base)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(win, date)
+function resolveWindowEnd(
+  win: WindowLite,
+  date: Date,
+  timezoneOffsetMinutes: number
+) {
+  const dayStart = startOfLocalDay(date, timezoneOffsetMinutes)
+  let end = new Date(
+    dayStart.getTime() + timeStringToMinutes(win.end_local) * MS_PER_MINUTE
+  )
+  const start = resolveWindowStart(win, date, timezoneOffsetMinutes)
   if (end <= start) {
-    end.setDate(end.getDate() + 1)
+    end = new Date(end.getTime() + MINUTES_PER_DAY * MS_PER_MINUTE)
   }
   return end
 }
 
-function startOfDay(date: Date) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+function normalizeTimezoneOffset(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0
+  }
+  return value
 }
 
-function addDays(date: Date, amount: number) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + amount)
-  return d
+function timeStringToMinutes(value: string): number {
+  const [hours = 0, minutes = 0] = value.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function startOfLocalDay(date: Date, timezoneOffsetMinutes: number) {
+  const localMs = date.getTime() - timezoneOffsetMinutes * MS_PER_MINUTE
+  const local = new Date(localMs)
+  local.setUTCHours(0, 0, 0, 0)
+  const utcMs = local.getTime() + timezoneOffsetMinutes * MS_PER_MINUTE
+  return new Date(utcMs)
+}
+
+function addLocalDays(date: Date, amount: number, timezoneOffsetMinutes: number) {
+  const local = new Date(date.getTime() - timezoneOffsetMinutes * MS_PER_MINUTE)
+  local.setUTCDate(local.getUTCDate() + amount)
+  const utcMs = local.getTime() + timezoneOffsetMinutes * MS_PER_MINUTE
+  return new Date(utcMs)
 }

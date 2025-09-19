@@ -262,4 +262,29 @@ describe("scheduleBacklog", () => {
       false,
     );
   });
+
+  it("converts window boundaries using the provided timezone offset", async () => {
+    const mockClient = {} as ScheduleBacklogClient;
+    const seen: Array<{ startLocal: Date; endLocal: Date }> = [];
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item, windows }) => {
+        attemptedProjectIds.push(item.id);
+        if (windows.length > 0) {
+          seen.push({
+            startLocal: new Date(windows[0].startLocal),
+            endLocal: new Date(windows[0].endLocal),
+          });
+        }
+        return { error: "NO_FIT" as const };
+      },
+    );
+
+    const timezoneOffsetMinutes = 480; // UTC-8
+    await scheduleBacklog(userId, baseDate, mockClient, timezoneOffsetMinutes);
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0].startLocal.toISOString()).toBe("2024-01-02T17:00:00.000Z");
+    expect(seen[0].endLocal.toISOString()).toBe("2024-01-02T18:00:00.000Z");
+  });
 });
