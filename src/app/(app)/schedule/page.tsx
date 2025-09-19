@@ -117,6 +117,16 @@ function utcDayRange(d: Date) {
   return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
+const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+})
+
+function formatTimeRangeLabel(start: Date, end: Date) {
+  return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
+}
+
 type LoadStatus = 'idle' | 'loading' | 'loaded'
 
 type SchedulerRunFailure = {
@@ -931,6 +941,10 @@ export default function SchedulePage() {
                       ((end.getTime() - start.getTime()) / 60000) * pxPerMin
                     const isExpanded = expandedProjects.has(projectId)
                     const tasksForProject = taskInstancesByProject[projectId] || []
+                    const durationMinutes = Math.round(
+                      (end.getTime() - start.getTime()) / 60000
+                    )
+                    const timeRangeLabel = formatTimeRangeLabel(start, end)
                     const style: CSSProperties = {
                       top,
                       height,
@@ -982,12 +996,13 @@ export default function SchedulePage() {
                                 {project.name}
                               </span>
                               <div className="text-xs text-zinc-200/70">
-                                {Math.round(
-                                  (end.getTime() - start.getTime()) / 60000
-                                )}
-                                m
+                                {timeRangeLabel} · {durationMinutes}m
                                 {project.taskCount > 0 && (
-                                  <span> · {project.taskCount} tasks</span>
+                                  <span>
+                                    {' '}
+                                    · {project.taskCount}{' '}
+                                    {project.taskCount === 1 ? 'task' : 'tasks'}
+                                  </span>
                                 )}
                               </div>
                             </div>
