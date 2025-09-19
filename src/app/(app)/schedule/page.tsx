@@ -43,7 +43,7 @@ import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
-import { toLocal } from '@/lib/time/tz'
+import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -115,6 +115,16 @@ function utcDayRange(d: Date) {
   const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
   const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
   return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
+}
+
+const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+})
+
+function formatTimeRangeLabel(start: Date, end: Date) {
+  return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
 }
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
@@ -302,7 +312,7 @@ export default function SchedulePage() {
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', currentDate.toISOString().slice(0, 10))
+    params.set('date', formatLocalDateKey(currentDate))
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [view, currentDate, router, pathname])
 
@@ -388,11 +398,17 @@ export default function SchedulePage() {
     return map
   }, [projectItems])
 
+  const windowMap = useMemo(() => {
+    const map: Record<string, RepoWindow> = {}
+    for (const w of windows) map[w.id] = w
+    return map
+  }, [windows])
+
   const dayEnergies = useMemo(() => {
     const map: Record<string, FlameLevel> = {}
     for (const inst of instances) {
       const start = toLocal(inst.start_utc)
-      const key = start.toISOString().slice(0, 10)
+      const key = formatLocalDateKey(start)
       const level = (inst.energy_resolved?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
       if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
@@ -413,6 +429,9 @@ export default function SchedulePage() {
           project,
           start: toLocal(inst.start_utc),
           end: toLocal(inst.end_utc),
+          assignedWindow: inst.window_id
+            ? windowMap[inst.window_id] ?? null
+            : null,
         }
       })
       .filter((value): value is {
@@ -420,9 +439,10 @@ export default function SchedulePage() {
         project: typeof projectItems[number]
         start: Date
         end: Date
+        assignedWindow: RepoWindow | null
       } => value !== null)
       .sort((a, b) => a.start.getTime() - b.start.getTime())
-  }, [instances, projectMap, projectItems])
+  }, [instances, projectMap, projectItems, windowMap])
 
   const projectInstanceIds = useMemo(() => {
     const set = new Set<string>()
@@ -923,7 +943,7 @@ export default function SchedulePage() {
                       </div>
                     )
                   })}
-                  {projectInstances.map(({ instance, project, start, end }, index) => {
+                  {projectInstances.map(({ instance, project, start, end, assignedWindow }, index) => {
                     const projectId = project.id
                     const startMin = start.getHours() * 60 + start.getMinutes()
                     const top = (startMin - startHour * 60) * pxPerMin
@@ -931,6 +951,40 @@ export default function SchedulePage() {
                       ((end.getTime() - start.getTime()) / 60000) * pxPerMin
                     const isExpanded = expandedProjects.has(projectId)
                     const tasksForProject = taskInstancesByProject[projectId] || []
+                    const durationMinutes = Math.round(
+                      (end.getTime() - start.getTime()) / 60000
+                    )
+                    const timeRangeLabel = formatTimeRangeLabel(start, end)
+                    const trimmedWindowLabel =
+                      typeof assignedWindow?.label === 'string'
+                        ? assignedWindow.label.trim()
+                        : ''
+                    const hasWindow = Boolean(instance.window_id)
+                    let windowDescriptor = `Window: ${
+                      trimmedWindowLabel.length > 0
+                        ? trimmedWindowLabel
+                        : assignedWindow
+                          ? 'Unnamed'
+                          : hasWindow
+                            ? 'Unknown'
+                            : 'Unassigned'
+                    }`
+                    if (assignedWindow?.fromPrevDay) {
+                      windowDescriptor = `${windowDescriptor} (previous day)`
+                    }
+                    const tasksLabel =
+                      project.taskCount > 0
+                        ? `${project.taskCount} ${
+                            project.taskCount === 1 ? 'task' : 'tasks'
+                          }`
+                        : null
+                    const detailParts = [
+                      windowDescriptor,
+                      timeRangeLabel,
+                      `${durationMinutes}m`,
+                    ]
+                    if (tasksLabel) detailParts.push(tasksLabel)
+                    const detailText = detailParts.join(' · ')
                     const style: CSSProperties = {
                       top,
                       height,
@@ -982,13 +1036,7 @@ export default function SchedulePage() {
                                 {project.name}
                               </span>
                               <div className="text-xs text-zinc-200/70">
-                                {Math.round(
-                                  (end.getTime() - start.getTime()) / 60000
-                                )}
-                                m
-                                {project.taskCount > 0 && (
-                                  <span> · {project.taskCount} tasks</span>
-                                )}
+                                {detailText}
                               </div>
                             </div>
                             {project.skill_icon && (

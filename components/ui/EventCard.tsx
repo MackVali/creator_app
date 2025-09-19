@@ -1,6 +1,7 @@
 "use client"
 
 import { scheduleIcons, ScheduleIconName } from '@/lib/icons'
+import { toLocal } from '@/lib/time/tz'
 
 interface EventCardProps {
   title: string
@@ -16,9 +17,9 @@ export function EventCard({ title, start, end, icon, muted = false, onClick, sty
   const Icon = scheduleIcons[icon]
   
   const formatTime = (isoString: string) => {
-    const date = new Date(isoString)
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
+    const date = toLocal(isoString)
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
       minute: '2-digit',
       hour12: true 
     })

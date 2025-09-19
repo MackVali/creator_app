@@ -1,8 +1,9 @@
 "use client"
 
 import { CheckCircle, Edit, Trash2, X } from 'lucide-react'
-import { ScheduleItem } from '@/lib/mock/schedule'
 import { scheduleIcons } from '@/lib/icons'
+import { ScheduleItem } from '@/lib/mock/schedule'
+import { toLocal } from '@/lib/time/tz'
 
 interface QuickPeekProps {
   event: ScheduleItem | null
@@ -19,9 +20,9 @@ export function QuickPeek({ event, isOpen, onClose, onEdit, onDelete, onMarkDone
   const Icon = scheduleIcons[event.icon]
   
   const formatTime = (isoString: string) => {
-    const date = new Date(isoString)
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
+    const date = toLocal(isoString)
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
       minute: '2-digit',
       hour12: true 
     })
