@@ -1,11 +1,20 @@
 import React from "react";
+import { cn } from "@/lib/utils";
 
 export function LevelBanner({
-  level = 80, current = 3200, total = 4000
-}:{level?:number; current?:number; total?:number;}){
-  const pct = Math.max(0, Math.min(100, Math.round((current/total)*100)));
+  level = 80,
+  current = 3200,
+  total = 4000,
+  className,
+}: {
+  level?: number;
+  current?: number;
+  total?: number;
+  className?: string;
+}) {
+  const pct = Math.max(0, Math.min(100, Math.round((current / total) * 100)));
   return (
-    <div className="card mx-4 mt-4 p-4">
+    <div className={cn("card p-4", className ?? "mx-4 mt-4")}>
       <div className="mb-3">
         <div className="font-extrabold text-[18px] tracking-wide">LEVEL {level}</div>
       </div>
