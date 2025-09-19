@@ -86,6 +86,25 @@ export function formatTimeZoneLabel(timeZone: string): string {
   }
 }
 
+export function normalizeTimeZone(input?: string | null): string | null {
+  if (typeof input !== 'string') return null
+  const trimmed = input.trim()
+  if (!trimmed) return null
+
+  if (typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function') {
+    return trimmed
+  }
+
+  try {
+    // Validate that the identifier is recognised; Intl will throw for invalid zones
+    new Intl.DateTimeFormat('en-US', { timeZone: trimmed })
+    return trimmed
+  } catch (error) {
+    console.warn('Ignoring invalid timezone identifier', { input, error })
+    return null
+  }
+}
+
 export function toLocal(isoUTC: string, timeZone?: string | null): Date {
   const utcDate = new Date(isoUTC)
   if (!timeZone || Number.isNaN(utcDate.getTime())) return utcDate

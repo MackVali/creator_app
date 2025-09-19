@@ -9,6 +9,7 @@ import {
   listTimeZones,
   formatTimeZoneLabel,
   getResolvedTimeZone,
+  normalizeTimeZone,
 } from "@/lib/time/tz";
 
 export default function SettingsPage() {
@@ -17,7 +18,10 @@ export default function SettingsPage() {
   const { profile, loading: profileLoading, refreshProfile } = useProfile();
   const [email, setEmail] = useState("");
   const router = useRouter();
-  const resolvedTimezone = useMemo(() => getResolvedTimeZone(), []);
+  const detectedTimezone = useMemo(
+    () => normalizeTimeZone(getResolvedTimeZone()),
+    []
+  );
   const timezones = useMemo(() => listTimeZones(), []);
   const [timezone, setTimezone] = useState<string>("UTC");
   const timezoneOptions = useMemo(() => {
@@ -41,16 +45,16 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (profileLoading) return;
-    const fallback = resolvedTimezone ?? "UTC";
-    const next = profile?.timezone ?? fallback;
+    const fallback = detectedTimezone ?? "UTC";
+    const next = normalizeTimeZone(profile?.timezone) ?? fallback;
     setTimezone(next);
-  }, [profile?.timezone, profileLoading, resolvedTimezone]);
+  }, [profile?.timezone, profileLoading, detectedTimezone]);
 
   const initials = getInitials(profile?.name || null, email);
-  const savedTimezone = profile?.timezone ?? "";
+  const savedTimezone = normalizeTimeZone(profile?.timezone) ?? "";
   const hasTimezoneChanges = timezone !== savedTimezone;
-  const detectedTimezoneLabel = resolvedTimezone
-    ? formatTimeZoneLabel(resolvedTimezone)
+  const detectedTimezoneLabel = detectedTimezone
+    ? formatTimeZoneLabel(detectedTimezone)
     : null;
 
   const handleSaveTimezone = async () => {
@@ -71,8 +75,8 @@ export default function SettingsPage() {
   };
 
   const handleUseDetectedTimezone = () => {
-    if (!resolvedTimezone) return;
-    setTimezone(resolvedTimezone);
+    if (!detectedTimezone) return;
+    setTimezone(detectedTimezone);
   };
 
   return (
@@ -194,10 +198,10 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={handleUseDetectedTimezone}
-                disabled={!resolvedTimezone}
+                disabled={!detectedTimezone}
                 className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-[var(--text)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {resolvedTimezone
+                {detectedTimezone
                   ? `Use ${detectedTimezoneLabel}`
                   : "Detect timezone"}
               </button>

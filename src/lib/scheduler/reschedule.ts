@@ -6,6 +6,7 @@ import {
   getUTCDateRangeForKey,
   parseDateKey,
   zonedDateTimeToUTC,
+  normalizeTimeZone,
 } from '../time/tz'
 import type { Database } from '../../../types/supabase'
 import {
@@ -110,11 +111,7 @@ export async function scheduleBacklog(
     console.error('Failed to fetch profile timezone', profileError)
   }
 
-  const userTimeZoneRaw = profile?.timezone ?? null
-  const userTimeZone =
-    typeof userTimeZoneRaw === 'string' && userTimeZoneRaw.trim().length > 0
-      ? userTimeZoneRaw
-      : null
+  const userTimeZone = normalizeTimeZone(profile?.timezone)
   const tzOption = userTimeZone ?? undefined
 
   const baseKey = getLocalDateKey(baseDate.toISOString(), tzOption)

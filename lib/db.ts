@@ -1,6 +1,7 @@
 import { getSupabaseBrowser } from "./supabase";
 import { getCurrentUserId } from "./auth";
 import { PostgrestError } from "@supabase/supabase-js";
+import { normalizeTimeZone } from "./time/tz";
 import {
   Profile,
   ProfileFormData,
@@ -283,8 +284,9 @@ export async function updateProfileTimezone(
     }
 
     const userId = await getUserId();
+    const safeTimezone = normalizeTimeZone(timezone);
     const updateData: Partial<Profile> = {
-      timezone: timezone ?? null,
+      timezone: safeTimezone,
       updated_at: new Date().toISOString(),
     };
 

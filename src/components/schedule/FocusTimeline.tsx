@@ -10,7 +10,7 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "./DayTimeline";
-import { toLocal, getResolvedTimeZone } from "@/lib/time/tz";
+import { toLocal, getResolvedTimeZone, normalizeTimeZone } from "@/lib/time/tz";
 
 interface FocusTimelineProps {
   children?: ReactNode;
@@ -18,10 +18,11 @@ interface FocusTimelineProps {
 }
 
 export function FocusTimeline({ children, timeZone }: FocusTimelineProps) {
-  const resolvedZone = useMemo(
-    () => timeZone ?? getResolvedTimeZone(),
-    [timeZone]
-  );
+  const resolvedZone = useMemo(() => {
+    const provided = normalizeTimeZone(timeZone);
+    if (provided) return provided;
+    return normalizeTimeZone(getResolvedTimeZone());
+  }, [timeZone]);
   const now = new Date();
   const localNow = useMemo(
     () => toLocal(now.toISOString(), resolvedZone),

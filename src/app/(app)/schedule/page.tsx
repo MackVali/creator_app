@@ -53,6 +53,7 @@ import {
   formatTimeZoneLabel,
   getUTCDateRangeForKey,
   getLocalTimeParts,
+  normalizeTimeZone,
 } from '@/lib/time/tz'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
@@ -218,7 +219,10 @@ export default function SchedulePage() {
   const userId = session?.user.id ?? null
   const { profile, loading: profileLoading, refreshProfile } = useProfile()
 
-  const resolvedTimezone = useMemo(() => getResolvedTimeZone(), [])
+  const detectedTimezone = useMemo(
+    () => normalizeTimeZone(getResolvedTimeZone()),
+    [],
+  )
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -231,7 +235,7 @@ export default function SchedulePage() {
     if (initialDate && /\d{4}-\d{2}-\d{2}/.test(initialDate)) {
       return initialDate
     }
-    return getLocalDateKey(new Date().toISOString(), resolvedTimezone)
+    return getLocalDateKey(new Date().toISOString(), detectedTimezone)
   })
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
@@ -250,8 +254,11 @@ export default function SchedulePage() {
 
   const startHour = 0
   const pxPerMin = 2
-  const userTimezone = profile?.timezone ?? null
-  const effectiveTimezone = userTimezone ?? resolvedTimezone ?? null
+  const profileTimezone = useMemo(
+    () => normalizeTimeZone(profile?.timezone),
+    [profile?.timezone],
+  )
+  const effectiveTimezone = profileTimezone ?? detectedTimezone ?? null
   const currentDate = useMemo(
     () => parseDateKey(currentDateKey, effectiveTimezone),
     [currentDateKey, effectiveTimezone]
@@ -262,22 +269,22 @@ export default function SchedulePage() {
   )
   const year = currentDate.getFullYear()
   const detectedTimezoneLabel = useMemo(
-    () => (resolvedTimezone ? formatTimeZoneLabel(resolvedTimezone) : null),
-    [resolvedTimezone]
+    () => (detectedTimezone ? formatTimeZoneLabel(detectedTimezone) : null),
+    [detectedTimezone]
   )
   const [timezonePromptStatus, setTimezonePromptStatus] = useState<
     'idle' | 'saving' | 'error'
   >('idle')
   const [timezonePromptError, setTimezonePromptError] = useState<string | null>(null)
-  const showTimezonePrompt = !profileLoading && !profile?.timezone
+  const showTimezonePrompt = !profileLoading && !profileTimezone
   const timezonePromptSaving = timezonePromptStatus === 'saving'
 
   const handleQuickTimezoneApply = useCallback(async () => {
-    if (!resolvedTimezone) return
+    if (!detectedTimezone) return
     try {
       setTimezonePromptStatus('saving')
       setTimezonePromptError(null)
-      const result = await updateProfileTimezone(resolvedTimezone)
+      const result = await updateProfileTimezone(detectedTimezone)
       if (!result.success) {
         setTimezonePromptStatus('error')
         setTimezonePromptError(result.error ?? 'Failed to update timezone')
@@ -290,7 +297,7 @@ export default function SchedulePage() {
       setTimezonePromptStatus('error')
       setTimezonePromptError('Failed to update timezone')
     }
-  }, [resolvedTimezone, refreshProfile])
+  }, [detectedTimezone, refreshProfile])
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -767,7 +774,7 @@ export default function SchedulePage() {
               <button
                 type="button"
                 onClick={handleQuickTimezoneApply}
-                disabled={!resolvedTimezone || timezonePromptSaving}
+                disabled={!detectedTimezone || timezonePromptSaving}
                 className="inline-flex items-center justify-center rounded-md bg-amber-400 px-3 py-2 text-xs font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {timezonePromptSaving
