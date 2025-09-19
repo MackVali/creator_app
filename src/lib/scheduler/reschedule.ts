@@ -1,5 +1,6 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { getZonedDateTimeParts, zonedTimeToUtc } from '@/lib/time/tz'
 import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
@@ -64,10 +65,14 @@ export async function markMissedAndQueue(
 export async function scheduleBacklog(
   userId: string,
   baseDate = new Date(),
-  client?: Client
+  client?: Client,
+  options?: { timeZone?: string }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [] }
+
+  const timeZone =
+    options?.timeZone ?? (await loadUserTimezone(supabase, userId))
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
   if (missed.error) {
@@ -92,7 +97,7 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
-  const baseStart = startOfDay(baseDate)
+  const baseStart = startOfDay(baseDate, timeZone)
 
   const seenMissedProjects = new Set<string>()
 
@@ -165,7 +170,7 @@ export async function scheduleBacklog(
   }
 
   const initialQueueProjectIds = new Set(queue.map(item => item.id))
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEnd = addDays(baseStart, 28, timeZone)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
@@ -265,8 +270,13 @@ export async function scheduleBacklog(
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(supabase, day, item)
+      const day = addDays(baseStart, offset, timeZone)
+      const windows = await fetchCompatibleWindowsForItem(
+        supabase,
+        day,
+        timeZone,
+        item
+      )
       if (windows.length === 0) continue
 
       const placed = await placeItemInWindows({
@@ -302,6 +312,27 @@ export async function scheduleBacklog(
   }
 
   return result
+}
+
+async function loadUserTimezone(supabase: Client, userId: string): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('timezone')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (error) {
+      console.error('scheduleBacklog: failed to fetch profile timezone', error)
+      return 'UTC'
+    }
+
+    const timezone = data?.timezone
+    return typeof timezone === 'string' && timezone.length > 0 ? timezone : 'UTC'
+  } catch (error) {
+    console.error('scheduleBacklog: unexpected error loading timezone', error)
+    return 'UTC'
+  }
 }
 
 type DedupeResult = {
@@ -425,6 +456,7 @@ async function dedupeScheduledProjects(
 async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
+  timeZone: string,
   item: { energy: string; duration_min: number }
 ) {
   const windows = await fetchWindowsForDate(date, supabase)
@@ -432,8 +464,8 @@ async function fetchCompatibleWindowsForItem(
   const compatible = windows.filter(w => energyIndex(w.energy) >= itemIdx)
   return compatible.map(w => ({
     id: w.id,
-    startLocal: resolveWindowStart(w, date),
-    endLocal: resolveWindowEnd(w, date),
+    startLocal: resolveWindowStart(w, date, timeZone),
+    endLocal: resolveWindowEnd(w, date, timeZone),
   }))
 }
 
@@ -443,34 +475,66 @@ function energyIndex(level?: string | null) {
   return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
 }
 
-function resolveWindowStart(win: WindowLite, date: Date) {
-  const [hour = 0, minute = 0] = win.start_local.split(':').map(Number)
-  const start = startOfDay(date)
-  if (win.fromPrevDay) start.setDate(start.getDate() - 1)
-  start.setHours(hour, minute, 0, 0)
-  return start
+function resolveWindowStart(win: WindowLite, date: Date, timeZone: string) {
+  const dayParts = getZonedDateTimeParts(date, timeZone)
+  const baseDay = win.fromPrevDay
+    ? shiftDay({ year: dayParts.year, month: dayParts.month, day: dayParts.day }, -1)
+    : { year: dayParts.year, month: dayParts.month, day: dayParts.day }
+  return applyLocalTime(baseDay, win.start_local, timeZone)
 }
 
-function resolveWindowEnd(win: WindowLite, date: Date) {
-  const [hour = 0, minute = 0] = win.end_local.split(':').map(Number)
-  const base = win.fromPrevDay ? startOfDay(date) : startOfDay(date)
-  const end = new Date(base)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(win, date)
+function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
+  const dayParts = getZonedDateTimeParts(date, timeZone)
+  const baseDay = { year: dayParts.year, month: dayParts.month, day: dayParts.day }
+  let end = applyLocalTime(baseDay, win.end_local, timeZone)
+  const start = resolveWindowStart(win, date, timeZone)
   if (end <= start) {
-    end.setDate(end.getDate() + 1)
+    const nextDay = shiftDay(baseDay, 1)
+    end = applyLocalTime(nextDay, win.end_local, timeZone)
   }
   return end
 }
 
-function startOfDay(date: Date) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+function startOfDay(date: Date, timeZone: string) {
+  const parts = getZonedDateTimeParts(date, timeZone)
+  return zonedTimeToUtc(
+    { year: parts.year, month: parts.month, day: parts.day },
+    timeZone
+  )
 }
 
-function addDays(date: Date, amount: number) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + amount)
-  return d
+function addDays(date: Date, amount: number, timeZone: string) {
+  const parts = getZonedDateTimeParts(date, timeZone)
+  const shifted = shiftDay(
+    { year: parts.year, month: parts.month, day: parts.day },
+    amount
+  )
+  return zonedTimeToUtc(shifted, timeZone)
+}
+
+type DayParts = { year: number; month: number; day: number }
+
+function shiftDay(base: DayParts, amount: number): DayParts {
+  const reference = new Date(Date.UTC(base.year, base.month - 1, base.day + amount))
+  return {
+    year: reference.getUTCFullYear(),
+    month: reference.getUTCMonth() + 1,
+    day: reference.getUTCDate(),
+  }
+}
+
+function applyLocalTime(base: DayParts, time: string, timeZone: string) {
+  const [hourRaw = 0, minuteRaw = 0] = time.split(':')
+  const hour = Number(hourRaw)
+  const minute = Number(minuteRaw)
+  return zonedTimeToUtc(
+    {
+      year: base.year,
+      month: base.month,
+      day: base.day,
+      hour: Number.isFinite(hour) ? hour : 0,
+      minute: Number.isFinite(minute) ? minute : 0,
+    },
+    timeZone
+  )
 }

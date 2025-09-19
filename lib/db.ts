@@ -245,6 +245,10 @@ export async function updateProfile(
       accent_color: profileData.accent_color,
     };
 
+    if (profileData.timezone !== undefined) {
+      updateData.timezone = profileData.timezone || null;
+    }
+
     // Add avatar and banner URLs if provided
     if (avatarUrl) {
       updateData.avatar_url = avatarUrl;
@@ -336,6 +340,7 @@ export async function createProfile(
         theme_color: "#3B82F6",
         font_family: "Inter",
         accent_color: "#8B5CF6",
+        timezone: profileData.timezone || null,
       })
       .select()
       .single();

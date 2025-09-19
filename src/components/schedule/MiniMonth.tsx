@@ -2,37 +2,72 @@
 
 import React, { useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { getZonedDateTimeParts, zonedTimeToUtc } from "@/lib/time/tz";
 
 interface MiniMonthProps {
   year: number;
   month: number; // 0-based
-  selectedDate?: Date;
+  timeZone: string;
+  selectedDayKey?: string | null;
   onSelect?: (date: Date) => void;
 }
 
 /** A compact month grid used in the year view */
-export function MiniMonth({ year, month, selectedDate, onSelect }: MiniMonthProps) {
-  const today = useMemo(() => new Date(), []);
-  const date = new Date(year, month, 1);
-  const monthName = date.toLocaleString(undefined, { month: "short" });
-  const firstWeekday = date.getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+export function MiniMonth({
+  year,
+  month,
+  timeZone,
+  selectedDayKey,
+  onSelect,
+}: MiniMonthProps) {
+  const todayKey = useMemo(
+    () => getZonedDateTimeParts(new Date(), timeZone).dayKey,
+    [timeZone]
+  );
+  const firstOfMonthUtc = useMemo(
+    () => zonedTimeToUtc({ year, month: month + 1, day: 1 }, timeZone),
+    [year, month, timeZone]
+  );
+  const firstParts = useMemo(
+    () => getZonedDateTimeParts(firstOfMonthUtc, timeZone),
+    [firstOfMonthUtc, timeZone]
+  );
+  const monthName = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        timeZone,
+      }).format(firstOfMonthUtc),
+    [firstOfMonthUtc, timeZone]
+  );
+  const firstWeekday = firstParts.weekday;
+  const daysInMonth = useMemo(() => new Date(year, month + 1, 0).getDate(), [year, month]);
 
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < firstWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+  const cells = useMemo(() => {
+    const items: Array<{ day: number; dayKey: string; weekday: number } | null> = [];
+    for (let i = 0; i < firstWeekday; i++) items.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const utcDate = zonedTimeToUtc({ year, month: month + 1, day: d }, timeZone);
+      const parts = getZonedDateTimeParts(utcDate, timeZone);
+      items.push({ day: d, dayKey: parts.dayKey, weekday: parts.weekday });
+    }
+    while (items.length % 7 !== 0) items.push(null);
+    return items;
+  }, [firstWeekday, daysInMonth, year, month, timeZone]);
 
-  const isSelectedMonth =
-    selectedDate &&
-    selectedDate.getFullYear() === year &&
-    selectedDate.getMonth() === month;
-  const selectedDay = isSelectedMonth ? selectedDate!.getDate() : null;
+  const isSelectedMonth = useMemo(() => {
+    if (!selectedDayKey) return false;
+    const parsed = parseDayKey(selectedDayKey);
+    if (!parsed) return false;
+    return parsed.year === year && parsed.month - 1 === month;
+  }, [selectedDayKey, year, month]);
 
   return (
     <button
       type="button"
-      onClick={() => onSelect?.(date)}
+      onClick={() => {
+        onSelect?.(firstOfMonthUtc);
+      }}
       className="flex flex-col rounded-md p-1 text-center text-[10px] text-[var(--text-primary)] hover:bg-[var(--surface)]"
     >
       <div
@@ -46,10 +81,9 @@ export function MiniMonth({ year, month, selectedDate, onSelect }: MiniMonthProp
       <div className="grid grid-cols-7 gap-[1px]">
         {cells.map((d, i) => {
           if (d === null) return <div key={i} className="h-3 w-3" />;
-          const cellDate = new Date(year, month, d);
-          const isWeekend = cellDate.getDay() === 0 || cellDate.getDay() === 6;
-          const isToday = isSameDay(cellDate, today);
-          const isSelected = selectedDay === d;
+          const isWeekend = d.weekday === 0 || d.weekday === 6;
+          const isToday = d.dayKey === todayKey;
+          const isSelected = d.dayKey === selectedDayKey;
           return (
             <div
               key={i}
@@ -65,8 +99,15 @@ export function MiniMonth({ year, month, selectedDate, onSelect }: MiniMonthProp
                   isWeekend &&
                   "text-[var(--weekend-dim)]"
               )}
+              onClick={(event) => {
+                event.stopPropagation();
+                const parts = parseDayKey(d.dayKey);
+                if (!parts) return;
+                const date = zonedTimeToUtc(parts, timeZone);
+                onSelect?.(date);
+              }}
             >
-              {d}
+              {d.day}
             </div>
           );
         })}
@@ -75,12 +116,11 @@ export function MiniMonth({ year, month, selectedDate, onSelect }: MiniMonthProp
   );
 }
 
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+function parseDayKey(key: string | null | undefined) {
+  if (!key) return null;
+  const [y, m, d] = key.split("-").map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  return { year: y, month: m, day: d };
 }
 
 export default MiniMonth;

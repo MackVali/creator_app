@@ -151,7 +151,7 @@ describe("scheduleBacklog", () => {
 
   it("skips already scheduled projects when falling back to enqueue all", async () => {
     const mockClient = {} as ScheduleBacklogClient;
-    await scheduleBacklog(userId, baseDate, mockClient);
+    await scheduleBacklog(userId, baseDate, mockClient, { timeZone: "UTC" });
 
     expect(fetchInstancesForRangeSpy).toHaveBeenCalledTimes(2);
 
@@ -253,7 +253,7 @@ describe("scheduleBacklog", () => {
       };
     });
 
-    const result = await scheduleBacklog(userId, baseDate, supabase);
+    const result = await scheduleBacklog(userId, baseDate, supabase, { timeZone: "UTC" });
 
     expect(reuseId).toBe("inst-existing");
     expect(result.placed).toHaveLength(1);
@@ -261,5 +261,34 @@ describe("scheduleBacklog", () => {
     expect(updateMock.mock.calls.some((call) => call?.[0]?.status === "canceled")).toBe(
       false,
     );
+  });
+
+  it("translates windows into the user's timezone", async () => {
+    const placementMock = placement.placeItemInWindows as unknown as vi.Mock;
+    let capturedWindows:
+      | Array<{ id: string; startLocal: Date; endLocal: Date }>
+      | null = null;
+    placementMock.mockImplementation(async (params) => {
+      if (!capturedWindows) {
+        capturedWindows = params.windows;
+      }
+      return { error: "NO_FIT" as const };
+    });
+
+    const mockClient = {} as ScheduleBacklogClient;
+
+    await scheduleBacklog(userId, baseDate, mockClient, {
+      timeZone: "America/New_York",
+    });
+
+    const fetchWindowsMock = repo.fetchWindowsForDate as unknown as vi.Mock;
+    expect(fetchWindowsMock).toHaveBeenCalled();
+    const [firstCallDate] = fetchWindowsMock.mock.calls[0] as [Date];
+    expect(firstCallDate.toISOString()).toBe("2024-01-02T05:00:00.000Z");
+
+    expect(capturedWindows).not.toBeNull();
+    const firstWindow = capturedWindows?.[0];
+    expect(firstWindow?.startLocal.toISOString()).toBe("2024-01-02T14:00:00.000Z");
+    expect(firstWindow?.endLocal.toISOString()).toBe("2024-01-02T15:00:00.000Z");
   });
 });

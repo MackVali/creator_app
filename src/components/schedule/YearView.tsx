@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FlameLevel } from "@/components/FlameEmber";
 import MiniMonth from "./MiniMonth";
+import { getZonedDateTimeParts } from "@/lib/time/tz";
 
 interface YearViewProps {
   events?: Record<string, number>;
   energies?: Record<string, FlameLevel>;
-  selectedDate?: Date;
+  timeZone: string;
+  selectedDayKey?: string | null;
   onSelectDate?: (date: Date) => void;
 }
 
@@ -19,10 +21,14 @@ interface YearViewProps {
 export function YearView({
   events: _events,
   energies: _energies,
-  selectedDate,
+  timeZone,
+  selectedDayKey,
   onSelectDate,
 }: YearViewProps) {
-  const today = useMemo(() => new Date(), []);
+  const todayParts = useMemo(
+    () => getZonedDateTimeParts(new Date(), timeZone),
+    [timeZone]
+  );
   const totalYears = 400; // ~200 years back and forward
   const currentIndex = Math.floor(totalYears / 2);
 
@@ -48,7 +54,7 @@ export function YearView({
         }}
       >
         {virtualizer.getVirtualItems().map((item) => {
-          const year = today.getFullYear() + item.index - currentIndex;
+          const year = todayParts.year + item.index - currentIndex;
           return (
             <div
               key={item.key}
@@ -65,7 +71,8 @@ export function YearView({
                     key={m}
                     year={year}
                     month={m}
-                    selectedDate={selectedDate}
+                    timeZone={timeZone}
+                    selectedDayKey={selectedDayKey}
                     onSelect={onSelectDate}
                   />
                 ))}
