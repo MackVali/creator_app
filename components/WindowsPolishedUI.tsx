@@ -9,6 +9,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Sparkles,
   SunMedium,
   Trash2,
@@ -25,6 +26,7 @@ function classNames(...classes: Array<string | false | null | undefined>) {
 
 type Energy = "no" | "low" | "medium" | "high" | "ultra" | "extreme"
 type Day = "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat"
+type SortOption = "az" | "start" | "end" | "active"
 
 export interface WindowItem {
   id: string
@@ -116,7 +118,8 @@ export default function WindowsPolishedUI({
   const [energyFilter, setEnergyFilter] = useState<"all" | Energy>("all")
   const [search, setSearch] = useState("")
   const [searchDebounced, setSearchDebounced] = useState("")
-  const [sort, setSort] = useState("az")
+  const [sort, setSort] = useState<SortOption>("az")
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.toLowerCase()), 200)
@@ -234,18 +237,14 @@ export default function WindowsPolishedUI({
           onNew={() => setDrawerOpen(true)}
           total={stats.total}
         />
-        <FiltersPanel
+        <FiltersLauncher
           energyFilter={energyFilter}
           filtered={filteredCount}
           hasFilters={hasActiveFilters}
+          onOpen={() => setFiltersOpen(true)}
           onReset={resetFilters}
           search={search}
-          selectedDays={selectedDays}
-          setEnergyFilter={setEnergyFilter}
-          setSearch={setSearch}
-          setSelectedDays={setSelectedDays}
-          setSort={setSort}
-          setStatusFilter={setStatusFilter}
+          selectedDays={Array.from(selectedDays)}
           sort={sort}
           statusFilter={statusFilter}
           total={stats.total}
@@ -270,6 +269,25 @@ export default function WindowsPolishedUI({
           {allEmpty && <EmptyState onNew={() => setDrawerOpen(true)} />}
         </section>
       </div>
+      {filtersOpen && (
+        <FiltersSheet
+          energyFilter={energyFilter}
+          filtered={filteredCount}
+          hasFilters={hasActiveFilters}
+          onClose={() => setFiltersOpen(false)}
+          onReset={resetFilters}
+          search={search}
+          selectedDays={selectedDays}
+          setEnergyFilter={setEnergyFilter}
+          setSearch={setSearch}
+          setSelectedDays={setSelectedDays}
+          setSort={setSort}
+          setStatusFilter={setStatusFilter}
+          sort={sort}
+          statusFilter={statusFilter}
+          total={stats.total}
+        />
+      )}
       {drawerOpen && (
         <Drawer
           initial={editing}
@@ -372,18 +390,131 @@ interface FiltersProps {
   setEnergyFilter: (v: "all" | Energy) => void
   search: string
   setSearch: (v: string) => void
-  sort: string
-  setSort: (v: string) => void
+  sort: SortOption
+  setSort: (v: SortOption) => void
 }
 
-interface FiltersPanelProps extends FiltersProps {
+interface FiltersLauncherProps {
   total: number
   filtered: number
   hasFilters: boolean
   onReset: () => void
+  onOpen: () => void
+  energyFilter: "all" | Energy
+  search: string
+  selectedDays: Day[]
+  sort: SortOption
+  statusFilter: "all" | "active" | "inactive"
 }
 
-function FiltersPanel({
+interface FiltersSheetProps extends FiltersProps {
+  total: number
+  filtered: number
+  hasFilters: boolean
+  onReset: () => void
+  onClose: () => void
+}
+
+function FiltersLauncher({
+  total,
+  filtered,
+  hasFilters,
+  onReset,
+  onOpen,
+  energyFilter,
+  search,
+  selectedDays,
+  sort,
+  statusFilter,
+}: FiltersLauncherProps) {
+  const chips = useMemo(() => {
+    const items: string[] = []
+    if (statusFilter !== "all") {
+      items.push(`Status: ${statusFilter === "active" ? "Active" : "Inactive"}`)
+    }
+    if (selectedDays.length) {
+      const ordered = [...selectedDays].sort(
+        (a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b),
+      )
+      items.push(
+        `Days: ${ordered.length === 7 ? "Every day" : ordered.join(" · ")}`,
+      )
+    }
+    if (energyFilter !== "all") {
+      items.push(
+        `Energy: ${energyFilter.charAt(0).toUpperCase()}${energyFilter.slice(1)}`,
+      )
+    }
+    if (search.trim()) {
+      items.push(`Search: “${search.trim()}”`)
+    }
+    if (sort !== "az") {
+      const sortLabel =
+        sort === "start"
+          ? "Start time"
+          : sort === "end"
+            ? "End time"
+            : "Active first"
+      items.push(`Sort: ${sortLabel}`)
+    }
+    return items
+  }, [energyFilter, search, selectedDays, sort, statusFilter])
+
+  return (
+    <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-6 shadow-[0_30px_80px_rgba(15,23,42,0.35)] backdrop-blur">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Window filters</h2>
+          <p className="text-sm text-slate-300">
+            Showing {filtered} of {total} windows
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {hasFilters && (
+            <button
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:text-white"
+              onClick={onReset}
+              type="button"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Clear filters
+            </button>
+          )}
+          <button
+            className={classNames(
+              "inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-wide transition",
+              hasFilters
+                ? "bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)] hover:bg-indigo-500"
+                : "border border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20",
+            )}
+            onClick={onOpen}
+            type="button"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filter options
+          </button>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {chips.length ? (
+          chips.map((chip) => (
+            <span
+              key={chip}
+              className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-slate-200"
+            >
+              {chip}
+            </span>
+          ))
+        ) : (
+          <span className="inline-flex items-center rounded-full border border-dashed border-white/15 bg-white/[0.02] px-3 py-1 text-xs font-medium text-slate-400">
+            No filters applied
+          </span>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function FiltersSheet({
   statusFilter,
   setStatusFilter,
   selectedDays,
@@ -398,7 +529,16 @@ function FiltersPanel({
   filtered,
   hasFilters,
   onReset,
-}: FiltersPanelProps) {
+  onClose,
+}: FiltersSheetProps) {
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [onClose])
+
   function toggleDay(d: Day) {
     const next = new Set(selectedDays)
     if (next.has(d)) next.delete(d)
@@ -413,113 +553,154 @@ function FiltersPanel({
   ]
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-6 shadow-[0_30px_80px_rgba(15,23,42,0.35)] backdrop-blur">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Refine your windows</h2>
-          <p className="text-sm text-slate-300">
-            Showing {filtered} of {total} windows
-          </p>
-        </div>
-        {hasFilters && (
+    <div
+      className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/70 px-4 py-8 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-3xl overflow-hidden rounded-3xl border border-white/10 bg-[#080b14]/95 shadow-[0_30px_80px_rgba(15,23,42,0.6)]">
+        <div className="flex items-start justify-between border-b border-white/10 px-6 py-5">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Filter windows</h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Narrow the schedule by combining different filter options.
+            </p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Showing {filtered} of {total} windows
+            </p>
+          </div>
           <button
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30"
-            onClick={onReset}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/30 hover:text-white"
+            onClick={onClose}
             type="button"
           >
-            <RefreshCw className="h-3.5 w-3.5" /> Reset
+            <X className="h-4 w-4" />
           </button>
-        )}
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            className="h-11 w-full rounded-full border border-white/10 bg-white/[0.05] pl-9 pr-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
-            placeholder="Search by name"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
         </div>
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Sort by
-          </label>
-          <select
-            className="mt-2 h-11 w-full rounded-full border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
+        <div className="space-y-6 px-6 py-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Search
+              </label>
+              <div className="relative mt-2">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="h-11 w-full rounded-full border border-white/10 bg-white/[0.05] pl-9 pr-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
+                  placeholder="Search by name"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Sort by
+              </label>
+              <select
+                className="mt-2 h-11 w-full rounded-full border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortOption)}
+              >
+                <option className="bg-slate-900 text-white" value="az">
+                  A → Z
+                </option>
+                <option className="bg-slate-900 text-white" value="start">
+                  Start time
+                </option>
+                <option className="bg-slate-900 text-white" value="end">
+                  End time
+                </option>
+                <option className="bg-slate-900 text-white" value="active">
+                  Active first
+                </option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Status
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {statusOptions.map((option) => (
+                <button
+                  key={option.key}
+                  className={classNames(
+                    "flex min-w-[108px] items-center justify-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition",
+                    statusFilter === option.key
+                      ? "border-transparent bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]"
+                      : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20",
+                  )}
+                  onClick={() => setStatusFilter(option.key)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Days of the week
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {dayOrder.map((d) => (
+                <DayPill
+                  key={d}
+                  active={selectedDays.has(d)}
+                  label={d}
+                  onClick={() => toggleDay(d)}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Energy focus
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <EnergyChip
+                active={energyFilter === "all"}
+                energy="all"
+                label="All"
+                onClick={() => setEnergyFilter("all")}
+              />
+              {energies.map((e) => (
+                <EnergyChip
+                  key={e}
+                  active={energyFilter === e}
+                  energy={e}
+                  label={e}
+                  onClick={() => setEnergyFilter(e)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!hasFilters}
+            onClick={() => {
+              if (hasFilters) onReset()
+            }}
+            type="button"
           >
-            <option className="bg-slate-900 text-white" value="az">
-              A → Z
-            </option>
-            <option className="bg-slate-900 text-white" value="start">
-              Start time
-            </option>
-            <option className="bg-slate-900 text-white" value="end">
-              End time
-            </option>
-            <option className="bg-slate-900 text-white" value="active">
-              Active first
-            </option>
-          </select>
-        </div>
-      </div>
-      <div className="mt-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Status
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {statusOptions.map((o) => (
+            <RefreshCw className="h-3.5 w-3.5" /> Clear filters
+          </button>
+          <div className="flex items-center gap-3">
             <button
-              key={o.key}
-              className={classNames(
-                "flex min-w-[108px] items-center justify-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition",
-                statusFilter === o.key
-                  ? "border-transparent bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]"
-                  : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20",
-              )}
-              onClick={() => setStatusFilter(o.key)}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:text-white"
+              onClick={onClose}
               type="button"
             >
-              {o.label}
+              Done
             </button>
-          ))}
+          </div>
         </div>
       </div>
-      <div className="mt-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Days of the week
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {dayOrder.map((d) => (
-            <DayPill key={d} active={selectedDays.has(d)} label={d} onClick={() => toggleDay(d)} />
-          ))}
-        </div>
-      </div>
-      <div className="mt-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Energy focus
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <EnergyChip
-            active={energyFilter === "all"}
-            energy="all"
-            label="All"
-            onClick={() => setEnergyFilter("all")}
-          />
-          {energies.map((e) => (
-            <EnergyChip
-              key={e}
-              active={energyFilter === e}
-              energy={e}
-              label={e}
-              onClick={() => setEnergyFilter(e)}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
+    </div>
   )
 }
 
