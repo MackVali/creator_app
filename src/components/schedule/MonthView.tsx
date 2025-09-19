@@ -8,6 +8,13 @@ import { cn } from "@/lib/utils";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function formatLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 interface MonthViewProps {
   /** Starting month to center in the scroller */
   date?: Date;
@@ -248,7 +255,7 @@ const DayCell = React.memo(function DayCell({
     () => (cell ? new Date(year, month + cell.offset, cell.day) : null),
     [year, month, cell]
   );
-  const key = dayDate ? dayDate.toISOString().slice(0, 10) : "";
+  const key = dayDate ? formatLocalDateKey(dayDate) : "";
   const count = key && events ? events[key] ?? 0 : 0;
   const energy = key && energies ? energies[key] : undefined;
   const isToday = dayDate ? isSameDay(dayDate, today) : false;
