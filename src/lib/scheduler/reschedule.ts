@@ -184,34 +184,36 @@ export async function scheduleBacklog(
   collectReuseIds(dedupe.canceledByProject)
   const scheduled = dedupe.scheduled
 
-  if (queue.length === 0) {
-    const enqueue = (
-      def:
-        | {
-            id: string
-            duration_min: number
-            energy: string | null | undefined
-            weight: number
-          }
-        | null
-    ) => {
-      if (!def) return
-      const duration = Number(def.duration_min ?? 0)
-      if (!Number.isFinite(duration) || duration <= 0) return
-      if (scheduled.has(def.id)) return
-      const energy = (def.energy ?? 'NO').toString().toUpperCase()
-      queue.push({
-        id: def.id,
-        sourceType: 'PROJECT',
-        duration_min: duration,
-        energy,
-        weight: def.weight ?? 0,
-      })
-    }
+  const queuedProjectIds = new Set(queue.map(item => item.id))
 
-    for (const project of projectItems) {
-      enqueue(project)
-    }
+  const enqueue = (
+    def:
+      | {
+          id: string
+          duration_min: number
+          energy: string | null | undefined
+          weight: number
+        }
+      | null
+  ) => {
+    if (!def) return
+    const duration = Number(def.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) return
+    if (scheduled.has(def.id)) return
+    if (queuedProjectIds.has(def.id)) return
+    const energy = (def.energy ?? 'NO').toString().toUpperCase()
+    queue.push({
+      id: def.id,
+      sourceType: 'PROJECT',
+      duration_min: duration,
+      energy,
+      weight: def.weight ?? 0,
+    })
+    queuedProjectIds.add(def.id)
+  }
+
+  for (const project of projectItems) {
+    enqueue(project)
   }
 
   const finalQueueProjectIds = new Set(queue.map(item => item.id))

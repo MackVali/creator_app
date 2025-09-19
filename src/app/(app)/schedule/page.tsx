@@ -35,6 +35,7 @@ import {
 } from '@/lib/scheduler/repo'
 import {
   fetchInstancesForRange,
+  fetchScheduledProjectIds,
   updateInstanceStatus,
   type ScheduleInstance,
 } from '@/lib/scheduler/instanceRepo'
@@ -118,6 +119,137 @@ function utcDayRange(d: Date) {
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
 
+type SchedulerRunFailure = {
+  itemId: string
+  reason: string
+  detail?: unknown
+}
+
+type SchedulerDebugState = {
+  runAt: string
+  failures: SchedulerRunFailure[]
+  placedCount: number
+  placedProjectIds: string[]
+  error: unknown
+}
+
+function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
+  if (!Array.isArray(input)) return []
+  const results: SchedulerRunFailure[] = []
+  for (const entry of input) {
+    if (!entry || typeof entry !== 'object') continue
+    const value = entry as { itemId?: unknown; reason?: unknown; detail?: unknown }
+    const itemId = value.itemId
+    if (typeof itemId !== 'string' || itemId.length === 0) continue
+    const reason = value.reason
+    results.push({
+      itemId,
+      reason: typeof reason === 'string' && reason.length > 0 ? reason : 'unknown',
+      detail: value.detail,
+    })
+  }
+  return results
+}
+
+function parseSchedulerDebugPayload(
+  payload: unknown
+): Omit<SchedulerDebugState, 'runAt'> | null {
+  if (!payload || typeof payload !== 'object') return null
+  const schedule = (payload as { schedule?: unknown }).schedule
+  if (!schedule || typeof schedule !== 'object') return null
+  const scheduleValue = schedule as {
+    placed?: unknown
+    failures?: unknown
+    error?: unknown
+  }
+  const placedCount = Array.isArray(scheduleValue.placed)
+    ? scheduleValue.placed.length
+    : 0
+  const placedProjectIds = Array.isArray(scheduleValue.placed)
+    ? Array.from(
+        new Set(
+          scheduleValue.placed
+            .map(entry => {
+              if (!entry || typeof entry !== 'object') return null
+              const value = entry as { source_id?: unknown }
+              const id = value.source_id
+              return typeof id === 'string' && id.length > 0 ? id : null
+            })
+            .filter((value): value is string => Boolean(value))
+        )
+      )
+    : []
+  return {
+    failures: parseSchedulerFailures(scheduleValue.failures),
+    placedCount,
+    placedProjectIds,
+    error: scheduleValue.error ?? null,
+  }
+}
+
+function formatSchedulerDetail(detail: unknown): string | null {
+  if (detail === null || detail === undefined) return null
+  if (detail instanceof Error) return detail.message
+  if (typeof detail === 'string') return detail
+  if (typeof detail === 'number' || typeof detail === 'boolean') {
+    return String(detail)
+  }
+  if (typeof detail === 'object') {
+    const obj = detail as Record<string, unknown>
+    const candidates = ['message', 'details', 'hint', 'code'] as const
+    const parts: string[] = []
+    for (const key of candidates) {
+      const value = obj[key]
+      if (typeof value === 'string' && value.trim().length > 0) {
+        parts.push(value.trim())
+      }
+    }
+    if (parts.length > 0) return parts.join(' · ')
+    try {
+      return JSON.stringify(detail)
+    } catch (error) {
+      console.error('Failed to serialize scheduler detail', error)
+    }
+  }
+  try {
+    return JSON.stringify(detail)
+  } catch (error) {
+    console.error('Failed to stringify scheduler detail', error)
+  }
+  return String(detail)
+}
+
+function describeSchedulerFailure(
+  failure: SchedulerRunFailure,
+  context: { durationMinutes: number; energy: string }
+): { message: string; detail?: string } {
+  const duration = Math.max(0, Math.round(context.durationMinutes))
+  const energy = context.energy.toUpperCase()
+  const detail = formatSchedulerDetail(failure.detail) ?? undefined
+  switch (failure.reason) {
+    case 'NO_WINDOW': {
+      const energyDescription =
+        energy === 'NO'
+          ? 'any available window'
+          : `a window with ${energy} energy or higher`
+      return {
+        message: `Scheduler could not find ${energyDescription} long enough (≥ ${duration}m) within the next 28 days.`,
+        detail,
+      }
+    }
+    case 'error':
+      return {
+        message: 'Scheduler encountered an error while trying to book this project.',
+        detail,
+      }
+    default:
+      return {
+        message: `Scheduler reported "${failure.reason}" for this project.`,
+        detail,
+      }
+  }
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -141,8 +273,10 @@ export default function SchedulePage() {
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
+  const [scheduledProjectIds, setScheduledProjectIds] = useState<Set<string>>(new Set())
   const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
+  const [schedulerDebug, setSchedulerDebug] = useState<SchedulerDebugState | null>(null)
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const touchStartX = useRef<number | null>(null)
@@ -154,6 +288,16 @@ export default function SchedulePage() {
   const startHour = 0
   const pxPerMin = 2
   const year = currentDate.getFullYear()
+
+  const refreshScheduledProjectIds = useCallback(async () => {
+    if (!userId) return
+    const ids = await fetchScheduledProjectIds(userId)
+    setScheduledProjectIds(new Set(ids))
+  }, [userId])
+
+  useEffect(() => {
+    setSchedulerDebug(null)
+  }, [userId])
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -167,6 +311,7 @@ export default function SchedulePage() {
       setWindows([])
       setTasks([])
       setProjects([])
+      setScheduledProjectIds(new Set())
       setMetaStatus('idle')
       return
     }
@@ -176,15 +321,23 @@ export default function SchedulePage() {
 
     async function load() {
       try {
-        const [ws, ts, pm] = await Promise.all([
+        const [ws, ts, pm, scheduledIds] = await Promise.all([
           fetchWindowsForDate(currentDate),
           fetchReadyTasks(),
           fetchProjectsMap(),
+          fetchScheduledProjectIds(userId),
         ])
         if (!active) return
         setWindows(ws)
         setTasks(ts)
         setProjects(Object.values(pm))
+        setScheduledProjectIds(prev => {
+          const next = new Set(prev)
+          for (const id of scheduledIds) {
+            if (id) next.add(id)
+          }
+          return next
+        })
       } catch (e) {
         if (!active) return
         console.error(e)
@@ -211,6 +364,21 @@ export default function SchedulePage() {
   const taskMap = useMemo(() => {
     const map: Record<string, TaskLite> = {}
     for (const t of tasks) map[t.id] = t
+    return map
+  }, [tasks])
+
+  const tasksByProjectId = useMemo(() => {
+    const map: Record<string, TaskLite[]> = {}
+    for (const task of tasks) {
+      const projectId = task.project_id
+      if (!projectId) continue
+      const existing = map[projectId]
+      if (existing) {
+        existing.push(task)
+      } else {
+        map[projectId] = [task]
+      }
+    }
     return map
   }, [tasks])
 
@@ -263,6 +431,64 @@ export default function SchedulePage() {
     }
     return set
   }, [projectInstances])
+
+  const unscheduledProjects = useMemo(() => {
+    return projectItems.filter(project => {
+      if (scheduledProjectIds.has(project.id)) return false
+      return !projectInstanceIds.has(project.id)
+    })
+  }, [projectItems, projectInstanceIds, scheduledProjectIds])
+
+  const unscheduledTaskCount = useMemo(() => {
+    return unscheduledProjects.reduce((sum, project) => {
+      const relatedTasks = tasksByProjectId[project.id] ?? []
+      return sum + relatedTasks.length
+    }, 0)
+  }, [unscheduledProjects, tasksByProjectId])
+
+  const schedulerFailureByProjectId = useMemo(() => {
+    if (!schedulerDebug) return {}
+    return schedulerDebug.failures.reduce<Record<string, SchedulerRunFailure[]>>(
+      (acc, failure) => {
+        const id = failure.itemId
+        if (!id) return acc
+        if (!acc[id]) acc[id] = []
+        acc[id].push(failure)
+        return acc
+      },
+      {}
+    )
+  }, [schedulerDebug])
+
+  const schedulerRunSummary = useMemo(() => {
+    if (!schedulerDebug) return null
+    const runAt = new Date(schedulerDebug.runAt)
+    const timestamp = Number.isNaN(runAt.getTime())
+      ? null
+      : runAt.toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+    const parts: string[] = []
+    if (timestamp) parts.push(`Last run ${timestamp}`)
+    parts.push(
+      `${schedulerDebug.placedCount} placement${
+        schedulerDebug.placedCount === 1 ? '' : 's'
+      }`
+    )
+    parts.push(
+      `${schedulerDebug.failures.length} failure${
+        schedulerDebug.failures.length === 1 ? '' : 's'
+      }`
+    )
+    return parts.join(' · ')
+  }, [schedulerDebug])
+
+  const schedulerErrorMessage = useMemo(() => {
+    if (!schedulerDebug) return null
+    const text = formatSchedulerDetail(schedulerDebug.error)
+    return text && text.length > 0 ? text : null
+  }, [schedulerDebug])
 
   const taskInstancesByProject = useMemo(() => {
     const map: Record<
@@ -511,17 +737,63 @@ export default function SchedulePage() {
         method: 'POST',
         cache: 'no-store',
       })
+      let payload: unknown = null
+      let parseError: unknown = null
+      try {
+        payload = await response.json()
+      } catch (err) {
+        parseError = err
+      }
+
       if (!response.ok) {
-        let payload: unknown = null
-        try {
-          payload = await response.json()
-        } catch (err) {
-          console.error('Failed to parse scheduler response', err)
+        console.error('Scheduler run failed', response.status, payload ?? parseError)
+      }
+
+      const parsed = parseSchedulerDebugPayload(payload)
+      if (parsed) {
+        setSchedulerDebug({
+          runAt: new Date().toISOString(),
+          ...parsed,
+        })
+        if (parsed.placedProjectIds.length > 0) {
+          setScheduledProjectIds(prev => {
+            let changed = false
+            const next = new Set(prev)
+            for (const id of parsed.placedProjectIds) {
+              if (!next.has(id)) {
+                next.add(id)
+                changed = true
+              }
+            }
+            return changed ? next : prev
+          })
         }
-        console.error('Scheduler run failed', response.status, payload)
+      } else {
+        if (parseError) {
+          console.error('Failed to parse scheduler response', parseError)
+        }
+        const fallbackError =
+          parseError ??
+          (!response.ok
+            ? payload
+            : { message: 'Scheduler response missing schedule payload' })
+        setSchedulerDebug({
+          runAt: new Date().toISOString(),
+          failures: [],
+          placedCount: 0,
+          placedProjectIds: [],
+          error: fallbackError,
+        })
       }
     } catch (error) {
       console.error('Failed to run scheduler', error)
+      setSchedulerDebug({
+        runAt: new Date().toISOString(),
+        failures: [],
+        placedCount: 0,
+        placedProjectIds: [],
+        error,
+      })
     } finally {
       isSchedulingRef.current = false
       try {
@@ -529,8 +801,13 @@ export default function SchedulePage() {
       } catch (error) {
         console.error('Failed to reload schedule instances', error)
       }
+      try {
+        await refreshScheduledProjectIds()
+      } catch (error) {
+        console.error('Failed to refresh scheduled project history', error)
+      }
     }
-  }, [userId])
+  }, [userId, refreshScheduledProjectIds])
 
   useEffect(() => {
     autoScheduledForRef.current = null
@@ -662,7 +939,11 @@ export default function SchedulePage() {
                       outlineOffset: '-1px',
                     }
                     return (
-                      <AnimatePresence key={instance.id} initial={false}>
+                      <AnimatePresence
+                        key={instance.id}
+                        initial={false}
+                        mode="wait"
+                      >
                         {!isExpanded || tasksForProject.length === 0 ? (
                           <motion.div
                             key="project"
@@ -728,82 +1009,107 @@ export default function SchedulePage() {
                             />
                           </motion.div>
                         ) : (
-                          tasksForProject.map(taskInfo => {
-                            const { instance: taskInstance, task, start, end } = taskInfo
-                            const tStartMin = start.getHours() * 60 + start.getMinutes()
-                            const tTop = (tStartMin - startHour * 60) * pxPerMin
-                            const tHeight =
-                              ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                            const tStyle: CSSProperties = {
-                              top: tTop,
-                              height: tHeight,
-                              boxShadow: 'var(--elev-card)',
-                              outline: '1px solid var(--event-border)',
-                              outlineOffset: '-1px',
-                            }
-                            const progress =
-                              (task as { progress?: number }).progress ?? 0
-                            return (
                           <motion.div
-                            key={taskInstance.id}
-                            aria-label={`Task ${task.name}`}
-                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                            style={tStyle}
-                            onClick={() =>
-                              setExpandedProjects(prev => {
-                                const next = new Set(prev)
-                                next.delete(projectId)
-                                return next
-                              })
+                            key="tasks"
+                            initial={
+                              prefersReducedMotion
+                                ? false
+                                : { opacity: 0, y: 4 }
                             }
-                                initial={
-                                  prefersReducedMotion
-                                    ? false
-                                    : { opacity: 0, y: 4 }
-                                }
-                                animate={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : { opacity: 1, y: 0 }
-                                }
-                                exit={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : { opacity: 0, y: 4 }
-                                }
-                              >
-                                {renderInstanceActions(taskInstance.id, { projectId })}
-                                <div className="flex flex-col">
-                                  <span className="truncate text-sm font-medium">
-                                    {task.name}
-                                  </span>
-                                  <div className="text-xs text-zinc-200/70">
-                                    {Math.round(
-                                      (end.getTime() - start.getTime()) / 60000
-                                    )}
-                                    m
+                            animate={
+                              prefersReducedMotion
+                                ? undefined
+                                : { opacity: 1, y: 0 }
+                            }
+                            exit={
+                              prefersReducedMotion
+                                ? undefined
+                                : { opacity: 0, y: 4 }
+                            }
+                            transition={
+                              prefersReducedMotion
+                                ? undefined
+                                : { delay: index * 0.02 }
+                            }
+                          >
+                            {tasksForProject.map(taskInfo => {
+                              const { instance: taskInstance, task, start, end } = taskInfo
+                              const tStartMin =
+                                start.getHours() * 60 + start.getMinutes()
+                              const tTop = (tStartMin - startHour * 60) * pxPerMin
+                              const tHeight =
+                                ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                              const tStyle: CSSProperties = {
+                                top: tTop,
+                                height: tHeight,
+                                boxShadow: 'var(--elev-card)',
+                                outline: '1px solid var(--event-border)',
+                                outlineOffset: '-1px',
+                              }
+                              const progress =
+                                (task as { progress?: number }).progress ?? 0
+                              return (
+                                <motion.div
+                                  key={taskInstance.id}
+                                  aria-label={`Task ${task.name}`}
+                                  className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                                  style={tStyle}
+                                  onClick={() =>
+                                    setExpandedProjects(prev => {
+                                      const next = new Set(prev)
+                                      next.delete(projectId)
+                                      return next
+                                    })
+                                  }
+                                  initial={
+                                    prefersReducedMotion
+                                      ? false
+                                      : { opacity: 0, y: 4 }
+                                  }
+                                  animate={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : { opacity: 1, y: 0 }
+                                  }
+                                  exit={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : { opacity: 0, y: 4 }
+                                  }
+                                >
+                                  {renderInstanceActions(taskInstance.id, { projectId })}
+                                  <div className="flex flex-col">
+                                    <span className="truncate text-sm font-medium">
+                                      {task.name}
+                                    </span>
+                                    <div className="text-xs text-zinc-200/70">
+                                      {Math.round(
+                                        (end.getTime() - start.getTime()) / 60000
+                                      )}
+                                      m
+                                    </div>
                                   </div>
-                                </div>
-                                {task.skill_icon && (
-                                  <span
-                                    className="ml-2 text-lg leading-none flex-shrink-0"
-                                    aria-hidden
-                                  >
-                                    {task.skill_icon}
-                                  </span>
-                                )}
-                                <FlameEmber
-                                  level={(task.energy as FlameLevel) || 'NO'}
-                                  size="sm"
-                                  className="absolute -top-1 -right-1"
-                                />
-                                <div
-                                  className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                                  style={{ width: `${progress}%` }}
-                                />
-                              </motion.div>
-                            )
-                          })
+                                  {task.skill_icon && (
+                                    <span
+                                      className="ml-2 text-lg leading-none flex-shrink-0"
+                                      aria-hidden
+                                    >
+                                      {task.skill_icon}
+                                    </span>
+                                  )}
+                                  <FlameEmber
+                                    level={(task.energy as FlameLevel) || 'NO'}
+                                    size="sm"
+                                    className="absolute -top-1 -right-1"
+                                  />
+                                  <div
+                                    className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </motion.div>
+                              )
+                            })}
+                          </motion.div>
                         )}
                       </AnimatePresence>
                     )
@@ -876,6 +1182,130 @@ export default function SchedulePage() {
             )}
           </AnimatePresence>
         </div>
+        {metaStatus === 'loaded' && instancesStatus === 'loaded' && (
+          <div className="rounded-lg border border-dashed border-amber-500/40 bg-amber-500/10 p-4 text-[11px] text-amber-100">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-amber-200">
+              <span className="font-semibold uppercase tracking-wide">
+                Unscheduled projects (debug)
+              </span>
+              <span>
+                {unscheduledProjects.length} project
+                {unscheduledProjects.length === 1 ? '' : 's'}
+                {unscheduledTaskCount > 0 && (
+                  <>
+                    {' '}
+                    · {unscheduledTaskCount} task
+                    {unscheduledTaskCount === 1 ? '' : 's'}
+                  </>
+                )}
+              </span>
+            </div>
+            {schedulerDebug ? (
+              <div className="mt-2 space-y-1 text-[10px] text-amber-200/70">
+                {schedulerRunSummary && <div>{schedulerRunSummary}</div>}
+                {schedulerErrorMessage && (
+                  <div className="text-amber-200/60">
+                    Scheduler error: {schedulerErrorMessage}
+                  </div>
+                )}
+              </div>
+            ) : (
+              unscheduledProjects.length > 0 && (
+                <p className="mt-2 text-[10px] text-amber-200/60">
+                  Run the scheduler (call{' '}
+                  <code className="rounded bg-amber-500/20 px-1 py-[1px]">
+                    window.__runScheduler()
+                  </code>
+                  ) to capture failure diagnostics for these projects.
+                </p>
+              )
+            )}
+            {unscheduledProjects.length === 0 ? (
+              <p className="mt-2 text-amber-200/80">
+                All projects currently have at least one scheduled instance.
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {unscheduledProjects.map(project => {
+                  const relatedTasks = tasksByProjectId[project.id] ?? []
+                  const failures = schedulerFailureByProjectId[project.id] ?? []
+                  const diagnostics = failures.map(failure =>
+                    describeSchedulerFailure(failure, {
+                      durationMinutes: project.duration_min,
+                      energy: project.energy,
+                    })
+                  )
+                  return (
+                    <li
+                      key={project.id}
+                      className="rounded-md bg-amber-500/5 p-3 text-amber-100"
+                    >
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <div className="text-sm font-medium text-amber-50">
+                          {project.name || 'Untitled project'}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-amber-200/70">
+                          {project.id}
+                        </div>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-amber-200/70">
+                        <span>Stage: {project.stage}</span>
+                        <span>Priority: {project.priority}</span>
+                        <span>Duration: {Math.round(project.duration_min)}m</span>
+                        <span>Energy: {project.energy}</span>
+                      </div>
+                      {relatedTasks.length > 0 ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-50">
+                          {relatedTasks.map(task => (
+                            <li key={task.id}>
+                              <div className="flex flex-wrap items-baseline justify-between gap-2 text-[11px]">
+                                <span className="font-medium">{task.name}</span>
+                                <span className="text-[10px] text-amber-200/70">
+                                  {task.duration_min}m · {task.priority} · {task.stage}
+                                </span>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-2 text-[10px] text-amber-200/70">
+                          No ready tasks linked to this project.
+                        </p>
+                      )}
+                      <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                          Scheduler diagnostics
+                        </div>
+                        {diagnostics.length > 0 ? (
+                          <ul className="mt-1 space-y-1 text-[10px] text-amber-200/80">
+                            {diagnostics.map((diag, index) => (
+                              <li key={`${project.id}-diag-${index}`}>
+                                <span>{diag.message}</span>
+                                {diag.detail && (
+                                  <div className="text-amber-200/60">{diag.detail}</div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : schedulerDebug ? (
+                          <p className="mt-1 text-[10px] text-amber-200/70">
+                            {schedulerErrorMessage
+                              ? `Scheduler run ended with an error: ${schedulerErrorMessage}`
+                              : 'Last scheduler run did not report a project-specific failure.'}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[10px] text-amber-200/70">
+                            Diagnostics unavailable until the scheduler runs.
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   )
