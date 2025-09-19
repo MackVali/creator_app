@@ -96,20 +96,12 @@ export default function SkillDetailPage() {
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-4 w-2/3" />
                 <div className="flex flex-wrap gap-3">
-                  <Skeleton className="h-9 w-28 rounded-full" />
-                  <Skeleton className="h-9 w-36 rounded-full" />
+                  <Skeleton className="h-8 w-24 rounded-full" />
+                  <Skeleton className="h-8 w-28 rounded-full" />
+                  <Skeleton className="h-8 w-32 rounded-full" />
                 </div>
               </div>
             </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton
-                key={i}
-                className="h-32 rounded-2xl border border-white/5 bg-slate-900/50"
-              />
-            ))}
           </div>
 
           <div className="space-y-4">
@@ -237,64 +229,27 @@ export default function SkillDetailPage() {
                     {`Everything connected to ${skill.name} lives here — goals, notes, and the progress you're making along the way.`}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-slate-300 md:justify-start">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2">
-                    <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Created
-                    </span>
-                    <span className="font-semibold text-white">
-                      {formattedCreatedAt ?? "Not available"}
-                    </span>
-                  </div>
-                  {daysTracked !== null ? (
-                    <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/30 bg-indigo-500/15 px-4 py-2 text-indigo-100">
-                      <span className="text-xs font-medium uppercase tracking-wide text-indigo-200/80">
-                        Tracking
+                <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
+                  {stats.map((stat) => (
+                    <div
+                      key={stat.label}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-left backdrop-blur-sm"
+                    >
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                        {stat.label}
                       </span>
-                      <span className="font-semibold">
-                        {daysTracked} day{daysTracked === 1 ? "" : "s"}
+                      <span className="text-sm font-semibold text-white">
+                        {stat.value}
                       </span>
+                      {stat.description ? (
+                        <span className="sr-only">{stat.description}</span>
+                      ) : null}
                     </div>
-                  ) : null}
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-        </section>
-
-        <section aria-labelledby="skill-snapshot">
-          <Card className="border-white/10 bg-slate-950/70 backdrop-blur-md shadow-[0_40px_80px_-25px_rgba(15,23,42,0.65)]">
-            <CardHeader className="pb-2">
-              <div className="space-y-2">
-                <CardTitle id="skill-snapshot" className="text-lg font-semibold text-white">
-                  Skill snapshot
-                </CardTitle>
-                <CardDescription className="text-slate-400">
-                  A quick look at how {skill.name} is evolving.
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="pb-6">
-              <div className="grid gap-4 md:grid-cols-3">
-                {stats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="rounded-2xl border border-white/5 bg-slate-900/70 p-5 shadow-[0_25px_60px_-30px_rgba(15,23,42,0.9)]"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                      {stat.label}
-                    </p>
-                    <p className="mt-3 text-2xl font-semibold text-white">
-                      {stat.value}
-                    </p>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                      {stat.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </section>
 
         <section aria-labelledby="skill-goals">
