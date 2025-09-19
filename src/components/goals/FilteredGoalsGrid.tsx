@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFilteredGoals } from "@/lib/hooks/useFilteredGoals";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
-import { GoalCard as GoalFolder } from "@/app/(app)/goals/components/GoalCard";
+import { GoalFolderCard } from "@/app/(app)/dashboard/components/GoalFolderCard";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 
 interface FilteredGoalsGridProps {
@@ -19,9 +19,12 @@ interface FilteredGoalsGridProps {
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-32 rounded-2xl bg-[#111520]" />
+        <Skeleton
+          key={i}
+          className="h-[140px] w-[110px] rounded-[26px] bg-white/10"
+        />
       ))}
     </div>
   );
@@ -118,6 +121,7 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
         active: true,
         updatedAt: g.created_at,
         projects: projectsByGoal[g.id] || [],
+        monumentId: g.monument_id ?? undefined,
       }));
 
       setGoalFolders(mapped);
@@ -160,9 +164,9 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
           <Button variant="outline" onClick={onCreateGoal}>+ Goal</Button>
         </Card>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {goalFolders.map((goal) => (
-            <GoalFolder key={goal.id} goal={goal} />
+            <GoalFolderCard key={goal.id} goal={goal} size={0.52} />
           ))}
         </div>
       )}
