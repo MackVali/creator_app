@@ -235,18 +235,8 @@ export default function WindowsPolishedUI({
           active={stats.active}
           highlightEnergy={stats.topEnergy}
           onNew={() => setDrawerOpen(true)}
-          total={stats.total}
-        />
-        <FiltersLauncher
-          energyFilter={energyFilter}
-          filtered={filteredCount}
-          hasFilters={hasActiveFilters}
-          onOpen={() => setFiltersOpen(true)}
-          onReset={resetFilters}
-          search={search}
-          selectedDays={Array.from(selectedDays)}
-          sort={sort}
-          statusFilter={statusFilter}
+          hasActiveFilters={hasActiveFilters}
+          onOpenFilters={() => setFiltersOpen(true)}
           total={stats.total}
         />
         <section className="relative space-y-4">
@@ -314,11 +304,15 @@ function HeaderBar({
   total,
   active,
   highlightEnergy,
+  onOpenFilters,
+  hasActiveFilters,
 }: {
   onNew: () => void
   total: number
   active: number
   highlightEnergy: Energy | null
+  onOpenFilters: () => void
+  hasActiveFilters: boolean
 }) {
   const energyLabel = highlightEnergy
     ? `${highlightEnergy.charAt(0).toUpperCase()}${highlightEnergy.slice(1)}`
@@ -327,7 +321,7 @@ function HeaderBar({
     <header className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] px-8 py-10 shadow-[0_30px_80px_rgba(15,23,42,0.45)] backdrop-blur">
       <div className="pointer-events-none absolute inset-y-0 left-0 w-[45%] bg-[radial-gradient(circle_at_left,_rgba(129,140,248,0.16),_transparent_70%)]" />
       <div className="pointer-events-none absolute -right-10 top-1/2 h-40 w-40 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(52,211,153,0.25),_transparent_70%)] blur-xl" />
-      <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+      <div className="relative flex flex-col gap-8">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
             <Sparkles className="h-4 w-4" />
@@ -349,10 +343,17 @@ function HeaderBar({
             New window
           </button>
         </div>
-        <div className="grid w-full max-w-md gap-3 sm:grid-cols-3 lg:max-w-none lg:grid-cols-3">
-          <StatCard icon={<SunMedium className="h-4 w-4" />} label="Active" value={`${active}`} />
-          <StatCard icon={<CalendarDays className="h-4 w-4" />} label="Total" value={`${total}`} />
-          <StatCard icon={<FlameIcon className="h-4 w-4" />} label="Peak energy" value={energyLabel} />
+        <div className="flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatCard icon={<SunMedium className="h-3.5 w-3.5" />} label="Active" value={`${active}`} />
+            <StatCard icon={<CalendarDays className="h-3.5 w-3.5" />} label="Total" value={`${total}`} />
+            <StatCard icon={<FlameIcon className="h-3.5 w-3.5" />} label="Peak energy" value={energyLabel} />
+          </div>
+          <FiltersLauncher
+            className="w-full justify-center sm:w-auto"
+            hasFilters={hasActiveFilters}
+            onOpen={onOpenFilters}
+          />
         </div>
       </div>
     </header>
@@ -369,14 +370,16 @@ function StatCard({
   value: string
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-5 text-left shadow-[0_20px_40px_rgba(15,23,42,0.35)]">
-      <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08] text-indigo-200">
-          {icon}
+    <div className="flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.07] px-3 py-1.5 shadow-[0_15px_35px_rgba(15,23,42,0.35)]">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.12] text-indigo-200">
+        {icon}
+      </span>
+      <div className="flex items-baseline gap-1">
+        <span className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-300">
+          {label}
         </span>
-        {label}
+        <span className="text-sm font-semibold text-white">{value}</span>
       </div>
-      <div className="mt-3 text-2xl font-semibold text-white">{value}</div>
     </div>
   )
 }
@@ -395,16 +398,9 @@ interface FiltersProps {
 }
 
 interface FiltersLauncherProps {
-  total: number
-  filtered: number
   hasFilters: boolean
-  onReset: () => void
   onOpen: () => void
-  energyFilter: "all" | Energy
-  search: string
-  selectedDays: Day[]
-  sort: SortOption
-  statusFilter: "all" | "active" | "inactive"
+  className?: string
 }
 
 interface FiltersSheetProps extends FiltersProps {
@@ -415,102 +411,22 @@ interface FiltersSheetProps extends FiltersProps {
   onClose: () => void
 }
 
-function FiltersLauncher({
-  total,
-  filtered,
-  hasFilters,
-  onReset,
-  onOpen,
-  energyFilter,
-  search,
-  selectedDays,
-  sort,
-  statusFilter,
-}: FiltersLauncherProps) {
-  const chips = useMemo(() => {
-    const items: string[] = []
-    if (statusFilter !== "all") {
-      items.push(`Status: ${statusFilter === "active" ? "Active" : "Inactive"}`)
-    }
-    if (selectedDays.length) {
-      const ordered = [...selectedDays].sort(
-        (a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b),
-      )
-      items.push(
-        `Days: ${ordered.length === 7 ? "Every day" : ordered.join(" · ")}`,
-      )
-    }
-    if (energyFilter !== "all") {
-      items.push(
-        `Energy: ${energyFilter.charAt(0).toUpperCase()}${energyFilter.slice(1)}`,
-      )
-    }
-    if (search.trim()) {
-      items.push(`Search: “${search.trim()}”`)
-    }
-    if (sort !== "az") {
-      const sortLabel =
-        sort === "start"
-          ? "Start time"
-          : sort === "end"
-            ? "End time"
-            : "Active first"
-      items.push(`Sort: ${sortLabel}`)
-    }
-    return items
-  }, [energyFilter, search, selectedDays, sort, statusFilter])
-
+function FiltersLauncher({ hasFilters, onOpen, className }: FiltersLauncherProps) {
   return (
-    <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-6 shadow-[0_30px_80px_rgba(15,23,42,0.35)] backdrop-blur">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Window filters</h2>
-          <p className="text-sm text-slate-300">
-            Showing {filtered} of {total} windows
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {hasFilters && (
-            <button
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30 hover:text-white"
-              onClick={onReset}
-              type="button"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Clear filters
-            </button>
-          )}
-          <button
-            className={classNames(
-              "inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-wide transition",
-              hasFilters
-                ? "bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)] hover:bg-indigo-500"
-                : "border border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20",
-            )}
-            onClick={onOpen}
-            type="button"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            Filter options
-          </button>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {chips.length ? (
-          chips.map((chip) => (
-            <span
-              key={chip}
-              className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-slate-200"
-            >
-              {chip}
-            </span>
-          ))
-        ) : (
-          <span className="inline-flex items-center rounded-full border border-dashed border-white/15 bg-white/[0.02] px-3 py-1 text-xs font-medium text-slate-400">
-            No filters applied
-          </span>
-        )}
-      </div>
-    </section>
+    <button
+      className={classNames(
+        "inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-wide transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+        hasFilters
+          ? "bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)] hover:bg-indigo-500"
+          : "border border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20 hover:text-white",
+        className,
+      )}
+      onClick={onOpen}
+      type="button"
+    >
+      <SlidersHorizontal className="h-4 w-4" />
+      Filter options
+    </button>
   )
 }
 
