@@ -1,5 +1,12 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import {
+  addDaysToKey,
+  getLocalDateKey,
+  getUTCDateRangeForKey,
+  parseDateKey,
+  zonedDateTimeToUTC,
+} from '../time/tz'
 import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
@@ -92,7 +99,27 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
-  const baseStart = startOfDay(baseDate)
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('timezone')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (profileError) {
+    console.error('Failed to fetch profile timezone', profileError)
+  }
+
+  const userTimeZoneRaw = profile?.timezone ?? null
+  const userTimeZone =
+    typeof userTimeZoneRaw === 'string' && userTimeZoneRaw.trim().length > 0
+      ? userTimeZoneRaw
+      : null
+  const tzOption = userTimeZone ?? undefined
+
+  const baseKey = getLocalDateKey(baseDate.toISOString(), tzOption)
+  const { startUTC: baseStartUTC } = getUTCDateRangeForKey(baseKey, tzOption)
+  const baseStart = new Date(baseStartUTC)
 
   const seenMissedProjects = new Set<string>()
 
@@ -165,7 +192,9 @@ export async function scheduleBacklog(
   }
 
   const initialQueueProjectIds = new Set(queue.map(item => item.id))
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEndKey = addDaysToKey(baseKey, 28, tzOption)
+  const { startUTC: rangeEndUTC } = getUTCDateRangeForKey(rangeEndKey, tzOption)
+  const rangeEnd = new Date(rangeEndUTC)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
@@ -263,15 +292,22 @@ export async function scheduleBacklog(
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(supabase, day, item)
+      const dayKey = addDaysToKey(baseKey, offset, tzOption)
+      const { startUTC: dayStartUTC } = getUTCDateRangeForKey(dayKey, tzOption)
+      const dayDate = new Date(dayStartUTC)
+      const windows = await fetchCompatibleWindowsForItem(
+        supabase,
+        dayKey,
+        item,
+        userTimeZone
+      )
       if (windows.length === 0) continue
 
       const placed = await placeItemInWindows({
         userId,
         item,
         windows,
-        date: day,
+        date: dayDate,
         client: supabase,
         reuseInstanceId: item.instanceId,
       })
@@ -422,17 +458,44 @@ async function dedupeScheduledProjects(
 
 async function fetchCompatibleWindowsForItem(
   supabase: Client,
-  date: Date,
-  item: { energy: string; duration_min: number }
+  dayKey: string,
+  item: { energy: string; duration_min: number },
+  timeZone: string | null,
 ) {
-  const windows = await fetchWindowsForDate(date, supabase)
+  const tzOption = timeZone ?? undefined
+  const parsedDate = parseDateKey(dayKey, tzOption)
+  const dayDate = Number.isNaN(parsedDate.getTime())
+    ? new Date(`${dayKey}T00:00:00Z`)
+    : parsedDate
+  const windows = await fetchWindowsForDate(dayDate, supabase, { timeZone })
   const itemIdx = energyIndex(item.energy)
   const compatible = windows.filter(w => energyIndex(w.energy) >= itemIdx)
-  return compatible.map(w => ({
-    id: w.id,
-    startLocal: resolveWindowStart(w, date),
-    endLocal: resolveWindowEnd(w, date),
-  }))
+  const { startUTC: dayStartISO, endUTC: dayEndISO } = getUTCDateRangeForKey(
+    dayKey,
+    tzOption,
+  )
+  const dayStart = new Date(dayStartISO)
+  const dayEnd = new Date(dayEndISO)
+
+  return compatible
+    .map(w => {
+      const start = resolveWindowStart(w, dayKey, timeZone)
+      const end = resolveWindowEnd(w, dayKey, timeZone)
+      const clampedStart = start < dayStart ? dayStart : start
+      const clampedEnd = end > dayEnd ? dayEnd : end
+      if (clampedEnd <= clampedStart) return null
+      return {
+        id: w.id,
+        startLocal: clampedStart,
+        endLocal: clampedEnd,
+      }
+    })
+    .filter(
+      (
+        value,
+      ): value is { id: string; startLocal: Date; endLocal: Date } =>
+        value !== null,
+    )
 }
 
 function energyIndex(level?: string | null) {
@@ -441,34 +504,95 @@ function energyIndex(level?: string | null) {
   return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
 }
 
-function resolveWindowStart(win: WindowLite, date: Date) {
-  const [hour = 0, minute = 0] = win.start_local.split(':').map(Number)
-  const start = startOfDay(date)
-  if (win.fromPrevDay) start.setDate(start.getDate() - 1)
-  start.setHours(hour, minute, 0, 0)
-  return start
+function resolveWindowStart(
+  win: WindowLite,
+  dayKey: string,
+  timeZone: string | null,
+) {
+  const tzOption = timeZone ?? undefined
+  const targetKey = win.fromPrevDay
+    ? addDaysToKey(dayKey, -1, tzOption)
+    : dayKey
+  return makeUTCDate(targetKey, win.start_local, timeZone)
 }
 
-function resolveWindowEnd(win: WindowLite, date: Date) {
-  const [hour = 0, minute = 0] = win.end_local.split(':').map(Number)
-  const base = win.fromPrevDay ? startOfDay(date) : startOfDay(date)
-  const end = new Date(base)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(win, date)
+function resolveWindowEnd(
+  win: WindowLite,
+  dayKey: string,
+  timeZone: string | null,
+) {
+  const tzOption = timeZone ?? undefined
+  const baseKey = dayKey
+  let end = makeUTCDate(baseKey, win.end_local, timeZone)
+  const start = resolveWindowStart(win, dayKey, timeZone)
   if (end <= start) {
-    end.setDate(end.getDate() + 1)
+    const nextKey = addDaysToKey(baseKey, 1, tzOption)
+    end = makeUTCDate(nextKey, win.end_local, timeZone)
   }
   return end
 }
 
-function startOfDay(date: Date) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
+function makeUTCDate(
+  dateKey: string,
+  timeValue: string,
+  timeZone: string | null,
+) {
+  const { year, month, day } = parseDateKeyParts(dateKey)
+  const [hour, minute, second] = parseTimeSegments(timeValue)
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return new Date(NaN)
+  }
+
+  if (timeZone) {
+    try {
+      return zonedDateTimeToUTC(
+        {
+          year,
+          month,
+          day,
+          hour,
+          minute,
+          second,
+          millisecond: 0,
+        },
+        timeZone,
+      )
+    } catch (error) {
+      console.warn('Failed to convert zoned time to UTC', {
+        dateKey,
+        timeValue,
+        timeZone,
+        error,
+      })
+    }
+  }
+
+  return new Date(
+    Date.UTC(
+      year,
+      (Number.isFinite(month) ? month : 1) - 1,
+      Number.isFinite(day) ? day : 1,
+      hour,
+      minute,
+      second,
+      0,
+    ),
+  )
 }
 
-function addDays(date: Date, amount: number) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + amount)
-  return d
+function parseDateKeyParts(dateKey: string) {
+  const [yearStr, monthStr, dayStr] = dateKey.split('-')
+  return {
+    year: Number(yearStr),
+    month: Number(monthStr),
+    day: Number(dayStr),
+  }
+}
+
+function parseTimeSegments(value: string): [number, number, number] {
+  const [hourStr = '0', minuteStr = '0', secondStr = '0'] = value.split(':')
+  const hour = Number(hourStr)
+  const minute = Number(minuteStr)
+  const second = Number(secondStr)
+  return [Number.isFinite(hour) ? hour : 0, Number.isFinite(minute) ? minute : 0, Number.isFinite(second) ? second : 0]
 }

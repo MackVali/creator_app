@@ -1,16 +1,35 @@
 "use client";
 // Render <SettingsPage /> in /settings route
-import { useState, useEffect, ReactNode } from "react";
+import { useState, useEffect, useMemo, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getCurrentUser } from "@/lib/auth";
+import { updateProfileTimezone } from "@/lib/db";
+import {
+  listTimeZones,
+  formatTimeZoneLabel,
+  getResolvedTimeZone,
+} from "@/lib/time/tz";
 
 export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(true);
   const [notifications, setNotifications] = useState(true);
-  const { profile } = useProfile();
+  const { profile, loading: profileLoading, refreshProfile } = useProfile();
   const [email, setEmail] = useState("");
   const router = useRouter();
+  const resolvedTimezone = useMemo(() => getResolvedTimeZone(), []);
+  const timezones = useMemo(() => listTimeZones(), []);
+  const [timezone, setTimezone] = useState<string>("UTC");
+  const timezoneOptions = useMemo(() => {
+    if (timezone && !timezones.includes(timezone)) {
+      return [timezone, ...timezones];
+    }
+    return timezones;
+  }, [timezones, timezone]);
+  const [timezoneStatus, setTimezoneStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const [timezoneError, setTimezoneError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadEmail() {
@@ -20,7 +39,41 @@ export default function SettingsPage() {
     loadEmail();
   }, []);
 
+  useEffect(() => {
+    if (profileLoading) return;
+    const fallback = resolvedTimezone ?? "UTC";
+    const next = profile?.timezone ?? fallback;
+    setTimezone(next);
+  }, [profile?.timezone, profileLoading, resolvedTimezone]);
+
   const initials = getInitials(profile?.name || null, email);
+  const savedTimezone = profile?.timezone ?? "";
+  const hasTimezoneChanges = timezone !== savedTimezone;
+  const detectedTimezoneLabel = resolvedTimezone
+    ? formatTimeZoneLabel(resolvedTimezone)
+    : null;
+
+  const handleSaveTimezone = async () => {
+    if (timezoneStatus === "saving") return;
+    setTimezoneStatus("saving");
+    setTimezoneError(null);
+    const result = await updateProfileTimezone(timezone || null);
+    if (result.success) {
+      await refreshProfile();
+      setTimezoneStatus("saved");
+      setTimeout(() => {
+        setTimezoneStatus("idle");
+      }, 2500);
+    } else {
+      setTimezoneStatus("error");
+      setTimezoneError(result.error ?? "Failed to update timezone");
+    }
+  };
+
+  const handleUseDetectedTimezone = () => {
+    if (!resolvedTimezone) return;
+    setTimezone(resolvedTimezone);
+  };
 
   return (
     <div
@@ -111,12 +164,67 @@ export default function SettingsPage() {
               />
             }
           />
-          <Row
-            ariaLabel="Change language"
-            left="🌐"
-            label="Language"
-            right={<Chevron />}
-          />
+        </SectionCard>
+        <SectionCard title="Time & Region">
+          <div className="space-y-3 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--text)]">Timezone</p>
+              <p className="text-xs text-[var(--muted)]">
+                We use your timezone to schedule windows and projects at the correct
+                local time.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <select
+                id="timezone"
+                value={timezone}
+                onChange={(event) => {
+                  setTimezone(event.target.value);
+                  if (timezoneStatus !== "idle") setTimezoneStatus("idle");
+                  if (timezoneError) setTimezoneError(null);
+                }}
+                className="w-full rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:max-w-sm"
+              >
+                {timezoneOptions.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {formatTimeZoneLabel(tz)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleUseDetectedTimezone}
+                disabled={!resolvedTimezone}
+                className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-[var(--text)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {resolvedTimezone
+                  ? `Use ${detectedTimezoneLabel}`
+                  : "Detect timezone"}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSaveTimezone}
+                disabled={!hasTimezoneChanges || timezoneStatus === "saving"}
+                className="inline-flex items-center justify-center rounded-md bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {timezoneStatus === "saving" ? "Saving…" : "Save timezone"}
+              </button>
+              {timezoneStatus === "saved" && (
+                <span className="text-xs text-emerald-300">Timezone updated</span>
+              )}
+              {timezoneStatus === "error" && timezoneError && (
+                <span className="text-xs text-red-300">{timezoneError}</span>
+              )}
+            </div>
+            {!profile?.timezone && !profileLoading && (
+              <p className="text-xs text-amber-200/80">
+                You haven’t saved a timezone yet. Saving one ensures scheduled items
+                line up with your day.
+              </p>
+            )}
+          </div>
         </SectionCard>
         <SectionCard title="About">
           <Row
@@ -225,4 +333,3 @@ function getInitials(name: string | null, email: string) {
   }
   return "";
 }
-

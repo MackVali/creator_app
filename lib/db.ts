@@ -273,6 +273,40 @@ export async function updateProfile(
   }
 }
 
+export async function updateProfileTimezone(
+  timezone: string | null
+): Promise<ProfileUpdateResult> {
+  try {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      return { success: false, error: "Supabase client not initialized" };
+    }
+
+    const userId = await getUserId();
+    const updateData: Partial<Profile> = {
+      timezone: timezone ?? null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update(updateData)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("❌ Failed to update timezone:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, profile: data as Profile };
+  } catch (error) {
+    console.error("Error updating profile timezone:", error);
+    return { success: false, error: "Failed to update timezone" };
+  }
+}
+
 export async function checkUsernameAvailability(
   username: string,
   excludeUserId?: string

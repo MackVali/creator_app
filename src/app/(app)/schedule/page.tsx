@@ -12,6 +12,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
+import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -42,7 +43,17 @@ import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
-import { toLocal } from '@/lib/time/tz'
+import { useProfile } from '@/lib/hooks/useProfile'
+import { updateProfileTimezone } from '@/lib/db'
+import {
+  toLocal,
+  getLocalDateKey,
+  parseDateKey,
+  addDaysToKey,
+  getResolvedTimeZone,
+  formatTimeZoneLabel,
+  getUTCDateRangeForKey,
+} from '@/lib/time/tz'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -107,13 +118,8 @@ function WindowLabel({
   )
 }
 
-function utcDayRange(d: Date) {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const day = d.getUTCDate()
-  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
-  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
-  return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
+function utcDayRange(dateKey: string, timeZone?: string | null) {
+  return getUTCDateRangeForKey(dateKey, timeZone)
 }
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
@@ -125,6 +131,9 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const { session } = useAuth()
   const userId = session?.user.id ?? null
+  const { profile, loading: profileLoading, refreshProfile } = useProfile()
+
+  const resolvedTimezone = useMemo(() => getResolvedTimeZone(), [])
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -133,9 +142,12 @@ export default function SchedulePage() {
       : 'year'
   const initialDate = searchParams.get('date')
 
-  const [currentDate, setCurrentDate] = useState(
-    () => (initialDate ? new Date(initialDate) : new Date())
-  )
+  const [currentDateKey, setCurrentDateKey] = useState(() => {
+    if (initialDate && /\d{4}-\d{2}-\d{2}/.test(initialDate)) {
+      return initialDate
+    }
+    return getLocalDateKey(new Date().toISOString(), resolvedTimezone)
+  })
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
@@ -153,14 +165,50 @@ export default function SchedulePage() {
 
   const startHour = 0
   const pxPerMin = 2
+  const userTimezone = profile?.timezone ?? null
+  const effectiveTimezone = userTimezone ?? resolvedTimezone ?? null
+  const currentDate = useMemo(
+    () => parseDateKey(currentDateKey, effectiveTimezone),
+    [currentDateKey, effectiveTimezone]
+  )
   const year = currentDate.getFullYear()
+  const detectedTimezoneLabel = useMemo(
+    () => (resolvedTimezone ? formatTimeZoneLabel(resolvedTimezone) : null),
+    [resolvedTimezone]
+  )
+  const [timezonePromptStatus, setTimezonePromptStatus] = useState<
+    'idle' | 'saving' | 'error'
+  >('idle')
+  const [timezonePromptError, setTimezonePromptError] = useState<string | null>(null)
+  const showTimezonePrompt = !profileLoading && !profile?.timezone
+  const timezonePromptSaving = timezonePromptStatus === 'saving'
+
+  const handleQuickTimezoneApply = useCallback(async () => {
+    if (!resolvedTimezone) return
+    try {
+      setTimezonePromptStatus('saving')
+      setTimezonePromptError(null)
+      const result = await updateProfileTimezone(resolvedTimezone)
+      if (!result.success) {
+        setTimezonePromptStatus('error')
+        setTimezonePromptError(result.error ?? 'Failed to update timezone')
+        return
+      }
+      await refreshProfile()
+      setTimezonePromptStatus('idle')
+    } catch (error) {
+      console.error('Failed to apply detected timezone', error)
+      setTimezonePromptStatus('error')
+      setTimezonePromptError('Failed to update timezone')
+    }
+  }, [resolvedTimezone, refreshProfile])
 
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', currentDate.toISOString().slice(0, 10))
+    params.set('date', currentDateKey)
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
-  }, [view, currentDate, router, pathname])
+  }, [view, currentDateKey, router, pathname])
 
   useEffect(() => {
     if (!userId) {
@@ -176,8 +224,9 @@ export default function SchedulePage() {
 
     async function load() {
       try {
+        const targetDate = parseDateKey(currentDateKey, effectiveTimezone)
         const [ws, ts, pm] = await Promise.all([
-          fetchWindowsForDate(currentDate),
+          fetchWindowsForDate(targetDate, undefined, { timeZone: effectiveTimezone }),
           fetchReadyTasks(),
           fetchProjectsMap(),
         ])
@@ -202,7 +251,7 @@ export default function SchedulePage() {
     return () => {
       active = false
     }
-  }, [currentDate, userId])
+  }, [currentDateKey, effectiveTimezone, userId])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -223,8 +272,7 @@ export default function SchedulePage() {
   const dayEnergies = useMemo(() => {
     const map: Record<string, FlameLevel> = {}
     for (const inst of instances) {
-      const start = toLocal(inst.start_utc)
-      const key = start.toISOString().slice(0, 10)
+      const key = getLocalDateKey(inst.start_utc, effectiveTimezone)
       const level = (inst.energy_resolved?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
       if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
@@ -232,7 +280,7 @@ export default function SchedulePage() {
       }
     }
     return map
-  }, [instances])
+  }, [instances, effectiveTimezone])
 
   const projectInstances = useMemo(() => {
     return instances
@@ -243,10 +291,10 @@ export default function SchedulePage() {
         return {
           instance: inst,
           project,
-          start: toLocal(inst.start_utc),
-          end: toLocal(inst.end_utc),
-        }
-      })
+          start: toLocal(inst.start_utc, effectiveTimezone),
+          end: toLocal(inst.end_utc, effectiveTimezone),
+      }
+    })
       .filter((value): value is {
         instance: ScheduleInstance
         project: typeof projectItems[number]
@@ -254,7 +302,7 @@ export default function SchedulePage() {
         end: Date
       } => value !== null)
       .sort((a, b) => a.start.getTime() - b.start.getTime())
-  }, [instances, projectMap, projectItems])
+  }, [instances, projectMap, projectItems, effectiveTimezone])
 
   const projectInstanceIds = useMemo(() => {
     const set = new Set<string>()
@@ -279,8 +327,8 @@ export default function SchedulePage() {
       bucket.push({
         instance: inst,
         task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
+        start: toLocal(inst.start_utc, effectiveTimezone),
+        end: toLocal(inst.end_utc, effectiveTimezone),
       })
       map[projectId] = bucket
     }
@@ -288,7 +336,7 @@ export default function SchedulePage() {
       map[key].sort((a, b) => a.start.getTime() - b.start.getTime())
     }
     return map
-  }, [instances, taskMap, projectInstanceIds])
+  }, [instances, taskMap, projectInstanceIds, effectiveTimezone])
 
   const standaloneTaskInstances = useMemo(() => {
     const items: Array<{
@@ -306,13 +354,13 @@ export default function SchedulePage() {
       items.push({
         instance: inst,
         task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
+        start: toLocal(inst.start_utc, effectiveTimezone),
+        end: toLocal(inst.end_utc, effectiveTimezone),
       })
     }
     items.sort((a, b) => a.start.getTime() - b.start.getTime())
     return items
-  }, [instances, taskMap, projectInstanceIds])
+  }, [instances, taskMap, projectInstanceIds, effectiveTimezone])
 
   const handleInstanceStatusChange = useCallback(
     async (
@@ -443,12 +491,14 @@ export default function SchedulePage() {
 
   function handleDrillDown(date: Date) {
     const next = getChildView(view, date)
-    setCurrentDate(next.date)
+    const dateKey = getLocalDateKey(next.date.toISOString(), effectiveTimezone)
+    setCurrentDateKey(dateKey)
     if (next.view !== view) navigate(next.view)
   }
 
   const handleToday = () => {
-    setCurrentDate(new Date())
+    const todayKey = getLocalDateKey(new Date().toISOString(), effectiveTimezone)
+    setCurrentDateKey(todayKey)
     navigate('day')
   }
   useEffect(() => {
@@ -465,7 +515,10 @@ export default function SchedulePage() {
       if (!active) return
       setInstancesStatus('loading')
       try {
-        const { startUTC, endUTC } = utcDayRange(currentDate)
+        const { startUTC, endUTC } = utcDayRange(
+          currentDateKey,
+          effectiveTimezone
+        )
         const { data, error } = await fetchInstancesForRange(
           userId,
           startUTC,
@@ -497,7 +550,7 @@ export default function SchedulePage() {
       active = false
       clearInterval(id)
     }
-  }, [userId, currentDate])
+  }, [userId, currentDateKey, effectiveTimezone])
 
   const runScheduler = useCallback(async () => {
     if (!userId) {
@@ -534,7 +587,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     autoScheduledForRef.current = null
-  }, [userId, currentDate])
+  }, [userId, currentDateKey, effectiveTimezone])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -552,14 +605,15 @@ export default function SchedulePage() {
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
     if (instances.length > 0) return
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDate)
-    const key = `${userId}:${startUTC}`
+    const { startUTC } = utcDayRange(currentDateKey, effectiveTimezone)
+    const key = `${userId}:${startUTC}:${effectiveTimezone ?? 'none'}`
     if (autoScheduledForRef.current === key) return
     autoScheduledForRef.current = key
     void runScheduler()
   }, [
     userId,
-    currentDate,
+    currentDateKey,
+    effectiveTimezone,
     metaStatus,
     instancesStatus,
     instances.length,
@@ -576,11 +630,8 @@ export default function SchedulePage() {
     const diff = e.changedTouches[0].clientX - touchStartX.current
     const threshold = 50
     if (Math.abs(diff) > threshold) {
-      setCurrentDate(prev => {
-        const d = new Date(prev)
-        d.setDate(prev.getDate() + (diff < 0 ? 1 : -1))
-        return d
-      })
+      const direction = diff < 0 ? 1 : -1
+      setCurrentDateKey(prev => addDaysToKey(prev, direction, effectiveTimezone))
     }
     touchStartX.current = null
   }
@@ -588,10 +639,42 @@ export default function SchedulePage() {
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
+        {showTimezonePrompt && (
+          <div className="mx-4 rounded-md border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <p className="font-semibold">Set your timezone</p>
+            <p className="mt-1 text-xs text-amber-100/80">
+              Save your timezone so projects and windows appear at the right local time.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleQuickTimezoneApply}
+                disabled={!resolvedTimezone || timezonePromptSaving}
+                className="inline-flex items-center justify-center rounded-md bg-amber-400 px-3 py-2 text-xs font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {timezonePromptSaving
+                  ? 'Saving…'
+                  : detectedTimezoneLabel
+                    ? `Use ${detectedTimezoneLabel}`
+                    : 'Detect timezone'}
+              </button>
+              <Link
+                href="/settings"
+                className="inline-flex items-center justify-center rounded-md border border-white/20 px-3 py-2 text-xs font-medium text-[var(--text)] transition hover:bg-white/10"
+              >
+                Open settings
+              </Link>
+              {timezonePromptStatus === 'error' && timezonePromptError && (
+                <span className="text-xs text-red-200">{timezonePromptError}</span>
+              )}
+            </div>
+          </div>
+        )}
         <ScheduleTopBar
           year={year}
           onBack={handleBack}
           onToday={handleToday}
+          canGoBack={view !== 'year'}
         />
         <div
           className="relative bg-[var(--surface)]"
@@ -605,6 +688,7 @@ export default function SchedulePage() {
                   energies={dayEnergies}
                   selectedDate={currentDate}
                   onSelectDate={handleDrillDown}
+                  timeZone={effectiveTimezone}
                 />
               </ScheduleViewShell>
             )}
@@ -615,6 +699,7 @@ export default function SchedulePage() {
                   energies={dayEnergies}
                   selectedDate={currentDate}
                   onSelectDate={handleDrillDown}
+                  timeZone={effectiveTimezone}
                 />
               </ScheduleViewShell>
             )}
@@ -626,6 +711,7 @@ export default function SchedulePage() {
                   date={currentDate}
                   startHour={startHour}
                   pxPerMin={pxPerMin}
+                  timeZone={effectiveTimezone}
                 >
                   {windows.map(w => {
                     const { top, height } = windowRect(w, startHour, pxPerMin)
@@ -871,7 +957,7 @@ export default function SchedulePage() {
             )}
             {view === 'focus' && (
               <ScheduleViewShell key="focus">
-                <FocusTimeline />
+                <FocusTimeline timeZone={effectiveTimezone} />
               </ScheduleViewShell>
             )}
           </AnimatePresence>

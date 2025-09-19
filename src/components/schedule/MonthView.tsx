@@ -5,6 +5,11 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FlameLevel } from "@/components/FlameEmber";
 import FlameEmber from "@/components/FlameEmber";
 import { cn } from "@/lib/utils";
+import {
+  getLocalDateKey,
+  parseDateKey,
+  getWeekdayFromKey,
+} from "@/lib/time/tz";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -19,6 +24,8 @@ interface MonthViewProps {
   selectedDate?: Date;
   /** Callback when a day is selected */
   onSelectDate?: (date: Date) => void;
+  /** Time zone used for deriving local dates */
+  timeZone?: string | null;
 }
 
 /**
@@ -31,13 +38,28 @@ export function MonthView({
   energies,
   selectedDate,
   onSelectDate,
+  timeZone,
 }: MonthViewProps) {
-  const today = useMemo(() => new Date(), []);
+  const currentKey = useMemo(
+    () => getLocalDateKey(date.toISOString(), timeZone),
+    [date, timeZone]
+  );
+  const selectedKey = useMemo(
+    () =>
+      selectedDate ? getLocalDateKey(selectedDate.toISOString(), timeZone) : null,
+    [selectedDate, timeZone]
+  );
+  const todayKey = useMemo(
+    () => getLocalDateKey(new Date().toISOString(), timeZone),
+    [timeZone]
+  );
+
+  const [currentYear, currentMonth] = keyToYearMonth(currentKey);
+  const [todayYear, todayMonth] = keyToYearMonth(todayKey);
+
   const totalMonths = 1200; // ~100 years of months
   const baseIndex = Math.floor(totalMonths / 2);
-  const monthDiff =
-    (date.getFullYear() - today.getFullYear()) * 12 +
-    (date.getMonth() - today.getMonth());
+  const monthDiff = (currentYear - todayYear) * 12 + (currentMonth - todayMonth);
   const currentIndex = baseIndex + monthDiff;
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -62,13 +84,12 @@ export function MonthView({
           position: "relative",
         }}
       >
-        {virtualizer.getVirtualItems().map((item) => {
+        {virtualizer.getVirtualItems().map(item => {
           const offset = item.index - baseIndex;
-          const monthDate = new Date(
-            today.getFullYear(),
-            today.getMonth() + offset,
-            1
-          );
+          const monthNumber = todayMonth + offset;
+          const monthYear = todayYear + Math.floor(monthNumber / 12);
+          const normalizedMonth = ((monthNumber % 12) + 12) % 12;
+          const monthDate = new Date(monthYear, normalizedMonth, 1);
           return (
             <div
               key={item.key}
@@ -83,12 +104,14 @@ export function MonthView({
                 })}
               </h2>
               <MonthGrid
-                year={monthDate.getFullYear()}
-                month={monthDate.getMonth()}
+                year={monthYear}
+                month={normalizedMonth}
                 events={events}
                 energies={energies}
-                selectedDate={selectedDate}
+                selectedKey={selectedKey}
+                todayKey={todayKey}
                 onSelectDate={onSelectDate}
+                timeZone={timeZone}
               />
             </div>
           );
@@ -103,8 +126,10 @@ interface MonthGridProps {
   month: number;
   events?: Record<string, number>;
   energies?: Record<string, FlameLevel>;
-  selectedDate?: Date;
+  selectedKey?: string | null;
+  todayKey?: string | null;
   onSelectDate?: (date: Date) => void;
+  timeZone?: string | null;
 }
 
 type Cell = { day: number; offset: number } | null;
@@ -115,8 +140,10 @@ function MonthGrid({
   month,
   events,
   energies,
-  selectedDate,
+  selectedKey,
+  todayKey,
   onSelectDate,
+  timeZone,
 }: MonthGridProps) {
   const weeks = useMemo<Week[]>(() => {
     const first = new Date(year, month, 1);
@@ -124,15 +151,12 @@ function MonthGrid({
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const cells: Cell[] = [];
 
-    // Fill leading days with empty cells to keep weeks separate
     for (let i = startWeekday - 1; i >= 0; i--) {
       cells.push(null);
     }
-    // Add all days of the current month
     for (let d = 1; d <= daysInMonth; d++) {
       cells.push({ day: d, offset: 0 });
     }
-    // Fill trailing days with empty cells
     while (cells.length % 7 !== 0) {
       cells.push(null);
     }
@@ -140,7 +164,7 @@ function MonthGrid({
     for (let i = 0; i < cells.length; i += 7) {
       const weekDays = cells.slice(i, i + 7);
       const ref =
-        weekDays.find((d) => d && d.offset === 0) ||
+        weekDays.find(d => d && d.offset === 0) ||
         weekDays.find((d): d is Exclude<Cell, null> => d !== null) ||
         { day: 1, offset: 0 };
       const weekDate = new Date(year, month + ref.offset, ref.day);
@@ -149,13 +173,11 @@ function MonthGrid({
     return weeks;
   }, [year, month]);
 
-  const today = useMemo(() => new Date(), []);
-
   return (
     <div className="text-[11px]">
       <div className="relative mb-[6px] grid grid-cols-[24px_repeat(7,1fr)] gap-[6px] text-center text-[var(--text-muted)] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-[var(--hairline)] after:content-['']">
         <div />
-        {dayNames.map((d) => (
+        {dayNames.map(d => (
           <div key={d} className="tracking-wide">
             {d}
           </div>
@@ -168,11 +190,12 @@ function MonthGrid({
             week={week}
             year={year}
             month={month}
-            today={today}
             events={events}
             energies={energies}
-            selectedDate={selectedDate}
+            selectedKey={selectedKey}
+            todayKey={todayKey}
             onSelectDate={onSelectDate}
+            timeZone={timeZone}
           />
         ))}
       </div>
@@ -184,22 +207,24 @@ interface WeekRowProps {
   week: Week;
   year: number;
   month: number;
-  today: Date;
   events?: Record<string, number>;
   energies?: Record<string, FlameLevel>;
-  selectedDate?: Date;
+  selectedKey?: string | null;
+  todayKey?: string | null;
   onSelectDate?: (date: Date) => void;
+  timeZone?: string | null;
 }
 
 const WeekRow = React.memo(function WeekRow({
   week,
   year,
   month,
-  today,
   events,
   energies,
-  selectedDate,
+  selectedKey,
+  todayKey,
   onSelectDate,
+  timeZone,
 }: WeekRowProps) {
   return (
     <div className="relative grid min-h-[48px] grid-cols-[24px_repeat(7,1fr)] gap-[6px] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-[var(--hairline)] after:content-[''] last:after:hidden">
@@ -212,11 +237,12 @@ const WeekRow = React.memo(function WeekRow({
           cell={cell}
           year={year}
           month={month}
-          today={today}
           events={events}
           energies={energies}
-          selectedDate={selectedDate}
+          selectedKey={selectedKey}
+          todayKey={todayKey}
           onSelectDate={onSelectDate}
+          timeZone={timeZone}
         />
       ))}
     </div>
@@ -227,36 +253,36 @@ interface DayCellProps {
   cell: Cell;
   year: number;
   month: number;
-  today: Date;
   events?: Record<string, number>;
   energies?: Record<string, FlameLevel>;
-  selectedDate?: Date;
+  selectedKey?: string | null;
+  todayKey?: string | null;
   onSelectDate?: (date: Date) => void;
+  timeZone?: string | null;
 }
 
 const DayCell = React.memo(function DayCell({
   cell,
   year,
   month,
-  today,
   events,
   energies,
-  selectedDate,
+  selectedKey,
+  todayKey,
   onSelectDate,
+  timeZone,
 }: DayCellProps) {
-  const dayDate = useMemo(
-    () => (cell ? new Date(year, month + cell.offset, cell.day) : null),
-    [year, month, cell]
-  );
-  const key = dayDate ? dayDate.toISOString().slice(0, 10) : "";
-  const count = key && events ? events[key] ?? 0 : 0;
-  const energy = key && energies ? energies[key] : undefined;
-  const isToday = dayDate ? isSameDay(dayDate, today) : false;
-  const isSelected =
-    dayDate && selectedDate ? isSameDay(dayDate, selectedDate) : false;
-  const isWeekend = dayDate
-    ? dayDate.getDay() === 0 || dayDate.getDay() === 6
-    : false;
+  const dayKey = useMemo(() => {
+    if (!cell || cell.offset !== 0) return null;
+    return makeDateKey(year, month + cell.offset, cell.day);
+  }, [cell, year, month]);
+
+  const count = dayKey && events ? events[dayKey] ?? 0 : 0;
+  const energy = dayKey && energies ? energies[dayKey] : undefined;
+  const isSelected = dayKey && selectedKey ? dayKey === selectedKey : false;
+  const isToday = dayKey && todayKey ? dayKey === todayKey : false;
+  const weekday = dayKey ? getWeekdayFromKey(dayKey, timeZone) : null;
+  const isWeekend = weekday === 0 || weekday === 6;
   const dotOpacity = isWeekend ? 0.85 : 1;
 
   const dots = useMemo(() => {
@@ -284,12 +310,14 @@ const DayCell = React.memo(function DayCell({
     return <div className="mt-1 flex justify-center gap-[4px]">{items}</div>;
   }, [count, dotOpacity]);
 
-  if (!cell || !dayDate || cell.offset !== 0) return <div className="min-h-[48px]" />;
+  if (!cell || !dayKey || cell.offset !== 0) return <div className="min-h-[48px]" />;
+
+  const dateForSelect = parseDateKey(dayKey, timeZone);
 
   return (
     <button
       type="button"
-      onClick={() => onSelectDate?.(dayDate)}
+      onClick={() => onSelectDate?.(dateForSelect)}
       aria-current={isSelected ? "date" : undefined}
       className={cn(
         "relative flex min-h-[48px] flex-col items-center justify-center text-[var(--text-primary)] focus:outline-none",
@@ -319,12 +347,19 @@ const DayCell = React.memo(function DayCell({
   );
 });
 
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+function keyToYearMonth(key: string): [number, number] {
+  const [yearStr, monthStr] = key.split("-");
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1;
+  return [Number.isFinite(year) ? year : 0, Number.isFinite(monthIndex) ? monthIndex : 0];
+}
+
+function makeDateKey(year: number, monthIndex: number, day: number): string {
+  const normalizedYear = year + Math.floor(monthIndex / 12);
+  const normalizedMonth = ((monthIndex % 12) + 12) % 12 + 1;
+  const paddedMonth = normalizedMonth.toString().padStart(2, "0");
+  const paddedDay = day.toString().padStart(2, "0");
+  return `${normalizedYear}-${paddedMonth}-${paddedDay}`;
 }
 
 function getWeekNumber(date: Date) {
@@ -338,4 +373,3 @@ function getWeekNumber(date: Date) {
 
 DayCell.displayName = "DayCell";
 WeekRow.displayName = "WeekRow";
-

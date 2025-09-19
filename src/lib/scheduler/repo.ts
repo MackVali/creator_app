@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseBrowser } from '../../../lib/supabase';
 import type { Database } from '../../../types/supabase';
+import { getLocalDateKey, getWeekdayFromKey } from '../time/tz';
 import type { TaskLite, ProjectLite } from './weight';
 
 export type WindowLite = {
@@ -47,11 +48,17 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
 
 export async function fetchWindowsForDate(
   date: Date,
-  client?: Client
+  client?: Client,
+  options?: { timeZone?: string | null }
 ): Promise<WindowLite[]> {
   const supabase = ensureClient(client);
 
-  const weekday = date.getDay();
+  const timeZone = options?.timeZone ?? null;
+  let weekday = date.getDay();
+  if (timeZone) {
+    const dayKey = getLocalDateKey(date.toISOString(), timeZone);
+    weekday = getWeekdayFromKey(dayKey, timeZone);
+  }
   const prevWeekday = (weekday + 6) % 7;
 
   const { data: today, error: err1 } = await supabase
