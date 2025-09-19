@@ -1,4 +1,20 @@
-import React, { useState, useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  CalendarDays,
+  Clock,
+  Copy,
+  Flame as FlameIcon,
+  MoreVertical,
+  PencilLine,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  SunMedium,
+  Trash2,
+  X,
+} from "lucide-react"
+
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber"
 import { useToastHelpers } from "@/components/ui/toast"
 
@@ -31,12 +47,12 @@ interface Props {
 const dayOrder: Day[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const energies: Energy[] = ["no", "low", "medium", "high", "ultra", "extreme"]
 const energyAccent: Record<Energy, string> = {
-  no: "#2A2D31",
-  low: "#2F3338",
-  medium: "#363B41",
-  high: "#3D434A",
-  ultra: "#444C55",
-  extreme: "#4B5560",
+  no: "#818cf8",
+  low: "#38bdf8",
+  medium: "#22d3ee",
+  high: "#34d399",
+  ultra: "#fbbf24",
+  extreme: "#f97316",
 }
 
 // Mock data if none provided
@@ -48,7 +64,7 @@ const mockWindows: WindowItem[] = [
     start: "09:00",
     end: "11:00",
     energy: "high",
-    location: "home",
+    location: "Home Studio",
     active: true,
   },
   {
@@ -58,7 +74,7 @@ const mockWindows: WindowItem[] = [
     start: "18:00",
     end: "19:30",
     energy: "ultra",
-    location: "work",
+    location: "Fitness Club",
     active: false,
   },
   {
@@ -68,7 +84,7 @@ const mockWindows: WindowItem[] = [
     start: "12:00",
     end: "15:00",
     energy: "medium",
-    location: "home",
+    location: "Library",
     active: true,
   },
 ]
@@ -90,16 +106,12 @@ export default function WindowsPolishedUI({
         setLoading(false)
       }, 800)
       return () => clearTimeout(t)
-    } else {
-      setList(windows)
-      setLoading(false)
     }
+    setList(windows)
+    setLoading(false)
   }, [windows])
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">(
-    "all"
-  )
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all")
   const [selectedDays, setSelectedDays] = useState<Set<Day>>(new Set())
   const [energyFilter, setEnergyFilter] = useState<"all" | Energy>("all")
   const [search, setSearch] = useState("")
@@ -142,7 +154,37 @@ export default function WindowsPolishedUI({
     return w
   }, [list, statusFilter, selectedDays, energyFilter, searchDebounced, sort])
 
-  // Drawer state
+  const stats = useMemo(() => {
+    const items = list ?? []
+    const active = items.filter((w) => w.active).length
+    const total = items.length
+    const energyIndices = items
+      .map((w) => (w.energy ? energies.indexOf(w.energy) : -1))
+      .filter((idx) => idx >= 0)
+    const topEnergy =
+      energyIndices.length > 0
+        ? energies[Math.max(...energyIndices) as number]
+        : null
+    return { total, active, topEnergy }
+  }, [list])
+
+  const hasActiveFilters =
+    statusFilter !== "all" ||
+    selectedDays.size > 0 ||
+    energyFilter !== "all" ||
+    Boolean(searchDebounced)
+
+  const filteredCount = filtered.length
+  const allEmpty = !loading && filteredCount === 0
+
+  function resetFilters() {
+    setStatusFilter("all")
+    setSelectedDays(new Set())
+    setEnergyFilter("all")
+    setSearch("")
+    setSort("az")
+  }
+
   const [editing, setEditing] = useState<WindowItem | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<WindowItem | null>(null)
@@ -155,9 +197,7 @@ export default function WindowsPolishedUI({
           if (ok === false) throw new Error("save failed")
         } else {
           setList((prev) =>
-            prev?.map((w) =>
-              w.id === editing.id ? { ...data, id: editing.id } : w
-            )
+            prev?.map((w) => (w.id === editing.id ? { ...data, id: editing.id } : w)),
           )
         }
       } else {
@@ -171,7 +211,8 @@ export default function WindowsPolishedUI({
       }
       setDrawerOpen(false)
       setEditing(null)
-    } catch (e) {
+    } catch (error) {
+      console.error(error)
       toast.error("Failed to save window")
     }
   }
@@ -182,37 +223,52 @@ export default function WindowsPolishedUI({
     setConfirmDelete(null)
   }
 
-  const allEmpty = !loading && (filtered.length === 0)
-
   return (
-    <div className="min-h-screen bg-[#111315] text-[#E6E6E6]">
-      <HeaderBar onNew={() => setDrawerOpen(true)} />
-      <FiltersBar
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-        selectedDays={selectedDays}
-        setSelectedDays={setSelectedDays}
-        energyFilter={energyFilter}
-        setEnergyFilter={setEnergyFilter}
-        search={search}
-        setSearch={setSearch}
-        sort={sort}
-        setSort={setSort}
-      />
-      <div className="p-4 space-y-4">
-        {loading && <LoadingSkeleton />}
-        {allEmpty && <EmptyState onNew={() => setDrawerOpen(true)} />}
-        {!loading && filtered.map((w) => (
-          <WindowCard
-            key={w.id}
-            item={w}
-            onEdit={() => {
-              setEditing(w)
-              setDrawerOpen(true)
-            }}
-            onDelete={() => setConfirmDelete(w)}
-          />
-        ))}
+    <div className="relative min-h-screen overflow-hidden bg-[#04060d] text-slate-100">
+      <div className="pointer-events-none absolute inset-x-0 top-[-20%] h-[520px] bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.25),_transparent_65%)]" />
+      <div className="pointer-events-none absolute inset-x-16 top-1/3 h-[360px] rounded-full bg-[radial-gradient(circle,_rgba(34,211,238,0.18),_transparent_70%)] blur-3xl" />
+      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 pb-16 pt-12">
+        <HeaderBar
+          active={stats.active}
+          highlightEnergy={stats.topEnergy}
+          onNew={() => setDrawerOpen(true)}
+          total={stats.total}
+        />
+        <FiltersPanel
+          energyFilter={energyFilter}
+          filtered={filteredCount}
+          hasFilters={hasActiveFilters}
+          onReset={resetFilters}
+          search={search}
+          selectedDays={selectedDays}
+          setEnergyFilter={setEnergyFilter}
+          setSearch={setSearch}
+          setSelectedDays={setSelectedDays}
+          setSort={setSort}
+          setStatusFilter={setStatusFilter}
+          sort={sort}
+          statusFilter={statusFilter}
+          total={stats.total}
+        />
+        <section className="relative space-y-4">
+          {loading && <LoadingSkeleton />}
+          {!loading && filteredCount > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {filtered.map((w) => (
+                <WindowCard
+                  key={w.id}
+                  item={w}
+                  onDelete={() => setConfirmDelete(w)}
+                  onEdit={() => {
+                    setEditing(w)
+                    setDrawerOpen(true)
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {allEmpty && <EmptyState onNew={() => setDrawerOpen(true)} />}
+        </section>
       </div>
       {drawerOpen && (
         <Drawer
@@ -235,25 +291,78 @@ export default function WindowsPolishedUI({
   )
 }
 
-// HeaderBar
-function HeaderBar({ onNew }: { onNew: () => void }) {
+function HeaderBar({
+  onNew,
+  total,
+  active,
+  highlightEnergy,
+}: {
+  onNew: () => void
+  total: number
+  active: number
+  highlightEnergy: Energy | null
+}) {
+  const energyLabel = highlightEnergy
+    ? `${highlightEnergy.charAt(0).toUpperCase()}${highlightEnergy.slice(1)}`
+    : "–"
   return (
-    <header className="bg-[#1C1F22] px-4 py-3 flex items-center justify-between sticky top-0 z-20">
-      <div>
-        <h1 className="text-lg font-semibold">Windows</h1>
-        <p className="text-sm text-[#A6A6A6]">Manage your scheduling windows</p>
+    <header className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] px-8 py-10 shadow-[0_30px_80px_rgba(15,23,42,0.45)] backdrop-blur">
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-[45%] bg-[radial-gradient(circle_at_left,_rgba(129,140,248,0.16),_transparent_70%)]" />
+      <div className="pointer-events-none absolute -right-10 top-1/2 h-40 w-40 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(52,211,153,0.25),_transparent_70%)] blur-xl" />
+      <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
+            <Sparkles className="h-4 w-4" />
+            Windows
+          </div>
+          <h1 className="mt-4 text-3xl font-semibold text-white md:text-4xl">
+            Shape your ideal week
+          </h1>
+          <p className="mt-3 max-w-xl text-sm text-slate-300">
+            Build time blocks that match your energy. Prioritize the windows that move you
+            forward and keep everything else in sight.
+          </p>
+          <button
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-sky-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:shadow-indigo-500/50"
+            onClick={onNew}
+            type="button"
+          >
+            <Plus className="h-4 w-4" />
+            New window
+          </button>
+        </div>
+        <div className="grid w-full max-w-md gap-3 sm:grid-cols-3 lg:max-w-none lg:grid-cols-3">
+          <StatCard icon={<SunMedium className="h-4 w-4" />} label="Active" value={`${active}`} />
+          <StatCard icon={<CalendarDays className="h-4 w-4" />} label="Total" value={`${total}`} />
+          <StatCard icon={<FlameIcon className="h-4 w-4" />} label="Peak energy" value={energyLabel} />
+        </div>
       </div>
-      <button
-        className="bg-[#22262A] rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-        onClick={onNew}
-      >
-        New Window
-      </button>
     </header>
   )
 }
 
-// FiltersBar
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-5 text-left shadow-[0_20px_40px_rgba(15,23,42,0.35)]">
+      <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.08] text-indigo-200">
+          {icon}
+        </span>
+        {label}
+      </div>
+      <div className="mt-3 text-2xl font-semibold text-white">{value}</div>
+    </div>
+  )
+}
+
 interface FiltersProps {
   statusFilter: "all" | "active" | "inactive"
   setStatusFilter: (v: "all" | "active" | "inactive") => void
@@ -267,7 +376,14 @@ interface FiltersProps {
   setSort: (v: string) => void
 }
 
-function FiltersBar({
+interface FiltersPanelProps extends FiltersProps {
+  total: number
+  filtered: number
+  hasFilters: boolean
+  onReset: () => void
+}
+
+function FiltersPanel({
   statusFilter,
   setStatusFilter,
   selectedDays,
@@ -278,81 +394,135 @@ function FiltersBar({
   setSearch,
   sort,
   setSort,
-}: FiltersProps) {
+  total,
+  filtered,
+  hasFilters,
+  onReset,
+}: FiltersPanelProps) {
   function toggleDay(d: Day) {
     const next = new Set(selectedDays)
     if (next.has(d)) next.delete(d)
     else next.add(d)
     setSelectedDays(next)
   }
+
   const statusOptions: { key: "all" | "active" | "inactive"; label: string }[] = [
     { key: "all", label: "All" },
     { key: "active", label: "Active" },
     { key: "inactive", label: "Inactive" },
   ]
+
   return (
-    <div className="sticky top-[72px] z-10 backdrop-blur bg-[#1C1F22]/95 px-4 py-2 space-y-2">
-      <div className="flex gap-2">
-        {statusOptions.map((o) => (
+    <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-6 shadow-[0_30px_80px_rgba(15,23,42,0.35)] backdrop-blur">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Refine your windows</h2>
+          <p className="text-sm text-slate-300">
+            Showing {filtered} of {total} windows
+          </p>
+        </div>
+        {hasFilters && (
           <button
-            key={o.key}
-            onClick={() => setStatusFilter(o.key)}
-            className={classNames(
-              "flex-1 h-10 rounded-md text-sm",
-              statusFilter === o.key
-                ? "bg-[#22262A]"
-                : "bg-transparent border border-[#2F343A]"
-            )}
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30"
+            onClick={onReset}
+            type="button"
           >
-            {o.label}
+            <RefreshCw className="h-3.5 w-3.5" /> Reset
           </button>
-        ))}
+        )}
       </div>
-      <div className="flex flex-wrap gap-2">
-        {dayOrder.map((d) => (
-          <DayPill key={d} label={d} active={selectedDays.has(d)} onClick={() => toggleDay(d)} />
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <EnergyChip
-          energy="all"
-          label="All"
-          active={energyFilter === "all"}
-          onClick={() => setEnergyFilter("all")}
-        />
-        {energies.map((e) => (
-          <EnergyChip
-            key={e}
-            energy={e}
-            label={e}
-            active={energyFilter === e}
-            onClick={() => setEnergyFilter(e)}
+      <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            className="h-11 w-full rounded-full border border-white/10 bg-white/[0.05] pl-9 pr-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
+            placeholder="Search by name"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
-        ))}
+        </div>
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Sort by
+          </label>
+          <select
+            className="mt-2 h-11 w-full rounded-full border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+          >
+            <option className="bg-slate-900 text-white" value="az">
+              A → Z
+            </option>
+            <option className="bg-slate-900 text-white" value="start">
+              Start time
+            </option>
+            <option className="bg-slate-900 text-white" value="end">
+              End time
+            </option>
+            <option className="bg-slate-900 text-white" value="active">
+              Active first
+            </option>
+          </select>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <input
-          className="flex-1 h-10 rounded-md bg-[#22262A] px-3 text-sm placeholder-[#7C838A] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-          placeholder="Search by name"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select
-          className="h-10 rounded-md bg-[#22262A] px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-        >
-          <option value="az">A→Z</option>
-          <option value="start">Start time</option>
-          <option value="end">End time</option>
-          <option value="active">Active first</option>
-        </select>
+      <div className="mt-6">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Status
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {statusOptions.map((o) => (
+            <button
+              key={o.key}
+              className={classNames(
+                "flex min-w-[108px] items-center justify-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition",
+                statusFilter === o.key
+                  ? "border-transparent bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]"
+                  : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20",
+              )}
+              onClick={() => setStatusFilter(o.key)}
+              type="button"
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
+      <div className="mt-6">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Days of the week
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {dayOrder.map((d) => (
+            <DayPill key={d} active={selectedDays.has(d)} label={d} onClick={() => toggleDay(d)} />
+          ))}
+        </div>
+      </div>
+      <div className="mt-6">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Energy focus
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <EnergyChip
+            active={energyFilter === "all"}
+            energy="all"
+            label="All"
+            onClick={() => setEnergyFilter("all")}
+          />
+          {energies.map((e) => (
+            <EnergyChip
+              key={e}
+              active={energyFilter === e}
+              energy={e}
+              label={e}
+              onClick={() => setEnergyFilter(e)}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
-// DayPill
 function DayPill({
   label,
   active,
@@ -364,10 +534,13 @@ function DayPill({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={classNames(
-        "w-10 h-10 rounded-full text-xs flex items-center justify-center",
-        active ? "bg-[#22262A]" : "bg-transparent border border-[#2F343A]"
+        "rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-wide transition",
+        active
+          ? "border-transparent bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)]"
+          : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20",
       )}
     >
       {label}
@@ -375,7 +548,6 @@ function DayPill({
   )
 }
 
-// EnergyChip
 function EnergyChip({
   energy,
   label,
@@ -387,25 +559,28 @@ function EnergyChip({
   active: boolean
   onClick: () => void
 }) {
-  const accent = energy === "all" ? "#2F343A" : energyAccent[energy as Energy]
+  const accent = energy === "all" ? "#64748b" : energyAccent[energy as Energy]
   return (
     <button
+      type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={classNames(
-        "relative px-3 h-8 rounded-md text-xs flex items-center gap-2 border border-[#2F343A]",
-        active && "bg-[#22262A]"
+        "relative flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold capitalize tracking-wide transition",
+        active
+          ? "border-transparent bg-indigo-500/20 text-indigo-100 shadow-[0_0_15px_rgba(129,140,248,0.45)]"
+          : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20",
       )}
     >
       <span
-        className="absolute left-0 top-0 h-full w-[3px] rounded-l-md"
+        className="h-2.5 w-2.5 rounded-full"
         style={{ background: accent }}
       />
-      <span className="capitalize ml-1">{label}</span>
+      <span>{label}</span>
     </button>
   )
 }
 
-// WindowCard
 function WindowCard({
   item,
   onEdit,
@@ -417,130 +592,210 @@ function WindowCard({
 }) {
   const [menu, setMenu] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!cardRef.current?.contains(e.target as Node)) setMenu(false)
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(false)
+    }
     document.addEventListener("click", onDoc)
-    return () => document.removeEventListener("click", onDoc)
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("click", onDoc)
+      document.removeEventListener("keydown", onKey)
+    }
   }, [])
 
   const startPct = (toMins(item.start) / 1440) * 100
   const endPct = (toMins(item.end) / 1440) * 100
+  const daySummary =
+    item.days.length === 7 ? "Every day" : item.days.join(" · ")
 
   return (
-    <div
+    <article
       ref={cardRef}
-      className="bg-[#1C1F22] border border-[#2F343A] rounded-xl p-4 flex justify-between hover:bg-[#22262A] transition-colors"
+      className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-[0_25px_60px_rgba(15,23,42,0.4)] backdrop-blur transition hover:border-indigo-400/50 hover:bg-white/[0.08]"
     >
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <h3 className="font-medium capitalize">{item.name}</h3>
-          <span
-            className={classNames(
-              "w-2 h-2 rounded-full",
-              item.active ? "bg-[#6DD3A8]" : "bg-[#7C838A]"
-            )}
-          />
-        </div>
-        <div className="flex gap-1">
-          {dayOrder.map((d) => (
-            <span
-              key={d}
-              className={classNames(
-                "w-6 h-6 text-[10px] flex items-center justify-center rounded-full",
-                item.days.includes(d)
-                  ? "bg-[#22262A]"
-                  : "bg-transparent border border-[#2F343A]"
-              )}
-            >
-              {d[0]}
-            </span>
-          ))}
-        </div>
-        <div>
-          <p className="text-sm">
-            {item.start} — {item.end}
-          </p>
-          <TimelineMini start={startPct} end={endPct} />
-        </div>
-        <div className="flex gap-2 flex-wrap items-center">
-          {item.energy && (
-            <span className="px-2 h-6 rounded-md bg-[#22262A] text-xs flex items-center gap-1">
-              <FlameEmber
-                level={item.energy.toUpperCase() as FlameLevel}
-                size="sm"
-              />
-              <span className="capitalize">{item.energy}</span>
-            </span>
-          )}
-          {item.location && (
-            <span className="px-2 h-6 rounded-md bg-[#22262A] text-xs flex items-center">
-              {item.location}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="relative">
-        <button
-          className="px-3 py-1 rounded-md border border-[#2F343A] text-sm focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-          onClick={onEdit}
-        >
-          Edit
-        </button>
-        <button
-          className="ml-2 w-8 h-8 rounded-md border border-[#2F343A] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-          onClick={() => setMenu((m) => !m)}
-        >
-          ⋯
-        </button>
-        {menu && (
-          <div className="absolute right-0 mt-2 w-32 bg-[#1C1F22] border border-[#2F343A] rounded-md z-10">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0 transition group-hover:opacity-100" />
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="text-xl font-semibold text-white">{item.name}</h3>
+              <StatusBadge active={Boolean(item.active)} />
+            </div>
+            <p className="text-sm text-slate-300">{daySummary}</p>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-[#22262A]"
-              onClick={() => {
-                setMenu(false)
-                onEdit()
-              }}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-indigo-400/40 hover:text-white"
+              onClick={onEdit}
+              type="button"
             >
+              <PencilLine className="h-4 w-4" />
               Edit
             </button>
             <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-[#22262A]"
-              onClick={() => {
-                setMenu(false)
-              }}
+              aria-expanded={menu}
+              aria-haspopup="menu"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.02] text-slate-300 transition hover:border-indigo-400/40 hover:text-white"
+              onClick={() => setMenu((m) => !m)}
+              type="button"
             >
-              Duplicate
-            </button>
-            <button
-              className="w-full text-left px-3 py-2 text-sm text-[#E8C268] hover:bg-[#22262A]"
-              onClick={() => {
-                setMenu(false)
-                onDelete()
-              }}
-            >
-              Delete
+              <MoreVertical className="h-4 w-4" />
             </button>
           </div>
-        )}
+        </div>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
+            <span className="inline-flex items-center gap-2 font-medium text-indigo-100">
+              <Clock className="h-4 w-4" />
+              {item.start} – {item.end}
+            </span>
+            <span className="hidden h-4 w-px bg-white/10 sm:block" />
+            <span className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
+              <CalendarDays className="h-4 w-4" />
+              {daySummary}
+            </span>
+          </div>
+          <TimelineMini end={endPct} start={startPct} />
+          <div className="flex flex-wrap gap-2">
+            {dayOrder.map((d) => (
+              <span
+                key={d}
+                className={classNames(
+                  "flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold uppercase tracking-wide",
+                  item.days.includes(d)
+                    ? "border-transparent bg-indigo-500/30 text-indigo-100 shadow-[0_0_10px_rgba(99,102,241,0.35)]"
+                    : "border-white/10 bg-white/[0.03] text-slate-500",
+                )}
+              >
+                {d[0]}
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+            {item.energy && (
+              <span className="inline-flex items-center gap-2 rounded-full bg-indigo-500/15 px-3 py-1 text-indigo-100">
+                <FlameEmber
+                  level={item.energy.toUpperCase() as FlameLevel}
+                  size="sm"
+                />
+                <span className="capitalize">{item.energy}</span>
+              </span>
+            )}
+            {item.location && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 text-slate-200">
+                <Sparkles className="h-3 w-3" />
+                {item.location}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+      {menu && (
+        <div
+          className="absolute right-6 top-16 z-20 w-44 overflow-hidden rounded-2xl border border-white/10 bg-[#050a16]/95 shadow-xl"
+          role="menu"
+        >
+          <button
+            className="flex w-full items-center gap-2 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.06]"
+            onClick={() => {
+              setMenu(false)
+              onEdit()
+            }}
+            type="button"
+          >
+            <PencilLine className="h-4 w-4" /> Edit
+          </button>
+          <button
+            className="flex w-full items-center gap-2 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.06]"
+            onClick={() => setMenu(false)}
+            type="button"
+          >
+            <Copy className="h-4 w-4" /> Duplicate
+          </button>
+          <button
+            className="flex w-full items-center gap-2 px-4 py-3 text-sm text-rose-300 transition hover:bg-rose-500/10"
+            onClick={() => {
+              setMenu(false)
+              onDelete()
+            }}
+            type="button"
+          >
+            <Trash2 className="h-4 w-4" /> Delete
+          </button>
+        </div>
+      )}
+    </article>
+  )
+}
+
+function StatusBadge({ active }: { active: boolean }) {
+  return (
+    <span
+      className={classNames(
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
+        active
+          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
+          : "border-slate-500/40 bg-slate-500/10 text-slate-300",
+      )}
+    >
+      <span
+        className={classNames(
+          "h-2.5 w-2.5 rounded-full",
+          active
+            ? "bg-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
+            : "bg-slate-400",
+        )}
+      />
+      {active ? "Active" : "Paused"}
+    </span>
   )
 }
 
 function TimelineMini({ start, end }: { start: number; end: number }) {
+  const crossesMidnight = end < start
+  const firstWidth = crossesMidnight ? 100 - start : end - start
+  const secondWidth = crossesMidnight ? end : 0
+
   return (
-    <div className="relative h-2 bg-[#22262A] rounded-full mt-1">
+    <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
       <div
-        className="absolute h-2 bg-[#9966CC] rounded-full"
-        style={{ left: `${start}%`, width: `${Math.max(end - start, 2)}%` }}
+        className="absolute inset-y-0 rounded-full bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-300 shadow-[0_0_14px_rgba(59,130,246,0.45)]"
+        style={{
+          left: `${start}%`,
+          width: `${Math.max(firstWidth, 4)}%`,
+        }}
       />
+      {crossesMidnight && (
+        <div
+          className="absolute inset-y-0 rounded-full bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-300 shadow-[0_0_14px_rgba(59,130,246,0.45)]"
+          style={{
+            left: "0%",
+            width: `${Math.max(secondWidth, 4)}%`,
+          }}
+        />
+      )}
     </div>
   )
 }
 
-// Drawer for create/edit
+function createDefaultWindow(): WindowItem {
+  return {
+    id: "",
+    name: "",
+    days: [],
+    start: "08:00",
+    end: "09:00",
+    energy: "no",
+    location: "",
+    active: true,
+  }
+}
+
 function Drawer({
   initial,
   onClose,
@@ -551,17 +806,13 @@ function Drawer({
   onSave: (data: WindowItem) => void
 }) {
   const [form, setForm] = useState<WindowItem>(
-    initial ?? {
-      id: "",
-      name: "",
-      days: [],
-      start: "08:00",
-      end: "09:00",
-      energy: "no",
-      location: "",
-      active: true,
-    }
+    initial ? { ...initial } : createDefaultWindow(),
   )
+
+  useEffect(() => {
+    if (initial) setForm({ ...initial })
+    else setForm(createDefaultWindow())
+  }, [initial])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -582,116 +833,143 @@ function Drawer({
 
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/50 flex justify-end"
-      role="dialog" aria-modal="true"
+      aria-modal="true"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 px-4 py-8 backdrop-blur-sm"
+      role="dialog"
     >
-      <div className="w-full max-w-md h-full bg-[#1C1F22] p-4 overflow-y-auto">
-        <h2 className="text-lg font-semibold mb-4">
-          {initial ? "Edit Window" : "New Window"}
-        </h2>
-        <div className="space-y-4">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border border-white/10 bg-[#080b14]/95 shadow-[0_30px_80px_rgba(15,23,42,0.65)]">
+        <div className="flex items-start justify-between border-b border-white/10 px-6 py-5">
           <div>
-            <label className="block text-sm mb-1">Name</label>
+            <h2 className="text-lg font-semibold text-white">
+              {initial ? "Edit window" : "Create window"}
+            </h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Define when you are available and how the time should feel.
+            </p>
+          </div>
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/30 hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-6 px-6 py-6">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Name
+            </label>
             <input
-              className="w-full h-10 rounded-md bg-[#22262A] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
           <div>
-            <label className="block text-sm mb-1">Days</label>
-            <div className="flex flex-wrap gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Days
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
               {dayOrder.map((d) => (
                 <DayPill
                   key={d}
-                  label={d}
                   active={form.days.includes(d)}
+                  label={d}
                   onClick={() => toggleDay(d)}
                 />
               ))}
             </div>
           </div>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="block text-sm mb-1">Start</label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Start time
+              </label>
               <input
+                className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
                 type="time"
-                className="w-full h-10 rounded-md bg-[#22262A] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
                 value={form.start}
                 onChange={(e) => setForm({ ...form, start: e.target.value })}
               />
             </div>
-            <div className="flex-1">
-              <label className="block text-sm mb-1">End</label>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                End time
+              </label>
               <input
+                className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
                 type="time"
-                className="w-full h-10 rounded-md bg-[#22262A] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
                 value={form.end}
                 onChange={(e) => setForm({ ...form, end: e.target.value })}
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm mb-1">Energy</label>
-            <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Energy focus
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
               {energies.map((e) => (
-                <label
+                <EnergyChip
                   key={e}
-                  className={classNames(
-                    "flex items-center gap-2 h-8 px-2 rounded-md border border-[#2F343A]",
-                    form.energy === e && "bg-[#22262A]"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="energy"
-                    className="hidden"
-                    value={e}
-                    checked={form.energy === e}
-                    onChange={() => setForm({ ...form, energy: e })}
-                  />
-                  <span
-                    className="w-[3px] h-full rounded-sm"
-                    style={{ background: energyAccent[e] }}
-                  />
-                  <span className="capitalize text-xs">{e}</span>
-                </label>
+                  active={form.energy === e}
+                  energy={e}
+                  label={e}
+                  onClick={() => setForm({ ...form, energy: e })}
+                />
               ))}
             </div>
           </div>
           <div>
-            <label className="block text-sm mb-1">Location</label>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Location
+            </label>
             <input
-              className="w-full h-10 rounded-md bg-[#22262A] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
               value={form.location ?? ""}
               onChange={(e) => setForm({ ...form, location: e.target.value })}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              id="active"
-              type="checkbox"
-              className="w-4 h-4 bg-[#22262A] border border-[#2F343A]"
-              checked={form.active}
-              onChange={(e) => setForm({ ...form, active: e.target.checked })}
-            />
-            <label htmlFor="active" className="text-sm">
-              Active
-            </label>
+          <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">Active window</p>
+              <p className="text-xs text-slate-400">
+                Toggle off when you want this slot hidden from scheduling.
+              </p>
+            </div>
+            <button
+              className={classNames(
+                "relative h-6 w-12 rounded-full border border-white/10 transition",
+                form.active ? "bg-emerald-500/70" : "bg-white/[0.08]",
+              )}
+              onClick={() => setForm({ ...form, active: !form.active })}
+              type="button"
+            >
+              <span
+                className={classNames(
+                  "absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white transition",
+                  form.active ? "left-6" : "left-1",
+                )}
+              />
+            </button>
           </div>
         </div>
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="flex items-center justify-end gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-4">
           <button
-            className="h-10 px-4 rounded-md border border-[#2F343A] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30"
             onClick={onClose}
+            type="button"
           >
             Cancel
           </button>
           <button
-            className="h-10 px-4 rounded-md bg-[#22262A] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-sky-500 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-lg shadow-indigo-500/30 transition hover:shadow-indigo-500/50"
             onClick={() => onSave(form)}
+            type="button"
           >
-            Save
+            <Sparkles className="h-4 w-4" /> Save window
           </button>
         </div>
       </div>
@@ -699,7 +977,6 @@ function Drawer({
   )
 }
 
-// Confirm delete sheet
 function ConfirmSheet({
   item,
   onCancel,
@@ -716,26 +993,34 @@ function ConfirmSheet({
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
   }, [onCancel])
+
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/50 flex items-end"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 px-4 py-8 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full bg-[#1C1F22] p-4 rounded-t-xl">
-        <p className="mb-4">Delete window? {item.name} {item.start} — {item.end}</p>
-        <div className="flex justify-end gap-2">
+      <div className="absolute inset-0" onClick={onCancel} />
+      <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-[#080b14]/95 p-6 text-left shadow-[0_30px_80px_rgba(15,23,42,0.6)]">
+        <h3 className="text-lg font-semibold text-white">Delete window?</h3>
+        <p className="mt-2 text-sm text-slate-300">
+          You’re about to remove <span className="font-semibold text-white">{item.name}</span>
+          {" "}({item.start} – {item.end}). This action cannot be undone.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
           <button
-            className="h-10 px-4 rounded-md border border-[#2F343A] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30"
             onClick={onCancel}
+            type="button"
           >
             Cancel
           </button>
           <button
-            className="h-10 px-4 rounded-md bg-[#22262A] text-[#E8C268] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-500 via-pink-500 to-orange-500 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-lg shadow-rose-500/30 transition hover:shadow-rose-500/50"
             onClick={onConfirm}
+            type="button"
           >
-            Confirm
+            <Trash2 className="h-4 w-4" /> Delete
           </button>
         </div>
       </div>
@@ -745,14 +1030,20 @@ function ConfirmSheet({
 
 function EmptyState({ onNew }: { onNew: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="text-4xl mb-4">🪟</div>
-      <p className="mb-4">No windows yet</p>
+    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-8 py-20 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-500/15 text-4xl">
+        🪟
+      </div>
+      <h3 className="mt-6 text-xl font-semibold text-white">No windows yet</h3>
+      <p className="mt-2 max-w-md text-sm text-slate-300">
+        Start by defining the time blocks that match your energy and availability.
+      </p>
       <button
-        className="bg-[#22262A] rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
+        className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-semibold text-slate-100 transition hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white"
         onClick={onNew}
+        type="button"
       >
-        New Window
+        <Plus className="h-4 w-4" /> Create your first window
       </button>
     </div>
   )
@@ -760,12 +1051,17 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-4 animate-pulse">
+    <div className="grid gap-4 md:grid-cols-2">
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="h-32 bg-gradient-to-r from-[#1C1F22] to-[#22262A] rounded-xl"
-        />
+          className="animate-pulse overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-6"
+        >
+          <div className="h-5 w-40 rounded-full bg-white/10" />
+          <div className="mt-4 h-3 rounded-full bg-white/10" />
+          <div className="mt-3 h-3 rounded-full bg-white/10" />
+          <div className="mt-6 h-2 rounded-full bg-white/10" />
+        </div>
       ))}
     </div>
   )
@@ -775,4 +1071,3 @@ function toMins(t: string) {
   const [h, m] = t.split(":").map(Number)
   return h * 60 + m
 }
-
