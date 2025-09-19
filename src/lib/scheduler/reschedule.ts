@@ -143,14 +143,14 @@ export async function scheduleBacklog(
     })
   }
 
-  const queueProjectIds = new Set(queue.map(item => item.id))
+  const initialQueueProjectIds = new Set(queue.map(item => item.id))
   const rangeEnd = addDays(baseStart, 28)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
     baseStart,
     rangeEnd,
-    queueProjectIds
+    initialQueueProjectIds
   )
   if (dedupe.error) {
     result.error = dedupe.error
@@ -188,6 +188,34 @@ export async function scheduleBacklog(
 
     for (const project of projectItems) {
       enqueue(project)
+    }
+  }
+
+  const finalQueueProjectIds = new Set(queue.map(item => item.id))
+  let needsSecondDedupe = finalQueueProjectIds.size !== initialQueueProjectIds.size
+  if (!needsSecondDedupe) {
+    for (const id of finalQueueProjectIds) {
+      if (!initialQueueProjectIds.has(id)) {
+        needsSecondDedupe = true
+        break
+      }
+    }
+  }
+
+  if (needsSecondDedupe) {
+    const fallbackDedupe = await dedupeScheduledProjects(
+      supabase,
+      userId,
+      baseStart,
+      rangeEnd,
+      finalQueueProjectIds
+    )
+    if (fallbackDedupe.error) {
+      result.error = fallbackDedupe.error
+      return result
+    }
+    if (fallbackDedupe.failures.length > 0) {
+      result.failures.push(...fallbackDedupe.failures)
     }
   }
 
