@@ -129,6 +129,7 @@ type SchedulerDebugState = {
   runAt: string
   failures: SchedulerRunFailure[]
   placedCount: number
+  placedProjectIds: string[]
   error: unknown
 }
 
@@ -164,9 +165,24 @@ function parseSchedulerDebugPayload(
   const placedCount = Array.isArray(scheduleValue.placed)
     ? scheduleValue.placed.length
     : 0
+  const placedProjectIds = Array.isArray(scheduleValue.placed)
+    ? Array.from(
+        new Set(
+          scheduleValue.placed
+            .map(entry => {
+              if (!entry || typeof entry !== 'object') return null
+              const value = entry as { source_id?: unknown }
+              const id = value.source_id
+              return typeof id === 'string' && id.length > 0 ? id : null
+            })
+            .filter((value): value is string => Boolean(value))
+        )
+      )
+    : []
   return {
     failures: parseSchedulerFailures(scheduleValue.failures),
     placedCount,
+    placedProjectIds,
     error: scheduleValue.error ?? null,
   }
 }
@@ -273,6 +289,12 @@ export default function SchedulePage() {
   const pxPerMin = 2
   const year = currentDate.getFullYear()
 
+  const refreshScheduledProjectIds = useCallback(async () => {
+    if (!userId) return
+    const ids = await fetchScheduledProjectIds(userId)
+    setScheduledProjectIds(new Set(ids))
+  }, [userId])
+
   useEffect(() => {
     setSchedulerDebug(null)
   }, [userId])
@@ -309,14 +331,19 @@ export default function SchedulePage() {
         setWindows(ws)
         setTasks(ts)
         setProjects(Object.values(pm))
-        setScheduledProjectIds(new Set(scheduledIds))
+        setScheduledProjectIds(prev => {
+          const next = new Set(prev)
+          for (const id of scheduledIds) {
+            if (id) next.add(id)
+          }
+          return next
+        })
       } catch (e) {
         if (!active) return
         console.error(e)
         setWindows([])
         setTasks([])
         setProjects([])
-        setScheduledProjectIds(new Set())
       } finally {
         if (!active) return
         setMetaStatus('loaded')
@@ -728,6 +755,19 @@ export default function SchedulePage() {
           runAt: new Date().toISOString(),
           ...parsed,
         })
+        if (parsed.placedProjectIds.length > 0) {
+          setScheduledProjectIds(prev => {
+            let changed = false
+            const next = new Set(prev)
+            for (const id of parsed.placedProjectIds) {
+              if (!next.has(id)) {
+                next.add(id)
+                changed = true
+              }
+            }
+            return changed ? next : prev
+          })
+        }
       } else {
         if (parseError) {
           console.error('Failed to parse scheduler response', parseError)
@@ -741,6 +781,7 @@ export default function SchedulePage() {
           runAt: new Date().toISOString(),
           failures: [],
           placedCount: 0,
+          placedProjectIds: [],
           error: fallbackError,
         })
       }
@@ -750,6 +791,7 @@ export default function SchedulePage() {
         runAt: new Date().toISOString(),
         failures: [],
         placedCount: 0,
+        placedProjectIds: [],
         error,
       })
     } finally {
@@ -759,8 +801,13 @@ export default function SchedulePage() {
       } catch (error) {
         console.error('Failed to reload schedule instances', error)
       }
+      try {
+        await refreshScheduledProjectIds()
+      } catch (error) {
+        console.error('Failed to refresh scheduled project history', error)
+      }
     }
-  }, [userId])
+  }, [userId, refreshScheduledProjectIds])
 
   useEffect(() => {
     autoScheduledForRef.current = null
