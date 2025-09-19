@@ -179,9 +179,25 @@ function WindowLabel({
   )
 }
 
-function utcDayRange(d: Date) {
-  const startUTC = new Date(d.getTime())
-  const endUTC = new Date(startUTC.getTime() + DAY_MS)
+function utcDayRange(baseDate: Date, timeZone: string) {
+  const dayParts = getZonedDateTimeParts(baseDate, timeZone)
+  const startUTC = zonedTimeToUtc(
+    {
+      year: dayParts.year,
+      month: dayParts.month,
+      day: dayParts.day,
+    },
+    timeZone,
+  )
+  const nextDay = new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day + 1))
+  const endUTC = zonedTimeToUtc(
+    {
+      year: nextDay.getUTCFullYear(),
+      month: nextDay.getUTCMonth() + 1,
+      day: nextDay.getUTCDate(),
+    },
+    timeZone,
+  )
   return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
@@ -1081,7 +1097,7 @@ export default function SchedulePage() {
       if (!active) return
       setInstancesStatus('loading')
       try {
-        const { startUTC, endUTC } = utcDayRange(currentDate)
+        const { startUTC, endUTC } = utcDayRange(currentDate, timezone)
         const { data, error } = await fetchInstancesForRange(
           userId,
           startUTC,
@@ -1219,7 +1235,7 @@ export default function SchedulePage() {
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
     if (instances.length > 0) return
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDate)
+    const { startUTC } = utcDayRange(currentDate, timezone)
     const key = `${userId}:${startUTC}`
     if (autoScheduledForRef.current === key) return
     autoScheduledForRef.current = key
