@@ -1,13 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
+import { getZonedDateTimeParts } from "@/lib/time/tz";
 
 interface DayTimelineProps {
   startHour?: number;
   endHour?: number;
   pxPerMin?: number;
-  date?: Date;
+  timeZone: string;
+  dayKey?: string | null;
   children?: ReactNode;
 }
 
@@ -15,7 +17,8 @@ export function DayTimeline({
   startHour = 0,
   endHour = 24,
   pxPerMin = 2,
-  date = new Date(),
+  timeZone,
+  dayKey,
   children,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
@@ -23,29 +26,41 @@ export function DayTimeline({
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isSameDay(date, new Date())) {
+    if (!dayKey) {
       setNowMinutes(null);
       return;
     }
 
     function update() {
-      const d = new Date();
-      const minutes = d.getHours() * 60 + d.getMinutes();
+      const nowParts = getZonedDateTimeParts(new Date(), timeZone);
+      if (nowParts.dayKey !== dayKey) {
+        setNowMinutes((prev) => (prev !== null ? null : prev));
+        return;
+      }
+      const minutes =
+        nowParts.hour * 60 +
+        nowParts.minute +
+        nowParts.second / 60 +
+        nowParts.millisecond / 60000;
       setNowMinutes(minutes - startHour * 60);
     }
+
     update();
-    const id = setInterval(update, 30_000);
-    return () => clearInterval(id);
-  }, [startHour, date]);
+    const id = window.setInterval(update, 30_000);
+    return () => window.clearInterval(id);
+  }, [dayKey, timeZone, startHour]);
 
   const showNowLine =
     nowMinutes !== null && nowMinutes >= 0 && nowMinutes <= totalMinutes;
   const nowTop = (nowMinutes ?? 0) * pxPerMin;
 
-  const hours: number[] = [];
-  for (let h = Math.ceil(startHour); h < endHour; h++) {
-    hours.push(h);
-  }
+  const hours = useMemo(() => {
+    const list: number[] = [];
+    for (let h = Math.ceil(startHour); h < endHour; h++) {
+      list.push(h);
+    }
+    return list;
+  }, [startHour, endHour]);
 
   return (
     <>
@@ -83,19 +98,19 @@ export function DayTimeline({
               className="absolute flex items-center gap-1 text-xs text-white"
               style={{ top: nowTop - 8, left: 4 }}
             >
-              <Clock className="h-3 w-3" />
-              <span>Now</span>
-            </div>
-            <div
-              className="absolute right-0 text-xs text-white pr-2"
-              style={{ top: nowTop - 8 }}
-            >
-              {formatTime(nowMinutes! + startHour * 60)}
-            </div>
-          </>
-        )}
-      </div>
-    </>
+          <Clock className="h-3 w-3" />
+          <span>Now</span>
+        </div>
+        <div
+          className="absolute right-0 text-xs text-white pr-2"
+          style={{ top: nowTop - 8 }}
+        >
+          {formatTime(nowMinutes! + startHour * 60)}
+        </div>
+      </>
+    )}
+  </div>
+</>
   );
 }
 
@@ -112,12 +127,4 @@ function formatTime(totalMinutes: number) {
   const hour12 = hours % 12 === 0 ? 12 : hours % 12;
   const minuteStr = minutes.toString().padStart(2, "0");
   return `${hour12}:${minuteStr}`;
-}
-
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
 }

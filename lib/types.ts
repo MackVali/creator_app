@@ -111,6 +111,7 @@ export interface Profile {
   theme_color?: string;
   font_family?: string;
   accent_color?: string;
+  timezone?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -178,6 +179,7 @@ export interface ProfileFormData {
   theme_color?: string;
   font_family?: string;
   accent_color?: string;
+  timezone?: string | null;
 }
 
 // Linked Account Form Data
