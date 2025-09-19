@@ -2,6 +2,7 @@
 
 import { Target, FolderOpen, CheckSquare, Repeat, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { toLocal } from '@/lib/time/tz'
 
 interface CreateSheetProps {
   isOpen: boolean
@@ -64,14 +65,14 @@ export function CreateSheet({ isOpen, onClose, selectedTime }: CreateSheetProps)
                 <div className="text-zinc-200 font-medium">{action.name}</div>
                 {selectedTime && (
                   <div className="text-sm text-zinc-400">
-                    {new Date(selectedTime.start).toLocaleTimeString('en-US', { 
-                      hour: 'numeric', 
+                    {toLocal(selectedTime.start).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
                       minute: '2-digit',
-                      hour12: true 
-                    })} - {new Date(selectedTime.end).toLocaleTimeString('en-US', { 
-                      hour: 'numeric', 
+                      hour12: true
+                    })} - {toLocal(selectedTime.end).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
                       minute: '2-digit',
-                      hour12: true 
+                      hour12: true
                     })}
                   </div>
                 )}

@@ -43,7 +43,7 @@ import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
-import { toLocal } from '@/lib/time/tz'
+import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -302,7 +302,7 @@ export default function SchedulePage() {
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', currentDate.toISOString().slice(0, 10))
+    params.set('date', formatLocalDateKey(currentDate))
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [view, currentDate, router, pathname])
 
@@ -392,7 +392,7 @@ export default function SchedulePage() {
     const map: Record<string, FlameLevel> = {}
     for (const inst of instances) {
       const start = toLocal(inst.start_utc)
-      const key = start.toISOString().slice(0, 10)
+      const key = formatLocalDateKey(start)
       const level = (inst.energy_resolved?.toUpperCase() as FlameLevel) || 'NO'
       const current = map[key]
       if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
