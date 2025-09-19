@@ -214,6 +214,21 @@ export default function SchedulePage() {
     return map
   }, [tasks])
 
+  const tasksByProjectId = useMemo(() => {
+    const map: Record<string, TaskLite[]> = {}
+    for (const task of tasks) {
+      const projectId = task.project_id
+      if (!projectId) continue
+      const existing = map[projectId]
+      if (existing) {
+        existing.push(task)
+      } else {
+        map[projectId] = [task]
+      }
+    }
+    return map
+  }, [tasks])
+
   const projectMap = useMemo(() => {
     const map: Record<string, typeof projectItems[number]> = {}
     for (const p of projectItems) map[p.id] = p
@@ -263,6 +278,17 @@ export default function SchedulePage() {
     }
     return set
   }, [projectInstances])
+
+  const unscheduledProjects = useMemo(() => {
+    return projectItems.filter(project => !projectInstanceIds.has(project.id))
+  }, [projectItems, projectInstanceIds])
+
+  const unscheduledTaskCount = useMemo(() => {
+    return unscheduledProjects.reduce((sum, project) => {
+      const relatedTasks = tasksByProjectId[project.id] ?? []
+      return sum + relatedTasks.length
+    }, 0)
+  }, [unscheduledProjects, tasksByProjectId])
 
   const taskInstancesByProject = useMemo(() => {
     const map: Record<
@@ -876,6 +902,76 @@ export default function SchedulePage() {
             )}
           </AnimatePresence>
         </div>
+        {metaStatus === 'loaded' && instancesStatus === 'loaded' && (
+          <div className="rounded-lg border border-dashed border-amber-500/40 bg-amber-500/10 p-4 text-[11px] text-amber-100">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-amber-200">
+              <span className="font-semibold uppercase tracking-wide">
+                Unscheduled projects (debug)
+              </span>
+              <span>
+                {unscheduledProjects.length} project
+                {unscheduledProjects.length === 1 ? '' : 's'}
+                {unscheduledTaskCount > 0 && (
+                  <>
+                    {' '}
+                    · {unscheduledTaskCount} task
+                    {unscheduledTaskCount === 1 ? '' : 's'}
+                  </>
+                )}
+              </span>
+            </div>
+            {unscheduledProjects.length === 0 ? (
+              <p className="mt-2 text-amber-200/80">
+                All projects currently have at least one scheduled instance.
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {unscheduledProjects.map(project => {
+                  const relatedTasks = tasksByProjectId[project.id] ?? []
+                  return (
+                    <li
+                      key={project.id}
+                      className="rounded-md bg-amber-500/5 p-3 text-amber-100"
+                    >
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <div className="text-sm font-medium text-amber-50">
+                          {project.name || 'Untitled project'}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wide text-amber-200/70">
+                          {project.id}
+                        </div>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-amber-200/70">
+                        <span>Stage: {project.stage}</span>
+                        <span>Priority: {project.priority}</span>
+                        <span>Duration: {Math.round(project.duration_min)}m</span>
+                        <span>Energy: {project.energy}</span>
+                      </div>
+                      {relatedTasks.length > 0 ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-50">
+                          {relatedTasks.map(task => (
+                            <li key={task.id}>
+                              <div className="flex flex-wrap items-baseline justify-between gap-2 text-[11px]">
+                                <span className="font-medium">{task.name}</span>
+                                <span className="text-[10px] text-amber-200/70">
+                                  {task.duration_min}m · {task.priority} · {task.stage}
+                                </span>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-2 text-[10px] text-amber-200/70">
+                          No ready tasks linked to this project.
+                        </p>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   )
