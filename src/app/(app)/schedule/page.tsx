@@ -939,7 +939,11 @@ export default function SchedulePage() {
                       outlineOffset: '-1px',
                     }
                     return (
-                      <AnimatePresence key={instance.id} initial={false}>
+                      <AnimatePresence
+                        key={instance.id}
+                        initial={false}
+                        mode="wait"
+                      >
                         {!isExpanded || tasksForProject.length === 0 ? (
                           <motion.div
                             key="project"
@@ -1005,82 +1009,107 @@ export default function SchedulePage() {
                             />
                           </motion.div>
                         ) : (
-                          tasksForProject.map(taskInfo => {
-                            const { instance: taskInstance, task, start, end } = taskInfo
-                            const tStartMin = start.getHours() * 60 + start.getMinutes()
-                            const tTop = (tStartMin - startHour * 60) * pxPerMin
-                            const tHeight =
-                              ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                            const tStyle: CSSProperties = {
-                              top: tTop,
-                              height: tHeight,
-                              boxShadow: 'var(--elev-card)',
-                              outline: '1px solid var(--event-border)',
-                              outlineOffset: '-1px',
-                            }
-                            const progress =
-                              (task as { progress?: number }).progress ?? 0
-                            return (
                           <motion.div
-                            key={taskInstance.id}
-                            aria-label={`Task ${task.name}`}
-                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                            style={tStyle}
-                            onClick={() =>
-                              setExpandedProjects(prev => {
-                                const next = new Set(prev)
-                                next.delete(projectId)
-                                return next
-                              })
+                            key="tasks"
+                            initial={
+                              prefersReducedMotion
+                                ? false
+                                : { opacity: 0, y: 4 }
                             }
-                                initial={
-                                  prefersReducedMotion
-                                    ? false
-                                    : { opacity: 0, y: 4 }
-                                }
-                                animate={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : { opacity: 1, y: 0 }
-                                }
-                                exit={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : { opacity: 0, y: 4 }
-                                }
-                              >
-                                {renderInstanceActions(taskInstance.id, { projectId })}
-                                <div className="flex flex-col">
-                                  <span className="truncate text-sm font-medium">
-                                    {task.name}
-                                  </span>
-                                  <div className="text-xs text-zinc-200/70">
-                                    {Math.round(
-                                      (end.getTime() - start.getTime()) / 60000
-                                    )}
-                                    m
+                            animate={
+                              prefersReducedMotion
+                                ? undefined
+                                : { opacity: 1, y: 0 }
+                            }
+                            exit={
+                              prefersReducedMotion
+                                ? undefined
+                                : { opacity: 0, y: 4 }
+                            }
+                            transition={
+                              prefersReducedMotion
+                                ? undefined
+                                : { delay: index * 0.02 }
+                            }
+                          >
+                            {tasksForProject.map(taskInfo => {
+                              const { instance: taskInstance, task, start, end } = taskInfo
+                              const tStartMin =
+                                start.getHours() * 60 + start.getMinutes()
+                              const tTop = (tStartMin - startHour * 60) * pxPerMin
+                              const tHeight =
+                                ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+                              const tStyle: CSSProperties = {
+                                top: tTop,
+                                height: tHeight,
+                                boxShadow: 'var(--elev-card)',
+                                outline: '1px solid var(--event-border)',
+                                outlineOffset: '-1px',
+                              }
+                              const progress =
+                                (task as { progress?: number }).progress ?? 0
+                              return (
+                                <motion.div
+                                  key={taskInstance.id}
+                                  aria-label={`Task ${task.name}`}
+                                  className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                                  style={tStyle}
+                                  onClick={() =>
+                                    setExpandedProjects(prev => {
+                                      const next = new Set(prev)
+                                      next.delete(projectId)
+                                      return next
+                                    })
+                                  }
+                                  initial={
+                                    prefersReducedMotion
+                                      ? false
+                                      : { opacity: 0, y: 4 }
+                                  }
+                                  animate={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : { opacity: 1, y: 0 }
+                                  }
+                                  exit={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : { opacity: 0, y: 4 }
+                                  }
+                                >
+                                  {renderInstanceActions(taskInstance.id, { projectId })}
+                                  <div className="flex flex-col">
+                                    <span className="truncate text-sm font-medium">
+                                      {task.name}
+                                    </span>
+                                    <div className="text-xs text-zinc-200/70">
+                                      {Math.round(
+                                        (end.getTime() - start.getTime()) / 60000
+                                      )}
+                                      m
+                                    </div>
                                   </div>
-                                </div>
-                                {task.skill_icon && (
-                                  <span
-                                    className="ml-2 text-lg leading-none flex-shrink-0"
-                                    aria-hidden
-                                  >
-                                    {task.skill_icon}
-                                  </span>
-                                )}
-                                <FlameEmber
-                                  level={(task.energy as FlameLevel) || 'NO'}
-                                  size="sm"
-                                  className="absolute -top-1 -right-1"
-                                />
-                                <div
-                                  className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                                  style={{ width: `${progress}%` }}
-                                />
-                              </motion.div>
-                            )
-                          })
+                                  {task.skill_icon && (
+                                    <span
+                                      className="ml-2 text-lg leading-none flex-shrink-0"
+                                      aria-hidden
+                                    >
+                                      {task.skill_icon}
+                                    </span>
+                                  )}
+                                  <FlameEmber
+                                    level={(task.energy as FlameLevel) || 'NO'}
+                                    size="sm"
+                                    className="absolute -top-1 -right-1"
+                                  />
+                                  <div
+                                    className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </motion.div>
+                              )
+                            })}
+                          </motion.div>
                         )}
                       </AnimatePresence>
                     )
