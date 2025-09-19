@@ -26,20 +26,44 @@ describe("scheduleBacklog", () => {
 
   const createSupabaseMock = () => {
     let lastEqValue: string | null = null;
-    const single = vi.fn(async () => ({
+    const updateSingle = vi.fn(async () => ({
       data: { id: lastEqValue },
       error: null,
       count: null,
       status: 200,
       statusText: "OK",
     }));
-    const select = vi.fn(() => ({ single }));
-    const eq = vi.fn((_: string, value: string) => {
+    const updateSelect = vi.fn(() => ({ single: updateSingle }));
+    const updateEq = vi.fn((_: string, value: string) => {
       lastEqValue = value;
-      return { select };
+      return { select: updateSelect };
     });
-    const update = vi.fn(() => ({ eq }));
-    const from = vi.fn(() => ({ update }));
+    const update = vi.fn(() => ({ eq: updateEq }));
+
+    const profileMaybeSingle = vi.fn(async () => ({
+      data: { timezone: "UTC" },
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+    const profileSelect = vi.fn(() => ({
+      eq: vi.fn(() => ({ maybeSingle: profileMaybeSingle })),
+    }));
+
+    const from = vi.fn((table: string) => {
+      if (table === "profiles") {
+        return {
+          select: profileSelect,
+        } as unknown as {
+          select: ReturnType<typeof profileSelect>;
+        };
+      }
+      return { update } as unknown as {
+        update: ReturnType<typeof update>;
+      };
+    });
+
     const client = { from } as unknown as ScheduleBacklogClient;
     return { client, update };
   };
@@ -150,7 +174,7 @@ describe("scheduleBacklog", () => {
   });
 
   it("skips already scheduled projects when falling back to enqueue all", async () => {
-    const mockClient = {} as ScheduleBacklogClient;
+    const { client: mockClient } = createSupabaseMock();
     await scheduleBacklog(userId, baseDate, mockClient);
 
     expect(fetchInstancesForRangeSpy).toHaveBeenCalledTimes(2);

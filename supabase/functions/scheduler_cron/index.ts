@@ -4,6 +4,7 @@ import {
   type PostgrestError,
   type SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2?dts'
+import { DateTime } from 'https://esm.sh/luxon@3.5.0?dts'
 import type { Database } from '../../../types/supabase.ts'
 
 type Client = SupabaseClient<Database>
@@ -69,7 +70,24 @@ async function markMissedAndQueue(client: Client, userId: string, now: Date) {
     .lt('end_utc', cutoff)
 }
 
+async function fetchUserTimezone(client: Client, userId: string): Promise<string> {
+  const { data, error } = await client
+    .from('profiles')
+    .select('timezone')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('fetchUserTimezone error', error)
+    return 'UTC'
+  }
+
+  const tz = data?.timezone
+  return typeof tz === 'string' && tz.length > 0 ? tz : 'UTC'
+}
+
 async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
+  const timeZone = await fetchUserTimezone(client, userId)
   const missed = await fetchMissedInstances(client, userId)
   if (missed.error) return { placed: [], failures: [], error: missed.error }
 
@@ -88,7 +106,7 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     instanceId?: string | null
   }
 
-  const baseStart = startOfDay(baseDate)
+  const baseStart = startOfDay(baseDate, timeZone)
   const queue: QueueItem[] = []
   const failures: { itemId: string; reason: string; detail?: unknown }[] = []
   const seenMissedProjects = new Set<string>()
@@ -145,7 +163,7 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     })
   }
 
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEnd = addDays(baseStart, 28, timeZone)
   const dedupe = await dedupeScheduledProjects(
     client,
     userId,
@@ -191,8 +209,14 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(client, userId, day, item)
+      const day = addDays(baseStart, offset, timeZone)
+      const windows = await fetchCompatibleWindowsForItem(
+        client,
+        userId,
+        day,
+        item,
+        timeZone
+      )
       if (windows.length === 0) continue
 
       const placedInstance = await placeItemInWindows(
@@ -448,15 +472,16 @@ async function fetchCompatibleWindowsForItem(
   client: Client,
   userId: string,
   date: Date,
-  item: { energy: string; duration_min: number }
+  item: { energy: string; duration_min: number },
+  timeZone: string
 ) {
-  const windows = await fetchWindowsForDate(client, userId, date)
+  const windows = await fetchWindowsForDate(client, userId, date, timeZone)
   const itemIdx = energyIndex(item.energy)
   const compatible = windows.filter(window => energyIndex(window.energy) >= itemIdx)
   return compatible.map(window => ({
     id: window.id,
-    startLocal: resolveWindowStart(window, date),
-    endLocal: resolveWindowEnd(window, date),
+    startLocal: resolveWindowStart(window, date, timeZone),
+    endLocal: resolveWindowEnd(window, date, timeZone),
   }))
 }
 
@@ -470,8 +495,14 @@ type WindowRecord = {
   fromPrevDay?: boolean
 }
 
-async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
-  const weekday = date.getDay()
+async function fetchWindowsForDate(
+  client: Client,
+  userId: string,
+  date: Date,
+  timeZone: string
+) {
+  const target = DateTime.fromJSDate(date, { zone: 'utc' }).setZone(timeZone)
+  const weekday = target.isValid ? target.weekday % 7 : date.getDay()
   const prevWeekday = (weekday + 6) % 7
 
   const [{ data: today, error: errToday }, { data: prev, error: errPrev }] = await Promise.all([
@@ -663,36 +694,44 @@ async function rescheduleInstance(
   return data
 }
 
-function resolveWindowStart(window: WindowRecord, date: Date) {
+function resolveWindowStart(window: WindowRecord, date: Date, timeZone: string) {
   const [hour = 0, minute = 0] = window.start_local.split(':').map(Number)
-  const base = startOfDay(date)
-  if (window.fromPrevDay) base.setDate(base.getDate() - 1)
-  const start = new Date(base)
-  start.setHours(hour, minute, 0, 0)
-  return start
-}
-
-function resolveWindowEnd(window: WindowRecord, date: Date) {
-  const [hour = 0, minute = 0] = window.end_local.split(':').map(Number)
-  const end = startOfDay(date)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(window, date)
-  if (end <= start) {
-    end.setDate(end.getDate() + 1)
+  let base = DateTime.fromJSDate(date, { zone: 'utc' })
+    .setZone(timeZone)
+    .startOf('day')
+  if (window.fromPrevDay) {
+    base = base.minus({ days: 1 })
   }
-  return end
+  const start = base.plus({ hours: hour, minutes: minute })
+  return start.toUTC().toJSDate()
 }
 
-function startOfDay(date: Date) {
-  const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  return copy
+function resolveWindowEnd(window: WindowRecord, date: Date, timeZone: string) {
+  const [hour = 0, minute = 0] = window.end_local.split(':').map(Number)
+  const start = DateTime.fromJSDate(resolveWindowStart(window, date, timeZone), { zone: 'utc' })
+    .setZone(timeZone)
+  let end = DateTime.fromJSDate(date, { zone: 'utc' }).setZone(timeZone).startOf('day')
+  end = end.plus({ hours: hour, minutes: minute })
+  if (end <= start) {
+    end = end.plus({ days: 1 })
+  }
+  return end.toUTC().toJSDate()
 }
 
-function addDays(date: Date, amount: number) {
-  const copy = new Date(date)
-  copy.setDate(copy.getDate() + amount)
-  return copy
+function startOfDay(date: Date, timeZone: string) {
+  return DateTime.fromJSDate(date, { zone: 'utc' })
+    .setZone(timeZone)
+    .startOf('day')
+    .toUTC()
+    .toJSDate()
+}
+
+function addDays(date: Date, amount: number, timeZone: string) {
+  return DateTime.fromJSDate(date, { zone: 'utc' })
+    .setZone(timeZone)
+    .plus({ days: amount })
+    .toUTC()
+    .toJSDate()
 }
 
 function addMin(date: Date, minutes: number) {
