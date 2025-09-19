@@ -6,7 +6,7 @@ import { Section } from "@/components/ui/Section";
 import { LevelBanner } from "@/components/ui/LevelBanner";
 import { MonumentContainer } from "@/components/ui/MonumentContainer";
 import SkillsCarousel from "./_skills/SkillsCarousel";
-import { GoalFolderCard } from "./components/GoalFolderCard";
+import { GoalFolderCard } from "@/components/goals/GoalFolderCard";
 import type { Goal, Project } from "../goals/types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";

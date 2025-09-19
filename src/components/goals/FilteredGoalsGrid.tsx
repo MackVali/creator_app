@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFilteredGoals } from "@/lib/hooks/useFilteredGoals";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
-import { GoalFolderCard } from "@/app/(app)/dashboard/components/GoalFolderCard";
+import { GoalFolderCard } from "@/components/goals/GoalFolderCard";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 
 interface FilteredGoalsGridProps {
@@ -71,11 +71,51 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
+function goalStatusToStatus(status?: string | null): Goal["status"] {
+  switch (status) {
+    case "COMPLETED":
+    case "Completed":
+    case "DONE":
+      return "Completed";
+    case "INACTIVE":
+    case "Inactive":
+      return "Inactive";
+    case "OVERDUE":
+    case "Overdue":
+      return "Overdue";
+    case "ACTIVE":
+    case "Active":
+    case "IN_PROGRESS":
+    case "IN PROGRESS":
+    default:
+      return "Active";
+  }
+}
+
 export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGridProps) {
   const { goals, loading: goalsLoading, error } = useFilteredGoals({ entity, id, limit: 12 });
   const [active, setActive] = useState("Active");
   const [goalFolders, setGoalFolders] = useState<Goal[]>([]);
   const [projLoading, setProjLoading] = useState(true);
+
+  const matchesFilter = (goal: Goal) => {
+    const status = goal.status ?? (goal.active === false ? "Inactive" : "Active");
+
+    switch (active) {
+      case "Active":
+        return status === "Active" && goal.active !== false;
+      case "Blocked":
+        return (
+          status === "Inactive" ||
+          status === "Overdue" ||
+          goal.active === false
+        );
+      case "Completed":
+        return status === "Completed";
+      default:
+        return true;
+    }
+  };
 
   useEffect(() => {
     const loadProjects = async () => {
@@ -111,18 +151,23 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
         projectsByGoal[p.goal_id].push(proj);
       });
 
-      const mapped: Goal[] = goals.map((g) => ({
-        id: g.id,
-        title: g.name,
-        priority: mapPriority(g.priority),
-        energy: mapEnergy(g.energy),
-        progress: 0,
-        status: "Active",
-        active: true,
-        updatedAt: g.created_at,
-        projects: projectsByGoal[g.id] || [],
-        monumentId: g.monument_id ?? undefined,
-      }));
+      const mapped: Goal[] = goals.map((g) => {
+        const status = goalStatusToStatus(g.status);
+        const isActive = g.active ?? status === "Active";
+
+        return {
+          id: g.id,
+          title: g.name,
+          priority: mapPriority(g.priority),
+          energy: mapEnergy(g.energy),
+          progress: 0,
+          status,
+          active: isActive,
+          updatedAt: g.created_at,
+          projects: projectsByGoal[g.id] || [],
+          monumentId: g.monument_id ?? undefined,
+        };
+      });
 
       setGoalFolders(mapped);
       setProjLoading(false);
@@ -134,6 +179,19 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
   }, [goals, goalsLoading]);
 
   const loading = goalsLoading || projLoading;
+  const filteredGoalFolders = goalFolders.filter(matchesFilter);
+  const hasGoals = goalFolders.length > 0;
+  const hasFilteredGoals = filteredGoalFolders.length > 0;
+  const emptyStateMessage =
+    entity === "skill"
+      ? "No goals linked to this skill yet."
+      : "No goals linked to this monument yet.";
+  const filterEmptyMessage =
+    active === "Active"
+      ? "No active goals right now."
+      : active === "Blocked"
+      ? "No blocked goals right now."
+      : "No completed goals yet.";
 
   return (
     <div>
@@ -158,14 +216,20 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
           <p className="text-red-400 mb-2">Error loading goals</p>
           <p className="text-sm text-gray-400">{error}</p>
         </div>
-      ) : goalFolders.length === 0 ? (
+      ) : !hasGoals ? (
         <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
-          <p className="text-[#A7B0BD] mb-4">No goals linked to this monument.</p>
-          <Button variant="outline" onClick={onCreateGoal}>+ Goal</Button>
+          <p className="text-[#A7B0BD] mb-4">{emptyStateMessage}</p>
+          {onCreateGoal ? (
+            <Button variant="outline" onClick={onCreateGoal}>+ Goal</Button>
+          ) : null}
+        </Card>
+      ) : !hasFilteredGoals ? (
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm text-[#A7B0BD] shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+          {filterEmptyMessage}
         </Card>
       ) : (
         <div className="grid grid-cols-1 justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {goalFolders.map((goal) => (
+          {filteredGoalFolders.map((goal) => (
             <GoalFolderCard key={goal.id} goal={goal} size={0.52} />
           ))}
         </div>
