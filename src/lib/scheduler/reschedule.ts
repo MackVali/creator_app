@@ -143,14 +143,35 @@ export async function scheduleBacklog(
     })
   }
 
-  const queueProjectIds = new Set(queue.map(item => item.id))
+  const reuseInstanceByProject = new Map<string, string>()
+
+  const registerReuseInstance = (projectId: string, reuseId?: string | null) => {
+    if (!reuseId) return
+    if (reuseInstanceByProject.has(projectId)) return
+    reuseInstanceByProject.set(projectId, reuseId)
+  }
+
+  const collectReuseIds = (source: Map<string, string[]>) => {
+    for (const [projectId, ids] of source) {
+      const reuseId = ids.find(Boolean)
+      registerReuseInstance(projectId, reuseId)
+    }
+  }
+
+  const collectPrimaryReuseIds = (source: Map<string, string>) => {
+    for (const [projectId, reuseId] of source) {
+      registerReuseInstance(projectId, reuseId)
+    }
+  }
+
+  const initialQueueProjectIds = new Set(queue.map(item => item.id))
   const rangeEnd = addDays(baseStart, 28)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
     baseStart,
     rangeEnd,
-    queueProjectIds
+    initialQueueProjectIds
   )
   if (dedupe.error) {
     result.error = dedupe.error
@@ -159,6 +180,8 @@ export async function scheduleBacklog(
   if (dedupe.failures.length > 0) {
     result.failures.push(...dedupe.failures)
   }
+  collectPrimaryReuseIds(dedupe.reusableByProject)
+  collectReuseIds(dedupe.canceledByProject)
   const scheduled = dedupe.scheduled
 
   if (queue.length === 0) {
@@ -189,6 +212,44 @@ export async function scheduleBacklog(
     for (const project of projectItems) {
       enqueue(project)
     }
+  }
+
+  const finalQueueProjectIds = new Set(queue.map(item => item.id))
+  let needsSecondDedupe = finalQueueProjectIds.size !== initialQueueProjectIds.size
+  if (!needsSecondDedupe) {
+    for (const id of finalQueueProjectIds) {
+      if (!initialQueueProjectIds.has(id)) {
+        needsSecondDedupe = true
+        break
+      }
+    }
+  }
+
+  if (needsSecondDedupe) {
+    const fallbackDedupe = await dedupeScheduledProjects(
+      supabase,
+      userId,
+      baseStart,
+      rangeEnd,
+      finalQueueProjectIds
+    )
+    if (fallbackDedupe.error) {
+      result.error = fallbackDedupe.error
+      return result
+    }
+    if (fallbackDedupe.failures.length > 0) {
+      result.failures.push(...fallbackDedupe.failures)
+    }
+    collectPrimaryReuseIds(fallbackDedupe.reusableByProject)
+    collectReuseIds(fallbackDedupe.canceledByProject)
+  }
+
+  for (const item of queue) {
+    if (item.instanceId) continue
+    const reuseId = reuseInstanceByProject.get(item.id)
+    if (!reuseId) continue
+    item.instanceId = reuseId
+    reuseInstanceByProject.delete(item.id)
   }
 
   queue.sort((a, b) => {
@@ -241,17 +302,21 @@ export async function scheduleBacklog(
   return result
 }
 
+type DedupeResult = {
+  scheduled: Set<string>
+  failures: ScheduleFailure[]
+  error: PostgrestError | null
+  canceledByProject: Map<string, string[]>
+  reusableByProject: Map<string, string>
+}
+
 async function dedupeScheduledProjects(
   supabase: Client,
   userId: string,
   baseStart: Date,
   rangeEnd: Date,
   projectsToReset: Set<string>
-): Promise<{
-  scheduled: Set<string>
-  failures: ScheduleFailure[]
-  error: PostgrestError | null
-}> {
+): Promise<DedupeResult> {
   const response = await fetchInstancesForRange(
     userId,
     baseStart.toISOString(),
@@ -264,27 +329,43 @@ async function dedupeScheduledProjects(
       scheduled: new Set<string>(),
       failures: [],
       error: response.error,
+      canceledByProject: new Map(),
+      reusableByProject: new Map(),
     }
   }
 
   const keepers = new Map<string, ScheduleInstance>()
+  const reusableCandidates = new Map<string, ScheduleInstance>()
   const extras: ScheduleInstance[] = []
 
   for (const inst of response.data ?? []) {
     if (inst.source_type !== 'PROJECT') continue
+    if (inst.status !== 'scheduled') continue
 
-    if (projectsToReset.has(inst.source_id)) {
-      if (inst.status === 'scheduled') {
+    const projectId = inst.source_id
+
+    if (projectsToReset.has(projectId)) {
+      const existing = reusableCandidates.get(projectId)
+      if (!existing) {
+        reusableCandidates.set(projectId, inst)
+        continue
+      }
+
+      const existingStart = new Date(existing.start_utc).getTime()
+      const instStart = new Date(inst.start_utc).getTime()
+
+      if (instStart < existingStart) {
+        extras.push(existing)
+        reusableCandidates.set(projectId, inst)
+      } else {
         extras.push(inst)
       }
       continue
     }
 
-    if (inst.status !== 'scheduled') continue
-
-    const existing = keepers.get(inst.source_id)
+    const existing = keepers.get(projectId)
     if (!existing) {
-      keepers.set(inst.source_id, inst)
+      keepers.set(projectId, inst)
       continue
     }
 
@@ -293,13 +374,15 @@ async function dedupeScheduledProjects(
 
     if (instStart < existingStart) {
       extras.push(existing)
-      keepers.set(inst.source_id, inst)
+      keepers.set(projectId, inst)
     } else {
       extras.push(inst)
     }
   }
 
   const failures: ScheduleFailure[] = []
+
+  const canceledByProject = new Map<string, string[]>()
 
   for (const extra of extras) {
     const cancel = await supabase
@@ -315,7 +398,13 @@ async function dedupeScheduledProjects(
         reason: 'error',
         detail: cancel.error,
       })
+      continue
     }
+
+    const id = cancel.data?.id ?? extra.id
+    const existing = canceledByProject.get(extra.source_id) ?? []
+    existing.push(id)
+    canceledByProject.set(extra.source_id, existing)
   }
 
   const scheduled = new Set<string>()
@@ -323,7 +412,12 @@ async function dedupeScheduledProjects(
     scheduled.add(key)
   }
 
-  return { scheduled, failures, error: null }
+  const reusableByProject = new Map<string, string>()
+  for (const [projectId, inst] of reusableCandidates) {
+    reusableByProject.set(projectId, inst.id)
+  }
+
+  return { scheduled, failures, error: null, canceledByProject, reusableByProject }
 }
 
 async function fetchCompatibleWindowsForItem(

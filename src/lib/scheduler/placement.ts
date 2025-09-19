@@ -46,7 +46,9 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       return { error }
     }
 
-    const sorted = (taken ?? []).sort(
+    const filtered = (taken ?? []).filter(inst => inst.id !== reuseInstanceId)
+
+    const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     )
 
