@@ -251,65 +251,76 @@ export default function DashboardClient() {
   ];
 
   return (
-    <main className="pb-24">
+    <main className="pb-20 sm:pb-24">
       <div className="relative isolate">
         <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-          <div className="absolute left-[6%] top-[-180px] h-[320px] w-[320px] rounded-full bg-emerald-500/20 blur-[140px]" aria-hidden />
-          <div className="absolute right-[12%] top-[180px] h-[420px] w-[420px] rounded-full bg-indigo-500/15 blur-[170px]" aria-hidden />
+          <div
+            className="absolute left-[8%] top-[-140px] h-[260px] w-[260px] rounded-full bg-emerald-500/15 blur-[120px]"
+            aria-hidden
+          />
+          <div
+            className="absolute right-[10%] top-[220px] h-[320px] w-[320px] rounded-full bg-indigo-500/10 blur-[150px]"
+            aria-hidden
+          />
         </div>
-        <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 pb-16 pt-6 sm:px-6 lg:px-8">
-          <section className="card relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.02] px-6 py-8 shadow-[0_20px_45px_rgba(0,0,0,0.45)] backdrop-blur">
-            <div className="absolute inset-y-0 right-[-25%] top-8 hidden h-[420px] w-[420px] rounded-full bg-sky-500/10 blur-3xl sm:block" aria-hidden />
-            <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-center">
-              <div className="space-y-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/60">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 pb-16 pt-6 sm:gap-10 sm:px-6 md:px-8">
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] px-5 py-6 shadow-[0_16px_45px_rgba(0,0,0,0.45)] backdrop-blur">
+            <div
+              className="absolute -right-16 -top-24 h-60 w-60 rounded-full bg-sky-500/10 blur-3xl sm:-right-6"
+              aria-hidden
+            />
+            <div
+              className="absolute -bottom-36 left-1/2 h-60 w-60 -translate-x-1/2 rounded-full bg-emerald-500/10 blur-3xl sm:left-12 sm:translate-x-0"
+              aria-hidden
+            />
+            <div className="relative flex flex-col gap-6">
+              <div className="space-y-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/60">
                   Overview
                 </p>
-                <h1 className="text-3xl font-semibold text-white sm:text-[34px] sm:leading-[1.2]">
-                  Your creative command center
+                <h1 className="text-2xl font-semibold text-white sm:text-[28px] sm:leading-[1.2]">
+                  Stay on top of your creative flow
                 </h1>
-                <p className="max-w-2xl text-sm text-white/70">
-                  Keep goals, projects, and skill building aligned in one place.
+                <p className="text-sm text-white/70 sm:text-base">
+                  {"Everything you\u2019re building lives here—easy to skim on the go."}
                 </p>
-                <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  {overviewStats.map(({ label, value, hint }) => (
-                    <div
-                      key={label}
-                      className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 shadow-inner shadow-black/30"
-                    >
-                      <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
-                        {label}
-                      </dt>
-                      <dd className="mt-2 text-2xl font-semibold text-white">
-                        {loadingGoals ? (
-                          <span
-                            className="inline-flex h-7 w-16 animate-pulse rounded-full bg-white/20"
-                            aria-hidden
-                          />
-                        ) : (
-                          value
-                        )}
-                      </dd>
-                      <p className="mt-1 text-xs text-white/60">{hint}</p>
-                    </div>
-                  ))}
-                </dl>
               </div>
-              <div className="flex items-center justify-center">
-                <LevelBanner
-                  level={80}
-                  current={3200}
-                  total={4000}
-                  className="mx-0 mt-0 w-full max-w-sm border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.55)]"
-                />
-              </div>
+              <LevelBanner
+                level={80}
+                current={3200}
+                total={4000}
+                className="mx-0 mt-0 w-full rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.08] to-white/[0.02] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.5)] sm:max-w-sm"
+              />
+              <dl className="grid gap-3 min-[420px]:grid-cols-2 md:grid-cols-4">
+                {overviewStats.map(({ label, value, hint }) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-inner shadow-black/30"
+                  >
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
+                      {label}
+                    </dt>
+                    <dd className="mt-1 text-xl font-semibold text-white">
+                      {loadingGoals ? (
+                        <span
+                          className="inline-flex h-6 w-14 animate-pulse rounded-full bg-white/20"
+                          aria-hidden
+                        />
+                      ) : (
+                        value
+                      )}
+                    </dd>
+                    <p className="mt-1 text-xs text-white/60">{hint}</p>
+                  </div>
+                ))}
+              </dl>
             </div>
           </section>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-            <section className="card relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] px-6 py-6 shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
-              <div className="absolute inset-x-16 top-0 h-32 rounded-full bg-emerald-500/10 blur-3xl" aria-hidden />
-              <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="grid gap-6 md:gap-8 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
+              <div className="absolute inset-x-12 top-0 h-28 rounded-full bg-emerald-500/10 blur-3xl" aria-hidden />
+              <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Active goals</h2>
                   <p className="mt-1 text-sm text-white/60">
@@ -323,18 +334,18 @@ export default function DashboardClient() {
                   View all
                 </Link>
               </div>
-              <div className="relative mt-6">
+              <div className="relative mt-5">
                 {loadingGoals ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 xl:grid-cols-3">
                     {Array.from({ length: 3 }).map((_, idx) => (
                       <div
                         key={idx}
-                        className="h-[220px] animate-pulse rounded-3xl border border-white/10 bg-white/[0.06]"
+                        className="h-[210px] animate-pulse rounded-3xl border border-white/10 bg-white/[0.06]"
                       />
                     ))}
                   </div>
                 ) : goals.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                     {goals.map((goal) => (
                       <GoalFolderCard
                         key={goal.id}
@@ -352,10 +363,10 @@ export default function DashboardClient() {
               </div>
             </section>
 
-            <div className="flex flex-col gap-6">
-              <section className="card relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] px-6 py-6 shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
-                <div className="absolute inset-x-8 top-0 h-32 rounded-full bg-sky-500/10 blur-3xl" aria-hidden />
-                <div className="relative flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-6 md:gap-8">
+              <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.45)]">
+                <div className="absolute inset-x-10 top-0 h-28 rounded-full bg-sky-500/10 blur-3xl" aria-hidden />
+                <div className="relative flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-white">Skill focus</h2>
                     <p className="mt-1 text-sm text-white/60">
@@ -369,7 +380,7 @@ export default function DashboardClient() {
                     View skills
                   </Link>
                 </div>
-                <div className="relative mt-6 -mx-4">
+                <div className="relative mt-5 -mx-2 overflow-hidden sm:-mx-3 md:-mx-4">
                   <SkillsCarousel />
                 </div>
               </section>
