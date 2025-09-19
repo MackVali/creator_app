@@ -180,11 +180,8 @@ function WindowLabel({
 }
 
 function utcDayRange(d: Date) {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const day = d.getUTCDate()
-  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
-  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
+  const startUTC = new Date(d.getTime())
+  const endUTC = new Date(startUTC.getTime() + DAY_MS)
   return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
