@@ -24,6 +24,25 @@ describe("scheduleBacklog", () => {
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
 
+  const createSupabaseMock = () => {
+    let lastEqValue: string | null = null;
+    const single = vi.fn(async () => ({
+      data: { id: lastEqValue },
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+    const select = vi.fn(() => ({ single }));
+    const eq = vi.fn((_: string, value: string) => {
+      lastEqValue = value;
+      return { select };
+    });
+    const update = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ update }));
+    return { from } as unknown as ScheduleBacklogClient;
+  };
+
   beforeEach(() => {
     instances = [
       {
@@ -142,5 +161,101 @@ describe("scheduleBacklog", () => {
     const scheduledProjectIds = new Set(attemptedProjectIds);
     expect(scheduledProjectIds.has("proj-1")).toBe(false);
     expect(scheduledProjectIds.has("proj-2")).toBe(true);
+  });
+
+  it("reuses canceled instances when fallback enqueues a project", async () => {
+    const supabase = createSupabaseMock();
+    const existing = {
+      id: "inst-existing",
+      user_id: userId,
+      source_id: "proj-1",
+      source_type: "PROJECT",
+      status: "scheduled",
+      start_utc: "2024-01-03T09:00:00Z",
+      end_utc: "2024-01-03T10:00:00Z",
+      duration_min: 60,
+      window_id: "win-existing",
+      weight_snapshot: 1,
+      energy_resolved: "NO",
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+      note: null,
+      label: null,
+      project_instance_id: null,
+      user_timezone: null,
+      planned_start_utc: null,
+      planned_end_utc: null,
+      backlog_item_id: null,
+      backlog_item_type: null,
+      backlog_item_status: null,
+      backlog_item_name: null,
+      backlog_item_priority: null,
+      backlog_item_stage: null,
+      backlog_item_duration_min: null,
+      backlog_item_energy: null,
+      backlog_item_skill_id: null,
+      backlog_item_skill_icon: null,
+      backlog_item_project_id: null,
+      backlog_item_project_stage: null,
+      backlog_item_project_energy: null,
+      backlog_item_project_priority: null,
+      completed_at: null,
+      created_by: null,
+      updated_by: null,
+      source_duration_min: null,
+      energy_snapshot: null,
+      energy_resolved_snapshot: null,
+      metadata: null,
+    } as unknown as ScheduleInstance;
+
+    let fetchCall = 0;
+    fetchInstancesForRangeSpy.mockImplementation(async () => {
+      fetchCall += 1;
+      if (fetchCall === 1) {
+        return {
+          data: [],
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        } satisfies InstancesResponse;
+      }
+      return {
+        data: [existing],
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      } satisfies InstancesResponse;
+    });
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "Existing",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    });
+
+    let reuseId: string | null = null;
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async (params) => {
+      reuseId = params.reuseInstanceId ?? null;
+      return {
+        data: existing,
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      };
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    expect(reuseId).toBe("inst-existing");
+    expect(result.placed).toHaveLength(1);
+    expect(fetchCall).toBeGreaterThanOrEqual(2);
   });
 });

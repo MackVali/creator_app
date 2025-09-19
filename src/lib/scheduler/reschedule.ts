@@ -143,6 +143,17 @@ export async function scheduleBacklog(
     })
   }
 
+  const reuseInstanceByProject = new Map<string, string>()
+
+  const collectReuseIds = (source: Map<string, string[]>) => {
+    for (const [projectId, ids] of source) {
+      const reuseId = ids.find(Boolean)
+      if (!reuseId) continue
+      if (reuseInstanceByProject.has(projectId)) continue
+      reuseInstanceByProject.set(projectId, reuseId)
+    }
+  }
+
   const initialQueueProjectIds = new Set(queue.map(item => item.id))
   const rangeEnd = addDays(baseStart, 28)
   const dedupe = await dedupeScheduledProjects(
@@ -159,6 +170,7 @@ export async function scheduleBacklog(
   if (dedupe.failures.length > 0) {
     result.failures.push(...dedupe.failures)
   }
+  collectReuseIds(dedupe.canceledByProject)
   const scheduled = dedupe.scheduled
 
   if (queue.length === 0) {
@@ -217,6 +229,15 @@ export async function scheduleBacklog(
     if (fallbackDedupe.failures.length > 0) {
       result.failures.push(...fallbackDedupe.failures)
     }
+    collectReuseIds(fallbackDedupe.canceledByProject)
+  }
+
+  for (const item of queue) {
+    if (item.instanceId) continue
+    const reuseId = reuseInstanceByProject.get(item.id)
+    if (!reuseId) continue
+    item.instanceId = reuseId
+    reuseInstanceByProject.delete(item.id)
   }
 
   queue.sort((a, b) => {
@@ -269,17 +290,20 @@ export async function scheduleBacklog(
   return result
 }
 
+type DedupeResult = {
+  scheduled: Set<string>
+  failures: ScheduleFailure[]
+  error: PostgrestError | null
+  canceledByProject: Map<string, string[]>
+}
+
 async function dedupeScheduledProjects(
   supabase: Client,
   userId: string,
   baseStart: Date,
   rangeEnd: Date,
   projectsToReset: Set<string>
-): Promise<{
-  scheduled: Set<string>
-  failures: ScheduleFailure[]
-  error: PostgrestError | null
-}> {
+): Promise<DedupeResult> {
   const response = await fetchInstancesForRange(
     userId,
     baseStart.toISOString(),
@@ -292,6 +316,7 @@ async function dedupeScheduledProjects(
       scheduled: new Set<string>(),
       failures: [],
       error: response.error,
+      canceledByProject: new Map(),
     }
   }
 
@@ -329,6 +354,8 @@ async function dedupeScheduledProjects(
 
   const failures: ScheduleFailure[] = []
 
+  const canceledByProject = new Map<string, string[]>()
+
   for (const extra of extras) {
     const cancel = await supabase
       .from('schedule_instances')
@@ -343,7 +370,13 @@ async function dedupeScheduledProjects(
         reason: 'error',
         detail: cancel.error,
       })
+      continue
     }
+
+    const id = cancel.data?.id ?? extra.id
+    const existing = canceledByProject.get(extra.source_id) ?? []
+    existing.push(id)
+    canceledByProject.set(extra.source_id, existing)
   }
 
   const scheduled = new Set<string>()
@@ -351,7 +384,7 @@ async function dedupeScheduledProjects(
     scheduled.add(key)
   }
 
-  return { scheduled, failures, error: null }
+  return { scheduled, failures, error: null, canceledByProject }
 }
 
 async function fetchCompatibleWindowsForItem(
