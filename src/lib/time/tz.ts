@@ -1,4 +1,4 @@
-type DateParts = {
+export type DateParts = {
   year: number
   month: number
   day: number
@@ -225,6 +225,51 @@ export function getUTCDateRangeForKey(
     millisecond: 0,
   }, timeZone)
   return { startUTC: start.toISOString(), endUTC: end.toISOString() }
+}
+
+export function getLocalTimeParts(
+  isoUTC: string,
+  timeZone?: string | null,
+): DateParts {
+  const date = new Date(isoUTC)
+  if (Number.isNaN(date.getTime())) {
+    return {
+      year: Number.NaN,
+      month: Number.NaN,
+      day: Number.NaN,
+      hour: Number.NaN,
+      minute: Number.NaN,
+      second: Number.NaN,
+      millisecond: Number.NaN,
+    }
+  }
+
+  if (!timeZone) {
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+      second: date.getUTCSeconds(),
+      millisecond: date.getUTCMilliseconds(),
+    }
+  }
+
+  try {
+    return getZonedDateParts(date, timeZone)
+  } catch (error) {
+    console.warn('Failed to resolve local time parts', { isoUTC, timeZone, error })
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+      second: date.getUTCSeconds(),
+      millisecond: date.getUTCMilliseconds(),
+    }
+  }
 }
 
 function getZonedDateParts(date: Date, timeZone: string): DateParts {
