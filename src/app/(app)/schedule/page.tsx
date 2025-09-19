@@ -143,6 +143,7 @@ function resolveInstanceTiming(
   startISO: string,
   endISO: string,
   timeZone: string | null,
+  options?: { clampToDay?: { startUTC: string; endUTC: string } },
 ): {
   startDate: Date
   endDate: Date
@@ -155,17 +156,55 @@ function resolveInstanceTiming(
     return null
   }
 
-  const startMinutes = minutesFromParts(getLocalTimeParts(startISO, timeZone))
+  if (endDate <= startDate) {
+    return null
+  }
+
+  let displayStart = startDate
+  let displayEnd = endDate
+
+  const clamp = options?.clampToDay
+  if (clamp) {
+    const clampStart = new Date(clamp.startUTC)
+    const clampEnd = new Date(clamp.endUTC)
+    const clampValid =
+      !Number.isNaN(clampStart.getTime()) &&
+      !Number.isNaN(clampEnd.getTime()) &&
+      clampEnd > clampStart
+
+    if (clampValid) {
+      if (displayEnd <= clampStart || displayStart >= clampEnd) {
+        return null
+      }
+
+      if (displayStart < clampStart) {
+        displayStart = clampStart
+      }
+
+      if (displayEnd > clampEnd) {
+        displayEnd = clampEnd
+      }
+    }
+  }
+
+  const startMinutes = minutesFromParts(
+    getLocalTimeParts(displayStart.toISOString(), timeZone),
+  )
   if (!Number.isFinite(startMinutes)) {
     return null
   }
 
-  const durationMinutes = (endDate.getTime() - startDate.getTime()) / 60000
-  if (!Number.isFinite(durationMinutes)) {
+  const durationMinutes = (displayEnd.getTime() - displayStart.getTime()) / 60000
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
     return null
   }
 
-  return { startDate, endDate, startMinutes, durationMinutes }
+  return {
+    startDate: displayStart,
+    endDate: displayEnd,
+    startMinutes,
+    durationMinutes,
+  }
 }
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
@@ -215,6 +254,10 @@ export default function SchedulePage() {
   const effectiveTimezone = userTimezone ?? resolvedTimezone ?? null
   const currentDate = useMemo(
     () => parseDateKey(currentDateKey, effectiveTimezone),
+    [currentDateKey, effectiveTimezone]
+  )
+  const dayRangeUTC = useMemo(
+    () => utcDayRange(currentDateKey, effectiveTimezone),
     [currentDateKey, effectiveTimezone]
   )
   const year = currentDate.getFullYear()
@@ -338,6 +381,7 @@ export default function SchedulePage() {
           inst.start_utc,
           inst.end_utc,
           effectiveTimezone ?? null,
+          { clampToDay: dayRangeUTC },
         )
         if (!timing) return null
         return {
@@ -356,7 +400,7 @@ export default function SchedulePage() {
         durationMinutes: number
       } => value !== null)
       .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
-  }, [instances, projectMap, projectItems, effectiveTimezone])
+  }, [instances, projectMap, projectItems, effectiveTimezone, dayRangeUTC])
 
   const projectInstanceIds = useMemo(() => {
     const set = new Set<string>()
@@ -387,6 +431,7 @@ export default function SchedulePage() {
         inst.start_utc,
         inst.end_utc,
         effectiveTimezone ?? null,
+        { clampToDay: dayRangeUTC },
       )
       if (!timing) continue
       const bucket = map[projectId] ?? []
@@ -403,7 +448,7 @@ export default function SchedulePage() {
       map[key].sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
     }
     return map
-  }, [instances, taskMap, projectInstanceIds, effectiveTimezone])
+  }, [instances, taskMap, projectInstanceIds, effectiveTimezone, dayRangeUTC])
 
   const standaloneTaskInstances = useMemo(() => {
     const items: Array<{
@@ -423,6 +468,7 @@ export default function SchedulePage() {
         inst.start_utc,
         inst.end_utc,
         effectiveTimezone ?? null,
+        { clampToDay: dayRangeUTC },
       )
       if (!timing) continue
       items.push({
@@ -435,7 +481,7 @@ export default function SchedulePage() {
     }
     items.sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
     return items
-  }, [instances, taskMap, projectInstanceIds, effectiveTimezone])
+  }, [instances, taskMap, projectInstanceIds, effectiveTimezone, dayRangeUTC])
 
   const handleInstanceStatusChange = useCallback(
     async (
@@ -590,10 +636,7 @@ export default function SchedulePage() {
       if (!active) return
       setInstancesStatus('loading')
       try {
-        const { startUTC, endUTC } = utcDayRange(
-          currentDateKey,
-          effectiveTimezone
-        )
+        const { startUTC, endUTC } = dayRangeUTC
         const { data, error } = await fetchInstancesForRange(
           userId,
           startUTC,
@@ -680,7 +723,7 @@ export default function SchedulePage() {
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
     if (instances.length > 0) return
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDateKey, effectiveTimezone)
+    const { startUTC } = dayRangeUTC
     const key = `${userId}:${startUTC}:${effectiveTimezone ?? 'none'}`
     if (autoScheduledForRef.current === key) return
     autoScheduledForRef.current = key
