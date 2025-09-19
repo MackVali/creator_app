@@ -24,7 +24,12 @@ type PlaceParams = {
     energy: string
     weight: number
   }
-  windows: Array<{ id: string; startLocal: Date; endLocal: Date }>
+  windows: Array<{
+    id: string
+    startLocal: Date
+    endLocal: Date
+    availableStartLocal?: Date
+  }>
   date: Date
   client?: Client
   reuseInstanceId?: string | null
@@ -33,7 +38,7 @@ type PlaceParams = {
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
   const { userId, item, windows, client, reuseInstanceId } = params
   for (const w of windows) {
-    const start = new Date(w.startLocal)
+    const start = new Date(w.availableStartLocal ?? w.startLocal)
     const end = new Date(w.endLocal)
 
     const { data: taken, error } = await fetchInstancesForRange(

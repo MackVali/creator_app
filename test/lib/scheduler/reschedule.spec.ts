@@ -248,7 +248,7 @@ describe("scheduleBacklog", () => {
     expect(callOrder[1]).toBe("proj-low");
   });
 
-  it("prioritizes windows by energy match and start time", async () => {
+  it("prioritizes upcoming windows closest to now before later options", async () => {
     instances = [];
 
     const backlogResponse: BacklogResponse = {
@@ -282,37 +282,39 @@ describe("scheduleBacklog", () => {
       },
     });
 
+    const testBaseDate = new Date("2024-01-02T10:30:00Z");
+
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async () => [
       {
-        id: "win-high",
-        label: "High early",
-        energy: "HIGH",
-        start_local: "07:00",
-        end_local: "08:00",
-        days: [2],
-      },
-      {
-        id: "win-medium-late",
-        label: "Medium late",
+        id: "win-past",
+        label: "Past",
         energy: "MEDIUM",
-        start_local: "10:00",
-        end_local: "11:00",
-        days: [2],
-      },
-      {
-        id: "win-medium-early",
-        label: "Medium early",
-        energy: "MEDIUM",
-        start_local: "09:00",
-        end_local: "10:00",
-        days: [2],
-      },
-      {
-        id: "win-low",
-        label: "Low",
-        energy: "LOW",
         start_local: "06:00",
         end_local: "07:00",
+        days: [2],
+      },
+      {
+        id: "win-current",
+        label: "Current window",
+        energy: "MEDIUM",
+        start_local: "09:00",
+        end_local: "13:00",
+        days: [2],
+      },
+      {
+        id: "win-high",
+        label: "High later",
+        energy: "HIGH",
+        start_local: "13:00",
+        end_local: "14:00",
+        days: [2],
+      },
+      {
+        id: "win-next",
+        label: "Next",
+        energy: "MEDIUM",
+        start_local: "14:00",
+        end_local: "16:00",
         days: [2],
       },
     ]);
@@ -326,9 +328,71 @@ describe("scheduleBacklog", () => {
     });
 
     const mockClient = {} as ScheduleBacklogClient;
-    await scheduleBacklog(userId, baseDate, mockClient);
+    await scheduleBacklog(userId, testBaseDate, mockClient);
 
-    expect(observedOrder).toEqual(["win-medium-early", "win-medium-late", "win-high"]);
+    expect(observedOrder).toEqual(["win-current", "win-high", "win-next"]);
+  });
+
+  it("uses the current time as the anchor for partially elapsed windows", async () => {
+    instances = [];
+
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-medium",
+          source_id: "proj-medium",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "MEDIUM",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      backlogResponse,
+    );
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-medium": {
+        id: "proj-medium",
+        name: "Medium Energy",
+        priority: "LOW",
+        stage: "RESEARCH",
+        energy: "MEDIUM",
+        duration_min: 60,
+      },
+    });
+
+    const anchorDate = new Date("2024-01-02T10:15:00Z");
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-current",
+        label: "Current",
+        energy: "MEDIUM",
+        start_local: "09:00",
+        end_local: "13:00",
+        days: [2],
+      },
+    ]);
+
+    let observedStart: Date | null = null;
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async ({ windows }) => {
+      if (!observedStart) {
+        observedStart = windows[0]?.availableStartLocal ?? null;
+      }
+      return { error: "NO_FIT" as const };
+    });
+
+    const mockClient = {} as ScheduleBacklogClient;
+    await scheduleBacklog(userId, anchorDate, mockClient);
+
+    expect(observedStart).not.toBeNull();
+    expect(observedStart?.toISOString()).toBe(anchorDate.toISOString());
   });
 
   it("skips already scheduled projects when falling back to enqueue all", async () => {

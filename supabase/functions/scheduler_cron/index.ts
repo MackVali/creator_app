@@ -194,7 +194,13 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
       const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(client, userId, day, item)
+      const windows = await fetchCompatibleWindowsForItem(
+        client,
+        userId,
+        day,
+        item,
+        offset === 0 ? { now: baseDate } : undefined
+      )
       if (windows.length === 0) continue
 
       const placedInstance = await placeItemInWindows(
@@ -450,28 +456,54 @@ async function fetchCompatibleWindowsForItem(
   client: Client,
   userId: string,
   date: Date,
-  item: { energy: string; duration_min: number }
+  item: { energy: string; duration_min: number },
+  options?: { now?: Date }
 ) {
   const windows = await fetchWindowsForDate(client, userId, date)
   const itemIdx = energyIndex(item.energy)
-  const compatible = windows
-    .map(window => {
-      const energyIdx = energyIndex(window.energy)
-      return {
-        id: window.id,
-        startLocal: resolveWindowStart(window, date),
-        endLocal: resolveWindowEnd(window, date),
-        energyIdx,
-      }
+  const now = options?.now ? new Date(options.now) : null
+  const nowMs = now?.getTime()
+  const durationMs = Math.max(0, item.duration_min) * 60_000
+
+  const compatible: Array<{
+    id: string
+    startLocal: Date
+    endLocal: Date
+    availableStartLocal: Date
+    energyIdx: number
+  }> = []
+
+  for (const window of windows) {
+    const energyIdx = energyIndex(window.energy)
+    if (energyIdx < itemIdx) continue
+
+    const startLocal = resolveWindowStart(window, date)
+    const endLocal = resolveWindowEnd(window, date)
+    const startMs = startLocal.getTime()
+    const endMs = endLocal.getTime()
+
+    if (typeof nowMs === 'number' && endMs <= nowMs) continue
+
+    const availableStartMs = typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
+    if (availableStartMs >= endMs) continue
+    if (availableStartMs + durationMs > endMs) continue
+
+    compatible.push({
+      id: window.id,
+      startLocal,
+      endLocal,
+      availableStartLocal: new Date(availableStartMs),
+      energyIdx,
     })
-    .filter(window => window.energyIdx >= itemIdx)
+  }
 
   compatible.sort((a, b) => {
-    const aDiff = a.energyIdx - itemIdx
-    const bDiff = b.energyIdx - itemIdx
-    if (aDiff !== bDiff) return aDiff - bDiff
-    const startDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    const startDiff = a.availableStartLocal.getTime() - b.availableStartLocal.getTime()
     if (startDiff !== 0) return startDiff
+    const energyDiff = a.energyIdx - b.energyIdx
+    if (energyDiff !== 0) return energyDiff
+    const rawStartDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    if (rawStartDiff !== 0) return rawStartDiff
     return a.id.localeCompare(b.id)
   })
 
@@ -479,6 +511,7 @@ async function fetchCompatibleWindowsForItem(
     id: window.id,
     startLocal: window.startLocal,
     endLocal: window.endLocal,
+    availableStartLocal: window.availableStartLocal,
   }))
 }
 
@@ -529,11 +562,11 @@ async function placeItemInWindows(
   client: Client,
   userId: string,
   item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
-  windows: Array<{ id: string; startLocal: Date; endLocal: Date }>,
+  windows: Array<{ id: string; startLocal: Date; endLocal: Date; availableStartLocal?: Date }>,
   reuseInstanceId?: string | null
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
-    const start = new Date(window.startLocal)
+    const start = new Date(window.availableStartLocal ?? window.startLocal)
     const end = new Date(window.endLocal)
 
     const { data: taken, error } = await client
