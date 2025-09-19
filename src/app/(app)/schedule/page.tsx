@@ -119,6 +119,121 @@ function utcDayRange(d: Date) {
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
 
+type SchedulerRunFailure = {
+  itemId: string
+  reason: string
+  detail?: unknown
+}
+
+type SchedulerDebugState = {
+  runAt: string
+  failures: SchedulerRunFailure[]
+  placedCount: number
+  error: unknown
+}
+
+function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
+  if (!Array.isArray(input)) return []
+  const results: SchedulerRunFailure[] = []
+  for (const entry of input) {
+    if (!entry || typeof entry !== 'object') continue
+    const value = entry as { itemId?: unknown; reason?: unknown; detail?: unknown }
+    const itemId = value.itemId
+    if (typeof itemId !== 'string' || itemId.length === 0) continue
+    const reason = value.reason
+    results.push({
+      itemId,
+      reason: typeof reason === 'string' && reason.length > 0 ? reason : 'unknown',
+      detail: value.detail,
+    })
+  }
+  return results
+}
+
+function parseSchedulerDebugPayload(
+  payload: unknown
+): Omit<SchedulerDebugState, 'runAt'> | null {
+  if (!payload || typeof payload !== 'object') return null
+  const schedule = (payload as { schedule?: unknown }).schedule
+  if (!schedule || typeof schedule !== 'object') return null
+  const scheduleValue = schedule as {
+    placed?: unknown
+    failures?: unknown
+    error?: unknown
+  }
+  const placedCount = Array.isArray(scheduleValue.placed)
+    ? scheduleValue.placed.length
+    : 0
+  return {
+    failures: parseSchedulerFailures(scheduleValue.failures),
+    placedCount,
+    error: scheduleValue.error ?? null,
+  }
+}
+
+function formatSchedulerDetail(detail: unknown): string | null {
+  if (detail === null || detail === undefined) return null
+  if (detail instanceof Error) return detail.message
+  if (typeof detail === 'string') return detail
+  if (typeof detail === 'number' || typeof detail === 'boolean') {
+    return String(detail)
+  }
+  if (typeof detail === 'object') {
+    const obj = detail as Record<string, unknown>
+    const candidates = ['message', 'details', 'hint', 'code'] as const
+    const parts: string[] = []
+    for (const key of candidates) {
+      const value = obj[key]
+      if (typeof value === 'string' && value.trim().length > 0) {
+        parts.push(value.trim())
+      }
+    }
+    if (parts.length > 0) return parts.join(' · ')
+    try {
+      return JSON.stringify(detail)
+    } catch (error) {
+      console.error('Failed to serialize scheduler detail', error)
+    }
+  }
+  try {
+    return JSON.stringify(detail)
+  } catch (error) {
+    console.error('Failed to stringify scheduler detail', error)
+  }
+  return String(detail)
+}
+
+function describeSchedulerFailure(
+  failure: SchedulerRunFailure,
+  context: { durationMinutes: number; energy: string }
+): { message: string; detail?: string } {
+  const duration = Math.max(0, Math.round(context.durationMinutes))
+  const energy = context.energy.toUpperCase()
+  const detail = formatSchedulerDetail(failure.detail) ?? undefined
+  switch (failure.reason) {
+    case 'NO_WINDOW': {
+      const energyDescription =
+        energy === 'NO'
+          ? 'any available window'
+          : `a window with ${energy} energy or higher`
+      return {
+        message: `Scheduler could not find ${energyDescription} long enough (≥ ${duration}m) within the next 28 days.`,
+        detail,
+      }
+    }
+    case 'error':
+      return {
+        message: 'Scheduler encountered an error while trying to book this project.',
+        detail,
+      }
+    default:
+      return {
+        message: `Scheduler reported "${failure.reason}" for this project.`,
+        detail,
+      }
+  }
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -145,6 +260,7 @@ export default function SchedulePage() {
   const [scheduledProjectIds, setScheduledProjectIds] = useState<Set<string>>(new Set())
   const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
+  const [schedulerDebug, setSchedulerDebug] = useState<SchedulerDebugState | null>(null)
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const touchStartX = useRef<number | null>(null)
@@ -156,6 +272,10 @@ export default function SchedulePage() {
   const startHour = 0
   const pxPerMin = 2
   const year = currentDate.getFullYear()
+
+  useEffect(() => {
+    setSchedulerDebug(null)
+  }, [userId])
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -298,6 +418,50 @@ export default function SchedulePage() {
       return sum + relatedTasks.length
     }, 0)
   }, [unscheduledProjects, tasksByProjectId])
+
+  const schedulerFailureByProjectId = useMemo(() => {
+    if (!schedulerDebug) return {}
+    return schedulerDebug.failures.reduce<Record<string, SchedulerRunFailure[]>>(
+      (acc, failure) => {
+        const id = failure.itemId
+        if (!id) return acc
+        if (!acc[id]) acc[id] = []
+        acc[id].push(failure)
+        return acc
+      },
+      {}
+    )
+  }, [schedulerDebug])
+
+  const schedulerRunSummary = useMemo(() => {
+    if (!schedulerDebug) return null
+    const runAt = new Date(schedulerDebug.runAt)
+    const timestamp = Number.isNaN(runAt.getTime())
+      ? null
+      : runAt.toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+    const parts: string[] = []
+    if (timestamp) parts.push(`Last run ${timestamp}`)
+    parts.push(
+      `${schedulerDebug.placedCount} placement${
+        schedulerDebug.placedCount === 1 ? '' : 's'
+      }`
+    )
+    parts.push(
+      `${schedulerDebug.failures.length} failure${
+        schedulerDebug.failures.length === 1 ? '' : 's'
+      }`
+    )
+    return parts.join(' · ')
+  }, [schedulerDebug])
+
+  const schedulerErrorMessage = useMemo(() => {
+    if (!schedulerDebug) return null
+    const text = formatSchedulerDetail(schedulerDebug.error)
+    return text && text.length > 0 ? text : null
+  }, [schedulerDebug])
 
   const taskInstancesByProject = useMemo(() => {
     const map: Record<
@@ -546,17 +710,48 @@ export default function SchedulePage() {
         method: 'POST',
         cache: 'no-store',
       })
+      let payload: unknown = null
+      let parseError: unknown = null
+      try {
+        payload = await response.json()
+      } catch (err) {
+        parseError = err
+      }
+
       if (!response.ok) {
-        let payload: unknown = null
-        try {
-          payload = await response.json()
-        } catch (err) {
-          console.error('Failed to parse scheduler response', err)
+        console.error('Scheduler run failed', response.status, payload ?? parseError)
+      }
+
+      const parsed = parseSchedulerDebugPayload(payload)
+      if (parsed) {
+        setSchedulerDebug({
+          runAt: new Date().toISOString(),
+          ...parsed,
+        })
+      } else {
+        if (parseError) {
+          console.error('Failed to parse scheduler response', parseError)
         }
-        console.error('Scheduler run failed', response.status, payload)
+        const fallbackError =
+          parseError ??
+          (!response.ok
+            ? payload
+            : { message: 'Scheduler response missing schedule payload' })
+        setSchedulerDebug({
+          runAt: new Date().toISOString(),
+          failures: [],
+          placedCount: 0,
+          error: fallbackError,
+        })
       }
     } catch (error) {
       console.error('Failed to run scheduler', error)
+      setSchedulerDebug({
+        runAt: new Date().toISOString(),
+        failures: [],
+        placedCount: 0,
+        error,
+      })
     } finally {
       isSchedulingRef.current = false
       try {
@@ -929,6 +1124,26 @@ export default function SchedulePage() {
                 )}
               </span>
             </div>
+            {schedulerDebug ? (
+              <div className="mt-2 space-y-1 text-[10px] text-amber-200/70">
+                {schedulerRunSummary && <div>{schedulerRunSummary}</div>}
+                {schedulerErrorMessage && (
+                  <div className="text-amber-200/60">
+                    Scheduler error: {schedulerErrorMessage}
+                  </div>
+                )}
+              </div>
+            ) : (
+              unscheduledProjects.length > 0 && (
+                <p className="mt-2 text-[10px] text-amber-200/60">
+                  Run the scheduler (call{' '}
+                  <code className="rounded bg-amber-500/20 px-1 py-[1px]">
+                    window.__runScheduler()
+                  </code>
+                  ) to capture failure diagnostics for these projects.
+                </p>
+              )
+            )}
             {unscheduledProjects.length === 0 ? (
               <p className="mt-2 text-amber-200/80">
                 All projects currently have at least one scheduled instance.
@@ -937,6 +1152,13 @@ export default function SchedulePage() {
               <ul className="mt-3 space-y-3">
                 {unscheduledProjects.map(project => {
                   const relatedTasks = tasksByProjectId[project.id] ?? []
+                  const failures = schedulerFailureByProjectId[project.id] ?? []
+                  const diagnostics = failures.map(failure =>
+                    describeSchedulerFailure(failure, {
+                      durationMinutes: project.duration_min,
+                      energy: project.energy,
+                    })
+                  )
                   return (
                     <li
                       key={project.id}
@@ -974,6 +1196,33 @@ export default function SchedulePage() {
                           No ready tasks linked to this project.
                         </p>
                       )}
+                      <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                          Scheduler diagnostics
+                        </div>
+                        {diagnostics.length > 0 ? (
+                          <ul className="mt-1 space-y-1 text-[10px] text-amber-200/80">
+                            {diagnostics.map((diag, index) => (
+                              <li key={`${project.id}-diag-${index}`}>
+                                <span>{diag.message}</span>
+                                {diag.detail && (
+                                  <div className="text-amber-200/60">{diag.detail}</div>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : schedulerDebug ? (
+                          <p className="mt-1 text-[10px] text-amber-200/70">
+                            {schedulerErrorMessage
+                              ? `Scheduler run ended with an error: ${schedulerErrorMessage}`
+                              : 'Last scheduler run did not report a project-specific failure.'}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[10px] text-amber-200/70">
+                            Diagnostics unavailable until the scheduler runs.
+                          </p>
+                        )}
+                      </div>
                     </li>
                   )
                 })}
