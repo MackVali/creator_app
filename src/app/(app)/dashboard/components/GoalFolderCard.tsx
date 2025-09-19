@@ -3,11 +3,14 @@
 import type { ReactNode } from "react";
 import { Folder } from "./Folder";
 import type { Goal } from "@/app/(app)/goals/types";
+import { cn } from "@/lib/utils";
 
 type GoalFolderCardProps = {
   goal: Goal;
   onEdit?: () => void;
   onToggleActive?: () => void;
+  size?: number;
+  className?: string;
 };
 
 const darkGrayGradient =
@@ -23,6 +26,8 @@ export function GoalFolderCard({
   goal,
   onEdit: _onEdit,
   onToggleActive: _onToggleActive,
+  size = 0.42,
+  className,
 }: GoalFolderCardProps) {
   void _onEdit;
   void _onToggleActive;
@@ -76,12 +81,17 @@ export function GoalFolderCard({
   );
 
   return (
-    <div className="flex w-full flex-col items-center gap-2 text-center">
+    <div
+      className={cn(
+        "flex w-full flex-col items-center gap-2 text-center",
+        className,
+      )}
+    >
       <Folder
         color={theme.base}
         gradient={theme.gradient}
         items={folderItems}
-        size={0.42}
+        size={size}
         label={folderLabel}
       />
     </div>
