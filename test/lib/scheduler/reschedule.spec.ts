@@ -40,7 +40,8 @@ describe("scheduleBacklog", () => {
     });
     const update = vi.fn(() => ({ eq }));
     const from = vi.fn(() => ({ update }));
-    return { from } as unknown as ScheduleBacklogClient;
+    const client = { from } as unknown as ScheduleBacklogClient;
+    return { client, update };
   };
 
   beforeEach(() => {
@@ -163,8 +164,8 @@ describe("scheduleBacklog", () => {
     expect(scheduledProjectIds.has("proj-2")).toBe(true);
   });
 
-  it("reuses canceled instances when fallback enqueues a project", async () => {
-    const supabase = createSupabaseMock();
+  it("reuses existing instances when fallback enqueues a project", async () => {
+    const { client: supabase, update: updateMock } = createSupabaseMock();
     const existing = {
       id: "inst-existing",
       user_id: userId,
@@ -257,5 +258,8 @@ describe("scheduleBacklog", () => {
     expect(reuseId).toBe("inst-existing");
     expect(result.placed).toHaveLength(1);
     expect(fetchCall).toBeGreaterThanOrEqual(2);
+    expect(updateMock.mock.calls.some((call) => call?.[0]?.status === "canceled")).toBe(
+      false,
+    );
   });
 });
