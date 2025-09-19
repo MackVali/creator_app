@@ -1,11 +1,9 @@
 "use client";
 
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
-import { useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import styles from "./Folder.module.css";
-
-type PaperOffset = { x: number; y: number };
 
 type FolderProps = {
   color?: string;
@@ -15,8 +13,6 @@ type FolderProps = {
   label?: ReactNode;
   className?: string;
 };
-
-const MAX_ITEMS = 5;
 
 const darkenColor = (hex: string, percent: number) => {
   let color = hex.startsWith("#") ? hex.slice(1) : hex;
@@ -46,60 +42,27 @@ const paperColors = [
   darkenColor("#ffffff", -0.05),
 ];
 
-const computePositions = (count: number) => {
-  if (count <= 0) return [] as number[];
-  if (count === 1) return [0];
-  const start = -(count - 1) / 2;
-  return Array.from({ length: count }, (_, index) => start + index);
-};
-
 export function Folder({
-  color = "#221042",
+  color = "#E5E7EB",
   gradient,
   size = 1,
   items = [],
   label,
   className,
 }: FolderProps) {
-  const visibleItems = items.filter((item) => item != null).slice(0, MAX_ITEMS);
-  const positions = computePositions(visibleItems.length);
+  const visibleItems = items.filter((item) => item != null);
 
   const [open, setOpen] = useState(false);
-  const [paperOffsets, setPaperOffsets] = useState<PaperOffset[]>(() =>
-    Array.from({ length: MAX_ITEMS }, () => ({ x: 0, y: 0 }))
-  );
+  const folderBackRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelContentRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
+  const [panelShift, setPanelShift] = useState(0);
 
-  const folderBackColor = darkenColor(color, -0.18);
+  const folderBackColor = darkenColor(color, 0.12);
 
   const handleClick = () => {
-    setOpen((prev) => {
-      if (prev) {
-        setPaperOffsets(Array.from({ length: MAX_ITEMS }, () => ({ x: 0, y: 0 })));
-      }
-      return !prev;
-    });
-  };
-
-  const handlePaperMouseMove = (event: MouseEvent<HTMLDivElement>, index: number) => {
-    if (!open) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const offsetX = (event.clientX - centerX) * 0.15;
-    const offsetY = (event.clientY - centerY) * 0.15;
-    setPaperOffsets((prev) => {
-      const next = [...prev];
-      next[index] = { x: offsetX, y: offsetY };
-      return next;
-    });
-  };
-
-  const handlePaperMouseLeave = (_event: MouseEvent<HTMLDivElement>, index: number) => {
-    setPaperOffsets((prev) => {
-      const next = [...prev];
-      next[index] = { x: 0, y: 0 };
-      return next;
-    });
+    setOpen((prev) => !prev);
   };
 
   const folderStyle: CSSProperties = {
@@ -115,6 +78,130 @@ export function Folder({
     ["--folder-scale" as string]: size,
   };
 
+  const recomputePanelMetrics = useCallback(() => {
+    const content = panelContentRef.current;
+
+    if (content) {
+      setPanelHeight(content.scrollHeight);
+    } else {
+      setPanelHeight(0);
+    }
+
+    if (!open) {
+      setPanelShift(0);
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const folderBack = folderBackRef.current;
+    const panel = panelRef.current;
+
+    if (!folderBack || !panel) {
+      setPanelShift(0);
+      return;
+    }
+
+    const backRect = folderBack.getBoundingClientRect();
+    const panelWidth = panel.getBoundingClientRect().width;
+    const baseLeft = backRect.left + panel.offsetLeft;
+    const folderCenter = backRect.left + backRect.width / 2;
+
+    const viewportWidth =
+      window.innerWidth || document.documentElement.clientWidth || panelWidth;
+    const desiredLeft = folderCenter - panelWidth / 2;
+    const viewportPadding = 16;
+    const minLeft = viewportPadding;
+    const maxLeft = viewportWidth - panelWidth - viewportPadding;
+
+    let clampedLeft = desiredLeft;
+
+    if (maxLeft < minLeft) {
+      clampedLeft = Math.max((viewportWidth - panelWidth) / 2, 0);
+    } else if (desiredLeft < minLeft) {
+      clampedLeft = minLeft;
+    } else if (desiredLeft > maxLeft) {
+      clampedLeft = maxLeft;
+    }
+
+    setPanelShift(clampedLeft - baseLeft);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    let frame: number | undefined;
+
+    const scheduleMeasurement = () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        recomputePanelMetrics();
+      });
+    };
+
+    scheduleMeasurement();
+
+    const content = panelContentRef.current;
+
+    if (content && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => {
+        scheduleMeasurement();
+      });
+
+      observer.observe(content);
+
+      return () => {
+        observer.disconnect();
+
+        if (frame !== undefined) {
+          cancelAnimationFrame(frame);
+        }
+      };
+    }
+
+    return () => {
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+      }
+    };
+  }, [recomputePanelMetrics, size, visibleItems.length]);
+
+  useEffect(() => {
+    if (!open || typeof window === "undefined") {
+      return;
+    }
+
+    const handleResize = () => {
+      recomputePanelMetrics();
+    };
+
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+
+    handleResize();
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
+  }, [open, recomputePanelMetrics]);
+
+  const safePanelShift = Number.isFinite(panelShift) ? panelShift : 0;
+
+  const panelStyle: CSSProperties = {
+    ["--panel-height" as string]: open ? `${panelHeight}px` : "0px",
+    ["--panel-opacity" as string]: open ? "1" : "0",
+    ["--panel-shift" as string]: `${safePanelShift}px`,
+  };
+
   return (
     <div className={cn(styles.wrapper, className)} style={wrapperStyle}>
       <div
@@ -122,39 +209,28 @@ export function Folder({
         style={folderStyle}
         onClick={handleClick}
       >
-        <div className={styles.folderBack}>
-          {visibleItems.map((item, index) => {
-            const magnetStyle: CSSProperties = {
-              ["--paper-position" as string]: `${positions[index] ?? 0}`,
-              ["--paper-color" as string]:
-                paperColors[index] ?? paperColors[paperColors.length - 1],
-              ["--paper-z" as string]: `${Math.round(
-                MAX_ITEMS - Math.abs(positions[index] ?? 0)
-              )}`,
-              ["--paper-delay" as string]: `${index * 0.04}s`,
-            };
+        <div ref={folderBackRef} className={styles.folderBack}>
+          <div
+            ref={panelRef}
+            className={cn(styles.paperPanel, open && styles.paperPanelOpen)}
+            style={panelStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div ref={panelContentRef} className={styles.paperTrack}>
+              {visibleItems.map((item, index) => {
+                const cardStyle: CSSProperties = {
+                  ["--paper-color" as string]:
+                    paperColors[index] ?? paperColors[paperColors.length - 1],
+                };
 
-            if (open) {
-              magnetStyle["--magnet-x" as string] = `${
-                paperOffsets[index]?.x ?? 0
-              }px`;
-              magnetStyle["--magnet-y" as string] = `${
-                paperOffsets[index]?.y ?? 0
-              }px`;
-            }
-
-            return (
-              <div
-                key={index}
-                className={styles.paper}
-                onMouseMove={(event) => handlePaperMouseMove(event, index)}
-                onMouseLeave={(event) => handlePaperMouseLeave(event, index)}
-                style={magnetStyle}
-              >
-                {item}
-              </div>
-            );
-          })}
+                return (
+                  <div key={index} className={styles.paper} style={cardStyle}>
+                    {item}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           <div className={styles.folderFront}>
             {label ? <div className={styles.folderLabel}>{label}</div> : null}
           </div>
