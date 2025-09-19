@@ -10,13 +10,13 @@ type GoalFolderCardProps = {
   onToggleActive?: () => void;
 };
 
-const lightGrayGradient =
-  "linear-gradient(140deg, #F9FAFB 0%, #E5E7EB 48%, #D1D5DB 100%)";
+const darkGrayGradient =
+  "linear-gradient(145deg, #D1D5DB 0%, #9CA3AF 45%, #4B5563 100%)";
 
 const folderThemes: Record<Goal["priority"], { base: string; gradient: string }> = {
-  High: { base: "#C3C9D2", gradient: lightGrayGradient },
-  Medium: { base: "#C3C9D2", gradient: lightGrayGradient },
-  Low: { base: "#C3C9D2", gradient: lightGrayGradient },
+  High: { base: "#6B7280", gradient: darkGrayGradient },
+  Medium: { base: "#6B7280", gradient: darkGrayGradient },
+  Low: { base: "#6B7280", gradient: darkGrayGradient },
 };
 
 export function GoalFolderCard({

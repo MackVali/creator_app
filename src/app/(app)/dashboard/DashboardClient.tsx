@@ -215,7 +215,7 @@ export default function DashboardClient() {
         className="safe-bottom mt-2 px-4"
       >
         {loadingGoals ? (
-          <div className="grid grid-cols-5 justify-items-center gap-4">
+          <div className="grid grid-cols-1 grid-rows-5 justify-items-center gap-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
@@ -224,7 +224,7 @@ export default function DashboardClient() {
             ))}
           </div>
         ) : goals.length > 0 ? (
-          <div className="grid grid-cols-5 justify-items-center gap-4">
+          <div className="grid grid-cols-1 grid-rows-5 justify-items-center gap-4">
             {goals.map((goal) => (
               <GoalFolderCard key={goal.id} goal={goal} />
             ))}
