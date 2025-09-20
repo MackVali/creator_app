@@ -332,3 +332,27 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
+
+[functions.plan_today_simple]
+verify_jwt = false
+
+[functions.finalize_today_simple]
+verify_jwt = false
+
+[[cron.jobs]]
+name = "plan_today_simple"
+schedule = "5 6 * * *"
+http = {
+  method = "POST",
+  url = "{{ .SupabaseUrl }}/functions/v1/plan_today_simple?userId={{ .Env.SCHEDULER_USER_ID }}",
+  headers = { Authorization = "Bearer {{ .ServiceRoleKey }}" }
+}
+
+[[cron.jobs]]
+name = "finalize_today_simple"
+schedule = "59 23 * * *"
+http = {
+  method = "POST",
+  url = "{{ .SupabaseUrl }}/functions/v1/finalize_today_simple?userId={{ .Env.SCHEDULER_USER_ID }}",
+  headers = { Authorization = "Bearer {{ .ServiceRoleKey }}" }
+}
