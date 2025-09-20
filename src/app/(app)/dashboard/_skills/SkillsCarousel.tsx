@@ -21,7 +21,11 @@ export default function SkillsCarousel() {
     const idx = deriveInitialIndex(categories, initialId);
     setActiveIndex(idx);
     const el = cardRefs.current[idx];
-    el?.scrollIntoView({ behavior: "instant", inline: "center" });
+    el?.scrollIntoView({
+      behavior: "instant",
+      inline: "center",
+      block: "nearest",
+    });
   }, [categories, search]);
 
   const changeIndex = (idx: number) => {
