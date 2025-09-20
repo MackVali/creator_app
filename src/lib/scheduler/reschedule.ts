@@ -14,7 +14,6 @@ import {
   type WindowLite,
 } from './repo'
 import { placeItemInWindows } from './placement'
-import { ENERGY } from './config'
 
 type Client = SupabaseClient<Database>
 
@@ -254,36 +253,121 @@ export async function scheduleBacklog(
     reuseInstanceByProject.delete(item.id)
   }
 
-  queue.sort((a, b) => {
-    const weightDiff = b.weight - a.weight
-    if (weightDiff !== 0) return weightDiff
-    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
-    if (energyDiff !== 0) return energyDiff
+  const projectsByEnergy = new Map<string, QueueItem[]>()
+  const sortEnergyQueue = (items: QueueItem[]) => {
+    items.sort((a, b) => {
+      const weightDiff = b.weight - a.weight
+      if (weightDiff !== 0) return weightDiff
+      const durationDiff = a.duration_min - b.duration_min
+      if (durationDiff !== 0) return durationDiff
+      return a.id.localeCompare(b.id)
+    })
+  }
+
+  for (const item of queue) {
+    const energy = item.energy.toUpperCase()
+    const group = projectsByEnergy.get(energy)
+    if (group) {
+      group.push(item)
+    } else {
+      projectsByEnergy.set(energy, [item])
+    }
+  }
+
+  for (const items of projectsByEnergy.values()) {
+    sortEnergyQueue(items)
+  }
+
+  type WindowTimelineEntry = {
+    id: string
+    key: string
+    energy: string
+    startLocal: Date
+    endLocal: Date
+    availableStartLocal: Date
+    date: Date
+  }
+
+  const timeline: WindowTimelineEntry[] = []
+  const windowAvailability = new Map<string, Date>()
+  const seenWindowKeys = new Set<string>()
+  const nowMs = baseDate.getTime()
+
+  for (let offset = 0; offset < 28; offset += 1) {
+    const day = addDays(baseStart, offset)
+    const windows = await fetchWindowsForDate(day, supabase)
+    for (const win of windows) {
+      const startLocal = resolveWindowStart(win, day)
+      const endLocal = resolveWindowEnd(win, day)
+      const key = windowKey(win.id, startLocal)
+      if (seenWindowKeys.has(key)) continue
+      seenWindowKeys.add(key)
+
+      const endMs = endLocal.getTime()
+      if (endMs <= nowMs) continue
+
+      const startMs = startLocal.getTime()
+      const availableStartMs = Math.max(startMs, nowMs)
+      if (availableStartMs >= endMs) continue
+
+      const availableStartLocal = new Date(availableStartMs)
+      const energy = (win.energy ?? 'NO').toString().toUpperCase()
+
+      const entry: WindowTimelineEntry = {
+        id: win.id,
+        key,
+        energy,
+        startLocal,
+        endLocal,
+        availableStartLocal,
+        date: day,
+      }
+
+      timeline.push(entry)
+      windowAvailability.set(key, availableStartLocal)
+    }
+  }
+
+  timeline.sort((a, b) => {
+    const startDiff = a.availableStartLocal.getTime() - b.availableStartLocal.getTime()
+    if (startDiff !== 0) return startDiff
+    const rawStartDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    if (rawStartDiff !== 0) return rawStartDiff
     return a.id.localeCompare(b.id)
   })
 
-  const windowAvailability = new Map<string, Date>()
+  for (const entry of timeline) {
+    const energyQueue = projectsByEnergy.get(entry.energy)
+    if (!energyQueue || energyQueue.length === 0) continue
 
-  for (const item of queue) {
-    let scheduled = false
-    for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(
-        supabase,
-        day,
-        item,
-        {
-          availability: windowAvailability,
-          now: offset === 0 ? baseDate : undefined,
-        }
-      )
-      if (windows.length === 0) continue
+    const attempted: QueueItem[] = []
+
+    while (true) {
+      const currentAvailable = windowAvailability.get(entry.key) ?? entry.availableStartLocal
+      if (currentAvailable >= entry.endLocal) break
+
+      const remainingMs = entry.endLocal.getTime() - currentAvailable.getTime()
+      const remainingMin = Math.floor(remainingMs / 60000)
+      if (remainingMin <= 0) break
+
+      const candidateIndex = energyQueue.findIndex(item => item.duration_min <= remainingMin)
+      if (candidateIndex === -1) break
+
+      const [item] = energyQueue.splice(candidateIndex, 1)
+
+      const windowInput = {
+        id: entry.id,
+        startLocal: entry.startLocal,
+        endLocal: entry.endLocal,
+        availableStartLocal: currentAvailable,
+        key: entry.key,
+      }
 
       const placed = await placeItemInWindows({
         userId,
         item,
-        windows,
-        date: day,
+        windows: [windowInput],
+        date: entry.date,
         client: supabase,
         reuseInstanceId: item.instanceId,
       })
@@ -291,6 +375,8 @@ export async function scheduleBacklog(
       if (!('status' in placed)) {
         if (placed.error !== 'NO_FIT') {
           result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
+        } else {
+          attempted.push(item)
         }
         continue
       }
@@ -302,21 +388,24 @@ export async function scheduleBacklog(
 
       if (placed.data) {
         result.placed.push(placed.data)
-        const placementWindow = findPlacementWindow(
-          windows,
-          placed.data
-        )
+        const placementWindow = findPlacementWindow([windowInput], placed.data)
+        const nextAvailable = new Date(placed.data.end_utc)
         if (placementWindow?.key) {
-          windowAvailability.set(
-            placementWindow.key,
-            new Date(placed.data.end_utc)
-          )
+          windowAvailability.set(placementWindow.key, nextAvailable)
+        } else {
+          windowAvailability.set(entry.key, nextAvailable)
         }
-        scheduled = true
       }
     }
 
-    if (!scheduled) {
+    if (attempted.length > 0) {
+      energyQueue.push(...attempted)
+      sortEnergyQueue(energyQueue)
+    }
+  }
+
+  for (const remaining of projectsByEnergy.values()) {
+    for (const item of remaining) {
       result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
     }
   }
@@ -442,87 +531,6 @@ async function dedupeScheduledProjects(
   return { scheduled, failures, error: null, canceledByProject, reusableByProject }
 }
 
-async function fetchCompatibleWindowsForItem(
-  supabase: Client,
-  date: Date,
-  item: { energy: string; duration_min: number },
-  options?: { now?: Date; availability?: Map<string, Date> }
-) {
-  const windows = await fetchWindowsForDate(date, supabase)
-  const itemIdx = energyIndex(item.energy)
-  const now = options?.now ? new Date(options.now) : null
-  const nowMs = now?.getTime()
-  const durationMs = Math.max(0, item.duration_min) * 60000
-  const availability = options?.availability
-
-  const compatible = [] as Array<{
-    id: string
-    key: string
-    startLocal: Date
-    endLocal: Date
-    availableStartLocal: Date
-    energyIdx: number
-  }>
-
-  for (const win of windows) {
-    const energyIdx = energyIndex(win.energy)
-    if (energyIdx < itemIdx) continue
-
-    const startLocal = resolveWindowStart(win, date)
-    const endLocal = resolveWindowEnd(win, date)
-    const key = windowKey(win.id, startLocal)
-    const startMs = startLocal.getTime()
-    const endMs = endLocal.getTime()
-
-    if (typeof nowMs === 'number' && endMs <= nowMs) continue
-
-    const baseAvailableStartMs =
-      typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
-    const carriedStartMs = availability?.get(key)?.getTime()
-    const availableStartMs =
-      typeof carriedStartMs === 'number'
-        ? Math.max(baseAvailableStartMs, carriedStartMs)
-        : baseAvailableStartMs
-    if (availableStartMs >= endMs) continue
-    if (availableStartMs + durationMs > endMs) continue
-
-    const availableStartLocal = new Date(availableStartMs)
-    if (availability) {
-      const existing = availability.get(key)
-      if (!existing || existing.getTime() !== availableStartMs) {
-        availability.set(key, availableStartLocal)
-      }
-    }
-
-    compatible.push({
-      id: win.id,
-      key,
-      startLocal,
-      endLocal,
-      availableStartLocal,
-      energyIdx,
-    })
-  }
-
-  compatible.sort((a, b) => {
-    const startDiff = a.availableStartLocal.getTime() - b.availableStartLocal.getTime()
-    if (startDiff !== 0) return startDiff
-    const energyDiff = a.energyIdx - b.energyIdx
-    if (energyDiff !== 0) return energyDiff
-    const rawStartDiff = a.startLocal.getTime() - b.startLocal.getTime()
-    if (rawStartDiff !== 0) return rawStartDiff
-    return a.id.localeCompare(b.id)
-  })
-
-  return compatible.map(win => ({
-    id: win.id,
-    key: win.key,
-    startLocal: win.startLocal,
-    endLocal: win.endLocal,
-    availableStartLocal: win.availableStartLocal,
-  }))
-}
-
 function findPlacementWindow(
   windows: Array<{
     id: string
@@ -550,12 +558,6 @@ function isWithinWindow(
 
 function windowKey(windowId: string, startLocal: Date) {
   return `${windowId}:${startLocal.toISOString()}`
-}
-
-function energyIndex(level?: string | null) {
-  if (!level) return -1
-  const up = level.toUpperCase()
-  return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
 }
 
 function resolveWindowStart(win: WindowLite, date: Date) {
