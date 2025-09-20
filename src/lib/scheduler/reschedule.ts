@@ -263,7 +263,6 @@ export async function scheduleBacklog(
     return a.id.localeCompare(b.id)
   })
 
-  const windowAvailability = new Map<string, Date>()
   const windowCache = new Map<string, WindowLite[]>()
   const lookaheadDays = Math.min(
     MAX_LOOKAHEAD_DAYS,
@@ -274,6 +273,7 @@ export async function scheduleBacklog(
     let scheduled = false
     for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
       const day = addDays(baseStart, offset)
+      const windowAvailability = new Map<string, Date>()
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
