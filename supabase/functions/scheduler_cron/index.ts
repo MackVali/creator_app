@@ -559,21 +559,33 @@ async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
   const weekday = date.getDay()
   const prevWeekday = (weekday + 6) % 7
 
-  const [{ data: today, error: errToday }, { data: prev, error: errPrev }] = await Promise.all([
+  const columns = 'id, label, energy, start_local, end_local, days'
+
+  const [
+    { data: today, error: errToday },
+    { data: prev, error: errPrev },
+    { data: recurring, error: errRecurring },
+  ] = await Promise.all([
     client
       .from('windows')
-      .select('id, label, energy, start_local, end_local, days')
+      .select(columns)
       .eq('user_id', userId)
       .contains('days', [weekday]),
     client
       .from('windows')
-      .select('id, label, energy, start_local, end_local, days')
+      .select(columns)
       .eq('user_id', userId)
       .contains('days', [prevWeekday]),
+    client
+      .from('windows')
+      .select(columns)
+      .eq('user_id', userId)
+      .is('days', null),
   ])
 
   if (errToday) console.error('fetchWindowsForDate error (today)', errToday)
   if (errPrev) console.error('fetchWindowsForDate error (prev)', errPrev)
+  if (errRecurring) console.error('fetchWindowsForDate error (recurring)', errRecurring)
 
   const crosses = (window: WindowRecord) => {
     const [sh = 0, sm = 0] = window.start_local.split(':').map(Number)
@@ -581,11 +593,20 @@ async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
     return eh < sh || (eh === sh && em < sm)
   }
 
-  const prevCross = (prev ?? [])
+  const always = recurring ?? []
+
+  const base = new Map<string, WindowRecord>()
+  for (const window of [...(today ?? []), ...always]) {
+    if (!base.has(window.id)) {
+      base.set(window.id, window)
+    }
+  }
+
+  const prevCross = [...(prev ?? []), ...always]
     .filter(crosses)
     .map(window => ({ ...window, fromPrevDay: true as const }))
 
-  return [...(today ?? []), ...prevCross]
+  return [...base.values(), ...prevCross]
 }
 
 async function placeItemInWindows(

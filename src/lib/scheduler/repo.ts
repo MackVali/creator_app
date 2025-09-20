@@ -53,18 +53,29 @@ export async function fetchWindowsForDate(
 
   const weekday = date.getDay();
   const prevWeekday = (weekday + 6) % 7;
+  const columns = 'id, label, energy, start_local, end_local, days';
 
-  const { data: today, error: err1 } = await supabase
-    .from('windows')
-    .select('id, label, energy, start_local, end_local, days')
-    .contains('days', [weekday]);
+  const [
+    { data: today, error: errToday },
+    { data: prev, error: errPrev },
+    { data: recurring, error: errRecurring },
+  ] = await Promise.all([
+    supabase
+      .from('windows')
+      .select(columns)
+      .contains('days', [weekday]),
+    supabase
+      .from('windows')
+      .select(columns)
+      .contains('days', [prevWeekday]),
+    supabase.from('windows').select(columns).is('days', null),
+  ]);
 
-  const { data: prev, error: err2 } = await supabase
-    .from('windows')
-    .select('id, label, energy, start_local, end_local, days')
-    .contains('days', [prevWeekday]);
+  if (errToday || errPrev || errRecurring) {
+    throw errToday ?? errPrev ?? errRecurring;
+  }
 
-  if (err1 || err2) throw err1 ?? err2;
+  const always = recurring ?? [];
 
   const crosses = (w: WindowLite) => {
     const [sh = 0, sm = 0] = w.start_local.split(':').map(Number);
@@ -72,11 +83,18 @@ export async function fetchWindowsForDate(
     return eh < sh || (eh === sh && em < sm);
   };
 
-  const prevCross = (prev ?? [])
+  const base = new Map<string, WindowLite>();
+  for (const window of [...(today ?? []), ...always]) {
+    if (!base.has(window.id)) {
+      base.set(window.id, window as WindowLite);
+    }
+  }
+
+  const prevCross = [...(prev ?? []), ...always]
     .filter(crosses)
     .map((w) => ({ ...w, fromPrevDay: true }));
 
-  return [...(today ?? []), ...prevCross] as WindowLite[];
+  return [...base.values(), ...prevCross] as WindowLite[];
 }
 
 export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
