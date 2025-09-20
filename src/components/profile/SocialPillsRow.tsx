@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import {
+  Github,
+  Globe,
   Instagram,
-  Twitter,
-  Youtube,
-  Music,
   Linkedin,
   Mail,
-  Globe,
-  Github,
   MessageCircle,
+  Music,
+  Twitter,
+  Youtube,
 } from "lucide-react";
 
 interface SocialPillsRowProps {
@@ -74,7 +74,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
 
   // Filter out undefined URLs and sort by platform priority
   const availableSocials = Object.entries(socials)
-    .filter(([_, url]) => url && url !== "#")
+    .filter(([, url]) => url && url !== "#")
     .sort(([a], [b]) => {
       const priority = [
         "instagram",
@@ -100,7 +100,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
   }
 
   return (
-    <div className="flex justify-center space-x-3">
+    <div className="flex flex-wrap justify-center gap-3">
       {availableSocials.map(([platform, url]) => {
         const config = platformConfig[platform as keyof typeof platformConfig];
         if (!config || !url) return null;
@@ -113,24 +113,14 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="group"
+            className="group inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/80 transition-all hover:border-white/30 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
           >
-            <div
-              className={`
-              w-11 h-11 rounded-full 
-              ${config.color} 
-              ring-1 ring-white/10 
-              hover:bg-white/8 
-              hover:ring-white/20
-              transition-all duration-200 
-              flex items-center justify-center
-              shadow-lg hover:shadow-xl
-              transform hover:scale-105
-            `}
+            <span
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-white shadow-lg ${config.color}`}
             >
-              <IconComponent className="w-5 h-5 text-white" />
-            </div>
-            <span className="sr-only">{config.label}</span>
+              <IconComponent className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <span>{config.label}</span>
           </Link>
         );
       })}

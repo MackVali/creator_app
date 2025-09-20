@@ -71,7 +71,7 @@ export default function ProfileByHandlePage() {
           url: window.location.href,
         });
       } catch (error) {
-        console.log("Share cancelled");
+        console.log("Share cancelled", error);
       }
     } else {
       // Fallback: copy to clipboard
@@ -80,7 +80,7 @@ export default function ProfileByHandlePage() {
         // You could add a toast notification here
         console.log("URL copied to clipboard");
       } catch (error) {
-        console.error("Failed to copy URL");
+        console.error("Failed to copy URL", error);
       }
     }
   };
@@ -102,14 +102,20 @@ export default function ProfileByHandlePage() {
 
   if (error || !profile) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">
-            {error || "Profile not found"}
-          </h1>
+      <div className="relative flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute left-1/2 top-[-20%] h-[320px] w-[320px] -translate-x-1/2 rounded-full bg-blue-500/10 blur-[160px]" />
+          <div className="absolute bottom-[-25%] right-[-15%] h-[260px] w-[260px] rounded-full bg-purple-500/10 blur-[200px]" />
+        </div>
+
+        <div className="relative z-10 w-full max-w-md rounded-3xl border border-white/10 bg-slate-900/70 p-8 text-center shadow-[0_25px_45px_rgba(15,23,42,0.45)] backdrop-blur">
+          <h1 className="text-2xl font-semibold text-white">{error || "Profile not found"}</h1>
+          <p className="mt-3 text-sm text-white/60">
+            Something went wrong while loading this profile. Try again or head back to your dashboard.
+          </p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="px-6 py-3 bg-slate-800 text-white rounded-2xl hover:bg-slate-700 transition-colors"
+            className="mt-6 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition-colors hover:border-white/25 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
           >
             Back to Dashboard
           </button>
@@ -126,17 +132,63 @@ export default function ProfileByHandlePage() {
     }
   });
 
+  const activeSocialCount = socialLinks.filter(
+    (link) => link.is_active && !!link.url,
+  ).length;
+  const activeLinkCount = contentCards.filter((card) => card.is_active).length;
+
   return (
-    <div className="min-h-screen bg-slate-900 pb-[env(safe-area-inset-bottom)]">
-      <HeroHeader profile={profile} onShare={handleShare} onBack={handleBack} />
-
-      <div className="px-4 -mt-8">
-        <SocialPillsRow socials={socialsData} />
+    <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-1/2 top-[-18%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-blue-500/15 blur-[160px]" />
+        <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-purple-500/10 blur-[200px]" />
       </div>
 
-      <div className="mt-8">
-        <LinkGrid links={contentCards} />
-      </div>
+      <main className="relative z-10 py-12">
+        <HeroHeader profile={profile} onShare={handleShare} onBack={handleBack} />
+
+        <section className="mx-auto mt-10 w-full max-w-4xl px-4">
+          <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-6 shadow-[0_25px_45px_rgba(15,23,42,0.45)] backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-white/60">
+              <div className="font-semibold uppercase tracking-[0.35em] text-white/50">
+                Connect
+              </div>
+              {activeSocialCount > 0 ? (
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/60">
+                  {activeSocialCount} {activeSocialCount === 1 ? "network" : "networks"}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="mt-4">
+              <SocialPillsRow socials={socialsData} />
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto mt-12 w-full max-w-5xl px-4 pb-16">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-semibold text-white">Featured links</h2>
+              <p className="mt-1 text-sm text-white/50">
+                {activeLinkCount > 0
+                  ? "Curated highlights from across this creator's world."
+                  : "Links you add will appear here for your audience."}
+              </p>
+            </div>
+
+            {activeLinkCount > 0 ? (
+              <span className="rounded-full border border-white/10 bg-white/5 px-4 py-1 text-sm font-medium text-white/70">
+                {activeLinkCount} {activeLinkCount === 1 ? "link" : "links"}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-6">
+            <LinkGrid links={contentCards} />
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

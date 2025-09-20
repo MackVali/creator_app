@@ -2,7 +2,6 @@
 
 import { ContentCard } from "@/lib/types";
 import LinkTile from "./LinkTile";
-import { ProfileSkeleton } from "./ProfileSkeleton";
 
 interface LinkGridProps {
   links: ContentCard[];
@@ -10,14 +9,18 @@ interface LinkGridProps {
 }
 
 export default function LinkGrid({ links, loading = false }: LinkGridProps) {
+  const activeLinks = (links || [])
+    .filter((link) => link.is_active)
+    .sort((a, b) => a.position - b.position);
+
   if (loading) {
     return (
       <div className="px-4">
-        <div className="grid grid-cols-2 gap-3">
-          {Array.from({ length: 6 }).map((_, index) => (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, index) => (
             <div
-              key={index}
-              className="aspect-square rounded-2xl bg-white/5 animate-pulse"
+              key={`link-skeleton-${index}`}
+              className="h-44 rounded-3xl bg-white/5 animate-pulse"
             />
           ))}
         </div>
@@ -25,20 +28,13 @@ export default function LinkGrid({ links, loading = false }: LinkGridProps) {
     );
   }
 
-  if (!links || links.length === 0) {
+  if (activeLinks.length === 0) {
     return (
       <div className="px-4">
-        <div
-          className="
-          rounded-2xl bg-slate-900/60 
-          ring-1 ring-white/10 
-          p-8 text-center
-          shadow-[inset_0_1px_rgba(255,255,255,0.06),0_10px_30px_rgba(0,0,0,0.45)]
-        "
-        >
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800 flex items-center justify-center">
+        <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-10 text-center shadow-[0_25px_45px_rgba(15,23,42,0.45)]">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-white/5 text-white/50">
             <svg
-              className="w-8 h-8 text-white/50"
+              className="h-8 w-8"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -47,29 +43,22 @@ export default function LinkGrid({ links, loading = false }: LinkGridProps) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-.758l1.102-1.101a4 4 0 105.656-5.656l4-4a4 4 0 00-5.656 0l-1.102 1.101"
+                d="M12 4v16m8-8H4"
               />
             </svg>
           </div>
-          <h3 className="text-white font-semibold text-lg mb-2">
-            No links yet
-          </h3>
-          <p className="text-white/50 text-sm">
-            Add your first link to get started
+          <h3 className="text-lg font-semibold text-white">No links yet</h3>
+          <p className="mt-2 text-sm text-white/50">
+            Publish your first link to showcase what you are working on.
           </p>
         </div>
       </div>
     );
   }
 
-  // Filter active links and sort by position
-  const activeLinks = links
-    .filter((link) => link.is_active)
-    .sort((a, b) => a.position - b.position);
-
   return (
     <div className="px-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {activeLinks.map((link) => (
           <LinkTile
             key={link.id}
