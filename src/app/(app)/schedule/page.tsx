@@ -951,6 +951,11 @@ export default function SchedulePage() {
                       ((end.getTime() - start.getTime()) / 60000) * pxPerMin
                     const isExpanded = expandedProjects.has(projectId)
                     const tasksForProject = taskInstancesByProject[projectId] || []
+                    const backlogTasks = tasksByProjectId[projectId] ?? []
+                    const hasScheduledBreakdown = tasksForProject.length > 0
+                    const hasFallbackBreakdown =
+                      !hasScheduledBreakdown && backlogTasks.length > 0
+                    const canExpand = hasScheduledBreakdown || hasFallbackBreakdown
                     const durationMinutes = Math.round(
                       (end.getTime() - start.getTime()) / 60000
                     )
@@ -992,18 +997,35 @@ export default function SchedulePage() {
                       outline: '1px solid var(--event-border)',
                       outlineOffset: '-1px',
                     }
+                    const fallbackDurations = backlogTasks.map(task => {
+                      const value = Number(task.duration_min)
+                      return Number.isFinite(value) && value > 0 ? value : 0
+                    })
+                    const fallbackTotalDuration = fallbackDurations.reduce(
+                      (sum, value) => sum + value,
+                      0
+                    )
+                    const fallbackTaskCount = backlogTasks.length
+                    const safeDurationMinutes =
+                      durationMinutes > 0
+                        ? durationMinutes
+                        : fallbackTotalDuration > 0
+                          ? Math.round(fallbackTotalDuration)
+                          : Math.max(fallbackTaskCount, 1)
+                    let fallbackRemainingNormalized = fallbackTotalDuration
+                    let fallbackConsumedMinutes = 0
                     return (
                       <AnimatePresence
                         key={instance.id}
                         initial={false}
                         mode="wait"
                       >
-                        {!isExpanded || tasksForProject.length === 0 ? (
+                        {!isExpanded || !canExpand ? (
                           <motion.div
                             key="project"
                             aria-label={`Project ${project.name}`}
                             onClick={() => {
-                              if (tasksForProject.length === 0) return
+                              if (!canExpand) return
                               setExpandedProjects(prev => {
                                 const next = new Set(prev)
                                 if (next.has(projectId)) next.delete(projectId)
@@ -1011,7 +1033,9 @@ export default function SchedulePage() {
                                 return next
                               })
                             }}
-                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
+                            className={`absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white${
+                              canExpand ? ' cursor-pointer' : ''
+                            }`}
                             style={style}
                             initial={
                               prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -1080,83 +1104,221 @@ export default function SchedulePage() {
                                 : { delay: index * 0.02 }
                             }
                           >
-                            {tasksForProject.map(taskInfo => {
-                              const { instance: taskInstance, task, start, end } = taskInfo
-                              const tStartMin =
-                                start.getHours() * 60 + start.getMinutes()
-                              const tTop = (tStartMin - startHour * 60) * pxPerMin
-                              const tHeight =
-                                ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                              const tStyle: CSSProperties = {
-                                top: tTop,
-                                height: tHeight,
-                                boxShadow: 'var(--elev-card)',
-                                outline: '1px solid var(--event-border)',
-                                outlineOffset: '-1px',
-                              }
-                              const progress =
-                                (task as { progress?: number }).progress ?? 0
-                              return (
-                                <motion.div
-                                  key={taskInstance.id}
-                                  aria-label={`Task ${task.name}`}
-                                  className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                                  style={tStyle}
-                                  onClick={() =>
-                                    setExpandedProjects(prev => {
-                                      const next = new Set(prev)
-                                      next.delete(projectId)
-                                      return next
-                                    })
+                            {hasScheduledBreakdown
+                              ? tasksForProject.map(taskInfo => {
+                                  const { instance: taskInstance, task, start, end } =
+                                    taskInfo
+                                  const tStartMin =
+                                    start.getHours() * 60 + start.getMinutes()
+                                  const tTop =
+                                    (tStartMin - startHour * 60) * pxPerMin
+                                  const tHeight =
+                                    ((end.getTime() - start.getTime()) / 60000) *
+                                    pxPerMin
+                                  const tStyle: CSSProperties = {
+                                    top: tTop,
+                                    height: tHeight,
+                                    boxShadow: 'var(--elev-card)',
+                                    outline: '1px solid var(--event-border)',
+                                    outlineOffset: '-1px',
                                   }
-                                  initial={
-                                    prefersReducedMotion
-                                      ? false
-                                      : { opacity: 0, y: 4 }
-                                  }
-                                  animate={
-                                    prefersReducedMotion
-                                      ? undefined
-                                      : { opacity: 1, y: 0 }
-                                  }
-                                  exit={
-                                    prefersReducedMotion
-                                      ? undefined
-                                      : { opacity: 0, y: 4 }
-                                  }
-                                >
-                                  {renderInstanceActions(taskInstance.id, { projectId })}
-                                  <div className="flex flex-col">
-                                    <span className="truncate text-sm font-medium">
-                                      {task.name}
-                                    </span>
-                                    <div className="text-xs text-zinc-200/70">
-                                      {Math.round(
-                                        (end.getTime() - start.getTime()) / 60000
-                                      )}
-                                      m
-                                    </div>
-                                  </div>
-                                  {task.skill_icon && (
-                                    <span
-                                      className="ml-2 text-lg leading-none flex-shrink-0"
-                                      aria-hidden
+                                  const progress =
+                                    (task as { progress?: number }).progress ?? 0
+                                  return (
+                                    <motion.div
+                                      key={taskInstance.id}
+                                      aria-label={`Task ${task.name}`}
+                                      className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                                      style={tStyle}
+                                      onClick={() =>
+                                        setExpandedProjects(prev => {
+                                          const next = new Set(prev)
+                                          next.delete(projectId)
+                                          return next
+                                        })
+                                      }
+                                      initial={
+                                        prefersReducedMotion
+                                          ? false
+                                          : { opacity: 0, y: 4 }
+                                      }
+                                      animate={
+                                        prefersReducedMotion
+                                          ? undefined
+                                          : { opacity: 1, y: 0 }
+                                      }
+                                      exit={
+                                        prefersReducedMotion
+                                          ? undefined
+                                          : { opacity: 0, y: 4 }
+                                      }
                                     >
-                                      {task.skill_icon}
-                                    </span>
-                                  )}
-                                  <FlameEmber
-                                    level={(task.energy as FlameLevel) || 'NO'}
-                                    size="sm"
-                                    className="absolute -top-1 -right-1"
-                                  />
-                                  <div
-                                    className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                                    style={{ width: `${progress}%` }}
-                                  />
-                                </motion.div>
-                              )
-                            })}
+                                      {renderInstanceActions(taskInstance.id, {
+                                        projectId,
+                                      })}
+                                      <div className="flex flex-col">
+                                        <span className="truncate text-sm font-medium">
+                                          {task.name}
+                                        </span>
+                                        <div className="text-xs text-zinc-200/70">
+                                          {Math.round(
+                                            (end.getTime() - start.getTime()) /
+                                              60000
+                                          )}
+                                          m
+                                        </div>
+                                      </div>
+                                      {task.skill_icon && (
+                                        <span
+                                          className="ml-2 text-lg leading-none flex-shrink-0"
+                                          aria-hidden
+                                        >
+                                          {task.skill_icon}
+                                        </span>
+                                      )}
+                                      <FlameEmber
+                                        level={(task.energy as FlameLevel) || 'NO'}
+                                        size="sm"
+                                        className="absolute -top-1 -right-1"
+                                      />
+                                      <div
+                                        className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                                        style={{ width: `${progress}%` }}
+                                      />
+                                    </motion.div>
+                                  )
+                                })
+                              : backlogTasks.map((task, taskIndex) => {
+                                  const normalized = fallbackDurations[taskIndex] ?? 0
+                                  const remainingCount =
+                                    fallbackTaskCount - taskIndex
+                                  const remainingMinutes = Math.max(
+                                    safeDurationMinutes - fallbackConsumedMinutes,
+                                    0
+                                  )
+                                  let blockMinutes: number
+                                  if (taskIndex === fallbackTaskCount - 1) {
+                                    blockMinutes = remainingMinutes
+                                  } else if (
+                                    fallbackRemainingNormalized > 0 &&
+                                    remainingMinutes > 0
+                                  ) {
+                                    blockMinutes = Math.round(
+                                      (normalized / fallbackRemainingNormalized) *
+                                        remainingMinutes
+                                    )
+                                  } else if (remainingCount > 0) {
+                                    blockMinutes = Math.round(
+                                      remainingMinutes / remainingCount
+                                    )
+                                  } else {
+                                    blockMinutes = 0
+                                  }
+
+                                  const minForRest = Math.max(remainingCount - 1, 0)
+                                  if (remainingMinutes > 0) {
+                                    if (blockMinutes < 1) blockMinutes = 1
+                                    if (blockMinutes > remainingMinutes - minForRest) {
+                                      blockMinutes = Math.max(
+                                        1,
+                                        remainingMinutes - minForRest
+                                      )
+                                    }
+                                  } else {
+                                    blockMinutes = 0
+                                  }
+
+                                  const startOffsetMinutes = fallbackConsumedMinutes
+                                  fallbackConsumedMinutes += blockMinutes
+                                  fallbackRemainingNormalized -= normalized
+
+                                  const startOffsetPx =
+                                    safeDurationMinutes > 0
+                                      ? (startOffsetMinutes / safeDurationMinutes) *
+                                        height
+                                      : 0
+                                  let blockHeightPx =
+                                    safeDurationMinutes > 0
+                                      ? (blockMinutes / safeDurationMinutes) * height
+                                      : 0
+                                  if (taskIndex === fallbackTaskCount - 1) {
+                                    blockHeightPx = Math.max(0, height - startOffsetPx)
+                                  }
+
+                                  const fallbackStyle: CSSProperties = {
+                                    top: top + startOffsetPx,
+                                    height: blockHeightPx,
+                                    boxShadow: 'var(--elev-card)',
+                                    outline: '1px solid var(--event-border)',
+                                    outlineOffset: '-1px',
+                                  }
+
+                                  const approxMinutes =
+                                    blockMinutes > 0
+                                      ? blockMinutes
+                                      : Math.max(
+                                          1,
+                                          Math.round(
+                                            normalized > 0
+                                              ? normalized
+                                              : safeDurationMinutes /
+                                                  Math.max(fallbackTaskCount, 1)
+                                          )
+                                        )
+
+                                  return (
+                                    <motion.div
+                                      key={task.id}
+                                      aria-label={`Task ${task.name}`}
+                                      className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                                      style={fallbackStyle}
+                                      onClick={() =>
+                                        setExpandedProjects(prev => {
+                                          const next = new Set(prev)
+                                          next.delete(projectId)
+                                          return next
+                                        })
+                                      }
+                                      initial={
+                                        prefersReducedMotion
+                                          ? false
+                                          : { opacity: 0, y: 4 }
+                                      }
+                                      animate={
+                                        prefersReducedMotion
+                                          ? undefined
+                                          : { opacity: 1, y: 0 }
+                                      }
+                                      exit={
+                                        prefersReducedMotion
+                                          ? undefined
+                                          : { opacity: 0, y: 4 }
+                                      }
+                                    >
+                                      <div className="flex flex-col">
+                                        <span className="truncate text-sm font-medium">
+                                          {task.name}
+                                        </span>
+                                        <div className="text-xs text-zinc-200/70">
+                                          ~{approxMinutes}m · {task.priority} · {task.stage}
+                                        </div>
+                                      </div>
+                                      {task.skill_icon && (
+                                        <span
+                                          className="ml-2 text-lg leading-none flex-shrink-0"
+                                          aria-hidden
+                                        >
+                                          {task.skill_icon}
+                                        </span>
+                                      )}
+                                      <FlameEmber
+                                        level={(task.energy as FlameLevel) || 'NO'}
+                                        size="sm"
+                                        className="absolute -top-1 -right-1"
+                                      />
+                                    </motion.div>
+                                  )
+                                })}
                           </motion.div>
                         )}
                       </AnimatePresence>
