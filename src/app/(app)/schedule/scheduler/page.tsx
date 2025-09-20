@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -308,11 +309,20 @@ export default function SchedulerPage() {
   return (
     <ProtectedRoute>
       <div className="space-y-6 p-4 text-zinc-100">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Scheduler</h1>
-          <p className="text-sm text-zinc-400">
-            Run the scheduler on demand to reschedule tasks and projects.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Scheduler</h1>
+            <p className="text-sm text-zinc-400">
+              Run the scheduler on demand to reschedule tasks and projects.
+            </p>
+          </div>
+          <Button
+            asChild
+            size="sm"
+            className="bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          >
+            <Link href="/schedule">Back</Link>
+          </Button>
         </div>
         <Button
           onClick={handleReschedule}
