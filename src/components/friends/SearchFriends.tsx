@@ -12,19 +12,25 @@ export default function SearchFriends({ data }: { data: Friend[] }) {
     const supabase = getSupabaseBrowser();
     supabase?.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        const rawUsername =
+          (user.user_metadata?.username as string | undefined) ||
+          user.email?.split('@')[0] ||
+          'me';
+        const username = rawUsername.toLowerCase();
+        const displayName =
+          (user.user_metadata?.full_name as string | undefined) ||
+          user.email ||
+          'Me';
+        const avatarUrl =
+          (user.user_metadata?.avatar_url as string | undefined) ||
+          'https://i.pravatar.cc/96?img=67';
+
         setMe({
           id: user.id,
-          username:
-            user.user_metadata?.username ||
-            user.email?.split('@')[0] ||
-            'me',
-          displayName:
-            user.user_metadata?.full_name ||
-            user.email ||
-            'Me',
-          avatarUrl:
-            user.user_metadata?.avatar_url ||
-            'https://i.pravatar.cc/96?img=67',
+          username,
+          displayName,
+          avatarUrl,
+          profileUrl: username ? `/profile/${username}` : '#',
         });
       }
     });
