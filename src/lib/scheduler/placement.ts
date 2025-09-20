@@ -29,6 +29,7 @@ type PlaceParams = {
     startLocal: Date
     endLocal: Date
     availableStartLocal?: Date
+    key?: string
   }>
   date: Date
   client?: Client

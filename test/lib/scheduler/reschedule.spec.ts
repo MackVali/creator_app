@@ -5,6 +5,8 @@ import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 
+const realPlaceItemInWindows = placement.placeItemInWindows;
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => null),
 }));
@@ -393,6 +395,144 @@ describe("scheduleBacklog", () => {
 
     expect(observedStart).not.toBeNull();
     expect(observedStart?.toISOString()).toBe(anchorDate.toISOString());
+  });
+
+  it("fills the nearest window sequentially even when new placements are not yet visible", async () => {
+    instances = [];
+
+    const emptyBacklog: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      emptyBacklog,
+    );
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "One",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 60,
+      },
+      "proj-2": {
+        id: "proj-2",
+        name: "Two",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 60,
+      },
+      "proj-3": {
+        id: "proj-3",
+        name: "Three",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 60,
+      },
+      "proj-4": {
+        id: "proj-4",
+        name: "Four",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 60,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
+      async (date: Date) => [
+        {
+          id: "win-primary",
+          label: "Primary",
+          energy: "NO",
+          start_local: "10:00",
+          end_local: "14:00",
+          days: [date.getDay()],
+        },
+      ],
+    );
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse));
+
+    const createSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockImplementation(async (input) => {
+        const data = createInstanceRecord({
+          id: `inst-${instances.length + 1}`,
+          source_id: input.sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        instances.push(data);
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+      });
+
+    vi.spyOn(instanceRepo, "rescheduleInstance").mockImplementation(
+      async () => {
+        throw new Error("rescheduleInstance should not be called");
+      },
+    );
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async (params) => await realPlaceItemInWindows(params),
+    );
+
+    const anchor = new Date("2024-01-02T10:00:00Z");
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, anchor, mockClient);
+
+    expect(result.error).toBeUndefined();
+    expect(result.failures).toHaveLength(0);
+    expect(result.placed).toHaveLength(4);
+
+    const sorted = [...result.placed].sort(
+      (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime(),
+    );
+
+    const firstStart = new Date(sorted[0]!.start_utc).getTime();
+    const dayAhead = anchor.getTime() + 24 * 60 * 60 * 1000;
+
+    expect(firstStart).toBeGreaterThanOrEqual(anchor.getTime());
+
+    for (let i = 0; i < sorted.length; i += 1) {
+      const current = sorted[i]!;
+      const startMs = new Date(current.start_utc).getTime();
+      expect(startMs).toBeLessThan(dayAhead);
+      if (i > 0) {
+        const prevEnd = new Date(sorted[i - 1]!.end_utc).getTime();
+        expect(startMs).toBe(prevEnd);
+      }
+      expect(current.window_id).toBe("win-primary");
+    }
+
+    expect(createSpy).toHaveBeenCalledTimes(4);
   });
 
   it("skips already scheduled projects when falling back to enqueue all", async () => {
