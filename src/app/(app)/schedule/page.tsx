@@ -123,6 +123,9 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   hour12: true,
 })
 
+const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
+const MAX_FALLBACK_TASKS = 12
+
 function formatTimeRangeLabel(start: Date, end: Date) {
   return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
 }
@@ -141,6 +144,124 @@ type SchedulerDebugState = {
   placedCount: number
   placedProjectIds: string[]
   error: unknown
+}
+
+type TaskInstanceInfo = {
+  instance: ScheduleInstance
+  task: TaskLite
+  start: Date
+  end: Date
+}
+
+type ProjectTaskCard = {
+  key: string
+  task: TaskLite
+  start: Date
+  end: Date
+  kind: 'scheduled' | 'fallback'
+  instanceId?: string
+  displayDurationMinutes: number
+}
+
+function taskMatchesProjectInstance(
+  taskInfo: TaskInstanceInfo,
+  projectInstance: ScheduleInstance,
+  projectStart: Date,
+  projectEnd: Date
+) {
+  const projectWindowId = projectInstance.window_id
+  const taskWindowId = taskInfo.instance.window_id
+  if (projectWindowId && taskWindowId && projectWindowId !== taskWindowId) {
+    return false
+  }
+
+  const tolerance = TASK_INSTANCE_MATCH_TOLERANCE_MS
+  const taskStart = taskInfo.start.getTime()
+  const taskEnd = taskInfo.end.getTime()
+  const instanceStart = projectStart.getTime()
+  const instanceEnd = projectEnd.getTime()
+
+  if (taskEnd <= instanceStart - tolerance) return false
+  if (taskStart >= instanceEnd + tolerance) return false
+  if (taskStart < instanceStart - tolerance) return false
+  if (taskEnd > instanceEnd + tolerance) return false
+
+  return true
+}
+
+function buildFallbackTaskCards({
+  tasks,
+  projectStart,
+  projectEnd,
+  instanceId,
+  maxCount,
+}: {
+  tasks: TaskLite[]
+  projectStart: Date
+  projectEnd: Date
+  instanceId: string
+  maxCount: number
+}): ProjectTaskCard[] {
+  if (!tasks.length || maxCount <= 0) return []
+
+  const projectDurationMs = Math.max(projectEnd.getTime() - projectStart.getTime(), 1)
+  const limited = tasks.slice(0, maxCount)
+  const durations = limited.map(task => {
+    const raw = Number(task.duration_min ?? 0)
+    return Number.isFinite(raw) && raw > 0 ? raw : 0
+  })
+  const totalDuration = durations.reduce((sum, value) => sum + value, 0)
+
+  let accumulatedRatio = 0
+  const fallbackCards: ProjectTaskCard[] = []
+
+  for (let index = 0; index < limited.length; index += 1) {
+    const task = limited[index]
+    const availableRatio = Math.max(0, 1 - accumulatedRatio)
+    if (availableRatio <= 0) break
+
+    const durationValue = durations[index]
+    let ratioShare: number
+    if (totalDuration > 0 && durationValue > 0) {
+      ratioShare = (durationValue / totalDuration) * (1 - accumulatedRatio)
+    } else {
+      const remaining = limited.length - index
+      ratioShare = remaining > 0 ? availableRatio / remaining : availableRatio
+    }
+
+    if (index === limited.length - 1) {
+      ratioShare = availableRatio
+    } else if (ratioShare > availableRatio) {
+      ratioShare = availableRatio
+    }
+
+    const startRatio = accumulatedRatio
+    const endRatio = Math.min(1, startRatio + ratioShare)
+    accumulatedRatio = endRatio
+
+    const startTime = new Date(projectStart.getTime() + startRatio * projectDurationMs)
+    const endTime = new Date(projectStart.getTime() + endRatio * projectDurationMs)
+    const fallbackDuration =
+      durationValue > 0
+        ? durationValue
+        : (ratioShare * projectDurationMs) / 60000
+
+    fallbackCards.push({
+      key: `fallback:${instanceId}:${task.id}:${index}`,
+      kind: 'fallback',
+      task,
+      start: startTime,
+      end: endTime,
+      displayDurationMinutes: Math.max(1, Math.round(fallbackDuration || 0)),
+    })
+  }
+
+  if (fallbackCards.length > 0) {
+    const last = fallbackCards[fallbackCards.length - 1]
+    last.end = new Date(projectEnd.getTime())
+  }
+
+  return fallbackCards
 }
 
 function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
@@ -289,6 +410,21 @@ export default function SchedulePage() {
   const [schedulerDebug, setSchedulerDebug] = useState<SchedulerDebugState | null>(null)
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
+  const setProjectExpansion = useCallback(
+    (projectId: string, nextState?: boolean) => {
+      setHasInteractedWithProjects(true)
+      setExpandedProjects(prev => {
+        const next = new Set(prev)
+        const shouldExpand =
+          typeof nextState === 'boolean' ? nextState : !next.has(projectId)
+        if (shouldExpand) next.add(projectId)
+        else next.delete(projectId)
+        return next
+      })
+    },
+    [setExpandedProjects, setHasInteractedWithProjects]
+  )
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
@@ -511,10 +647,7 @@ export default function SchedulePage() {
   }, [schedulerDebug])
 
   const taskInstancesByProject = useMemo(() => {
-    const map: Record<
-      string,
-      Array<{ instance: ScheduleInstance; task: TaskLite; start: Date; end: Date }>
-    > = {}
+    const map: Record<string, TaskInstanceInfo[]> = {}
     for (const inst of instances) {
       if (inst.source_type !== 'TASK') continue
       const task = taskMap[inst.source_id]
@@ -537,12 +670,7 @@ export default function SchedulePage() {
   }, [instances, taskMap, projectInstanceIds])
 
   const standaloneTaskInstances = useMemo(() => {
-    const items: Array<{
-      instance: ScheduleInstance
-      task: TaskLite
-      start: Date
-      end: Date
-    }> = []
+    const items: TaskInstanceInfo[] = []
     for (const inst of instances) {
       if (inst.source_type !== 'TASK') continue
       const task = taskMap[inst.source_id]
@@ -601,12 +729,7 @@ export default function SchedulePage() {
         })
 
         if (status === 'canceled' && options?.projectId) {
-          setExpandedProjects(prev => {
-            if (!prev.has(options.projectId)) return prev
-            const next = new Set(prev)
-            next.delete(options.projectId)
-            return next
-          })
+          setProjectExpansion(options.projectId, false)
         }
       } catch (error) {
         console.error(error)
@@ -618,7 +741,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances, setExpandedProjects]
+    [userId, setInstances, setProjectExpansion]
   )
 
   const handleMarkCompleted = useCallback(
@@ -950,7 +1073,34 @@ export default function SchedulePage() {
                     const height =
                       ((end.getTime() - start.getTime()) / 60000) * pxPerMin
                     const isExpanded = expandedProjects.has(projectId)
-                    const tasksForProject = taskInstancesByProject[projectId] || []
+                    const projectTaskCandidates =
+                      taskInstancesByProject[projectId] ?? []
+                    const scheduledCards: ProjectTaskCard[] =
+                      projectTaskCandidates
+                        .filter(taskInfo =>
+                          taskMatchesProjectInstance(
+                            taskInfo,
+                            instance,
+                            start,
+                            end
+                          )
+                        )
+                        .map(taskInfo => ({
+                          key: `scheduled:${taskInfo.instance.id}`,
+                          kind: 'scheduled' as const,
+                          task: taskInfo.task,
+                          start: taskInfo.start,
+                          end: taskInfo.end,
+                          instanceId: taskInfo.instance.id,
+                          displayDurationMinutes: Math.max(
+                            1,
+                            Math.round(
+                              (taskInfo.end.getTime() - taskInfo.start.getTime()) /
+                                60000
+                            )
+                          ),
+                        }))
+                    const hasScheduledBreakdown = scheduledCards.length > 0
                     const durationMinutes = Math.round(
                       (end.getTime() - start.getTime()) / 60000
                     )
@@ -984,182 +1134,310 @@ export default function SchedulePage() {
                       `${durationMinutes}m`,
                     ]
                     if (tasksLabel) detailParts.push(tasksLabel)
-                    const detailText = detailParts.join(' · ')
-                    const style: CSSProperties = {
+                    let detailText = detailParts.join(' · ')
+                    const positionStyle: CSSProperties = {
                       top,
                       height,
+                    }
+                    const cardStyle: CSSProperties = {
                       boxShadow: 'var(--elev-card)',
                       outline: '1px solid var(--event-border)',
                       outlineOffset: '-1px',
                     }
+                    const projectDurationMs = Math.max(
+                      end.getTime() - start.getTime(),
+                      1
+                    )
+                    const projectHeightPx = Math.max(typeof height === 'number' ? height : 0, 1)
+                    const minHeightRatio = Math.min(1, 4 / projectHeightPx)
+                    const backlogTasks = tasksByProjectId[projectId] ?? []
+                    const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
+                    const fallbackLimit = Math.min(
+                      MAX_FALLBACK_TASKS,
+                      Math.max(1, Math.floor(1 / safeMinHeightRatio)),
+                      backlogTasks.length
+                    )
+                    const fallbackCards =
+                      !hasScheduledBreakdown && fallbackLimit > 0
+                        ? buildFallbackTaskCards({
+                            tasks: backlogTasks,
+                            projectStart: start,
+                            projectEnd: end,
+                            instanceId: instance.id,
+                            maxCount: fallbackLimit,
+                          })
+                        : []
+                    const displayCards =
+                      hasScheduledBreakdown ? scheduledCards : fallbackCards
+                    const usingFallback =
+                      !hasScheduledBreakdown && displayCards.length > 0
+                    if (usingFallback) {
+                      detailText = `${detailText} · Backlog preview`
+                    }
+                    const hiddenFallbackCount = usingFallback
+                      ? Math.max(0, backlogTasks.length - displayCards.length)
+                      : 0
+                    const canExpand = displayCards.length > 0
                     return (
-                      <AnimatePresence
+                      <motion.div
                         key={instance.id}
-                        initial={false}
-                        mode="wait"
+                        className="absolute left-16 right-2"
+                        style={positionStyle}
+                        layout={!prefersReducedMotion}
+                        transition={
+                          prefersReducedMotion
+                            ? undefined
+                            : { type: 'spring', stiffness: 320, damping: 32 }
+                        }
                       >
-                        {!isExpanded || tasksForProject.length === 0 ? (
-                          <motion.div
-                            key="project"
-                            aria-label={`Project ${project.name}`}
-                            onClick={() => {
-                              if (tasksForProject.length === 0) return
-                              setExpandedProjects(prev => {
-                                const next = new Set(prev)
-                                if (next.has(projectId)) next.delete(projectId)
-                                else next.add(projectId)
-                                return next
-                              })
-                            }}
-                            className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white"
-                            style={style}
-                            initial={
-                              prefersReducedMotion ? false : { opacity: 0, y: 4 }
-                            }
-                            animate={
-                              prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
-                            }
-                            exit={
-                              prefersReducedMotion
-                                ? undefined
-                                : { opacity: 0, y: 4 }
-                            }
-                            transition={
-                              prefersReducedMotion
-                                ? undefined
-                                : { delay: index * 0.02 }
-                            }
-                          >
-                            {renderInstanceActions(instance.id, { projectId })}
-                            <div className="flex flex-col">
-                              <span className="truncate text-sm font-medium">
-                                {project.name}
-                              </span>
-                              <div className="text-xs text-zinc-200/70">
-                                {detailText}
+                        <AnimatePresence mode="wait" initial={false}>
+                          {!isExpanded || !canExpand ? (
+                            <motion.div
+                              key="project"
+                              aria-label={`Project ${project.name}`}
+                              onClick={() => {
+                                if (!canExpand) return
+                                setProjectExpansion(projectId)
+                              }}
+                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white${
+                                canExpand ? ' cursor-pointer' : ''
+                              }`}
+                              style={cardStyle}
+                              initial={
+                                prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                              }
+                              animate={
+                                prefersReducedMotion
+                                  ? undefined
+                                  : {
+                                      opacity: 1,
+                                      y: 0,
+                                      transition: {
+                                        delay: hasInteractedWithProjects
+                                          ? 0
+                                          : index * 0.02,
+                                        duration: 0.18,
+                                        ease: [0.4, 0, 0.2, 1],
+                                      },
+                                    }
+                              }
+                              exit={
+                                prefersReducedMotion
+                                  ? undefined
+                                  : {
+                                      opacity: 0,
+                                      y: 4,
+                                      transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                                    }
+                              }
+                            >
+                              {renderInstanceActions(instance.id, { projectId })}
+                              <div className="flex flex-col">
+                                <span className="truncate text-sm font-medium">
+                                  {project.name}
+                                </span>
+                                <div className="text-xs text-zinc-200/70">
+                                  {detailText}
+                                </div>
                               </div>
-                            </div>
-                            {project.skill_icon && (
-                              <span
-                                className="ml-2 text-lg leading-none flex-shrink-0"
-                                aria-hidden
-                              >
-                                {project.skill_icon}
-                              </span>
-                            )}
-                            <FlameEmber
-                              level={
-                                (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                                'NO'
-                              }
-                              size="sm"
-                              className="absolute -top-1 -right-1"
-                            />
-                          </motion.div>
-                        ) : (
-                          <motion.div
-                            key="tasks"
-                            initial={
-                              prefersReducedMotion
-                                ? false
-                                : { opacity: 0, y: 4 }
-                            }
-                            animate={
-                              prefersReducedMotion
-                                ? undefined
-                                : { opacity: 1, y: 0 }
-                            }
-                            exit={
-                              prefersReducedMotion
-                                ? undefined
-                                : { opacity: 0, y: 4 }
-                            }
-                            transition={
-                              prefersReducedMotion
-                                ? undefined
-                                : { delay: index * 0.02 }
-                            }
-                          >
-                            {tasksForProject.map(taskInfo => {
-                              const { instance: taskInstance, task, start, end } = taskInfo
-                              const tStartMin =
-                                start.getHours() * 60 + start.getMinutes()
-                              const tTop = (tStartMin - startHour * 60) * pxPerMin
-                              const tHeight =
-                                ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-                              const tStyle: CSSProperties = {
-                                top: tTop,
-                                height: tHeight,
-                                boxShadow: 'var(--elev-card)',
-                                outline: '1px solid var(--event-border)',
-                                outlineOffset: '-1px',
-                              }
-                              const progress =
-                                (task as { progress?: number }).progress ?? 0
-                              return (
-                                <motion.div
-                                  key={taskInstance.id}
-                                  aria-label={`Task ${task.name}`}
-                                  className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
-                                  style={tStyle}
-                                  onClick={() =>
-                                    setExpandedProjects(prev => {
-                                      const next = new Set(prev)
-                                      next.delete(projectId)
-                                      return next
-                                    })
-                                  }
-                                  initial={
-                                    prefersReducedMotion
-                                      ? false
-                                      : { opacity: 0, y: 4 }
-                                  }
-                                  animate={
-                                    prefersReducedMotion
-                                      ? undefined
-                                      : { opacity: 1, y: 0 }
-                                  }
-                                  exit={
-                                    prefersReducedMotion
-                                      ? undefined
-                                      : { opacity: 0, y: 4 }
-                                  }
+                              {project.skill_icon && (
+                                <span
+                                  className="ml-2 text-lg leading-none flex-shrink-0"
+                                  aria-hidden
                                 >
-                                  {renderInstanceActions(taskInstance.id, { projectId })}
-                                  <div className="flex flex-col">
-                                    <span className="truncate text-sm font-medium">
-                                      {task.name}
-                                    </span>
-                                    <div className="text-xs text-zinc-200/70">
-                                      {Math.round(
-                                        (end.getTime() - start.getTime()) / 60000
-                                      )}
-                                      m
+                                  {project.skill_icon}
+                                </span>
+                              )}
+                              <FlameEmber
+                                level={
+                                  (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                                  'NO'
+                                }
+                                size="sm"
+                                className="absolute -top-1 -right-1"
+                              />
+                            </motion.div>
+                          ) : (
+                            <motion.div
+                              key="tasks"
+                              className="relative h-full w-full"
+                              initial={
+                                prefersReducedMotion
+                                  ? false
+                                  : { opacity: 0, y: 4 }
+                              }
+                              animate={
+                                prefersReducedMotion
+                                  ? undefined
+                                  : {
+                                      opacity: 1,
+                                      y: 0,
+                                      transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
+                                    }
+                              }
+                              exit={
+                                prefersReducedMotion
+                                  ? undefined
+                                  : {
+                                      opacity: 0,
+                                      y: 4,
+                                      transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                                    }
+                              }
+                            >
+                              {displayCards.map(taskCard => {
+                                const {
+                                  task,
+                                  start: taskStart,
+                                  end: taskEnd,
+                                  kind,
+                                  key,
+                                  instanceId,
+                                  displayDurationMinutes,
+                                } = taskCard
+                                const startOffsetMs =
+                                  taskStart.getTime() - start.getTime()
+                                const endOffsetMs = taskEnd.getTime() - start.getTime()
+                                const rawStartRatio = startOffsetMs / projectDurationMs
+                                const rawEndRatio = endOffsetMs / projectDurationMs
+                                const clampRatio = (value: number) =>
+                                  Number.isFinite(value)
+                                    ? Math.min(Math.max(value, 0), 1)
+                                    : 0
+                                let startRatio = clampRatio(rawStartRatio)
+                                let endRatio = clampRatio(rawEndRatio)
+                                if (endRatio <= startRatio) {
+                                  endRatio = Math.min(1, startRatio + minHeightRatio)
+                                }
+                                let heightRatio = Math.max(endRatio - startRatio, 0)
+                                if (heightRatio < minHeightRatio) {
+                                  heightRatio = minHeightRatio
+                                }
+                                if (startRatio + heightRatio > 1) {
+                                  const overflow = startRatio + heightRatio - 1
+                                  startRatio = Math.max(0, startRatio - overflow)
+                                  heightRatio = Math.min(heightRatio, 1 - startRatio)
+                                }
+                                const topPercent = startRatio * 100
+                                const heightPercent = Math.max(
+                                  heightRatio * 100,
+                                  minHeightRatio * 100
+                                )
+                                const tStyle: CSSProperties = {
+                                  top: `${topPercent}%`,
+                                  height: `${heightPercent}%`,
+                                  ...cardStyle,
+                                }
+                                const cardClasses =
+                                  kind === 'scheduled'
+                                    ? 'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white'
+                                    : 'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-600/80 px-3 py-2 text-white ring-1 ring-white/10 backdrop-blur-sm'
+                                const progressValue =
+                                  kind === 'scheduled'
+                                    ? Math.max(
+                                        0,
+                                        Math.min(
+                                          100,
+                                          (task as { progress?: number }).progress ?? 0
+                                        )
+                                      )
+                                    : 0
+                                const durationLabel =
+                                  kind === 'fallback'
+                                    ? `~${displayDurationMinutes}m`
+                                    : `${displayDurationMinutes}m`
+                                const resolvedEnergyRaw = (
+                                  task.energy ?? project.energy ?? 'NO'
+                                ).toString()
+                                const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
+                                const energyLevel = ENERGY.LIST.includes(
+                                  resolvedEnergyUpper as FlameLevel
+                                )
+                                  ? (resolvedEnergyUpper as FlameLevel)
+                                  : 'NO'
+                                return (
+                                  <motion.div
+                                    key={key}
+                                    aria-label={`Task ${task.name}`}
+                                    className={cardClasses}
+                                    style={tStyle}
+                                    onClick={() =>
+                                      setProjectExpansion(projectId, false)
+                                    }
+                                    initial={
+                                      prefersReducedMotion
+                                        ? false
+                                        : { opacity: 0, y: 6 }
+                                    }
+                                    animate={
+                                      prefersReducedMotion
+                                        ? undefined
+                                        : {
+                                            opacity: 1,
+                                            y: 0,
+                                            transition: {
+                                              duration: 0.18,
+                                              ease: [0.4, 0, 0.2, 1],
+                                            },
+                                          }
+                                    }
+                                    exit={
+                                      prefersReducedMotion
+                                        ? undefined
+                                        : {
+                                            opacity: 0,
+                                            y: 6,
+                                            transition: {
+                                              duration: 0.14,
+                                              ease: [0.4, 0, 0.2, 1],
+                                            },
+                                          }
+                                    }
+                                  >
+                                    {kind === 'scheduled' && instanceId
+                                      ? renderInstanceActions(instanceId, { projectId })
+                                      : null}
+                                    <div className="flex flex-col">
+                                      <span className="truncate text-sm font-medium">
+                                        {task.name}
+                                      </span>
+                                      <div className="text-xs text-zinc-200/70">
+                                        {durationLabel}
+                                      </div>
                                     </div>
-                                  </div>
-                                  {task.skill_icon && (
-                                    <span
-                                      className="ml-2 text-lg leading-none flex-shrink-0"
-                                      aria-hidden
-                                    >
-                                      {task.skill_icon}
-                                    </span>
-                                  )}
-                                  <FlameEmber
-                                    level={(task.energy as FlameLevel) || 'NO'}
-                                    size="sm"
-                                    className="absolute -top-1 -right-1"
-                                  />
-                                  <div
-                                    className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                                    style={{ width: `${progress}%` }}
-                                  />
-                                </motion.div>
-                              )
-                            })}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                                    {task.skill_icon && (
+                                      <span
+                                        className="ml-2 text-lg leading-none flex-shrink-0"
+                                        aria-hidden
+                                      >
+                                        {task.skill_icon}
+                                      </span>
+                                    )}
+                                    <FlameEmber
+                                      level={energyLevel}
+                                      size="sm"
+                                      className="absolute -top-1 -right-1"
+                                    />
+                                    {progressValue > 0 && (
+                                      <div
+                                        className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                                        style={{ width: `${progressValue}%` }}
+                                      />
+                                    )}
+                                  </motion.div>
+                                )
+                              })}
+                              {usingFallback && hiddenFallbackCount > 0 && (
+                                <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
+                                  <span className="rounded-full bg-stone-900/70 px-2 py-[2px] text-[10px] text-zinc-100/80">
+                                    +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
+                                  </span>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
                     )
                   })}
                   {standaloneTaskInstances.map(({ instance, task, start, end }) => {
