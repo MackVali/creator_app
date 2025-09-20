@@ -430,6 +430,11 @@ export default function SchedulePage() {
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
   const isSchedulingRef = useRef(false)
   const autoScheduledForRef = useRef<string | null>(null)
+  const autoScheduleSnapshotRef = useRef<{
+    userId: string | null
+    projectIds: Set<string>
+    taskIds: Set<string>
+  } | null>(null)
 
   const startHour = 0
   const pxPerMin = 2
@@ -954,7 +959,8 @@ export default function SchedulePage() {
 
   useEffect(() => {
     autoScheduledForRef.current = null
-  }, [userId, currentDate])
+    autoScheduleSnapshotRef.current = null
+  }, [userId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -968,21 +974,67 @@ export default function SchedulePage() {
   }, [runScheduler])
 
   useEffect(() => {
-    if (!userId) return
+    if (!userId) {
+      autoScheduledForRef.current = null
+      autoScheduleSnapshotRef.current = null
+      return
+    }
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
-    if (instances.length > 0) return
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDate)
-    const key = `${userId}:${startUTC}`
-    if (autoScheduledForRef.current === key) return
-    autoScheduledForRef.current = key
+
+    const currentProjectIds = new Set(projects.map(project => project.id))
+    const currentTaskIds = new Set(tasks.map(task => task.id))
+    const previousSnapshot = autoScheduleSnapshotRef.current
+
+    autoScheduleSnapshotRef.current = {
+      userId,
+      projectIds: currentProjectIds,
+      taskIds: currentTaskIds,
+    }
+
+    if (!previousSnapshot || previousSnapshot.userId !== userId) {
+      return
+    }
+
+    let hasNewProject = false
+    for (const projectId of currentProjectIds) {
+      if (!previousSnapshot.projectIds.has(projectId)) {
+        hasNewProject = true
+        break
+      }
+    }
+
+    let hasNewTask = false
+    for (const taskId of currentTaskIds) {
+      if (!previousSnapshot.taskIds.has(taskId)) {
+        hasNewTask = true
+        break
+      }
+    }
+
+    if (!hasNewProject && !hasNewTask) {
+      return
+    }
+
+    const signature = [
+      userId,
+      ...Array.from(currentProjectIds).sort(),
+      '|',
+      ...Array.from(currentTaskIds).sort(),
+    ].join(':')
+
+    if (autoScheduledForRef.current === signature) {
+      return
+    }
+
+    autoScheduledForRef.current = signature
     void runScheduler()
   }, [
     userId,
-    currentDate,
+    projects,
+    tasks,
     metaStatus,
     instancesStatus,
-    instances.length,
     runScheduler,
   ])
 
