@@ -523,7 +523,7 @@ async function fetchCompatibleWindowsForItem(
 
     const startLocal = resolveWindowStart(win, date)
     const endLocal = resolveWindowEnd(win, date)
-    const key = windowKey(win.id, startLocal)
+    const key = windowInstanceKey(win.id, date, win.fromPrevDay)
     const startMs = startLocal.getTime()
     const endMs = endLocal.getTime()
 
@@ -601,8 +601,10 @@ function isWithinWindow(
   return start >= win.startLocal && start < win.endLocal
 }
 
-function windowKey(windowId: string, startLocal: Date) {
-  return `${windowId}:${startLocal.toISOString()}`
+function windowInstanceKey(windowId: string, date: Date, fromPrevDay?: boolean) {
+  const dayKey = startOfDay(date).toISOString()
+  const suffix = fromPrevDay ? 'prev' : 'base'
+  return `${windowId}:${dayKey}:${suffix}`
 }
 
 function dateCacheKey(date: Date) {
