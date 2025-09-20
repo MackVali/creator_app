@@ -1180,7 +1180,7 @@ export default function SchedulePage() {
                             : { type: 'spring', stiffness: 320, damping: 32 }
                         }
                       >
-                        <AnimatePresence initial={false}>
+                        <AnimatePresence mode="wait" initial={false}>
                           {!isExpanded || !canExpand ? (
                             <motion.div
                               key="project"
@@ -1199,7 +1199,7 @@ export default function SchedulePage() {
                               }`}
                               style={cardStyle}
                               initial={
-                                prefersReducedMotion ? false : { opacity: 0, y: 6 }
+                                prefersReducedMotion ? false : { opacity: 0, y: 4 }
                               }
                               animate={
                                 prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
@@ -1207,7 +1207,7 @@ export default function SchedulePage() {
                               exit={
                                 prefersReducedMotion
                                   ? undefined
-                                  : { opacity: 0, y: -6 }
+                                  : { opacity: 0, y: 4 }
                               }
                               transition={
                                 prefersReducedMotion
@@ -1248,7 +1248,7 @@ export default function SchedulePage() {
                               initial={
                                 prefersReducedMotion
                                   ? false
-                                  : { opacity: 0, y: 6 }
+                                  : { opacity: 0, y: 4 }
                               }
                               animate={
                                 prefersReducedMotion
@@ -1258,7 +1258,7 @@ export default function SchedulePage() {
                               exit={
                                 prefersReducedMotion
                                   ? undefined
-                                  : { opacity: 0, y: -6 }
+                                  : { opacity: 0, y: 4 }
                               }
                               transition={
                                 prefersReducedMotion
