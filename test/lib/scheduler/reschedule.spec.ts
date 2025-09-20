@@ -1070,15 +1070,20 @@ describe("scheduleBacklog", () => {
     },
   );
 
-  it("attempts to reschedule already scheduled projects when enqueuing all", async () => {
+  it("leaves already scheduled projects untouched by default", async () => {
     const mockClient = {} as ScheduleBacklogClient;
-    await scheduleBacklog(userId, baseDate, mockClient);
+    const result = await scheduleBacklog(userId, baseDate, mockClient);
 
     expect(fetchInstancesForRangeSpy).toHaveBeenCalled();
 
-    const scheduledProjectIds = new Set(attemptedProjectIds);
-    expect(scheduledProjectIds.has("proj-1")).toBe(true);
-    expect(scheduledProjectIds.has("proj-2")).toBe(true);
+    const attempted = new Set(attemptedProjectIds);
+    expect(attempted.has("proj-1")).toBe(false);
+    expect(attempted.has("proj-2")).toBe(true);
+
+    const keptProjects = result.timeline
+      .filter(entry => entry.decision === "kept")
+      .map(entry => entry.projectId);
+    expect(keptProjects).toContain("proj-1");
   });
 
   it("reuses existing instances when fallback enqueues a project", async () => {
@@ -1126,8 +1131,28 @@ describe("scheduleBacklog", () => {
       metadata: null,
     } as unknown as ScheduleInstance;
 
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-existing",
+          source_id: "proj-1",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "NO",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      backlogResponse,
+    );
+
     fetchInstancesForRangeSpy.mockImplementation(async () => ({
-      data: [existing],
+      data: [],
       error: null,
       count: null,
       status: 200,
@@ -1172,6 +1197,33 @@ describe("scheduleBacklog", () => {
   it("reschedules existing placements into the timeline when rerun", async () => {
     const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
     placeSpy.mockReset();
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-existing",
+          source_id: "proj-1",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "NO",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      backlogResponse,
+    );
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse));
     const rescheduled = createInstanceRecord({
       id: "inst-existing",
       source_id: "proj-1",
