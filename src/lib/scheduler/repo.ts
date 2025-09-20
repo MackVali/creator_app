@@ -79,6 +79,18 @@ export async function fetchWindowsForDate(
   return [...(today ?? []), ...prevCross] as WindowLite[];
 }
 
+export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
+  const supabase = ensureClient(client);
+
+  const { data, error } = await supabase
+    .from('windows')
+    .select('id, label, energy, start_local, end_local, days');
+
+  if (error) throw error;
+
+  return (data ?? []) as WindowLite[];
+}
+
 export async function fetchProjectsMap(
   client?: Client
 ): Promise<Record<string, ProjectLite>> {
