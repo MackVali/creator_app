@@ -34,13 +34,19 @@ type PlaceParams = {
   date: Date
   client?: Client
   reuseInstanceId?: string | null
+  earliestStart?: Date
 }
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
-  const { userId, item, windows, client, reuseInstanceId } = params
+  const { userId, item, windows, client, reuseInstanceId, earliestStart } = params
+  const earliestStartTime = earliestStart?.getTime()
   for (const w of windows) {
     const start = new Date(w.availableStartLocal ?? w.startLocal)
     const end = new Date(w.endLocal)
+
+    if (earliestStartTime !== undefined && end.getTime() <= earliestStartTime) {
+      continue
+    }
 
     const { data: taken, error } = await fetchInstancesForRange(
       userId,
@@ -59,6 +65,9 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
     )
 
     let cursor = start
+    if (earliestStartTime !== undefined && cursor.getTime() < earliestStartTime) {
+      cursor = new Date(earliestStartTime)
+    }
     const durMin = item.duration_min
 
     for (const block of sorted) {
