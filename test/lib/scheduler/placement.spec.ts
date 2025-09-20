@@ -74,5 +74,76 @@ describe("placeItemInWindows", () => {
 
     expect(capturedStartUTC).toBe(availableStart.toISOString());
   });
+
+  it("chooses the window whose actual opening is earliest", async () => {
+    const fetchInstancesMock = instanceRepo.fetchInstancesForRange as unknown as vi.Mock;
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+
+    const firstWindowStart = new Date("2024-01-02T09:00:00Z");
+    const firstWindowEnd = new Date("2024-01-02T17:00:00Z");
+    const secondWindowStart = new Date("2024-01-02T10:00:00Z");
+    const secondWindowEnd = new Date("2024-01-02T12:00:00Z");
+
+    fetchInstancesMock
+      .mockImplementationOnce(async () => ({
+        data: [
+          {
+            id: "inst-existing",
+            start_utc: "2024-01-02T09:00:00Z",
+            end_utc: "2024-01-02T16:00:00Z",
+          },
+        ],
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      }))
+      .mockImplementationOnce(async () => ({
+        data: [],
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      }));
+
+    let capturedStartUTC: string | null = null;
+    createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
+      capturedStartUTC = input.startUTC;
+      return {
+        data: { id: "inst-placed" },
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "proj-1",
+        sourceType: "PROJECT",
+        duration_min: 60,
+        energy: "MEDIUM",
+        weight: 1,
+      },
+      windows: [
+        {
+          id: "win-late-gap",
+          startLocal: firstWindowStart,
+          endLocal: firstWindowEnd,
+        },
+        {
+          id: "win-early-gap",
+          startLocal: secondWindowStart,
+          endLocal: secondWindowEnd,
+        },
+      ],
+      date: firstWindowStart,
+    });
+
+    expect(capturedStartUTC).toBe(new Date("2024-01-02T10:00:00Z").toISOString());
+    expect(fetchInstancesMock).toHaveBeenCalledTimes(2);
+  });
 });
 
