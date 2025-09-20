@@ -108,13 +108,22 @@ function WindowLabel({
   )
 }
 
-function utcDayRange(d: Date) {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const day = d.getUTCDate()
-  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
-  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
-  return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
+function utcDayRange(date: Date) {
+  const startLocal = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    0,
+    0,
+    0,
+    0
+  )
+  const endLocal = new Date(startLocal)
+  endLocal.setDate(endLocal.getDate() + 1)
+  return {
+    startUTC: startLocal.toISOString(),
+    endUTC: endLocal.toISOString(),
+  }
 }
 
 const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
