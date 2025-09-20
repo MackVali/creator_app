@@ -12,6 +12,9 @@ type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row'
 const GRACE_MIN = 60
 const DEFAULT_PROJECT_DURATION_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
+const BASE_LOOKAHEAD_DAYS = 28
+const LOOKAHEAD_PER_ITEM_DAYS = 7
+const MAX_LOOKAHEAD_DAYS = 365
 
 serve(async req => {
   try {
@@ -190,10 +193,15 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
 
   const placed: ScheduleInstance[] = []
   const windowAvailability = new Map<string, Date>()
+  const windowCache = new Map<string, WindowRecord[]>()
+  const lookaheadDays = Math.min(
+    MAX_LOOKAHEAD_DAYS,
+    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
+  )
 
   for (const item of queue) {
     let scheduled = false
-    for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
+    for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
       const day = addDays(baseStart, offset)
       const windows = await fetchCompatibleWindowsForItem(
         client,
@@ -203,6 +211,7 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
         {
           availability: windowAvailability,
           now: offset === 0 ? baseDate : undefined,
+          cache: windowCache,
         }
       )
       if (windows.length === 0) continue
@@ -468,9 +477,21 @@ async function fetchCompatibleWindowsForItem(
   userId: string,
   date: Date,
   item: { energy: string; duration_min: number },
-  options?: { now?: Date; availability?: Map<string, Date> }
+  options?: {
+    now?: Date
+    availability?: Map<string, Date>
+    cache?: Map<string, WindowRecord[]>
+  }
 ) {
-  const windows = await fetchWindowsForDate(client, userId, date)
+  const cacheKey = dateCacheKey(date)
+  const cache = options?.cache
+  let windows: WindowRecord[]
+  if (cache?.has(cacheKey)) {
+    windows = cache.get(cacheKey) ?? []
+  } else {
+    windows = await fetchWindowsForDate(client, userId, date)
+    cache?.set(cacheKey, windows)
+  }
   const itemIdx = energyIndex(item.energy)
   const now = options?.now ? new Date(options.now) : null
   const nowMs = now?.getTime()
@@ -804,6 +825,10 @@ function isWithinWindow(
 
 function windowKey(windowId: string, startLocal: Date) {
   return `${windowId}:${startLocal.toISOString()}`
+}
+
+function dateCacheKey(date: Date) {
+  return startOfDay(date).toISOString()
 }
 
 function resolveWindowStart(window: WindowRecord, date: Date) {

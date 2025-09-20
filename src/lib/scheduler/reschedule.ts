@@ -19,6 +19,9 @@ import { ENERGY } from './config'
 type Client = SupabaseClient<Database>
 
 const GRACE_MIN = 60
+const BASE_LOOKAHEAD_DAYS = 28
+const LOOKAHEAD_PER_ITEM_DAYS = 7
+const MAX_LOOKAHEAD_DAYS = 365
 
 type ScheduleFailure = {
   itemId: string
@@ -261,10 +264,15 @@ export async function scheduleBacklog(
   })
 
   const windowAvailability = new Map<string, Date>()
+  const windowCache = new Map<string, WindowLite[]>()
+  const lookaheadDays = Math.min(
+    MAX_LOOKAHEAD_DAYS,
+    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
+  )
 
   for (const item of queue) {
     let scheduled = false
-    for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
+    for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
       const day = addDays(baseStart, offset)
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
@@ -273,6 +281,7 @@ export async function scheduleBacklog(
         {
           availability: windowAvailability,
           now: offset === 0 ? baseDate : undefined,
+          cache: windowCache,
         }
       )
       if (windows.length === 0) continue
@@ -478,9 +487,21 @@ async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
   item: { energy: string; duration_min: number },
-  options?: { now?: Date; availability?: Map<string, Date> }
+  options?: {
+    now?: Date
+    availability?: Map<string, Date>
+    cache?: Map<string, WindowLite[]>
+  }
 ) {
-  const windows = await fetchWindowsForDate(date, supabase)
+  const cacheKey = dateCacheKey(date)
+  const cache = options?.cache
+  let windows: WindowLite[]
+  if (cache?.has(cacheKey)) {
+    windows = cache.get(cacheKey) ?? []
+  } else {
+    windows = await fetchWindowsForDate(date, supabase)
+    cache?.set(cacheKey, windows)
+  }
   const itemIdx = energyIndex(item.energy)
   const now = options?.now ? new Date(options.now) : null
   const nowMs = now?.getTime()
@@ -582,6 +603,10 @@ function isWithinWindow(
 
 function windowKey(windowId: string, startLocal: Date) {
   return `${windowId}:${startLocal.toISOString()}`
+}
+
+function dateCacheKey(date: Date) {
+  return startOfDay(date).toISOString()
 }
 
 function energyIndex(level?: string | null) {
