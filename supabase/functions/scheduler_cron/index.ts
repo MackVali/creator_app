@@ -189,12 +189,22 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   })
 
   const placed: ScheduleInstance[] = []
+  const windowAvailability = new Map<string, Date>()
 
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < 28 && !scheduled; offset += 1) {
       const day = addDays(baseStart, offset)
-      const windows = await fetchCompatibleWindowsForItem(client, userId, day, item)
+      const windows = await fetchCompatibleWindowsForItem(
+        client,
+        userId,
+        day,
+        item,
+        {
+          availability: windowAvailability,
+          now: offset === 0 ? baseDate : undefined,
+        }
+      )
       if (windows.length === 0) continue
 
       const placedInstance = await placeItemInWindows(
@@ -206,6 +216,13 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
       )
       if (placedInstance) {
         placed.push(placedInstance)
+        const placementWindow = findPlacementWindow(windows, placedInstance)
+        if (placementWindow?.key) {
+          windowAvailability.set(
+            placementWindow.key,
+            new Date(placedInstance.end_utc)
+          )
+        }
         scheduled = true
       }
     }
@@ -450,35 +467,81 @@ async function fetchCompatibleWindowsForItem(
   client: Client,
   userId: string,
   date: Date,
-  item: { energy: string; duration_min: number }
+  item: { energy: string; duration_min: number },
+  options?: { now?: Date; availability?: Map<string, Date> }
 ) {
   const windows = await fetchWindowsForDate(client, userId, date)
   const itemIdx = energyIndex(item.energy)
-  const compatible = windows
-    .map(window => {
-      const energyIdx = energyIndex(window.energy)
-      return {
-        id: window.id,
-        startLocal: resolveWindowStart(window, date),
-        endLocal: resolveWindowEnd(window, date),
-        energyIdx,
+  const now = options?.now ? new Date(options.now) : null
+  const nowMs = now?.getTime()
+  const durationMs = Math.max(0, item.duration_min) * 60_000
+  const availability = options?.availability
+
+  const compatible: Array<{
+    id: string
+    key: string
+    startLocal: Date
+    endLocal: Date
+    availableStartLocal: Date
+    energyIdx: number
+  }> = []
+
+  for (const window of windows) {
+    const energyIdx = energyIndex(window.energy)
+    if (energyIdx < itemIdx) continue
+
+    const startLocal = resolveWindowStart(window, date)
+    const endLocal = resolveWindowEnd(window, date)
+    const key = windowKey(window.id, startLocal)
+    const startMs = startLocal.getTime()
+    const endMs = endLocal.getTime()
+
+    if (typeof nowMs === 'number' && endMs <= nowMs) continue
+
+    const baseAvailableStartMs =
+      typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
+    const carriedStartMs = availability?.get(key)?.getTime()
+    const availableStartMs =
+      typeof carriedStartMs === 'number'
+        ? Math.max(baseAvailableStartMs, carriedStartMs)
+        : baseAvailableStartMs
+    if (availableStartMs >= endMs) continue
+    if (availableStartMs + durationMs > endMs) continue
+
+    const availableStartLocal = new Date(availableStartMs)
+    if (availability) {
+      const existing = availability.get(key)
+      if (!existing || existing.getTime() !== availableStartMs) {
+        availability.set(key, availableStartLocal)
       }
+    }
+
+    compatible.push({
+      id: window.id,
+      key,
+      startLocal,
+      endLocal,
+      availableStartLocal,
+      energyIdx,
     })
-    .filter(window => window.energyIdx >= itemIdx)
+  }
 
   compatible.sort((a, b) => {
-    const aDiff = a.energyIdx - itemIdx
-    const bDiff = b.energyIdx - itemIdx
-    if (aDiff !== bDiff) return aDiff - bDiff
-    const startDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    const startDiff = a.availableStartLocal.getTime() - b.availableStartLocal.getTime()
     if (startDiff !== 0) return startDiff
+    const energyDiff = a.energyIdx - b.energyIdx
+    if (energyDiff !== 0) return energyDiff
+    const rawStartDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    if (rawStartDiff !== 0) return rawStartDiff
     return a.id.localeCompare(b.id)
   })
 
   return compatible.map(window => ({
     id: window.id,
+    key: window.key,
     startLocal: window.startLocal,
     endLocal: window.endLocal,
+    availableStartLocal: window.availableStartLocal,
   }))
 }
 
@@ -529,11 +592,17 @@ async function placeItemInWindows(
   client: Client,
   userId: string,
   item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
-  windows: Array<{ id: string; startLocal: Date; endLocal: Date }>,
+  windows: Array<{
+    id: string
+    startLocal: Date
+    endLocal: Date
+    availableStartLocal?: Date
+    key?: string
+  }>,
   reuseInstanceId?: string | null
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
-    const start = new Date(window.startLocal)
+    const start = new Date(window.availableStartLocal ?? window.startLocal)
     const end = new Date(window.endLocal)
 
     const { data: taken, error } = await client
@@ -549,7 +618,9 @@ async function placeItemInWindows(
       continue
     }
 
-    const sorted = (taken ?? []).sort(
+    const filtered = (taken ?? []).filter(instance => instance.id !== reuseInstanceId)
+
+    const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     )
 
@@ -683,6 +754,35 @@ async function rescheduleInstance(
   }
 
   return data
+}
+
+function findPlacementWindow(
+  windows: Array<{
+    id: string
+    startLocal: Date
+    endLocal: Date
+    key?: string
+  }>,
+  placement: ScheduleInstance
+) {
+  if (!placement.window_id) return null
+  const start = new Date(placement.start_utc)
+  const match = windows.find(
+    window => window.id === placement.window_id && isWithinWindow(start, window)
+  )
+  if (match) return match
+  return windows.find(window => window.id === placement.window_id) ?? null
+}
+
+function isWithinWindow(
+  start: Date,
+  window: { startLocal: Date; endLocal: Date }
+) {
+  return start >= window.startLocal && start < window.endLocal
+}
+
+function windowKey(windowId: string, startLocal: Date) {
+  return `${windowId}:${startLocal.toISOString()}`
 }
 
 function resolveWindowStart(window: WindowRecord, date: Date) {
