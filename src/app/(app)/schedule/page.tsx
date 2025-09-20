@@ -123,6 +123,8 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   hour12: true,
 })
 
+const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
+
 function formatTimeRangeLabel(start: Date, end: Date) {
   return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
 }
@@ -141,6 +143,39 @@ type SchedulerDebugState = {
   placedCount: number
   placedProjectIds: string[]
   error: unknown
+}
+
+type TaskInstanceInfo = {
+  instance: ScheduleInstance
+  task: TaskLite
+  start: Date
+  end: Date
+}
+
+function taskMatchesProjectInstance(
+  taskInfo: TaskInstanceInfo,
+  projectInstance: ScheduleInstance,
+  projectStart: Date,
+  projectEnd: Date
+) {
+  const projectWindowId = projectInstance.window_id
+  const taskWindowId = taskInfo.instance.window_id
+  if (projectWindowId && taskWindowId && projectWindowId !== taskWindowId) {
+    return false
+  }
+
+  const tolerance = TASK_INSTANCE_MATCH_TOLERANCE_MS
+  const taskStart = taskInfo.start.getTime()
+  const taskEnd = taskInfo.end.getTime()
+  const instanceStart = projectStart.getTime()
+  const instanceEnd = projectEnd.getTime()
+
+  if (taskEnd <= instanceStart - tolerance) return false
+  if (taskStart >= instanceEnd + tolerance) return false
+  if (taskStart < instanceStart - tolerance) return false
+  if (taskEnd > instanceEnd + tolerance) return false
+
+  return true
 }
 
 function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
@@ -511,10 +546,7 @@ export default function SchedulePage() {
   }, [schedulerDebug])
 
   const taskInstancesByProject = useMemo(() => {
-    const map: Record<
-      string,
-      Array<{ instance: ScheduleInstance; task: TaskLite; start: Date; end: Date }>
-    > = {}
+    const map: Record<string, TaskInstanceInfo[]> = {}
     for (const inst of instances) {
       if (inst.source_type !== 'TASK') continue
       const task = taskMap[inst.source_id]
@@ -537,12 +569,7 @@ export default function SchedulePage() {
   }, [instances, taskMap, projectInstanceIds])
 
   const standaloneTaskInstances = useMemo(() => {
-    const items: Array<{
-      instance: ScheduleInstance
-      task: TaskLite
-      start: Date
-      end: Date
-    }> = []
+    const items: TaskInstanceInfo[] = []
     for (const inst of instances) {
       if (inst.source_type !== 'TASK') continue
       const task = taskMap[inst.source_id]
@@ -950,7 +977,11 @@ export default function SchedulePage() {
                     const height =
                       ((end.getTime() - start.getTime()) / 60000) * pxPerMin
                     const isExpanded = expandedProjects.has(projectId)
-                    const tasksForProject = taskInstancesByProject[projectId] || []
+                    const projectTaskCandidates =
+                      taskInstancesByProject[projectId] ?? []
+                    const tasksForProject = projectTaskCandidates.filter(taskInfo =>
+                      taskMatchesProjectInstance(taskInfo, instance, start, end)
+                    )
                     const backlogTasks = tasksByProjectId[projectId] ?? []
                     const hasScheduledBreakdown = tasksForProject.length > 0
                     const hasFallbackBreakdown =
