@@ -212,18 +212,14 @@ export async function scheduleBacklog(
     queuedProjectIds.add(def.id)
   }
 
-  for (const project of projectItems) {
-    enqueue(project)
-  }
-
-  const finalQueueProjectIds = new Set(queuedProjectIds)
+  const projectsToReset = new Set(queuedProjectIds)
   const rangeEnd = addDays(baseStart, 28)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
     baseStart,
     rangeEnd,
-    finalQueueProjectIds
+    projectsToReset
   )
   if (dedupe.error) {
     result.error = dedupe.error
@@ -245,6 +241,12 @@ export async function scheduleBacklog(
       decision: 'kept',
       scheduledDayOffset: dayOffsetFor(inst.start_utc) ?? undefined,
     })
+  }
+
+  for (const project of projectItems) {
+    if (queuedProjectIds.has(project.id)) continue
+    if (dedupe.scheduled.has(project.id)) continue
+    enqueue(project)
   }
 
   for (const item of queue) {
