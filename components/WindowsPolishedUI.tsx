@@ -227,7 +227,7 @@ export default function WindowsPolishedUI({
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#04060d] text-slate-100">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#04060d] text-slate-100">
       <div className="pointer-events-none absolute inset-x-0 top-[-20%] h-[520px] bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.25),_transparent_65%)]" />
       <div className="pointer-events-none absolute inset-x-16 top-1/3 h-[360px] rounded-full bg-[radial-gradient(circle,_rgba(34,211,238,0.18),_transparent_70%)] blur-3xl" />
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 pb-16 pt-12">
