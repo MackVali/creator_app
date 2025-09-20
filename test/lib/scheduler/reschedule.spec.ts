@@ -787,6 +787,134 @@ describe("scheduleBacklog", () => {
     expect(finalStart.startsWith("2024-01-04T00:00:00.000Z")).toBe(true);
   });
 
+  it("allows a daily window to host different projects on successive days", async () => {
+    instances = [];
+
+    const emptyBacklog: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      emptyBacklog,
+    );
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const projectDefs = ["proj-a", "proj-b"].reduce<Record<string, ProjectLite>>(
+      (acc, id) => {
+        acc[id] = {
+          id,
+          name: `Project ${id}`,
+          priority: "HIGH",
+          stage: "PLAN",
+          energy: "NO",
+          duration_min: 180,
+        } as ProjectLite;
+        return acc;
+      },
+      {},
+    );
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue(projectDefs);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
+      async (date: Date) => {
+        const weekday = date.getDay();
+        const prevWeekday = (weekday + 6) % 7;
+
+        const base = {
+          id: "win-shared",
+          label: "Shared",
+          energy: "NO",
+          start_local: "22:00",
+          end_local: "02:00",
+          days: [weekday],
+        };
+
+        if (weekday === 1) {
+          return [base];
+        }
+
+        const fromPrevDay = {
+          id: "win-shared",
+          label: "Shared",
+          energy: "NO",
+          start_local: "22:00",
+          end_local: "02:00",
+          days: [prevWeekday],
+          fromPrevDay: true as const,
+        };
+
+        return [fromPrevDay, base];
+      },
+    );
+
+    fetchInstancesForRangeSpy.mockImplementation(async (_userId, startUTC, endUTC) => {
+      const startMs = new Date(startUTC).getTime();
+      const endMs = new Date(endUTC).getTime();
+      const data = instances.filter(inst => {
+        const instStart = new Date(inst.start_utc).getTime();
+        const instEnd = new Date(inst.end_utc).getTime();
+        return instStart < endMs && instEnd > startMs;
+      });
+      return {
+        data,
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      } satisfies InstancesResponse;
+    });
+
+    vi.spyOn(instanceRepo, "createInstance").mockImplementation(async input => {
+      const data = createInstanceRecord({
+        id: `inst-${instances.length + 1}`,
+        source_id: input.sourceId,
+        start_utc: input.startUTC,
+        end_utc: input.endUTC,
+        duration_min: input.durationMin,
+        window_id: input.windowId ?? null,
+        weight_snapshot: input.weightSnapshot,
+        energy_resolved: input.energyResolved,
+        status: "scheduled",
+      });
+      instances.push(data);
+      return {
+        data,
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+    });
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => await realPlaceItemInWindows(params),
+    );
+
+    const mockClient = {} as ScheduleBacklogClient;
+    const anchor = new Date("2024-01-01T12:00:00Z");
+    const result = await scheduleBacklog(userId, anchor, mockClient);
+
+    expect(result.error).toBeUndefined();
+    expect(result.failures).toHaveLength(0);
+    expect(result.placed).toHaveLength(2);
+
+    const ordered = [...result.placed].sort(
+      (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime(),
+    );
+
+    expect(ordered[0]?.window_id).toBe("win-shared");
+    expect(ordered[1]?.window_id).toBe("win-shared");
+    expect(new Date(ordered[0]!.start_utc).getUTCDate()).not.toBe(
+      new Date(ordered[1]!.start_utc).getUTCDate(),
+    );
+  });
+
   it("extends the scheduling range when the backlog exceeds the default horizon", async () => {
     instances = [];
 
