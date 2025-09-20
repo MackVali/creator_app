@@ -618,7 +618,9 @@ async function placeItemInWindows(
       continue
     }
 
-    const sorted = (taken ?? []).sort(
+    const filtered = (taken ?? []).filter(instance => instance.id !== reuseInstanceId)
+
+    const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     )
 

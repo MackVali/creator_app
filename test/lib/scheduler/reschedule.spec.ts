@@ -535,6 +535,174 @@ describe("scheduleBacklog", () => {
     expect(createSpy).toHaveBeenCalledTimes(4);
   });
 
+  it(
+    "fills remaining time today with later projects even if earlier ones spill into tomorrow",
+    async () => {
+      instances = [];
+
+      const backlogResponse: BacklogResponse = {
+        data: [
+          createInstanceRecord({
+            id: "missed-long",
+            source_id: "proj-long",
+            status: "missed",
+            duration_min: 180,
+            energy_resolved: "NO",
+          }),
+          createInstanceRecord({
+            id: "missed-short",
+            source_id: "proj-short",
+            status: "missed",
+            duration_min: 60,
+            energy_resolved: "NO",
+          }),
+        ],
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      };
+
+      (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+        backlogResponse,
+      );
+
+      (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+        "proj-long": {
+          id: "proj-long",
+          name: "Long",
+          priority: "HIGH",
+          stage: "PLAN",
+          energy: "NO",
+          duration_min: 180,
+        },
+        "proj-short": {
+          id: "proj-short",
+          name: "Short",
+          priority: "LOW",
+          stage: "PLAN",
+          energy: "NO",
+          duration_min: 60,
+        },
+      });
+
+      (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+      (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+        const isoDay = date.toISOString().slice(0, 10);
+        if (isoDay === "2024-01-02") {
+          return [
+            {
+              id: "win-today",
+              label: "Tonight",
+              energy: "NO",
+              start_local: "21:00",
+              end_local: "23:00",
+              days: [date.getDay()],
+            },
+          ];
+        }
+        if (isoDay === "2024-01-03") {
+          return [
+            {
+              id: "win-tomorrow",
+              label: "Tomorrow",
+              energy: "NO",
+              start_local: "09:00",
+              end_local: "15:00",
+              days: [date.getDay()],
+            },
+          ];
+        }
+        return [];
+      });
+
+      fetchInstancesForRangeSpy.mockImplementation(async () => ({
+        data: [...instances],
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      }) satisfies InstancesResponse);
+
+      vi.spyOn(instanceRepo, "createInstance").mockImplementation(async (input) => {
+        const data = createInstanceRecord({
+          id: `inst-${instances.length + 1}`,
+          source_id: input.sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        instances.push(data);
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+      });
+
+      const projectByInstance = new Map([
+        ["missed-long", "proj-long"],
+        ["missed-short", "proj-short"],
+      ]);
+
+      vi.spyOn(instanceRepo, "rescheduleInstance").mockImplementation(async (id, input) => {
+        const sourceId = projectByInstance.get(id) ?? "unknown";
+        const data = createInstanceRecord({
+          id,
+          source_id: sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        const remaining = instances.filter((inst) => inst.id !== id);
+        remaining.push(data);
+        instances = remaining;
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        } as Awaited<ReturnType<typeof instanceRepo.rescheduleInstance>>;
+      });
+
+      (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+        async (params) => await realPlaceItemInWindows(params),
+      );
+
+      const anchor = new Date("2024-01-02T21:00:00Z");
+      const mockClient = {} as ScheduleBacklogClient;
+      const result = await scheduleBacklog(userId, anchor, mockClient);
+
+      expect(result.error).toBeUndefined();
+      expect(result.failures).toHaveLength(0);
+      expect(result.placed).toHaveLength(2);
+
+      const placementsByStart = [...result.placed].sort(
+        (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime(),
+      );
+
+      const first = placementsByStart[0]!;
+      const second = placementsByStart[1]!;
+
+      expect(new Date(first.start_utc).toISOString().startsWith("2024-01-02")).toBe(true);
+      expect(new Date(second.start_utc).toISOString().startsWith("2024-01-03")).toBe(true);
+      expect(first.source_id).toBe("proj-short");
+      expect(second.source_id).toBe("proj-long");
+    },
+  );
+
   it("skips already scheduled projects when falling back to enqueue all", async () => {
     const mockClient = {} as ScheduleBacklogClient;
     await scheduleBacklog(userId, baseDate, mockClient);
