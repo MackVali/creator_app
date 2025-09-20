@@ -124,6 +124,7 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
 })
 
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
+const MAX_FALLBACK_TASKS = 12
 
 function formatTimeRangeLabel(start: Date, end: Date) {
   return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
@@ -152,6 +153,16 @@ type TaskInstanceInfo = {
   end: Date
 }
 
+type ProjectTaskCard = {
+  key: string
+  task: TaskLite
+  start: Date
+  end: Date
+  kind: 'scheduled' | 'fallback'
+  instanceId?: string
+  displayDurationMinutes: number
+}
+
 function taskMatchesProjectInstance(
   taskInfo: TaskInstanceInfo,
   projectInstance: ScheduleInstance,
@@ -176,6 +187,81 @@ function taskMatchesProjectInstance(
   if (taskEnd > instanceEnd + tolerance) return false
 
   return true
+}
+
+function buildFallbackTaskCards({
+  tasks,
+  projectStart,
+  projectEnd,
+  instanceId,
+  maxCount,
+}: {
+  tasks: TaskLite[]
+  projectStart: Date
+  projectEnd: Date
+  instanceId: string
+  maxCount: number
+}): ProjectTaskCard[] {
+  if (!tasks.length || maxCount <= 0) return []
+
+  const projectDurationMs = Math.max(projectEnd.getTime() - projectStart.getTime(), 1)
+  const limited = tasks.slice(0, maxCount)
+  const durations = limited.map(task => {
+    const raw = Number(task.duration_min ?? 0)
+    return Number.isFinite(raw) && raw > 0 ? raw : 0
+  })
+  const totalDuration = durations.reduce((sum, value) => sum + value, 0)
+
+  let accumulatedRatio = 0
+  const fallbackCards: ProjectTaskCard[] = []
+
+  for (let index = 0; index < limited.length; index += 1) {
+    const task = limited[index]
+    const availableRatio = Math.max(0, 1 - accumulatedRatio)
+    if (availableRatio <= 0) break
+
+    const durationValue = durations[index]
+    let ratioShare: number
+    if (totalDuration > 0 && durationValue > 0) {
+      ratioShare = (durationValue / totalDuration) * (1 - accumulatedRatio)
+    } else {
+      const remaining = limited.length - index
+      ratioShare = remaining > 0 ? availableRatio / remaining : availableRatio
+    }
+
+    if (index === limited.length - 1) {
+      ratioShare = availableRatio
+    } else if (ratioShare > availableRatio) {
+      ratioShare = availableRatio
+    }
+
+    const startRatio = accumulatedRatio
+    const endRatio = Math.min(1, startRatio + ratioShare)
+    accumulatedRatio = endRatio
+
+    const startTime = new Date(projectStart.getTime() + startRatio * projectDurationMs)
+    const endTime = new Date(projectStart.getTime() + endRatio * projectDurationMs)
+    const fallbackDuration =
+      durationValue > 0
+        ? durationValue
+        : (ratioShare * projectDurationMs) / 60000
+
+    fallbackCards.push({
+      key: `fallback:${instanceId}:${task.id}:${index}`,
+      kind: 'fallback',
+      task,
+      start: startTime,
+      end: endTime,
+      displayDurationMinutes: Math.max(1, Math.round(fallbackDuration || 0)),
+    })
+  }
+
+  if (fallbackCards.length > 0) {
+    const last = fallbackCards[fallbackCards.length - 1]
+    last.end = new Date(projectEnd.getTime())
+  }
+
+  return fallbackCards
 }
 
 function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
@@ -979,11 +1065,32 @@ export default function SchedulePage() {
                     const isExpanded = expandedProjects.has(projectId)
                     const projectTaskCandidates =
                       taskInstancesByProject[projectId] ?? []
-                    const tasksForProject = projectTaskCandidates.filter(taskInfo =>
-                      taskMatchesProjectInstance(taskInfo, instance, start, end)
-                    )
-                    const hasScheduledBreakdown = tasksForProject.length > 0
-                    const canExpand = hasScheduledBreakdown
+                    const scheduledCards: ProjectTaskCard[] =
+                      projectTaskCandidates
+                        .filter(taskInfo =>
+                          taskMatchesProjectInstance(
+                            taskInfo,
+                            instance,
+                            start,
+                            end
+                          )
+                        )
+                        .map(taskInfo => ({
+                          key: `scheduled:${taskInfo.instance.id}`,
+                          kind: 'scheduled' as const,
+                          task: taskInfo.task,
+                          start: taskInfo.start,
+                          end: taskInfo.end,
+                          instanceId: taskInfo.instance.id,
+                          displayDurationMinutes: Math.max(
+                            1,
+                            Math.round(
+                              (taskInfo.end.getTime() - taskInfo.start.getTime()) /
+                                60000
+                            )
+                          ),
+                        }))
+                    const hasScheduledBreakdown = scheduledCards.length > 0
                     const durationMinutes = Math.round(
                       (end.getTime() - start.getTime()) / 60000
                     )
@@ -1017,7 +1124,7 @@ export default function SchedulePage() {
                       `${durationMinutes}m`,
                     ]
                     if (tasksLabel) detailParts.push(tasksLabel)
-                    const detailText = detailParts.join(' · ')
+                    let detailText = detailParts.join(' · ')
                     const positionStyle: CSSProperties = {
                       top,
                       height,
@@ -1033,6 +1140,34 @@ export default function SchedulePage() {
                     )
                     const projectHeightPx = Math.max(typeof height === 'number' ? height : 0, 1)
                     const minHeightRatio = Math.min(1, 4 / projectHeightPx)
+                    const backlogTasks = tasksByProjectId[projectId] ?? []
+                    const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
+                    const fallbackLimit = Math.min(
+                      MAX_FALLBACK_TASKS,
+                      Math.max(1, Math.floor(1 / safeMinHeightRatio)),
+                      backlogTasks.length
+                    )
+                    const fallbackCards =
+                      !hasScheduledBreakdown && fallbackLimit > 0
+                        ? buildFallbackTaskCards({
+                            tasks: backlogTasks,
+                            projectStart: start,
+                            projectEnd: end,
+                            instanceId: instance.id,
+                            maxCount: fallbackLimit,
+                          })
+                        : []
+                    const displayCards =
+                      hasScheduledBreakdown ? scheduledCards : fallbackCards
+                    const usingFallback =
+                      !hasScheduledBreakdown && displayCards.length > 0
+                    if (usingFallback) {
+                      detailText = `${detailText} · Backlog preview`
+                    }
+                    const hiddenFallbackCount = usingFallback
+                      ? Math.max(0, backlogTasks.length - displayCards.length)
+                      : 0
+                    const canExpand = displayCards.length > 0
                     return (
                       <motion.div
                         key={instance.id}
@@ -1131,13 +1266,16 @@ export default function SchedulePage() {
                                   : { delay: index * 0.02 }
                               }
                             >
-                              {tasksForProject.map(taskInfo => {
+                              {displayCards.map(taskCard => {
                                 const {
-                                  instance: taskInstance,
                                   task,
                                   start: taskStart,
                                   end: taskEnd,
-                                } = taskInfo
+                                  kind,
+                                  key,
+                                  instanceId,
+                                  displayDurationMinutes,
+                                } = taskCard
                                 const startOffsetMs =
                                   taskStart.getTime() - start.getTime()
                                 const endOffsetMs = taskEnd.getTime() - start.getTime()
@@ -1171,13 +1309,38 @@ export default function SchedulePage() {
                                   height: `${heightPercent}%`,
                                   ...cardStyle,
                                 }
-                                const progress =
-                                  (task as { progress?: number }).progress ?? 0
+                                const cardClasses =
+                                  kind === 'scheduled'
+                                    ? 'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white'
+                                    : 'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-600/80 px-3 py-2 text-white ring-1 ring-white/10 backdrop-blur-sm'
+                                const progressValue =
+                                  kind === 'scheduled'
+                                    ? Math.max(
+                                        0,
+                                        Math.min(
+                                          100,
+                                          (task as { progress?: number }).progress ?? 0
+                                        )
+                                      )
+                                    : 0
+                                const durationLabel =
+                                  kind === 'fallback'
+                                    ? `~${displayDurationMinutes}m`
+                                    : `${displayDurationMinutes}m`
+                                const resolvedEnergyRaw = (
+                                  task.energy ?? project.energy ?? 'NO'
+                                ).toString()
+                                const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
+                                const energyLevel = ENERGY.LIST.includes(
+                                  resolvedEnergyUpper as FlameLevel
+                                )
+                                  ? (resolvedEnergyUpper as FlameLevel)
+                                  : 'NO'
                                 return (
                                   <motion.div
-                                    key={taskInstance.id}
+                                    key={key}
                                     aria-label={`Task ${task.name}`}
-                                    className="absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                                    className={cardClasses}
                                     style={tStyle}
                                     onClick={() =>
                                       setExpandedProjects(prev => {
@@ -1202,19 +1365,15 @@ export default function SchedulePage() {
                                         : { opacity: 0, y: -6 }
                                     }
                                   >
-                                    {renderInstanceActions(taskInstance.id, {
-                                      projectId,
-                                    })}
+                                    {kind === 'scheduled' && instanceId
+                                      ? renderInstanceActions(instanceId, { projectId })
+                                      : null}
                                     <div className="flex flex-col">
                                       <span className="truncate text-sm font-medium">
                                         {task.name}
                                       </span>
                                       <div className="text-xs text-zinc-200/70">
-                                        {Math.round(
-                                          (taskEnd.getTime() - taskStart.getTime()) /
-                                            60000
-                                        )}
-                                        m
+                                        {durationLabel}
                                       </div>
                                     </div>
                                     {task.skill_icon && (
@@ -1226,17 +1385,26 @@ export default function SchedulePage() {
                                       </span>
                                     )}
                                     <FlameEmber
-                                      level={(task.energy as FlameLevel) || 'NO'}
+                                      level={energyLevel}
                                       size="sm"
                                       className="absolute -top-1 -right-1"
                                     />
-                                    <div
-                                      className="absolute left-0 bottom-0 h-[3px] bg-white/30"
-                                      style={{ width: `${progress}%` }}
-                                    />
+                                    {progressValue > 0 && (
+                                      <div
+                                        className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                                        style={{ width: `${progressValue}%` }}
+                                      />
+                                    )}
                                   </motion.div>
                                 )
                               })}
+                              {usingFallback && hiddenFallbackCount > 0 && (
+                                <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
+                                  <span className="rounded-full bg-stone-900/70 px-2 py-[2px] text-[10px] text-zinc-100/80">
+                                    +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
+                                  </span>
+                                </div>
+                              )}
                             </motion.div>
                           )}
                         </AnimatePresence>
