@@ -1,9 +1,26 @@
 "use client";
-// Render <SettingsPage /> in /settings route
-import { useState, useEffect, ReactNode } from "react";
+
+import { ReactNode, useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getCurrentUser } from "@/lib/auth";
+import type { Profile as ProfileType } from "@/lib/types";
+import {
+  ArrowLeft,
+  Bell,
+  ChevronRight,
+  FileText,
+  Globe2,
+  Info,
+  Link2,
+  Lock,
+  Moon,
+  Pencil,
+  Shield,
+  ShieldCheck,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(true);
@@ -17,10 +34,11 @@ export default function SettingsPage() {
       const user = await getCurrentUser();
       setEmail(user?.email || "");
     }
+
     loadEmail();
   }, []);
 
-  const initials = getInitials(profile?.name || null, email);
+  const initials = getInitials(profile?.name || profile?.username || null, email);
 
   return (
     <div
@@ -30,159 +48,363 @@ export default function SettingsPage() {
         backgroundImage: "var(--bg-gradient)",
       }}
     >
-      <header className="sticky top-0 z-10 backdrop-blur bg-[var(--bg)]/80 border-b border-white/10">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <button
-            aria-label="Go back"
-            onClick={() => router.push("/dashboard")}
-            className="text-2xl text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-          >
-            ←
-          </button>
-          <div>
-            <h1 className="font-bold text-lg">Settings</h1>
-            <p className="text-sm text-[var(--muted)]">
-              Manage your account and preferences
-            </p>
+      <header className="sticky top-0 z-10 border-b border-white/10 bg-[var(--bg)]/80 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              aria-label="Go back to dashboard"
+              onClick={() => router.push("/dashboard")}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              <span>Back</span>
+            </button>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Your space</p>
+              <h1 className="text-xl font-semibold leading-tight">Settings</h1>
+              <p className="text-sm text-[var(--muted)]">Tune Creator to match the way you work.</p>
+            </div>
           </div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-[var(--muted)]">
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+            Account secure
+          </span>
         </div>
       </header>
-      <main className="p-4 space-y-6">
-        <SectionCard title="Account">
-          <Row
-            ariaLabel="Profile information"
-            left={
-              profile?.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt={profile.name || email}
-                  className="h-12 w-12 rounded-full object-cover"
-                />
-              ) : (
-                <div className="h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-lg">
-                  {initials}
-                </div>
-              )
-            }
-            label={
-              <div>
-                <p className="font-medium">{profile?.name || email || "User"}</p>
-                {email && (
-                  <p className="text-sm text-[var(--muted)]">{email}</p>
-                )}
-              </div>
-            }
+      <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <ProfileOverview
+            profile={profile}
+            email={email}
+            initials={initials}
+            onEdit={() => router.push("/profile/edit")}
+            onViewProfile={(handle) => router.push(`/profile/${handle}`)}
           />
-          <Row
-            ariaLabel="Edit profile"
-            left="✏️"
-            label="Edit Profile"
-            right={<Chevron />}
-          />
-          <Row
-            ariaLabel="Change password"
-            left="🔒"
-            label="Change Password"
-            right={<Chevron />}
-          />
-        </SectionCard>
-        <SectionCard title="App">
-          <Row
-            ariaLabel="Toggle theme"
-            left="🌑"
-            label="Dark Mode"
-            right={
-              <ToggleSwitch
-                checked={darkMode}
-                onChange={() => setDarkMode((v) => !v)}
-                ariaLabel="Toggle dark mode"
-              />
-            }
-          />
-          <Row
-            ariaLabel="Toggle notifications"
-            left="🔔"
-            label="Notifications"
-            right={
-              <ToggleSwitch
-                checked={notifications}
-                onChange={() => setNotifications((v) => !v)}
-                ariaLabel="Toggle notifications"
-              />
-            }
-          />
-          <Row
-            ariaLabel="Change language"
-            left="🌐"
-            label="Language"
-            right={<Chevron />}
-          />
-        </SectionCard>
-        <SectionCard title="About">
-          <Row
-            ariaLabel="View terms of service"
-            left="📜"
-            label="Terms of Service"
-            right={<Chevron />}
-          />
-          <Row
-            ariaLabel="View privacy policy"
-            left="🔐"
-            label="Privacy Policy"
-            right={<Chevron />}
-          />
-          <Row
-            ariaLabel="App version"
-            left="ℹ️"
-            label="App Version"
-            right={<span className="text-[var(--muted)]">v1.0.0</span>}
-          />
-        </SectionCard>
+          <SettingsCard
+            title="Security & access"
+            description="Control where your account is connected and how you sign in."
+          >
+            <SettingsActionRow
+              icon={Link2}
+              title="Linked accounts"
+              description="Manage the services connected to your Creator profile."
+              onClick={() => router.push("/profile/linked-accounts")}
+            />
+            <SettingsStaticRow
+              icon={Lock}
+              title="Password"
+              description="Passwords are handled by your authentication provider."
+              value="Managed externally"
+            />
+            <SettingsStaticRow
+              icon={Shield}
+              title="Two-factor authentication"
+              description="Add another layer of protection to your account."
+              value="Coming soon"
+            />
+          </SettingsCard>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
+          <SettingsCard
+            title="Preferences"
+            description="Dial in the experience so the interface feels familiar."
+          >
+            <SettingsToggleRow
+              icon={Moon}
+              title="Dark mode"
+              description="Reduce eye strain with our midnight palette."
+              checked={darkMode}
+              onChange={() => setDarkMode((value) => !value)}
+              ariaLabel="Toggle dark mode"
+            />
+            <SettingsToggleRow
+              icon={Bell}
+              title="Notifications"
+              description="Get nudges when teammates share something important."
+              checked={notifications}
+              onChange={() => setNotifications((value) => !value)}
+              ariaLabel="Toggle notifications"
+            />
+            <SettingsStaticRow
+              icon={Globe2}
+              title="Language"
+              description="Choose the language used throughout the dashboard."
+              value="English (US)"
+            />
+          </SettingsCard>
+
+          <SettingsCard
+            title="About Creator"
+            description="Stay informed about policies and the version you're using."
+          >
+            <SettingsStaticRow
+              icon={FileText}
+              title="Terms of Service"
+              description="Read the agreement that keeps everything running smoothly."
+              value="Coming soon"
+            />
+            <SettingsStaticRow
+              icon={Shield}
+              title="Privacy Policy"
+              description="Learn how we handle your data and respect your privacy."
+              value="Coming soon"
+            />
+            <SettingsStaticRow
+              icon={Info}
+              title="App version"
+              description="You're running the latest build available."
+              value="v1.0.0"
+            />
+          </SettingsCard>
+        </section>
       </main>
     </div>
   );
 }
 
-function Chevron() {
-  return <span className="text-[var(--muted)]">›</span>;
+type ProfileOverviewProps = {
+  profile: ProfileType | null;
+  email: string;
+  initials: string;
+  onEdit: () => void;
+  onViewProfile?: (handle: string) => void;
+};
+
+function ProfileOverview({ profile, email, initials, onEdit, onViewProfile }: ProfileOverviewProps) {
+  const handle = profile?.username?.trim();
+  const displayName =
+    profile?.name?.trim() ||
+    handle ||
+    email ||
+    "Your profile";
+  const username = handle ? `@${handle}` : "Not set";
+  const location = profile?.city?.trim() || "Add your location";
+  const bio = profile?.bio?.trim();
+  const avatarUrl = profile?.avatar_url;
+
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex flex-col gap-6 px-6 py-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <ProfileAvatar src={avatarUrl} alt={displayName} fallback={initials} />
+            <div>
+              <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Profile overview</p>
+              <h2 className="text-xl font-semibold leading-tight">{displayName}</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--muted)]">
+                <span>{username}</span>
+                {email ? (
+                  <>
+                    <span aria-hidden="true" className="text-white/20">
+                      •
+                    </span>
+                    <span>{email}</span>
+                  </>
+                ) : (
+                  <span>Add an email to finish setup</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {bio && (
+          <p className="text-sm leading-relaxed text-[var(--muted)]">{bio}</p>
+        )}
+
+        <dl className="grid gap-4 sm:grid-cols-2">
+          <InfoItem label="Email" value={email || "Not provided"} />
+          <InfoItem label="Username" value={username} />
+          <InfoItem label="Location" value={location} />
+        </dl>
+
+        <div className="flex flex-wrap gap-3">
+          <SecondaryButton onClick={onEdit}>
+            <Pencil className="h-4 w-4" aria-hidden="true" />
+            Edit profile
+          </SecondaryButton>
+          {handle && onViewProfile && (
+            <SecondaryButton onClick={() => onViewProfile(handle)}>
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              View public profile
+            </SecondaryButton>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
 
-type SectionCardProps = {
-  title: string;
+type InfoItemProps = {
+  label: string;
+  value: string;
+};
+
+function InfoItem({ label, value }: InfoItemProps) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-white/[0.03] px-4 py-3">
+      <dt className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</dt>
+      <dd className="mt-1 text-sm leading-6 text-[var(--text)] break-words">{value}</dd>
+    </div>
+  );
+}
+
+type SecondaryButtonProps = {
+  onClick?: () => void;
   children: ReactNode;
 };
 
-function SectionCard({ title, children }: SectionCardProps) {
+function SecondaryButton({ onClick, children }: SecondaryButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+    >
+      {children}
+    </button>
+  );
+}
+
+type ProfileAvatarProps = {
+  src?: string | null;
+  alt: string;
+  fallback: string;
+};
+
+function ProfileAvatar({ src, alt, fallback }: ProfileAvatarProps) {
+  const fallbackValue = fallback || alt.charAt(0).toUpperCase();
+
+  if (src) {
+    return (
+      <Image
+        src={src}
+        alt={alt}
+        width={64}
+        height={64}
+        unoptimized
+        className="h-16 w-16 rounded-2xl object-cover shadow-lg shadow-black/30"
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-lg font-semibold text-white shadow-inner shadow-black/40">
+      {fallbackValue}
+    </div>
+  );
+}
+
+type SettingsCardProps = {
+  title: string;
+  description?: string;
+  children: ReactNode;
+};
+
+function SettingsCard({ title, description, children }: SettingsCardProps) {
   return (
     <section className="card overflow-hidden">
-      <h2 className="px-4 py-3 font-semibold inner-hair">{title}</h2>
+      <div className="px-6 py-5 inner-hair">
+        <h2 className="text-lg font-semibold text-[var(--text)]">{title}</h2>
+        {description && (
+          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+        )}
+      </div>
       <div className="divide-y divide-white/5">{children}</div>
     </section>
   );
 }
 
-type RowProps = {
-  left: ReactNode;
-  label: ReactNode;
-  right?: ReactNode;
-  ariaLabel: string;
-  onClick?: () => void;
+type SettingsActionRowProps = {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+  onClick: () => void;
 };
 
-function Row({ left, label, right, ariaLabel, onClick }: RowProps) {
+function SettingsActionRow({ icon: Icon, title, description, onClick }: SettingsActionRowProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={ariaLabel}
-      className="w-full flex items-center justify-between h-14 px-4 text-left transition-all duration-200 hover:bg-white/5 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+      className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors duration-200 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
     >
-      <div className="flex items-center gap-4">
-        <span className="text-xl">{left}</span>
-        <span className="text-[var(--text)]">{label}</span>
+      <SettingsIcon icon={Icon} />
+      <div className="flex-1">
+        <p className="font-medium text-[var(--text)]">{title}</p>
+        {description && (
+          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+        )}
       </div>
-      {right}
+      <ChevronRight className="h-4 w-4 text-[var(--muted)]" aria-hidden="true" />
     </button>
+  );
+}
+
+type SettingsToggleRowProps = {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+  checked: boolean;
+  onChange: () => void;
+  ariaLabel: string;
+};
+
+function SettingsToggleRow({
+  icon: Icon,
+  title,
+  description,
+  checked,
+  onChange,
+  ariaLabel,
+}: SettingsToggleRowProps) {
+  return (
+    <div className="flex items-center gap-4 px-6 py-4">
+      <SettingsIcon icon={Icon} />
+      <div className="flex-1">
+        <p className="font-medium text-[var(--text)]">{title}</p>
+        {description && (
+          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+        )}
+      </div>
+      <ToggleSwitch checked={checked} onChange={onChange} ariaLabel={ariaLabel} />
+    </div>
+  );
+}
+
+type SettingsStaticRowProps = {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+  value?: string;
+};
+
+function SettingsStaticRow({ icon: Icon, title, description, value }: SettingsStaticRowProps) {
+  return (
+    <div className="flex items-center gap-4 px-6 py-4">
+      <SettingsIcon icon={Icon} />
+      <div className="flex-1">
+        <p className="font-medium text-[var(--text)]">{title}</p>
+        {description && (
+          <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
+        )}
+      </div>
+      {value && <span className="text-sm font-medium text-[var(--muted)]">{value}</span>}
+    </div>
+  );
+}
+
+type SettingsIconProps = {
+  icon: LucideIcon;
+};
+
+function SettingsIcon({ icon: Icon }: SettingsIconProps) {
+  return (
+    <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
+      <Icon className="h-5 w-5 text-[var(--text)]" aria-hidden="true" />
+    </span>
   );
 }
 
@@ -195,17 +417,19 @@ type ToggleSwitchProps = {
 function ToggleSwitch({ checked, onChange, ariaLabel }: ToggleSwitchProps) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
       onClick={onChange}
-      className={`w-12 h-7 rounded-full p-1 transition-colors duration-200 ${
+      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
         checked ? "bg-[var(--accent)]" : "bg-white/10"
       }`}
     >
       <span
-        className={`h-5 w-5 bg-white rounded-full shadow transition-transform duration-200 ${
-          checked ? "translate-x-5" : "translate-x-0"
+        aria-hidden="true"
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+          checked ? "translate-x-6" : "translate-x-1"
         }`}
       />
     </button>
@@ -216,13 +440,15 @@ function getInitials(name: string | null, email: string) {
   if (name) {
     return name
       .split(" ")
-      .map((w) => w.charAt(0))
+      .filter(Boolean)
+      .map((word) => word.charAt(0))
       .join("")
       .toUpperCase();
   }
+
   if (email) {
     return email.charAt(0).toUpperCase();
   }
+
   return "";
 }
-
