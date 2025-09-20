@@ -182,28 +182,6 @@ export async function scheduleBacklog(
     }
   }
 
-  const initialQueueProjectIds = new Set(queue.map(item => item.id))
-  const rangeEnd = addDays(baseStart, 28)
-  const dedupe = await dedupeScheduledProjects(
-    supabase,
-    userId,
-    baseStart,
-    rangeEnd,
-    initialQueueProjectIds
-  )
-  if (dedupe.error) {
-    result.error = dedupe.error
-    return result
-  }
-  if (dedupe.failures.length > 0) {
-    result.failures.push(...dedupe.failures)
-  }
-  collectPrimaryReuseIds(dedupe.reusableByProject)
-  collectReuseIds(dedupe.canceledByProject)
-  const scheduled = dedupe.scheduled
-  const keptInstances = [...dedupe.keepers]
-  const keptInstanceIds = new Set(keptInstances.map(inst => inst.id))
-
   const queuedProjectIds = new Set(queue.map(item => item.id))
 
   const enqueue = (
@@ -219,7 +197,6 @@ export async function scheduleBacklog(
     if (!def) return
     const duration = Number(def.duration_min ?? 0)
     if (!Number.isFinite(duration) || duration <= 0) return
-    if (scheduled.has(def.id)) return
     if (queuedProjectIds.has(def.id)) return
     const energy = (def.energy ?? 'NO').toString().toUpperCase()
     queue.push({
@@ -236,43 +213,25 @@ export async function scheduleBacklog(
     enqueue(project)
   }
 
-  const finalQueueProjectIds = new Set(queue.map(item => item.id))
-  let needsSecondDedupe = finalQueueProjectIds.size !== initialQueueProjectIds.size
-  if (!needsSecondDedupe) {
-    for (const id of finalQueueProjectIds) {
-      if (!initialQueueProjectIds.has(id)) {
-        needsSecondDedupe = true
-        break
-      }
-    }
+  const finalQueueProjectIds = new Set(queuedProjectIds)
+  const rangeEnd = addDays(baseStart, 28)
+  const dedupe = await dedupeScheduledProjects(
+    supabase,
+    userId,
+    baseStart,
+    rangeEnd,
+    finalQueueProjectIds
+  )
+  if (dedupe.error) {
+    result.error = dedupe.error
+    return result
   }
-
-  if (needsSecondDedupe) {
-    const fallbackDedupe = await dedupeScheduledProjects(
-      supabase,
-      userId,
-      baseStart,
-      rangeEnd,
-      finalQueueProjectIds
-    )
-    if (fallbackDedupe.error) {
-      result.error = fallbackDedupe.error
-      return result
-    }
-    if (fallbackDedupe.failures.length > 0) {
-      result.failures.push(...fallbackDedupe.failures)
-    }
-    collectPrimaryReuseIds(fallbackDedupe.reusableByProject)
-    collectReuseIds(fallbackDedupe.canceledByProject)
-    for (const id of fallbackDedupe.scheduled) {
-      scheduled.add(id)
-    }
-    for (const inst of fallbackDedupe.keepers) {
-      if (keptInstanceIds.has(inst.id)) continue
-      keptInstanceIds.add(inst.id)
-      keptInstances.push(inst)
-    }
+  if (dedupe.failures.length > 0) {
+    result.failures.push(...dedupe.failures)
   }
+  collectPrimaryReuseIds(dedupe.reusableByProject)
+  collectReuseIds(dedupe.canceledByProject)
+  const keptInstances = [...dedupe.keepers]
 
   for (const inst of keptInstances) {
     const projectId = inst.source_id ?? ''

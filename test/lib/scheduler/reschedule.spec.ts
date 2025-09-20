@@ -711,18 +711,14 @@ describe("scheduleBacklog", () => {
     },
   );
 
-  it("skips already scheduled projects when falling back to enqueue all", async () => {
+  it("attempts to reschedule already scheduled projects when enqueuing all", async () => {
     const mockClient = {} as ScheduleBacklogClient;
     await scheduleBacklog(userId, baseDate, mockClient);
 
-    expect(fetchInstancesForRangeSpy).toHaveBeenCalledTimes(2);
-
-    const scheduledInstances = instances.filter((inst) => inst.status === "scheduled");
-    expect(scheduledInstances).toHaveLength(1);
-    expect(scheduledInstances[0].source_id).toBe("proj-1");
+    expect(fetchInstancesForRangeSpy).toHaveBeenCalled();
 
     const scheduledProjectIds = new Set(attemptedProjectIds);
-    expect(scheduledProjectIds.has("proj-1")).toBe(false);
+    expect(scheduledProjectIds.has("proj-1")).toBe(true);
     expect(scheduledProjectIds.has("proj-2")).toBe(true);
   });
 
@@ -771,26 +767,13 @@ describe("scheduleBacklog", () => {
       metadata: null,
     } as unknown as ScheduleInstance;
 
-    let fetchCall = 0;
-    fetchInstancesForRangeSpy.mockImplementation(async () => {
-      fetchCall += 1;
-      if (fetchCall === 1) {
-        return {
-          data: [],
-          error: null,
-          count: null,
-          status: 200,
-          statusText: "OK",
-        } satisfies InstancesResponse;
-      }
-      return {
-        data: [existing],
-        error: null,
-        count: null,
-        status: 200,
-        statusText: "OK",
-      } satisfies InstancesResponse;
-    });
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [existing],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse));
 
     (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
       "proj-1": {
@@ -822,17 +805,30 @@ describe("scheduleBacklog", () => {
     expect(result.timeline).toHaveLength(1);
     expect(result.timeline[0]?.instance.id).toBe(result.placed[0]?.id);
     expect(result.timeline[0]?.decision).toBe("rescheduled");
-    expect(fetchCall).toBeGreaterThanOrEqual(2);
     expect(updateMock.mock.calls.some((call) => call?.[0]?.status === "canceled")).toBe(
       false,
     );
   });
 
-  it("returns kept placements in the timeline when no changes are made", async () => {
+  it("reschedules existing placements into the timeline when rerun", async () => {
     const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
     placeSpy.mockReset();
-    placeSpy.mockImplementation(async () => {
-      throw new Error("placeItemInWindows should not be called");
+    const rescheduled = createInstanceRecord({
+      id: "inst-existing",
+      source_id: "proj-1",
+      start_utc: "2024-01-02T17:00:00Z",
+      end_utc: "2024-01-02T18:00:00Z",
+      window_id: "win-updated",
+    });
+    placeSpy.mockImplementation(async ({ reuseInstanceId }) => {
+      expect(reuseInstanceId).toBe("inst-existing");
+      return {
+        data: rescheduled,
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      };
     });
 
     (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
@@ -849,9 +845,10 @@ describe("scheduleBacklog", () => {
     const { client: supabase } = createSupabaseMock();
     const result = await scheduleBacklog(userId, baseDate, supabase);
 
-    expect(result.placed).toHaveLength(0);
+    expect(placeSpy).toHaveBeenCalledTimes(1);
+    expect(result.placed).toHaveLength(1);
     expect(result.timeline).toHaveLength(1);
     expect(result.timeline[0]?.instance.id).toBe("inst-existing");
-    expect(result.timeline[0]?.decision).toBe("kept");
+    expect(result.timeline[0]?.decision).toBe("rescheduled");
   });
 });
