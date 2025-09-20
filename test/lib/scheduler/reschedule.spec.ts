@@ -511,6 +511,10 @@ describe("scheduleBacklog", () => {
     expect(result.error).toBeUndefined();
     expect(result.failures).toHaveLength(0);
     expect(result.placed).toHaveLength(4);
+    expect(result.timeline).toHaveLength(4);
+    expect(new Set(result.timeline.map(entry => entry.instance.id))).toEqual(
+      new Set(result.placed.map(inst => inst.id)),
+    );
 
     const sorted = [...result.placed].sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime(),
@@ -688,6 +692,10 @@ describe("scheduleBacklog", () => {
       expect(result.error).toBeUndefined();
       expect(result.failures).toHaveLength(0);
       expect(result.placed).toHaveLength(2);
+      expect(result.timeline).toHaveLength(2);
+      expect(new Set(result.timeline.map(entry => entry.instance.id))).toEqual(
+        new Set(result.placed.map(inst => inst.id)),
+      );
 
       const placementsByStart = [...result.placed].sort(
         (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime(),
@@ -811,9 +819,39 @@ describe("scheduleBacklog", () => {
 
     expect(reuseId).toBe("inst-existing");
     expect(result.placed).toHaveLength(1);
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0]?.instance.id).toBe(result.placed[0]?.id);
+    expect(result.timeline[0]?.decision).toBe("rescheduled");
     expect(fetchCall).toBeGreaterThanOrEqual(2);
     expect(updateMock.mock.calls.some((call) => call?.[0]?.status === "canceled")).toBe(
       false,
     );
+  });
+
+  it("returns kept placements in the timeline when no changes are made", async () => {
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockReset();
+    placeSpy.mockImplementation(async () => {
+      throw new Error("placeItemInWindows should not be called");
+    });
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "Existing",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    });
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    expect(result.placed).toHaveLength(0);
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0]?.instance.id).toBe("inst-existing");
+    expect(result.timeline[0]?.decision).toBe("kept");
   });
 });

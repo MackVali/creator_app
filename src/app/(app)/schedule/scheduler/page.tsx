@@ -27,9 +27,19 @@ type ScheduleDraft = {
   placed: ScheduleInstance[];
   failures: SchedulerFailure[];
   error?: unknown;
+  timeline: DraftPlacementEntry[];
 };
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
+
+type DraftPlacementEntry = {
+  instance: ScheduleInstance;
+  projectId: string;
+  decision: "kept" | "new" | "rescheduled";
+  availableStartLocal?: string | null;
+  windowStartLocal?: string | null;
+  scheduledDayOffset?: number | null;
+};
 
 type PlacementView = {
   instance: ScheduleInstance;
@@ -38,6 +48,8 @@ type PlacementView = {
   start: Date;
   end: Date;
   durationMin: number;
+  decision: DraftPlacementEntry["decision"];
+  reason: string;
 };
 
 type GapEntry = {
@@ -129,8 +141,9 @@ export default function SchedulerPage() {
 
   const placements = useMemo<PlacementView[]>(() => {
     if (!scheduleDraft) return [];
-    return scheduleDraft.placed
-      .map(instance => {
+    return scheduleDraft.timeline
+      .map(entry => {
+        const { instance, decision } = entry;
         if (!instance || typeof instance !== "object") return null;
         if (typeof instance.start_utc !== "string") return null;
         if (typeof instance.end_utc !== "string") return null;
@@ -142,17 +155,36 @@ export default function SchedulerPage() {
         );
         const projectId = typeof instance.source_id === "string"
           ? instance.source_id
-          : "";
+          : entry.projectId;
+        const project = projectId ? projectMap[projectId] : undefined;
+        const window =
+          typeof instance.window_id === "string"
+            ? windowMap[instance.window_id]
+            : undefined;
+        const availableStartLocal = entry.availableStartLocal
+          ? new Date(entry.availableStartLocal)
+          : null;
+        const windowStartLocal = entry.windowStartLocal
+          ? new Date(entry.windowStartLocal)
+          : null;
+        const reason = describePlacementReason({
+          decision,
+          project,
+          window,
+          instance,
+          start,
+          availableStartLocal,
+          windowStartLocal,
+        });
         return {
           instance,
-          project: projectId ? projectMap[projectId] : undefined,
-          window:
-            typeof instance.window_id === "string"
-              ? windowMap[instance.window_id]
-              : undefined,
+          project,
+          window,
           start,
           end,
           durationMin,
+          decision,
+          reason,
         };
       })
       .filter((placement): placement is PlacementView => placement !== null)
@@ -255,7 +287,9 @@ export default function SchedulerPage() {
         const parsed = parseScheduleDraft(
           (payload as { schedule?: unknown }).schedule,
         );
-        setScheduleDraft(parsed ?? { placed: [], failures: [] });
+        setScheduleDraft(
+          parsed ?? { placed: [], failures: [], timeline: [] },
+        );
       } else {
         setScheduleDraft(null);
       }
@@ -360,6 +394,11 @@ export default function SchedulerPage() {
                                 </span>
                               )}
                             </div>
+                            <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
+                              <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
+                                {formatDecisionLabel(placement.decision)}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-right text-xs text-zinc-400">
                             <div>{formatDateTime(placement.start)}</div>
@@ -385,6 +424,9 @@ export default function SchedulerPage() {
                               "NO"}
                           </span>
                         </div>
+                        <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                          {placement.reason}
+                        </p>
                       </div>
                     );
                   }
@@ -541,6 +583,7 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
     placed?: unknown;
     failures?: unknown;
     error?: unknown;
+    timeline?: unknown;
   };
 
   const placed: ScheduleInstance[] = Array.isArray(payload.placed)
@@ -557,11 +600,19 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
 
   const error = payload.error;
 
-  if (placed.length === 0 && failures.length === 0 && !error) {
-    return { placed: [], failures: [] };
+  const timeline: DraftPlacementEntry[] = Array.isArray(payload.timeline)
+    ? payload.timeline
+        .map(toDraftPlacementEntry)
+        .filter(
+          (item): item is DraftPlacementEntry => item !== null,
+        )
+    : [];
+
+  if (placed.length === 0 && failures.length === 0 && !error && timeline.length === 0) {
+    return { placed: [], failures: [], timeline: [] };
   }
 
-  return { placed, failures, error };
+  return { placed, failures, error, timeline };
 }
 
 function toScheduleInstance(input: unknown): ScheduleInstance | null {
@@ -583,6 +634,153 @@ function toSchedulerFailure(input: unknown): SchedulerFailure | null {
     reason: record.reason,
     detail: record.detail,
   };
+}
+
+function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
+  if (!input || typeof input !== "object") return null;
+  const record = input as {
+    instance?: unknown;
+    decision?: unknown;
+    projectId?: unknown;
+    availableStartLocal?: unknown;
+    windowStartLocal?: unknown;
+    scheduledDayOffset?: unknown;
+  };
+  const instance = toScheduleInstance(record.instance);
+  if (!instance) return null;
+  const decision = record.decision;
+  if (decision !== "kept" && decision !== "new" && decision !== "rescheduled") {
+    return null;
+  }
+  const projectId =
+    typeof record.projectId === "string"
+      ? record.projectId
+      : typeof instance.source_id === "string"
+        ? instance.source_id
+        : "";
+  return {
+    instance,
+    projectId,
+    decision,
+    availableStartLocal:
+      typeof record.availableStartLocal === "string"
+        ? record.availableStartLocal
+        : null,
+    windowStartLocal:
+      typeof record.windowStartLocal === "string"
+        ? record.windowStartLocal
+        : null,
+    scheduledDayOffset:
+      typeof record.scheduledDayOffset === "number"
+        ? record.scheduledDayOffset
+        : null,
+  };
+}
+
+function formatDecisionLabel(decision: DraftPlacementEntry["decision"]): string {
+  switch (decision) {
+    case "kept":
+      return "Kept from previous run";
+    case "rescheduled":
+      return "Rescheduled";
+    case "new":
+    default:
+      return "New placement";
+  }
+}
+
+function describePlacementReason({
+  decision,
+  project,
+  window,
+  instance,
+  start,
+  availableStartLocal,
+  windowStartLocal,
+}: {
+  decision: DraftPlacementEntry["decision"];
+  project?: ProjectItem;
+  window?: WindowLite;
+  instance: ScheduleInstance;
+  start: Date;
+  availableStartLocal: Date | null;
+  windowStartLocal: Date | null;
+}): string {
+  const projectName = project?.name?.trim()
+    ? project.name
+    : instance.source_id
+      ? `Project ${instance.source_id}`
+      : "This project";
+  const windowName = window?.label?.trim()
+    ? window.label
+    : instance.window_id
+      ? `window ${instance.window_id}`
+      : "an available window";
+  const formatEnergy = (value?: string | null) => {
+    if (!value) return null;
+    const text = value.toString().trim();
+    return text ? text.toUpperCase() : null;
+  };
+  const projectEnergy = formatEnergy(project?.energy ?? instance.energy_resolved);
+  const windowEnergy = formatEnergy(window?.energy);
+
+  const parts: string[] = [];
+  const startLabel = formatDateTime(start);
+
+  switch (decision) {
+    case "kept":
+      parts.push(
+        `${projectName} was already scheduled in ${windowName} starting ${startLabel}, so the scheduler kept the placement unchanged.`,
+      );
+      break;
+    case "rescheduled":
+      parts.push(
+        `${projectName} was rescheduled into ${windowName} starting ${startLabel} to reuse its existing slot as early as possible.`,
+      );
+      break;
+    case "new":
+      parts.push(
+        `${projectName} was scheduled into ${windowName} starting ${startLabel}, the earliest opening the scheduler could find.`,
+      );
+      break;
+  }
+
+  if (windowEnergy && projectEnergy) {
+    if (windowEnergy === projectEnergy) {
+      parts.push(`Both the project and window align at ${windowEnergy} energy.`);
+    } else {
+      parts.push(
+        `The project targets ${projectEnergy} energy while the window provides ${windowEnergy}, which satisfies the requirement.`,
+      );
+    }
+  } else if (projectEnergy) {
+    parts.push(`The project targets ${projectEnergy} energy.`);
+  } else if (windowEnergy) {
+    parts.push(`The window supplies ${windowEnergy} energy.`);
+  }
+
+  const validAvailable =
+    availableStartLocal instanceof Date && !Number.isNaN(availableStartLocal.getTime());
+  const validWindowStart =
+    windowStartLocal instanceof Date && !Number.isNaN(windowStartLocal.getTime());
+
+  if (decision !== "kept" && validAvailable && validWindowStart) {
+    const diffMinutes = Math.max(
+      0,
+      Math.round(
+        (availableStartLocal.getTime() - windowStartLocal.getTime()) / 60000,
+      ),
+    );
+    if (diffMinutes > 0) {
+      parts.push(
+        `Earlier slots in the window were occupied, so the project begins ${formatDurationMinutes(diffMinutes)} after the window opened.`,
+      );
+    } else {
+      parts.push(`The window was open immediately, so the project starts right at the window's beginning.`);
+    }
+  }
+
+  return parts.join(" ");
 }
 
 function describeFailure(
