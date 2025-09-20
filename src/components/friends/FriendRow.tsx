@@ -5,9 +5,15 @@ import Link from "next/link";
 import type { Friend } from "@/lib/mock/friends";
 
 export default function FriendRow({ f }: { f: Friend }) {
-  const isExternalProfile = /^https?:\/\//i.test(f.profileUrl);
   const linkClassName =
     "group flex flex-1 items-center gap-3 min-w-0 pr-2 transition";
+  const isInternalProfile = f.profileUrl.startsWith("/");
+  const href = isInternalProfile
+    ? f.profileUrl
+    : `/friends/${encodeURIComponent(f.username)}`;
+  const title = !isInternalProfile && /^https?:\/\//i.test(f.profileUrl)
+    ? f.profileUrl
+    : undefined;
 
   const linkBody = (
     <>
@@ -49,27 +55,15 @@ export default function FriendRow({ f }: { f: Friend }) {
   return (
     <li className="flex items-center justify-between gap-3 px-2">
       {/* LEFT: avatar + names */}
-      {isExternalProfile ? (
-        <a
-          href={f.profileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={linkClassName}
-          aria-label={`View ${f.displayName}'s profile`}
-          title={f.profileUrl}
-        >
-          {linkBody}
-        </a>
-      ) : (
-        <Link
-          href={f.profileUrl}
-          className={linkClassName}
-          prefetch={false}
-          aria-label={`View ${f.displayName}'s profile`}
-        >
-          {linkBody}
-        </Link>
-      )}
+      <Link
+        href={href}
+        className={linkClassName}
+        prefetch={false}
+        aria-label={`View ${f.displayName}'s profile`}
+        title={title}
+      >
+        {linkBody}
+      </Link>
 
       {/* RIGHT: actions */}
       <div className="flex items-center gap-2 shrink-0">
