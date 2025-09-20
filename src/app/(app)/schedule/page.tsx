@@ -410,6 +410,21 @@ export default function SchedulePage() {
   const [schedulerDebug, setSchedulerDebug] = useState<SchedulerDebugState | null>(null)
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
+  const setProjectExpansion = useCallback(
+    (projectId: string, nextState?: boolean) => {
+      setHasInteractedWithProjects(true)
+      setExpandedProjects(prev => {
+        const next = new Set(prev)
+        const shouldExpand =
+          typeof nextState === 'boolean' ? nextState : !next.has(projectId)
+        if (shouldExpand) next.add(projectId)
+        else next.delete(projectId)
+        return next
+      })
+    },
+    [setExpandedProjects, setHasInteractedWithProjects]
+  )
   const touchStartX = useRef<number | null>(null)
   const navLock = useRef(false)
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
@@ -714,12 +729,7 @@ export default function SchedulePage() {
         })
 
         if (status === 'canceled' && options?.projectId) {
-          setExpandedProjects(prev => {
-            if (!prev.has(options.projectId)) return prev
-            const next = new Set(prev)
-            next.delete(options.projectId)
-            return next
-          })
+          setProjectExpansion(options.projectId, false)
         }
       } catch (error) {
         console.error(error)
@@ -731,7 +741,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances, setExpandedProjects]
+    [userId, setInstances, setProjectExpansion]
   )
 
   const handleMarkCompleted = useCallback(
@@ -1187,12 +1197,7 @@ export default function SchedulePage() {
                               aria-label={`Project ${project.name}`}
                               onClick={() => {
                                 if (!canExpand) return
-                                setExpandedProjects(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(projectId)) next.delete(projectId)
-                                  else next.add(projectId)
-                                  return next
-                                })
+                                setProjectExpansion(projectId)
                               }}
                               className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white${
                                 canExpand ? ' cursor-pointer' : ''
@@ -1202,17 +1207,28 @@ export default function SchedulePage() {
                                 prefersReducedMotion ? false : { opacity: 0, y: 4 }
                               }
                               animate={
-                                prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
+                                prefersReducedMotion
+                                  ? undefined
+                                  : {
+                                      opacity: 1,
+                                      y: 0,
+                                      transition: {
+                                        delay: hasInteractedWithProjects
+                                          ? 0
+                                          : index * 0.02,
+                                        duration: 0.18,
+                                        ease: [0.4, 0, 0.2, 1],
+                                      },
+                                    }
                               }
                               exit={
                                 prefersReducedMotion
                                   ? undefined
-                                  : { opacity: 0, y: 4 }
-                              }
-                              transition={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : { delay: index * 0.02 }
+                                  : {
+                                      opacity: 0,
+                                      y: 4,
+                                      transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                                    }
                               }
                             >
                               {renderInstanceActions(instance.id, { projectId })}
@@ -1253,17 +1269,20 @@ export default function SchedulePage() {
                               animate={
                                 prefersReducedMotion
                                   ? undefined
-                                  : { opacity: 1, y: 0 }
+                                  : {
+                                      opacity: 1,
+                                      y: 0,
+                                      transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
+                                    }
                               }
                               exit={
                                 prefersReducedMotion
                                   ? undefined
-                                  : { opacity: 0, y: 4 }
-                              }
-                              transition={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : { delay: index * 0.02 }
+                                  : {
+                                      opacity: 0,
+                                      y: 4,
+                                      transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                                    }
                               }
                             >
                               {displayCards.map(taskCard => {
@@ -1343,11 +1362,7 @@ export default function SchedulePage() {
                                     className={cardClasses}
                                     style={tStyle}
                                     onClick={() =>
-                                      setExpandedProjects(prev => {
-                                        const next = new Set(prev)
-                                        next.delete(projectId)
-                                        return next
-                                      })
+                                      setProjectExpansion(projectId, false)
                                     }
                                     initial={
                                       prefersReducedMotion
@@ -1357,12 +1372,26 @@ export default function SchedulePage() {
                                     animate={
                                       prefersReducedMotion
                                         ? undefined
-                                        : { opacity: 1, y: 0 }
+                                        : {
+                                            opacity: 1,
+                                            y: 0,
+                                            transition: {
+                                              duration: 0.18,
+                                              ease: [0.4, 0, 0.2, 1],
+                                            },
+                                          }
                                     }
                                     exit={
                                       prefersReducedMotion
                                         ? undefined
-                                        : { opacity: 0, y: -6 }
+                                        : {
+                                            opacity: 0,
+                                            y: 6,
+                                            transition: {
+                                              duration: 0.14,
+                                              ease: [0.4, 0, 0.2, 1],
+                                            },
+                                          }
                                     }
                                   >
                                     {kind === 'scheduled' && instanceId
