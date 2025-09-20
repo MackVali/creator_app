@@ -935,141 +935,142 @@ function Drawer({
       role="dialog"
     >
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-3xl border border-white/10 bg-[#080b14]/95 shadow-[0_30px_80px_rgba(15,23,42,0.65)] max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)]">
-        <div className="flex h-full flex-col">
-          <div className="flex items-start justify-between border-b border-white/10 px-6 py-5">
+      <div
+        className="relative z-10 flex w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#080b14]/95 shadow-[0_30px_80px_rgba(15,23,42,0.65)] max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)]"
+        style={{ maxHeight: "min(calc(100dvh - 2rem), calc(100vh - 2rem))" }}
+      >
+        <div className="flex shrink-0 items-start justify-between border-b border-white/10 px-6 py-5">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              {initial ? "Edit window" : "Create window"}
+            </h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Define when you are available and how the time should feel.
+            </p>
+          </div>
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/30 hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Name
+            </label>
+            <input
+              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Days
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {dayOrder.map((d) => (
+                <DayPill
+                  key={d}
+                  active={form.days.includes(d)}
+                  label={d}
+                  onClick={() => toggleDay(d)}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <h2 className="text-lg font-semibold text-white">
-                {initial ? "Edit window" : "Create window"}
-              </h2>
-              <p className="mt-1 text-sm text-slate-300">
-                Define when you are available and how the time should feel.
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Start time
+              </label>
+              <input
+                className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+                type="time"
+                value={form.start}
+                onChange={(e) => setForm({ ...form, start: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                End time
+              </label>
+              <input
+                className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+                type="time"
+                value={form.end}
+                onChange={(e) => setForm({ ...form, end: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Energy focus
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {energies.map((e) => (
+                <EnergyChip
+                  key={e}
+                  active={form.energy === e}
+                  energy={e}
+                  label={e}
+                  onClick={() => setForm({ ...form, energy: e })}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Location
+            </label>
+            <input
+              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
+              value={form.location ?? ""}
+              onChange={(e) => setForm({ ...form, location: e.target.value })}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">Active window</p>
+              <p className="text-xs text-slate-400">
+                Toggle off when you want this slot hidden from scheduling.
               </p>
             </div>
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/30 hover:text-white"
-              onClick={onClose}
+              className={classNames(
+                "relative h-6 w-12 rounded-full border border-white/10 transition",
+                form.active ? "bg-emerald-500/70" : "bg-white/[0.08]",
+              )}
+              onClick={() => setForm({ ...form, active: !form.active })}
               type="button"
             >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Name
-              </label>
-              <input
-                className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Days
-              </label>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {dayOrder.map((d) => (
-                  <DayPill
-                    key={d}
-                    active={form.days.includes(d)}
-                    label={d}
-                    onClick={() => toggleDay(d)}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Start time
-                </label>
-                <input
-                  className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
-                  type="time"
-                  value={form.start}
-                  onChange={(e) => setForm({ ...form, start: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  End time
-                </label>
-                <input
-                  className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
-                  type="time"
-                  value={form.end}
-                  onChange={(e) => setForm({ ...form, end: e.target.value })}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Energy focus
-              </label>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {energies.map((e) => (
-                  <EnergyChip
-                    key={e}
-                    active={form.energy === e}
-                    energy={e}
-                    label={e}
-                    onClick={() => setForm({ ...form, energy: e })}
-                  />
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Location
-              </label>
-              <input
-                className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
-                value={form.location ?? ""}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-white">Active window</p>
-                <p className="text-xs text-slate-400">
-                  Toggle off when you want this slot hidden from scheduling.
-                </p>
-              </div>
-              <button
+              <span
                 className={classNames(
-                  "relative h-6 w-12 rounded-full border border-white/10 transition",
-                  form.active ? "bg-emerald-500/70" : "bg-white/[0.08]",
+                  "absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white transition",
+                  form.active ? "left-6" : "left-1",
                 )}
-                onClick={() => setForm({ ...form, active: !form.active })}
-                type="button"
-              >
-                <span
-                  className={classNames(
-                    "absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white transition",
-                    form.active ? "left-6" : "left-1",
-                  )}
-                />
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-4">
-            <button
-              className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30"
-              onClick={onClose}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-sky-500 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-lg shadow-indigo-500/30 transition hover:shadow-indigo-500/50"
-              onClick={() => onSave(form)}
-              type="button"
-            >
-              <Sparkles className="h-4 w-4" /> Save window
+              />
             </button>
           </div>
+        </div>
+        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-4">
+          <button
+            className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-white/30"
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-sky-500 px-5 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-lg shadow-indigo-500/30 transition hover:shadow-indigo-500/50"
+            onClick={() => onSave(form)}
+            type="button"
+          >
+            <Sparkles className="h-4 w-4" /> Save window
+          </button>
         </div>
       </div>
     </div>
