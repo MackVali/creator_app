@@ -43,9 +43,9 @@ function getDateTimeParts(date: Date, timeZone: string): DateParts {
     else if (part.type === 'minute') result.minute = value
     else if (part.type === 'second') result.second = value
   }
-  let year = result.year ?? date.getUTCFullYear()
-  let month = result.month ?? date.getUTCMonth() + 1
-  let day = result.day ?? date.getUTCDate()
+  const year = result.year ?? date.getUTCFullYear()
+  const month = result.month ?? date.getUTCMonth() + 1
+  const day = result.day ?? date.getUTCDate()
   let hour = result.hour ?? date.getUTCHours()
   const minute = result.minute ?? date.getUTCMinutes()
   const second = result.second ?? date.getUTCSeconds()
