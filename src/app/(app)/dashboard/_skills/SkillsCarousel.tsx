@@ -81,16 +81,7 @@ export default function SkillsCarousel() {
     return `radial-gradient(120% 160% at 48% 20%, ${soft} 0%, ${bright} 45%, transparent 75%), radial-gradient(140% 200% at 20% 120%, ${deep} 0%, transparent 70%)`;
   }, [activeColor]);
 
-  const particles = useMemo(
-    () => [
-      { x: 12, y: 18, size: 140, duration: 8, delay: 0 },
-      { x: 76, y: 24, size: 120, duration: 10, delay: 1.4 },
-      { x: 36, y: 72, size: 160, duration: 9, delay: 0.6 },
-      { x: 82, y: 68, size: 110, duration: 12, delay: 1.1 },
-      { x: 8, y: 60, size: 100, duration: 11, delay: 0.3 },
-    ],
-    []
-  );
+  const railTint = useMemo(() => withAlpha(activeColor, 0.12), [activeColor]);
 
   const animateToIndex = useCallback(
     (idx: number, options: { instant?: boolean } = {}) => {
@@ -147,11 +138,12 @@ export default function SkillsCarousel() {
 
   useEffect(() => {
     const el = trackRef.current;
-    if (!el) return;
+    if (!el || categories.length === 0) return;
+
     const handleScroll = () => {
       const { scrollLeft, clientWidth, scrollWidth } = el;
       const center = scrollLeft + clientWidth / 2;
-      let closest = 0;
+      let closest = activeIndexRef.current;
       let min = Number.POSITIVE_INFINITY;
       cardRefs.current.forEach((child, idx) => {
         if (!child) return;
@@ -162,17 +154,28 @@ export default function SkillsCarousel() {
           closest = idx;
         }
       });
-      setActiveIndex(closest);
+
+      if (closest !== activeIndexRef.current) {
+        activeIndexRef.current = closest;
+        setActiveIndex(closest);
+        const params = new URLSearchParams(search);
+        if (categories[closest]) {
+          params.set("cat", categories[closest].id);
+          router.replace(`?${params.toString()}`, { scroll: false });
+        }
+      }
+
       const progress =
         scrollWidth <= clientWidth ? 0.5 : scrollLeft / Math.max(1, scrollWidth - clientWidth);
       glowMotion.set(clamp(progress, 0, 1));
     };
+
     handleScroll();
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
       el.removeEventListener("scroll", handleScroll);
     };
-  }, [categories, glowMotion]);
+  }, [categories, glowMotion, router, search]);
 
   const goToIndex = useCallback(
     (idx: number, options: { instant?: boolean; fromAutoplay?: boolean } = {}) => {
@@ -279,55 +282,45 @@ export default function SkillsCarousel() {
         }
       }}
     >
-      <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.02] px-2 py-4 sm:px-4 backdrop-blur-xl">
+      <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-slate-950/40 px-2 py-5 sm:px-4">
         <motion.div
           className="pointer-events-none absolute inset-0"
           style={{ background: galleryGradient }}
-          animate={{ opacity: [0.85, 1, 0.85] }}
-          transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ opacity: [0.88, 1, 0.88] }}
+          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
         />
         <motion.div
-          className="pointer-events-none absolute -inset-28 blur-3xl"
-          style={{ background: withAlpha(activeColor, 0.12) }}
-          animate={{ opacity: [0.4, 0.7, 0.4] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
+          className="pointer-events-none absolute -inset-24 blur-3xl"
+          style={{ background: railTint }}
+          animate={{ opacity: [0.35, 0.6, 0.35] }}
+          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
         />
         <motion.div
-          className="pointer-events-none absolute top-1/2 h-[120%] w-[110%] -translate-y-1/2 -translate-x-1/2"
-          style={{ left: glowX, background: `radial-gradient(65% 120% at 50% 50%, ${withAlpha(activeColor, 0.55)} 0%, transparent 65%)` }}
-          animate={{ opacity: [0.45, 0.75, 0.45] }}
-          transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+          className="pointer-events-none absolute top-1/2 h-[120%] w-[115%] -translate-y-1/2 -translate-x-1/2"
+          style={{
+            left: glowX,
+            background: `radial-gradient(60% 120% at 50% 50%, ${withAlpha(activeColor, 0.52)} 0%, transparent 70%)`,
+          }}
+          animate={{ opacity: [0.42, 0.7, 0.42] }}
+          transition={{ duration: 7.2, repeat: Infinity, ease: "easeInOut" }}
         />
-        {particles.map((particle, index) => (
-          <motion.span
-            key={`${particle.x}-${index}`}
-            className="pointer-events-none absolute rounded-full blur-3xl"
-            style={{
-              width: particle.size,
-              height: particle.size,
-              left: `${particle.x}%`,
-              top: `${particle.y}%`,
-              background: withAlpha(activeColor, 0.18),
-            }}
-            animate={{ y: [0, -12, 0], opacity: [0.2, 0.55, 0.2] }}
-            transition={{
-              duration: particle.duration,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: particle.delay,
-            }}
-          />
-        ))}
         <div
           ref={trackRef}
-          className={`relative flex gap-6 overflow-x-auto overflow-y-hidden scroll-smooth snap-x px-2 ${
+          className={`relative flex snap-x gap-5 overflow-x-auto overflow-y-hidden px-2 sm:px-3 ${
             skillDragging ? "snap-none touch-none" : "snap-mandatory touch-pan-x"
           }`}
           onPointerDown={triggerAutoplayDelay}
+          onTouchStart={triggerAutoplayDelay}
         >
           {categories.map((cat, idx) => {
-            if (categories.length > 20 && Math.abs(idx - activeIndex) > 5) {
-              return <div key={cat.id} className="snap-center shrink-0 w-[86vw] sm:w-[74vw] lg:w-[56vw]" />;
+            if (categories.length > 20 && Math.abs(idx - activeIndex) > 6) {
+              return (
+                <div
+                  key={cat.id}
+                  className="snap-center shrink-0 w-[85vw] sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+                  aria-hidden
+                />
+              );
             }
             const isActive = idx === activeIndex;
             return (
@@ -338,7 +331,8 @@ export default function SkillsCarousel() {
                 }}
                 role="group"
                 aria-label={`Category ${idx + 1} of ${categories.length}`}
-                className="snap-center shrink-0 w-[86vw] sm:w-[74vw] lg:w-[56vw]"
+                className="snap-center shrink-0 w-[85vw] sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+                style={{ scrollMarginInline: "12px" }}
               >
                 <CategoryCard
                   category={cat}
@@ -351,7 +345,7 @@ export default function SkillsCarousel() {
           })}
         </div>
       </div>
-      <div className="mt-6 flex flex-wrap justify-center gap-3" role="tablist">
+      <div className="mt-6 flex flex-wrap justify-center gap-2.5" role="tablist">
         {categories.map((cat, idx) => {
           const isActive = idx === activeIndex;
           const previewSkill = (skillsByCategory[cat.id] || []).find((s) => s.emoji)?.emoji;
@@ -367,31 +361,31 @@ export default function SkillsCarousel() {
                 triggerAutoplayDelay();
                 goToIndex(idx);
               }}
-              className="group flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="group inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               style={{
-                background: isActive ? withAlpha(chipColor, 0.3) : "rgba(255,255,255,0.05)",
-                border: `1px solid ${isActive ? withAlpha(chipColor, 0.65) : "rgba(255,255,255,0.08)"}`,
+                background: isActive ? withAlpha(chipColor, 0.28) : "rgba(15,23,42,0.55)",
+                border: `1px solid ${isActive ? withAlpha(chipColor, 0.55) : "rgba(148,163,184,0.25)"}`,
                 boxShadow: isActive
-                  ? `0 18px 38px ${withAlpha(chipColor, 0.35)}`
-                  : "0 8px 24px rgba(15, 23, 42, 0.35)",
-                color: isActive ? "rgba(248,250,252,0.96)" : "rgba(226,232,240,0.82)",
+                  ? `0 16px 34px ${withAlpha(chipColor, 0.28)}`
+                  : "0 6px 18px rgba(15, 23, 42, 0.35)",
+                color: isActive ? "rgba(248,250,252,0.97)" : "rgba(226,232,240,0.82)",
               }}
-              whileHover={{ scale: 1.06 }}
-              whileFocus={{ scale: 1.04 }}
+              whileHover={{ scale: 1.05 }}
+              whileFocus={{ scale: 1.03 }}
               animate={{
                 scale: isActive ? 1.08 : 1,
-                opacity: isActive ? 1 : 0.76,
+                opacity: isActive ? 1 : 0.78,
               }}
               transition={{ type: "spring", stiffness: 240, damping: 20 }}
             >
               <span
                 className="flex h-6 w-6 items-center justify-center rounded-full text-base font-semibold shadow"
                 style={{
-                  background: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.2),
-                  color: isActive ? "rgba(15, 23, 42, 0.85)" : "rgba(255,255,255,0.95)",
+                  background: isActive ? withAlpha(chipColor, 0.5) : withAlpha(chipColor, 0.18),
+                  color: isActive ? "rgba(15, 23, 42, 0.85)" : "rgba(255,255,255,0.92)",
                   boxShadow: isActive
-                    ? `0 10px 22px ${withAlpha(chipColor, 0.4)}`
-                    : "0 6px 16px rgba(15,23,42,0.35)",
+                    ? `0 10px 20px ${withAlpha(chipColor, 0.32)}`
+                    : "0 6px 14px rgba(15,23,42,0.32)",
                 }}
               >
                 {preview}
