@@ -204,13 +204,18 @@ export default function DashboardClient() {
     <main className="pb-20">
       <LevelBanner level={80} current={3200} total={4000} />
 
-      <MonumentContainer />
+      <MonumentContainer tone="frosted" />
 
-      <Section title={<Link href="/skills">Skills</Link>} className="mt-1 px-4">
+      <Section
+        tone="frosted"
+        title={<Link href="/skills">Skills</Link>}
+        className="mt-1 px-4"
+      >
         <SkillsCarousel />
       </Section>
 
       <Section
+        tone="frosted"
         title={<Link href="/goals">Current Goals</Link>}
         className="safe-bottom mt-2 px-4"
       >

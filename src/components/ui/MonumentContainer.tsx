@@ -5,16 +5,23 @@ import MonumentGridWithSharedTransition, {
   type Monument as MonumentCard,
 } from "@/components/MonumentGridWithSharedTransition";
 import { MonumentsList } from "@/components/monuments/MonumentsList";
+import { Section } from "@/components/ui/Section";
 
-export function MonumentContainer() {
+interface MonumentContainerProps {
+  tone?: "plain" | "frosted";
+}
+
+export function MonumentContainer({ tone = "plain" }: MonumentContainerProps) {
   return (
-    <section className="section mt-2">
-      <div className="mb-3">
-        <Link href="/monuments" className="h-label block">
+    <Section
+      tone={tone}
+      title={
+        <Link href="/monuments" className="block">
           Monuments
         </Link>
-      </div>
-
+      }
+      className="mt-2"
+    >
       <MonumentsList limit={8} createHref="/monuments/new">
         {(monuments) => (
           <div className="px-4">
@@ -29,7 +36,7 @@ export function MonumentContainer() {
           </div>
         )}
       </MonumentsList>
-    </section>
+    </Section>
   );
 }
 
