@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import CategoryCard from "./CategoryCard";
@@ -71,6 +71,8 @@ export default function SkillsCarousel() {
   const autoplayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const manualPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeIndexRef = useRef(0);
+  const cardCentersRef = useRef<number[]>([]);
+  const scrollFrameRef = useRef<number | null>(null);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [skillDragging, setSkillDragging] = useState(false);
@@ -82,17 +84,25 @@ export default function SkillsCarousel() {
   const glowSpring = useSpring(glowMotion, { stiffness: 90, damping: 24, mass: 0.6 });
   const glowX = useTransform(glowSpring, (value) => `${value * 100}%`);
 
+  const measureCards = useCallback(() => {
+    cardCentersRef.current = cardRefs.current.map((card) =>
+      card ? card.offsetLeft + card.offsetWidth / 2 : Number.NaN
+    );
+  }, []);
+
   const computeStageColor = useCallback(
     (center: number) => {
       if (categories.length === 0) return FALLBACK_COLOR;
+      const centers = cardCentersRef.current;
+      if (centers.length === 0) return categories[activeIndexRef.current]?.color_hex || FALLBACK_COLOR;
+
       let leftIdx = -1;
       let rightIdx = -1;
       let leftCenter = -Infinity;
       let rightCenter = Infinity;
 
-      cardRefs.current.forEach((child, idx) => {
-        if (!child) return;
-        const middle = child.offsetLeft + child.offsetWidth / 2;
+      centers.forEach((middle, idx) => {
+        if (!Number.isFinite(middle)) return;
         if (middle <= center && middle > leftCenter) {
           leftIdx = idx;
           leftCenter = middle;
@@ -140,12 +150,16 @@ export default function SkillsCarousel() {
         return;
       }
 
+      if (!cardCentersRef.current.some((middle) => Number.isFinite(middle))) {
+        measureCards();
+      }
+
       const center =
         typeof centerOverride === "number" ? centerOverride : track.scrollLeft + track.clientWidth / 2;
       const color = computeStageColor(center);
       setStageColor((prev) => (prev === color ? prev : color));
     },
-    [categories, computeStageColor]
+    [categories, computeStageColor, measureCards]
   );
 
   const galleryGradient = useMemo(() => {
@@ -157,14 +171,17 @@ export default function SkillsCarousel() {
 
   const railTint = useMemo(() => withAlpha(stageColor, 0.12), [stageColor]);
 
-  const animateToIndex = useCallback((idx: number, options: { instant?: boolean } = {}) => {
-    const track = trackRef.current;
-    const card = cardRefs.current[idx];
-    if (!track || !card) return;
+  const animateToIndex = useCallback(
+    (idx: number, options: { instant?: boolean } = {}) => {
+      const track = trackRef.current;
+      const card = cardRefs.current[idx];
+      if (!track || !card) return;
 
-    const rawTarget = card.offsetLeft - track.clientWidth / 2 + card.clientWidth / 2;
-    const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
-    const target = clamp(rawTarget, 0, maxScroll);
+      measureCards();
+
+      const rawTarget = card.offsetLeft - track.clientWidth / 2 + card.clientWidth / 2;
+      const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+      const target = clamp(rawTarget, 0, maxScroll);
 
     if (options.instant) {
       track.scrollLeft = target;
@@ -172,13 +189,15 @@ export default function SkillsCarousel() {
       return;
     }
 
-    if (typeof track.scrollTo === "function") {
-      track.scrollTo({ left: target, behavior: "smooth" });
-    } else {
-      track.scrollLeft = target;
-      updateStageColor(target + track.clientWidth / 2);
-    }
-  }, [updateStageColor]);
+      if (typeof track.scrollTo === "function") {
+        track.scrollTo({ left: target, behavior: "smooth" });
+      } else {
+        track.scrollLeft = target;
+        updateStageColor(target + track.clientWidth / 2);
+      }
+    },
+    [measureCards, updateStageColor]
+  );
 
   useEffect(() => {
     if (categories.length === 0) return;
@@ -188,6 +207,10 @@ export default function SkillsCarousel() {
     activeIndexRef.current = idx;
     animateToIndex(idx, { instant: true });
   }, [categories, search, animateToIndex]);
+
+  useEffect(() => {
+    cardRefs.current = cardRefs.current.slice(0, categories.length);
+  }, [categories.length]);
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -206,42 +229,77 @@ export default function SkillsCarousel() {
     if (!el || categories.length === 0) return;
 
     const handleScroll = () => {
-      const { scrollLeft, clientWidth, scrollWidth } = el;
-      const center = scrollLeft + clientWidth / 2;
-      updateStageColor(center);
-      let closest = activeIndexRef.current;
-      let min = Number.POSITIVE_INFINITY;
-      cardRefs.current.forEach((child, idx) => {
-        if (!child) return;
-        const middle = child.offsetLeft + child.offsetWidth / 2;
-        const dist = Math.abs(center - middle);
-        if (dist < min) {
-          min = dist;
-          closest = idx;
-        }
-      });
-
-      if (closest !== activeIndexRef.current) {
-        activeIndexRef.current = closest;
-        setActiveIndex(closest);
-        const params = new URLSearchParams(search);
-        if (categories[closest]) {
-          params.set("cat", categories[closest].id);
-          router.replace(`?${params.toString()}`, { scroll: false });
-        }
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current);
       }
+      scrollFrameRef.current = requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        const { scrollLeft, clientWidth, scrollWidth } = el;
+        const center = scrollLeft + clientWidth / 2;
+        updateStageColor(center);
 
-      const progress =
-        scrollWidth <= clientWidth ? 0.5 : scrollLeft / Math.max(1, scrollWidth - clientWidth);
-      glowMotion.set(clamp(progress, 0, 1));
+        let centers = cardCentersRef.current;
+        if (!centers.some((middle) => Number.isFinite(middle))) {
+          measureCards();
+          centers = cardCentersRef.current;
+        }
+        let closest = activeIndexRef.current;
+        let min = Number.POSITIVE_INFINITY;
+        centers.forEach((middle, idx) => {
+          if (!Number.isFinite(middle)) return;
+          const dist = Math.abs(center - middle);
+          if (dist < min) {
+            min = dist;
+            closest = idx;
+          }
+        });
+
+        if (closest !== activeIndexRef.current) {
+          activeIndexRef.current = closest;
+          setActiveIndex(closest);
+          const params = new URLSearchParams(search);
+          if (categories[closest]) {
+            params.set("cat", categories[closest].id);
+            router.replace(`?${params.toString()}`, { scroll: false });
+          }
+        }
+
+        const progress =
+          scrollWidth <= clientWidth ? 0.5 : scrollLeft / Math.max(1, scrollWidth - clientWidth);
+        glowMotion.set(clamp(progress, 0, 1));
+      });
     };
 
     handleScroll();
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
       el.removeEventListener("scroll", handleScroll);
     };
-  }, [categories, glowMotion, router, search, updateStageColor]);
+  }, [categories, glowMotion, measureCards, router, search, updateStageColor]);
+
+  useLayoutEffect(() => {
+    if (categories.length === 0) return;
+    measureCards();
+    const track = trackRef.current;
+    if (track) {
+      updateStageColor(track.scrollLeft + track.clientWidth / 2);
+    }
+  }, [activeIndex, categories.length, measureCards, updateStageColor]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      measureCards();
+      updateStageColor();
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [measureCards, updateStageColor]);
 
   const goToIndex = useCallback(
     (idx: number, options: { instant?: boolean; fromAutoplay?: boolean } = {}) => {
@@ -432,13 +490,13 @@ export default function SkillsCarousel() {
                   : "0 6px 18px rgba(15, 23, 42, 0.35)",
                 color: isActive ? "rgba(248,250,252,0.97)" : "rgba(226,232,240,0.82)",
               }}
-              whileHover={{ scale: 1.05 }}
-              whileFocus={{ scale: 1.03 }}
+              whileHover={isActive ? undefined : { scale: 1.045 }}
+              whileFocus={isActive ? undefined : { scale: 1.035 }}
               animate={{
-                scale: isActive ? 1.08 : 1,
-                opacity: isActive ? 1 : 0.78,
+                scale: isActive ? 1.055 : 1,
+                opacity: isActive ? 1 : 0.8,
               }}
-              transition={{ type: "spring", stiffness: 240, damping: 20 }}
+              transition={{ type: "spring", stiffness: 260, damping: 26 }}
             >
               <span
                 className="flex h-6 w-6 items-center justify-center rounded-full text-base font-semibold shadow"
