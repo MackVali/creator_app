@@ -165,22 +165,82 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     failures.push(...dedupe.failures)
   }
 
-  const scheduled = dedupe.scheduled
+  const queueByProject = new Map(queue.map(item => [item.id, item]))
 
-  if (queue.length === 0) {
-    for (const project of projectItems) {
-      const duration = Number(project.duration_min ?? 0)
-      if (!Number.isFinite(duration) || duration <= 0) continue
-      if (scheduled.has(project.id)) continue
-      const energy = (project.energy ?? 'NO').toString().toUpperCase()
-      queue.push({
+  for (const project of projectItems) {
+    const duration = Number(project.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) continue
+    const energy = (project.energy ?? 'NO').toString().toUpperCase()
+    const weight = project.weight ?? 0
+    const existing = queueByProject.get(project.id)
+    const reuse = dedupe.keepers.get(project.id)
+    if (existing) {
+      existing.duration_min = duration
+      existing.energy = energy
+      existing.weight = weight
+      if (!existing.instanceId && reuse) {
+        existing.instanceId = reuse.id
+      }
+    } else {
+      const entry = {
         id: project.id,
-        sourceType: 'PROJECT',
+        sourceType: 'PROJECT' as const,
         duration_min: duration,
         energy,
-        weight: project.weight ?? 0,
-      })
+        weight,
+        instanceId: reuse?.id,
+      }
+      queue.push(entry)
+      queueByProject.set(project.id, entry)
     }
+  }
+
+  for (const [projectId, inst] of dedupe.keepers) {
+    if (queueByProject.has(projectId)) continue
+    const duration = Number(inst.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) continue
+    const energy = (inst.energy_resolved ?? 'NO').toString().toUpperCase()
+    const weight =
+      typeof inst.weight_snapshot === 'number' ? inst.weight_snapshot : 0
+    const fallbackProject = projectMap.get(projectId)
+    const entry = {
+      id: projectId,
+      sourceType: 'PROJECT' as const,
+      duration_min: duration,
+      energy,
+      weight: fallbackProject?.weight ?? weight,
+      instanceId: inst.id,
+    }
+    queue.push(entry)
+    queueByProject.set(projectId, entry)
+  }
+
+  const instanceIdToProject = new Map<string, string>()
+  for (const item of queue) {
+    if (item.instanceId) {
+      instanceIdToProject.set(item.instanceId, item.id)
+    }
+  }
+
+  const failedInstanceIds = new Set<string>()
+  for (const [instanceId, projectId] of instanceIdToProject) {
+    const { error } = await client
+      .from('schedule_instances')
+      .update({ status: 'canceled' })
+      .eq('id', instanceId)
+
+    if (error) {
+      failures.push({ itemId: projectId, reason: 'error', detail: error })
+      failedInstanceIds.add(instanceId)
+    }
+  }
+
+  if (failedInstanceIds.size > 0) {
+    const filteredQueue = queue.filter(
+      item => !item.instanceId || !failedInstanceIds.has(item.instanceId)
+    )
+    queue.length = 0
+    queue.push(...filteredQueue)
   }
 
   queue.sort((a, b) => {
@@ -407,6 +467,7 @@ async function dedupeScheduledProjects(
   projectsToReset: Set<string>
 ): Promise<{
   scheduled: Set<string>
+  keepers: Map<string, ScheduleInstance>
   failures: { itemId: string; reason: string; detail?: unknown }[]
   error: PostgrestError | null
 }> {
@@ -418,7 +479,12 @@ async function dedupeScheduledProjects(
   )
 
   if (response.error) {
-    return { scheduled: new Set<string>(), failures: [], error: response.error }
+    return {
+      scheduled: new Set<string>(),
+      keepers: new Map<string, ScheduleInstance>(),
+      failures: [],
+      error: response.error,
+    }
   }
 
   const keepers = new Map<string, ScheduleInstance>()
@@ -469,7 +535,7 @@ async function dedupeScheduledProjects(
     scheduled.add(key)
   }
 
-  return { scheduled, failures, error: null }
+  return { scheduled, keepers, failures, error: null }
 }
 
 async function fetchCompatibleWindowsForItem(
