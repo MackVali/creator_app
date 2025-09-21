@@ -13,6 +13,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function channelToHex(channel: number) {
+  return Math.round(clamp(channel, 0, 255)).toString(16).padStart(2, "0");
+}
+
 function hexToRgb(hex?: string | null) {
   if (!hex) return { r: 99, g: 102, b: 241 };
   const normalized = hex.replace("#", "");
@@ -39,6 +43,16 @@ function adjustColor(hex: string | null | undefined, amount: number) {
   return `rgb(${nr}, ${ng}, ${nb})`;
 }
 
+function mixHexColors(a?: string | null, b?: string | null, amount = 0) {
+  const start = hexToRgb(a);
+  const end = hexToRgb(b);
+  const ratio = clamp(amount, 0, 1);
+  const r = start.r + (end.r - start.r) * ratio;
+  const g = start.g + (end.g - start.g) * ratio;
+  const blue = start.b + (end.b - start.b) * ratio;
+  return `#${channelToHex(r)}${channelToHex(g)}${channelToHex(blue)}`;
+}
+
 function withAlpha(hex: string | null | undefined, alpha: number) {
   const { r, g, b } = hexToRgb(hex || FALLBACK_COLOR);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -62,21 +76,86 @@ export default function SkillsCarousel() {
   const [skillDragging, setSkillDragging] = useState(false);
   const [hovering, setHovering] = useState(false);
   const [manualPause, setManualPause] = useState(false);
+  const [stageColor, setStageColor] = useState(FALLBACK_COLOR);
 
   const glowMotion = useMotionValue(0.5);
   const glowSpring = useSpring(glowMotion, { stiffness: 90, damping: 24, mass: 0.6 });
   const glowX = useTransform(glowSpring, (value) => `${value * 100}%`);
 
-  const activeColor = categories[activeIndex]?.color_hex || FALLBACK_COLOR;
+  const computeStageColor = useCallback(
+    (center: number) => {
+      if (categories.length === 0) return FALLBACK_COLOR;
+      let leftIdx = -1;
+      let rightIdx = -1;
+      let leftCenter = -Infinity;
+      let rightCenter = Infinity;
+
+      cardRefs.current.forEach((child, idx) => {
+        if (!child) return;
+        const middle = child.offsetLeft + child.offsetWidth / 2;
+        if (middle <= center && middle > leftCenter) {
+          leftIdx = idx;
+          leftCenter = middle;
+        }
+        if (middle >= center && middle < rightCenter) {
+          rightIdx = idx;
+          rightCenter = middle;
+        }
+      });
+
+      if (leftIdx === -1 && rightIdx === -1) {
+        return FALLBACK_COLOR;
+      }
+      if (leftIdx === -1) {
+        return categories[rightIdx]?.color_hex || FALLBACK_COLOR;
+      }
+      if (rightIdx === -1) {
+        return categories[leftIdx]?.color_hex || FALLBACK_COLOR;
+      }
+      if (leftIdx === rightIdx) {
+        return categories[leftIdx]?.color_hex || FALLBACK_COLOR;
+      }
+      const span = rightCenter - leftCenter;
+      if (!Number.isFinite(span) || span <= 0) {
+        return categories[rightIdx]?.color_hex || FALLBACK_COLOR;
+      }
+      const ratio = clamp((center - leftCenter) / span, 0, 1);
+      return mixHexColors(categories[leftIdx]?.color_hex, categories[rightIdx]?.color_hex, ratio);
+    },
+    [categories]
+  );
+
+  const updateStageColor = useCallback(
+    (centerOverride?: number) => {
+      if (categories.length === 0) {
+        setStageColor((prev) => (prev === FALLBACK_COLOR ? prev : FALLBACK_COLOR));
+        return;
+      }
+
+      const track = trackRef.current;
+      if (!track) {
+        const fallbackColor =
+          categories[activeIndexRef.current]?.color_hex || categories[0]?.color_hex || FALLBACK_COLOR;
+        setStageColor((prev) => (prev === fallbackColor ? prev : fallbackColor));
+        return;
+      }
+
+      const center =
+        typeof centerOverride === "number" ? centerOverride : track.scrollLeft + track.clientWidth / 2;
+      const color = computeStageColor(center);
+      setStageColor((prev) => (prev === color ? prev : color));
+    },
+    [categories, computeStageColor]
+  );
 
   const galleryGradient = useMemo(() => {
-    const soft = withAlpha(activeColor, 0.22);
-    const bright = rgbToRgba(adjustColor(activeColor, 0.45), 0.3);
-    const deep = rgbToRgba(adjustColor(activeColor, -0.3), 0.28);
+    const soft = withAlpha(stageColor, 0.22);
+    const bright = rgbToRgba(adjustColor(stageColor, 0.45), 0.3);
+    const deep = rgbToRgba(adjustColor(stageColor, -0.3), 0.28);
     return `radial-gradient(120% 160% at 48% 20%, ${soft} 0%, ${bright} 45%, transparent 75%), radial-gradient(140% 200% at 20% 120%, ${deep} 0%, transparent 70%)`;
-  }, [activeColor]);
+  }, [stageColor]);
 
-  const railTint = useMemo(() => withAlpha(activeColor, 0.12), [activeColor]);
+  const railTint = useMemo(() => withAlpha(stageColor, 0.12), [stageColor]);
 
   const animateToIndex = useCallback((idx: number, options: { instant?: boolean } = {}) => {
     const track = trackRef.current;
@@ -89,6 +168,7 @@ export default function SkillsCarousel() {
 
     if (options.instant) {
       track.scrollLeft = target;
+      updateStageColor(target + track.clientWidth / 2);
       return;
     }
 
@@ -96,8 +176,9 @@ export default function SkillsCarousel() {
       track.scrollTo({ left: target, behavior: "smooth" });
     } else {
       track.scrollLeft = target;
+      updateStageColor(target + track.clientWidth / 2);
     }
-  }, []);
+  }, [updateStageColor]);
 
   useEffect(() => {
     if (categories.length === 0) return;
@@ -113,12 +194,21 @@ export default function SkillsCarousel() {
   }, [activeIndex]);
 
   useEffect(() => {
+    if (categories.length === 0) {
+      setStageColor(FALLBACK_COLOR);
+      return;
+    }
+    updateStageColor();
+  }, [categories, updateStageColor]);
+
+  useEffect(() => {
     const el = trackRef.current;
     if (!el || categories.length === 0) return;
 
     const handleScroll = () => {
       const { scrollLeft, clientWidth, scrollWidth } = el;
       const center = scrollLeft + clientWidth / 2;
+      updateStageColor(center);
       let closest = activeIndexRef.current;
       let min = Number.POSITIVE_INFINITY;
       cardRefs.current.forEach((child, idx) => {
@@ -151,7 +241,7 @@ export default function SkillsCarousel() {
     return () => {
       el.removeEventListener("scroll", handleScroll);
     };
-  }, [categories, glowMotion, router, search]);
+  }, [categories, glowMotion, router, search, updateStageColor]);
 
   const goToIndex = useCallback(
     (idx: number, options: { instant?: boolean; fromAutoplay?: boolean } = {}) => {
@@ -271,7 +361,7 @@ export default function SkillsCarousel() {
           className="pointer-events-none absolute top-1/2 h-[120%] w-[115%] -translate-y-1/2 -translate-x-1/2"
           style={{
             left: glowX,
-            background: `radial-gradient(60% 120% at 50% 50%, ${withAlpha(activeColor, 0.52)} 0%, transparent 70%)`,
+            background: `radial-gradient(60% 120% at 50% 50%, ${withAlpha(stageColor, 0.52)} 0%, transparent 70%)`,
           }}
           animate={{ opacity: 0.55 }}
           transition={{ duration: 0.6 }}
