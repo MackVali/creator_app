@@ -39,7 +39,10 @@ export async function POST() {
     )
   }
 
-  const scheduleResult = await scheduleBacklog(user.id, now, supabase)
+  const userTimeZone = extractUserTimeZone(user)
+  const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
+    timeZone: userTimeZone,
+  })
   const status = scheduleResult.error ? 500 : 200
 
   return NextResponse.json(
@@ -52,6 +55,21 @@ export async function POST() {
     },
     { status }
   )
+}
+
+function extractUserTimeZone(user: { user_metadata?: Record<string, unknown> | null }) {
+  const metadata = user.user_metadata ?? {}
+  const candidates = [
+    metadata?.timezone,
+    metadata?.timeZone,
+    metadata?.tz,
+  ]
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value
+    }
+  }
+  return null
 }
 
 export async function GET() {

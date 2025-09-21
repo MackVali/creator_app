@@ -38,7 +38,13 @@ type PlaceParams = {
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
   const { userId, item, windows, client, reuseInstanceId } = params
-  for (const w of windows) {
+  let best: null | {
+    window: (typeof windows)[number]
+    windowIndex: number
+    start: Date
+  } = null
+
+  for (const [index, w] of windows.entries()) {
     const start = new Date(w.availableStartLocal ?? w.startLocal)
     const end = new Date(w.endLocal)
 
@@ -60,48 +66,50 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
 
     let cursor = start
     const durMin = item.duration_min
+    let candidate: Date | null = null
 
     for (const block of sorted) {
       const blockStart = new Date(block.start_utc)
       const blockEnd = new Date(block.end_utc)
       if (diffMin(cursor, blockStart) >= durMin) {
-        const startUTC = cursor.toISOString()
-        const endUTC = addMin(cursor, durMin).toISOString()
-        return await persistPlacement(
-          {
-            userId,
-            item,
-            windowId: w.id,
-            startUTC,
-            endUTC,
-            reuseInstanceId,
-          },
-          client
-        )
+        candidate = new Date(cursor)
+        break
       }
       if (blockEnd > cursor) {
         cursor = blockEnd
       }
     }
 
-    if (diffMin(cursor, end) >= durMin) {
-      const startUTC = cursor.toISOString()
-      const endUTC = addMin(cursor, durMin).toISOString()
-      return await persistPlacement(
-        {
-          userId,
-          item,
-          windowId: w.id,
-          startUTC,
-          endUTC,
-          reuseInstanceId,
-        },
-        client
-      )
+    if (!candidate && diffMin(cursor, end) >= durMin) {
+      candidate = new Date(cursor)
+    }
+
+    if (!candidate) continue
+
+    if (
+      !best ||
+      candidate.getTime() < best.start.getTime() ||
+      (candidate.getTime() === best.start.getTime() && index < best.windowIndex)
+    ) {
+      best = { window: w, windowIndex: index, start: candidate }
     }
   }
 
-  return { error: 'NO_FIT' }
+  if (!best) {
+    return { error: 'NO_FIT' }
+  }
+
+  return await persistPlacement(
+    {
+      userId,
+      item,
+      windowId: best.window.id,
+      startUTC: best.start.toISOString(),
+      endUTC: addMin(best.start, item.duration_min).toISOString(),
+      reuseInstanceId,
+    },
+    client
+  )
 }
 
 function diffMin(a: Date, b: Date) {

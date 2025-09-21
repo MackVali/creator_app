@@ -15,6 +15,13 @@ import {
 } from './repo'
 import { placeItemInWindows } from './placement'
 import { ENERGY } from './config'
+import {
+  addDaysInTimeZone,
+  differenceInCalendarDaysInTimeZone,
+  normalizeTimeZone,
+  setTimeInTimeZone,
+  startOfDayInTimeZone,
+} from './timezone'
 
 type Client = SupabaseClient<Database>
 
@@ -77,10 +84,12 @@ export async function markMissedAndQueue(
 export async function scheduleBacklog(
   userId: string,
   baseDate = new Date(),
-  client?: Client
+  client?: Client,
+  options?: { timeZone?: string | null }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
+  const timeZone = normalizeTimeZone(options?.timeZone)
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
   if (missed.error) {
@@ -105,13 +114,11 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
-  const baseStart = startOfDay(baseDate)
+  const baseStart = startOfDayInTimeZone(baseDate, timeZone)
   const dayOffsetFor = (startUTC: string): number | undefined => {
     const start = new Date(startUTC)
     if (Number.isNaN(start.getTime())) return undefined
-    const diff = Math.floor(
-      (start.getTime() - baseStart.getTime()) / (24 * 60 * 60 * 1000)
-    )
+    const diff = differenceInCalendarDaysInTimeZone(baseStart, start, timeZone)
     return Number.isFinite(diff) ? diff : undefined
   }
 
@@ -217,7 +224,7 @@ export async function scheduleBacklog(
   }
 
   const finalQueueProjectIds = new Set(queuedProjectIds)
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEnd = addDaysInTimeZone(baseStart, 28, timeZone)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
@@ -278,11 +285,12 @@ export async function scheduleBacklog(
         windowAvailability = new Map<string, Date>()
         windowAvailabilityByDay.set(offset, windowAvailability)
       }
-      const day = addDays(baseStart, offset)
+      const day = addDaysInTimeZone(baseStart, offset, timeZone)
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
         item,
+        timeZone,
         {
           availability: windowAvailability,
           now: offset === 0 ? baseDate : undefined,
@@ -492,6 +500,7 @@ async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
   item: { energy: string; duration_min: number },
+  timeZone: string,
   options?: {
     now?: Date
     availability?: Map<string, Date>
@@ -526,8 +535,8 @@ async function fetchCompatibleWindowsForItem(
     const energyIdx = energyIndex(win.energy)
     if (energyIdx < itemIdx) continue
 
-    const startLocal = resolveWindowStart(win, date)
-    const endLocal = resolveWindowEnd(win, date)
+    const startLocal = resolveWindowStart(win, date, timeZone)
+    const endLocal = resolveWindowEnd(win, date, timeZone)
     const key = windowKey(win.id, startLocal)
     const startMs = startLocal.getTime()
     const endMs = endLocal.getTime()
@@ -611,7 +620,7 @@ function windowKey(windowId: string, startLocal: Date) {
 }
 
 function dateCacheKey(date: Date) {
-  return startOfDay(date).toISOString()
+  return date.toISOString()
 }
 
 function energyIndex(level?: string | null) {
@@ -620,34 +629,21 @@ function energyIndex(level?: string | null) {
   return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
 }
 
-function resolveWindowStart(win: WindowLite, date: Date) {
+function resolveWindowStart(win: WindowLite, date: Date, timeZone: string) {
   const [hour = 0, minute = 0] = win.start_local.split(':').map(Number)
-  const start = startOfDay(date)
-  if (win.fromPrevDay) start.setDate(start.getDate() - 1)
-  start.setHours(hour, minute, 0, 0)
-  return start
+  const baseDay = win.fromPrevDay
+    ? addDaysInTimeZone(date, -1, timeZone)
+    : date
+  return setTimeInTimeZone(baseDay, timeZone, hour, minute)
 }
 
-function resolveWindowEnd(win: WindowLite, date: Date) {
+function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
   const [hour = 0, minute = 0] = win.end_local.split(':').map(Number)
-  const base = win.fromPrevDay ? startOfDay(date) : startOfDay(date)
-  const end = new Date(base)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(win, date)
+  let end = setTimeInTimeZone(date, timeZone, hour, minute)
+  const start = resolveWindowStart(win, date, timeZone)
   if (end <= start) {
-    end.setDate(end.getDate() + 1)
+    const nextDay = addDaysInTimeZone(date, 1, timeZone)
+    end = setTimeInTimeZone(nextDay, timeZone, hour, minute)
   }
   return end
-}
-
-function startOfDay(date: Date) {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-function addDays(date: Date, amount: number) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + amount)
-  return d
 }

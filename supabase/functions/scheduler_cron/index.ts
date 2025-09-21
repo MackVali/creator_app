@@ -5,6 +5,12 @@ import {
   type SupabaseClient,
 } from 'https://esm.sh/@supabase/supabase-js@2?dts'
 import type { Database } from '../../../types/supabase.ts'
+import {
+  addDaysInTimeZone,
+  normalizeTimeZone,
+  setTimeInTimeZone,
+  startOfDayInTimeZone,
+} from '../../../src/lib/scheduler/timezone.ts'
 
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -46,7 +52,13 @@ serve(async req => {
       return new Response(JSON.stringify(missedResult), { status: 500 })
     }
 
-    const scheduleResult = await scheduleBacklog(supabase, userId, now)
+    const timeZoneValue = await resolveUserTimeZone(supabase, userId)
+    const scheduleResult = await scheduleBacklog(
+      supabase,
+      userId,
+      now,
+      timeZoneValue,
+    )
     if (scheduleResult.error) {
       console.error('scheduleBacklog error', scheduleResult.error)
       return new Response(JSON.stringify(scheduleResult), { status: 500 })
@@ -62,6 +74,32 @@ serve(async req => {
   }
 })
 
+async function resolveUserTimeZone(client: Client, userId: string) {
+  try {
+    const { data, error } = await client.auth.admin.getUserById(userId)
+    if (error) {
+      console.error('resolveUserTimeZone error', error)
+      return null
+    }
+    const user = data?.user ?? null
+    if (!user) return null
+    const meta =
+      ((user.user_metadata ?? user.raw_user_meta_data) as
+        | Record<string, unknown>
+        | null
+        | undefined) ?? {}
+    const candidates = [meta?.timezone, meta?.timeZone, meta?.tz]
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value
+      }
+    }
+  } catch (error) {
+    console.error('resolveUserTimeZone failure', error)
+  }
+  return null
+}
+
 async function markMissedAndQueue(client: Client, userId: string, now: Date) {
   const cutoff = new Date(now.getTime() - GRACE_MIN * 60_000).toISOString()
   return await client
@@ -72,7 +110,12 @@ async function markMissedAndQueue(client: Client, userId: string, now: Date) {
     .lt('end_utc', cutoff)
 }
 
-async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
+async function scheduleBacklog(
+  client: Client,
+  userId: string,
+  baseDate: Date,
+  timeZoneValue?: string | null,
+) {
   const missed = await fetchMissedInstances(client, userId)
   if (missed.error) return { placed: [], failures: [], error: missed.error }
 
@@ -91,7 +134,8 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     instanceId?: string | null
   }
 
-  const baseStart = startOfDay(baseDate)
+  const timeZone = normalizeTimeZone(timeZoneValue)
+  const baseStart = startOfDayInTimeZone(baseDate, timeZone)
   const queue: QueueItem[] = []
   const failures: { itemId: string; reason: string; detail?: unknown }[] = []
   const seenMissedProjects = new Set<string>()
@@ -148,7 +192,7 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     })
   }
 
-  const rangeEnd = addDays(baseStart, 28)
+  const rangeEnd = addDaysInTimeZone(baseStart, 28, timeZone)
   const dedupe = await dedupeScheduledProjects(
     client,
     userId,
@@ -165,22 +209,82 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
     failures.push(...dedupe.failures)
   }
 
-  const scheduled = dedupe.scheduled
+  const queueByProject = new Map(queue.map(item => [item.id, item]))
 
-  if (queue.length === 0) {
-    for (const project of projectItems) {
-      const duration = Number(project.duration_min ?? 0)
-      if (!Number.isFinite(duration) || duration <= 0) continue
-      if (scheduled.has(project.id)) continue
-      const energy = (project.energy ?? 'NO').toString().toUpperCase()
-      queue.push({
+  for (const project of projectItems) {
+    const duration = Number(project.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) continue
+    const energy = (project.energy ?? 'NO').toString().toUpperCase()
+    const weight = project.weight ?? 0
+    const existing = queueByProject.get(project.id)
+    const reuse = dedupe.keepers.get(project.id)
+    if (existing) {
+      existing.duration_min = duration
+      existing.energy = energy
+      existing.weight = weight
+      if (!existing.instanceId && reuse) {
+        existing.instanceId = reuse.id
+      }
+    } else {
+      const entry = {
         id: project.id,
-        sourceType: 'PROJECT',
+        sourceType: 'PROJECT' as const,
         duration_min: duration,
         energy,
-        weight: project.weight ?? 0,
-      })
+        weight,
+        instanceId: reuse?.id,
+      }
+      queue.push(entry)
+      queueByProject.set(project.id, entry)
     }
+  }
+
+  for (const [projectId, inst] of dedupe.keepers) {
+    if (queueByProject.has(projectId)) continue
+    const duration = Number(inst.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) continue
+    const energy = (inst.energy_resolved ?? 'NO').toString().toUpperCase()
+    const weight =
+      typeof inst.weight_snapshot === 'number' ? inst.weight_snapshot : 0
+    const fallbackProject = projectMap.get(projectId)
+    const entry = {
+      id: projectId,
+      sourceType: 'PROJECT' as const,
+      duration_min: duration,
+      energy,
+      weight: fallbackProject?.weight ?? weight,
+      instanceId: inst.id,
+    }
+    queue.push(entry)
+    queueByProject.set(projectId, entry)
+  }
+
+  const instanceIdToProject = new Map<string, string>()
+  for (const item of queue) {
+    if (item.instanceId) {
+      instanceIdToProject.set(item.instanceId, item.id)
+    }
+  }
+
+  const failedInstanceIds = new Set<string>()
+  for (const [instanceId, projectId] of instanceIdToProject) {
+    const { error } = await client
+      .from('schedule_instances')
+      .update({ status: 'canceled' })
+      .eq('id', instanceId)
+
+    if (error) {
+      failures.push({ itemId: projectId, reason: 'error', detail: error })
+      failedInstanceIds.add(instanceId)
+    }
+  }
+
+  if (failedInstanceIds.size > 0) {
+    const filteredQueue = queue.filter(
+      item => !item.instanceId || !failedInstanceIds.has(item.instanceId)
+    )
+    queue.length = 0
+    queue.push(...filteredQueue)
   }
 
   queue.sort((a, b) => {
@@ -202,12 +306,13 @@ async function scheduleBacklog(client: Client, userId: string, baseDate: Date) {
   for (const item of queue) {
     let scheduled = false
     for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
-      const day = addDays(baseStart, offset)
+      const day = addDaysInTimeZone(baseStart, offset, timeZone)
       const windows = await fetchCompatibleWindowsForItem(
         client,
         userId,
         day,
         item,
+        timeZone,
         {
           availability: windowAvailability,
           now: offset === 0 ? baseDate : undefined,
@@ -407,6 +512,7 @@ async function dedupeScheduledProjects(
   projectsToReset: Set<string>
 ): Promise<{
   scheduled: Set<string>
+  keepers: Map<string, ScheduleInstance>
   failures: { itemId: string; reason: string; detail?: unknown }[]
   error: PostgrestError | null
 }> {
@@ -418,7 +524,12 @@ async function dedupeScheduledProjects(
   )
 
   if (response.error) {
-    return { scheduled: new Set<string>(), failures: [], error: response.error }
+    return {
+      scheduled: new Set<string>(),
+      keepers: new Map<string, ScheduleInstance>(),
+      failures: [],
+      error: response.error,
+    }
   }
 
   const keepers = new Map<string, ScheduleInstance>()
@@ -469,7 +580,7 @@ async function dedupeScheduledProjects(
     scheduled.add(key)
   }
 
-  return { scheduled, failures, error: null }
+  return { scheduled, keepers, failures, error: null }
 }
 
 async function fetchCompatibleWindowsForItem(
@@ -477,6 +588,7 @@ async function fetchCompatibleWindowsForItem(
   userId: string,
   date: Date,
   item: { energy: string; duration_min: number },
+  timeZone: string,
   options?: {
     now?: Date
     availability?: Map<string, Date>
@@ -511,8 +623,8 @@ async function fetchCompatibleWindowsForItem(
     const energyIdx = energyIndex(window.energy)
     if (energyIdx < itemIdx) continue
 
-    const startLocal = resolveWindowStart(window, date)
-    const endLocal = resolveWindowEnd(window, date)
+    const startLocal = resolveWindowStart(window, date, timeZone)
+    const endLocal = resolveWindowEnd(window, date, timeZone)
     const key = windowKey(window.id, startLocal)
     const startMs = startLocal.getTime()
     const endMs = endLocal.getTime()
@@ -577,7 +689,7 @@ type WindowRecord = {
 }
 
 async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
-  const weekday = date.getDay()
+  const weekday = date.getUTCDay()
   const prevWeekday = (weekday + 6) % 7
 
   const columns = 'id, label, energy, start_local, end_local, days'
@@ -828,39 +940,26 @@ function windowKey(windowId: string, startLocal: Date) {
 }
 
 function dateCacheKey(date: Date) {
-  return startOfDay(date).toISOString()
+  return date.toISOString()
 }
 
-function resolveWindowStart(window: WindowRecord, date: Date) {
+function resolveWindowStart(window: WindowRecord, date: Date, timeZone: string) {
   const [hour = 0, minute = 0] = window.start_local.split(':').map(Number)
-  const base = startOfDay(date)
-  if (window.fromPrevDay) base.setDate(base.getDate() - 1)
-  const start = new Date(base)
-  start.setHours(hour, minute, 0, 0)
-  return start
+  const base = window.fromPrevDay
+    ? addDaysInTimeZone(date, -1, timeZone)
+    : date
+  return setTimeInTimeZone(base, timeZone, hour, minute)
 }
 
-function resolveWindowEnd(window: WindowRecord, date: Date) {
+function resolveWindowEnd(window: WindowRecord, date: Date, timeZone: string) {
   const [hour = 0, minute = 0] = window.end_local.split(':').map(Number)
-  const end = startOfDay(date)
-  end.setHours(hour, minute, 0, 0)
-  const start = resolveWindowStart(window, date)
+  let end = setTimeInTimeZone(date, timeZone, hour, minute)
+  const start = resolveWindowStart(window, date, timeZone)
   if (end <= start) {
-    end.setDate(end.getDate() + 1)
+    const nextDay = addDaysInTimeZone(date, 1, timeZone)
+    end = setTimeInTimeZone(nextDay, timeZone, hour, minute)
   }
   return end
-}
-
-function startOfDay(date: Date) {
-  const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  return copy
-}
-
-function addDays(date: Date, amount: number) {
-  const copy = new Date(date)
-  copy.setDate(copy.getDate() + amount)
-  return copy
 }
 
 function addMin(date: Date, minutes: number) {
