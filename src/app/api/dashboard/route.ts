@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { BRAND_CAT_COLORS } from "@/app/(app)/dashboard/_skills/brandColors";
 import type {
   UserStats,
   MonumentCounts,
@@ -65,7 +66,7 @@ export async function GET() {
     return {
       ...skill,
       cat_name: category?.name || "Uncategorized",
-      cat_color_hex: category?.color_hex || "#000000",
+      cat_color_hex: category?.color_hex || BRAND_CAT_COLORS[0],
     };
   });
 
@@ -123,7 +124,9 @@ export async function GET() {
           cat_name: catName,
           user_id: skill.user_id,
           skill_count: 0,
-          color_hex: catId ? skill.cat_color_hex || "#000000" : "#000000",
+          color_hex: catId
+            ? skill.cat_color_hex || BRAND_CAT_COLORS[0]
+            : BRAND_CAT_COLORS[0],
           skills: [],
         };
       }
@@ -163,7 +166,8 @@ export async function GET() {
     if (catSkills) {
       return {
         ...catSkills,
-        color_hex: cat.color_hex || catSkills.color_hex || "#000000",
+        color_hex:
+          cat.color_hex || catSkills.color_hex || BRAND_CAT_COLORS[0],
         order: cat.sort_order ?? null,
       }; // Return CAT with its skills
     } else {
@@ -173,7 +177,7 @@ export async function GET() {
         cat_name: cat.name,
         user_id: cat.user_id,
         skill_count: 0,
-        color_hex: cat.color_hex || "#000000",
+        color_hex: cat.color_hex || BRAND_CAT_COLORS[0],
         order: cat.sort_order ?? null,
         skills: [],
       };
@@ -185,7 +189,7 @@ export async function GET() {
   if (uncategorizedCat) {
     catsOut.push({
       ...uncategorizedCat,
-      color_hex: uncategorizedCat.color_hex || "#000000",
+      color_hex: uncategorizedCat.color_hex || BRAND_CAT_COLORS[0],
       order: null,
     });
   }
