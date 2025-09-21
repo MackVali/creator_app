@@ -51,7 +51,7 @@ export async function fetchWindowsForDate(
 ): Promise<WindowLite[]> {
   const supabase = ensureClient(client);
 
-  const weekday = date.getDay();
+  const weekday = date.getUTCDay();
   const prevWeekday = (weekday + 6) % 7;
   const columns = 'id, label, energy, start_local, end_local, days';
 

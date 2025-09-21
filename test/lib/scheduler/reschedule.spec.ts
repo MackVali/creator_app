@@ -1210,4 +1210,51 @@ describe("scheduleBacklog", () => {
     expect(result.timeline[0]?.instance.id).toBe("inst-existing");
     expect(result.timeline[0]?.decision).toBe("rescheduled");
   });
+
+  it("anchors scheduling to the provided user timezone", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "Evening work",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    });
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const requestedDates: string[] = [];
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
+      async (date: Date) => {
+        requestedDates.push(date.toISOString());
+        return [
+          {
+            id: "win-evening",
+            label: "Evening",
+            energy: "NO",
+            start_local: "18:00",
+            end_local: "20:00",
+            days: [1],
+          },
+        ];
+      },
+    );
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async () => ({ error: "NO_FIT" as const }),
+    );
+
+    const base = new Date("2024-01-02T01:00:00Z");
+    const { client: supabase } = createSupabaseMock();
+
+    await scheduleBacklog(userId, base, supabase, {
+      timeZone: "America/Los_Angeles",
+    });
+
+    expect(requestedDates[0]).toBe("2024-01-01T08:00:00.000Z");
+  });
 });
