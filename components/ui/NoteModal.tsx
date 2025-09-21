@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem } from "./select";
 import { useToastHelpers } from "./toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
-import { getNotes, saveNotes } from "@/lib/notesStorage";
+import { upsertSkillNote } from "@/lib/notesStorage";
 
 interface NoteModalProps {
   isOpen: boolean;
@@ -27,6 +27,7 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
     title: "",
     content: "",
   });
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -51,20 +52,24 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
 
   if (!isOpen || !mounted) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.skillId) {
       alert("Please select a skill");
       return;
     }
-    const notes = getNotes(formData.skillId);
-    notes.push({
-      id: Date.now().toString(),
+    if (isSaving) return;
+    setIsSaving(true);
+    const note = await upsertSkillNote({
       skillId: formData.skillId,
       title: formData.title,
       content: formData.content,
     });
-    saveNotes(formData.skillId, notes);
+    setIsSaving(false);
+    if (!note) {
+      toast.error("Failed to save note");
+      return;
+    }
     toast.success("Note saved");
     setFormData({ skillId: "", title: "", content: "" });
     onClose();
@@ -126,9 +131,9 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
           <Button
             type="submit"
             className="w-full"
-            disabled={!formData.skillId}
+            disabled={!formData.skillId || isSaving}
           >
-            Save Note
+            {isSaving ? "Saving..." : "Save Note"}
           </Button>
         </form>
       </div>

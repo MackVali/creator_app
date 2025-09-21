@@ -5,8 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { getNotes, saveNotes } from "@/lib/notesStorage";
-import type { Note } from "@/lib/types/note";
+import { fetchSkillNote, upsertSkillNote } from "@/lib/notesStorage";
 
 export default function NotePage() {
   const params = useParams();
@@ -16,33 +15,43 @@ export default function NotePage() {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const notes = getNotes(skillId);
-    const note = notes.find((n) => n.id === noteId);
-    if (note) {
+    if (noteId === "new") return;
+
+    let active = true;
+
+    const loadNote = async () => {
+      const note = await fetchSkillNote(skillId, noteId);
+      if (!active || !note) return;
       setTitle(note.title);
       setContent(note.content);
-    }
+    };
+
+    loadNote();
+
+    return () => {
+      active = false;
+    };
   }, [skillId, noteId]);
 
-  const onSave = () => {
-    const notes = getNotes(skillId);
-    const existingIndex = notes.findIndex((n) => n.id === noteId);
-    const newId = existingIndex >= 0 ? noteId : Date.now().toString();
-    const newNote: Note = {
-      id: newId,
+  const onSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+
+    const saved = await upsertSkillNote({
+      id: noteId === "new" ? undefined : noteId,
       skillId,
       title,
       content,
-    };
-    if (existingIndex >= 0) {
-      notes[existingIndex] = newNote;
-    } else {
-      notes.push(newNote);
+    });
+
+    setIsSaving(false);
+
+    if (saved) {
+      router.push(`/skills/${skillId}`);
     }
-    saveNotes(skillId, notes);
-    router.push(`/skills/${skillId}`);
   };
 
   return (
@@ -58,8 +67,8 @@ export default function NotePage() {
         placeholder="Write your note..."
         className="min-h-[300px]"
       />
-      <Button onClick={onSave}>
-        Save
+      <Button onClick={onSave} disabled={isSaving}>
+        {isSaving ? "Saving..." : "Save"}
       </Button>
     </main>
   );
