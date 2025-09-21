@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { BRAND_CAT_COLORS } from "./brandColors";
 
 export interface Category {
   id: string;
@@ -37,12 +38,17 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
       .order("sort_order", { ascending: true, nullsFirst: false })
       .order("name", { ascending: true });
     if (fallback.error) return [];
-    return (fallback.data ?? []).map((c) => ({ id: c.id, name: c.name, order: c.sort_order }));
+    return (fallback.data ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      color_hex: BRAND_CAT_COLORS[0],
+      order: c.sort_order,
+    }));
   }
   return (data ?? []).map((c) => ({
     id: c.id,
     name: c.name,
-    color_hex: c.color_hex || "#000000",
+    color_hex: c.color_hex || BRAND_CAT_COLORS[0],
     order: c.sort_order,
   }));
 }
@@ -131,7 +137,9 @@ export function useSkillsData() {
           setCategories(cats);
         } else if (Object.keys(grouped).length > 0) {
           // derive a single fallback category so skills still render
-          setCategories([{ id: "uncategorized", name: "Skills" }]);
+          setCategories([
+            { id: "uncategorized", name: "Skills", color_hex: BRAND_CAT_COLORS[0] },
+          ]);
         } else {
           setCategories([]);
         }

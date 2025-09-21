@@ -1,4 +1,5 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
+import { BRAND_CAT_COLORS } from "@/app/(app)/dashboard/_skills/brandColors";
 import type { CatRow } from "../types/cat";
 
 export async function getCatsForUser(userId: string) {
@@ -15,7 +16,7 @@ export async function getCatsForUser(userId: string) {
   if (error) throw error;
   return (data ?? []).map((c) => ({
     ...c,
-    color_hex: c.color_hex || "#000000",
+    color_hex: c.color_hex || BRAND_CAT_COLORS[0],
   })) as CatRow[];
 }
 
