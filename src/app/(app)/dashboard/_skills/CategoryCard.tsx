@@ -182,15 +182,15 @@ export default function CategoryCard({
             aria-hidden
             className="absolute inset-[1px] rounded-[24px]"
             style={{ border: `1px solid ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.24 : 0.14)}` }}
-            animate={{ opacity: active ? [0.65, 0.9, 0.65] : 0.5 }}
-            transition={{ duration: active ? 4.6 : 0.8, repeat: active ? Infinity : 0, ease: "easeInOut" }}
+            animate={{ opacity: active ? 0.75 : 0.5 }}
+            transition={{ duration: 0.4 }}
           />
           <motion.span
             aria-hidden
             className="absolute inset-0"
             style={{ background: palette.sheen, mixBlendMode: "screen" }}
-            animate={{ x: active ? [-18, 18, -18] : 0, opacity: active ? [0.4, 0.75, 0.4] : 0.35 }}
-            transition={{ duration: active ? 5.6 : 0.9, repeat: active ? Infinity : 0, ease: "easeInOut" }}
+            animate={{ opacity: active ? 0.6 : 0.35 }}
+            transition={{ duration: 0.5 }}
           />
         </div>
         <div className="relative z-10 flex h-full flex-col">
@@ -210,8 +210,8 @@ export default function CategoryCard({
                 aria-hidden
                 className="pointer-events-none absolute inset-0 rounded-full"
                 style={{ background: palette.sheen, mixBlendMode: "screen" }}
-                animate={{ x: active ? [-12, 12, -12] : [-8, 8, -8] }}
-                transition={{ duration: active ? 5 : 6, repeat: Infinity, ease: "easeInOut" }}
+                animate={{ opacity: active ? 0.55 : 0.4 }}
+                transition={{ duration: 0.45 }}
               />
             </button>
             <span

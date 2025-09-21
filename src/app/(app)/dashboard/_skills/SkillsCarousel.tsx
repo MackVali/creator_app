@@ -48,17 +48,12 @@ function rgbToRgba(rgb: string, alpha: number) {
   return rgb.replace("rgb", "rgba").replace(")", `, ${alpha})`);
 }
 
-function easeOutQuart(t: number) {
-  return 1 - (1 - t) ** 4;
-}
-
 export default function SkillsCarousel() {
   const { categories, skillsByCategory, isLoading } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
   const trackRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const animationFrameRef = useRef<number | null>(null);
   const autoplayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const manualPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeIndexRef = useRef(0);
@@ -83,45 +78,26 @@ export default function SkillsCarousel() {
 
   const railTint = useMemo(() => withAlpha(activeColor, 0.12), [activeColor]);
 
-  const animateToIndex = useCallback(
-    (idx: number, options: { instant?: boolean } = {}) => {
-      const track = trackRef.current;
-      const card = cardRefs.current[idx];
-      if (!track || !card) return;
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
+  const animateToIndex = useCallback((idx: number, options: { instant?: boolean } = {}) => {
+    const track = trackRef.current;
+    const card = cardRefs.current[idx];
+    if (!track || !card) return;
 
-      const start = track.scrollLeft;
-      const rawTarget = card.offsetLeft - track.clientWidth / 2 + card.clientWidth / 2;
-      const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
-      const target = clamp(rawTarget, 0, maxScroll);
+    const rawTarget = card.offsetLeft - track.clientWidth / 2 + card.clientWidth / 2;
+    const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+    const target = clamp(rawTarget, 0, maxScroll);
 
-      if (options.instant) {
-        track.scrollLeft = target;
-        return;
-      }
+    if (options.instant) {
+      track.scrollLeft = target;
+      return;
+    }
 
-      const duration = 650;
-      let startTime: number | null = null;
-
-      const step = (timestamp: number) => {
-        if (startTime === null) startTime = timestamp;
-        const progress = clamp((timestamp - startTime) / duration, 0, 1);
-        const eased = easeOutQuart(progress);
-        track.scrollLeft = start + (target - start) * eased;
-        if (progress < 1) {
-          animationFrameRef.current = requestAnimationFrame(step);
-        } else {
-          animationFrameRef.current = null;
-        }
-      };
-
-      animationFrameRef.current = requestAnimationFrame(step);
-    },
-    []
-  );
+    if (typeof track.scrollTo === "function") {
+      track.scrollTo({ left: target, behavior: "smooth" });
+    } else {
+      track.scrollLeft = target;
+    }
+  }, []);
 
   useEffect(() => {
     if (categories.length === 0) return;
@@ -240,9 +216,6 @@ export default function SkillsCarousel() {
       if (manualPauseTimeoutRef.current) {
         clearTimeout(manualPauseTimeoutRef.current);
       }
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
     };
   }, [stopAutoplay]);
 
@@ -284,16 +257,15 @@ export default function SkillsCarousel() {
     >
       <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-slate-950/40 px-2 py-5 sm:px-4">
         <motion.div
-          className="pointer-events-none absolute inset-0"
+          className="pointer-events-none absolute inset-0 transition-opacity duration-700"
           style={{ background: galleryGradient }}
-          animate={{ opacity: [0.88, 1, 0.88] }}
-          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ opacity: 1 }}
         />
         <motion.div
           className="pointer-events-none absolute -inset-24 blur-3xl"
           style={{ background: railTint }}
-          animate={{ opacity: [0.35, 0.6, 0.35] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
+          animate={{ opacity: 0.5 }}
+          transition={{ duration: 0.6 }}
         />
         <motion.div
           className="pointer-events-none absolute top-1/2 h-[120%] w-[115%] -translate-y-1/2 -translate-x-1/2"
@@ -301,8 +273,8 @@ export default function SkillsCarousel() {
             left: glowX,
             background: `radial-gradient(60% 120% at 50% 50%, ${withAlpha(activeColor, 0.52)} 0%, transparent 70%)`,
           }}
-          animate={{ opacity: [0.42, 0.7, 0.42] }}
-          transition={{ duration: 7.2, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ opacity: 0.55 }}
+          transition={{ duration: 0.6 }}
         />
         <div
           ref={trackRef}
