@@ -44,6 +44,9 @@ html,body{
   overflow-x:hidden;
 }
 .section{ padding:20px 16px 8px; }
+.frosted-surface{
+  background-image:radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.05) 100%);
+}
 .h-label{ letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--muted); font-size:12px; }
 .card{ background:linear-gradient(180deg,var(--surface),var(--surface-2));
        border-radius:var(--radius);
