@@ -13,7 +13,12 @@ import {
   type ReactNode,
 } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import {
+  AnimatePresence,
+  LayoutGroup,
+  motion,
+  useReducedMotion,
+} from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -1024,7 +1029,7 @@ export default function SchedulePage() {
     WebkitBackdropFilter: 'blur(18px)',
   }
   const collapsedProjectBaseClasses =
-    'relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200'
+    'relative flex h-full w-full items-center justify-between overflow-hidden rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200'
   const collapsedProjectSurfaceClasses =
     'bg-[linear-gradient(145deg,_rgba(12,14,18,0.95)_0%,_rgba(26,28,36,0.92)_52%,_rgba(98,102,116,0.78)_100%)] text-zinc-100/90 ring-1 ring-white/14 backdrop-blur-lg'
   const scheduledTaskBaseClasses =
@@ -1220,99 +1225,115 @@ export default function SchedulePage() {
                             : { type: 'spring', stiffness: 320, damping: 32 }
                         }
                       >
-                        <AnimatePresence mode="wait" initial={false}>
-                          {!isExpanded || !canExpand ? (
-                            <motion.div
-                              key="project"
-                              aria-label={`Project ${project.name}`}
-                              onClick={() => {
-                                if (!canExpand) return
-                                setProjectExpansion(projectId)
-                              }}
-                              className={collapsedProjectClasses}
-                              style={glassElevationStyle}
-                              initial={
-                                prefersReducedMotion ? false : { opacity: 0, y: 4 }
-                              }
-                              animate={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : {
-                                      opacity: 1,
-                                      y: 0,
-                                      transition: {
-                                        delay: hasInteractedWithProjects
-                                          ? 0
-                                          : index * 0.02,
-                                        duration: 0.18,
-                                        ease: [0.4, 0, 0.2, 1],
-                                      },
-                                    }
-                              }
-                              exit={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : {
-                                      opacity: 0,
-                                      y: 4,
-                                      transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                                    }
-                              }
-                            >
-                              {renderInstanceActions(instance.id, { projectId })}
-                              <div className="flex flex-col">
-                                <span className="truncate text-sm font-semibold tracking-tight">
-                                  {project.name}
-                                </span>
-                                <div className="text-xs text-zinc-300/75">
-                                  {detailText}
-                                </div>
-                              </div>
-                              {project.skill_icon && (
-                                <span
-                                  className="ml-2 text-lg leading-none flex-shrink-0"
-                                  aria-hidden
-                                >
-                                  {project.skill_icon}
-                                </span>
-                              )}
-                              <FlameEmber
-                                level={
-                                  (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                                  'NO'
+                        <LayoutGroup id={`schedule-project-${instance.id}`}>
+                          <AnimatePresence mode="popLayout" initial={false}>
+                            {!isExpanded || !canExpand ? (
+                              <motion.div
+                                key="project"
+                                layout={prefersReducedMotion ? false : 'position'}
+                                layoutId={`schedule-card-${instance.id}`}
+                                aria-label={`Project ${project.name}`}
+                                onClick={() => {
+                                  if (!canExpand) return
+                                  setProjectExpansion(projectId)
+                                }}
+                                className={collapsedProjectClasses}
+                                style={glassElevationStyle}
+                                initial={
+                                  prefersReducedMotion
+                                    ? false
+                                    : { opacity: 0, y: 4 }
                                 }
-                                size="sm"
-                                className="absolute -top-1 -right-1"
-                              />
-                            </motion.div>
-                          ) : (
-                            <motion.div
-                              key="tasks"
-                              className="relative h-full w-full"
-                              initial={
-                                prefersReducedMotion
-                                  ? false
-                                  : { opacity: 0, y: 4 }
-                              }
-                              animate={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : {
-                                      opacity: 1,
-                                      y: 0,
-                                      transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
-                                    }
-                              }
-                              exit={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : {
-                                      opacity: 0,
-                                      y: 4,
-                                      transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                                    }
-                              }
-                            >
+                                animate={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 1,
+                                        y: 0,
+                                        transition: {
+                                          delay: hasInteractedWithProjects
+                                            ? 0
+                                            : index * 0.02,
+                                          duration: 0.18,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                                exit={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 0,
+                                        y: 4,
+                                        transition: {
+                                          duration: 0.14,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                              >
+                                {renderInstanceActions(instance.id, { projectId })}
+                                <div className="flex flex-col">
+                                  <span className="truncate text-sm font-semibold tracking-tight">
+                                    {project.name}
+                                  </span>
+                                  <div className="text-xs text-zinc-300/75">
+                                    {detailText}
+                                  </div>
+                                </div>
+                                {project.skill_icon && (
+                                  <span
+                                    className="ml-2 text-lg leading-none flex-shrink-0"
+                                    aria-hidden
+                                  >
+                                    {project.skill_icon}
+                                  </span>
+                                )}
+                                <FlameEmber
+                                  level={
+                                    (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                                    'NO'
+                                  }
+                                  size="sm"
+                                  className="absolute -top-1 -right-1"
+                                />
+                              </motion.div>
+                            ) : (
+                              <motion.div
+                                key="tasks"
+                                layout={prefersReducedMotion ? false : 'position'}
+                                layoutId={`schedule-card-${instance.id}`}
+                                className="relative h-full w-full overflow-hidden rounded-[var(--radius-lg)]"
+                                initial={
+                                  prefersReducedMotion
+                                    ? false
+                                    : { opacity: 0, y: 4 }
+                                }
+                                animate={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 1,
+                                        y: 0,
+                                        transition: {
+                                          duration: 0.18,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                                exit={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 0,
+                                        y: 4,
+                                        transition: {
+                                          duration: 0.14,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                              >
                               {displayCards.map(taskCard => {
                                 const {
                                   task,
@@ -1470,6 +1491,7 @@ export default function SchedulePage() {
                             </motion.div>
                           )}
                         </AnimatePresence>
+                      </LayoutGroup>
                       </motion.div>
                     )
                   })}
