@@ -1349,7 +1349,7 @@ export default function SchedulePage() {
                                 const shinyTaskClasses =
                                   'bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)] text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60'
                                 const fallbackTaskClasses =
-                                  'bg-stone-600/80 text-white ring-1 ring-white/10 backdrop-blur-sm'
+                                  'bg-[linear-gradient(135deg,_rgba(248,250,252,0.96)_0%,_rgba(230,233,239,0.92)_48%,_rgba(208,215,226,0.9)_100%)] text-zinc-900/95 shadow-[0_10px_24px_rgba(17,24,39,0.28)] ring-1 ring-white/60'
                                 const cardClasses =
                                   kind === 'scheduled'
                                     ? `${baseTaskClasses} ${shinyTaskClasses}`
@@ -1368,14 +1368,11 @@ export default function SchedulePage() {
                                   kind === 'fallback'
                                     ? `~${displayDurationMinutes}m`
                                     : `${displayDurationMinutes}m`
-                                const metaTextClass =
-                                  kind === 'scheduled'
-                                    ? 'text-xs text-zinc-700/80'
-                                    : 'text-xs text-zinc-200/70'
+                                const metaTextClass = 'text-xs text-zinc-700/80'
                                 const progressBarClass =
                                   kind === 'scheduled'
                                     ? 'absolute left-0 bottom-0 h-[3px] bg-zinc-900/25'
-                                    : 'absolute left-0 bottom-0 h-[3px] bg-white/30'
+                                    : 'absolute left-0 bottom-0 h-[3px] bg-zinc-900/15'
                                 const resolvedEnergyRaw = (
                                   task.energy ?? project.energy ?? 'NO'
                                 ).toString()
@@ -1462,7 +1459,7 @@ export default function SchedulePage() {
                               })}
                               {usingFallback && hiddenFallbackCount > 0 && (
                                 <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
-                                  <span className="rounded-full bg-stone-900/70 px-2 py-[2px] text-[10px] text-zinc-100/80">
+                                  <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
                                     +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
                                   </span>
                                 </div>
