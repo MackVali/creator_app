@@ -1030,11 +1030,11 @@ export default function SchedulePage() {
   const scheduledTaskBaseClasses =
     'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 backdrop-blur-xl cursor-pointer select-none hover:-translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50'
   const scheduledTaskSurfaceClasses =
-    'bg-[linear-gradient(150deg,_rgba(44,46,56,0.96)_0%,_rgba(84,88,104,0.94)_48%,_rgba(184,188,204,0.9)_100%)] text-zinc-50 ring-1 ring-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+    'bg-[linear-gradient(168deg,_rgba(250,251,255,0.94)_0%,_rgba(218,224,236,0.9)_40%,_rgba(118,124,142,0.88)_100%),_radial-gradient(circle_at_top,_rgba(255,255,255,0.45)_0%,_rgba(255,255,255,0)_62%)] text-zinc-50 ring-1 ring-white/28 shadow-[inset_0_1px_0_rgba(255,255,255,0.32)]'
   const fallbackTaskSurfaceClasses =
-    'bg-[linear-gradient(150deg,_rgba(38,40,50,0.94)_0%,_rgba(72,76,94,0.92)_52%,_rgba(156,160,180,0.86)_100%)] text-zinc-100/90 ring-1 ring-white/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]'
+    'bg-[linear-gradient(168deg,_rgba(236,238,246,0.9)_0%,_rgba(192,198,214,0.88)_46%,_rgba(96,102,120,0.9)_100%),_radial-gradient(circle_at_top,_rgba(255,255,255,0.35)_0%,_rgba(255,255,255,0)_60%)] text-zinc-100 ring-1 ring-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)]'
   const overflowBadgeClasses =
-    'rounded-full border border-white/30 bg-white/12 px-2.5 py-[2px] text-[10px] text-zinc-50/80 shadow-[0_14px_28px_rgba(9,13,23,0.45)] backdrop-blur'
+    'rounded-full border border-white/45 bg-white/14 px-2.5 py-[2px] text-[10px] text-zinc-50/90 shadow-[0_18px_32px_rgba(10,14,22,0.45)] backdrop-blur'
 
   return (
     <ProtectedRoute>
@@ -1391,11 +1391,11 @@ export default function SchedulePage() {
                                       kind === 'fallback'
                                         ? `~${displayDurationMinutes}m`
                                         : `${displayDurationMinutes}m`
-                                    const metaTextClass = 'text-xs text-zinc-200/80'
+                                    const metaTextClass = 'text-xs text-zinc-200/90'
                                     const progressBarClass =
                                       kind === 'scheduled'
-                                        ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/55'
-                                        : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/28'
+                                        ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/70'
+                                        : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/35'
                                     const resolvedEnergyRaw = (
                                       task.energy ?? project.energy ?? 'NO'
                                     ).toString()
