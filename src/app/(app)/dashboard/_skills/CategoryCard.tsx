@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { motion, Reorder } from "framer-motion";
+import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
@@ -158,39 +158,36 @@ export default function CategoryCard({
   };
 
   return (
-    <motion.div layout className="relative h-full">
-      <motion.article
-        className="relative flex h-full flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg sm:px-4"
+    <div className="relative h-full">
+      <article
+        className="relative flex h-full flex-col rounded-[26px] border px-3 pb-4 pt-5 shadow-lg transition-all duration-200 sm:px-4"
         style={{
           color: palette.on,
           background: palette.surface,
           borderColor: palette.frame,
           boxShadow: palette.dropShadow,
+          transform: active ? "translateY(-6px) scale(1.02)" : undefined,
+          opacity: active ? 1 : 0.92,
         }}
-        animate={{ scale: active ? 1.02 : 1, y: active ? -6 : 0, opacity: active ? 1 : 0.92 }}
-        transition={{ type: "spring", stiffness: 230, damping: 28, mass: 0.9 }}
       >
-        <motion.span
+        <span
           aria-hidden
-          className="pointer-events-none absolute -inset-12 rounded-[34px] blur-3xl"
-          style={{ background: palette.halo }}
-          animate={{ opacity: active ? 0.3 : 0.16 }}
-          transition={{ duration: 0.6 }}
+          className="pointer-events-none absolute -inset-12 rounded-[34px] blur-3xl transition-opacity duration-300"
+          style={{ background: palette.halo, opacity: active ? 0.3 : 0.16 }}
         />
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[26px]">
-          <motion.span
+          <span
             aria-hidden
-            className="absolute inset-[1px] rounded-[24px]"
-            style={{ border: `1px solid ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.24 : 0.14)}` }}
-            animate={{ opacity: active ? 0.75 : 0.5 }}
-            transition={{ duration: 0.4 }}
+            className="absolute inset-[1px] rounded-[24px] transition-opacity duration-300"
+            style={{
+              border: `1px solid ${withAlpha(palette.on === "#fff" ? "#ffffff" : "#0f172a", active ? 0.24 : 0.14)}`,
+              opacity: active ? 0.75 : 0.5,
+            }}
           />
-          <motion.span
+          <span
             aria-hidden
-            className="absolute inset-0"
-            style={{ background: palette.sheen, mixBlendMode: "screen" }}
-            animate={{ opacity: active ? 0.6 : 0.35 }}
-            transition={{ duration: 0.5 }}
+            className="absolute inset-0 transition-opacity duration-300"
+            style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.6 : 0.35 }}
           />
         </div>
         <div className="relative z-10 flex h-full flex-col">
@@ -206,12 +203,10 @@ export default function CategoryCard({
               onClick={() => setMenuOpen((o) => !o)}
             >
               <span className="pr-3">{category.name}</span>
-              <motion.span
+              <span
                 aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-full"
-                style={{ background: palette.sheen, mixBlendMode: "screen" }}
-                animate={{ opacity: active ? 0.55 : 0.4 }}
-                transition={{ duration: 0.45 }}
+                className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
+                style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
               />
             </button>
             <span
@@ -294,8 +289,8 @@ export default function CategoryCard({
             )}
           </Reorder.Group>
         </div>
-      </motion.article>
-    </motion.div>
+      </article>
+    </div>
   );
 }
 
