@@ -758,31 +758,44 @@ export default function SchedulePage() {
 
   const renderInstanceActions = (
     instanceId: string,
-    options?: { projectId?: string }
+    options?: { projectId?: string; appearance?: 'light' | 'dark' }
   ) => {
     const pending = pendingInstanceIds.has(instanceId)
+    const appearance = options?.appearance ?? 'dark'
+    const projectOptions = options?.projectId
+      ? { projectId: options.projectId }
+      : undefined
+    const containerClass =
+      appearance === 'light'
+        ? 'absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-zinc-800/80'
+        : 'absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-white/70'
+    const buttonClass =
+      appearance === 'light'
+        ? 'rounded bg-black/10 px-2 py-0.5 tracking-wide hover:bg-black/20 disabled:cursor-not-allowed disabled:opacity-40'
+        : 'rounded bg-white/10 px-2 py-0.5 tracking-wide hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40'
+
     return (
-      <div className="absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-white/70">
+      <div className={containerClass}>
         <button
           type="button"
-          className="rounded bg-white/10 px-2 py-0.5 tracking-wide hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+          className={buttonClass}
           disabled={pending}
           onClick={event => {
             event.stopPropagation()
             if (pending) return
-            void handleMarkCompleted(instanceId, options)
+            void handleMarkCompleted(instanceId, projectOptions)
           }}
         >
           done
         </button>
         <button
           type="button"
-          className="rounded bg-white/10 px-2 py-0.5 tracking-wide hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+          className={buttonClass}
           disabled={pending}
           onClick={event => {
             event.stopPropagation()
             if (pending) return
-            void handleCancelInstance(instanceId, options)
+            void handleCancelInstance(instanceId, projectOptions)
           }}
         >
           cancel
@@ -1005,6 +1018,24 @@ export default function SchedulePage() {
     touchStartX.current = null
   }
 
+  const glassElevationStyle: CSSProperties = {
+    boxShadow: '0 28px 60px rgba(5, 8, 20, 0.55)',
+    backdropFilter: 'blur(18px)',
+    WebkitBackdropFilter: 'blur(18px)',
+  }
+  const collapsedProjectBaseClasses =
+    'relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200'
+  const collapsedProjectSurfaceClasses =
+    'bg-[linear-gradient(135deg,_rgba(6,7,12,0.88)_0%,_rgba(17,19,29,0.86)_55%,_rgba(68,72,92,0.72)_100%)] text-zinc-100/95 ring-1 ring-white/10 backdrop-blur-lg'
+  const scheduledTaskBaseClasses =
+    'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 backdrop-blur-xl cursor-pointer select-none hover:-translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50'
+  const scheduledTaskSurfaceClasses =
+    'bg-[linear-gradient(140deg,_rgba(255,255,255,0.97)_0%,_rgba(222,227,236,0.94)_46%,_rgba(142,152,172,0.9)_100%)] text-zinc-900/95 ring-1 ring-white/70'
+  const fallbackTaskSurfaceClasses =
+    'bg-[linear-gradient(140deg,_rgba(244,247,250,0.95)_0%,_rgba(214,219,228,0.9)_48%,_rgba(170,180,198,0.88)_100%)] text-zinc-900/90 ring-1 ring-white/65'
+  const overflowBadgeClasses =
+    'rounded-full border border-white/60 bg-white/75 px-2.5 py-[2px] text-[10px] text-zinc-700/80 shadow-[0_14px_28px_rgba(15,23,42,0.25)] backdrop-blur'
+
   return (
     <ProtectedRoute>
       <div className="space-y-4 text-zinc-100">
@@ -1139,11 +1170,6 @@ export default function SchedulePage() {
                       top,
                       height,
                     }
-                    const cardStyle: CSSProperties = {
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
-                      outlineOffset: '-1px',
-                    }
                     const projectDurationMs = Math.max(
                       end.getTime() - start.getTime(),
                       1
@@ -1178,6 +1204,10 @@ export default function SchedulePage() {
                       ? Math.max(0, backlogTasks.length - displayCards.length)
                       : 0
                     const canExpand = displayCards.length > 0
+                    const collapsedProjectInteractiveClasses = canExpand
+                      ? ' cursor-pointer hover:-translate-y-[1px] hover:ring-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30'
+                      : ''
+                    const collapsedProjectClasses = `${collapsedProjectBaseClasses} ${collapsedProjectSurfaceClasses}${collapsedProjectInteractiveClasses}`
                     return (
                       <motion.div
                         key={instance.id}
@@ -1199,10 +1229,8 @@ export default function SchedulePage() {
                                 if (!canExpand) return
                                 setProjectExpansion(projectId)
                               }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white${
-                                canExpand ? ' cursor-pointer' : ''
-                              }`}
-                              style={cardStyle}
+                              className={collapsedProjectClasses}
+                              style={glassElevationStyle}
                               initial={
                                 prefersReducedMotion ? false : { opacity: 0, y: 4 }
                               }
@@ -1233,10 +1261,10 @@ export default function SchedulePage() {
                             >
                               {renderInstanceActions(instance.id, { projectId })}
                               <div className="flex flex-col">
-                                <span className="truncate text-sm font-medium">
+                                <span className="truncate text-sm font-semibold tracking-tight">
                                   {project.name}
                                 </span>
-                                <div className="text-xs text-zinc-200/70">
+                                <div className="text-xs text-zinc-300/75">
                                   {detailText}
                                 </div>
                               </div>
@@ -1326,12 +1354,12 @@ export default function SchedulePage() {
                                 const tStyle: CSSProperties = {
                                   top: `${topPercent}%`,
                                   height: `${heightPercent}%`,
-                                  ...cardStyle,
+                                  ...glassElevationStyle,
                                 }
                                 const cardClasses =
                                   kind === 'scheduled'
-                                    ? 'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white'
-                                    : 'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-600/80 px-3 py-2 text-white ring-1 ring-white/10 backdrop-blur-sm'
+                                    ? `${scheduledTaskBaseClasses} ${scheduledTaskSurfaceClasses}`
+                                    : `${scheduledTaskBaseClasses} ${fallbackTaskSurfaceClasses}`
                                 const progressValue =
                                   kind === 'scheduled'
                                     ? Math.max(
@@ -1346,6 +1374,11 @@ export default function SchedulePage() {
                                   kind === 'fallback'
                                     ? `~${displayDurationMinutes}m`
                                     : `${displayDurationMinutes}m`
+                                const metaTextClass = 'text-xs text-zinc-700/75'
+                                const progressBarClass =
+                                  kind === 'scheduled'
+                                    ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-zinc-900/35'
+                                    : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-zinc-900/20'
                                 const resolvedEnergyRaw = (
                                   task.energy ?? project.energy ?? 'NO'
                                 ).toString()
@@ -1395,13 +1428,16 @@ export default function SchedulePage() {
                                     }
                                   >
                                     {kind === 'scheduled' && instanceId
-                                      ? renderInstanceActions(instanceId, { projectId })
-                                      : null}
+                                    ? renderInstanceActions(instanceId, {
+                                        projectId,
+                                        appearance: 'light',
+                                      })
+                                    : null}
                                     <div className="flex flex-col">
-                                      <span className="truncate text-sm font-medium">
+                                      <span className="truncate text-sm font-semibold tracking-tight text-zinc-900">
                                         {task.name}
                                       </span>
-                                      <div className="text-xs text-zinc-200/70">
+                                      <div className={metaTextClass}>
                                         {durationLabel}
                                       </div>
                                     </div>
@@ -1420,7 +1456,7 @@ export default function SchedulePage() {
                                     />
                                     {progressValue > 0 && (
                                       <div
-                                        className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                                        className={progressBarClass}
                                         style={{ width: `${progressValue}%` }}
                                       />
                                     )}
@@ -1429,7 +1465,7 @@ export default function SchedulePage() {
                               })}
                               {usingFallback && hiddenFallbackCount > 0 && (
                                 <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
-                                  <span className="rounded-full bg-stone-900/70 px-2 py-[2px] text-[10px] text-zinc-100/80">
+                                  <span className={overflowBadgeClasses}>
                                     +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
                                   </span>
                                 </div>
@@ -1448,16 +1484,14 @@ export default function SchedulePage() {
                     const style: CSSProperties = {
                       top,
                       height,
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
-                      outlineOffset: '-1px',
+                      ...glassElevationStyle,
                     }
                     const progress = (task as { progress?: number }).progress ?? 0
                     return (
                       <motion.div
                         key={instance.id}
                         aria-label={`Task ${task.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] bg-stone-700 px-3 py-2 text-white"
+                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 text-zinc-900/95 ring-1 ring-white/70 backdrop-blur-xl bg-[linear-gradient(140deg,_rgba(255,255,255,0.97)_0%,_rgba(222,227,236,0.94)_46%,_rgba(142,152,172,0.9)_100%)]"
                         style={style}
                         initial={
                           prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -1468,16 +1502,16 @@ export default function SchedulePage() {
                         exit={
                           prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
                         }
-                      >
-                        {renderInstanceActions(instance.id)}
-                        <div className="flex flex-col">
-                          <span className="truncate text-sm font-medium">
-                            {task.name}
-                          </span>
-                          <div className="text-xs text-zinc-200/70">
-                            {Math.round((end.getTime() - start.getTime()) / 60000)}m
+                        >
+                          {renderInstanceActions(instance.id, { appearance: 'light' })}
+                          <div className="flex flex-col">
+                            <span className="truncate text-sm font-semibold tracking-tight text-zinc-900">
+                              {task.name}
+                            </span>
+                            <div className="text-xs text-zinc-700/75">
+                              {Math.round((end.getTime() - start.getTime()) / 60000)}m
+                            </div>
                           </div>
-                        </div>
                         {task.skill_icon && (
                           <span
                             className="ml-2 text-lg leading-none flex-shrink-0"
@@ -1492,7 +1526,7 @@ export default function SchedulePage() {
                           className="absolute -top-1 -right-1"
                         />
                         <div
-                          className="absolute left-0 bottom-0 h-[3px] bg-white/30"
+                          className="absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-zinc-900/35"
                           style={{ width: `${progress}%` }}
                         />
                       </motion.div>
