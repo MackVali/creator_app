@@ -1030,11 +1030,11 @@ export default function SchedulePage() {
   const scheduledTaskBaseClasses =
     'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 backdrop-blur-xl cursor-pointer select-none hover:-translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50'
   const scheduledTaskSurfaceClasses =
-    'bg-[linear-gradient(140deg,_rgba(255,255,255,0.97)_0%,_rgba(222,227,236,0.94)_46%,_rgba(142,152,172,0.9)_100%)] text-zinc-900/95 ring-1 ring-white/70'
+    'bg-[linear-gradient(135deg,_rgba(18,20,28,0.95)_0%,_rgba(28,32,44,0.92)_48%,_rgba(74,82,102,0.88)_100%)] text-zinc-100/95 ring-1 ring-white/12'
   const fallbackTaskSurfaceClasses =
-    'bg-[linear-gradient(140deg,_rgba(244,247,250,0.95)_0%,_rgba(214,219,228,0.9)_48%,_rgba(170,180,198,0.88)_100%)] text-zinc-900/90 ring-1 ring-white/65'
+    'bg-[linear-gradient(135deg,_rgba(20,22,30,0.92)_0%,_rgba(30,34,46,0.9)_52%,_rgba(62,68,88,0.86)_100%)] text-zinc-100/90 ring-1 ring-white/10'
   const overflowBadgeClasses =
-    'rounded-full border border-white/60 bg-white/75 px-2.5 py-[2px] text-[10px] text-zinc-700/80 shadow-[0_14px_28px_rgba(15,23,42,0.25)] backdrop-blur'
+    'rounded-full border border-white/25 bg-white/10 px-2.5 py-[2px] text-[10px] text-zinc-100/80 shadow-[0_14px_28px_rgba(9,13,23,0.5)] backdrop-blur'
 
   return (
     <ProtectedRoute>
@@ -1374,11 +1374,11 @@ export default function SchedulePage() {
                                   kind === 'fallback'
                                     ? `~${displayDurationMinutes}m`
                                     : `${displayDurationMinutes}m`
-                                const metaTextClass = 'text-xs text-zinc-700/75'
+                                const metaTextClass = 'text-xs text-zinc-200/70'
                                 const progressBarClass =
                                   kind === 'scheduled'
-                                    ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-zinc-900/35'
-                                    : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-zinc-900/20'
+                                    ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/35'
+                                    : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/20'
                                 const resolvedEnergyRaw = (
                                   task.energy ?? project.energy ?? 'NO'
                                 ).toString()
@@ -1428,13 +1428,10 @@ export default function SchedulePage() {
                                     }
                                   >
                                     {kind === 'scheduled' && instanceId
-                                    ? renderInstanceActions(instanceId, {
-                                        projectId,
-                                        appearance: 'light',
-                                      })
-                                    : null}
+                                      ? renderInstanceActions(instanceId, { projectId })
+                                      : null}
                                     <div className="flex flex-col">
-                                      <span className="truncate text-sm font-semibold tracking-tight text-zinc-900">
+                                      <span className="truncate text-sm font-semibold tracking-tight text-zinc-100">
                                         {task.name}
                                       </span>
                                       <div className={metaTextClass}>
@@ -1491,7 +1488,7 @@ export default function SchedulePage() {
                       <motion.div
                         key={instance.id}
                         aria-label={`Task ${task.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 text-zinc-900/95 ring-1 ring-white/70 backdrop-blur-xl bg-[linear-gradient(140deg,_rgba(255,255,255,0.97)_0%,_rgba(222,227,236,0.94)_46%,_rgba(142,152,172,0.9)_100%)]"
+                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 text-zinc-100/95 ring-1 ring-white/12 backdrop-blur-xl bg-[linear-gradient(135deg,_rgba(18,20,28,0.95)_0%,_rgba(28,32,44,0.92)_48%,_rgba(74,82,102,0.88)_100%)]"
                         style={style}
                         initial={
                           prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -1503,12 +1500,12 @@ export default function SchedulePage() {
                           prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
                         }
                         >
-                          {renderInstanceActions(instance.id, { appearance: 'light' })}
+                          {renderInstanceActions(instance.id)}
                           <div className="flex flex-col">
-                            <span className="truncate text-sm font-semibold tracking-tight text-zinc-900">
+                            <span className="truncate text-sm font-semibold tracking-tight text-zinc-100">
                               {task.name}
                             </span>
-                            <div className="text-xs text-zinc-700/75">
+                            <div className="text-xs text-zinc-200/70">
                               {Math.round((end.getTime() - start.getTime()) / 60000)}m
                             </div>
                           </div>
@@ -1526,7 +1523,7 @@ export default function SchedulePage() {
                           className="absolute -top-1 -right-1"
                         />
                         <div
-                          className="absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-zinc-900/35"
+                          className="absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/35"
                           style={{ width: `${progress}%` }}
                         />
                       </motion.div>
