@@ -1026,15 +1026,15 @@ export default function SchedulePage() {
   const collapsedProjectBaseClasses =
     'relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200'
   const collapsedProjectSurfaceClasses =
-    'bg-[linear-gradient(135deg,_rgba(6,7,12,0.88)_0%,_rgba(17,19,29,0.86)_55%,_rgba(68,72,92,0.72)_100%)] text-zinc-100/95 ring-1 ring-white/10 backdrop-blur-lg'
+    'bg-[linear-gradient(145deg,_rgba(12,14,18,0.95)_0%,_rgba(26,28,36,0.92)_52%,_rgba(98,102,116,0.78)_100%)] text-zinc-100/90 ring-1 ring-white/14 backdrop-blur-lg'
   const scheduledTaskBaseClasses =
     'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 backdrop-blur-xl cursor-pointer select-none hover:-translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50'
   const scheduledTaskSurfaceClasses =
-    'bg-[linear-gradient(135deg,_rgba(18,20,28,0.95)_0%,_rgba(28,32,44,0.92)_48%,_rgba(74,82,102,0.88)_100%)] text-zinc-100/95 ring-1 ring-white/12'
+    'bg-[linear-gradient(150deg,_rgba(44,46,56,0.96)_0%,_rgba(84,88,104,0.94)_48%,_rgba(184,188,204,0.9)_100%)] text-zinc-50 ring-1 ring-white/18 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
   const fallbackTaskSurfaceClasses =
-    'bg-[linear-gradient(135deg,_rgba(20,22,30,0.92)_0%,_rgba(30,34,46,0.9)_52%,_rgba(62,68,88,0.86)_100%)] text-zinc-100/90 ring-1 ring-white/10'
+    'bg-[linear-gradient(150deg,_rgba(38,40,50,0.94)_0%,_rgba(72,76,94,0.92)_52%,_rgba(156,160,180,0.86)_100%)] text-zinc-100/90 ring-1 ring-white/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]'
   const overflowBadgeClasses =
-    'rounded-full border border-white/25 bg-white/10 px-2.5 py-[2px] text-[10px] text-zinc-100/80 shadow-[0_14px_28px_rgba(9,13,23,0.5)] backdrop-blur'
+    'rounded-full border border-white/30 bg-white/12 px-2.5 py-[2px] text-[10px] text-zinc-50/80 shadow-[0_14px_28px_rgba(9,13,23,0.45)] backdrop-blur'
 
   return (
     <ProtectedRoute>
@@ -1374,11 +1374,11 @@ export default function SchedulePage() {
                                   kind === 'fallback'
                                     ? `~${displayDurationMinutes}m`
                                     : `${displayDurationMinutes}m`
-                                const metaTextClass = 'text-xs text-zinc-200/70'
+                                const metaTextClass = 'text-xs text-zinc-200/80'
                                 const progressBarClass =
                                   kind === 'scheduled'
-                                    ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/35'
-                                    : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/20'
+                                    ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/55'
+                                    : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/28'
                                 const resolvedEnergyRaw = (
                                   task.energy ?? project.energy ?? 'NO'
                                 ).toString()
@@ -1488,7 +1488,7 @@ export default function SchedulePage() {
                       <motion.div
                         key={instance.id}
                         aria-label={`Task ${task.name}`}
-                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 text-zinc-100/95 ring-1 ring-white/12 backdrop-blur-xl bg-[linear-gradient(135deg,_rgba(18,20,28,0.95)_0%,_rgba(28,32,44,0.92)_48%,_rgba(74,82,102,0.88)_100%)]"
+                        className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 transition-all duration-200 text-zinc-50 ring-1 ring-white/18 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] bg-[linear-gradient(150deg,_rgba(44,46,56,0.96)_0%,_rgba(84,88,104,0.94)_48%,_rgba(184,188,204,0.9)_100%)]"
                         style={style}
                         initial={
                           prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -1505,7 +1505,7 @@ export default function SchedulePage() {
                             <span className="truncate text-sm font-semibold tracking-tight text-zinc-100">
                               {task.name}
                             </span>
-                            <div className="text-xs text-zinc-200/70">
+                            <div className="text-xs text-zinc-200/80">
                               {Math.round((end.getTime() - start.getTime()) / 60000)}m
                             </div>
                           </div>
@@ -1523,7 +1523,7 @@ export default function SchedulePage() {
                           className="absolute -top-1 -right-1"
                         />
                         <div
-                          className="absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/35"
+                          className="absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/55"
                           style={{ width: `${progress}%` }}
                         />
                       </motion.div>
