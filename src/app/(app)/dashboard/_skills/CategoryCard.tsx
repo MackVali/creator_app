@@ -166,7 +166,6 @@ export default function CategoryCard({
           background: palette.surface,
           borderColor: palette.frame,
           boxShadow: palette.dropShadow,
-          transform: active ? "translateY(-6px) scale(1.02)" : undefined,
           opacity: active ? 1 : 0.92,
         }}
       >
