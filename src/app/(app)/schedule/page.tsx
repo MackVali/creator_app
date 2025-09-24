@@ -13,12 +13,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import {
-  AnimatePresence,
-  LayoutGroup,
-  motion,
-  useReducedMotion,
-} from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -1225,13 +1220,14 @@ export default function SchedulePage() {
                             : { type: 'spring', stiffness: 320, damping: 32 }
                         }
                       >
-                        <LayoutGroup id={`schedule-project-${instance.id}`}>
-                          <AnimatePresence mode="popLayout" initial={false}>
+                        <motion.div
+                          className="relative h-full w-full"
+                          layout={!prefersReducedMotion}
+                        >
+                          <AnimatePresence initial={false}>
                             {!isExpanded || !canExpand ? (
                               <motion.div
                                 key="project"
-                                layout={prefersReducedMotion ? false : 'position'}
-                                layoutId={`schedule-card-${instance.id}`}
                                 aria-label={`Project ${project.name}`}
                                 onClick={() => {
                                   if (!canExpand) return
@@ -1301,9 +1297,7 @@ export default function SchedulePage() {
                             ) : (
                               <motion.div
                                 key="tasks"
-                                layout={prefersReducedMotion ? false : 'position'}
-                                layoutId={`schedule-card-${instance.id}`}
-                                className="relative h-full w-full overflow-hidden rounded-[var(--radius-lg)]"
+                                className="absolute inset-0"
                                 initial={
                                   prefersReducedMotion
                                     ? false
@@ -1334,164 +1328,168 @@ export default function SchedulePage() {
                                       }
                                 }
                               >
-                              {displayCards.map(taskCard => {
-                                const {
-                                  task,
-                                  start: taskStart,
-                                  end: taskEnd,
-                                  kind,
-                                  key,
-                                  instanceId,
-                                  displayDurationMinutes,
-                                } = taskCard
-                                const startOffsetMs =
-                                  taskStart.getTime() - start.getTime()
-                                const endOffsetMs = taskEnd.getTime() - start.getTime()
-                                const rawStartRatio = startOffsetMs / projectDurationMs
-                                const rawEndRatio = endOffsetMs / projectDurationMs
-                                const clampRatio = (value: number) =>
-                                  Number.isFinite(value)
-                                    ? Math.min(Math.max(value, 0), 1)
-                                    : 0
-                                let startRatio = clampRatio(rawStartRatio)
-                                let endRatio = clampRatio(rawEndRatio)
-                                if (endRatio <= startRatio) {
-                                  endRatio = Math.min(1, startRatio + minHeightRatio)
-                                }
-                                let heightRatio = Math.max(endRatio - startRatio, 0)
-                                if (heightRatio < minHeightRatio) {
-                                  heightRatio = minHeightRatio
-                                }
-                                if (startRatio + heightRatio > 1) {
-                                  const overflow = startRatio + heightRatio - 1
-                                  startRatio = Math.max(0, startRatio - overflow)
-                                  heightRatio = Math.min(heightRatio, 1 - startRatio)
-                                }
-                                const topPercent = startRatio * 100
-                                const heightPercent = Math.max(
-                                  heightRatio * 100,
-                                  minHeightRatio * 100
-                                )
-                                const tStyle: CSSProperties = {
-                                  top: `${topPercent}%`,
-                                  height: `${heightPercent}%`,
-                                  ...glassElevationStyle,
-                                }
-                                const cardClasses =
-                                  kind === 'scheduled'
-                                    ? `${scheduledTaskBaseClasses} ${scheduledTaskSurfaceClasses}`
-                                    : `${scheduledTaskBaseClasses} ${fallbackTaskSurfaceClasses}`
-                                const progressValue =
-                                  kind === 'scheduled'
-                                    ? Math.max(
-                                        0,
-                                        Math.min(
-                                          100,
-                                          (task as { progress?: number }).progress ?? 0
-                                        )
-                                      )
-                                    : 0
-                                const durationLabel =
-                                  kind === 'fallback'
-                                    ? `~${displayDurationMinutes}m`
-                                    : `${displayDurationMinutes}m`
-                                const metaTextClass = 'text-xs text-zinc-200/80'
-                                const progressBarClass =
-                                  kind === 'scheduled'
-                                    ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/55'
-                                    : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/28'
-                                const resolvedEnergyRaw = (
-                                  task.energy ?? project.energy ?? 'NO'
-                                ).toString()
-                                const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
-                                const energyLevel = ENERGY.LIST.includes(
-                                  resolvedEnergyUpper as FlameLevel
-                                )
-                                  ? (resolvedEnergyUpper as FlameLevel)
-                                  : 'NO'
-                                return (
-                                  <motion.div
-                                    key={key}
-                                    aria-label={`Task ${task.name}`}
-                                    className={cardClasses}
-                                    style={tStyle}
-                                    onClick={() =>
-                                      setProjectExpansion(projectId, false)
+                                <div className="relative h-full w-full overflow-hidden rounded-[var(--radius-lg)]">
+                                  {displayCards.map(taskCard => {
+                                    const {
+                                      task,
+                                      start: taskStart,
+                                      end: taskEnd,
+                                      kind,
+                                      key,
+                                      instanceId,
+                                      displayDurationMinutes,
+                                    } = taskCard
+                                    const startOffsetMs =
+                                      taskStart.getTime() - start.getTime()
+                                    const endOffsetMs =
+                                      taskEnd.getTime() - start.getTime()
+                                    const rawStartRatio = startOffsetMs / projectDurationMs
+                                    const rawEndRatio = endOffsetMs / projectDurationMs
+                                    const clampRatio = (value: number) =>
+                                      Number.isFinite(value)
+                                        ? Math.min(Math.max(value, 0), 1)
+                                        : 0
+                                    let startRatio = clampRatio(rawStartRatio)
+                                    let endRatio = clampRatio(rawEndRatio)
+                                    if (endRatio <= startRatio) {
+                                      endRatio = Math.min(1, startRatio + minHeightRatio)
                                     }
-                                    initial={
-                                      prefersReducedMotion
-                                        ? false
-                                        : { opacity: 0, y: 6 }
+                                    let heightRatio = Math.max(endRatio - startRatio, 0)
+                                    if (heightRatio < minHeightRatio) {
+                                      heightRatio = minHeightRatio
                                     }
-                                    animate={
-                                      prefersReducedMotion
-                                        ? undefined
-                                        : {
-                                            opacity: 1,
-                                            y: 0,
-                                            transition: {
-                                              duration: 0.18,
-                                              ease: [0.4, 0, 0.2, 1],
-                                            },
-                                          }
+                                    if (startRatio + heightRatio > 1) {
+                                      const overflow = startRatio + heightRatio - 1
+                                      startRatio = Math.max(0, startRatio - overflow)
+                                      heightRatio = Math.min(heightRatio, 1 - startRatio)
                                     }
-                                    exit={
-                                      prefersReducedMotion
-                                        ? undefined
-                                        : {
-                                            opacity: 0,
-                                            y: 6,
-                                            transition: {
-                                              duration: 0.14,
-                                              ease: [0.4, 0, 0.2, 1],
-                                            },
-                                          }
+                                    const topPercent = startRatio * 100
+                                    const heightPercent = Math.max(
+                                      heightRatio * 100,
+                                      minHeightRatio * 100
+                                    )
+                                    const tStyle: CSSProperties = {
+                                      top: `${topPercent}%`,
+                                      height: `${heightPercent}%`,
+                                      ...glassElevationStyle,
                                     }
-                                  >
-                                    {kind === 'scheduled' && instanceId
-                                      ? renderInstanceActions(instanceId, { projectId })
-                                      : null}
-                                    <div className="flex flex-col">
-                                      <span className="truncate text-sm font-semibold tracking-tight text-zinc-100">
-                                        {task.name}
-                                      </span>
-                                      <div className={metaTextClass}>
-                                        {durationLabel}
-                                      </div>
-                                    </div>
-                                    {task.skill_icon && (
-                                      <span
-                                        className="ml-2 text-lg leading-none flex-shrink-0"
-                                        aria-hidden
+                                    const cardClasses =
+                                      kind === 'scheduled'
+                                        ? `${scheduledTaskBaseClasses} ${scheduledTaskSurfaceClasses}`
+                                        : `${scheduledTaskBaseClasses} ${fallbackTaskSurfaceClasses}`
+                                    const progressValue =
+                                      kind === 'scheduled'
+                                        ? Math.max(
+                                            0,
+                                            Math.min(
+                                              100,
+                                              (task as { progress?: number }).progress ?? 0
+                                            )
+                                          )
+                                        : 0
+                                    const durationLabel =
+                                      kind === 'fallback'
+                                        ? `~${displayDurationMinutes}m`
+                                        : `${displayDurationMinutes}m`
+                                    const metaTextClass = 'text-xs text-zinc-200/80'
+                                    const progressBarClass =
+                                      kind === 'scheduled'
+                                        ? 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/55'
+                                        : 'absolute left-1 right-1 bottom-1 h-[3px] rounded-full bg-white/28'
+                                    const resolvedEnergyRaw = (
+                                      task.energy ?? project.energy ?? 'NO'
+                                    ).toString()
+                                    const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
+                                    const energyLevel = ENERGY.LIST.includes(
+                                      resolvedEnergyUpper as FlameLevel
+                                    )
+                                      ? (resolvedEnergyUpper as FlameLevel)
+                                      : 'NO'
+                                    return (
+                                      <motion.div
+                                        key={key}
+                                        aria-label={`Task ${task.name}`}
+                                        className={cardClasses}
+                                        style={tStyle}
+                                        onClick={() =>
+                                          setProjectExpansion(projectId, false)
+                                        }
+                                        initial={
+                                          prefersReducedMotion
+                                            ? false
+                                            : { opacity: 0, y: 6 }
+                                        }
+                                        animate={
+                                          prefersReducedMotion
+                                            ? undefined
+                                            : {
+                                                opacity: 1,
+                                                y: 0,
+                                                transition: {
+                                                  duration: 0.18,
+                                                  ease: [0.4, 0, 0.2, 1],
+                                                },
+                                              }
+                                        }
+                                        exit={
+                                          prefersReducedMotion
+                                            ? undefined
+                                            : {
+                                                opacity: 0,
+                                                y: 6,
+                                                transition: {
+                                                  duration: 0.14,
+                                                  ease: [0.4, 0, 0.2, 1],
+                                                },
+                                              }
+                                        }
                                       >
-                                        {task.skill_icon}
+                                        {kind === 'scheduled' && instanceId
+                                          ? renderInstanceActions(instanceId, { projectId })
+                                          : null}
+                                        <div className="flex flex-col">
+                                          <span className="truncate text-sm font-semibold tracking-tight text-zinc-100">
+                                            {task.name}
+                                          </span>
+                                          <div className={metaTextClass}>
+                                            {durationLabel}
+                                          </div>
+                                        </div>
+                                        {task.skill_icon && (
+                                          <span
+                                            className="ml-2 text-lg leading-none flex-shrink-0"
+                                            aria-hidden
+                                          >
+                                            {task.skill_icon}
+                                          </span>
+                                        )}
+                                        <FlameEmber
+                                          level={energyLevel}
+                                          size="sm"
+                                          className="absolute -top-1 -right-1"
+                                        />
+                                        {progressValue > 0 && (
+                                          <div
+                                            className={progressBarClass}
+                                            style={{ width: `${progressValue}%` }}
+                                          />
+                                        )}
+                                      </motion.div>
+                                    )
+                                  })}
+                                  {usingFallback && hiddenFallbackCount > 0 && (
+                                    <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
+                                      <span className={overflowBadgeClasses}>
+                                        +{hiddenFallbackCount} more task
+                                        {hiddenFallbackCount === 1 ? '' : 's'} in backlog
                                       </span>
-                                    )}
-                                    <FlameEmber
-                                      level={energyLevel}
-                                      size="sm"
-                                      className="absolute -top-1 -right-1"
-                                    />
-                                    {progressValue > 0 && (
-                                      <div
-                                        className={progressBarClass}
-                                        style={{ width: `${progressValue}%` }}
-                                      />
-                                    )}
-                                  </motion.div>
-                                )
-                              })}
-                              {usingFallback && hiddenFallbackCount > 0 && (
-                                <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
-                                  <span className={overflowBadgeClasses}>
-                                    +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
-                                  </span>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </LayoutGroup>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </motion.div>
                       </motion.div>
                     )
                   })}
