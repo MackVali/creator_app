@@ -1212,7 +1212,7 @@ export default function SchedulePage() {
                                 if (!canExpand) return
                                 setProjectExpansion(projectId)
                               }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]${
+                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white${
                                 canExpand ? ' cursor-pointer' : ''
                               }`}
                               style={cardStyle}
@@ -1244,15 +1244,12 @@ export default function SchedulePage() {
                                     }
                               }
                             >
-                              {renderInstanceActions(instance.id, {
-                                projectId,
-                                appearance: 'light',
-                              })}
+                              {renderInstanceActions(instance.id, { projectId })}
                               <div className="flex flex-col">
                                 <span className="truncate text-sm font-medium">
                                   {project.name}
                                 </span>
-                                <div className="text-xs text-zinc-700/80">
+                                <div className="text-xs text-zinc-200/70">
                                   {detailText}
                                 </div>
                               </div>
