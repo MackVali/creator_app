@@ -7,38 +7,109 @@ type TextOverrideProviderProps = {
   children: ReactNode;
 };
 
+type OverrideEntry = {
+  id: string;
+  original: string;
+  override: string;
+};
+
+type OverridesState = {
+  byOriginal: Map<string, OverrideEntry>;
+  byId: Map<string, OverrideEntry>;
+};
+
+type NodeMetadata = {
+  originalTrimmed: string;
+  prefix: string;
+  suffix: string;
+  overrideId?: string;
+};
+
+function buildOverrides(entries: OverrideEntry[]): OverridesState {
+  const byOriginal = new Map<string, OverrideEntry>();
+  const byId = new Map<string, OverrideEntry>();
+
+  entries.forEach((entry) => {
+    if (!entry.original) return;
+    byOriginal.set(entry.original, entry);
+    byId.set(entry.id, entry);
+  });
+
+  return { byOriginal, byId };
+}
+
+function computePrefixAndSuffix(full: string, trimmed: string): [string, string] {
+  const startIndex = trimmed ? full.indexOf(trimmed) : -1;
+
+  if (startIndex === -1) {
+    return ["", ""];
+  }
+
+  const prefix = full.slice(0, startIndex);
+  const suffix = full.slice(startIndex + trimmed.length);
+  return [prefix, suffix];
+}
+
 export default function TextOverrideProvider({ children }: TextOverrideProviderProps) {
-  const overridesRef = useRef<Map<string, string>>(new Map());
+  const overridesRef = useRef<OverridesState>({ byOriginal: new Map(), byId: new Map() });
+  const nodeMetadataRef = useRef<WeakMap<Text, NodeMetadata>>(new WeakMap());
   const observerRef = useRef<MutationObserver | null>(null);
 
   const applyOverridesToNode = useCallback((root: Node | null) => {
     if (!root) return;
     const overrides = overridesRef.current;
-    if (!overrides.size) return;
+    const metadataMap = nodeMetadataRef.current;
 
     const processTextNode = (node: Text) => {
-      const originalContent = node.textContent;
-      if (!originalContent) return;
+      const currentText = node.textContent;
+      if (!currentText) return;
 
-      const trimmed = originalContent.trim();
-      if (!trimmed) return;
+      const metadata = metadataMap.get(node);
+      const trimmedCurrent = currentText.trim();
+      const canonicalOriginal = metadata?.originalTrimmed ?? trimmedCurrent;
 
-      const override = overrides.get(trimmed);
-      if (!override) return;
+      if (!canonicalOriginal) return;
 
-      if (trimmed === override && originalContent === override) {
+      let overrideEntry = overrides.byOriginal.get(canonicalOriginal);
+
+      if (!overrideEntry && metadata?.overrideId) {
+        overrideEntry = overrides.byId.get(metadata.overrideId);
+      }
+
+      if (overrideEntry) {
+        const [prefix, suffix] = metadata
+          ? [metadata.prefix, metadata.suffix]
+          : computePrefixAndSuffix(currentText, trimmedCurrent);
+
+        const targetText = `${prefix}${overrideEntry.override}${suffix}`;
+
+        if (node.textContent !== targetText) {
+          node.textContent = targetText;
+        }
+
+        metadataMap.set(node, {
+          originalTrimmed: canonicalOriginal,
+          prefix,
+          suffix,
+          overrideId: overrideEntry.id,
+        });
+
         return;
       }
 
-      const startIndex = originalContent.indexOf(trimmed);
-      if (startIndex === -1) {
-        node.textContent = override;
-        return;
-      }
+      if (metadata?.overrideId) {
+        const originalTarget = `${metadata.prefix}${metadata.originalTrimmed}${metadata.suffix}`;
 
-      const prefix = originalContent.slice(0, startIndex);
-      const suffix = originalContent.slice(startIndex + trimmed.length);
-      node.textContent = `${prefix}${override}${suffix}`;
+        if (node.textContent !== originalTarget) {
+          node.textContent = originalTarget;
+        }
+
+        metadataMap.set(node, {
+          originalTrimmed: metadata.originalTrimmed,
+          prefix: metadata.prefix,
+          suffix: metadata.suffix,
+        });
+      }
     };
 
     if (root.nodeType === Node.TEXT_NODE) {
@@ -68,7 +139,7 @@ export default function TextOverrideProvider({ children }: TextOverrideProviderP
     const loadOverrides = async () => {
       const { data, error } = await supabase
         .from("text_overrides")
-        .select("original_text, override_text")
+        .select("id, original_text, override_text")
         .order("original_text", { ascending: true });
 
       if (!isActive) return;
@@ -78,12 +149,22 @@ export default function TextOverrideProvider({ children }: TextOverrideProviderP
         return;
       }
 
-      const map = new Map<string, string>();
+      const entries: OverrideEntry[] = [];
+
       data?.forEach((entry) => {
-        map.set(entry.original_text.trim(), entry.override_text);
+        const original = entry.original_text.trim();
+        if (!original) {
+          return;
+        }
+
+        entries.push({
+          id: entry.id,
+          original,
+          override: entry.override_text,
+        });
       });
 
-      overridesRef.current = map;
+      overridesRef.current = buildOverrides(entries);
       applyOverridesToNode(document.body);
     };
 
