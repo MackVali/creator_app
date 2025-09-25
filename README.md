@@ -10,15 +10,21 @@ cp .env.example .env.local
 
 Fill `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
-2) Run the development server
+2) Install dependencies
 
 ```bash
-npm run dev
+pnpm install
+```
+
+3) Run the development server
+
+```bash
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-3) Run the test suite
+4) Run the test suite
 
 ```bash
 pnpm test:run
