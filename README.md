@@ -130,3 +130,46 @@ npx supabase migration repair --status applied <version>   # or --status reverte
 ```
 
   - After baselining/repair, return to the local-first flow (`db diff` → `db push`).
+
+## Payments & Stripe Connect
+
+SHELL's multi-tenant payments layer uses Stripe Connect (Express) with Prisma + SQLite. To run it locally:
+
+1. **Environment variables** – copy `.env.local` (or update your existing file) with:
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_xxx
+   STRIPE_WEBHOOK_SECRET=whsec_xxx
+   APP_URL=http://localhost:3000
+   ```
+   Replace the placeholders with keys from your Stripe account / Stripe CLI.
+2. **Generate Prisma client and apply the initial schema**
+   ```bash
+   pnpm prisma:migrate
+   pnpm prisma:generate
+   ```
+3. **Seed local data**
+   ```bash
+   pnpm db:seed
+   ```
+   This creates a sample business (`taco-fiesta`) with menu items for quick testing.
+4. **Start the Next.js dev server**
+   ```bash
+   pnpm dev
+   ```
+5. **Onboard a test food truck** – POST to `/api/connect/onboard` with the business ID returned in the seed output. Follow the returned onboarding link to complete Express setup.
+6. **Create a Checkout Session** – POST to `/api/checkout/taco-fiesta` with a payload like:
+   ```json
+   {
+     "items": [{ "name": "Al Pastor Taco", "priceCents": 899, "quantity": 2 }],
+     "tipCents": 200,
+     "taxCents": 150,
+     "orderMetadata": { "table": "N/A" }
+   }
+   ```
+7. **Listen for webhooks** – in another terminal run:
+   ```bash
+   stripe listen --forward-to localhost:3000/api/stripe/webhook
+   ```
+8. **Test the payment flow** – open the Checkout Session URL, pay with `4242 4242 4242 4242`, and confirm the order transitions to `PAID` via the webhook.
+
+The platform charges the business-specific application fee (bps) and transfers the remainder to the truck's connected account automatically via destination charges.
