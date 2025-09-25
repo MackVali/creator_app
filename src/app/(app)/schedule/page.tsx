@@ -1153,8 +1153,9 @@ export default function SchedulePage() {
                       height,
                     }
                     const cardStyle: CSSProperties = {
-                      boxShadow: '0 22px 48px rgba(3, 3, 6, 0.55)',
-                      outline: '1px solid rgba(255, 255, 255, 0.06)',
+                      boxShadow:
+                        '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                      outline: '1px solid rgba(10, 10, 12, 0.85)',
                       outlineOffset: '-1px',
                     }
                     const projectDurationMs = Math.max(
@@ -1212,7 +1213,7 @@ export default function SchedulePage() {
                                 if (!canExpand) return
                                 setProjectExpansion(projectId)
                               }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border border-white/10 shadow-[0_24px_44px_rgba(0,0,0,0.55)]${
+                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border border-black/70 shadow-[0_28px_54px_rgba(0,0,0,0.62)]${
                                 canExpand ? ' cursor-pointer' : ''
                               }`}
                               style={{
