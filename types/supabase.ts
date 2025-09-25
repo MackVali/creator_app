@@ -476,6 +476,32 @@ export interface Database {
           created_at?: string;
         };
       };
+      text_overrides: {
+        Row: {
+          id: string;
+          original_text: string;
+          override_text: string;
+          created_at: string;
+          updated_at: string;
+          created_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          original_text: string;
+          override_text: string;
+          created_at?: string;
+          updated_at?: string;
+          created_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          original_text?: string;
+          override_text?: string;
+          created_at?: string;
+          updated_at?: string;
+          created_by?: string | null;
+        };
+      };
       windows: {
         Row: {
           id: string;

@@ -27,12 +27,41 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { profile } = useProfile();
   const [email, setEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     async function loadEmail() {
       const user = await getCurrentUser();
       setEmail(user?.email || "");
+
+      if (user) {
+        const possibleRoles = new Set<string>();
+        const addRole = (value: unknown) => {
+          if (typeof value === "string") {
+            possibleRoles.add(value.toLowerCase());
+          }
+        };
+
+        const addRoles = (values: unknown) => {
+          if (Array.isArray(values)) {
+            values.forEach((role) => addRole(role));
+          }
+        };
+
+        addRole(user.user_metadata?.role);
+        addRole(user.app_metadata?.role);
+        addRoles(user.user_metadata?.roles);
+        addRoles(user.app_metadata?.roles);
+
+        if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
+          possibleRoles.add("admin");
+        }
+
+        setIsAdmin(possibleRoles.has("admin"));
+      } else {
+        setIsAdmin(false);
+      }
     }
 
     loadEmail();
@@ -66,10 +95,23 @@ export default function SettingsPage() {
               <p className="text-sm text-[var(--muted)]">Tune Creator to match the way you work.</p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-[var(--muted)]">
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            Account secure
-          </span>
+          <div className="inline-flex items-center gap-3">
+            {isAdmin && (
+              <button
+                type="button"
+                aria-label="Manage content overrides"
+                onClick={() => router.push("/settings/content")}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium transition hover:border-white/20 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              >
+                <FileText className="h-4 w-4" aria-hidden="true" />
+                <span>Content overrides</span>
+              </button>
+            )}
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-[var(--muted)]">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              Account secure
+            </span>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">
@@ -159,6 +201,22 @@ export default function SettingsPage() {
             />
           </SettingsCard>
         </section>
+
+        {isAdmin && (
+          <section className="grid gap-6">
+            <SettingsCard
+              title="Administration"
+              description="Manage application-wide content and messaging."
+            >
+              <SettingsActionRow
+                icon={FileText}
+                title="Content overrides"
+                description="Update any copy that appears throughout the app."
+                onClick={() => router.push("/settings/content")}
+              />
+            </SettingsCard>
+          </section>
+        )}
       </main>
     </div>
   );

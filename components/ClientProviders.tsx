@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import TextOverrideProvider from "./TextOverrideProvider";
 
 export default function ClientProviders({
   children,
@@ -28,6 +29,8 @@ export default function ClientProviders({
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <TextOverrideProvider>{children}</TextOverrideProvider>
+    </QueryClientProvider>
   );
 }
