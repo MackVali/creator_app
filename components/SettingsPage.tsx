@@ -27,12 +27,41 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const { profile } = useProfile();
   const [email, setEmail] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     async function loadEmail() {
       const user = await getCurrentUser();
       setEmail(user?.email || "");
+
+      if (user) {
+        const possibleRoles = new Set<string>();
+        const addRole = (value: unknown) => {
+          if (typeof value === "string") {
+            possibleRoles.add(value.toLowerCase());
+          }
+        };
+
+        const addRoles = (values: unknown) => {
+          if (Array.isArray(values)) {
+            values.forEach((role) => addRole(role));
+          }
+        };
+
+        addRole(user.user_metadata?.role);
+        addRole(user.app_metadata?.role);
+        addRoles(user.user_metadata?.roles);
+        addRoles(user.app_metadata?.roles);
+
+        if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
+          possibleRoles.add("admin");
+        }
+
+        setIsAdmin(possibleRoles.has("admin"));
+      } else {
+        setIsAdmin(false);
+      }
     }
 
     loadEmail();
@@ -159,6 +188,22 @@ export default function SettingsPage() {
             />
           </SettingsCard>
         </section>
+
+        {isAdmin && (
+          <section className="grid gap-6">
+            <SettingsCard
+              title="Administration"
+              description="Manage application-wide content and messaging."
+            >
+              <SettingsActionRow
+                icon={FileText}
+                title="Content overrides"
+                description="Update any copy that appears throughout the app."
+                onClick={() => router.push("/settings/content")}
+              />
+            </SettingsCard>
+          </section>
+        )}
       </main>
     </div>
   );
