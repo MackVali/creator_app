@@ -1153,8 +1153,9 @@ export default function SchedulePage() {
                       height,
                     }
                     const cardStyle: CSSProperties = {
-                      boxShadow: 'var(--elev-card)',
-                      outline: '1px solid var(--event-border)',
+                      boxShadow:
+                        '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                      outline: '1px solid rgba(10, 10, 12, 0.85)',
                       outlineOffset: '-1px',
                     }
                     const projectDurationMs = Math.max(
@@ -1212,10 +1213,14 @@ export default function SchedulePage() {
                                 if (!canExpand) return
                                 setProjectExpansion(projectId)
                               }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] bg-[var(--event-bg)] px-3 py-2 text-white${
+                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border border-black/70 shadow-[0_28px_54px_rgba(0,0,0,0.62)]${
                                 canExpand ? ' cursor-pointer' : ''
                               }`}
-                              style={cardStyle}
+                              style={{
+                                ...cardStyle,
+                                background:
+                                  'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)',
+                              }}
                               initial={
                                 prefersReducedMotion ? false : { opacity: 0, y: 4 }
                               }
@@ -1344,9 +1349,9 @@ export default function SchedulePage() {
                                 const baseTaskClasses =
                                   'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
                                 const shinyTaskClasses =
-                                  'bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)] text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60'
+                                  'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
                                 const fallbackTaskClasses =
-                                  'bg-[linear-gradient(135deg,_rgba(248,250,252,0.96)_0%,_rgba(230,233,239,0.92)_48%,_rgba(208,215,226,0.9)_100%)] text-zinc-900/95 shadow-[0_10px_24px_rgba(17,24,39,0.28)] ring-1 ring-white/60'
+                                  'bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]'
                                 const cardClasses =
                                   kind === 'scheduled'
                                     ? `${baseTaskClasses} ${shinyTaskClasses}`
@@ -1365,11 +1370,11 @@ export default function SchedulePage() {
                                   kind === 'fallback'
                                     ? `~${displayDurationMinutes}m`
                                     : `${displayDurationMinutes}m`
-                                const metaTextClass = 'text-xs text-zinc-700/80'
+                                const metaTextClass = 'text-xs text-zinc-200/75'
                                 const progressBarClass =
                                   kind === 'scheduled'
-                                    ? 'absolute left-0 bottom-0 h-[3px] bg-zinc-900/25'
-                                    : 'absolute left-0 bottom-0 h-[3px] bg-zinc-900/15'
+                                    ? 'absolute left-0 bottom-0 h-[3px] bg-white/40'
+                                    : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
                                 const resolvedEnergyRaw = (
                                   task.energy ?? project.energy ?? 'NO'
                                 ).toString()
