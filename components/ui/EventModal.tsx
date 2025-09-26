@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  Check,
   CheckSquare,
   FolderKanban,
   Repeat,
@@ -228,6 +229,67 @@ function OptionGrid({
           {selectedOption.description}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+interface ChoiceDropdownProps {
+  value: string;
+  options: ChoiceOption[];
+  onChange: (value: string) => void;
+  placeholder: string;
+  helperText?: string;
+}
+
+function ChoiceDropdown({
+  value,
+  options,
+  onChange,
+  placeholder,
+  helperText,
+}: ChoiceDropdownProps) {
+  const selectedOption = options.find((option) => option.value === value);
+
+  return (
+    <div className="space-y-2">
+      <Select
+        value={value}
+        onValueChange={onChange}
+        placeholder={placeholder}
+        className="w-full"
+      >
+        <SelectContent>
+          {options.map((option) => {
+            const isActive = option.value === value;
+            return (
+              <SelectItem
+                key={option.value}
+                value={option.value}
+                className="items-start justify-between gap-3"
+              >
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-white">
+                    {option.label}
+                  </span>
+                  {option.description ? (
+                    <span className="text-xs text-zinc-400">
+                      {option.description}
+                    </span>
+                  ) : null}
+                </div>
+                <span className="mt-1">
+                  {isActive ? (
+                    <Check className="h-4 w-4 text-blue-400" />
+                  ) : null}
+                </span>
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-zinc-500">
+        {selectedOption?.description ?? helperText ?? "Select an option"}
+      </p>
     </div>
   );
 }
@@ -524,7 +586,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const overviewDescription = useMemo(() => {
     switch (eventType) {
       case "GOAL":
-        return "Give your goal a name and explain why it matters.";
+        return "Give your goal a name. You can capture the motivation at the end.";
       case "PROJECT":
         return "Summarise what you’re building and the impact you expect.";
       case "TASK":
@@ -639,54 +701,85 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  {eventType === "GOAL" ? "Why this matters" : "Description"}
-                </Label>
-                <Textarea
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  placeholder={
-                    eventType === "GOAL"
-                      ? "Capture the motivation or vision for this goal"
-                      : `Describe your ${eventMeta.badge.toLowerCase()}`
-                  }
-                  className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                />
-                <p className="text-xs text-zinc-500">Optional, but recommended.</p>
-              </div>
+              {eventType !== "GOAL" ? (
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                    Description
+                  </Label>
+                  <Textarea
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                    placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
+                    className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                  <p className="text-xs text-zinc-500">Optional, but recommended.</p>
+                </div>
+              ) : null}
             </div>
           </FormSection>
 
           <FormSection title="Intensity" description={intensityDescription}>
-            <div className="space-y-4">
-              <div className="space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                  Priority
-                </p>
-                <OptionGrid
-                  value={formData.priority}
-                  options={PRIORITY_OPTIONS}
-                  onChange={(value) =>
-                    setFormData({ ...formData, priority: value })
-                  }
-                />
+            {eventType === "GOAL" ? (
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Priority
+                  </p>
+                  <ChoiceDropdown
+                    value={formData.priority}
+                    options={PRIORITY_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, priority: value })
+                    }
+                    placeholder="Select priority"
+                    helperText="Choose how urgent this goal feels."
+                  />
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Energy
+                  </p>
+                  <ChoiceDropdown
+                    value={formData.energy}
+                    options={ENERGY_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, energy: value })
+                    }
+                    placeholder="Select energy"
+                    helperText="Track the effort you expect this goal to take."
+                  />
+                </div>
               </div>
-              <div className="space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                  Energy
-                </p>
-                <OptionGrid
-                  value={formData.energy}
-                  options={ENERGY_OPTIONS}
-                  onChange={(value) =>
-                    setFormData({ ...formData, energy: value })
-                  }
-                />
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Priority
+                  </p>
+                  <OptionGrid
+                    value={formData.priority}
+                    options={PRIORITY_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, priority: value })
+                    }
+                  />
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                    Energy
+                  </p>
+                  <OptionGrid
+                    value={formData.energy}
+                    options={ENERGY_OPTIONS}
+                    onChange={(value) =>
+                      setFormData({ ...formData, energy: value })
+                    }
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </FormSection>
 
           {eventType === "GOAL" ? (
@@ -995,6 +1088,30 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     }
                   />
                 </div>
+              </div>
+            </FormSection>
+          ) : null}
+
+          {eventType === "GOAL" ? (
+            <FormSection
+              title="Why?"
+              description="Capture the motivation or vision fueling this goal."
+            >
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Why this matters (optional)
+                </Label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  placeholder="Capture the motivation or vision for this goal"
+                  className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                />
+                <p className="text-xs text-zinc-500">
+                  Optional, but it helps keep the goal anchored to a clear purpose.
+                </p>
               </div>
             </FormSection>
           ) : null}
