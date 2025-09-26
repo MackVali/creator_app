@@ -997,13 +997,36 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                     Stage
                   </p>
-                  <OptionGrid
+                  <Select
                     value={formData.stage}
-                    options={PROJECT_STAGE_OPTIONS}
-                    onChange={(value) =>
+                    onValueChange={(value) =>
                       setFormData({ ...formData, stage: value })
                     }
-                  />
+                    triggerClassName="h-12 px-4 text-left"
+                    contentWrapperClassName="bg-[#0b1222]"
+                  >
+                    <SelectContent className="space-y-1">
+                      {PROJECT_STAGE_OPTIONS.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value}
+                          label={option.label}
+                          className="px-4 py-3"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-white">
+                              {option.label}
+                            </span>
+                            {option.description ? (
+                              <span className="text-xs text-zinc-400">
+                                {option.description}
+                              </span>
+                            ) : null}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </FormSection>
             </>
@@ -1120,14 +1143,36 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                     Stage
                   </p>
-                  <OptionGrid
+                  <Select
                     value={formData.stage}
-                    options={TASK_STAGE_OPTIONS}
-                    onChange={(value) =>
+                    onValueChange={(value) =>
                       setFormData({ ...formData, stage: value })
                     }
-                    columnsClassName="grid-cols-3"
-                  />
+                    triggerClassName="h-12 px-4 text-left"
+                    contentWrapperClassName="bg-[#0b1222]"
+                  >
+                    <SelectContent className="space-y-1">
+                      {TASK_STAGE_OPTIONS.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value}
+                          label={option.label}
+                          className="px-4 py-3"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-white">
+                              {option.label}
+                            </span>
+                            {option.description ? (
+                              <span className="text-xs text-zinc-400">
+                                {option.description}
+                              </span>
+                            ) : null}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </FormSection>
             </>
