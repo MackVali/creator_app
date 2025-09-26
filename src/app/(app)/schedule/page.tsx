@@ -5,7 +5,6 @@ export const runtime = 'nodejs'
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -67,40 +66,26 @@ function WindowLabel({
   label: string
   availableHeight: number
 }) {
-  const spanRef = useRef<HTMLSpanElement | null>(null)
-  const [shouldWrap, setShouldWrap] = useState(false)
+  const safeHeight = Number.isFinite(availableHeight)
+    ? Math.max(0, availableHeight)
+    : 0
 
-  useLayoutEffect(() => {
-    const el = spanRef.current
-    if (!el) return
-
-    const safeHeight = Number.isFinite(availableHeight)
-      ? Math.max(0, availableHeight)
-      : 0
-
-    if (!label || safeHeight <= 0) {
-      setShouldWrap(prev => (prev ? false : prev))
-      return
-    }
-
-    const previousWhiteSpace = el.style.whiteSpace
-    el.style.whiteSpace = 'nowrap'
-    const measuredHeight = Math.ceil(el.getBoundingClientRect().height)
-    el.style.whiteSpace = previousWhiteSpace
-
-    const nextShouldWrap = measuredHeight - safeHeight > 1
-    setShouldWrap(prev => (prev === nextShouldWrap ? prev : nextShouldWrap))
-  }, [label, availableHeight])
+  const inlineSize = safeHeight > 0 ? safeHeight : undefined
 
   return (
     <span
-      ref={spanRef}
+      title={label}
       className="ml-1 text-[10px] leading-none text-zinc-500"
       style={{
+        display: 'inline-flex',
         writingMode: 'vertical-rl',
         textOrientation: 'mixed',
-        whiteSpace: shouldWrap ? 'normal' : 'nowrap',
-        wordBreak: 'keep-all',
+        whiteSpace: 'normal',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+        overflow: 'hidden',
+        maxInlineSize: inlineSize,
+        inlineSize,
       }}
     >
       {label}
