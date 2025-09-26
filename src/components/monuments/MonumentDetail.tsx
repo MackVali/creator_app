@@ -13,7 +13,6 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import MilestonesPanel, { MilestonesPanelHandle } from "./MilestonesPanel";
 import ActivityPanel from "./ActivityPanel";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
@@ -35,7 +34,6 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
   const supabase = getSupabaseBrowser();
   const router = useRouter();
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
-  const milestonesRef = useRef<MilestonesPanelHandle>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,21 +130,6 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     );
   }
 
-  const handleCreateMilestone = () => {
-    milestonesRef.current?.addMilestone();
-  };
-
-  const handleAddMilestone = () => {
-    document
-      .getElementById("monument-milestones")
-      ?.scrollIntoView({ behavior: "smooth" });
-    handleCreateMilestone();
-  };
-
-  const handleAutoSplit = () => {
-    console.log("Auto Split coming soon");
-  };
-
   const handleAddNote = () => {
     noteInputRef.current?.scrollIntoView({ behavior: "smooth" });
     noteInputRef.current?.focus();
@@ -171,8 +154,8 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
     },
     {
       label: "Next step",
-      value: "Create a milestone",
-      description: "Break the vision into concrete wins to unlock progress.",
+      value: "Capture a note",
+      description: "Jot down momentum-building ideas while they&apos;re fresh.",
       icon: Sparkles,
     },
   ] as const;
@@ -211,7 +194,7 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
                   {monument.title}
                 </h1>
                 <p className="max-w-xl text-sm text-white/70 sm:text-base">
-                  Track the momentum of this monument with milestones, goals, and notes that feel as polished as the vision.
+                  Track the momentum of this monument with goals and notes that feel as polished as the vision.
                 </p>
               </div>
             </div>
@@ -222,15 +205,6 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
                 className="rounded-full bg-white px-5 text-slate-900 shadow-sm transition hover:bg-white/90"
               >
                 <Link href={`/monuments/${id}/edit`}>Edit monument</Link>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleAddMilestone}
-                aria-label="Add milestone"
-                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
-              >
-                Add milestone
               </Button>
               <Button
                 size="sm"
@@ -266,12 +240,6 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="space-y-6">
-            <MilestonesPanel
-              ref={milestonesRef}
-              monumentId={id}
-              onAutoSplit={handleAutoSplit}
-            />
-
             <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
               <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
