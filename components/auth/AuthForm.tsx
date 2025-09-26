@@ -17,9 +17,11 @@ const validatePassword = (password: string): string | null => {
 
 export default function AuthForm() {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
+  const [identifier, setIdentifier] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [role, setRole] = useState<"CREATOR" | "MANAGER" | "BUSINESS">(
     "CREATOR"
   );
@@ -29,7 +31,7 @@ export default function AuthForm() {
   const [success, setSuccess] = useState<string | null>(null);
 
   // Rate limiting state
-  const [attempts, setAttempts] = useState(0);
+  const [, setAttempts] = useState(0);
   const [lockoutTime, setLockoutTime] = useState<Date | null>(null);
   const [lockoutDuration] = useState(5 * 60 * 1000); // 5 minutes
 
@@ -83,19 +85,65 @@ export default function AuthForm() {
     lockoutTime &&
     new Date().getTime() - lockoutTime.getTime() < lockoutDuration;
 
+  const registerFailedAttempt = (message: string) => {
+    setAttempts((prev: number) => {
+      const nextAttempts = prev + 1;
+
+      if (nextAttempts >= 5) {
+        setLockoutTime(new Date());
+        setError(
+          "Too many failed attempts. Please wait 5 minutes before trying again."
+        );
+      } else {
+        setError(message);
+      }
+
+      return nextAttempts;
+    });
+  };
+
   const handleAuthError = (error: { message?: string }) => {
     const appError = parseSupabaseError(error);
-    setAttempts((prev: number) => prev + 1);
+    registerFailedAttempt(appError.userMessage);
+  };
 
-    // Lock out after 5 failed attempts
-    if (attempts >= 4) {
-      setLockoutTime(new Date());
-      setError(
-        "Too many failed attempts. Please wait 5 minutes before trying again."
-      );
-    } else {
-      setError(appError.userMessage);
+  const resolveSignInEmail = async (value: string) => {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      throw new Error("Please enter your email or username");
     }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (emailPattern.test(trimmed)) {
+      return trimmed;
+    }
+
+    const response = await fetch("/api/auth/resolve-username", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: trimmed }),
+    });
+
+    if (!response.ok) {
+      let message = "Invalid username or password";
+      try {
+        const data = await response.json();
+        if (data?.error && typeof data.error === "string") {
+          message = data.error;
+        }
+      } catch (err) {
+        console.error("Failed to parse username resolution error:", err);
+      }
+      throw new Error(message);
+    }
+
+    const data = (await response.json()) as { email?: string };
+    if (!data?.email) {
+      throw new Error("Invalid username or password");
+    }
+
+    return data.email;
   };
 
   async function handleSignIn(e: React.FormEvent) {
@@ -114,8 +162,9 @@ export default function AuthForm() {
     setSuccess(null);
 
     try {
+      const loginEmail = await resolveSignInEmail(identifier);
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: loginEmail,
         password,
       });
       if (error) {
@@ -126,7 +175,11 @@ export default function AuthForm() {
         router.replace(redirectTo);
       }
     } catch (err) {
-      handleAuthError(err as { message?: string });
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Invalid username or password";
+      registerFailedAttempt(message);
     } finally {
       setLoading(false);
     }
@@ -140,6 +193,21 @@ export default function AuthForm() {
     }
     if (!supabase) {
       setError("Supabase not initialized");
+      return;
+    }
+
+    const trimmedUsername = username.trim().toLowerCase();
+
+    if (!trimmedUsername) {
+      setError("Username is required");
+      return;
+    }
+
+    const usernamePattern = /^[a-z0-9_]{3,20}$/;
+    if (!usernamePattern.test(trimmedUsername)) {
+      setError(
+        "Username must be 3-20 characters and use lowercase letters, numbers, or underscores"
+      );
       return;
     }
 
@@ -158,7 +226,7 @@ export default function AuthForm() {
         email,
         password,
         options: {
-          data: { full_name: fullName, role },
+          data: { full_name: fullName, role, username: trimmedUsername },
           emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
@@ -245,14 +313,14 @@ export default function AuthForm() {
           <form onSubmit={handleSignIn} className="space-y-6">
             <div>
               <label className="block text-sm font-semibold text-white mb-3">
-                Email
+                Email or Username
               </label>
               <input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
+                type="text"
+                placeholder="Enter your email or username"
+                value={identifier}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setEmail(e.target.value)
+                  setIdentifier(e.target.value)
                 }
                 className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
                 required
@@ -336,6 +404,22 @@ export default function AuthForm() {
                 value={fullName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFullName(e.target.value)
+                }
+                className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-white mb-3">
+                Username
+              </label>
+              <input
+                type="text"
+                placeholder="Choose a username (3-20 lowercase characters)"
+                value={username}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setUsername(e.target.value)
                 }
                 className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
                 required
