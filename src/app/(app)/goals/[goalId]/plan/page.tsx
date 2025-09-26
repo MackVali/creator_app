@@ -6,6 +6,7 @@ import { Plus, Loader2, X } from "lucide-react";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PageHeader } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,11 +37,37 @@ const PROJECT_STAGE_OPTIONS = [
 const DEFAULT_PRIORITY = "NO";
 const DEFAULT_ENERGY = "NO";
 
+const PRIORITY_OPTIONS = [
+  { value: "NO", label: "No Priority" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "CRITICAL", label: "Critical" },
+  { value: "ULTRA-CRITICAL", label: "Ultra-Critical" },
+];
+
+const ENERGY_OPTIONS = [
+  { value: "NO", label: "No Energy" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "ULTRA", label: "Ultra" },
+  { value: "EXTREME", label: "Extreme" },
+];
+
+const getPriorityLabel = (value: string) =>
+  PRIORITY_OPTIONS.find((option) => option.value === value)?.label ?? value;
+
+const getEnergyLabel = (value: string) =>
+  ENERGY_OPTIONS.find((option) => option.value === value)?.label ?? value;
+
 interface DraftProject {
   id: string;
   name: string;
   stage: string;
   why: string;
+  priority: string;
+  energy: string;
 }
 
 function createDraftProject(): DraftProject {
@@ -53,6 +80,8 @@ function createDraftProject(): DraftProject {
     name: "",
     stage: PROJECT_STAGE_OPTIONS[0].value,
     why: "",
+    priority: DEFAULT_PRIORITY,
+    energy: DEFAULT_ENERGY,
   };
 }
 
@@ -202,8 +231,8 @@ export default function PlanGoalPage() {
         name: draft.name,
         stage: draft.stage,
         why: draft.why || null,
-        priority: DEFAULT_PRIORITY,
-        energy: DEFAULT_ENERGY,
+        priority: draft.priority || DEFAULT_PRIORITY,
+        energy: draft.energy || DEFAULT_ENERGY,
       }));
 
       const { data, error } = await supabase
@@ -338,6 +367,52 @@ export default function PlanGoalPage() {
                             />
                           </div>
                         </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Priority
+                            </Label>
+                            <Select
+                              value={draft.priority}
+                              onValueChange={(value) =>
+                                handleDraftChange(draft.id, "priority", value)
+                              }
+                            >
+                              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                <SelectValue placeholder="Choose a priority" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                {PRIORITY_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Energy
+                            </Label>
+                            <Select
+                              value={draft.energy}
+                              onValueChange={(value) =>
+                                handleDraftChange(draft.id, "energy", value)
+                              }
+                            >
+                              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                <SelectValue placeholder="Choose energy" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                {ENERGY_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
                       </div>
 
                       {drafts.length > 1 ? (
@@ -410,6 +485,14 @@ export default function PlanGoalPage() {
                     {project.why ? (
                       <p className="mt-2 text-xs text-zinc-400">{project.why}</p>
                     ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                      <Badge className="border-white/10 bg-white/[0.08] text-white">
+                        Priority: {getPriorityLabel(project.priority)}
+                      </Badge>
+                      <Badge className="border-white/10 bg-white/[0.08] text-white">
+                        Energy: {getEnergyLabel(project.energy)}
+                      </Badge>
+                    </div>
                   </li>
                 ))}
               </ul>
