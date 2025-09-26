@@ -85,9 +85,11 @@ function WindowLabel({
     const previousWhiteSpace = el.style.whiteSpace
     const previousWordBreak = el.style.wordBreak
     const previousMaxHeight = el.style.maxHeight
+    const previousMaxWidth = el.style.maxWidth
     const previousMaxInlineSize = el.style.maxInlineSize
     if (safeHeight > 0) {
       el.style.maxHeight = ''
+      el.style.maxWidth = ''
       el.style.maxInlineSize = ''
     }
     el.style.whiteSpace = 'nowrap'
@@ -96,6 +98,7 @@ function WindowLabel({
     el.style.whiteSpace = previousWhiteSpace
     el.style.wordBreak = previousWordBreak
     el.style.maxHeight = previousMaxHeight
+    el.style.maxWidth = previousMaxWidth
     el.style.maxInlineSize = previousMaxInlineSize
 
     const nextShouldWrap = measuredHeight - safeHeight > 1
@@ -114,7 +117,9 @@ function WindowLabel({
         whiteSpace: shouldWrap ? 'normal' : 'nowrap',
         wordBreak: shouldWrap ? 'break-word' : 'keep-all',
         overflowWrap: shouldWrap ? 'anywhere' : undefined,
+        overflow: 'hidden',
         maxHeight: safeHeight || undefined,
+        maxWidth: safeHeight || undefined,
         maxInlineSize: safeHeight || undefined,
       }}
     >
