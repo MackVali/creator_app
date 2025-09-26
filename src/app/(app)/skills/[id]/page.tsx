@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import {
   Card,
   CardContent,
@@ -16,6 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
+import { SkillProjectsGrid } from "@/app/(app)/skills/components/SkillProjectsGrid";
 
 interface Skill {
   id: string;
@@ -197,8 +197,8 @@ export default function SkillDetailPage() {
 
   const icon = skill.icon || "💡";
 
-  const handleCreateGoal = () => {
-    router.push("/goals/new");
+  const handleCreateProject = () => {
+    router.push("/projects/new");
   };
 
   return (
@@ -272,23 +272,23 @@ export default function SkillDetailPage() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_60%)]" />
             <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Goals</p>
-                <h2 className="text-lg font-semibold text-white sm:text-xl">Projects driving this skill</h2>
+                <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Projects</p>
+                <h2 className="text-lg font-semibold text-white sm:text-xl">Projects using this skill</h2>
                 <p className="text-xs text-white/60 sm:text-sm">
-                  Explore the goal folders powering {skill.name} and see the projects pushing it forward.
+                  Explore the projects that rely on {skill.name} and see where it&apos;s creating momentum.
                 </p>
               </div>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={handleCreateGoal}
+                onClick={handleCreateProject}
                 className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
               >
-                New goal
+                New project
               </Button>
             </header>
             <div className="relative mt-6">
-              <FilteredGoalsGrid entity="skill" id={id} displayMode="minimal" onCreateGoal={handleCreateGoal} />
+              <SkillProjectsGrid skillId={id} />
             </div>
           </section>
 
