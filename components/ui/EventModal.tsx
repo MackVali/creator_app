@@ -7,6 +7,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   CheckSquare,
@@ -404,6 +405,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (!isOpen || !eventType) return;
@@ -481,6 +484,80 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     });
   };
 
+  const saveGoal = useCallback(async (): Promise<Goal | null> => {
+    if (!formData.monument_id) {
+      toast.error(
+        "Monument Required",
+        "Select a monument to ground this goal."
+      );
+      return null;
+    }
+
+    setIsSaving(true);
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        console.error("Supabase client not available");
+        toast.error("Error", "Unable to connect to the database");
+        return null;
+      }
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        console.error("User not authenticated:", userError);
+        toast.error("Authentication Required", "Please sign in to continue.");
+        return null;
+      }
+
+      const insertData: {
+        user_id: string;
+        name: string;
+        priority: string;
+        energy: string;
+        monument_id: string;
+        why?: string;
+      } = {
+        user_id: user.id,
+        name: formData.name.trim(),
+        priority: formData.priority,
+        energy: formData.energy,
+        monument_id: formData.monument_id,
+      };
+
+      const why = formData.description.trim();
+      if (why) {
+        insertData.why = why;
+      }
+
+      const { data, error } = await supabase
+        .from("goals")
+        .insert(insertData)
+        .select(
+          "id, name, priority, energy, why, created_at, active, status, monument_id"
+        )
+        .single();
+
+      if (error) {
+        console.error("Error creating goal:", error);
+        toast.error("Error", "Failed to create goal");
+        return null;
+      }
+
+      toast.success("Saved", "Goal created successfully");
+      return data as Goal;
+    } catch (error) {
+      console.error("Error creating goal:", error);
+      toast.error("Error", "Failed to create goal");
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [formData, toast]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -498,7 +575,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
     }
 
+    if (eventType === "GOAL") {
+      const goal = await saveGoal();
+      if (goal) {
+        onClose();
+        window.location.reload();
+      }
+      return;
+    }
+
     try {
+      setIsSaving(true);
       const supabase = getSupabaseBrowser();
       if (!supabase) {
         console.error("Supabase client not available");
@@ -618,6 +705,21 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     } catch (error) {
       console.error("Error creating " + eventType.toLowerCase() + ":", error);
       toast.error("Error", "Failed to create " + eventType.toLowerCase());
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePlanGoal = async () => {
+    if (!formData.name.trim()) {
+      alert("Please enter a name for your goal");
+      return;
+    }
+
+    const goal = await saveGoal();
+    if (goal) {
+      onClose();
+      router.push(`/goals/${goal.id}/plan`);
     }
   };
 
@@ -719,7 +821,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
   }, [eventType, formData.type]);
 
-  const submitLabel = loading
+  const submitLabel = loading || isSaving
     ? "Creating..."
     : `Create ${eventMeta.badge}`;
 
@@ -1236,27 +1338,41 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             </FormSection>
           ) : null}
 
-          <div className="flex flex-col gap-3 border-t border-white/5 pt-6 sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                loading ||
-                !formData.name.trim() ||
-                (eventType === "PROJECT" && !formData.goal_id) ||
-                (eventType === "TASK" && !formData.project_id)
-              }
-              className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitLabel}
-            </Button>
+          <div className="flex flex-col gap-3 border-t border-white/5 pt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  loading ||
+                  isSaving ||
+                  !formData.name.trim() ||
+                  (eventType === "PROJECT" && !formData.goal_id) ||
+                  (eventType === "TASK" && !formData.project_id)
+                }
+                className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitLabel}
+              </Button>
+            </div>
+            {eventType === "GOAL" ? (
+              <Button
+                type="button"
+                onClick={handlePlanGoal}
+                disabled={loading || isSaving}
+                variant="secondary"
+                className="h-11 rounded-xl bg-white/[0.08] text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(59,130,246,0.45)] transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Plan Goal
+              </Button>
+            ) : null}
           </div>
         </form>
       </div>
