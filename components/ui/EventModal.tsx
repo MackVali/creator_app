@@ -55,12 +55,12 @@ type ChoiceOption = {
 };
 
 const PRIORITY_OPTIONS: ChoiceOption[] = [
-  { value: "NO", label: "No Priority", description: "Backlog or nice-to-have." },
-  { value: "LOW", label: "Low", description: "Good to do when time allows." },
-  { value: "MEDIUM", label: "Medium", description: "Important, but not urgent." },
-  { value: "HIGH", label: "High", description: "Time-sensitive and meaningful." },
-  { value: "CRITICAL", label: "Critical", description: "Blocks progress elsewhere." },
-  { value: "ULTRA-CRITICAL", label: "Ultra-Critical", description: "Drop everything else." },
+  { value: "NO", label: "No Priority" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "CRITICAL", label: "Critical" },
+  { value: "ULTRA-CRITICAL", label: "Ultra-Critical" },
 ];
 
 const renderFlameIcon = (level: FlameLevel) => {
@@ -75,37 +75,31 @@ const ENERGY_OPTIONS: ChoiceOption[] = [
   {
     value: "NO",
     label: "No Energy",
-    description: "Light lift or admin work.",
     renderIcon: renderFlameIcon("NO"),
   },
   {
     value: "LOW",
     label: "Low",
-    description: "Can handle even on slow days.",
     renderIcon: renderFlameIcon("LOW"),
   },
   {
     value: "MEDIUM",
     label: "Medium",
-    description: "Requires steady focus.",
     renderIcon: renderFlameIcon("MEDIUM"),
   },
   {
     value: "HIGH",
     label: "High",
-    description: "Deep work or complex effort.",
     renderIcon: renderFlameIcon("HIGH"),
   },
   {
     value: "ULTRA",
     label: "Ultra",
-    description: "Demanding, plan carefully.",
     renderIcon: renderFlameIcon("ULTRA"),
   },
   {
     value: "EXTREME",
     label: "Extreme",
-    description: "Only when you are fully charged.",
     renderIcon: renderFlameIcon("EXTREME"),
   },
 ];
