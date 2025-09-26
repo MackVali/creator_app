@@ -3,12 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  BatteryCharging,
-  Flame,
-  Sparkles,
-} from "lucide-react";
+import { ArrowLeft, BatteryCharging, Flame } from "lucide-react";
 
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -151,12 +146,6 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
       value: "Not charging yet",
       description: "No activity has been recorded for this monument yet.",
       icon: BatteryCharging,
-    },
-    {
-      label: "Next step",
-      value: "Capture a note",
-      description: "Jot down momentum-building ideas while they&apos;re fresh.",
-      icon: Sparkles,
     },
   ] as const;
 
