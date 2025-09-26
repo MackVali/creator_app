@@ -544,15 +544,27 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           alert("Please select a project for your task");
           return;
         }
+        if (!formData.skill_id) {
+          toast.error(
+            "Skill Required",
+            "Choose the skill this task will advance."
+          );
+          return;
+        }
         insertData.project_id = formData.project_id;
         insertData.stage = formData.stage;
-        if (formData.skill_id) {
-          insertData.skill_id = formData.skill_id;
-        }
+        insertData.skill_id = formData.skill_id;
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
         insertData.recurrence = formData.recurrence;
-      } else if (eventType === "GOAL" && formData.monument_id) {
+      } else if (eventType === "GOAL") {
+        if (!formData.monument_id) {
+          toast.error(
+            "Monument Required",
+            "Select a monument to ground this goal."
+          );
+          return;
+        }
         insertData.monument_id = formData.monument_id;
       }
 
@@ -864,21 +876,21 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
           {eventType === "GOAL" ? (
             <FormSection
-              title="Connections"
-              description="Link this goal to a monument to celebrate progress."
+              title="Relations"
+              description="Link this goal to a monument so the progress has a home."
             >
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Monument (optional)
+                  Monument
                 </Label>
                 <Select
                   value={formData.monument_id}
                   onValueChange={(value) =>
                     setFormData({ ...formData, monument_id: value })
                   }
+                  placeholder="Select monument..."
                 >
                   <SelectContent>
-                    <SelectItem value="">No monument</SelectItem>
                     {monuments.map((monument) => (
                       <SelectItem key={monument.id} value={monument.id}>
                         {monument.title}
@@ -888,8 +900,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 </Select>
                 {monuments.length === 0 ? (
                   <p className="text-xs text-zinc-500">
-                    You can connect goals to monuments once you’ve created
-                    them.
+                    Create a monument first to connect this goal.
                   </p>
                 ) : null}
               </div>
@@ -1077,16 +1088,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                    Skill (optional)
+                    Skill
                   </Label>
                   <Select
                     value={formData.skill_id}
                     onValueChange={(value) =>
                       setFormData({ ...formData, skill_id: value })
                     }
+                    placeholder="Select skill..."
                   >
                     <SelectContent>
-                      <SelectItem value="">No specific skill</SelectItem>
                       {skills.map((skill) => (
                         <SelectItem key={skill.id} value={skill.id}>
                           {skill.name}
@@ -1094,6 +1105,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {skills.length === 0 ? (
+                    <p className="text-xs text-zinc-500">
+                      Add skills to your workspace to connect tasks to them.
+                    </p>
+                  ) : null}
                 </div>
               </FormSection>
 
