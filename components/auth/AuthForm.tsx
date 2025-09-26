@@ -185,6 +185,9 @@ export default function AuthForm() {
     }
   }
 
+  const normalizeUsername = (value: string) =>
+    value.trim().replace(/^@+/, "").toLowerCase();
+
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
     if (isLockedOut) {
@@ -196,7 +199,7 @@ export default function AuthForm() {
       return;
     }
 
-    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedUsername = normalizeUsername(username);
 
     if (!trimmedUsername) {
       setError("Username is required");
@@ -416,10 +419,10 @@ export default function AuthForm() {
               </label>
               <input
                 type="text"
-                placeholder="Choose a username (3-20 lowercase characters)"
+                placeholder="Choose a username (3-20 lowercase characters, no @)"
                 value={username}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setUsername(e.target.value)
+                  setUsername(normalizeUsername(e.target.value))
                 }
                 className="w-full bg-[#2C2C2C] border border-[#333] text-white placeholder-zinc-400 rounded-xl px-5 py-4 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/20 transition-all duration-200"
                 required

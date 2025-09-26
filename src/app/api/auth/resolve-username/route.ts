@@ -8,10 +8,11 @@ const GENERIC_ERROR = "Invalid username or password";
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null);
-    const username =
-      typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
+    const rawInput =
+      typeof body?.username === "string" ? body.username.trim() : "";
+    const normalizedUsername = rawInput.replace(/^@+/, "").toLowerCase();
 
-    if (!username) {
+    if (!normalizedUsername) {
       return NextResponse.json(
         { error: "Username is required" },
         { status: 400 }
@@ -33,18 +34,37 @@ export async function POST(request: Request) {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .ilike("username", username)
-      .maybeSingle();
+    const candidates = Array.from(
+      new Set(
+        [
+          normalizedUsername,
+          rawInput.toLowerCase(),
+          `@${normalizedUsername}`,
+        ].filter((value) => value && typeof value === "string")
+      )
+    );
 
-    if (profileError) {
-      console.error("Failed to fetch profile for username:", profileError);
-      return NextResponse.json(
-        { error: "Authentication service unavailable" },
-        { status: 500 }
-      );
+    let profile: { user_id: string } | null = null;
+
+    for (const candidate of candidates) {
+      const { data, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .ilike("username", candidate)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("Failed to fetch profile for username:", profileError);
+        return NextResponse.json(
+          { error: "Authentication service unavailable" },
+          { status: 500 }
+        );
+      }
+
+      if (data?.user_id) {
+        profile = data;
+        break;
+      }
     }
 
     if (!profile?.user_id) {
