@@ -1,20 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { ENERGY } from "@/lib/scheduler/config";
 import { buildProjectItems, type ProjectItem } from "@/lib/scheduler/projects";
-import {
-  fetchAllWindows,
-  fetchProjectsMap,
-  fetchReadyTasks,
-  type WindowLite,
-} from "@/lib/scheduler/repo";
+import { type WindowLite } from "@/lib/scheduler/repo";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
-import type { ProjectLite, TaskLite } from "@/lib/scheduler/weight";
 import { toLocal } from "@/lib/time/tz";
+import { useSchedulerMeta } from "@/lib/scheduler/useSchedulerMeta";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const GAP_THRESHOLD_MINUTES = 1;
 
@@ -28,10 +24,8 @@ type ScheduleDraft = {
   placed: ScheduleInstance[];
   failures: SchedulerFailure[];
   error?: unknown;
-  timeline: DraftPlacementEntry[];
+  timeline: PreparedPlacementEntry[];
 };
-
-type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 type DraftPlacementEntry = {
   instance: ScheduleInstance;
@@ -40,6 +34,14 @@ type DraftPlacementEntry = {
   availableStartLocal?: string | null;
   windowStartLocal?: string | null;
   scheduledDayOffset?: number | null;
+};
+
+type PreparedPlacementEntry = DraftPlacementEntry & {
+  start: Date;
+  end: Date;
+  durationMin: number;
+  availableStartLocalDate: Date | null;
+  windowStartLocalDate: Date | null;
 };
 
 type PlacementView = {
@@ -74,122 +76,71 @@ export default function SchedulerPage() {
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
 
-  const [metaStatus, setMetaStatus] = useState<LoadStatus>("idle");
-  const [metaError, setMetaError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<ProjectLite[]>([]);
-  const [tasks, setTasks] = useState<TaskLite[]>([]);
-  const [windows, setWindows] = useState<WindowLite[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    setMetaStatus("loading");
-    setMetaError(null);
-
-    async function loadMeta() {
-      try {
-        const [taskList, projectMap, windowList] = await Promise.all([
-          fetchReadyTasks(),
-          fetchProjectsMap(),
-          fetchAllWindows(),
-        ]);
-        if (!active) return;
-        setTasks(taskList);
-        setProjects(Object.values(projectMap));
-        setWindows(windowList);
-        setMetaStatus("loaded");
-      } catch (metaErr) {
-        if (!active) return;
-        console.error("Failed to load scheduler context", metaErr);
-        setMetaError(
-          metaErr instanceof Error
-            ? metaErr.message
-            : "Failed to load scheduler context",
-        );
-        setTasks([]);
-        setProjects([]);
-        setWindows([]);
-        setMetaStatus("error");
-      }
-    }
-
-    void loadMeta();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { tasks, projects, windowMap, status: metaStatus, error: metaError } =
+    useSchedulerMeta();
 
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks],
   );
 
-  const projectMap = useMemo(() => {
+  const { projectMap, energyGroups } = useMemo(() => {
     const map: Record<string, ProjectItem> = {};
+    const grouped = new Map<ProjectItem["energy"], ProjectItem[]>();
+
     for (const item of projectItems) {
       map[item.id] = item;
+      const existing = grouped.get(item.energy);
+      if (existing) {
+        existing.push(item);
+      } else {
+        grouped.set(item.energy, [item]);
+      }
     }
-    return map;
-  }, [projectItems]);
 
-  const windowMap = useMemo(() => {
-    const map: Record<string, WindowLite> = {};
-    for (const window of windows) {
-      map[window.id] = window;
-    }
-    return map;
-  }, [windows]);
+    const groups = ENERGY.LIST.flatMap(energy => {
+      const items = grouped.get(energy);
+      if (!items || items.length === 0) return [];
+      items.sort((a, b) => b.weight - a.weight);
+      return [{ energy, items }];
+    });
+
+    return { projectMap: map, energyGroups: groups };
+  }, [projectItems]);
 
   const placements = useMemo<PlacementView[]>(() => {
     if (!scheduleDraft) return [];
-    return scheduleDraft.timeline
-      .map(entry => {
-        const { instance, decision } = entry;
-        if (!instance || typeof instance !== "object") return null;
-        if (typeof instance.start_utc !== "string") return null;
-        if (typeof instance.end_utc !== "string") return null;
-        const start = toLocal(instance.start_utc);
-        const end = toLocal(instance.end_utc);
-        const durationMin = Math.max(
-          0,
-          Math.round((end.getTime() - start.getTime()) / 60000),
-        );
-        const projectId = typeof instance.source_id === "string"
+    return scheduleDraft.timeline.map(entry => {
+      const { instance, decision, start, end, durationMin } = entry;
+      const projectId =
+        typeof instance.source_id === "string" && instance.source_id
           ? instance.source_id
           : entry.projectId;
-        const project = projectId ? projectMap[projectId] : undefined;
-        const window =
-          typeof instance.window_id === "string"
-            ? windowMap[instance.window_id]
-            : undefined;
-        const availableStartLocal = entry.availableStartLocal
-          ? new Date(entry.availableStartLocal)
-          : null;
-        const windowStartLocal = entry.windowStartLocal
-          ? new Date(entry.windowStartLocal)
-          : null;
-        const reason = describePlacementReason({
-          decision,
-          project,
-          window,
-          instance,
-          start,
-          availableStartLocal,
-          windowStartLocal,
-        });
-        return {
-          instance,
-          project,
-          window,
-          start,
-          end,
-          durationMin,
-          decision,
-          reason,
-        };
-      })
-      .filter((placement): placement is PlacementView => placement !== null)
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
+      const project = projectId ? projectMap[projectId] : undefined;
+      const window =
+        typeof instance.window_id === "string"
+          ? windowMap[instance.window_id]
+          : undefined;
+      const reason = describePlacementReason({
+        decision,
+        project,
+        window,
+        instance,
+        start,
+        availableStartLocal: entry.availableStartLocalDate,
+        windowStartLocal: entry.windowStartLocalDate,
+      });
+      return {
+        instance,
+        project,
+        window,
+        start,
+        end,
+        durationMin,
+        decision,
+        reason,
+      };
+    });
   }, [scheduleDraft, projectMap, windowMap]);
 
   const failureDetails = useMemo(() => {
@@ -243,16 +194,24 @@ export default function SchedulerPage() {
     return entries;
   }, [placements, failureSummary]);
 
-  const energyGroups = useMemo(
-    () =>
-      ENERGY.LIST.map(energy => {
-        const items = projectItems
-          .filter(project => project.energy === energy)
-          .sort((a, b) => b.weight - a.weight);
-        return { energy, items };
-      }).filter(group => group.items.length > 0),
-    [projectItems],
-  );
+  const timelineParentRef = useRef<HTMLDivElement | null>(null);
+
+  const timelineVirtualizer = useVirtualizer({
+    count: timelineEntries.length,
+    getScrollElement: () => timelineParentRef.current,
+    estimateSize: () => 176,
+    overscan: 6,
+    getItemKey: index => {
+      const entry = timelineEntries[index];
+      return entry.type === "placement"
+        ? `placement-${entry.placement.instance.id}`
+        : `gap-${entry.id}`;
+    },
+    measureElement:
+      typeof window !== "undefined"
+        ? element => element.getBoundingClientRect().height
+        : undefined,
+  });
 
   async function handleReschedule() {
     setStatus("pending");
@@ -377,84 +336,132 @@ export default function SchedulerPage() {
               )}
 
               {timelineEntries.length > 0 ? (
-                timelineEntries.map(entry => {
-                  if (entry.type === "placement") {
-                    const { placement } = entry;
-                    const projectName = placement.project?.name?.trim()
-                      ? placement.project.name
-                      : placement.instance.source_id || "Untitled project";
-                    return (
-                      <div
-                        key={placement.instance.id}
-                        className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-medium text-zinc-100">
-                              {projectName}
-                            </div>
-                            <div className="text-xs text-zinc-400">
-                              {(placement.project?.stage || "") && (
-                                <span>{placement.project?.stage}</span>
-                              )}
-                              {placement.project?.priority && (
-                                <span>
-                                  {placement.project?.stage ? " · " : ""}
-                                  {placement.project.priority}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
-                              <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
-                                {formatDecisionLabel(placement.decision)}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-right text-xs text-zinc-400">
-                            <div>{formatDateTime(placement.start)}</div>
-                            <div className="text-zinc-500">
-                              → {formatDateTime(placement.end)}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
-                          <span>
-                            Window:{" "}
-                            {placement.window?.label ||
-                              placement.instance.window_id ||
-                              "Unassigned"}
-                          </span>
-                          <span>
-                            Duration: {formatDurationMinutes(placement.durationMin)}
-                          </span>
-                          <span>
-                            Energy:{" "}
-                            {placement.project?.energy ||
-                              placement.instance.energy_resolved ||
-                              "NO"}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs leading-relaxed text-zinc-300">
-                          {placement.reason}
-                        </p>
-                      </div>
-                    );
-                  }
+                <div
+                  ref={timelineParentRef}
+                  className="max-h-[60vh] overflow-y-auto"
+                >
+                  <div
+                    style={{
+                      height: `${timelineVirtualizer.getTotalSize()}px`,
+                      position: "relative",
+                      width: "100%",
+                    }}
+                  >
+                    {timelineVirtualizer.getVirtualItems().map(virtualRow => {
+                      const entry = timelineEntries[virtualRow.index];
+                      const isLast = virtualRow.index === timelineEntries.length - 1;
 
-                  return (
-                    <div
-                      key={entry.id}
-                      className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-amber-100"
-                    >
-                      <div className="text-sm font-semibold">
-                        Gap · {formatDurationMinutes(entry.durationMin)}
-                      </div>
-                      <p className="mt-1 text-xs text-amber-100/90">
-                        {entry.message}
-                      </p>
-                    </div>
-                  );
-                })
+                      if (entry.type === "placement") {
+                        const { placement } = entry;
+                        const projectName = placement.project?.name?.trim()
+                          ? placement.project.name
+                          : placement.instance.source_id || "Untitled project";
+
+                        return (
+                          <div
+                            key={virtualRow.key}
+                            ref={timelineVirtualizer.measureElement}
+                            className="absolute left-0 right-0"
+                            style={{
+                              transform: `translateY(${virtualRow.start}px)`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                paddingBottom: isLast ? 0 : "0.75rem",
+                              }}
+                            >
+                              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-sm font-medium text-zinc-100">
+                                      {projectName}
+                                    </div>
+                                    <div className="text-xs text-zinc-400">
+                                      {(placement.project?.stage || "") && (
+                                        <span>{placement.project?.stage}</span>
+                                      )}
+                                      {placement.project?.priority && (
+                                        <span>
+                                          {placement.project?.stage ? " · " : ""}
+                                          {placement.project.priority}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
+                                      <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
+                                        {formatDecisionLabel(placement.decision)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right text-xs text-zinc-400">
+                                    <div>{formatDateTime(placement.start)}</div>
+                                    <div className="text-zinc-500">
+                                      → {formatDateTime(placement.end)}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
+                                  <span>
+                                    Window:{" "}
+                                    {placement.window?.label ||
+                                      placement.instance.window_id ||
+                                      "Unassigned"}
+                                  </span>
+                                  <span>
+                                    Duration: {formatDurationMinutes(placement.durationMin)}
+                                  </span>
+                                  <span>
+                                    Energy:{" "}
+                                    {placement.project?.energy ||
+                                      placement.instance.energy_resolved ||
+                                      "NO"}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                                  {placement.reason}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={virtualRow.key}
+                          ref={timelineVirtualizer.measureElement}
+                          className="absolute left-0 right-0"
+                          style={{
+                            transform: `translateY(${virtualRow.start}px)`,
+                          }}
+                        >
+                          <div
+                            style={{
+                              paddingBottom: isLast ? 0 : "0.75rem",
+                            }}
+                          >
+                            <div className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">
+                                Gap
+                              </div>
+                              <div className="mt-1 text-xs text-amber-100/80">
+                                {formatDateTime(entry.start)} → {formatDateTime(entry.end)}
+                              </div>
+                              <div className="mt-1 text-xs">
+                                {formatDurationMinutes(entry.durationMin)} gap between
+                                placements.
+                              </div>
+                              <p className="mt-2 text-xs leading-relaxed text-amber-50">
+                                {entry.message}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               ) : (
                 <p className="text-sm text-zinc-400">
                   The scheduler did not return any placements. Run the scheduler
@@ -610,12 +617,15 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
 
   const error = payload.error;
 
-  const timeline: DraftPlacementEntry[] = Array.isArray(payload.timeline)
+  const timeline: PreparedPlacementEntry[] = Array.isArray(payload.timeline)
     ? payload.timeline
         .map(toDraftPlacementEntry)
+        .filter((item): item is DraftPlacementEntry => item !== null)
+        .map(prepareDraftPlacementEntry)
         .filter(
-          (item): item is DraftPlacementEntry => item !== null,
+          (item): item is PreparedPlacementEntry => item !== null,
         )
+        .sort((a, b) => a.start.getTime() - b.start.getTime())
     : [];
 
   if (placed.length === 0 && failures.length === 0 && !error && timeline.length === 0) {
@@ -684,6 +694,51 @@ function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
       typeof record.scheduledDayOffset === "number"
         ? record.scheduledDayOffset
         : null,
+  };
+}
+
+function prepareDraftPlacementEntry(
+  entry: DraftPlacementEntry,
+): PreparedPlacementEntry | null {
+  const { instance } = entry;
+  if (typeof instance.start_utc !== "string") return null;
+  if (typeof instance.end_utc !== "string") return null;
+
+  const start = toLocal(instance.start_utc);
+  const end = toLocal(instance.end_utc);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
+  const durationMin = Math.max(
+    0,
+    Math.round((end.getTime() - start.getTime()) / 60000),
+  );
+
+  const availableStartLocalDate = entry.availableStartLocal
+    ? new Date(entry.availableStartLocal)
+    : null;
+  const windowStartLocalDate = entry.windowStartLocal
+    ? new Date(entry.windowStartLocal)
+    : null;
+
+  const validAvailable =
+    availableStartLocalDate &&
+    !Number.isNaN(availableStartLocalDate.getTime())
+      ? availableStartLocalDate
+      : null;
+  const validWindowStart =
+    windowStartLocalDate && !Number.isNaN(windowStartLocalDate.getTime())
+      ? windowStartLocalDate
+      : null;
+
+  return {
+    ...entry,
+    start,
+    end,
+    durationMin,
+    availableStartLocalDate: validAvailable,
+    windowStartLocalDate: validWindowStart,
   };
 }
 
