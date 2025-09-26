@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { ENERGY } from "@/lib/scheduler/config";
@@ -10,6 +10,7 @@ import { type WindowLite } from "@/lib/scheduler/repo";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import { toLocal } from "@/lib/time/tz";
 import { useSchedulerMeta } from "@/lib/scheduler/useSchedulerMeta";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 const GAP_THRESHOLD_MINUTES = 1;
 
@@ -177,6 +178,25 @@ export default function SchedulerPage() {
     return entries;
   }, [placements, failureSummary]);
 
+  const timelineParentRef = useRef<HTMLDivElement | null>(null);
+
+  const timelineVirtualizer = useVirtualizer({
+    count: timelineEntries.length,
+    getScrollElement: () => timelineParentRef.current,
+    estimateSize: () => 176,
+    overscan: 6,
+    getItemKey: index => {
+      const entry = timelineEntries[index];
+      return entry.type === "placement"
+        ? `placement-${entry.placement.instance.id}`
+        : `gap-${entry.id}`;
+    },
+    measureElement:
+      typeof window !== "undefined"
+        ? element => element.getBoundingClientRect().height
+        : undefined,
+  });
+
   const energyGroups = useMemo(
     () =>
       ENERGY.LIST.map(energy => {
@@ -311,84 +331,132 @@ export default function SchedulerPage() {
               )}
 
               {timelineEntries.length > 0 ? (
-                timelineEntries.map(entry => {
-                  if (entry.type === "placement") {
-                    const { placement } = entry;
-                    const projectName = placement.project?.name?.trim()
-                      ? placement.project.name
-                      : placement.instance.source_id || "Untitled project";
-                    return (
-                      <div
-                        key={placement.instance.id}
-                        className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-medium text-zinc-100">
-                              {projectName}
-                            </div>
-                            <div className="text-xs text-zinc-400">
-                              {(placement.project?.stage || "") && (
-                                <span>{placement.project?.stage}</span>
-                              )}
-                              {placement.project?.priority && (
-                                <span>
-                                  {placement.project?.stage ? " · " : ""}
-                                  {placement.project.priority}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
-                              <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
-                                {formatDecisionLabel(placement.decision)}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-right text-xs text-zinc-400">
-                            <div>{formatDateTime(placement.start)}</div>
-                            <div className="text-zinc-500">
-                              → {formatDateTime(placement.end)}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
-                          <span>
-                            Window:{" "}
-                            {placement.window?.label ||
-                              placement.instance.window_id ||
-                              "Unassigned"}
-                          </span>
-                          <span>
-                            Duration: {formatDurationMinutes(placement.durationMin)}
-                          </span>
-                          <span>
-                            Energy:{" "}
-                            {placement.project?.energy ||
-                              placement.instance.energy_resolved ||
-                              "NO"}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs leading-relaxed text-zinc-300">
-                          {placement.reason}
-                        </p>
-                      </div>
-                    );
-                  }
+                <div
+                  ref={timelineParentRef}
+                  className="max-h-[60vh] overflow-y-auto"
+                >
+                  <div
+                    style={{
+                      height: `${timelineVirtualizer.getTotalSize()}px`,
+                      position: "relative",
+                      width: "100%",
+                    }}
+                  >
+                    {timelineVirtualizer.getVirtualItems().map(virtualRow => {
+                      const entry = timelineEntries[virtualRow.index];
+                      const isLast = virtualRow.index === timelineEntries.length - 1;
 
-                  return (
-                    <div
-                      key={entry.id}
-                      className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-amber-100"
-                    >
-                      <div className="text-sm font-semibold">
-                        Gap · {formatDurationMinutes(entry.durationMin)}
-                      </div>
-                      <p className="mt-1 text-xs text-amber-100/90">
-                        {entry.message}
-                      </p>
-                    </div>
-                  );
-                })
+                      if (entry.type === "placement") {
+                        const { placement } = entry;
+                        const projectName = placement.project?.name?.trim()
+                          ? placement.project.name
+                          : placement.instance.source_id || "Untitled project";
+
+                        return (
+                          <div
+                            key={virtualRow.key}
+                            ref={timelineVirtualizer.measureElement}
+                            className="absolute left-0 right-0"
+                            style={{
+                              transform: `translateY(${virtualRow.start}px)`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                paddingBottom: isLast ? 0 : "0.75rem",
+                              }}
+                            >
+                              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-sm font-medium text-zinc-100">
+                                      {projectName}
+                                    </div>
+                                    <div className="text-xs text-zinc-400">
+                                      {(placement.project?.stage || "") && (
+                                        <span>{placement.project?.stage}</span>
+                                      )}
+                                      {placement.project?.priority && (
+                                        <span>
+                                          {placement.project?.stage ? " · " : ""}
+                                          {placement.project.priority}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
+                                      <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
+                                        {formatDecisionLabel(placement.decision)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right text-xs text-zinc-400">
+                                    <div>{formatDateTime(placement.start)}</div>
+                                    <div className="text-zinc-500">
+                                      → {formatDateTime(placement.end)}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
+                                  <span>
+                                    Window:{" "}
+                                    {placement.window?.label ||
+                                      placement.instance.window_id ||
+                                      "Unassigned"}
+                                  </span>
+                                  <span>
+                                    Duration: {formatDurationMinutes(placement.durationMin)}
+                                  </span>
+                                  <span>
+                                    Energy:{" "}
+                                    {placement.project?.energy ||
+                                      placement.instance.energy_resolved ||
+                                      "NO"}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                                  {placement.reason}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={virtualRow.key}
+                          ref={timelineVirtualizer.measureElement}
+                          className="absolute left-0 right-0"
+                          style={{
+                            transform: `translateY(${virtualRow.start}px)`,
+                          }}
+                        >
+                          <div
+                            style={{
+                              paddingBottom: isLast ? 0 : "0.75rem",
+                            }}
+                          >
+                            <div className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">
+                                Gap
+                              </div>
+                              <div className="mt-1 text-xs text-amber-100/80">
+                                {formatDateTime(entry.start)} → {formatDateTime(entry.end)}
+                              </div>
+                              <div className="mt-1 text-xs">
+                                {formatDurationMinutes(entry.durationMin)} gap between
+                                placements.
+                              </div>
+                              <p className="mt-2 text-xs leading-relaxed text-amber-50">
+                                {entry.message}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               ) : (
                 <p className="text-sm text-zinc-400">
                   The scheduler did not return any placements. Run the scheduler
