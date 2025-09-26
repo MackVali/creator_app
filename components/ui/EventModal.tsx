@@ -308,6 +308,69 @@ function OptionGrid({
   );
 }
 
+interface OptionDropdownProps {
+  value: string;
+  options: ChoiceOption[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+function OptionDropdown({
+  value,
+  options,
+  onChange,
+  placeholder,
+}: OptionDropdownProps) {
+  return (
+    <Select value={value} onValueChange={onChange} placeholder={placeholder}>
+      <SelectContent>
+        {options.map((option) => {
+          const selected = option.value === value;
+          const IconComponent = option.icon;
+          const iconNode = option.renderIcon
+            ? option.renderIcon(selected)
+            : IconComponent
+            ? (
+                <IconComponent
+                  className={cn(
+                    "h-4 w-4",
+                    option.iconClassName ??
+                      (selected ? "text-blue-400" : "text-zinc-400")
+                  )}
+                />
+              )
+            : null;
+
+          return (
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              label={option.label}
+              className="rounded-lg border border-transparent px-3 py-2.5 text-left transition hover:border-white/10"
+            >
+              <div className="flex items-start gap-3">
+                {iconNode ? (
+                  <span className="mt-0.5 text-zinc-400">{iconNode}</span>
+                ) : null}
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-white">
+                    {option.label}
+                  </span>
+                  {option.description ? (
+                    <span className="text-xs text-zinc-400">
+                      {option.description}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [mounted, setMounted] = useState(false);
   const toast = useToastHelpers();
@@ -748,30 +811,30 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
           <FormSection title="Intensity" description={intensityDescription}>
             <div className="space-y-4">
-              <div className="space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Priority
-                </p>
-                <OptionGrid
+                </Label>
+                <OptionDropdown
                   value={formData.priority}
                   options={PRIORITY_OPTIONS}
                   onChange={(value) =>
                     setFormData({ ...formData, priority: value })
                   }
-                  layout="list"
+                  placeholder="Select priority..."
                 />
               </div>
-              <div className="space-y-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Energy
-                </p>
-                <OptionGrid
+                </Label>
+                <OptionDropdown
                   value={formData.energy}
                   options={ENERGY_OPTIONS}
                   onChange={(value) =>
                     setFormData({ ...formData, energy: value })
                   }
-                  layout="list"
+                  placeholder="Select energy..."
                 />
               </div>
             </div>
