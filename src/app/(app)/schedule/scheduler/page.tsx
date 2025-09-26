@@ -84,12 +84,28 @@ export default function SchedulerPage() {
     [projects, tasks],
   );
 
-  const projectMap = useMemo(() => {
+  const { projectMap, energyGroups } = useMemo(() => {
     const map: Record<string, ProjectItem> = {};
+    const grouped = new Map<ProjectItem["energy"], ProjectItem[]>();
+
     for (const item of projectItems) {
       map[item.id] = item;
+      const existing = grouped.get(item.energy);
+      if (existing) {
+        existing.push(item);
+      } else {
+        grouped.set(item.energy, [item]);
+      }
     }
-    return map;
+
+    const groups = ENERGY.LIST.flatMap(energy => {
+      const items = grouped.get(energy);
+      if (!items || items.length === 0) return [];
+      items.sort((a, b) => b.weight - a.weight);
+      return [{ energy, items }];
+    });
+
+    return { projectMap: map, energyGroups: groups };
   }, [projectItems]);
 
   const placements = useMemo<PlacementView[]>(() => {
@@ -196,17 +212,6 @@ export default function SchedulerPage() {
         ? element => element.getBoundingClientRect().height
         : undefined,
   });
-
-  const energyGroups = useMemo(
-    () =>
-      ENERGY.LIST.map(energy => {
-        const items = projectItems
-          .filter(project => project.energy === energy)
-          .sort((a, b) => b.weight - a.weight);
-        return { energy, items };
-      }).filter(group => group.items.length > 0),
-    [projectItems],
-  );
 
   async function handleReschedule() {
     setStatus("pending");
