@@ -219,6 +219,7 @@ interface OptionGridProps {
   className?: string;
   columnsClassName?: string;
   showDescriptions?: boolean;
+  layout?: "grid" | "list";
 }
 
 function OptionGrid({
@@ -228,18 +229,28 @@ function OptionGrid({
   className,
   columnsClassName,
   showDescriptions = true,
+  layout = "grid",
 }: OptionGridProps) {
-  const computedColumns = columnsClassName
-    ? columnsClassName
-    : options.length > 4
-    ? "grid-cols-2 sm:grid-cols-3"
-    : "grid-cols-2 sm:grid-cols-2";
+  const computedColumns =
+    layout === "list"
+      ? "grid-cols-1"
+      : columnsClassName
+      ? columnsClassName
+      : options.length > 4
+      ? "grid-cols-2 sm:grid-cols-3"
+      : "grid-cols-2 sm:grid-cols-2";
 
   const selectedOption = options.find((option) => option.value === value);
 
   return (
     <div className={cn("space-y-2", className)}>
-      <div className={cn("grid gap-2 sm:gap-3", computedColumns)}>
+      <div
+        className={cn(
+          "grid gap-2 sm:gap-3",
+          computedColumns,
+          layout === "list" && "sm:gap-2"
+        )}
+      >
         {options.map((option) => {
           const selected = option.value === value;
           const IconComponent = option.icon;
@@ -264,6 +275,7 @@ function OptionGrid({
               aria-pressed={selected}
               className={cn(
                 "rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-0",
+                layout === "list" && "w-full",
                 selected
                   ? "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
                   : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
@@ -274,7 +286,12 @@ function OptionGrid({
                 {option.label}
               </span>
               {showDescriptions && option.description ? (
-                <span className="mt-1 hidden text-[11px] leading-snug text-zinc-400 sm:block">
+                <span
+                  className={cn(
+                    "mt-1 text-[11px] leading-snug text-zinc-400",
+                    layout !== "list" && "hidden sm:block"
+                  )}
+                >
                   {option.description}
                 </span>
               ) : null}
@@ -282,7 +299,7 @@ function OptionGrid({
           );
         })}
       </div>
-      {showDescriptions && selectedOption?.description ? (
+      {showDescriptions && layout !== "list" && selectedOption?.description ? (
         <p className="text-[11px] leading-snug text-zinc-400 sm:hidden">
           {selectedOption.description}
         </p>
@@ -741,7 +758,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   onChange={(value) =>
                     setFormData({ ...formData, priority: value })
                   }
-                  showDescriptions={false}
+                  layout="list"
                 />
               </div>
               <div className="space-y-3">
@@ -754,7 +771,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   onChange={(value) =>
                     setFormData({ ...formData, energy: value })
                   }
-                  showDescriptions={false}
+                  layout="list"
                 />
               </div>
             </div>
