@@ -231,18 +231,10 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
           <div className="space-y-6">
             <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
-              <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-white/60">
-                    Goals
-                  </p>
-                  <h2 className="text-lg font-semibold text-white sm:text-xl">
-                    Linked goals
-                  </h2>
-                  <p className="text-xs text-white/70 sm:text-sm">
-                    Keep adjacent work in sync so progress feels coordinated and effortless.
-                  </p>
-                </div>
+              <header className="relative flex items-center justify-between">
+                <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+                  GOALS
+                </h2>
                 <Button
                   size="sm"
                   variant="outline"
@@ -252,11 +244,12 @@ export function MonumentDetail({ id }: MonumentDetailProps) {
                   New goal
                 </Button>
               </header>
-              <div className="relative mt-5">
+              <div className="relative mt-4">
                 <FilteredGoalsGrid
                   entity="monument"
                   id={id}
                   onCreateGoal={handleCreateGoal}
+                  displayMode="minimal"
                 />
               </div>
             </section>
