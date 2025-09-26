@@ -1,20 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { ENERGY } from "@/lib/scheduler/config";
 import { buildProjectItems, type ProjectItem } from "@/lib/scheduler/projects";
-import {
-  fetchAllWindows,
-  fetchProjectsMap,
-  fetchReadyTasks,
-  type WindowLite,
-} from "@/lib/scheduler/repo";
+import { type WindowLite } from "@/lib/scheduler/repo";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
-import type { ProjectLite, TaskLite } from "@/lib/scheduler/weight";
 import { toLocal } from "@/lib/time/tz";
+import { useSchedulerMeta } from "@/lib/scheduler/useSchedulerMeta";
 
 const GAP_THRESHOLD_MINUTES = 1;
 
@@ -28,10 +23,8 @@ type ScheduleDraft = {
   placed: ScheduleInstance[];
   failures: SchedulerFailure[];
   error?: unknown;
-  timeline: DraftPlacementEntry[];
+  timeline: PreparedPlacementEntry[];
 };
-
-type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 type DraftPlacementEntry = {
   instance: ScheduleInstance;
@@ -40,6 +33,14 @@ type DraftPlacementEntry = {
   availableStartLocal?: string | null;
   windowStartLocal?: string | null;
   scheduledDayOffset?: number | null;
+};
+
+type PreparedPlacementEntry = DraftPlacementEntry & {
+  start: Date;
+  end: Date;
+  durationMin: number;
+  availableStartLocalDate: Date | null;
+  windowStartLocalDate: Date | null;
 };
 
 type PlacementView = {
@@ -74,50 +75,8 @@ export default function SchedulerPage() {
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
 
-  const [metaStatus, setMetaStatus] = useState<LoadStatus>("idle");
-  const [metaError, setMetaError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<ProjectLite[]>([]);
-  const [tasks, setTasks] = useState<TaskLite[]>([]);
-  const [windows, setWindows] = useState<WindowLite[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    setMetaStatus("loading");
-    setMetaError(null);
-
-    async function loadMeta() {
-      try {
-        const [taskList, projectMap, windowList] = await Promise.all([
-          fetchReadyTasks(),
-          fetchProjectsMap(),
-          fetchAllWindows(),
-        ]);
-        if (!active) return;
-        setTasks(taskList);
-        setProjects(Object.values(projectMap));
-        setWindows(windowList);
-        setMetaStatus("loaded");
-      } catch (metaErr) {
-        if (!active) return;
-        console.error("Failed to load scheduler context", metaErr);
-        setMetaError(
-          metaErr instanceof Error
-            ? metaErr.message
-            : "Failed to load scheduler context",
-        );
-        setTasks([]);
-        setProjects([]);
-        setWindows([]);
-        setMetaStatus("error");
-      }
-    }
-
-    void loadMeta();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { tasks, projects, windowMap, status: metaStatus, error: metaError } =
+    useSchedulerMeta();
 
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
@@ -132,64 +91,39 @@ export default function SchedulerPage() {
     return map;
   }, [projectItems]);
 
-  const windowMap = useMemo(() => {
-    const map: Record<string, WindowLite> = {};
-    for (const window of windows) {
-      map[window.id] = window;
-    }
-    return map;
-  }, [windows]);
-
   const placements = useMemo<PlacementView[]>(() => {
     if (!scheduleDraft) return [];
-    return scheduleDraft.timeline
-      .map(entry => {
-        const { instance, decision } = entry;
-        if (!instance || typeof instance !== "object") return null;
-        if (typeof instance.start_utc !== "string") return null;
-        if (typeof instance.end_utc !== "string") return null;
-        const start = toLocal(instance.start_utc);
-        const end = toLocal(instance.end_utc);
-        const durationMin = Math.max(
-          0,
-          Math.round((end.getTime() - start.getTime()) / 60000),
-        );
-        const projectId = typeof instance.source_id === "string"
+    return scheduleDraft.timeline.map(entry => {
+      const { instance, decision, start, end, durationMin } = entry;
+      const projectId =
+        typeof instance.source_id === "string" && instance.source_id
           ? instance.source_id
           : entry.projectId;
-        const project = projectId ? projectMap[projectId] : undefined;
-        const window =
-          typeof instance.window_id === "string"
-            ? windowMap[instance.window_id]
-            : undefined;
-        const availableStartLocal = entry.availableStartLocal
-          ? new Date(entry.availableStartLocal)
-          : null;
-        const windowStartLocal = entry.windowStartLocal
-          ? new Date(entry.windowStartLocal)
-          : null;
-        const reason = describePlacementReason({
-          decision,
-          project,
-          window,
-          instance,
-          start,
-          availableStartLocal,
-          windowStartLocal,
-        });
-        return {
-          instance,
-          project,
-          window,
-          start,
-          end,
-          durationMin,
-          decision,
-          reason,
-        };
-      })
-      .filter((placement): placement is PlacementView => placement !== null)
-      .sort((a, b) => a.start.getTime() - b.start.getTime());
+      const project = projectId ? projectMap[projectId] : undefined;
+      const window =
+        typeof instance.window_id === "string"
+          ? windowMap[instance.window_id]
+          : undefined;
+      const reason = describePlacementReason({
+        decision,
+        project,
+        window,
+        instance,
+        start,
+        availableStartLocal: entry.availableStartLocalDate,
+        windowStartLocal: entry.windowStartLocalDate,
+      });
+      return {
+        instance,
+        project,
+        window,
+        start,
+        end,
+        durationMin,
+        decision,
+        reason,
+      };
+    });
   }, [scheduleDraft, projectMap, windowMap]);
 
   const failureDetails = useMemo(() => {
@@ -610,12 +544,15 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
 
   const error = payload.error;
 
-  const timeline: DraftPlacementEntry[] = Array.isArray(payload.timeline)
+  const timeline: PreparedPlacementEntry[] = Array.isArray(payload.timeline)
     ? payload.timeline
         .map(toDraftPlacementEntry)
+        .filter((item): item is DraftPlacementEntry => item !== null)
+        .map(prepareDraftPlacementEntry)
         .filter(
-          (item): item is DraftPlacementEntry => item !== null,
+          (item): item is PreparedPlacementEntry => item !== null,
         )
+        .sort((a, b) => a.start.getTime() - b.start.getTime())
     : [];
 
   if (placed.length === 0 && failures.length === 0 && !error && timeline.length === 0) {
@@ -684,6 +621,51 @@ function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
       typeof record.scheduledDayOffset === "number"
         ? record.scheduledDayOffset
         : null,
+  };
+}
+
+function prepareDraftPlacementEntry(
+  entry: DraftPlacementEntry,
+): PreparedPlacementEntry | null {
+  const { instance } = entry;
+  if (typeof instance.start_utc !== "string") return null;
+  if (typeof instance.end_utc !== "string") return null;
+
+  const start = toLocal(instance.start_utc);
+  const end = toLocal(instance.end_utc);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
+  const durationMin = Math.max(
+    0,
+    Math.round((end.getTime() - start.getTime()) / 60000),
+  );
+
+  const availableStartLocalDate = entry.availableStartLocal
+    ? new Date(entry.availableStartLocal)
+    : null;
+  const windowStartLocalDate = entry.windowStartLocal
+    ? new Date(entry.windowStartLocal)
+    : null;
+
+  const validAvailable =
+    availableStartLocalDate &&
+    !Number.isNaN(availableStartLocalDate.getTime())
+      ? availableStartLocalDate
+      : null;
+  const validWindowStart =
+    windowStartLocalDate && !Number.isNaN(windowStartLocalDate.getTime())
+      ? windowStartLocalDate
+      : null;
+
+  return {
+    ...entry,
+    start,
+    end,
+    durationMin,
+    availableStartLocalDate: validAvailable,
+    windowStartLocalDate: validWindowStart,
   };
 }
 

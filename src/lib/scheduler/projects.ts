@@ -14,20 +14,68 @@ export type ProjectItem = ProjectLite & {
   skill_icon?: string | null
 }
 
+const normEnergy = (e?: string | null): Energy | null => {
+  const up = (e ?? '').toUpperCase()
+  return ENERGY.LIST.includes(up as Energy) ? (up as Energy) : null
+}
+
+const mergeEnergy = (a: Energy | null, b: Energy | null): Energy | null => {
+  if (!a) return b ?? null
+  if (!b) return a
+  return ENERGY.LIST.indexOf(b) > ENERGY.LIST.indexOf(a) ? b : a
+}
+
+type TaskAggregates = {
+  durationSum: number
+  weightSum: number
+  energy: Energy | null
+  skill_icon: string | null
+  count: number
+}
+
 export function buildProjectItems(
   projects: ProjectLite[],
   tasks: TaskLite[]
 ): ProjectItem[] {
+  const aggregates = new Map<ProjectLite['id'], TaskAggregates>()
+
+  for (const task of tasks) {
+    const projectId = task.project_id
+    if (projectId == null) continue
+
+    const existing = aggregates.get(projectId) ?? {
+      durationSum: 0,
+      weightSum: 0,
+      energy: null,
+      skill_icon: null,
+      count: 0,
+    }
+
+    const duration = Number(task.duration_min ?? 0)
+    const energy = normEnergy(task.energy)
+    const skillIcon = existing.skill_icon ?? task.skill_icon ?? null
+
+    const updated: TaskAggregates = {
+      durationSum: existing.durationSum + (Number.isFinite(duration) ? duration : 0),
+      weightSum: existing.weightSum + taskWeight(task),
+      energy: mergeEnergy(existing.energy, energy),
+      skill_icon: skillIcon,
+      count: existing.count + 1,
+    }
+
+    aggregates.set(projectId, updated)
+  }
+
   const items: ProjectItem[] = []
   for (const p of projects) {
-    const related = tasks.filter(t => t.project_id === p.id)
+    const related = aggregates.get(p.id)
     const projectDuration = Number(p.duration_min ?? 0)
     let duration_min = Number.isFinite(projectDuration) && projectDuration > 0
       ? projectDuration
       : 0
 
-    if (!duration_min && related.length > 0) {
-      const relatedDuration = related.reduce((sum, t) => sum + t.duration_min, 0)
+    if (!duration_min && related) {
+      const relatedDuration = related.durationSum
       if (relatedDuration > 0) {
         duration_min = relatedDuration
       }
@@ -36,32 +84,20 @@ export function buildProjectItems(
     if (!duration_min) {
       duration_min = DEFAULT_PROJECT_DURATION_MIN
     }
-    const norm = (e?: string | null): Energy | null => {
-      const up = (e ?? '').toUpperCase()
-      return ENERGY.LIST.includes(up as Energy) ? (up as Energy) : null
-    }
+
     const energy =
-      related.reduce<Energy | null>((acc, t) => {
-        const current = norm(t.energy)
-        if (!current) return acc
-        if (!acc) return current
-        return ENERGY.LIST.indexOf(current) > ENERGY.LIST.indexOf(acc)
-          ? current
-          : acc
-      }, norm(p.energy)) ?? DEFAULT_PROJECT_ENERGY
-    const relatedWeightSum = related.reduce(
-      (sum, t) => sum + taskWeight(t),
-      0
-    )
-    const weight = projectWeight(p, relatedWeightSum)
-    const skill_icon = related.find(t => t.skill_icon)?.skill_icon ?? null
+      mergeEnergy(normEnergy(p.energy), related?.energy ?? null) ??
+      DEFAULT_PROJECT_ENERGY
+
+    const weight = projectWeight(p, related?.weightSum ?? 0)
+    const skill_icon = related?.skill_icon ?? null
     items.push({
       ...p,
       name: p.name ?? '',
       duration_min,
       energy,
       weight,
-      taskCount: related.length,
+      taskCount: related?.count ?? 0,
       skill_icon,
     })
   }
