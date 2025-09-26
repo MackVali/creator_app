@@ -78,7 +78,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           }
 
           if (child.type === SelectItem && child.props.value === value) {
-            match = getLabelText(child.props.children);
+            match = child.props.label ?? getLabelText(child.props.children);
           } else if (child.props && "children" in child.props) {
             match = findLabel(child.props.children);
           }
@@ -190,11 +190,12 @@ interface SelectItemProps {
   onSelect?: (value: string, label: string) => void;
   selectedValue?: string;
   className?: string;
+  label?: string;
 }
 
 const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
-  ({ value, children, onSelect, selectedValue, className }, ref) => {
-    const labelText = getLabelText(children);
+  ({ value, children, onSelect, selectedValue, className, label }, ref) => {
+    const labelText = label ?? getLabelText(children);
 
     return (
       <div

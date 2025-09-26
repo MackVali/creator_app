@@ -9,7 +9,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  Check,
   CheckSquare,
   FolderKanban,
   Repeat,
@@ -56,12 +55,12 @@ type ChoiceOption = {
 };
 
 const PRIORITY_OPTIONS: ChoiceOption[] = [
-  { value: "NO", label: "No Priority", description: "Backlog or nice-to-have." },
-  { value: "LOW", label: "Low", description: "Good to do when time allows." },
-  { value: "MEDIUM", label: "Medium", description: "Important, but not urgent." },
-  { value: "HIGH", label: "High", description: "Time-sensitive and meaningful." },
-  { value: "CRITICAL", label: "Critical", description: "Blocks progress elsewhere." },
-  { value: "ULTRA-CRITICAL", label: "Ultra-Critical", description: "Drop everything else." },
+  { value: "NO", label: "No Priority" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Medium" },
+  { value: "HIGH", label: "High" },
+  { value: "CRITICAL", label: "Critical" },
+  { value: "ULTRA-CRITICAL", label: "Ultra-Critical" },
 ];
 
 const renderFlameIcon = (level: FlameLevel) => {
@@ -76,37 +75,31 @@ const ENERGY_OPTIONS: ChoiceOption[] = [
   {
     value: "NO",
     label: "No Energy",
-    description: "Light lift or admin work.",
     renderIcon: renderFlameIcon("NO"),
   },
   {
     value: "LOW",
     label: "Low",
-    description: "Can handle even on slow days.",
     renderIcon: renderFlameIcon("LOW"),
   },
   {
     value: "MEDIUM",
     label: "Medium",
-    description: "Requires steady focus.",
     renderIcon: renderFlameIcon("MEDIUM"),
   },
   {
     value: "HIGH",
     label: "High",
-    description: "Deep work or complex effort.",
     renderIcon: renderFlameIcon("HIGH"),
   },
   {
     value: "ULTRA",
     label: "Ultra",
-    description: "Demanding, plan carefully.",
     renderIcon: renderFlameIcon("ULTRA"),
   },
   {
     value: "EXTREME",
     label: "Extreme",
-    description: "Only when you are fully charged.",
     renderIcon: renderFlameIcon("EXTREME"),
   },
 ];
@@ -220,6 +213,7 @@ interface OptionGridProps {
   className?: string;
   columnsClassName?: string;
   showDescriptions?: boolean;
+  layout?: "grid" | "list";
 }
 
 function OptionGrid({
@@ -229,18 +223,28 @@ function OptionGrid({
   className,
   columnsClassName,
   showDescriptions = true,
+  layout = "grid",
 }: OptionGridProps) {
-  const computedColumns = columnsClassName
-    ? columnsClassName
-    : options.length > 4
-    ? "grid-cols-2 sm:grid-cols-3"
-    : "grid-cols-2 sm:grid-cols-2";
+  const computedColumns =
+    layout === "list"
+      ? "grid-cols-1"
+      : columnsClassName
+      ? columnsClassName
+      : options.length > 4
+      ? "grid-cols-2 sm:grid-cols-3"
+      : "grid-cols-2 sm:grid-cols-2";
 
   const selectedOption = options.find((option) => option.value === value);
 
   return (
     <div className={cn("space-y-2", className)}>
-      <div className={cn("grid gap-2 sm:gap-3", computedColumns)}>
+      <div
+        className={cn(
+          "grid gap-2 sm:gap-3",
+          computedColumns,
+          layout === "list" && "sm:gap-2"
+        )}
+      >
         {options.map((option) => {
           const selected = option.value === value;
           const IconComponent = option.icon;
@@ -265,6 +269,7 @@ function OptionGrid({
               aria-pressed={selected}
               className={cn(
                 "rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-0",
+                layout === "list" && "w-full",
                 selected
                   ? "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
                   : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
@@ -275,7 +280,12 @@ function OptionGrid({
                 {option.label}
               </span>
               {showDescriptions && option.description ? (
-                <span className="mt-1 hidden text-[11px] leading-snug text-zinc-400 sm:block">
+                <span
+                  className={cn(
+                    "mt-1 text-[11px] leading-snug text-zinc-400",
+                    layout !== "list" && "hidden sm:block"
+                  )}
+                >
                   {option.description}
                 </span>
               ) : null}
@@ -283,7 +293,7 @@ function OptionGrid({
           );
         })}
       </div>
-      {showDescriptions && selectedOption?.description ? (
+      {showDescriptions && layout !== "list" && selectedOption?.description ? (
         <p className="text-[11px] leading-snug text-zinc-400 sm:hidden">
           {selectedOption.description}
         </p>
@@ -292,83 +302,66 @@ function OptionGrid({
   );
 }
 
-interface ChoiceDropdownProps {
+interface OptionDropdownProps {
   value: string;
   options: ChoiceOption[];
   onChange: (value: string) => void;
-  placeholder: string;
-  helperText?: string;
-  showDescriptions?: boolean;
+  placeholder?: string;
 }
 
-function ChoiceDropdown({
+function OptionDropdown({
   value,
   options,
   onChange,
   placeholder,
-  helperText,
-  showDescriptions = true,
-}: ChoiceDropdownProps) {
-  const selectedOption = options.find((option) => option.value === value);
-
+}: OptionDropdownProps) {
   return (
-    <div className="space-y-2">
-      <Select
-        value={value}
-        onValueChange={onChange}
-        placeholder={placeholder}
-        className="w-full"
-      >
-        <SelectContent>
-          {options.map((option) => {
-            const isActive = option.value === value;
-            const IconComponent = option.icon;
-            const iconNode = option.renderIcon
-              ? option.renderIcon(isActive)
-              : IconComponent
-              ? (
-                  <IconComponent
-                    className={cn(
-                      "h-4 w-4",
-                      option.iconClassName ??
-                        (isActive ? "text-blue-400" : "text-zinc-400")
-                    )}
-                  />
-                )
-              : null;
-            return (
-              <SelectItem
-                key={option.value}
-                value={option.value}
-                className="items-start justify-between gap-3"
-              >
+    <Select value={value} onValueChange={onChange} placeholder={placeholder}>
+      <SelectContent>
+        {options.map((option) => {
+          const selected = option.value === value;
+          const IconComponent = option.icon;
+          const iconNode = option.renderIcon
+            ? option.renderIcon(selected)
+            : IconComponent
+            ? (
+                <IconComponent
+                  className={cn(
+                    "h-4 w-4",
+                    option.iconClassName ??
+                      (selected ? "text-blue-400" : "text-zinc-400")
+                  )}
+                />
+              )
+            : null;
+
+          return (
+            <SelectItem
+              key={option.value}
+              value={option.value}
+              label={option.label}
+              className="rounded-lg border border-transparent px-3 py-2.5 text-left transition hover:border-white/10"
+            >
+              <div className="flex items-start gap-3">
+                {iconNode ? (
+                  <span className="mt-0.5 text-zinc-400">{iconNode}</span>
+                ) : null}
                 <div className="flex flex-col">
-                  <span className="flex items-center gap-2 text-sm font-medium text-white">
-                    {iconNode}
+                  <span className="text-sm font-semibold text-white">
                     {option.label}
                   </span>
-                  {showDescriptions && option.description ? (
+                  {option.description ? (
                     <span className="text-xs text-zinc-400">
                       {option.description}
                     </span>
                   ) : null}
                 </div>
-                <span className="mt-1">
-                  {isActive ? (
-                    <Check className="h-4 w-4 text-blue-400" />
-                  ) : null}
-                </span>
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-      {showDescriptions ? (
-        <p className="text-xs text-zinc-500">
-          {selectedOption?.description ?? helperText ?? "Select an option"}
-        </p>
-      ) : null}
-    </div>
+              </div>
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -544,15 +537,27 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           alert("Please select a project for your task");
           return;
         }
+        if (!formData.skill_id) {
+          toast.error(
+            "Skill Required",
+            "Choose the skill this task will advance."
+          );
+          return;
+        }
         insertData.project_id = formData.project_id;
         insertData.stage = formData.stage;
-        if (formData.skill_id) {
-          insertData.skill_id = formData.skill_id;
-        }
+        insertData.skill_id = formData.skill_id;
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
         insertData.recurrence = formData.recurrence;
-      } else if (eventType === "GOAL" && formData.monument_id) {
+      } else if (eventType === "GOAL") {
+        if (!formData.monument_id) {
+          toast.error(
+            "Monument Required",
+            "Select a monument to ground this goal."
+          );
+          return;
+        }
         insertData.monument_id = formData.monument_id;
       }
 
@@ -799,86 +804,53 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           </FormSection>
 
           <FormSection title="Intensity" description={intensityDescription}>
-            {eventType === "GOAL" ? (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Priority
-                  </p>
-                  <ChoiceDropdown
-                    value={formData.priority}
-                    options={PRIORITY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, priority: value })
-                    }
-                    placeholder="Select priority"
-                    showDescriptions={false}
-                  />
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Energy
-                  </p>
-                  <ChoiceDropdown
-                    value={formData.energy}
-                    options={ENERGY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, energy: value })
-                    }
-                    placeholder="Select energy"
-                    showDescriptions={false}
-                  />
-                </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Priority
+                </Label>
+                <OptionDropdown
+                  value={formData.priority}
+                  options={PRIORITY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, priority: value })
+                  }
+                  placeholder="Select priority..."
+                />
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Priority
-                  </p>
-                  <OptionGrid
-                    value={formData.priority}
-                    options={PRIORITY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, priority: value })
-                    }
-                    showDescriptions={false}
-                  />
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Energy
-                  </p>
-                  <OptionGrid
-                    value={formData.energy}
-                    options={ENERGY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, energy: value })
-                    }
-                    showDescriptions={false}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Energy
+                </Label>
+                <OptionDropdown
+                  value={formData.energy}
+                  options={ENERGY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, energy: value })
+                  }
+                  placeholder="Select energy..."
+                />
               </div>
-            )}
+            </div>
           </FormSection>
 
           {eventType === "GOAL" ? (
             <FormSection
-              title="Connections"
-              description="Link this goal to a monument to celebrate progress."
+              title="Relations"
+              description="Link this goal to a monument so the progress has a home."
             >
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Monument (optional)
+                  Monument
                 </Label>
                 <Select
                   value={formData.monument_id}
                   onValueChange={(value) =>
                     setFormData({ ...formData, monument_id: value })
                   }
+                  placeholder="Select monument..."
                 >
                   <SelectContent>
-                    <SelectItem value="">No monument</SelectItem>
                     {monuments.map((monument) => (
                       <SelectItem key={monument.id} value={monument.id}>
                         {monument.title}
@@ -888,8 +860,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 </Select>
                 {monuments.length === 0 ? (
                   <p className="text-xs text-zinc-500">
-                    You can connect goals to monuments once you’ve created
-                    them.
+                    Create a monument first to connect this goal.
                   </p>
                 ) : null}
               </div>
@@ -1077,16 +1048,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                    Skill (optional)
+                    Skill
                   </Label>
                   <Select
                     value={formData.skill_id}
                     onValueChange={(value) =>
                       setFormData({ ...formData, skill_id: value })
                     }
+                    placeholder="Select skill..."
                   >
                     <SelectContent>
-                      <SelectItem value="">No specific skill</SelectItem>
                       {skills.map((skill) => (
                         <SelectItem key={skill.id} value={skill.id}>
                           {skill.name}
@@ -1094,6 +1065,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {skills.length === 0 ? (
+                    <p className="text-xs text-zinc-500">
+                      Add skills to your workspace to connect tasks to them.
+                    </p>
+                  ) : null}
                 </div>
               </FormSection>
 
