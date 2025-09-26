@@ -9,7 +9,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  Check,
   CheckSquare,
   FolderKanban,
   Repeat,
@@ -286,86 +285,6 @@ function OptionGrid({
       {showDescriptions && selectedOption?.description ? (
         <p className="text-[11px] leading-snug text-zinc-400 sm:hidden">
           {selectedOption.description}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-interface ChoiceDropdownProps {
-  value: string;
-  options: ChoiceOption[];
-  onChange: (value: string) => void;
-  placeholder: string;
-  helperText?: string;
-  showDescriptions?: boolean;
-}
-
-function ChoiceDropdown({
-  value,
-  options,
-  onChange,
-  placeholder,
-  helperText,
-  showDescriptions = true,
-}: ChoiceDropdownProps) {
-  const selectedOption = options.find((option) => option.value === value);
-
-  return (
-    <div className="space-y-2">
-      <Select
-        value={value}
-        onValueChange={onChange}
-        placeholder={placeholder}
-        className="w-full"
-      >
-        <SelectContent>
-          {options.map((option) => {
-            const isActive = option.value === value;
-            const IconComponent = option.icon;
-            const iconNode = option.renderIcon
-              ? option.renderIcon(isActive)
-              : IconComponent
-              ? (
-                  <IconComponent
-                    className={cn(
-                      "h-4 w-4",
-                      option.iconClassName ??
-                        (isActive ? "text-blue-400" : "text-zinc-400")
-                    )}
-                  />
-                )
-              : null;
-            return (
-              <SelectItem
-                key={option.value}
-                value={option.value}
-                className="items-start justify-between gap-3"
-              >
-                <div className="flex flex-col">
-                  <span className="flex items-center gap-2 text-sm font-medium text-white">
-                    {iconNode}
-                    {option.label}
-                  </span>
-                  {showDescriptions && option.description ? (
-                    <span className="text-xs text-zinc-400">
-                      {option.description}
-                    </span>
-                  ) : null}
-                </div>
-                <span className="mt-1">
-                  {isActive ? (
-                    <Check className="h-4 w-4 text-blue-400" />
-                  ) : null}
-                </span>
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-      {showDescriptions ? (
-        <p className="text-xs text-zinc-500">
-          {selectedOption?.description ?? helperText ?? "Select an option"}
         </p>
       ) : null}
     </div>
@@ -811,67 +730,34 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           </FormSection>
 
           <FormSection title="Intensity" description={intensityDescription}>
-            {eventType === "GOAL" ? (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Priority
-                  </p>
-                  <ChoiceDropdown
-                    value={formData.priority}
-                    options={PRIORITY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, priority: value })
-                    }
-                    placeholder="Select priority"
-                    showDescriptions={false}
-                  />
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Energy
-                  </p>
-                  <ChoiceDropdown
-                    value={formData.energy}
-                    options={ENERGY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, energy: value })
-                    }
-                    placeholder="Select energy"
-                    showDescriptions={false}
-                  />
-                </div>
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                  Priority
+                </p>
+                <OptionGrid
+                  value={formData.priority}
+                  options={PRIORITY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, priority: value })
+                  }
+                  showDescriptions={false}
+                />
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Priority
-                  </p>
-                  <OptionGrid
-                    value={formData.priority}
-                    options={PRIORITY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, priority: value })
-                    }
-                    showDescriptions={false}
-                  />
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Energy
-                  </p>
-                  <OptionGrid
-                    value={formData.energy}
-                    options={ENERGY_OPTIONS}
-                    onChange={(value) =>
-                      setFormData({ ...formData, energy: value })
-                    }
-                    showDescriptions={false}
-                  />
-                </div>
+              <div className="space-y-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                  Energy
+                </p>
+                <OptionGrid
+                  value={formData.energy}
+                  options={ENERGY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, energy: value })
+                  }
+                  showDescriptions={false}
+                />
               </div>
-            )}
+            </div>
           </FormSection>
 
           {eventType === "GOAL" ? (
