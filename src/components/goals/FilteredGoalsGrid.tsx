@@ -15,6 +15,7 @@ interface FilteredGoalsGridProps {
   entity: "monument" | "skill";
   id: string;
   onCreateGoal?: () => void;
+  displayMode?: "default" | "minimal";
 }
 
 function GridSkeleton() {
@@ -92,11 +93,17 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
   }
 }
 
-export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGridProps) {
+export function FilteredGoalsGrid({
+  entity,
+  id,
+  onCreateGoal,
+  displayMode = "default",
+}: FilteredGoalsGridProps) {
   const { goals, loading: goalsLoading, error } = useFilteredGoals({ entity, id, limit: 12 });
   const [active, setActive] = useState("Active");
   const [goalFolders, setGoalFolders] = useState<Goal[]>([]);
   const [projLoading, setProjLoading] = useState(true);
+  const isMinimal = displayMode === "minimal";
 
   const matchesFilter = (goal: Goal) => {
     const status = goal.status ?? (goal.active === false ? "Inactive" : "Active");
@@ -179,7 +186,7 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
   }, [goals, goalsLoading]);
 
   const loading = goalsLoading || projLoading;
-  const filteredGoalFolders = goalFolders.filter(matchesFilter);
+  const filteredGoalFolders = isMinimal ? goalFolders : goalFolders.filter(matchesFilter);
   const hasGoals = goalFolders.length > 0;
   const hasFilteredGoals = filteredGoalFolders.length > 0;
   const emptyStateMessage =
@@ -192,6 +199,24 @@ export function FilteredGoalsGrid({ entity, id, onCreateGoal }: FilteredGoalsGri
       : active === "Blocked"
       ? "No blocked goals right now."
       : "No completed goals yet.";
+
+  if (isMinimal) {
+    if (loading) {
+      return <GridSkeleton />;
+    }
+
+    if (error || !hasGoals || !hasFilteredGoals) {
+      return null;
+    }
+
+    return (
+      <div className="grid grid-cols-1 justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {filteredGoalFolders.map((goal) => (
+          <GoalFolderCard key={goal.id} goal={goal} size={0.52} />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -10,7 +10,7 @@ export default function ActivityPanel() {
         </p>
         <h3 className="text-lg font-semibold text-white sm:text-xl">Recent progress</h3>
         <p className="text-xs text-white/70 sm:text-sm">
-          As you add milestones, notes, or goals, updates will collect here.
+          As you add notes or goals, updates will collect here.
         </p>
       </div>
       <div className="relative mt-6 rounded-2xl border border-dashed border-white/20 bg-white/5 px-5 py-6 text-sm text-white/70">
