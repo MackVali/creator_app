@@ -5,12 +5,14 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   CheckSquare,
+  ChevronDown,
   FolderKanban,
   Repeat,
   Sparkles,
@@ -204,6 +206,174 @@ function FormSection({ title, description, children }: FormSectionProps) {
       </div>
       <div className="mt-4 space-y-4">{children}</div>
     </section>
+  );
+}
+
+interface SkillMultiSelectProps {
+  skills: Skill[];
+  selectedIds: string[];
+  onToggle: (skillId: string) => void;
+}
+
+function SkillMultiSelect({
+  skills,
+  selectedIds,
+  onToggle,
+}: SkillMultiSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchTerm("");
+    }
+  }, [isOpen]);
+
+  const sortedSkills = useMemo(
+    () =>
+      [...skills].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      ),
+    [skills]
+  );
+
+  const filteredSkills = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) {
+      return sortedSkills;
+    }
+
+    return sortedSkills.filter((skill) =>
+      skill.name.toLowerCase().includes(query)
+    );
+  }, [sortedSkills, searchTerm]);
+
+  const selectedSkills = useMemo(
+    () => sortedSkills.filter((skill) => selectedIds.includes(skill.id)),
+    [sortedSkills, selectedIds]
+  );
+
+  const hasSkills = sortedSkills.length > 0;
+
+  useEffect(() => {
+    if (!hasSkills) {
+      setIsOpen(false);
+    }
+  }, [hasSkills]);
+
+  const summaryText = hasSkills
+    ? selectedSkills.length === 0
+      ? "Select skills..."
+      : selectedSkills.length <= 2
+      ? selectedSkills.map((skill) => skill.name).join(", ")
+      : `${selectedSkills.length} skills selected`
+    : "No skills available";
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => hasSkills && setIsOpen((prev) => !prev)}
+        disabled={!hasSkills}
+        className={cn(
+          "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60",
+          isOpen && hasSkills && "border-blue-400/70"
+        )}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+      >
+        <span className="block truncate text-left">{summaryText}</span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 opacity-50 transition-transform",
+            isOpen && "rotate-180"
+          )}
+        />
+      </button>
+      {isOpen && hasSkills ? (
+        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0f172a] shadow-xl shadow-black/40">
+          <div className="p-2">
+            <Input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search skills..."
+              className="h-9 border-white/10 bg-white/[0.02] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus:outline-none focus:ring-0"
+              autoFocus
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            {filteredSkills.length > 0 ? (
+              filteredSkills.map((skill) => {
+                const isSelected = selectedIds.includes(skill.id);
+                return (
+                  <button
+                    key={skill.id}
+                    type="button"
+                    onClick={() => onToggle(skill.id)}
+                    className={cn(
+                      "flex w-full items-center justify-between px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5",
+                      isSelected && "bg-blue-500/15 text-white"
+                    )}
+                  >
+                    <span>{skill.name}</span>
+                    {isSelected ? (
+                      <CheckSquare className="h-4 w-4 text-blue-400" />
+                    ) : null}
+                  </button>
+                );
+              })
+            ) : (
+              <p className="px-3 py-2 text-xs text-zinc-500">
+                No skills match your search.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : null}
+      {selectedSkills.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {selectedSkills.map((skill) => (
+            <Badge
+              key={skill.id}
+              variant="outline"
+              className="border-white/15 bg-white/[0.05] px-3 py-1 text-xs text-zinc-100"
+            >
+              {skill.name}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -404,6 +574,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [taskSkillSearch, setTaskSkillSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
@@ -455,6 +626,30 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       loadFormData();
     }
   }, [isOpen, mounted, eventType, loadFormData]);
+
+  const sortedSkills = useMemo(
+    () =>
+      [...skills].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      ),
+    [skills]
+  );
+
+  const filteredTaskSkills = useMemo(() => {
+    const query = taskSkillSearch.trim().toLowerCase();
+    if (!query) {
+      return sortedSkills;
+    }
+
+    return sortedSkills.filter((skill) =>
+      skill.name.toLowerCase().includes(query)
+    );
+  }, [sortedSkills, taskSkillSearch]);
+
+  const handleTaskSkillSelect = (value: string) => {
+    setFormData((prev) => ({ ...prev, skill_id: value }));
+    setTaskSkillSearch("");
+  };
 
   const handleGoalChange = useCallback(
     async (goalId: string) => {
@@ -1024,36 +1219,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Skills involved
                     </Label>
-                    <div className="flex flex-wrap gap-2">
-                      {skills.length > 0 ? (
-                        skills.map((skill) => {
-                          const selected = formData.skill_ids.includes(
-                            skill.id
-                          );
-                          return (
-                            <button
-                              key={skill.id}
-                              type="button"
-                              onClick={() => toggleSkill(skill.id)}
-                              className={cn(
-                                "rounded-full border px-3 py-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
-                                selected
-                                  ? "border-blue-400/80 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.25)]"
-                                  : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
-                              )}
-                              aria-pressed={selected}
-                            >
-                              {skill.name}
-                            </button>
-                          );
-                        })
-                      ) : (
-                        <p className="text-xs text-zinc-500">
-                          Skills will appear here once you’ve added them to
-                          your workspace.
-                        </p>
-                      )}
-                    </div>
+                    <SkillMultiSelect
+                      skills={sortedSkills}
+                      selectedIds={formData.skill_ids}
+                      onToggle={toggleSkill}
+                    />
+                    {skills.length === 0 ? (
+                      <p className="text-xs text-zinc-500">
+                        Skills will appear here once you’ve added them to your
+                        workspace.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </FormSection>
@@ -1196,17 +1372,34 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   </Label>
                   <Select
                     value={formData.skill_id}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, skill_id: value })
-                    }
+                    onValueChange={handleTaskSkillSelect}
                     placeholder="Select skill..."
                   >
                     <SelectContent>
-                      {skills.map((skill) => (
-                        <SelectItem key={skill.id} value={skill.id}>
-                          {skill.name}
-                        </SelectItem>
-                      ))}
+                      <div className="px-2 py-1.5">
+                        <Input
+                          value={taskSkillSearch}
+                          onChange={(event) =>
+                            setTaskSkillSearch(event.target.value)
+                          }
+                          placeholder="Search skills..."
+                          className="h-9 border-white/10 bg-white/[0.02] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                          autoFocus
+                        />
+                      </div>
+                      {filteredTaskSkills.length > 0 ? (
+                        filteredTaskSkills.map((skill) => (
+                          <SelectItem key={skill.id} value={skill.id}>
+                            {skill.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-xs text-zinc-500">
+                          {skills.length === 0
+                            ? "No skills available. Add skills to your workspace to connect tasks."
+                            : "No skills match your search."}
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
                   {skills.length === 0 ? (
