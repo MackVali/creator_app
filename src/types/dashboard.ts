@@ -31,6 +31,8 @@ export type GoalItem = {
   created_at: string;
   status?: string | null;
   active?: boolean | null;
+  weight_snapshot?: number | null;
+  weight?: number | null;
 };
 
 export type DashboardData = {
