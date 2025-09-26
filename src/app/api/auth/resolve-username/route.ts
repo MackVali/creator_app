@@ -51,18 +51,29 @@ export async function POST(request: Request) {
         .from("profiles")
         .select("user_id")
         .ilike("username", candidate)
-        .maybeSingle();
+        .order("created_at", { ascending: false })
+        .limit(1);
 
       if (profileError) {
         console.error("Failed to fetch profile for username:", profileError);
+
+        // Some older datasets have duplicated usernames which previously
+        // triggered PGRST116 "Results contain 0 rows" errors when using
+        // .maybeSingle(). When we see that PostgREST code we simply try the
+        // next candidate instead of surfacing a hard failure.
+        if (profileError.code === "PGRST116") {
+          continue;
+        }
+
         return NextResponse.json(
           { error: "Authentication service unavailable" },
           { status: 500 }
         );
       }
 
-      if (data?.user_id) {
-        profile = data;
+      const [match] = data ?? [];
+      if (match?.user_id) {
+        profile = match;
         break;
       }
     }
