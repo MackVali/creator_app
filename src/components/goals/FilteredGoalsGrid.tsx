@@ -18,6 +18,13 @@ interface FilteredGoalsGridProps {
   displayMode?: "default" | "minimal";
 }
 
+const PREVIEW_LIMIT = 3;
+const PRIORITY_WEIGHT: Record<Goal["priority"], number> = {
+  High: 3,
+  Medium: 2,
+  Low: 1,
+};
+
 function GridSkeleton() {
   return (
     <div className="grid grid-cols-1 justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -103,6 +110,7 @@ export function FilteredGoalsGrid({
   const [active, setActive] = useState("Active");
   const [goalFolders, setGoalFolders] = useState<Goal[]>([]);
   const [projLoading, setProjLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
   const isMinimal = displayMode === "minimal";
 
   const matchesFilter = (goal: Goal) => {
@@ -129,6 +137,7 @@ export function FilteredGoalsGrid({
       if (!goals || goals.length === 0) {
         setGoalFolders([]);
         setProjLoading(false);
+        setShowAll(false);
         return;
       }
 
@@ -161,11 +170,22 @@ export function FilteredGoalsGrid({
       const mapped: Goal[] = goals.map((g) => {
         const status = goalStatusToStatus(g.status);
         const isActive = g.active ?? status === "Active";
+        const priority = mapPriority(g.priority);
+        const rawWeight =
+          typeof g.weight_snapshot === "number"
+            ? g.weight_snapshot
+            : typeof g.weight === "number"
+            ? g.weight
+            : null;
+        const normalizedWeight =
+          typeof rawWeight === "number" && Number.isFinite(rawWeight)
+            ? rawWeight
+            : null;
 
         return {
           id: g.id,
           title: g.name,
-          priority: mapPriority(g.priority),
+          priority,
           energy: mapEnergy(g.energy),
           progress: 0,
           status,
@@ -173,6 +193,7 @@ export function FilteredGoalsGrid({
           updatedAt: g.created_at,
           projects: projectsByGoal[g.id] || [],
           monumentId: g.monument_id ?? undefined,
+          weight: normalizedWeight ?? PRIORITY_WEIGHT[priority],
         };
       });
 
@@ -184,6 +205,11 @@ export function FilteredGoalsGrid({
       loadProjects();
     }
   }, [goals, goalsLoading]);
+
+  useEffect(() => {
+    if (!isMinimal) return;
+    setShowAll(false);
+  }, [entity, id, goalFolders.length, isMinimal]);
 
   const loading = goalsLoading || projLoading;
   const filteredGoalFolders = isMinimal ? goalFolders : goalFolders.filter(matchesFilter);
@@ -209,11 +235,46 @@ export function FilteredGoalsGrid({
       return null;
     }
 
+    const sortedGoalFolders = [...filteredGoalFolders].sort((a, b) => {
+      const weightDiff = (b.weight ?? 0) - (a.weight ?? 0);
+      if (weightDiff !== 0) {
+        return weightDiff;
+      }
+
+      const aUpdated = Date.parse(a.updatedAt);
+      const bUpdated = Date.parse(b.updatedAt);
+      const bothValid = Number.isFinite(aUpdated) && Number.isFinite(bUpdated);
+      if (bothValid && bUpdated !== aUpdated) {
+        return bUpdated - aUpdated;
+      }
+
+      return a.title.localeCompare(b.title);
+    });
+
+    const hasMoreThanPreview = sortedGoalFolders.length > PREVIEW_LIMIT;
+    const visibleGoals = showAll
+      ? sortedGoalFolders
+      : sortedGoalFolders.slice(0, PREVIEW_LIMIT);
+
     return (
-      <div className="grid grid-cols-1 justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {filteredGoalFolders.map((goal) => (
-          <GoalFolderCard key={goal.id} goal={goal} size={0.52} />
-        ))}
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {visibleGoals.map((goal) => (
+            <GoalFolderCard key={goal.id} goal={goal} size={0.52} />
+          ))}
+        </div>
+        {hasMoreThanPreview ? (
+          <div className="flex justify-center">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 rounded-full border border-white/20 bg-white/5 px-3 text-xs font-medium text-white/70 backdrop-blur transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+              onClick={() => setShowAll((prev) => !prev)}
+            >
+              {showAll ? "Show fewer goals" : "Show all goals"}
+            </Button>
+          </div>
+        ) : null}
       </div>
     );
   }

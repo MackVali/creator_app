@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { GoalItem } from "@/types/dashboard";
 
@@ -34,26 +35,55 @@ export function useFilteredGoals({
     try {
       await supabase.auth.getSession();
 
+      const {
+        data: authData,
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      const userId = authData.user?.id;
+      if (!userId) throw new Error("User not authenticated");
+
       let goalsData: GoalItem[] = [];
+
+      const selectBase =
+        "id,name,priority,energy,monument_id,created_at,status,active";
+      const selectWithWeight = `${selectBase},weight_snapshot,weight`;
+
+      const shouldFallbackToBase = (error: PostgrestError | null) => {
+        if (!error) return false;
+        const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+        return (
+          message.includes("does not exist") &&
+          (message.includes("weight_snapshot") || message.includes("weight"))
+        );
+      };
 
       if (entity === "monument") {
         // Direct query for monument goals
-        const { data, error } = await supabase
-          .from("goals")
-          .select("id,name,priority,energy,monument_id,created_at,status,active")
-          .eq("user_id", (await supabase.auth.getUser()).data.user?.id)
-          .eq("monument_id", id)
-          .order("priority", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(limit);
+        const runQuery = (select: string) =>
+          supabase
+            .from("goals")
+            .select(select)
+            .eq("user_id", userId)
+            .eq("monument_id", id)
+            .order("priority", { ascending: false })
+            .order("created_at", { ascending: false })
+            .limit(limit);
 
-        if (error) throw error;
-        goalsData = data || [];
+        const { data, error } = await runQuery(selectWithWeight);
+
+        if (error && shouldFallbackToBase(error)) {
+          const fallback = await runQuery(selectBase);
+          if (fallback.error) throw fallback.error;
+          goalsData = fallback.data || [];
+        } else {
+          if (error) throw error;
+          goalsData = data || [];
+        }
       } else if (entity === "skill") {
         // Complex query for skill goals via project_skills and tasks
-        const userId = (await supabase.auth.getUser()).data.user?.id;
-        if (!userId) throw new Error("User not authenticated");
-
         // Get distinct goal IDs from both sources
         const goalIds = new Set<string>();
 
@@ -116,17 +146,28 @@ export function useFilteredGoals({
         // Fetch the actual goals data
         if (goalIds.size > 0) {
           const goalIdsArray = Array.from(goalIds);
-          const { data: goalsDataResult, error: goalsError } = await supabase
-            .from("goals")
-            .select("id,name,priority,energy,monument_id,created_at,status,active")
-            .eq("user_id", userId)
-            .in("id", goalIdsArray)
-            .order("priority", { ascending: false })
-            .order("created_at", { ascending: false })
-            .limit(limit);
+          const runSkillQuery = (select: string) =>
+            supabase
+              .from("goals")
+              .select(select)
+              .eq("user_id", userId)
+              .in("id", goalIdsArray)
+              .order("priority", { ascending: false })
+              .order("created_at", { ascending: false })
+              .limit(limit);
 
-          if (goalsError) throw goalsError;
-          goalsData = goalsDataResult || [];
+          const { data: goalsResult, error: goalsError } = await runSkillQuery(
+            selectWithWeight
+          );
+
+          if (goalsError && shouldFallbackToBase(goalsError)) {
+            const fallback = await runSkillQuery(selectBase);
+            if (fallback.error) throw fallback.error;
+            goalsData = fallback.data || [];
+          } else {
+            if (goalsError) throw goalsError;
+            goalsData = goalsResult || [];
+          }
         }
       }
 

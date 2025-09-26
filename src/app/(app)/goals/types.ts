@@ -29,4 +29,5 @@ export interface Goal {
   monumentId?: string | null;
   /** Associated skill IDs */
   skills?: string[];
+  weight?: number;
 }
