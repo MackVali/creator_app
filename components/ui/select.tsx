@@ -5,8 +5,20 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function getLabelText(children: React.ReactNode): string {
-  return React.Children.toArray(children)
-    .map((child) => (typeof child === "string" ? child : ""))
+  const extract = (nodes: React.ReactNode): string[] =>
+    React.Children.toArray(nodes).flatMap((child) => {
+      if (typeof child === "string" || typeof child === "number") {
+        return [String(child)];
+      }
+
+      if (React.isValidElement(child) && "props" in child && child.props) {
+        return extract(child.props.children);
+      }
+
+      return [];
+    });
+
+  return extract(children)
     .join(" ")
     .trim();
 }
@@ -16,10 +28,11 @@ interface SelectProps {
   onValueChange?: (value: string) => void;
   children: React.ReactNode;
   className?: string;
+  placeholder?: string;
 }
 
 const Select = React.forwardRef<HTMLDivElement, SelectProps>(
-  ({ value, onValueChange, children, className }, ref) => {
+  ({ value, onValueChange, children, className, placeholder }, ref) => {
     const [isOpen, setIsOpen] = React.useState(false);
     const [selectedValue, setSelectedValue] = React.useState(value || "");
     const [selectedLabel, setSelectedLabel] = React.useState("");
@@ -96,7 +109,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           )}
         >
           <span className="block truncate">
-            {selectedLabel || "Select option..."}
+            {selectedLabel || placeholder || "Select option..."}
           </span>
           <ChevronDown
             className={cn(
