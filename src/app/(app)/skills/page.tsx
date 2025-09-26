@@ -24,6 +24,10 @@ import {
   Plus,
   MoreVertical,
   ChevronRight,
+  Sparkles,
+  FolderKanban,
+  Goal,
+  Clock3,
 } from "lucide-react";
 
 interface Monument {
@@ -39,43 +43,6 @@ function useDebounce<T>(value: T, delay: number) {
     return () => clearTimeout(handler);
   }, [value, delay]);
   return debounced;
-}
-
-// circular progress ring component
-function CircularProgress({ value }: { value: number }) {
-  const normalized = Math.max(0, Math.min(100, value));
-  const circumference = 2 * Math.PI * 20;
-  const offset = circumference - (normalized / 100) * circumference;
-  return (
-    <div className="relative w-14 h-14">
-      <svg className="w-14 h-14" viewBox="0 0 44 44">
-        <circle
-          className="text-gray-700"
-          strokeWidth="4"
-          stroke="currentColor"
-          fill="transparent"
-          r="20"
-          cx="22"
-          cy="22"
-        />
-        <circle
-          className="text-gray-400"
-          strokeWidth="4"
-          stroke="currentColor"
-          fill="transparent"
-          r="20"
-          cx="22"
-          cy="22"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
-      </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-xs text-gray-100">
-        {normalized}%
-      </span>
-    </div>
-  );
 }
 
 function SkillsPageContent() {
@@ -279,6 +246,66 @@ function SkillsPageContent() {
     }
   };
 
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const totalSkills = skills.length;
+  const totalCategories = categories.length;
+  const createdThisMonth = skills.filter((skill) => {
+    if (!skill.created_at) return false;
+    const createdAt = new Date(skill.created_at);
+    return createdAt >= startOfMonth && createdAt <= now;
+  }).length;
+  const trackedMonuments = skills.reduce((set, skill) => {
+    if (skill.monument_id) {
+      set.add(skill.monument_id);
+    }
+    return set;
+  }, new Set<string>()).size;
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach((category) => {
+      map.set(category.id, category.name);
+    });
+    map.set("uncategorized", "Uncategorized");
+    return map;
+  }, [categories]);
+
+  const monumentLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    monuments.forEach((monument) => {
+      map.set(monument.id, monument.title);
+    });
+    return map;
+  }, [monuments]);
+
+  const heroStats = [
+    {
+      label: "Active skills",
+      value: totalSkills,
+      description: "Skills you're actively tracking and refining.",
+      icon: Sparkles,
+    },
+    {
+      label: "Categories organized",
+      value: totalCategories,
+      description: "Folders giving structure to your practice.",
+      icon: FolderKanban,
+    },
+    {
+      label: "Linked monuments",
+      value: trackedMonuments,
+      description: "Monuments currently tied to your skills.",
+      icon: Goal,
+    },
+    {
+      label: "New this month",
+      value: createdThisMonth,
+      description: "Fresh additions added in the last 30 days.",
+      icon: Clock3,
+    },
+  ];
+
   if (loading) {
     return (
       <div className="p-4 space-y-4">
@@ -292,203 +319,379 @@ function SkillsPageContent() {
   const empty = filtered.length === 0;
 
   return (
-    <div className="text-white pb-20">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4">
-        <div>
-          <h1 className="text-2xl font-bold leading-tight">Skills</h1>
-          <p className="text-sm text-gray-400">Track and improve your skills</p>
-        </div>
-        <Button
-          onClick={() => setOpen(true)}
-          className="h-11 px-4 bg-gray-200 text-black hover:bg-gray-300"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Create
-        </Button>
-      </div>
-
-      {/* Utility Bar */}
-      <div className="sticky top-0 z-10 bg-[#1E1E1E] px-4 pb-2">
-        <div className="flex items-center gap-2 mb-2">
-          <Input
-            placeholder="Search skills..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-11 flex-1"
-          />
-          <Button
-            onClick={() => setView("grid")}
-            variant={view === "grid" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
-          >
-            <LayoutGrid className="w-5 h-5" />
-            <span className="sr-only">Grid view</span>
-          </Button>
-          <Button
-            onClick={() => setView("list")}
-            variant={view === "list" ? undefined : "secondary"}
-            className="h-11 w-11 p-0"
-          >
-            <ListIcon className="w-5 h-5" />
-            <span className="sr-only">List view</span>
-          </Button>
-        </div>
-        <div className="flex items-center gap-2 overflow-x-auto">
-          {allCats.map((cat) => (
-            <div key={cat.id} className="relative flex-shrink-0">
-              <button
-                onClick={() => setSelectedCat(cat.id)}
-                className={`px-4 min-h-[44px] rounded-full text-sm whitespace-nowrap border ${
-                  selectedCat === cat.id
-                    ? "bg-gray-200 text-black border-gray-200"
-                    : "bg-[#2C2C2C] border-[#333]"
-                }`}
-              >
-                {cat.name} ({cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0})
-              </button>
-              {cat.id !== "all" && cat.id !== "uncategorized" && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemoveCategory(cat.id);
-                  }}
-                  className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center"
-                  aria-label={`Delete ${cat.name}`}
-                >
-                  ×
-                </button>
-              )}
+    <div className="pb-24 text-white">
+      <section className="relative px-4 pt-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#10121a] to-[#191c29] p-8 shadow-[0_45px_140px_-60px_rgba(15,23,42,0.85)]">
+            <div className="absolute inset-0">
+              <div className="absolute -right-28 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.28),_transparent_65%)] blur-3xl" />
+              <div className="absolute -bottom-32 left-8 h-72 w-72 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.22),_transparent_65%)] blur-3xl" />
             </div>
-          ))}
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className="ml-auto h-11 bg-[#2C2C2C] border border-[#333] rounded-md px-3"
-          >
-            <option value="name">A→Z</option>
-            <option value="level">Level (desc)</option>
-            <option value="progress">Progress (desc)</option>
-            <option value="recent">Recently Added</option>
-          </select>
+            <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-2xl space-y-6">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/70 backdrop-blur">
+                  Skill library
+                </div>
+                <div className="space-y-3">
+                  <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">Your skills headquarters</h1>
+                  <p className="text-sm leading-relaxed text-white/70 sm:text-base">
+                    Orchestrate every ability you&apos;re building. Track categories, link monuments, and open the drawer to spin up something new in seconds.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    onClick={() => setOpen(true)}
+                    className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 shadow-[0_15px_40px_-20px_rgba(148,163,184,0.9)] transition hover:bg-white/90"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add a skill
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full border-white/30 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur hover:border-white/40 hover:bg-white/15"
+                  >
+                    <Link href="/dashboard">Return to dashboard</Link>
+                  </Button>
+                </div>
+              </div>
+              <dl className="grid gap-4 sm:grid-cols-2">
+                {heroStats.map(({ label, value, description, icon: Icon }) => (
+                  <div
+                    key={label}
+                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-5 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition hover:border-white/20 hover:bg-white/10"
+                  >
+                    <div className="pointer-events-none absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
+                    <div className="relative flex items-start justify-between gap-3">
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-[0.25em] text-white/60">{label}</dt>
+                        <dd className="mt-3 text-2xl font-semibold text-white">{value}</dd>
+                      </div>
+                      <span className="flex size-9 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/80">
+                        <Icon className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                    </div>
+                    <p className="relative mt-3 text-xs leading-relaxed text-white/60">{description}</p>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Skills */}
-      {empty ? (
-        <div className="p-8">
-          <div className="text-center text-gray-400">No skills found</div>
-        </div>
-      ) : view === "grid" ? (
-        <div className="grid grid-cols-2 gap-4 p-4">
-          {filtered.map((skill) => (
-            <Link
-              key={skill.id}
-              href={`/skills/${skill.id}`}
-              className="relative bg-[#2C2C2C] rounded-lg p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform"
-            >
-              <CircularProgress value={skill.progress} />
-              <div className="text-center w-full">
-                <div className="text-sm font-medium truncate">
-                  {skill.name}
-                </div>
-                <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
-                  Lv {skill.level}
-                </span>
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="absolute top-2 right-2 p-2"
-                    aria-label="More"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
+      <section className="relative z-[1] -mt-12 px-4">
+        <div className="mx-auto max-w-6xl">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0d0f18]/90 p-5 shadow-[0_40px_120px_-70px_rgba(15,23,42,0.85)] backdrop-blur">
+            <div className="absolute inset-0">
+              <div className="absolute -left-16 top-0 h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(79,70,229,0.18),_transparent_65%)] blur-2xl" />
+            </div>
+            <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                <Input
+                  placeholder="Search skills..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-white/30 focus:ring-white/30"
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => setView("grid")}
+                    variant="ghost"
+                    className={`h-11 w-11 rounded-2xl border p-0 ${
+                      view === "grid"
+                        ? "border-white bg-white text-slate-900 shadow-[0_15px_30px_-20px_rgba(148,163,184,0.85)] hover:bg-white/90"
+                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:bg-white/10"
+                    }`}
                   >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      startEdit(skill);
-                    }}
+                    <LayoutGrid className="h-5 w-5" />
+                    <span className="sr-only">Grid view</span>
+                  </Button>
+                  <Button
+                    onClick={() => setView("list")}
+                    variant="ghost"
+                    className={`h-11 w-11 rounded-2xl border p-0 ${
+                      view === "list"
+                        ? "border-white bg-white text-slate-900 shadow-[0_15px_30px_-20px_rgba(148,163,184,0.85)] hover:bg-white/90"
+                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:bg-white/10"
+                    }`}
                   >
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleRemoveSkill(skill.id);
-                    }}
-                  >
-                    Remove
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </Link>
-          ))}
-        </div>
-      ) : (
-        <div className="p-4 space-y-3">
-          {filtered.map((skill) => (
-            <Link
-              key={skill.id}
-              href={`/skills/${skill.id}`}
-              className="relative flex items-center justify-between bg-[#2C2C2C] border border-[#333] rounded-lg p-3"
-            >
-              <div className="flex items-center gap-3">
-                <CircularProgress value={skill.progress} />
-                <div>
-                  <div className="text-sm font-medium">{skill.name}</div>
-                  <span className="text-[10px] bg-[#404040] px-2 py-0.5 rounded-full">
-                    Lv {skill.level}
-                  </span>
+                    <ListIcon className="h-5 w-5" />
+                    <span className="sr-only">List view</span>
+                  </Button>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="absolute top-2 right-2 p-2"
-                    aria-label="More"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="bg-[#2C2C2C] border-[#333]">
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      startEdit(skill);
-                    }}
-                  >
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleRemoveSkill(skill.id);
-                    }}
-                  >
-                    Remove
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </Link>
-          ))}
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+                className="h-11 min-w-[180px] rounded-2xl border border-white/15 bg-white/5 px-4 text-sm font-medium text-white/80 focus:border-white/30 focus:outline-none"
+              >
+                <option value="name" className="bg-slate-900 text-white">
+                  Alphabetical
+                </option>
+                <option value="level" className="bg-slate-900 text-white">
+                  Level (high to low)
+                </option>
+                <option value="progress" className="bg-slate-900 text-white">
+                  Progress (high to low)
+                </option>
+                <option value="recent" className="bg-slate-900 text-white">
+                  Recently added
+                </option>
+              </select>
+            </div>
+            <div className="relative mt-5 flex flex-wrap gap-2">
+              {allCats.map((cat) => {
+                const count =
+                  cat.id === "all" ? searchFiltered.length : counts[cat.id] || 0;
+                const isActive = selectedCat === cat.id;
+                return (
+                  <div key={cat.id} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCat(cat.id)}
+                      className={`group inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] transition ${
+                        isActive
+                          ? "border-white bg-white text-slate-900 shadow-[0_18px_40px_-28px_rgba(148,163,184,0.85)]"
+                          : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10"
+                      }`}
+                    >
+                      <span>{cat.name}</span>
+                      <span className={isActive ? "text-slate-600" : "text-white/50"}>{count}</span>
+                    </button>
+                    {cat.id !== "all" && cat.id !== "uncategorized" && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveCategory(cat.id);
+                        }}
+                        className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/40 bg-white/80 text-[10px] font-bold text-slate-900 shadow-sm transition hover:bg-white"
+                        aria-label={`Delete ${cat.name}`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      )}
+      </section>
+
+      <section className="px-4 pt-14">
+        <div className="mx-auto max-w-6xl">
+          {empty ? (
+            <div className="relative overflow-hidden rounded-3xl border border-dashed border-white/20 bg-white/5 p-12 text-center text-white/70 shadow-[0_40px_120px_-80px_rgba(15,23,42,0.9)]">
+              <div className="absolute inset-0">
+                <div className="absolute left-1/2 top-0 h-52 w-52 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.25),_transparent_65%)] blur-3xl" />
+              </div>
+              <div className="relative space-y-4">
+                <h2 className="text-xl font-semibold text-white">No skills yet</h2>
+                <p className="text-sm text-white/60">
+                  Start your collection by creating your first skill. Once added, you can connect it to monuments, goals, and notes just like the detail pages.
+                </p>
+                <Button
+                  onClick={() => setOpen(true)}
+                  className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-slate-900 shadow-[0_18px_40px_-20px_rgba(148,163,184,0.85)] transition hover:bg-white/90"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add your first skill
+                </Button>
+              </div>
+            </div>
+          ) : view === "grid" ? (
+            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((skill) => {
+                const categoryName = categoryLookup.get(skill.cat_id || "uncategorized");
+                const linkedMonument = skill.monument_id
+                  ? monumentLookup.get(skill.monument_id)
+                  : null;
+                return (
+                  <Link
+                    key={skill.id}
+                    href={`/skills/${skill.id}`}
+                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#090b14] via-[#141826] to-[#1c2132] p-6 text-left shadow-[0_35px_100px_-65px_rgba(99,102,241,0.7)] transition hover:border-white/20 hover:shadow-[0_45px_120px_-65px_rgba(56,189,248,0.65)]"
+                  >
+                    <div className="absolute inset-0">
+                      <div className="absolute -right-20 -top-16 h-44 w-44 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.32),_transparent_60%)] opacity-40 transition group-hover:opacity-80" />
+                      <div className="absolute -bottom-24 left-12 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.2),_transparent_60%)] opacity-40 transition group-hover:opacity-80" />
+                    </div>
+                    <div className="relative flex flex-col gap-6">
+                      <div className="flex items-start justify-between gap-4">
+                        <span
+                          className="flex h-[72px] w-[72px] items-center justify-center rounded-3xl bg-white/10 text-4xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/15"
+                          role="img"
+                          aria-label={`Skill: ${skill.name}`}
+                        >
+                          {skill.icon}
+                        </span>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                            Lv {skill.level}
+                          </span>
+                          {skill.created_at && (
+                            <span className="text-[11px] uppercase tracking-[0.25em] text-white/40">
+                              Added {new Date(skill.created_at).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-2">
+                            <h3 className="text-lg font-semibold text-white">{skill.name}</h3>
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                              <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white/70">
+                                {categoryName || "Uncategorized"}
+                              </span>
+                              {linkedMonument && (
+                                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-emerald-200">
+                                  <Goal className="h-3 w-3" aria-hidden="true" />
+                                  {linkedMonument}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-sm leading-relaxed text-white/60">
+                          Open to review milestones, notes, and goals tied to this capability.
+                        </p>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/70 opacity-0 transition hover:text-white group-hover:opacity-100"
+                            aria-label="More"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-40 border border-white/10 bg-[#0f111a]/95 text-white backdrop-blur">
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              startEdit(skill);
+                            }}
+                          >
+                            Edit skill
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleRemoveSkill(skill.id);
+                            }}
+                          >
+                            Remove skill
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filtered.map((skill) => {
+                const categoryName = categoryLookup.get(skill.cat_id || "uncategorized");
+                const linkedMonument = skill.monument_id
+                  ? monumentLookup.get(skill.monument_id)
+                  : null;
+                return (
+                  <Link
+                    key={skill.id}
+                    href={`/skills/${skill.id}`}
+                    className="group relative flex items-center justify-between overflow-hidden rounded-2xl border border-white/10 bg-[#0b0d17]/90 p-5 text-left shadow-[0_30px_90px_-65px_rgba(79,70,229,0.7)] transition hover:border-white/20 hover:bg-[#111425]"
+                  >
+                    <div className="absolute inset-0">
+                      <div className="absolute -left-20 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.22),_transparent_65%)] opacity-40 transition group-hover:opacity-80" />
+                    </div>
+                    <div className="relative flex items-center gap-5">
+                      <span
+                        className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-3xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/15"
+                        role="img"
+                        aria-label={`Skill: ${skill.name}`}
+                      >
+                        {skill.icon}
+                      </span>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-lg font-semibold text-white">{skill.name}</h3>
+                          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                            Lv {skill.level}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                          <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white/70">
+                            {categoryName || "Uncategorized"}
+                          </span>
+                          {linkedMonument && (
+                            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-emerald-200">
+                              <Goal className="h-3 w-3" aria-hidden="true" />
+                              {linkedMonument}
+                            </span>
+                          )}
+                        </div>
+                        {skill.created_at && (
+                          <p className="text-xs text-white/50">
+                            Added {new Date(skill.created_at).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="relative h-5 w-5 text-white/40 transition group-hover:translate-x-1 group-hover:text-white/70" />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/70 opacity-0 transition hover:text-white group-hover:opacity-100"
+                          aria-label="More"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-40 border border-white/10 bg-[#0f111a]/95 text-white backdrop-blur">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            startEdit(skill);
+                          }}
+                        >
+                          Edit skill
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleRemoveSkill(skill.id);
+                          }}
+                        >
+                          Remove skill
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
 
       <SkillDrawer
         open={open}

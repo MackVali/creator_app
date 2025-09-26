@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { CalendarDays, Clock3, Target, ArrowLeft } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import {
@@ -13,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
+import { Button } from "@/components/ui/button";
 
 interface Skill {
   id: string;
@@ -42,6 +45,7 @@ export default function SkillDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -166,14 +170,16 @@ export default function SkillDetailPage() {
 
   const stats = [
     {
-      label: "Level",
+      label: "Skill level",
       value: `Lv ${skill.level}`,
       description: describeLevel(skill.level),
+      icon: Target,
     },
     {
       label: "Added to timeline",
       value: formattedCreatedAt ?? "Not available",
       description: createdRelativeText,
+      icon: CalendarDays,
     },
     {
       label: "Days tracked",
@@ -185,108 +191,152 @@ export default function SkillDetailPage() {
         daysTracked !== null
           ? `Time since you logged ${skill.name}.`
           : "Tracking duration unavailable.",
+      icon: Clock3,
     },
   ];
 
   const icon = skill.icon || "💡";
 
+  const handleCreateGoal = () => {
+    router.push("/goals/new");
+  };
+
   return (
-    <main className="px-4 pb-16 pt-10">
-      <div className="mx-auto max-w-6xl space-y-10">
-        <section aria-labelledby="skill-overview">
-          <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/80 shadow-[0_40px_80px_-25px_rgba(15,23,42,0.65)]">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(129,140,248,0.35),transparent_55%)]"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-[-20%] w-2/3 bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.2),transparent_65%)]"
-            />
-            <div className="relative z-10 flex flex-col gap-8 p-8 text-center md:flex-row md:items-center md:gap-12 md:p-12 md:text-left">
-              <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20 shadow-[0_20px_45px_-20px_rgba(15,23,42,0.9)] md:mx-0 md:h-32 md:w-32">
-                <span className="text-5xl md:text-6xl" role="img" aria-label={`Skill: ${skill.name}`}>
-                  {icon}
-                </span>
-              </div>
-              <div className="flex-1 space-y-6">
-                <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
-                  <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200">
-                    Skill Overview
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-indigo-400/30 bg-indigo-500/20 px-4 py-1 text-sm font-semibold text-indigo-100">
-                    Level {skill.level}
-                  </span>
+    <main className="px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="w-fit gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-medium text-white/70 backdrop-blur transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+        >
+          <Link href="/skills">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back to skills
+          </Link>
+        </Button>
+
+        <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#11121a] to-[#1a1c27] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
+          <div className="absolute inset-0">
+            <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.28),_transparent_70%)] blur-3xl" />
+            <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.25),_transparent_65%)] blur-3xl" />
+          </div>
+          <div className="relative flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-5">
+              <span
+                className="flex h-[88px] w-[88px] items-center justify-center rounded-3xl bg-white/10 text-5xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/20"
+                role="img"
+                aria-label={`Skill: ${skill.name}`}
+              >
+                {icon}
+              </span>
+              <div className="space-y-3">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/80 backdrop-blur">
+                  Skill overview
                 </div>
-                <div className="space-y-3">
-                  <h1
-                    id="skill-overview"
-                    className="text-4xl font-semibold tracking-tight text-white sm:text-5xl"
-                  >
-                    {skill.name}
-                  </h1>
-                  <p className="mx-auto max-w-2xl text-base leading-relaxed text-slate-300 md:mx-0">
-                    {`Everything connected to ${skill.name} lives here — goals, notes, and the progress you're making along the way.`}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
-                  {stats.map((stat) => (
-                    <div
-                      key={stat.label}
-                      className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-left backdrop-blur-sm"
-                    >
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                        {stat.label}
-                      </span>
-                      <span className="text-sm font-semibold text-white">
-                        {stat.value}
-                      </span>
-                      {stat.description ? (
-                        <span className="sr-only">{stat.description}</span>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
+                <h1 id="skill-overview" className="text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
+                  {skill.name}
+                </h1>
+                <p className="max-w-xl text-sm text-white/70 sm:text-base">
+                  Everything connected to {skill.name} lives here — goals, notes, and the progress you&apos;re making along the way.
+                </p>
               </div>
             </div>
+            <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur sm:w-[220px]">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">Current focus</p>
+              <p className="text-sm leading-relaxed text-white/80">{describeLevel(skill.level)}</p>
+            </div>
           </div>
+          <dl className="relative mt-8 grid gap-3 sm:grid-cols-3">
+            {stats.map(({ label, value, description, icon: Icon }) => (
+              <div
+                key={label}
+                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition hover:border-white/20 hover:bg-white/10"
+              >
+                <div className="pointer-events-none absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
+                <dt className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-white/60">
+                  <span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/70">
+                    <Icon className="size-4" aria-hidden="true" />
+                  </span>
+                  {label}
+                </dt>
+                <dd className="mt-2 text-lg font-semibold text-white">{value}</dd>
+                <p className="mt-2 text-xs text-white/60">{description}</p>
+              </div>
+            ))}
+          </dl>
         </section>
 
-        <section aria-labelledby="skill-goals">
-          <Card className="border-white/10 bg-slate-950/70 backdrop-blur-md shadow-[0_40px_80px_-25px_rgba(15,23,42,0.65)]">
-            <CardHeader className="pb-2">
-              <div className="space-y-2">
-                <CardTitle id="skill-goals" className="text-lg font-semibold text-white">
-                  Related goals
-                </CardTitle>
-                <CardDescription className="text-slate-400">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060608] via-[#10121a] to-[#1a1d28] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_60%)]" />
+            <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Goals</p>
+                <h2 className="text-lg font-semibold text-white sm:text-xl">Projects driving this skill</h2>
+                <p className="text-xs text-white/60 sm:text-sm">
                   Explore the goal folders powering {skill.name} and see the projects pushing it forward.
-                </CardDescription>
+                </p>
               </div>
-            </CardHeader>
-            <CardContent className="pb-6">
-              <FilteredGoalsGrid entity="skill" id={id} />
-            </CardContent>
-          </Card>
-        </section>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCreateGoal}
+                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
+              >
+                New goal
+              </Button>
+            </header>
+            <div className="relative mt-6">
+              <FilteredGoalsGrid entity="skill" id={id} displayMode="minimal" onCreateGoal={handleCreateGoal} />
+            </div>
+          </section>
 
-        <section aria-labelledby="skill-notes">
-          <Card className="border-white/10 bg-slate-950/70 backdrop-blur-md shadow-[0_40px_80px_-25px_rgba(15,23,42,0.65)]">
-            <CardHeader className="pb-2">
-              <div className="space-y-2">
-                <CardTitle id="skill-notes" className="text-lg font-semibold text-white">
-                  Notes
-                </CardTitle>
-                <CardDescription className="text-slate-400">
-                  Keep track of learnings, resources, and reminders tied to {skill.name}.
-                </CardDescription>
+          <section className="relative space-y-6">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070709] via-[#11131a] to-[#1c1f2b] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-7">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.16),_transparent_60%)]" />
+              <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Notes</p>
+                  <h2 className="text-lg font-semibold text-white sm:text-xl">Keep discoveries close</h2>
+                  <p className="text-xs text-white/60 sm:text-sm">
+                    Save learnings, resources, and reminders tied to {skill.name}.
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
+                >
+                  <Link href={`/skills/${id}/notes/new`}>New note</Link>
+                </Button>
+              </header>
+              <div className="relative mt-5">
+                <NotesGrid skillId={id} />
               </div>
-            </CardHeader>
-            <CardContent className="pb-6">
-              <NotesGrid skillId={id} />
-            </CardContent>
-          </Card>
-        </section>
+            </div>
+
+            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(129,140,248,0.14),_transparent_70%)]" />
+              <CardHeader className="relative">
+                <CardTitle className="text-base font-semibold text-white">Need a different view?</CardTitle>
+                <CardDescription className="text-white/70">
+                  Jump back to your full skills library to reorganize, add new abilities, or explore other focuses.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="relative">
+                <Button
+                  asChild
+                  size="sm"
+                  className="rounded-full bg-white px-5 text-slate-900 shadow-sm transition hover:bg-white/90"
+                >
+                  <Link href="/skills">Open skills dashboard</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          </section>
+        </div>
       </div>
     </main>
   );
