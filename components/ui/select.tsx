@@ -29,10 +29,23 @@ interface SelectProps {
   children: React.ReactNode;
   className?: string;
   placeholder?: string;
+  triggerClassName?: string;
+  contentWrapperClassName?: string;
 }
 
 const Select = React.forwardRef<HTMLDivElement, SelectProps>(
-  ({ value, onValueChange, children, className, placeholder }, ref) => {
+  (
+    {
+      value,
+      onValueChange,
+      children,
+      className,
+      placeholder,
+      triggerClassName,
+      contentWrapperClassName,
+    },
+    ref
+  ) => {
     const [isOpen, setIsOpen] = React.useState(false);
     const [selectedValue, setSelectedValue] = React.useState(value || "");
     const [selectedLabel, setSelectedLabel] = React.useState("");
@@ -105,7 +118,8 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           className={cn(
             "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition",
             "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
-            isOpen && "border-blue-400/70"
+            isOpen && "border-blue-400/70",
+            triggerClassName
           )}
         >
           <span className="block truncate">
@@ -120,7 +134,12 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         </button>
 
         {isOpen && (
-          <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0f172a] shadow-xl shadow-black/40">
+          <div
+            className={cn(
+              "absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0f172a] shadow-xl shadow-black/40",
+              contentWrapperClassName
+            )}
+          >
             {React.Children.map(children, (child) => {
               if (React.isValidElement(child) && child.type === SelectContent) {
                 return React.cloneElement(
@@ -162,11 +181,12 @@ interface SelectContentProps {
   children: React.ReactNode;
   onSelect?: (value: string, label: string) => void;
   selectedValue?: string;
+  className?: string;
 }
 
 const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
-  ({ children, onSelect, selectedValue }, ref) => (
-    <div ref={ref} className="max-h-60 overflow-auto p-1">
+  ({ children, onSelect, selectedValue, className }, ref) => (
+    <div ref={ref} className={cn("max-h-60 overflow-auto p-1", className)}>
       {React.Children.map(children, (child) => {
         if (React.isValidElement(child) && child.type === SelectItem) {
           return React.cloneElement(

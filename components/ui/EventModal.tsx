@@ -316,8 +316,15 @@ function OptionDropdown({
   placeholder,
 }: OptionDropdownProps) {
   return (
-    <Select value={value} onValueChange={onChange} placeholder={placeholder}>
-      <SelectContent>
+    <Select
+      value={value}
+      onValueChange={onChange}
+      placeholder={placeholder}
+      className="w-full"
+      triggerClassName="h-12 rounded-2xl border border-white/10 bg-gradient-to-r from-slate-950/90 via-slate-950/70 to-slate-950 px-4 text-sm font-medium text-zinc-100 shadow-[0_22px_45px_-32px_rgba(15,23,42,0.9)] transition focus:ring-blue-500/70 hover:border-blue-500/40"
+      contentWrapperClassName="rounded-2xl border border-white/10 bg-[#020617]/95 backdrop-blur-xl shadow-[0_35px_60px_-40px_rgba(15,23,42,0.95)]"
+    >
+      <SelectContent className="max-h-72 space-y-1 p-2">
         {options.map((option) => {
           const selected = option.value === value;
           const IconComponent = option.icon;
@@ -340,14 +347,26 @@ function OptionDropdown({
               key={option.value}
               value={option.value}
               label={option.label}
-              className="rounded-lg border border-transparent px-3 py-2.5 text-left transition hover:border-white/10"
+              className={cn(
+                "group relative rounded-xl border border-transparent bg-white/[0.02] px-4 py-3 text-left transition",
+                "hover:border-blue-500/40 hover:bg-white/[0.05]",
+                selected &&
+                  "border-blue-500/60 bg-blue-500/20 shadow-[0_18px_45px_-30px_rgba(59,130,246,0.6)]"
+              )}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-4">
                 {iconNode ? (
-                  <span className="mt-0.5 text-zinc-400">{iconNode}</span>
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.02] text-zinc-400 transition",
+                      selected && "bg-blue-500/20 text-blue-300"
+                    )}
+                  >
+                    {iconNode}
+                  </span>
                 ) : null}
                 <div className="flex flex-col">
-                  <span className="text-sm font-semibold text-white">
+                  <span className="text-sm font-semibold text-zinc-100">
                     {option.label}
                   </span>
                   {option.description ? (
