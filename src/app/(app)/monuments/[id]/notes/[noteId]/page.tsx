@@ -6,10 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
-  getMonumentNotes,
-  saveMonumentNotes,
+  fetchMonumentNote,
+  upsertMonumentNote,
 } from "@/lib/monumentNotesStorage";
-import type { MonumentNote } from "@/lib/types/monument-note";
 
 export default function MonumentNotePage() {
   const params = useParams();
@@ -19,33 +18,43 @@ export default function MonumentNotePage() {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const notes = getMonumentNotes(monumentId);
-    const note = notes.find((n) => n.id === noteId);
-    if (note) {
+    if (noteId === "new") return;
+
+    let active = true;
+
+    const loadNote = async () => {
+      const note = await fetchMonumentNote(monumentId, noteId);
+      if (!active || !note) return;
       setTitle(note.title);
       setContent(note.content);
-    }
+    };
+
+    loadNote();
+
+    return () => {
+      active = false;
+    };
   }, [monumentId, noteId]);
 
-  const onSave = () => {
-    const notes = getMonumentNotes(monumentId);
-    const existingIndex = notes.findIndex((n) => n.id === noteId);
-    const newId = existingIndex >= 0 ? noteId : Date.now().toString();
-    const newNote: MonumentNote = {
-      id: newId,
+  const onSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+
+    const saved = await upsertMonumentNote({
+      id: noteId === "new" ? undefined : noteId,
       monumentId,
       title,
       content,
-    };
-    if (existingIndex >= 0) {
-      notes[existingIndex] = newNote;
-    } else {
-      notes.push(newNote);
+    });
+
+    setIsSaving(false);
+
+    if (saved) {
+      router.push(`/monuments/${monumentId}`);
     }
-    saveMonumentNotes(monumentId, notes);
-    router.push(`/monuments/${monumentId}`);
   };
 
   return (
@@ -61,7 +70,9 @@ export default function MonumentNotePage() {
         placeholder="Write your note..."
         className="min-h-[300px]"
       />
-      <Button onClick={onSave}>Save</Button>
+      <Button onClick={onSave} disabled={isSaving}>
+        {isSaving ? "Saving..." : "Save"}
+      </Button>
     </main>
   );
 }

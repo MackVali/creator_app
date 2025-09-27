@@ -14,8 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import {
-  getMonumentNotes,
-  saveMonumentNotes,
+  fetchMonumentNotes,
+  upsertMonumentNote,
 } from "@/lib/monumentNotesStorage";
 import { MonumentNoteCard } from "./MonumentNoteCard";
 
@@ -27,6 +27,7 @@ interface MonumentNotesGridProps {
 export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridProps) {
   const [notes, setNotes] = useState<MonumentNote[]>([]);
   const [draft, setDraft] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -40,12 +41,20 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
   }, [inputRef]);
 
   useEffect(() => {
-    setNotes(getMonumentNotes(monumentId));
-  }, [monumentId]);
+    let active = true;
 
-  useEffect(() => {
-    saveMonumentNotes(monumentId, notes);
-  }, [monumentId, notes]);
+    const loadNotes = async () => {
+      const data = await fetchMonumentNotes(monumentId);
+      if (!active) return;
+      setNotes(data);
+    };
+
+    loadNotes();
+
+    return () => {
+      active = false;
+    };
+  }, [monumentId]);
 
   const hasNotes = notes && notes.length > 0;
 
@@ -55,16 +64,26 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
     e.target.style.height = `${e.target.scrollHeight}px`;
   };
 
-  const handleAdd = (e: FormEvent) => {
+  const handleAdd = async (e: FormEvent) => {
     e.preventDefault();
-    if (!draft.trim()) return;
-    const newNote: MonumentNote = {
-      id: Date.now().toString(),
+    if (!draft.trim() || isSaving) return;
+
+    setIsSaving(true);
+
+    const newNote = await upsertMonumentNote({
       monumentId,
       title: draft.trim(),
       content: draft.trim(),
-    };
-    setNotes([...notes, newNote]);
+    });
+
+    setIsSaving(false);
+
+    if (!newNote) return;
+
+    setNotes((prev) => [
+      newNote,
+      ...prev.filter((note) => note.id !== newNote.id),
+    ]);
     setDraft("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
@@ -84,11 +103,11 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           <Button
             type="submit"
             size="sm"
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || isSaving}
             aria-label="Save note"
             className="rounded-full px-5"
           >
-            Save note
+            {isSaving ? "Saving..." : "Save note"}
           </Button>
         </div>
       </form>
