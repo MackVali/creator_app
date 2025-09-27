@@ -46,7 +46,8 @@ export async function POST(request: Request) {
   const dryRun = body.dryRun === true
   const lookaheadDays = typeof body.lookaheadDays === 'number' ? body.lookaheadDays : undefined
   const stabilityLockMinutes = typeof body.stabilityLockMinutes === 'number' ? body.stabilityLockMinutes : undefined
-  const traceToFile = body.traceToFile ?? !dryRun
+  const collectTrace = body.collectTrace === true || body.trace === 'full'
+  const traceToFile = collectTrace && body.traceToFile === true
 
   const markResult = await markMissedAndQueue(user.id, now, supabase)
   if (markResult.error) {
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
     DRY_RUN: dryRun,
     lookaheadDays,
     stabilityLockMinutes,
+    collectTrace,
     traceToFile,
   })
   const status = scheduleResult.error ? 500 : 200

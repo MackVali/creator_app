@@ -7,3 +7,7 @@
 - assumptions: CLI runs in production contexts with only production deps; scheduler UI relies on API unaffected.
 - decisions: promote `tsx` to runtime dependency so the scheduler CLI works when dev deps are pruned.
 - open TODOs: monitor trace file persistence behavior in serverless deploys; revisit schema-drift tolerant fetches.
+## 2025-09-28T20:15Z
+- observations: per-request trace logging incurred heavy payloads and synchronous file writes, stalling scheduler responses.
+- decisions: gate trace capture behind explicit `collectTrace` requests, disable file persistence by default, and pass-through CLI opt-in to avoid UI hangs.
+- open TODOs: revisit lightweight trace summaries for UI without full candidate dumps.

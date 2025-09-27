@@ -78,6 +78,7 @@ async function main() {
     DRY_RUN: options.dryRun,
     lookaheadDays: options.days,
     stabilityLockMinutes: options.stabilityLockMinutes,
+    collectTrace: Boolean(options.explain),
     traceToFile: false,
   })
 
@@ -93,6 +94,11 @@ async function main() {
   }
 
   if (options.explain) {
+    if (scheduleResult.trace.length === 0) {
+      console.log('No trace entries recorded for this run.')
+      return
+    }
+
     const filtered = scheduleResult.trace.filter(entry => entry.itemId === options.explain)
     if (filtered.length === 0) {
       console.log(`No trace entries for item ${options.explain}`)

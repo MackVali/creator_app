@@ -134,10 +134,12 @@ export async function scheduleBacklog(
     DRY_RUN?: boolean
     lookaheadDays?: number
     stabilityLockMinutes?: number
+    collectTrace?: boolean
     traceToFile?: boolean
   }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
+  const collectTrace = options?.collectTrace === true
   const trace: TraceEntry[] = []
   const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [], trace }
   const timeZone = normalizeTimeZone(options?.timeZone)
@@ -342,7 +344,9 @@ export async function scheduleBacklog(
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
       const effectiveNow = clampToDayInTimeZone(baseDate, day, timeZone)
       if (effectiveNow === null) {
-        trace.push({ type: 'skip-day', itemId: item.id, dayOffset: offset, reason: 'DayInPast' })
+        if (collectTrace) {
+          trace.push({ type: 'skip-day', itemId: item.id, dayOffset: offset, reason: 'DayInPast' })
+        }
         continue
       }
 
@@ -364,17 +368,23 @@ export async function scheduleBacklog(
         }
       )
 
-      const considerIndex = trace.push({
-        type: 'consider',
-        itemId: item.id,
-        dayOffset: offset,
-        effectiveNow: effectiveNow ? effectiveNow.toISOString() : null,
-        windowCount: windows.length,
-      }) - 1
+      let considerIndex: number | null = null
+      if (collectTrace) {
+        considerIndex =
+          trace.push({
+            type: 'consider',
+            itemId: item.id,
+            dayOffset: offset,
+            effectiveNow: effectiveNow ? effectiveNow.toISOString() : null,
+            windowCount: windows.length,
+          }) - 1
+      }
 
       if (windows.length === 0) {
         lastFailure = { reason: 'NoCompatibleWindow', candidates: [] }
-        trace[considerIndex] = { ...trace[considerIndex], candidates: [] }
+        if (collectTrace && considerIndex !== null) {
+          trace[considerIndex] = { ...trace[considerIndex], candidates: [] }
+        }
         continue
       }
 
@@ -391,21 +401,26 @@ export async function scheduleBacklog(
         stabilityLockMinutes,
         effectiveNow,
         weights: SCORING_WEIGHTS,
+        collectEvaluations: collectTrace,
       })
 
-      const candidatesTrace = summarizeCandidates(placed.considered)
-      trace[considerIndex] = { ...trace[considerIndex], candidates: candidatesTrace }
+      const candidatesTrace = collectTrace ? summarizeCandidates(placed.considered) : []
+      if (collectTrace && considerIndex !== null) {
+        trace[considerIndex] = { ...trace[considerIndex], candidates: candidatesTrace }
+      }
 
       if (!placed.ok) {
         lastFailure = { reason: placed.reason ?? 'NoCompatibleWindow', detail: placed.error, candidates: candidatesTrace }
-        trace.push({
-          type: 'reject',
-          itemId: item.id,
-          dayOffset: offset,
-          reason: lastFailure.reason,
-          detail: placed.error,
-          candidates: candidatesTrace,
-        })
+        if (collectTrace) {
+          trace.push({
+            type: 'reject',
+            itemId: item.id,
+            dayOffset: offset,
+            reason: lastFailure.reason,
+            detail: placed.error,
+            candidates: candidatesTrace,
+          })
+        }
         continue
       }
 
@@ -430,15 +445,17 @@ export async function scheduleBacklog(
           ? placementWindow.startLocal.toISOString()
           : undefined,
       })
-      trace.push({
-        type: 'place',
-        itemId: item.id,
-        windowId: placed.instance.window_id ?? null,
-        startUTC: placed.instance.start_utc,
-        endUTC: placed.instance.end_utc,
-        score: placed.score,
-        candidates: candidatesTrace,
-      })
+      if (collectTrace) {
+        trace.push({
+          type: 'place',
+          itemId: item.id,
+          windowId: placed.instance.window_id ?? null,
+          startUTC: placed.instance.start_utc,
+          endUTC: placed.instance.end_utc,
+          score: placed.score,
+          candidates: candidatesTrace,
+        })
+      }
 
       scheduled = true
     }
@@ -459,8 +476,12 @@ export async function scheduleBacklog(
     return aTime - bTime
   })
 
-  if (options?.traceToFile !== false) {
+  if (collectTrace && options?.traceToFile === true) {
     await persistTrace(runId, trace)
+  }
+
+  if (!collectTrace) {
+    result.trace = []
   }
 
   return result

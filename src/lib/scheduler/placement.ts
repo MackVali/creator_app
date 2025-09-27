@@ -60,6 +60,7 @@ type PlaceParams = {
   weights?: typeof SCORING_WEIGHTS
   dryRun?: boolean
   effectiveNow?: Date | null
+  collectEvaluations?: boolean
 }
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
@@ -75,6 +76,7 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
     weights = SCORING_WEIGHTS,
     dryRun,
     effectiveNow,
+    collectEvaluations = true,
   } = params
 
   const considered: CandidateEvaluation[] = []
@@ -143,7 +145,9 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       endUTC,
       score,
     }
-    considered.push(evaluation)
+    if (collectEvaluations) {
+      considered.push(evaluation)
+    }
 
     if (
       !best ||
@@ -155,12 +159,20 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
   }
 
   if (!best) {
-    return { ok: false, reason: 'NoCompatibleWindow', considered }
+    return {
+      ok: false,
+      reason: 'NoCompatibleWindow',
+      considered: collectEvaluations ? considered : [],
+    }
   }
 
   const lockedUntil = new Date(runStart.getTime() + stabilityLockMinutes * 60000)
   if (best.start < lockedUntil) {
-    return { ok: false, reason: 'LockedByStabilityHorizon', considered }
+    return {
+      ok: false,
+      reason: 'LockedByStabilityHorizon',
+      considered: collectEvaluations ? considered : [],
+    }
   }
 
   const instanceInput = {
@@ -178,7 +190,12 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
 
   if (dryRun) {
     const simulated = buildSimulatedInstance(instanceInput, reuseInstanceId)
-    return { ok: true, instance: simulated, score: best.candidate.score, considered }
+    return {
+      ok: true,
+      instance: simulated,
+      score: best.candidate.score,
+      considered: collectEvaluations ? considered : [],
+    }
   }
 
   const persisted = reuseInstanceId
@@ -186,11 +203,21 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
     : await createInstance(instanceInput, client)
 
   if (persisted.error) {
-    return { ok: false, reason: 'Unknown', considered, error: persisted.error }
+    return {
+      ok: false,
+      reason: 'Unknown',
+      considered: collectEvaluations ? considered : [],
+      error: persisted.error,
+    }
   }
 
   const instance = persisted.data as ScheduleInstance
-  return { ok: true, instance, score: best.candidate.score, considered }
+  return {
+    ok: true,
+    instance,
+    score: best.candidate.score,
+    considered: collectEvaluations ? considered : [],
+  }
 }
 
 function diffMin(a: Date, b: Date) {
