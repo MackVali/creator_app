@@ -262,6 +262,8 @@ export async function scheduleBacklog(
     reuseInstanceByProject.delete(item.id)
   }
 
+  const ignoreProjectIds = new Set(finalQueueProjectIds)
+
   queue.sort((a, b) => {
     const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
     if (energyDiff !== 0) return energyDiff
@@ -306,6 +308,7 @@ export async function scheduleBacklog(
         date: day,
         client: supabase,
         reuseInstanceId: item.instanceId,
+        ignoreProjectIds,
       })
 
       if (!('status' in placed)) {

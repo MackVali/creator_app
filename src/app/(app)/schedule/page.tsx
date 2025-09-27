@@ -619,7 +619,9 @@ function describeEmptyWindowReport({
         return { summary, details: detailItems }
       }
 
-      const sameDay = futurePlacements.filter(entry => entry.sameDay)
+      const sameDay = futurePlacements.filter(
+        entry => entry.sameDay && entry.fits !== false
+      )
       if (sameDay.length > 0) {
         const summary = `${windowLabel} stayed open because ${sameDay.length} compatible project${
           sameDay.length === 1 ? '' : 's'
@@ -633,7 +635,9 @@ function describeEmptyWindowReport({
         return { summary, details: detailItems }
       }
 
-      const futureDay = futurePlacements.filter(entry => !entry.sameDay)
+      const futureDay = futurePlacements.filter(
+        entry => !entry.sameDay && entry.fits !== false
+      )
       if (futureDay.length > 0) {
         const summary = `${windowLabel} stayed open because compatible projects were placed in upcoming windows.`
         const detailItems = futureDay.slice(0, 4).map(entry => {

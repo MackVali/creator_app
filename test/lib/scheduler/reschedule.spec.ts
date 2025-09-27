@@ -1432,6 +1432,104 @@ describe("scheduleBacklog", () => {
     expect(placements[0]?.startUTC.startsWith("2024-01-02")).toBe(true);
   });
 
+  it("treats queued projects as free when evaluating earlier windows", async () => {
+    instances = [];
+
+    const backlogResponse: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      backlogResponse,
+    );
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-alpha": {
+        id: "proj-alpha",
+        name: "Alpha",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 60,
+      },
+      "proj-beta": {
+        id: "proj-beta",
+        name: "Beta",
+        priority: "MEDIUM",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 45,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-early",
+        label: "High focus",
+        energy: "HIGH",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+      },
+    ]);
+
+    fetchInstancesForRangeSpy.mockResolvedValue({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse);
+
+    const ignoreSets: Array<Set<string> | undefined> = [];
+    const placementResults: Array<{ windowId: string; projectId: string }> = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async params => {
+      ignoreSets.push(params.ignoreProjectIds ? new Set(params.ignoreProjectIds) : undefined);
+      const window = params.windows[0];
+      if (!window) {
+        return { error: "NO_FIT" as const };
+      }
+      const start = new Date(window.availableStartLocal ?? window.startLocal);
+      const end = new Date(start.getTime() + params.item.duration_min * 60000);
+      placementResults.push({ windowId: window.id, projectId: params.item.id });
+      return {
+        data: createInstanceRecord({
+          id: `inst-${params.item.id}`,
+          source_id: params.item.id,
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: window.id,
+          status: "scheduled",
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, {} as ScheduleBacklogClient);
+
+    expect(result.failures).toHaveLength(0);
+    expect(result.error).toBeUndefined();
+    expect(ignoreSets.length).toBeGreaterThan(0);
+    for (const ignoreSet of ignoreSets) {
+      expect(ignoreSet).toBeDefined();
+      expect(ignoreSet?.has("proj-alpha")).toBe(true);
+      expect(ignoreSet?.has("proj-beta")).toBe(true);
+    }
+    expect(new Set(placementResults.map(entry => entry.projectId))).toEqual(
+      new Set(["proj-alpha", "proj-beta"]),
+    );
+  });
+
   it("reschedules projects that started earlier today so they begin at or after the current run time", async () => {
     const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
     placeSpy.mockReset();

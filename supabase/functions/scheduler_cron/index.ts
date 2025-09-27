@@ -326,7 +326,8 @@ async function scheduleBacklog(
         userId,
         item,
         windows,
-        item.instanceId
+        item.instanceId,
+        queueProjectIds
       )
       if (placedInstance) {
         placed.push(placedInstance)
@@ -755,7 +756,8 @@ async function placeItemInWindows(
     availableStartLocal?: Date
     key?: string
   }>,
-  reuseInstanceId?: string | null
+  reuseInstanceId: string | null | undefined,
+  ignoreProjectIds?: Set<string>
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
     const start = new Date(window.availableStartLocal ?? window.startLocal)
@@ -774,7 +776,16 @@ async function placeItemInWindows(
       continue
     }
 
-    const filtered = (taken ?? []).filter(instance => instance.id !== reuseInstanceId)
+    const filtered = (taken ?? []).filter(instance => {
+      if (instance.id === reuseInstanceId) return false
+      if (ignoreProjectIds && instance.source_type === 'PROJECT') {
+        const projectId = instance.source_id ?? ''
+        if (projectId && ignoreProjectIds.has(projectId)) {
+          return false
+        }
+      }
+      return true
+    })
 
     const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
