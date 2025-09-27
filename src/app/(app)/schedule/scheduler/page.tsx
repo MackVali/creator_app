@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
+import { RescheduleButton } from "@/components/schedule/RescheduleButton";
 import { ENERGY } from "@/lib/scheduler/config";
 import { buildProjectItems, type ProjectItem } from "@/lib/scheduler/projects";
 import { type WindowLite } from "@/lib/scheduler/repo";
@@ -283,13 +284,11 @@ export default function SchedulerPage() {
             <Link href="/schedule">Back</Link>
           </Button>
         </div>
-        <Button
+        <RescheduleButton
           onClick={handleReschedule}
           disabled={status === "pending"}
-          className="bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-        >
-          {status === "pending" ? "Rescheduling..." : "Trigger Reschedule"}
-        </Button>
+          isRunning={status === "pending"}
+        />
         {status === "success" && (
           <p className="text-sm text-emerald-400">Reschedule triggered.</p>
         )}

@@ -34,57 +34,102 @@ type PlaceParams = {
   date: Date
   client?: Client
   reuseInstanceId?: string | null
+  ignoreProjectIds?: Set<string>
+  notBefore?: Date
 }
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
-  const { userId, item, windows, client, reuseInstanceId } = params
+  const { userId, item, windows, client, reuseInstanceId, ignoreProjectIds, notBefore } = params
   let best: null | {
     window: (typeof windows)[number]
     windowIndex: number
     start: Date
   } = null
 
+  const notBeforeMs = notBefore ? notBefore.getTime() : null
+  const durationMs = Math.max(0, item.duration_min) * 60000
+
   for (const [index, w] of windows.entries()) {
-    const start = new Date(w.availableStartLocal ?? w.startLocal)
-    const end = new Date(w.endLocal)
+    const windowStart = new Date(w.availableStartLocal ?? w.startLocal)
+    const windowEnd = new Date(w.endLocal)
+
+    const windowStartMs = windowStart.getTime()
+    const windowEndMs = windowEnd.getTime()
+
+    if (typeof notBeforeMs === 'number' && windowEndMs <= notBeforeMs) {
+      continue
+    }
+
+    const startMs =
+      typeof notBeforeMs === 'number' ? Math.max(windowStartMs, notBeforeMs) : windowStartMs
+    const rangeStart = new Date(startMs)
 
     const { data: taken, error } = await fetchInstancesForRange(
       userId,
-      start.toISOString(),
-      end.toISOString(),
+      rangeStart.toISOString(),
+      windowEnd.toISOString(),
       client
     )
     if (error) {
       return { error }
     }
 
-    const filtered = (taken ?? []).filter(inst => inst.id !== reuseInstanceId)
+    const filtered = (taken ?? []).filter(inst => {
+      if (inst.id === reuseInstanceId) return false
+      if (ignoreProjectIds && inst.source_type === 'PROJECT') {
+        const projectId = inst.source_id ?? ''
+        if (projectId && ignoreProjectIds.has(projectId)) {
+          return false
+        }
+      }
+      return true
+    })
 
     const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     )
 
-    let cursor = start
-    const durMin = item.duration_min
+    let cursorMs = startMs
     let candidate: Date | null = null
 
     for (const block of sorted) {
       const blockStart = new Date(block.start_utc)
       const blockEnd = new Date(block.end_utc)
-      if (diffMin(cursor, blockStart) >= durMin) {
-        candidate = new Date(cursor)
+
+      const blockStartMs = blockStart.getTime()
+      const blockEndMs = blockEnd.getTime()
+
+      if (typeof notBeforeMs === 'number' && blockEndMs <= notBeforeMs) {
+        continue
+      }
+
+      const effectiveBlockStartMs =
+        typeof notBeforeMs === 'number'
+          ? Math.max(blockStartMs, notBeforeMs)
+          : blockStartMs
+
+      if (cursorMs + durationMs <= effectiveBlockStartMs) {
+        candidate = new Date(cursorMs)
         break
       }
-      if (blockEnd > cursor) {
-        cursor = blockEnd
+
+      if (blockEndMs > cursorMs) {
+        cursorMs = blockEndMs
+        if (typeof notBeforeMs === 'number' && cursorMs < notBeforeMs) {
+          cursorMs = notBeforeMs
+        }
       }
     }
 
-    if (!candidate && diffMin(cursor, end) >= durMin) {
-      candidate = new Date(cursor)
+    if (!candidate && cursorMs + durationMs <= windowEndMs) {
+      candidate = new Date(cursorMs)
     }
 
     if (!candidate) continue
+
+    if (typeof notBeforeMs === 'number' && candidate.getTime() < notBeforeMs) {
+      candidate = new Date(notBeforeMs)
+    }
 
     if (
       !best ||
@@ -110,10 +155,6 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
     },
     client
   )
-}
-
-function diffMin(a: Date, b: Date) {
-  return Math.floor((b.getTime() - a.getTime()) / 60000)
 }
 
 async function persistPlacement(

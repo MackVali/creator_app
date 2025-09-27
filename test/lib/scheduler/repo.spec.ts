@@ -72,7 +72,7 @@ describe("fetchWindowsForDate", () => {
       from: vi.fn(() => ({ select })),
     } as const;
 
-    const windows = await fetchWindowsForDate(date, client as never);
+    const windows = await fetchWindowsForDate(date, client as never, 'UTC');
 
     expect(windows).toEqual(
       expect.arrayContaining([
@@ -92,6 +92,23 @@ describe("fetchWindowsForDate", () => {
     const recurringAppearances = windows.filter(win => win.id === "win-recurring-cross");
     expect(recurringAppearances.some(win => win.fromPrevDay === true)).toBe(true);
     expect(recurringAppearances.some(win => !win.fromPrevDay)).toBe(true);
+  });
+
+  it("derives the weekday using the provided timezone", async () => {
+    const date = new Date("2024-01-01T11:00:00Z");
+    const containsMock = vi.fn(async (_column: string, value: number[]) => ({
+      data: [],
+      error: null,
+    } as const));
+    const isMock = vi.fn(async () => ({ data: [], error: null } as const));
+    const select = vi.fn(() => ({ contains: containsMock, is: isMock }));
+    const client = { from: vi.fn(() => ({ select })) } as const;
+
+    await fetchWindowsForDate(date, client as never, "Pacific/Auckland");
+
+    expect(containsMock).toHaveBeenCalledWith("days", [2]);
+    expect(containsMock).toHaveBeenCalledWith("days", [1]);
+    expect(isMock).toHaveBeenCalledWith("days", null);
   });
 });
 
