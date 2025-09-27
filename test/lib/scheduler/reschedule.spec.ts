@@ -1432,6 +1432,89 @@ describe("scheduleBacklog", () => {
     expect(placements[0]?.startUTC.startsWith("2024-01-02")).toBe(true);
   });
 
+  it("reschedules projects that started earlier today so they begin at or after the current run time", async () => {
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockReset();
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-early",
+        source_id: "proj-1",
+        start_utc: "2024-01-02T08:00:00Z",
+        end_utc: "2024-01-02T09:00:00Z",
+        window_id: "win-morning",
+        weight_snapshot: 5,
+      }),
+    ];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-1": {
+        id: "proj-1",
+        name: "Deep work",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 90,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+      const day = date.toISOString().slice(0, 10);
+      if (day === "2024-01-02") {
+        return [
+          {
+            id: "win-morning",
+            label: "Morning focus",
+            energy: "HIGH",
+            start_local: "06:00",
+            end_local: "12:00",
+            days: [date.getDay()],
+          },
+        ];
+      }
+      return [];
+    });
+
+    const placements: Array<{ windowId: string; startUTC: string }> = [];
+
+    placeSpy.mockImplementation(async params => {
+      const window = params.windows[0];
+      expect(window).toBeTruthy();
+      expect(params.reuseInstanceId).toBe("inst-early");
+      const start = new Date(window.availableStartLocal ?? window.startLocal);
+      const end = new Date(start.getTime() + params.item.duration_min * 60000);
+      placements.push({ windowId: window.id, startUTC: start.toISOString() });
+      return {
+        data: createInstanceRecord({
+          id: "inst-early",
+          source_id: params.item.id,
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: window.id,
+          status: "scheduled",
+        }),
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const anchor = new Date("2024-01-02T10:30:00Z");
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, anchor, supabase);
+
+    expect(placeSpy).toHaveBeenCalledTimes(1);
+    expect(result.failures).toHaveLength(0);
+    expect(placements).toHaveLength(1);
+    const scheduledStart = new Date(placements[0]?.startUTC ?? "");
+    expect(scheduledStart.getTime()).toBeGreaterThanOrEqual(anchor.getTime());
+    expect(result.placed[0]?.start_utc).toBe(placements[0]?.startUTC);
+  });
+
   it("attempts to reschedule already scheduled projects when enqueuing all", async () => {
     const mockClient = {} as ScheduleBacklogClient;
     await scheduleBacklog(userId, baseDate, mockClient);

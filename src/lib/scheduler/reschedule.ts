@@ -25,7 +25,7 @@ import {
 
 type Client = SupabaseClient<Database>
 
-const GRACE_MIN = 60
+const START_GRACE_MIN = 1
 const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
@@ -72,13 +72,13 @@ export async function markMissedAndQueue(
   client?: Client
 ) {
   const supabase = await ensureClient(client)
-  const cutoff = new Date(now.getTime() - GRACE_MIN * 60000).toISOString()
+  const cutoff = new Date(now.getTime() - START_GRACE_MIN * 60000).toISOString()
   return await supabase
     .from('schedule_instances')
     .update({ status: 'missed' })
     .eq('user_id', userId)
     .eq('status', 'scheduled')
-    .lt('end_utc', cutoff)
+    .lt('start_utc', cutoff)
 }
 
 export async function scheduleBacklog(

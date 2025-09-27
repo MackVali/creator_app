@@ -109,6 +109,14 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   hour12: true,
 })
 
+const DATE_WITH_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
 const MAX_FALLBACK_TASKS = 12
 
@@ -124,11 +132,26 @@ type SchedulerRunFailure = {
   detail?: unknown
 }
 
+type SchedulerTimelineEntry = {
+  instanceId: string
+  projectId: string
+  windowId: string | null
+  decision: 'kept' | 'new' | 'rescheduled'
+  startUTC: string
+  endUTC: string
+  durationMin: number | null
+  energyResolved: string | null
+  scheduledDayOffset: number | null
+  availableStartLocal: string | null
+  windowStartLocal: string | null
+}
+
 type SchedulerDebugState = {
   runAt: string
   failures: SchedulerRunFailure[]
   placedCount: number
   placedProjectIds: string[]
+  timeline: SchedulerTimelineEntry[]
   error: unknown
 }
 
@@ -268,6 +291,82 @@ function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
   return results
 }
 
+function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
+  if (!Array.isArray(input)) return []
+  const results: SchedulerTimelineEntry[] = []
+  for (const entry of input) {
+    if (!entry || typeof entry !== 'object') continue
+    const value = entry as {
+      instance?: unknown
+      projectId?: unknown
+      decision?: unknown
+      scheduledDayOffset?: unknown
+      availableStartLocal?: unknown
+      windowStartLocal?: unknown
+    }
+    const instance = value.instance
+    if (!instance || typeof instance !== 'object') continue
+    const instanceValue = instance as {
+      id?: unknown
+      source_id?: unknown
+      window_id?: unknown
+      start_utc?: unknown
+      end_utc?: unknown
+      duration_min?: unknown
+      energy_resolved?: unknown
+    }
+    const instanceId = typeof instanceValue.id === 'string' ? instanceValue.id : null
+    const startUTC = typeof instanceValue.start_utc === 'string' ? instanceValue.start_utc : null
+    const endUTC = typeof instanceValue.end_utc === 'string' ? instanceValue.end_utc : null
+    if (!instanceId || !startUTC || !endUTC) continue
+    const decision = value.decision
+    if (decision !== 'kept' && decision !== 'new' && decision !== 'rescheduled') continue
+    const projectId =
+      typeof value.projectId === 'string' && value.projectId.trim().length > 0
+        ? value.projectId
+        : typeof instanceValue.source_id === 'string' && instanceValue.source_id.trim().length > 0
+          ? (instanceValue.source_id as string)
+          : null
+    if (!projectId) continue
+    const windowId = typeof instanceValue.window_id === 'string' ? instanceValue.window_id : null
+    const durationMin =
+      typeof instanceValue.duration_min === 'number' && Number.isFinite(instanceValue.duration_min)
+        ? instanceValue.duration_min
+        : null
+    const energyResolved =
+      typeof instanceValue.energy_resolved === 'string' && instanceValue.energy_resolved.trim().length > 0
+        ? instanceValue.energy_resolved
+        : null
+    const scheduledDayOffset =
+      typeof value.scheduledDayOffset === 'number' && Number.isFinite(value.scheduledDayOffset)
+        ? value.scheduledDayOffset
+        : null
+    const availableStartLocal =
+      typeof value.availableStartLocal === 'string' && value.availableStartLocal.length > 0
+        ? value.availableStartLocal
+        : null
+    const windowStartLocal =
+      typeof value.windowStartLocal === 'string' && value.windowStartLocal.length > 0
+        ? value.windowStartLocal
+        : null
+
+    results.push({
+      instanceId,
+      projectId,
+      windowId,
+      decision,
+      startUTC,
+      endUTC,
+      durationMin,
+      energyResolved,
+      scheduledDayOffset,
+      availableStartLocal,
+      windowStartLocal,
+    })
+  }
+  return results
+}
+
 function parseSchedulerDebugPayload(
   payload: unknown
 ): Omit<SchedulerDebugState, 'runAt'> | null {
@@ -278,6 +377,7 @@ function parseSchedulerDebugPayload(
     placed?: unknown
     failures?: unknown
     error?: unknown
+    timeline?: unknown
   }
   const placedCount = Array.isArray(scheduleValue.placed)
     ? scheduleValue.placed.length
@@ -300,6 +400,7 @@ function parseSchedulerDebugPayload(
     failures: parseSchedulerFailures(scheduleValue.failures),
     placedCount,
     placedProjectIds,
+    timeline: parseSchedulerTimeline(scheduleValue.timeline),
     error: scheduleValue.error ?? null,
   }
 }
@@ -426,6 +527,32 @@ function formatWindowRange(window: RepoWindow): string {
   return `${formatClockLabel(window.start_local)} – ${formatClockLabel(window.end_local)}`
 }
 
+function resolveWindowBoundsForDate(window: RepoWindow, date: Date) {
+  const dayStart = new Date(date)
+  dayStart.setHours(0, 0, 0, 0)
+
+  const start = new Date(dayStart)
+  if (window.fromPrevDay) {
+    start.setDate(start.getDate() - 1)
+  }
+  const [startHour = 0, startMinute = 0] = window.start_local.split(':').map(Number)
+  start.setHours(startHour, startMinute, 0, 0)
+
+  const end = new Date(dayStart)
+  const [endHour = 0, endMinute = 0] = window.end_local.split(':').map(Number)
+  end.setHours(endHour, endMinute, 0, 0)
+
+  if (!window.fromPrevDay && end <= start) {
+    end.setDate(end.getDate() + 1)
+  }
+
+  if (window.fromPrevDay && end <= start) {
+    end.setDate(end.getDate() + 1)
+  }
+
+  return { start, end }
+}
+
 function describeEmptyWindowReport({
   windowLabel,
   energyLabel,
@@ -433,6 +560,10 @@ function describeEmptyWindowReport({
   unscheduledProjects,
   schedulerFailureByProjectId,
   diagnosticsAvailable,
+  runStartedAt,
+  windowStart,
+  windowEnd,
+  futurePlacements,
 }: {
   windowLabel: string
   energyLabel: (typeof ENERGY.LIST)[number]
@@ -440,6 +571,17 @@ function describeEmptyWindowReport({
   unscheduledProjects: ProjectItem[]
   schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>
   diagnosticsAvailable: boolean
+  runStartedAt: Date | null
+  windowStart: Date
+  windowEnd: Date
+  futurePlacements: Array<{
+    projectId: string
+    projectName: string
+    sameDay: boolean
+    fits: boolean | null
+    durationMinutes: number | null
+    start: Date
+  }>
 }): { summary: string; details: string[] } {
   const details: string[] = []
 
@@ -458,8 +600,61 @@ function describeEmptyWindowReport({
   }
 
   if (unscheduledProjects.length === 0) {
+    if (futurePlacements.length > 0) {
+      const allTooLong = futurePlacements.every(entry => entry.fits === false)
+      if (allTooLong) {
+        const durations = futurePlacements
+          .map(entry => entry.durationMinutes ?? Number.POSITIVE_INFINITY)
+          .filter(value => Number.isFinite(value))
+        const shortest = Math.min(...durations)
+        const summary = Number.isFinite(shortest)
+          ? `${windowLabel} is shorter than the ${formatDurationLabel(shortest)} needed by upcoming compatible projects, so they were scheduled later.`
+          : `${windowLabel} stayed open because upcoming compatible projects require longer blocks than it provides.`
+        const detailItems = futurePlacements.slice(0, 4).map(entry => {
+          const lengthLabel = entry.durationMinutes
+            ? formatDurationLabel(entry.durationMinutes)
+            : 'unknown length'
+          return `${entry.projectName} · ${lengthLabel} · ${DATE_WITH_TIME_FORMATTER.format(entry.start)}`
+        })
+        return { summary, details: detailItems }
+      }
+
+      const sameDay = futurePlacements.filter(entry => entry.sameDay)
+      if (sameDay.length > 0) {
+        const summary = `${windowLabel} stayed open because ${sameDay.length} compatible project${
+          sameDay.length === 1 ? '' : 's'
+        } already occupy later slots today.`
+        const detailItems = sameDay.slice(0, 4).map(entry => {
+          const lengthLabel = entry.durationMinutes
+            ? formatDurationLabel(entry.durationMinutes)
+            : 'unknown length'
+          return `${entry.projectName} · ${lengthLabel} · ${TIME_FORMATTER.format(entry.start)}`
+        })
+        return { summary, details: detailItems }
+      }
+
+      const futureDay = futurePlacements.filter(entry => !entry.sameDay)
+      if (futureDay.length > 0) {
+        const summary = `${windowLabel} stayed open because compatible projects were placed in upcoming windows.`
+        const detailItems = futureDay.slice(0, 4).map(entry => {
+          const lengthLabel = entry.durationMinutes
+            ? formatDurationLabel(entry.durationMinutes)
+            : 'unknown length'
+          return `${entry.projectName} · ${lengthLabel} · ${DATE_WITH_TIME_FORMATTER.format(entry.start)}`
+        })
+        return { summary, details: detailItems }
+      }
+    }
+
+    if (runStartedAt && runStartedAt >= windowEnd) {
+      return {
+        summary: `${windowLabel} began at ${TIME_FORMATTER.format(windowStart)}, but the scheduler last ran at ${TIME_FORMATTER.format(runStartedAt)}, after this window ended.`,
+        details,
+      }
+    }
+
     return {
-      summary: `No ready projects were waiting when the scheduler last ran, leaving ${windowLabel} open.`,
+      summary: `${windowLabel} remained open after the last scheduler run. Trigger a reschedule to reevaluate this slot.`,
       details,
     }
   }
@@ -832,6 +1027,52 @@ export default function SchedulePage() {
     )
   }, [schedulerDebug])
 
+  const schedulerTimelinePlacements = useMemo(() => {
+    if (!schedulerDebug) return [] as Array<{
+      projectId: string
+      projectName: string
+      start: Date
+      durationMinutes: number | null
+      energyLabel: (typeof ENERGY.LIST)[number]
+    }>
+
+    const placements: Array<{
+      projectId: string
+      projectName: string
+      start: Date
+      durationMinutes: number | null
+      energyLabel: (typeof ENERGY.LIST)[number]
+    }> = []
+
+    for (const entry of schedulerDebug.timeline) {
+      if (!entry) continue
+      const start = toLocal(entry.startUTC)
+      if (Number.isNaN(start.getTime())) continue
+      const project = projectMap[entry.projectId]
+      const durationMin =
+        typeof entry.durationMin === 'number' && Number.isFinite(entry.durationMin)
+          ? entry.durationMin
+          : typeof project?.duration_min === 'number' && Number.isFinite(project.duration_min)
+            ? project.duration_min
+            : null
+      const energySource =
+        typeof entry.energyResolved === 'string' && entry.energyResolved.trim().length > 0
+          ? entry.energyResolved
+          : project?.energy ?? null
+      const energyLabel = normalizeEnergyLabel(energySource)
+
+      placements.push({
+        projectId: entry.projectId,
+        projectName: project?.name || 'Untitled project',
+        start,
+        durationMinutes: durationMin,
+        energyLabel,
+      })
+    }
+
+    return placements
+  }, [schedulerDebug, projectMap])
+
   const windowReports = useMemo<WindowReportEntry[]>(() => {
     if (windows.length === 0) return []
     const assignments = new Map<string, number>()
@@ -842,6 +1083,7 @@ export default function SchedulePage() {
     }
 
     const diagnosticsAvailable = Boolean(schedulerDebug)
+    const runStartedAt = schedulerDebug ? new Date(schedulerDebug.runAt) : null
     const reports: WindowReportEntry[] = []
 
     for (const win of windows) {
@@ -854,6 +1096,26 @@ export default function SchedulePage() {
       const durationMinutes = windowDurationForDay(win, startHour)
       const windowLabel = win.label?.trim() || 'Untitled window'
       const energyLabel = normalizeEnergyLabel(win.energy)
+      const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(win, currentDate)
+      const windowEnergyIndex = energyIndexFromLabel(energyLabel)
+      const futurePlacements = schedulerTimelinePlacements
+        .filter(entry => entry.start.getTime() >= windowEnd.getTime())
+        .filter(entry => {
+          const entryEnergyIndex = energyIndexFromLabel(entry.energyLabel)
+          return entryEnergyIndex !== -1 && entryEnergyIndex <= windowEnergyIndex
+        })
+        .map(entry => ({
+          projectId: entry.projectId,
+          projectName: entry.projectName,
+          start: entry.start,
+          durationMinutes: entry.durationMinutes,
+          sameDay: formatLocalDateKey(entry.start) === formatLocalDateKey(windowEnd),
+          fits:
+            typeof entry.durationMinutes === 'number' && Number.isFinite(entry.durationMinutes)
+              ? entry.durationMinutes <= durationMinutes
+              : null,
+        }))
+
       const description = describeEmptyWindowReport({
         windowLabel,
         energyLabel,
@@ -861,6 +1123,10 @@ export default function SchedulePage() {
         unscheduledProjects,
         schedulerFailureByProjectId,
         diagnosticsAvailable,
+        runStartedAt: runStartedAt && !Number.isNaN(runStartedAt.getTime()) ? runStartedAt : null,
+        windowStart,
+        windowEnd,
+        futurePlacements,
       })
 
       reports.push({
@@ -885,6 +1151,8 @@ export default function SchedulePage() {
     unscheduledProjects,
     schedulerFailureByProjectId,
     schedulerDebug,
+    schedulerTimelinePlacements,
+    currentDate,
   ])
 
   const schedulerRunSummary = useMemo(() => {
@@ -1219,6 +1487,7 @@ export default function SchedulePage() {
           failures: [],
           placedCount: 0,
           placedProjectIds: [],
+          timeline: [],
           error: fallbackError,
         })
       }
@@ -1229,6 +1498,7 @@ export default function SchedulePage() {
         failures: [],
         placedCount: 0,
         placedProjectIds: [],
+        timeline: [],
         error,
       })
     } finally {

@@ -15,7 +15,7 @@ import {
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 
-const GRACE_MIN = 60
+const START_GRACE_MIN = 1
 const DEFAULT_PROJECT_DURATION_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
 const BASE_LOOKAHEAD_DAYS = 28
@@ -101,13 +101,13 @@ async function resolveUserTimeZone(client: Client, userId: string) {
 }
 
 async function markMissedAndQueue(client: Client, userId: string, now: Date) {
-  const cutoff = new Date(now.getTime() - GRACE_MIN * 60_000).toISOString()
+  const cutoff = new Date(now.getTime() - START_GRACE_MIN * 60_000).toISOString()
   return await client
     .from('schedule_instances')
     .update({ status: 'missed' })
     .eq('user_id', userId)
     .eq('status', 'scheduled')
-    .lt('end_utc', cutoff)
+    .lt('start_utc', cutoff)
 }
 
 async function scheduleBacklog(
