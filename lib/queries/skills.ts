@@ -3,6 +3,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 export interface Skill {
   id: string;
   name: string;
+  icon?: string | null;
 }
 
 export async function getSkillsForUser(userId: string): Promise<Skill[]> {
@@ -13,7 +14,7 @@ export async function getSkillsForUser(userId: string): Promise<Skill[]> {
 
   const { data, error } = await supabase
     .from("skills")
-    .select("id, name")
+    .select("id, name, icon")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -22,5 +23,9 @@ export async function getSkillsForUser(userId: string): Promise<Skill[]> {
     throw error;
   }
 
-  return data || [];
+  return (data ?? []).map(({ id, name, icon }) => ({
+    id,
+    name,
+    icon: icon ?? null,
+  }));
 }
