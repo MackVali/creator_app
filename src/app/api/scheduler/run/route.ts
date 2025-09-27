@@ -5,7 +5,39 @@ import { normalizeTimeZone, toZonedDate } from '@/lib/scheduler/timezone'
 
 export const runtime = 'nodejs'
 
-export async function POST() {
+type SchedulerRunRequest = {
+  timeZone?: string | null
+  localNow?: string | null
+  offsetMinutes?: number | null
+}
+
+function parseSchedulerRunBody(body: unknown): SchedulerRunRequest | null {
+  if (!body || typeof body !== 'object') return null
+  const payload = body as Record<string, unknown>
+  const result: SchedulerRunRequest = {}
+  if (typeof payload.timeZone === 'string') {
+    result.timeZone = payload.timeZone
+  }
+  if (typeof payload.localNow === 'string') {
+    result.localNow = payload.localNow
+  }
+  if (typeof payload.offsetMinutes === 'number' && Number.isFinite(payload.offsetMinutes)) {
+    result.offsetMinutes = payload.offsetMinutes
+  }
+  return result
+}
+
+export async function POST(request: Request) {
+  let requestPayload: SchedulerRunRequest | null = null
+  if (request.headers.get('content-type')?.includes('application/json')) {
+    try {
+      const rawBody = await request.json()
+      requestPayload = parseSchedulerRunBody(rawBody)
+    } catch (error) {
+      console.warn('Failed to parse scheduler run payload', error)
+    }
+  }
+
   const supabase = await createClient()
   if (!supabase) {
     return NextResponse.json(
@@ -30,9 +62,25 @@ export async function POST() {
     return NextResponse.json({ error: 'not authenticated' }, { status: 401 })
   }
 
-  const userTimeZone = extractUserTimeZone(user)
-  const timeZone = normalizeTimeZone(userTimeZone)
-  const now = toZonedDate(new Date(), timeZone)
+  const candidateTimeZone = requestPayload?.timeZone ?? extractUserTimeZone(user)
+  const timeZone = normalizeTimeZone(candidateTimeZone)
+
+  let baseNow = new Date()
+  if (requestPayload?.localNow) {
+    const parsed = new Date(requestPayload.localNow)
+    if (!Number.isNaN(parsed.getTime())) {
+      baseNow = parsed
+    }
+  } else if (typeof requestPayload?.offsetMinutes === 'number') {
+    const offsetMinutes = requestPayload.offsetMinutes
+    const serverOffsetMinutes = -baseNow.getTimezoneOffset()
+    const diffMinutes = offsetMinutes - serverOffsetMinutes
+    if (Math.abs(diffMinutes) > 0) {
+      baseNow = new Date(baseNow.getTime() + diffMinutes * 60_000)
+    }
+  }
+
+  const now = toZonedDate(baseNow, timeZone)
 
   const markResult = await markMissedAndQueue(user.id, now, supabase)
   if (markResult.error) {
