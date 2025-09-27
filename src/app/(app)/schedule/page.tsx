@@ -117,6 +117,24 @@ const DATE_WITH_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 })
 
+function formatDayViewLabel(date: Date, timeZone: string) {
+  try {
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone,
+    })
+    return formatter.format(date)
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('Unable to format day view label', error)
+    }
+    return date.toDateString()
+  }
+}
+
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
 const MAX_FALLBACK_TASKS = 12
 
@@ -798,6 +816,14 @@ export default function SchedulePage() {
     }
     return 'UTC'
   }, [])
+  const dayViewLabel = useMemo(
+    () => formatDayViewLabel(currentDate, localTimeZone),
+    [currentDate, localTimeZone]
+  )
+  const dayViewDateKey = useMemo(
+    () => formatLocalDateKey(currentDate),
+    [currentDate]
+  )
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -1654,6 +1680,16 @@ export default function SchedulePage() {
               <ScheduleViewShell key="day">
                 {/* source of truth: schedule_instances */}
                 <div className="text-[10px] opacity-60 px-2">data source: schedule_instances</div>
+                <div className="pl-16 pr-6 pt-6 pb-4 text-white">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+                    <h2 className="text-2xl font-semibold tracking-tight">
+                      {dayViewLabel}
+                    </h2>
+                    <span className="text-sm font-medium text-white/60">
+                      {dayViewDateKey}
+                    </span>
+                  </div>
+                </div>
                 <DayTimeline
                   date={currentDate}
                   startHour={startHour}
