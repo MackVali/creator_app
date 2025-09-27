@@ -378,7 +378,7 @@ export default function SchedulePage() {
   const initialView: ScheduleView =
     initialViewParam && ['year', 'month', 'day', 'focus'].includes(initialViewParam)
       ? initialViewParam
-      : 'year'
+      : 'day'
   const initialDate = searchParams.get('date')
 
   const [currentDate, setCurrentDate] = useState(
