@@ -374,6 +374,14 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const { session } = useAuth()
   const userId = session?.user.id ?? null
+  const localTimeZone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
+    } catch (error) {
+      console.warn('Unable to resolve local timezone', error)
+      return null
+    }
+  }, [])
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -454,7 +462,7 @@ export default function SchedulePage() {
     async function load() {
       try {
         const [ws, ts, pm, scheduledIds] = await Promise.all([
-          fetchWindowsForDate(currentDate),
+          fetchWindowsForDate(currentDate, undefined, { timeZone: localTimeZone }),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
@@ -487,7 +495,7 @@ export default function SchedulePage() {
     return () => {
       active = false
     }
-  }, [currentDate, userId])
+  }, [currentDate, userId, localTimeZone])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -865,7 +873,7 @@ export default function SchedulePage() {
       active = false
       clearInterval(id)
     }
-  }, [userId, currentDate])
+  }, [userId, currentDate, localTimeZone])
 
   const [isScheduling, setIsScheduling] = useState(false)
   const schedulerHistoryStorageKey = useMemo(() => {
@@ -883,12 +891,7 @@ export default function SchedulePage() {
     setIsScheduling(true)
     try {
       const localNow = new Date()
-      let timeZone: string | null = null
-      try {
-        timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
-      } catch (error) {
-        console.warn('Unable to resolve local timezone', error)
-      }
+      const timeZone = localTimeZone
 
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',

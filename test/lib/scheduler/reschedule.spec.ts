@@ -4,6 +4,7 @@ import * as instanceRepo from "../../../src/lib/scheduler/instanceRepo";
 import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
 import * as projects from "../../../src/lib/scheduler/projects";
+import { addDaysInTimeZone, setTimeInTimeZone } from "../../../src/lib/scheduler/timezone";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 import type { ProjectLite } from "../../../src/lib/scheduler/weight";
 
@@ -1399,6 +1400,13 @@ describe("scheduleBacklog", () => {
       timeZone: "America/Los_Angeles",
     });
 
-    expect(requestedDates[0]).toBe(base.toISOString());
+    const expectedFirstRequest = setTimeInTimeZone(
+      addDaysInTimeZone(base, 0, "America/Los_Angeles"),
+      "America/Los_Angeles",
+      12,
+      0,
+    ).toISOString();
+
+    expect(requestedDates[0]).toBe(expectedFirstRequest);
   });
 });

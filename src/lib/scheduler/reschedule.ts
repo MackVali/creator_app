@@ -308,10 +308,11 @@ export async function scheduleBacklog(
     }
 
     const day = addDaysInTimeZone(baseStart, offset, timeZone)
+    const windowDate = setTimeInTimeZone(day, timeZone, 12, 0)
     const windows = await resolveWindowsForDay({
       cache: windowCache,
       client: supabase,
-      date: day,
+      date: windowDate,
       timeZone,
       now: offset === 0 ? localNow : undefined,
       availability: windowAvailability,
@@ -599,7 +600,7 @@ async function resolveWindowsForDay(params: {
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(date, client)
+    windows = await fetchWindowsForDate(date, client, { timeZone })
     cache?.set(cacheKey, windows)
   }
 

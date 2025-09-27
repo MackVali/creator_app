@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseBrowser } from '../../../lib/supabase';
 import type { Database } from '../../../types/supabase';
 import type { TaskLite, ProjectLite } from './weight';
+import { addDaysInTimeZone, getWeekdayInTimeZone, normalizeTimeZone } from './timezone';
 
 export type WindowLite = {
   id: string;
@@ -47,12 +48,15 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
 
 export async function fetchWindowsForDate(
   date: Date,
-  client?: Client
+  client?: Client,
+  options?: { timeZone?: string | null }
 ): Promise<WindowLite[]> {
   const supabase = ensureClient(client);
 
-  const weekday = date.getUTCDay();
-  const prevWeekday = (weekday + 6) % 7;
+  const timeZone = normalizeTimeZone(options?.timeZone);
+  const weekday = getWeekdayInTimeZone(date, timeZone);
+  const prevDate = addDaysInTimeZone(date, -1, timeZone);
+  const prevWeekday = getWeekdayInTimeZone(prevDate, timeZone);
   const columns = 'id, label, energy, start_local, end_local, days';
 
   const [

@@ -194,3 +194,9 @@ export function makeDateInTimeZone(
 ) {
   return makeZonedDate({ ...input, second: 0, millisecond: 0 }, timeZone)
 }
+
+export function getWeekdayInTimeZone(date: Date, timeZone: string) {
+  const parts = getDateTimeParts(date, timeZone)
+  const midnightUTC = Date.UTC(parts.year, parts.month - 1, parts.day)
+  return new Date(midnightUTC).getUTCDay()
+}

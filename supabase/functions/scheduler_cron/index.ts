@@ -7,6 +7,7 @@ import {
 import type { Database } from '../../../types/supabase.ts'
 import {
   addDaysInTimeZone,
+  getWeekdayInTimeZone,
   normalizeTimeZone,
   setTimeInTimeZone,
   toZonedDate,
@@ -337,11 +338,12 @@ async function scheduleBacklog(
     }
 
     const day = addDaysInTimeZone(baseStart, offset, timeZone)
+    const windowDate = setTimeInTimeZone(day, timeZone, 12, 0)
     const windows = await resolveWindowsForDay({
       availability: dayAvailability,
       cache: windowCache,
       client,
-      date: day,
+      date: windowDate,
       now: offset === 0 ? localNow : undefined,
       timeZone,
       userId,
@@ -675,7 +677,7 @@ async function resolveWindowsForDay(params: {
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(client, userId, date)
+    windows = await fetchWindowsForDate(client, userId, date, timeZone)
     cache?.set(cacheKey, windows)
   }
 
@@ -800,9 +802,16 @@ type WindowRecord = {
   fromPrevDay?: boolean
 }
 
-async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
-  const weekday = date.getUTCDay()
-  const prevWeekday = (weekday + 6) % 7
+async function fetchWindowsForDate(
+  client: Client,
+  userId: string,
+  date: Date,
+  timeZoneValue: string,
+) {
+  const timeZone = normalizeTimeZone(timeZoneValue)
+  const weekday = getWeekdayInTimeZone(date, timeZone)
+  const prevDate = addDaysInTimeZone(date, -1, timeZone)
+  const prevWeekday = getWeekdayInTimeZone(prevDate, timeZone)
 
   const columns = 'id, label, energy, start_local, end_local, days'
 
