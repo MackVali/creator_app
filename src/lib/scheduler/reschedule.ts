@@ -550,8 +550,14 @@ async function fetchCompatibleWindowsForItem(
 
     if (typeof nowMs === 'number' && endMs <= nowMs) continue
 
-    const baseAvailableStartMs =
+    let baseAvailableStartMs =
       typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
+    if (win.fromPrevDay) {
+      const dayStartMs = startOfDayInTimeZone(date, timeZone).getTime()
+      if (baseAvailableStartMs < dayStartMs) {
+        baseAvailableStartMs = dayStartMs
+      }
+    }
     const carriedStartMs = availability?.get(key)?.getTime()
     const availableStartMs =
       typeof carriedStartMs === 'number'

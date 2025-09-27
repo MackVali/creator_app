@@ -1313,6 +1313,131 @@ describe("scheduleBacklog", () => {
     expect(placements[0]?.startUTC.startsWith("2024-01-02")).toBe(true);
   });
 
+  it("clamps next-day availability for midnight-spanning windows", async () => {
+    instances = [];
+
+    const backlogResponse: BacklogResponse = {
+      data: [
+        createInstanceRecord({
+          id: "inst-midnight",
+          source_id: "proj-midnight",
+          status: "missed",
+          duration_min: 60,
+          energy_resolved: "LOW",
+        }),
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      backlogResponse,
+    );
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-midnight": {
+        id: "proj-midnight",
+        name: "Late night project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+      const day = date.toISOString().slice(0, 10);
+      if (day === "2024-01-02") {
+        return [
+          {
+            id: "win-midnight",
+            label: "Late night",
+            energy: "LOW",
+            start_local: "23:00",
+            end_local: "01:00",
+            days: [date.getDay()],
+          },
+        ];
+      }
+      if (day === "2024-01-03") {
+        return [
+          {
+            id: "win-midnight",
+            label: "Late night",
+            energy: "LOW",
+            start_local: "23:00",
+            end_local: "01:00",
+            days: [date.getDay()],
+            fromPrevDay: true,
+          },
+        ];
+      }
+      return [];
+    });
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }) satisfies InstancesResponse);
+
+    const attempts: Array<{ date: Date; availableStart: Date | undefined }> = [];
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async params => {
+      const window = params.windows[0];
+      attempts.push({ date: params.date, availableStart: window?.availableStartLocal });
+      if (!window) {
+        return { error: "NO_FIT" as const };
+      }
+      if (attempts.length === 1) {
+        return { error: "NO_FIT" as const };
+      }
+      const start = new Date(window.availableStartLocal ?? window.startLocal);
+      const end = new Date(start.getTime() + params.item.duration_min * 60000);
+      return {
+        data: createInstanceRecord({
+          id: "inst-midnight-placement",
+          source_id: params.item.id,
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: window.id,
+          status: "scheduled",
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const anchor = new Date("2024-01-02T12:00:00Z");
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, anchor, mockClient, { timeZone: "UTC" });
+
+    expect(result.failures).toHaveLength(0);
+    expect(result.placed).toHaveLength(1);
+    expect(attempts).toHaveLength(2);
+
+    const sameDay = attempts[0];
+    expect(sameDay?.date.toISOString().startsWith("2024-01-02")).toBe(true);
+    expect(sameDay?.availableStart?.toISOString()).toBe("2024-01-02T23:00:00.000Z");
+
+    const nextDay = attempts[1];
+    expect(nextDay?.date.toISOString().startsWith("2024-01-03")).toBe(true);
+    expect(nextDay?.availableStart).toBeDefined();
+    expect(nextDay?.availableStart?.getTime()).toBeGreaterThanOrEqual(
+      nextDay.date.getTime(),
+    );
+    expect(nextDay?.availableStart?.toISOString()).toBe("2024-01-03T00:00:00.000Z");
+  });
+
   it("schedules high energy projects into today's earliest compatible window", async () => {
     instances = [];
 
