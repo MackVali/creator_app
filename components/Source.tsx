@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element */
 import React, { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import { Sparkles, Package, X } from "lucide-react"
+
+import { Badge } from "./ui/badge"
+import { Button } from "./ui/button"
+import { Input } from "./ui/input"
+import { Label } from "./ui/label"
+import { Textarea } from "./ui/textarea"
+import { Select, SelectContent, SelectItem } from "./ui/select"
 
 // utility helpers
 function classNames(...classes: (string | undefined | null | false)[]) {
@@ -499,155 +507,322 @@ function Drawer({
     setItem((prev: any) => ({ ...prev, [field]: value }))
   }
 
+  const meta =
+    type === "service"
+      ? {
+          eyebrow: "Source",
+          badge: "Service",
+          title: draft ? "Update your service" : "Create a new service",
+          description: "Craft a bookable experience that fits your offer stack.",
+          highlight: "Services live in Source and let people reserve time with you.",
+          accent: "from-[#5E3EFF]/70 via-[#9966FF]/55 to-[#1A86FF]/60",
+          icon: Sparkles,
+        }
+      : {
+          eyebrow: "Source",
+          badge: "Product",
+          title: draft ? "Update your product" : "Create a new product",
+          description: "Package what you sell with the clarity it deserves.",
+          highlight: "Products appear in Source for supporters to purchase instantly.",
+          accent: "from-[#27D7A1]/70 via-[#3EC7FF]/55 to-[#1D7BFF]/60",
+          icon: Package,
+        }
+
+  const Icon = meta.icon
+
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal>
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-gray-800 p-6 shadow-xl">
-        <div className="mb-4 flex items-start justify-between">
-          <h2 className="text-lg font-semibold text-white">
-            {draft ? "Edit" : "Create"} {type === "service" ? "Service" : "Product"}
-          </h2>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded p-1 text-gray-400 transition hover:bg-gray-700 hover:text-white"
-          >
-            ✕
-          </button>
-        </div>
-        <form
-          className="flex flex-1 flex-col gap-4 overflow-y-auto"
-          onSubmit={(e) => {
-            e.preventDefault()
-            const nextItem = {
-              ...item,
-              price: item.price === "" || item.price === undefined ? 0 : item.price,
-              durationMins:
-                item.durationMins === "" || item.durationMins === undefined
-                  ? undefined
-                  : Number(item.durationMins),
-              inventory:
-                item.inventory === "" || item.inventory === undefined
-                  ? undefined
-                  : Number(item.inventory),
-            }
-            onSave(nextItem)
-          }}
-        >
-          <FieldRow label="Cover Image">
-            <div className="flex h-32 items-center justify-center rounded-md border border-gray-700 bg-gray-900 text-sm text-gray-400">
-              Upload
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-4 py-6 backdrop-blur-sm sm:py-10"
+      role="dialog"
+      aria-modal
+      onClick={onClose}
+    >
+      <div className="flex min-h-full items-start justify-center sm:items-center" onClick={(event) => event.stopPropagation()}>
+        <div className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0B1016]/95 shadow-[0_45px_90px_-40px_rgba(15,23,42,0.8)] max-h-[calc(100dvh-2rem)] sm:max-h-[85vh]">
+          <div className="relative flex-none overflow-hidden">
+            <div
+              className={classNames(
+                "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90",
+                meta.accent
+              )}
+            />
+            <div className="relative flex flex-col gap-2.5 px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-4 sm:pt-3.5">
+              <div className="flex flex-1 flex-col gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-white shadow-inner">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge
+                        variant="outline"
+                        className="border-white/20 bg-white/10 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200"
+                      >
+                        {meta.eyebrow}
+                      </Badge>
+                      <Badge className="bg-white/15 text-[11px] font-semibold text-white">
+                        {meta.badge}
+                      </Badge>
+                    </div>
+                    <h2 className="text-lg font-semibold leading-snug text-white sm:text-xl">
+                      {meta.title}
+                    </h2>
+                    <p className="text-[11px] text-zinc-200 sm:text-sm">{meta.description}</p>
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="button"
+                onClick={onClose}
+                variant="ghost"
+                className="self-start rounded-full bg-white/10 p-1.5 text-zinc-100 hover:bg-white/20"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </Button>
             </div>
-          </FieldRow>
-          <FieldRow label="Title">
-            <input
-              value={item.title}
-              onChange={(e) => update("title", e.target.value)}
-              className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-              required
-            />
-          </FieldRow>
-          <FieldRow label="Description">
-            <textarea
-              value={item.description}
-              onChange={(e) => update("description", e.target.value)}
-              className="h-28 w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-            />
-          </FieldRow>
-          <FieldRow label="Price (USD)">
-            <input
-              type="number"
-              value={item.price ?? ""}
-              onChange={(e) => {
-                const { value } = e.target
-                update("price", value === "" ? "" : parseFloat(value))
-              }}
-              className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-              min={0}
-              step="0.01"
-            />
-          </FieldRow>
-          {type === "service" && (
-            <FieldRow label="Duration (mins)">
-              <input
-                type="number"
-                value={item.durationMins ?? ""}
-                onChange={(e) => {
-                  const { value } = e.target
-                  update("durationMins", value === "" ? "" : parseInt(value, 10))
-                }}
-                className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-                min={0}
-              />
-            </FieldRow>
-          )}
-          {type === "product" && (
-            <>
-              <FieldRow label="Inventory">
-                <input
-                  type="number"
-                  value={item.inventory ?? ""}
-                  onChange={(e) => {
-                    const { value } = e.target
-                    update("inventory", value === "" ? "" : parseInt(value, 10))
-                  }}
-                  className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-                  min={0}
-                />
-              </FieldRow>
-              <FieldRow label="SKU">
-                <input
-                  value={item.sku || ""}
-                  onChange={(e) => update("sku", e.target.value)}
-                  className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-                />
-              </FieldRow>
-            </>
-          )}
-          <FieldRow label="Visibility">
-            <select
-              value={item.status}
-              onChange={(e) => update("status", e.target.value)}
-              className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-            >
-              <option value="draft">Draft</option>
-              <option value="published">Published</option>
-            </select>
-          </FieldRow>
-          <div className="mt-auto flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md bg-gray-700 px-3 py-2 text-sm text-white transition hover:bg-gray-600"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => onPreview(item)}
-              className="rounded-md bg-gray-700 px-3 py-2 text-sm text-white transition hover:bg-gray-600"
-            >
-              Preview
-            </button>
-            <button
-              type="submit"
-              className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
-            >
-              {draft ? "Save" : "Create"}
-            </button>
+            <div className="border-t border-white/10 px-4 py-1.5 text-[11px] text-zinc-300 sm:px-6 sm:py-2">
+              {meta.highlight}
+            </div>
           </div>
-        </form>
+
+          <form
+            className="flex flex-1 flex-col gap-6 overflow-y-auto px-5 pb-6 pt-6 sm:px-8 sm:pb-8"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const nextItem = {
+                ...item,
+                price: item.price === "" || item.price === undefined ? 0 : item.price,
+                durationMins:
+                  item.durationMins === "" || item.durationMins === undefined
+                    ? undefined
+                    : Number(item.durationMins),
+                inventory:
+                  item.inventory === "" || item.inventory === undefined
+                    ? undefined
+                    : Number(item.inventory),
+              }
+              onSave(nextItem)
+            }}
+          >
+            <FormSection
+              title="Show the vibe"
+              description="Give people a quick sense of what they'll get when they choose this offering."
+            >
+              <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] px-4 py-6 text-center text-sm text-zinc-300">
+                <p className="text-sm font-medium text-white">Cover image</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Drop a file here or browse to upload a promo image.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-4 rounded-xl border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-white/20"
+                >
+                  Upload
+                </Button>
+              </div>
+            </FormSection>
+
+            <FormSection
+              title="Overview"
+              description={
+                type === "service"
+                  ? "Describe the experience in your words so clients know exactly what to expect."
+                  : "Explain what supporters get the moment they check out."
+              }
+            >
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Title
+                </Label>
+                <Input
+                  value={item.title}
+                  onChange={(e) => update("title", e.target.value)}
+                  placeholder={
+                    type === "service" ? "Name your service" : "Name your product"
+                  }
+                  className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Description
+                </Label>
+                <Textarea
+                  value={item.description}
+                  onChange={(e) => update("description", e.target.value)}
+                  placeholder={
+                    type === "service"
+                      ? "What’s the flow, outcome, or deliverable of this service?"
+                      : "Tell supporters what’s included, specs, or delivery details."
+                  }
+                  className="min-h-[140px] rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                />
+              </div>
+            </FormSection>
+
+            <FormSection
+              title="Pricing & logistics"
+              description={
+                type === "service"
+                  ? "Set the price and time commitment so scheduling is effortless."
+                  : "Track inventory and set pricing so supporters can check out smoothly."
+              }
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                    Price (USD)
+                  </Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={item.price ?? ""}
+                    onChange={(e) => {
+                      const { value } = e.target
+                      update("price", value === "" ? "" : parseFloat(value))
+                    }}
+                    min={0}
+                    step="0.01"
+                    className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                </div>
+                {type === "service" ? (
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Duration (mins)
+                    </Label>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      value={item.durationMins ?? ""}
+                      onChange={(e) => {
+                        const { value } = e.target
+                        update("durationMins", value === "" ? "" : parseInt(value, 10))
+                      }}
+                      min={0}
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Inventory
+                    </Label>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      value={item.inventory ?? ""}
+                      onChange={(e) => {
+                        const { value } = e.target
+                        update("inventory", value === "" ? "" : parseInt(value, 10))
+                      }}
+                      min={0}
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                    />
+                  </div>
+                )}
+              </div>
+              {type === "product" && (
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                    SKU (optional)
+                  </Label>
+                  <Input
+                    value={item.sku || ""}
+                    onChange={(e) => update("sku", e.target.value)}
+                    placeholder="Add a SKU so you can track this product later"
+                    className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                </div>
+              )}
+            </FormSection>
+
+            <FormSection
+              title="Visibility"
+              description="Choose whether to keep this hidden while you refine the details or ship it immediately."
+            >
+              <div className="space-y-3">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Status
+                </Label>
+                <Select value={item.status} onValueChange={(value) => update("status", value)}>
+                  <SelectContent className="space-y-1 bg-[#0B1222]">
+                    <SelectItem value="draft" label="Draft">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-white">Draft</p>
+                        <p className="text-xs text-zinc-400">
+                          Keep polishing without publishing to Source yet.
+                        </p>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="published" label="Published">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-white">Published</p>
+                        <p className="text-xs text-zinc-400">
+                          Make it live so members can discover and buy.
+                        </p>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </FormSection>
+
+            <div className="sticky bottom-0 -mx-5 flex flex-col gap-3 border-t border-white/5 bg-[#070B12]/80 px-5 py-4 backdrop-blur sm:-mx-8 sm:flex-row sm:items-center sm:justify-end sm:gap-2 sm:px-8">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onClose}
+                className="h-11 rounded-xl border border-white/10 bg-white/[0.02] px-5 text-sm font-medium text-zinc-200 hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => onPreview(item)}
+                className="h-11 rounded-xl border border-white/10 bg-white/[0.04] px-5 text-sm font-medium text-zinc-100 hover:bg-white/15"
+              >
+                Preview
+              </Button>
+              <Button
+                type="submit"
+                className="h-11 rounded-xl bg-gradient-to-r from-blue-500 via-violet-500 to-fuchsia-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-10px_rgba(88,28,228,0.65)] transition hover:from-blue-400 hover:via-violet-400 hover:to-fuchsia-400"
+              >
+                {draft ? "Save changes" : type === "service" ? "Create service" : "Create product"}
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   )
 }
 
-function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description?: string
+  children: React.ReactNode
+}) {
   return (
-    <label className="flex flex-col text-sm text-gray-200">
-      <span className="mb-1 font-medium text-gray-300">{label}</span>
-      {children}
-    </label>
+    <section className="space-y-4 rounded-2xl border border-white/5 bg-white/[0.02] p-4 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.75)] sm:p-5">
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
+          {title}
+        </p>
+        {description ? (
+          <p className="text-xs text-zinc-500 sm:text-sm">{description}</p>
+        ) : null}
+      </div>
+      <div className="grid gap-4">{children}</div>
+    </section>
   )
 }
 
