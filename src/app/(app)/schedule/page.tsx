@@ -21,12 +21,12 @@ import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
 import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
-import { RefreshCcw } from 'lucide-react'
 import {
   getChildView,
   getParentView,
   type ScheduleView,
 } from '@/components/schedule/viewUtils'
+import { RescheduleButton } from '@/components/schedule/RescheduleButton'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -1627,24 +1627,11 @@ export default function SchedulePage() {
           onTouchEnd={handleTouchEnd}
         >
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
-            <button
-              type="button"
+            <RescheduleButton
               onClick={handleRescheduleClick}
               disabled={isScheduling}
-              className="group relative inline-flex items-center gap-2 rounded-full border border-white/40 bg-[linear-gradient(140deg,_#f4f5f9_0%,_#d6d9e0_45%,_#a1a6b4_100%)] px-5 py-2 text-sm font-semibold text-[#1f2733] shadow-[0_12px_26px_rgba(10,12,18,0.55),_0_5px_12px_rgba(0,0,0,0.35),_inset_0_1px_0_rgba(255,255,255,0.85)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(8,10,16,0.6),_0_8px_18px_rgba(0,0,0,0.4),_inset_0_1px_0_rgba(255,255,255,0.9)] disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-80 disabled:shadow-[0_12px_26px_rgba(10,12,18,0.4),_0_5px_12px_rgba(0,0,0,0.25),_inset_0_1px_0_rgba(255,255,255,0.6)]"
-            >
-              <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),_0_4px_8px_rgba(0,0,0,0.25)]">
-                <RefreshCcw
-                  strokeWidth={2.6}
-                  className={`h-[18px] w-[18px] text-[#111b27] ${
-                    isScheduling ? 'animate-spin' : 'group-hover:rotate-6'
-                  } transition-transform duration-200 ease-out`}
-                />
-              </div>
-              <span className="tracking-wide">
-                {isScheduling ? 'Rescheduling…' : 'Reschedule'}
-              </span>
-            </button>
+              isRunning={isScheduling}
+            />
             {hasAutoRunToday === false && (
               <span className="text-[11px] font-medium text-white/75 drop-shadow">
                 Auto-rescheduling now from your current time…
