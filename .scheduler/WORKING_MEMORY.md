@@ -3,3 +3,7 @@
 - inferred schemas: tasks need {id,name,priority,stage,duration_min,energy,project_id?,skill_id?,skill_icon?}; windows expose {id,label,energy,start_local,end_local,days,fromPrevDay} per repo usage.
 - decisions: implement per-day now clamp, per-task availability clone, RUN_ID+DRY_RUN options, standardized rejection reasons, telemetry trace output.
 - open TODOs: confirm persistence columns for run_id & rejected_reason, design TRACE emission path, backfill schema drift logging.
+## 2025-09-27T19:59Z
+- assumptions: CLI runs in production contexts with only production deps; scheduler UI relies on API unaffected.
+- decisions: promote `tsx` to runtime dependency so the scheduler CLI works when dev deps are pruned.
+- open TODOs: monitor trace file persistence behavior in serverless deploys; revisit schema-drift tolerant fetches.
