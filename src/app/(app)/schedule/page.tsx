@@ -399,6 +399,17 @@ export default function SchedulePage() {
   const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
   const [isScheduling, setIsScheduling] = useState(false)
   const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null)
+  const localTimeZone = useMemo(() => {
+    try {
+      const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
+      if (resolved && resolved.trim()) {
+        return resolved
+      }
+    } catch (error) {
+      console.warn('Unable to resolve local time zone', error)
+    }
+    return 'UTC'
+  }, [])
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -484,7 +495,7 @@ export default function SchedulePage() {
     async function load() {
       try {
         const [ws, ts, pm, scheduledIds] = await Promise.all([
-          fetchWindowsForDate(currentDate),
+          fetchWindowsForDate(currentDate, undefined, localTimeZone),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
@@ -517,7 +528,7 @@ export default function SchedulePage() {
     return () => {
       active = false
     }
-  }, [currentDate, userId])
+  }, [currentDate, userId, localTimeZone])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -903,15 +914,7 @@ export default function SchedulePage() {
       return
     }
     const localNow = new Date()
-    let timeZone: string | null = null
-    try {
-      const options = Intl.DateTimeFormat().resolvedOptions()
-      if (options.timeZone && options.timeZone.trim()) {
-        timeZone = options.timeZone
-      }
-    } catch (error) {
-      console.warn('Unable to determine local time zone', error)
-    }
+    const timeZone: string | null = localTimeZone ?? null
     if (isSchedulingRef.current) return
     isSchedulingRef.current = true
     setIsScheduling(true)
@@ -998,7 +1001,7 @@ export default function SchedulePage() {
         console.error('Failed to refresh scheduled project history', error)
       }
     }
-  }, [userId, refreshScheduledProjectIds])
+  }, [userId, refreshScheduledProjectIds, localTimeZone])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

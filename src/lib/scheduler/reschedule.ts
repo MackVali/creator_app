@@ -513,7 +513,7 @@ async function fetchCompatibleWindowsForItem(
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(date, supabase)
+    windows = await fetchWindowsForDate(date, supabase, timeZone)
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)
