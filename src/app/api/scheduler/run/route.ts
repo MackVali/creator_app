@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
 
+type SchedulerRequestBody = {
+  runId?: string
+  dryRun?: boolean
+  lookaheadDays?: number
+  stabilityLockMinutes?: number
+  collectTrace?: boolean
+  trace?: string
+  traceToFile?: boolean
+}
+
 function generateRunId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
@@ -17,9 +27,9 @@ export async function POST(request: Request) {
     )
   }
 
-  let body: any = {}
+  let body: SchedulerRequestBody = {}
   try {
-    body = await request.json()
+    body = (await request.json()) as SchedulerRequestBody
   } catch {
     body = {}
   }

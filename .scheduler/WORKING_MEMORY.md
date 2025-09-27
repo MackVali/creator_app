@@ -11,3 +11,7 @@
 - observations: per-request trace logging incurred heavy payloads and synchronous file writes, stalling scheduler responses.
 - decisions: gate trace capture behind explicit `collectTrace` requests, disable file persistence by default, and pass-through CLI opt-in to avoid UI hangs.
 - open TODOs: revisit lightweight trace summaries for UI without full candidate dumps.
+## 2025-09-27T21:19Z
+- observations: scheduler API stalled when Supabase rejected cross-tenant fetches; added explicit user filters to repo queries.
+- decisions: thread `userId` through scheduler backlog reads so task/project fetches respect RLS while keeping shared hooks unchanged via optional parameters.
+- open TODOs: evaluate whether scheduler meta hooks should also accept explicit user contexts for SSR paths.

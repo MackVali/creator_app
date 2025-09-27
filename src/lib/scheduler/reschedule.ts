@@ -153,8 +153,8 @@ export async function scheduleBacklog(
     return result
   }
 
-  const tasks = await fetchReadyTasks(supabase)
-  const projectsMap = await fetchProjectsMap(supabase)
+  const tasks = await fetchReadyTasks(supabase, { userId })
+  const projectsMap = await fetchProjectsMap(supabase, { userId })
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}

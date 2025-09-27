@@ -22,12 +22,21 @@ function ensureClient(client?: Client): Client {
   return supabase as Client;
 }
 
-export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
+export async function fetchReadyTasks(
+  client?: Client,
+  options?: { userId?: string | null }
+): Promise<TaskLite[]> {
   const supabase = ensureClient(client);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('tasks')
     .select('id, name, priority, stage, duration_min, energy, project_id, skill_id, skills(icon)');
+
+  if (options?.userId) {
+    query = query.eq('user_id', options.userId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data ?? []).map(
@@ -110,13 +119,20 @@ export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
 }
 
 export async function fetchProjectsMap(
-  client?: Client
+  client?: Client,
+  options?: { userId?: string | null }
 ): Promise<Record<string, ProjectLite>> {
   const supabase = ensureClient(client);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('projects')
     .select('id, name, priority, stage, energy, duration_min');
+
+  if (options?.userId) {
+    query = query.eq('user_id', options.userId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
   const map: Record<string, ProjectLite> = {};
