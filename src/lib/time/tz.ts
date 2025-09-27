@@ -9,42 +9,15 @@ export function localWindowToUTC(dateLocalISO: string): string {
   return localDate.toISOString()
 }
 
-const parseIntegerOrZero = (value: string | undefined): number => {
-  const parsed = Number.parseInt(value ?? '', 10)
-  return Number.isNaN(parsed) ? 0 : parsed
-}
-
 export function toLocal(isoUTC: string): Date {
-  if (typeof isoUTC !== 'string' || isoUTC.length === 0) {
-    return new Date(isoUTC)
+  if (typeof isoUTC === 'string') {
+    const parsed = new Date(isoUTC)
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed
+    }
   }
 
-  const [datePart, timeAndOffset = ''] = isoUTC.split('T')
-  if (!datePart) return new Date(isoUTC)
-
-  const dateSegments = datePart.split('-')
-  if (dateSegments.length < 3) return new Date(isoUTC)
-
-  const [yearRaw, monthRaw, dayRaw] = dateSegments
-  const year = Number.parseInt(yearRaw, 10)
-  const month = Number.parseInt(monthRaw, 10)
-  const day = Number.parseInt(dayRaw, 10)
-
-  if ([year, month, day].some(Number.isNaN)) {
-    return new Date(isoUTC)
-  }
-
-  const [timePartRaw = ''] = timeAndOffset.split(/Z|[+-]/)
-  const [hourPart, minutePart, secondAndFractionPart] = timePartRaw.split(':')
-  const secondPart = secondAndFractionPart
-    ? secondAndFractionPart.split('.')[0]
-    : secondAndFractionPart
-
-  const hour = parseIntegerOrZero(hourPart)
-  const minute = parseIntegerOrZero(minutePart)
-  const second = parseIntegerOrZero(secondPart)
-
-  return new Date(year, month - 1, day, hour, minute, second)
+  return new Date(isoUTC)
 }
 
 export function formatLocalDateKey(date: Date): string {

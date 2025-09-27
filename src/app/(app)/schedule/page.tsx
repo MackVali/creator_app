@@ -26,6 +26,7 @@ import {
   getParentView,
   type ScheduleView,
 } from '@/components/schedule/viewUtils'
+import { RescheduleButton } from '@/components/schedule/RescheduleButton'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -40,9 +41,19 @@ import {
 } from '@/lib/scheduler/instanceRepo'
 import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
-import { windowRect } from '@/lib/scheduler/windowRect'
+import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
+import {
+  DATE_WITH_TIME_FORMATTER,
+  TIME_FORMATTER,
+  describeEmptyWindowReport,
+  describeSchedulerFailure,
+  energyIndexFromLabel,
+  formatDurationLabel,
+  formatSchedulerDetail,
+  type SchedulerRunFailure,
+} from '@/lib/scheduler/windowReports'
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -102,11 +113,23 @@ function utcDayRange(d: Date) {
   return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
-const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true,
-})
+function formatDayViewLabel(date: Date, timeZone: string) {
+  try {
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone,
+    })
+    return formatter.format(date)
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('Unable to format day view label', error)
+    }
+    return date.toDateString()
+  }
+}
 
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
 const MAX_FALLBACK_TASKS = 12
@@ -115,12 +138,48 @@ function formatTimeRangeLabel(start: Date, end: Date) {
   return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
 }
 
+function formatPlacementDecision(decision: SchedulerTimelineEntry['decision']) {
+  switch (decision) {
+    case 'kept':
+      return 'Kept'
+    case 'rescheduled':
+      return 'Rescheduled'
+    case 'new':
+    default:
+      return 'New'
+  }
+}
+
 type LoadStatus = 'idle' | 'loading' | 'loaded'
 
-type SchedulerRunFailure = {
-  itemId: string
-  reason: string
-  detail?: unknown
+type SchedulerTimelineEntry = {
+  instanceId: string
+  projectId: string
+  windowId: string | null
+  decision: 'kept' | 'new' | 'rescheduled'
+  startUTC: string
+  endUTC: string
+  durationMin: number | null
+  energyResolved: string | null
+  scheduledDayOffset: number | null
+  availableStartLocal: string | null
+  windowStartLocal: string | null
+}
+
+type SchedulerTimelinePlacement = {
+  projectId: string
+  projectName: string
+  start: Date
+  end: Date
+  durationMinutes: number | null
+  energyLabel: (typeof ENERGY.LIST)[number]
+  decision: SchedulerTimelineEntry['decision']
+}
+
+type SchedulerProjectPlacementDebug = {
+  projectId: string
+  projectName: string
+  placements: SchedulerTimelinePlacement[]
 }
 
 type SchedulerDebugState = {
@@ -128,6 +187,7 @@ type SchedulerDebugState = {
   failures: SchedulerRunFailure[]
   placedCount: number
   placedProjectIds: string[]
+  timeline: SchedulerTimelineEntry[]
   error: unknown
 }
 
@@ -267,6 +327,82 @@ function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
   return results
 }
 
+function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
+  if (!Array.isArray(input)) return []
+  const results: SchedulerTimelineEntry[] = []
+  for (const entry of input) {
+    if (!entry || typeof entry !== 'object') continue
+    const value = entry as {
+      instance?: unknown
+      projectId?: unknown
+      decision?: unknown
+      scheduledDayOffset?: unknown
+      availableStartLocal?: unknown
+      windowStartLocal?: unknown
+    }
+    const instance = value.instance
+    if (!instance || typeof instance !== 'object') continue
+    const instanceValue = instance as {
+      id?: unknown
+      source_id?: unknown
+      window_id?: unknown
+      start_utc?: unknown
+      end_utc?: unknown
+      duration_min?: unknown
+      energy_resolved?: unknown
+    }
+    const instanceId = typeof instanceValue.id === 'string' ? instanceValue.id : null
+    const startUTC = typeof instanceValue.start_utc === 'string' ? instanceValue.start_utc : null
+    const endUTC = typeof instanceValue.end_utc === 'string' ? instanceValue.end_utc : null
+    if (!instanceId || !startUTC || !endUTC) continue
+    const decision = value.decision
+    if (decision !== 'kept' && decision !== 'new' && decision !== 'rescheduled') continue
+    const projectId =
+      typeof value.projectId === 'string' && value.projectId.trim().length > 0
+        ? value.projectId
+        : typeof instanceValue.source_id === 'string' && instanceValue.source_id.trim().length > 0
+          ? (instanceValue.source_id as string)
+          : null
+    if (!projectId) continue
+    const windowId = typeof instanceValue.window_id === 'string' ? instanceValue.window_id : null
+    const durationMin =
+      typeof instanceValue.duration_min === 'number' && Number.isFinite(instanceValue.duration_min)
+        ? instanceValue.duration_min
+        : null
+    const energyResolved =
+      typeof instanceValue.energy_resolved === 'string' && instanceValue.energy_resolved.trim().length > 0
+        ? instanceValue.energy_resolved
+        : null
+    const scheduledDayOffset =
+      typeof value.scheduledDayOffset === 'number' && Number.isFinite(value.scheduledDayOffset)
+        ? value.scheduledDayOffset
+        : null
+    const availableStartLocal =
+      typeof value.availableStartLocal === 'string' && value.availableStartLocal.length > 0
+        ? value.availableStartLocal
+        : null
+    const windowStartLocal =
+      typeof value.windowStartLocal === 'string' && value.windowStartLocal.length > 0
+        ? value.windowStartLocal
+        : null
+
+    results.push({
+      instanceId,
+      projectId,
+      windowId,
+      decision,
+      startUTC,
+      endUTC,
+      durationMin,
+      energyResolved,
+      scheduledDayOffset,
+      availableStartLocal,
+      windowStartLocal,
+    })
+  }
+  return results
+}
+
 function parseSchedulerDebugPayload(
   payload: unknown
 ): Omit<SchedulerDebugState, 'runAt'> | null {
@@ -277,6 +413,7 @@ function parseSchedulerDebugPayload(
     placed?: unknown
     failures?: unknown
     error?: unknown
+    timeline?: unknown
   }
   const placedCount = Array.isArray(scheduleValue.placed)
     ? scheduleValue.placed.length
@@ -299,71 +436,78 @@ function parseSchedulerDebugPayload(
     failures: parseSchedulerFailures(scheduleValue.failures),
     placedCount,
     placedProjectIds,
+    timeline: parseSchedulerTimeline(scheduleValue.timeline),
     error: scheduleValue.error ?? null,
   }
 }
 
-function formatSchedulerDetail(detail: unknown): string | null {
-  if (detail === null || detail === undefined) return null
-  if (detail instanceof Error) return detail.message
-  if (typeof detail === 'string') return detail
-  if (typeof detail === 'number' || typeof detail === 'boolean') {
-    return String(detail)
-  }
-  if (typeof detail === 'object') {
-    const obj = detail as Record<string, unknown>
-    const candidates = ['message', 'details', 'hint', 'code'] as const
-    const parts: string[] = []
-    for (const key of candidates) {
-      const value = obj[key]
-      if (typeof value === 'string' && value.trim().length > 0) {
-        parts.push(value.trim())
-      }
-    }
-    if (parts.length > 0) return parts.join(' · ')
-    try {
-      return JSON.stringify(detail)
-    } catch (error) {
-      console.error('Failed to serialize scheduler detail', error)
-    }
-  }
-  try {
-    return JSON.stringify(detail)
-  } catch (error) {
-    console.error('Failed to stringify scheduler detail', error)
-  }
-  return String(detail)
+type WindowReportEntry = {
+  key: string
+  top: number
+  height: number
+  windowLabel: string
+  summary: string
+  details: string[]
+  energyLabel: (typeof ENERGY.LIST)[number]
+  durationLabel: string
+  rangeLabel: string
 }
 
-function describeSchedulerFailure(
-  failure: SchedulerRunFailure,
-  context: { durationMinutes: number; energy: string }
-): { message: string; detail?: string } {
-  const duration = Math.max(0, Math.round(context.durationMinutes))
-  const energy = context.energy.toUpperCase()
-  const detail = formatSchedulerDetail(failure.detail) ?? undefined
-  switch (failure.reason) {
-    case 'NO_WINDOW': {
-      const energyDescription =
-        energy === 'NO'
-          ? 'any available window'
-          : `a window with ${energy} energy or higher`
-      return {
-        message: `Scheduler could not find ${energyDescription} long enough (≥ ${duration}m) within the next 28 days.`,
-        detail,
-      }
-    }
-    case 'error':
-      return {
-        message: 'Scheduler encountered an error while trying to book this project.',
-        detail,
-      }
-    default:
-      return {
-        message: `Scheduler reported "${failure.reason}" for this project.`,
-        detail,
-      }
+function normalizeEnergyLabel(level?: string | null): (typeof ENERGY.LIST)[number] {
+  const raw = typeof level === 'string' ? level.trim().toUpperCase() : ''
+  return ENERGY.LIST.includes(raw as (typeof ENERGY.LIST)[number])
+    ? (raw as (typeof ENERGY.LIST)[number])
+    : 'NO'
+}
+
+function windowDurationForDay(window: RepoWindow, startHour: number): number {
+  const startMin = timeToMin(window.start_local)
+  const endMin = timeToMin(window.end_local)
+  const dayStartMin = startHour * 60
+  if (window.fromPrevDay) {
+    return Math.max(0, endMin - dayStartMin)
   }
+  if (endMin <= startMin) {
+    return Math.max(0, 24 * 60 - startMin)
+  }
+  return Math.max(0, endMin - startMin)
+}
+
+function formatClockLabel(localTime: string): string {
+  const [hour = 0, minute = 0] = localTime.split(':').map(Number)
+  const d = new Date()
+  d.setHours(hour, minute, 0, 0)
+  return TIME_FORMATTER.format(d)
+}
+
+function formatWindowRange(window: RepoWindow): string {
+  return `${formatClockLabel(window.start_local)} – ${formatClockLabel(window.end_local)}`
+}
+
+function resolveWindowBoundsForDate(window: RepoWindow, date: Date) {
+  const dayStart = new Date(date)
+  dayStart.setHours(0, 0, 0, 0)
+
+  const start = new Date(dayStart)
+  if (window.fromPrevDay) {
+    start.setDate(start.getDate() - 1)
+  }
+  const [startHour = 0, startMinute = 0] = window.start_local.split(':').map(Number)
+  start.setHours(startHour, startMinute, 0, 0)
+
+  const end = new Date(dayStart)
+  const [endHour = 0, endMinute = 0] = window.end_local.split(':').map(Number)
+  end.setHours(endHour, endMinute, 0, 0)
+
+  if (!window.fromPrevDay && end <= start) {
+    end.setDate(end.getDate() + 1)
+  }
+
+  if (window.fromPrevDay && end <= start) {
+    end.setDate(end.getDate() + 1)
+  }
+
+  return { start, end }
 }
 
 export default function SchedulePage() {
@@ -396,6 +540,27 @@ export default function SchedulePage() {
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
+  const [isScheduling, setIsScheduling] = useState(false)
+  const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null)
+  const localTimeZone = useMemo(() => {
+    try {
+      const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
+      if (resolved && resolved.trim()) {
+        return resolved
+      }
+    } catch (error) {
+      console.warn('Unable to resolve local time zone', error)
+    }
+    return 'UTC'
+  }, [])
+  const dayViewLabel = useMemo(
+    () => formatDayViewLabel(currentDate, localTimeZone),
+    [currentDate, localTimeZone]
+  )
+  const dayViewDateKey = useMemo(
+    () => formatLocalDateKey(currentDate),
+    [currentDate]
+  )
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -416,6 +581,32 @@ export default function SchedulePage() {
   const isSchedulingRef = useRef(false)
   const autoScheduledForRef = useRef<string | null>(null)
 
+  const persistAutoRunDate = useCallback(
+    (dateKey: string) => {
+      if (!userId) return
+      if (typeof window === 'undefined') return
+      const storageKey = `schedule:lastAutoRun:${userId}`
+      try {
+        window.localStorage.setItem(storageKey, dateKey)
+      } catch (error) {
+        console.warn('Failed to store schedule auto-run timestamp', error)
+      }
+    },
+    [userId]
+  )
+
+  const readLastAutoRunDate = useCallback((): string | null => {
+    if (!userId) return null
+    if (typeof window === 'undefined') return null
+    const storageKey = `schedule:lastAutoRun:${userId}`
+    try {
+      return window.localStorage.getItem(storageKey)
+    } catch (error) {
+      console.warn('Failed to read schedule auto-run timestamp', error)
+      return null
+    }
+  }, [userId])
+
   const startHour = 0
   const pxPerMin = 2
   const year = currentDate.getFullYear()
@@ -428,6 +619,8 @@ export default function SchedulePage() {
 
   useEffect(() => {
     setSchedulerDebug(null)
+    autoScheduledForRef.current = null
+    setHasAutoRunToday(null)
   }, [userId])
 
   useEffect(() => {
@@ -453,7 +646,7 @@ export default function SchedulePage() {
     async function load() {
       try {
         const [ws, ts, pm, scheduledIds] = await Promise.all([
-          fetchWindowsForDate(currentDate),
+          fetchWindowsForDate(currentDate, undefined, localTimeZone),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
@@ -486,7 +679,7 @@ export default function SchedulePage() {
     return () => {
       active = false
     }
-  }, [currentDate, userId])
+  }, [currentDate, userId, localTimeZone])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -563,7 +756,7 @@ export default function SchedulePage() {
         assignedWindow: RepoWindow | null
       } => value !== null)
       .sort((a, b) => a.start.getTime() - b.start.getTime())
-  }, [instances, projectMap, projectItems, windowMap])
+  }, [instances, projectMap, windowMap])
 
   const projectInstanceIds = useMemo(() => {
     const set = new Set<string>()
@@ -600,6 +793,158 @@ export default function SchedulePage() {
       {}
     )
   }, [schedulerDebug])
+
+  const schedulerTimelinePlacements = useMemo(() => {
+    if (!schedulerDebug) return [] as SchedulerTimelinePlacement[]
+
+    const placements: SchedulerTimelinePlacement[] = []
+
+    for (const entry of schedulerDebug.timeline) {
+      if (!entry) continue
+      const start = toLocal(entry.startUTC)
+      const end = toLocal(entry.endUTC)
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue
+      const project = projectMap[entry.projectId]
+      const durationMin =
+        typeof entry.durationMin === 'number' && Number.isFinite(entry.durationMin)
+          ? entry.durationMin
+          : typeof project?.duration_min === 'number' && Number.isFinite(project.duration_min)
+            ? project.duration_min
+            : null
+      const energySource =
+        typeof entry.energyResolved === 'string' && entry.energyResolved.trim().length > 0
+          ? entry.energyResolved
+          : project?.energy ?? null
+      const energyLabel = normalizeEnergyLabel(energySource)
+
+      placements.push({
+        projectId: entry.projectId,
+        projectName: project?.name || 'Untitled project',
+        start,
+        end,
+        durationMinutes: durationMin,
+        energyLabel,
+        decision: entry.decision,
+      })
+    }
+
+    return placements
+  }, [schedulerDebug, projectMap])
+
+  const schedulerPlacementsByProject = useMemo<SchedulerProjectPlacementDebug[]>(() => {
+    if (schedulerTimelinePlacements.length === 0) return []
+
+    const map = new Map<string, SchedulerProjectPlacementDebug>()
+    for (const placement of schedulerTimelinePlacements) {
+      const existing = map.get(placement.projectId)
+      if (existing) {
+        existing.placements.push(placement)
+      } else {
+        map.set(placement.projectId, {
+          projectId: placement.projectId,
+          projectName: placement.projectName,
+          placements: [placement],
+        })
+      }
+    }
+
+    const grouped = Array.from(map.values())
+    for (const entry of grouped) {
+      entry.placements.sort((a, b) => a.start.getTime() - b.start.getTime())
+    }
+    grouped.sort((a, b) => {
+      const aStart = a.placements[0]?.start.getTime() ?? Number.POSITIVE_INFINITY
+      const bStart = b.placements[0]?.start.getTime() ?? Number.POSITIVE_INFINITY
+      if (aStart === bStart) {
+        return a.projectName.localeCompare(b.projectName)
+      }
+      return aStart - bStart
+    })
+
+    return grouped
+  }, [schedulerTimelinePlacements])
+
+  const windowReports = useMemo<WindowReportEntry[]>(() => {
+    if (windows.length === 0) return []
+    const assignments = new Map<string, number>()
+    for (const { instance } of projectInstances) {
+      const windowId = instance.window_id
+      if (!windowId) continue
+      assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
+    }
+
+    const diagnosticsAvailable = Boolean(schedulerDebug)
+    const runStartedAt = schedulerDebug ? new Date(schedulerDebug.runAt) : null
+    const reports: WindowReportEntry[] = []
+
+    for (const win of windows) {
+      const assigned = assignments.get(win.id) ?? 0
+      if (assigned > 0) continue
+
+      const { top, height } = windowRect(win, startHour, pxPerMin)
+      if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) continue
+
+      const durationMinutes = windowDurationForDay(win, startHour)
+      const windowLabel = win.label?.trim() || 'Untitled window'
+      const energyLabel = normalizeEnergyLabel(win.energy)
+      const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(win, currentDate)
+      const windowEnergyIndex = energyIndexFromLabel(energyLabel)
+      const futurePlacements = schedulerTimelinePlacements
+        .filter(entry => entry.start.getTime() >= windowEnd.getTime())
+        .filter(entry => {
+          const entryEnergyIndex = energyIndexFromLabel(entry.energyLabel)
+          return entryEnergyIndex !== -1 && entryEnergyIndex <= windowEnergyIndex
+        })
+        .map(entry => ({
+          projectId: entry.projectId,
+          projectName: entry.projectName,
+          start: entry.start,
+          durationMinutes: entry.durationMinutes,
+          sameDay: formatLocalDateKey(entry.start) === formatLocalDateKey(windowEnd),
+          fits:
+            typeof entry.durationMinutes === 'number' && Number.isFinite(entry.durationMinutes)
+              ? entry.durationMinutes <= durationMinutes
+              : null,
+        }))
+
+      const description = describeEmptyWindowReport({
+        windowLabel,
+        energyLabel,
+        durationMinutes,
+        unscheduledProjects,
+        schedulerFailureByProjectId,
+        diagnosticsAvailable,
+        runStartedAt: runStartedAt && !Number.isNaN(runStartedAt.getTime()) ? runStartedAt : null,
+        windowStart,
+        windowEnd,
+        futurePlacements,
+      })
+
+      reports.push({
+        key: `${win.id}-${win.fromPrevDay ? 'prev' : 'curr'}-${win.start_local}-${win.end_local}`,
+        top,
+        height,
+        windowLabel,
+        summary: description.summary,
+        details: description.details,
+        energyLabel,
+        durationLabel: formatDurationLabel(durationMinutes),
+        rangeLabel: formatWindowRange(win),
+      })
+    }
+
+    return reports
+  }, [
+    windows,
+    projectInstances,
+    startHour,
+    pxPerMin,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    currentDate,
+  ])
 
   const schedulerRunSummary = useMemo(() => {
     if (!schedulerDebug) return null
@@ -871,12 +1216,22 @@ export default function SchedulePage() {
       console.warn('No user session available for scheduler run')
       return
     }
+    const localNow = new Date()
+    const timeZone: string | null = localTimeZone ?? null
     if (isSchedulingRef.current) return
     isSchedulingRef.current = true
+    setIsScheduling(true)
     try {
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
         cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          localTimeIso: localNow.toISOString(),
+          timeZone,
+        }),
       })
       let payload: unknown = null
       let parseError: unknown = null
@@ -923,6 +1278,7 @@ export default function SchedulePage() {
           failures: [],
           placedCount: 0,
           placedProjectIds: [],
+          timeline: [],
           error: fallbackError,
         })
       }
@@ -933,10 +1289,12 @@ export default function SchedulePage() {
         failures: [],
         placedCount: 0,
         placedProjectIds: [],
+        timeline: [],
         error,
       })
     } finally {
       isSchedulingRef.current = false
+      setIsScheduling(false)
       try {
         await loadInstancesRef.current()
       } catch (error) {
@@ -948,11 +1306,7 @@ export default function SchedulePage() {
         console.error('Failed to refresh scheduled project history', error)
       }
     }
-  }, [userId, refreshScheduledProjectIds])
-
-  useEffect(() => {
-    autoScheduledForRef.current = null
-  }, [userId, currentDate])
+  }, [userId, refreshScheduledProjectIds, localTimeZone])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -968,21 +1322,38 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId) return
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
-    if (instances.length > 0) return
+    const todayKey = formatLocalDateKey(new Date())
+    const stored = readLastAutoRunDate()
+    if (stored === todayKey) {
+      if (hasAutoRunToday !== true) setHasAutoRunToday(true)
+      return
+    }
+    if (hasAutoRunToday !== false) setHasAutoRunToday(false)
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDate)
-    const key = `${userId}:${startUTC}`
-    if (autoScheduledForRef.current === key) return
-    autoScheduledForRef.current = key
-    void runScheduler()
+    if (autoScheduledForRef.current === todayKey) return
+    autoScheduledForRef.current = todayKey
+    void (async () => {
+      await runScheduler()
+      persistAutoRunDate(todayKey)
+      setHasAutoRunToday(true)
+    })()
   }, [
     userId,
-    currentDate,
     metaStatus,
     instancesStatus,
-    instances.length,
     runScheduler,
+    readLastAutoRunDate,
+    persistAutoRunDate,
+    hasAutoRunToday,
   ])
+
+  const handleRescheduleClick = useCallback(async () => {
+    if (!userId) return
+    const todayKey = formatLocalDateKey(new Date())
+    await runScheduler()
+    persistAutoRunDate(todayKey)
+    setHasAutoRunToday(true)
+  }, [userId, runScheduler, persistAutoRunDate])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -1016,6 +1387,23 @@ export default function SchedulePage() {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
+          <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
+            <RescheduleButton
+              onClick={handleRescheduleClick}
+              disabled={isScheduling}
+              isRunning={isScheduling}
+            />
+            {hasAutoRunToday === false && (
+              <span className="text-[11px] font-medium text-white/75 drop-shadow">
+                Auto-rescheduling now from your current time…
+              </span>
+            )}
+            {hasAutoRunToday === true && (
+              <span className="text-[11px] font-medium text-white/70 drop-shadow">
+                Automatic reschedule already ran today. Use the button to refresh.
+              </span>
+            )}
+          </div>
           <AnimatePresence mode="wait" initial={false}>
             {view === 'year' && (
               <ScheduleViewShell key="year">
@@ -1040,6 +1428,16 @@ export default function SchedulePage() {
               <ScheduleViewShell key="day">
                 {/* source of truth: schedule_instances */}
                 <div className="text-[10px] opacity-60 px-2">data source: schedule_instances</div>
+                <div className="pl-16 pr-6 pt-6 pb-4 text-white">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+                    <h2 className="text-2xl font-semibold tracking-tight">
+                      {dayViewLabel}
+                    </h2>
+                    <span className="text-sm font-medium text-white/60">
+                      {dayViewDateKey}
+                    </span>
+                  </div>
+                </div>
                 <DayTimeline
                   date={currentDate}
                   startHour={startHour}
@@ -1064,6 +1462,34 @@ export default function SchedulePage() {
                       </div>
                     )
                   })}
+                  {windowReports.map(report => (
+                    <div
+                      key={report.key}
+                      className="absolute left-16 right-2"
+                      style={{ top: report.top, height: report.height }}
+                    >
+                      <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                          Window report · {report.windowLabel}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                          <span>{report.rangeLabel}</span>
+                          <span>Energy: {report.energyLabel}</span>
+                          <span>Duration: {report.durationLabel}</span>
+                        </div>
+                        <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                          {report.summary}
+                        </p>
+                        {report.details.length > 0 && (
+                          <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                            {report.details.map((detail, index) => (
+                              <li key={`${report.key}-detail-${index}`}>{detail}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                   {projectInstances.map(({ instance, project, start, end, assignedWindow }, index) => {
                     const projectId = project.id
                     const startMin = start.getHours() * 60 + start.getMinutes()
@@ -1562,6 +1988,56 @@ export default function SchedulePage() {
                   ) to capture failure diagnostics for these projects.
                 </p>
               )
+            )}
+            {schedulerDebug && schedulerPlacementsByProject.length > 0 && (
+              <div className="mt-3 rounded-md border border-amber-500/25 bg-black/20 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                  Scheduled placements (debug)
+                </div>
+                <ul className="mt-2 space-y-2">
+                  {schedulerPlacementsByProject.map(project => (
+                    <li key={project.projectId}>
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <span className="text-[11px] font-medium text-amber-50">
+                          {project.projectName}
+                        </span>
+                        <span className="text-[9px] uppercase tracking-wide text-amber-200/70">
+                          {project.projectId}
+                        </span>
+                      </div>
+                      <ul className="mt-1 space-y-1">
+                        {project.placements.map((placement, index) => {
+                          const durationLabel =
+                            typeof placement.durationMinutes === 'number' &&
+                            Number.isFinite(placement.durationMinutes)
+                              ? formatDurationLabel(Math.max(0, Math.round(placement.durationMinutes)))
+                              : null
+                          return (
+                            <li
+                              key={`${project.projectId}-${placement.start.getTime()}-${index}`}
+                              className="rounded border border-amber-500/20 bg-black/30 p-2"
+                            >
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <span className="text-[10px] font-semibold text-amber-50">
+                                  {DATE_WITH_TIME_FORMATTER.format(placement.start)}
+                                </span>
+                                <span className="text-[9px] uppercase tracking-wide text-amber-200/70">
+                                  {formatPlacementDecision(placement.decision)}
+                                </span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-amber-100/70">
+                                <span>{formatTimeRangeLabel(placement.start, placement.end)}</span>
+                                {durationLabel && <span>Duration: {durationLabel}</span>}
+                                <span>Energy: {placement.energyLabel}</span>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {unscheduledProjects.length === 0 ? (
               <p className="mt-2 text-amber-200/80">
