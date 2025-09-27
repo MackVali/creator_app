@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
@@ -12,7 +12,7 @@ interface SkillProjectsGridProps {
 
 interface ProjectRecord {
   id: string;
-  name: string;
+  name?: string | null;
   goal_id: string | null;
   priority: string | null;
   energy: string | null;
@@ -25,14 +25,9 @@ interface ProjectWithGoal extends ProjectRecord {
   goal_name: string;
 }
 
-type ProjectSkillLink = { skill_id: string | null };
-type TaskLink = { skill_id: string | null };
+type ProjectSkillRow = { project_id: string | null };
+type TaskRow = { project_id: string | null };
 type GoalSummaryRow = { id: string; name: string | null };
-
-type ProjectQueryRow = ProjectRecord & {
-  project_skills: ProjectSkillLink[] | null;
-  tasks: TaskLink[] | null;
-};
 
 const skeletonItems = Array.from({ length: 3 });
 
@@ -63,6 +58,18 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const emptyState = useMemo(
+    () => (
+      <Card className="rounded-2xl border border-white/5 bg-[#111520] p-6 text-sm text-[#A7B0BD]">
+        <p className="font-medium text-white">No related projects yet</p>
+        <p className="mt-2 text-xs text-[#A7B0BD]/80">
+          Link an existing project or create a new one to start tracking this skill in your work.
+        </p>
+      </Card>
+    ),
+    []
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -81,72 +88,95 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
 
       try {
         const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-        if (userError) {
-          throw userError;
+        if (sessionError) {
+          throw sessionError;
         }
 
-        if (!user) {
+        const userId = session?.user?.id;
+
+        if (!userId) {
           throw new Error("User not authenticated");
         }
 
+        const [projectSkillsRes, taskRes] = await Promise.all([
+          supabase
+            .from<ProjectSkillRow>("project_skills")
+            .select("project_id")
+            .eq("skill_id", skillId),
+          supabase.from<TaskRow>("tasks").select("project_id").eq("skill_id", skillId),
+        ]);
+
+        if (projectSkillsRes.error) {
+          throw projectSkillsRes.error;
+        }
+
+        if (taskRes.error) {
+          throw taskRes.error;
+        }
+
+        const projectIds = new Set<string>();
+
+        projectSkillsRes.data?.forEach((link) => {
+          if (link?.project_id) {
+            projectIds.add(link.project_id);
+          }
+        });
+
+        taskRes.data?.forEach((task) => {
+          if (task?.project_id) {
+            projectIds.add(task.project_id);
+          }
+        });
+
+        if (projectIds.size === 0) {
+          if (!cancelled) {
+            setProjects([]);
+          }
+          return;
+        }
+
+        const projectIdList = Array.from(projectIds);
+
         const { data: projectsData, error: projectsError } = await supabase
-          .from<ProjectQueryRow>("projects")
+          .from<ProjectRecord>("projects")
           .select(
-            `
-              id,
-              name,
-              goal_id,
-              priority,
-              energy,
-              stage,
-              due_date,
-              created_at,
-              project_skills ( skill_id ),
-              tasks ( skill_id )
-            `
+            `id, name, goal_id, priority, energy, stage, due_date, created_at`
           )
-          .eq("user_id", user.id);
+          .eq("user_id", userId)
+          .in("id", projectIdList);
 
         if (projectsError) {
           throw projectsError;
         }
 
-        const relevantProjects = (projectsData ?? []).filter((project) => {
-          const skillFromProject = project.project_skills?.some(
-            (link) => link.skill_id === skillId
-          );
-          const skillFromTasks = project.tasks?.some(
-            (link) => link.skill_id === skillId
-          );
+        const projectsForSkill = projectsData ?? [];
 
-          return Boolean(skillFromProject || skillFromTasks);
-        });
-
-        if (relevantProjects.length === 0) {
+        if (projectsForSkill.length === 0) {
           if (!cancelled) {
             setProjects([]);
-            setLoading(false);
           }
           return;
         }
+
         const goalIds = Array.from(
           new Set(
-            relevantProjects
+            projectsForSkill
               .map((project) => project.goal_id)
               .filter((goalId): goalId is string => Boolean(goalId))
           )
         );
 
         const goalsMap: Record<string, string> = {};
+
         if (goalIds.length > 0) {
           const { data: goalsData, error: goalsError } = await supabase
             .from<GoalSummaryRow>("goals")
             .select("id, name")
-            .eq("user_id", user.id)
+            .eq("user_id", userId)
             .in("id", goalIds);
 
           if (goalsError) {
@@ -160,18 +190,17 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
           });
         }
 
-        const mappedProjects: ProjectWithGoal[] = relevantProjects.map(
-          ({ project_skills: _projectSkills, tasks: _tasks, ...project }) => {
-            const goalName = project.goal_id
+        const mappedProjects: ProjectWithGoal[] = projectsForSkill.map((project) => {
+          const goalName = project.goal_id
             ? goalsMap[project.goal_id] ?? "Untitled goal"
             : "Unassigned goal";
 
-            return {
-              ...project,
-              goal_name: goalName,
-            };
-          }
-        );
+          return {
+            ...project,
+            name: project.name ?? "Untitled project",
+            goal_name: goalName,
+          };
+        });
 
         mappedProjects.sort((a, b) => {
           const aDue = a.due_date ? Date.parse(a.due_date) : Number.POSITIVE_INFINITY;
@@ -188,12 +217,11 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
             return bCreated - aCreated;
           }
 
-          return a.name.localeCompare(b.name);
+          return (a.name ?? "").localeCompare(b.name ?? "");
         });
 
         if (!cancelled) {
           setProjects(mappedProjects);
-          setLoading(false);
         }
       } catch (err) {
         console.error("Error loading projects for skill:", err);
@@ -201,6 +229,9 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
           const message = err instanceof Error ? err.message : "Failed to load projects";
           setError(message);
           setProjects([]);
+        }
+      } finally {
+        if (!cancelled) {
           setLoading(false);
         }
       }
@@ -227,11 +258,7 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
   }
 
   if (projects.length === 0) {
-    return (
-      <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-sm text-[#A7B0BD]">
-        No projects linked to this skill yet.
-      </Card>
-    );
+    return emptyState;
   }
 
   return (
