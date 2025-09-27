@@ -75,6 +75,48 @@ describe("placeItemInWindows", () => {
     expect(capturedStartUTC).toBe(availableStart.toISOString());
   });
 
+  it("never schedules before the supplied notBefore threshold", async () => {
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+
+    let capturedStartUTC: string | null = null;
+    createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
+      capturedStartUTC = input.startUTC;
+        return {
+          data: { id: "inst-2" },
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        };
+    });
+
+    const windowStart = new Date("2024-01-02T09:00:00Z");
+    const windowEnd = new Date("2024-01-02T12:00:00Z");
+    const threshold = new Date("2024-01-02T11:15:00Z");
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "proj-1",
+        sourceType: "PROJECT",
+        duration_min: 30,
+        energy: "MEDIUM",
+        weight: 1,
+      },
+      windows: [
+        {
+          id: "win-1",
+          startLocal: windowStart,
+          endLocal: windowEnd,
+        },
+      ],
+      date: windowStart,
+      notBefore: threshold,
+    });
+
+    expect(capturedStartUTC).toBe(threshold.toISOString());
+  });
+
   it("chooses the window whose actual opening is earliest", async () => {
     const fetchInstancesMock = instanceRepo.fetchInstancesForRange as unknown as vi.Mock;
     const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
@@ -144,6 +186,64 @@ describe("placeItemInWindows", () => {
 
     expect(capturedStartUTC).toBe(new Date("2024-01-02T10:00:00Z").toISOString());
     expect(fetchInstancesMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores queued project blocks when instructed", async () => {
+    const fetchInstancesMock = instanceRepo.fetchInstancesForRange as unknown as vi.Mock;
+    const createInstanceMock = instanceRepo.createInstance as unknown as vi.Mock;
+
+    fetchInstancesMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "inst-other",
+          source_id: "proj-other",
+          source_type: "PROJECT",
+          start_utc: "2024-01-02T09:00:00Z",
+          end_utc: "2024-01-02T10:00:00Z",
+        },
+      ],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    });
+
+    let capturedStartUTC: string | null = null;
+    createInstanceMock.mockImplementation(async (input: { startUTC: string }) => {
+      capturedStartUTC = input.startUTC;
+      return {
+        data: { id: "inst-placed" },
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const windowStart = new Date("2024-01-02T09:00:00Z");
+    const windowEnd = new Date("2024-01-02T11:00:00Z");
+
+    await placeItemInWindows({
+      userId: "user-1",
+      item: {
+        id: "proj-main",
+        sourceType: "PROJECT",
+        duration_min: 60,
+        energy: "HIGH",
+        weight: 10,
+      },
+      windows: [
+        {
+          id: "win-high",
+          startLocal: windowStart,
+          endLocal: windowEnd,
+        },
+      ],
+      date: windowStart,
+      ignoreProjectIds: new Set(["proj-other"]),
+    });
+
+    expect(capturedStartUTC).toBe(windowStart.toISOString());
   });
 });
 

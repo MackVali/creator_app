@@ -4,7 +4,13 @@ import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
 
 export const runtime = 'nodejs'
 
-export async function POST() {
+type SchedulerRunContext = {
+  localNow: Date | null
+  timeZone: string | null
+}
+
+export async function POST(request: Request) {
+  const { localNow, timeZone: requestTimeZone } = await readRunRequestContext(request)
   const supabase = await createClient()
   if (!supabase) {
     return NextResponse.json(
@@ -29,7 +35,7 @@ export async function POST() {
     return NextResponse.json({ error: 'not authenticated' }, { status: 401 })
   }
 
-  const now = new Date()
+  const now = localNow ?? new Date()
 
   const markResult = await markMissedAndQueue(user.id, now, supabase)
   if (markResult.error) {
@@ -39,7 +45,7 @@ export async function POST() {
     )
   }
 
-  const userTimeZone = extractUserTimeZone(user)
+  const userTimeZone = requestTimeZone ?? extractUserTimeZone(user)
   const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
     timeZone: userTimeZone,
   })
@@ -70,6 +76,42 @@ function extractUserTimeZone(user: { user_metadata?: Record<string, unknown> | n
     }
   }
   return null
+}
+
+async function readRunRequestContext(request: Request): Promise<SchedulerRunContext> {
+  if (!request) {
+    return { localNow: null, timeZone: null }
+  }
+
+  const contentType = request.headers.get('content-type') ?? ''
+  if (!contentType.toLowerCase().includes('application/json')) {
+    return { localNow: null, timeZone: null }
+  }
+
+  try {
+    const payload = (await request.json()) as {
+      localTimeIso?: unknown
+      timeZone?: unknown
+    }
+
+    let localNow: Date | null = null
+    if (payload && typeof payload.localTimeIso === 'string') {
+      const parsed = new Date(payload.localTimeIso)
+      if (!Number.isNaN(parsed.getTime())) {
+        localNow = parsed
+      }
+    }
+
+    let timeZone: string | null = null
+    if (payload && typeof payload.timeZone === 'string' && payload.timeZone.trim()) {
+      timeZone = payload.timeZone
+    }
+
+    return { localNow, timeZone }
+  } catch (error) {
+    console.warn('Failed to parse scheduler run payload', error)
+    return { localNow: null, timeZone: null }
+  }
 }
 
 export async function GET() {
