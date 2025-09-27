@@ -540,6 +540,81 @@ describe("scheduleBacklog", () => {
     expect(createSpy).toHaveBeenCalledTimes(4);
   });
 
+  it("considers windows without an energy designation for all projects", async () => {
+    instances = [];
+
+    const emptyBacklog: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      emptyBacklog,
+    );
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-any": {
+        id: "proj-any",
+        name: "Any energy",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 60,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-any",
+        label: "Any",
+        energy: "",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [baseDate.getDay()],
+      },
+    ]);
+
+    let observedWindowIds: string[] | null = null;
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item, windows }) => {
+        observedWindowIds = windows.map((win) => win.id);
+        const start = (windows[0]?.availableStartLocal ?? windows[0]?.startLocal)!;
+        const end = new Date(start.getTime() + item.duration_min * 60000);
+        return {
+          data: createInstanceRecord({
+            id: "inst-any",
+            source_id: item.id,
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: item.duration_min,
+            window_id: windows[0]?.id ?? "win-any",
+            weight_snapshot: item.weight,
+            energy_resolved: item.energy,
+            status: "scheduled",
+          }),
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      },
+    );
+
+    const anchor = new Date("2024-01-02T10:00:00Z");
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, anchor, mockClient);
+
+    expect(observedWindowIds).toContain("win-any");
+    expect(result.failures).toHaveLength(0);
+    expect(result.placed).toHaveLength(1);
+    expect(result.placed[0]?.window_id).toBe("win-any");
+  });
+
   it("rolls overflow into future days when a single window recurs daily", async () => {
     instances = [];
 

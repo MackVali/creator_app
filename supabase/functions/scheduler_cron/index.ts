@@ -620,7 +620,7 @@ async function fetchCompatibleWindowsForItem(
   }> = []
 
   for (const window of windows) {
-    const energyIdx = energyIndex(window.energy)
+    const energyIdx = energyIndex(window.energy, { fallback: ENERGY_ORDER.length })
     if (energyIdx < itemIdx) continue
 
     const startLocal = resolveWindowStart(window, date, timeZone)
@@ -970,10 +970,12 @@ function diffMin(a: Date, b: Date) {
   return Math.floor((b.getTime() - a.getTime()) / 60_000)
 }
 
-function energyIndex(level?: string | null) {
-  if (!level) return -1
+function energyIndex(level?: string | null, options?: { fallback?: number }) {
+  const fallback = options?.fallback ?? -1
+  if (!level) return fallback
   const upper = level.toUpperCase()
-  return ENERGY_ORDER.indexOf(upper as (typeof ENERGY_ORDER)[number])
+  const index = ENERGY_ORDER.indexOf(upper as (typeof ENERGY_ORDER)[number])
+  return index === -1 ? fallback : index
 }
 
 const TASK_PRIORITY_WEIGHT: Record<string, number> = {

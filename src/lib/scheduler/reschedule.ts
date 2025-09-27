@@ -532,7 +532,7 @@ async function fetchCompatibleWindowsForItem(
   }>
 
   for (const win of windows) {
-    const energyIdx = energyIndex(win.energy)
+    const energyIdx = energyIndex(win.energy, { fallback: ENERGY.LIST.length })
     if (energyIdx < itemIdx) continue
 
     const startLocal = resolveWindowStart(win, date, timeZone)
@@ -623,10 +623,12 @@ function dateCacheKey(date: Date) {
   return date.toISOString()
 }
 
-function energyIndex(level?: string | null) {
-  if (!level) return -1
+function energyIndex(level?: string | null, options?: { fallback?: number }) {
+  const fallback = options?.fallback ?? -1
+  if (!level) return fallback
   const up = level.toUpperCase()
-  return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
+  const index = ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
+  return index === -1 ? fallback : index
 }
 
 function resolveWindowStart(win: WindowLite, date: Date, timeZone: string) {
