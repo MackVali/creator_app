@@ -108,17 +108,13 @@ export default function Source({
 
   // handlers
   function handleSave(item: any) {
-    item.type = drawer.type;
+    item.type = drawer.type
     item.updatedAt = new Date().toISOString()
     if (drawer.draft?.id) {
       // edit
-      setCurrentList((prev: any[]) =>
-        prev.map((p) => (p.id === item.id ? item : p))
-      )
-      if (item.type === "service" && onUpdateService)
-        onUpdateService(item.id, item)
-      if (item.type === "product" && onUpdateProduct)
-        onUpdateProduct(item.id, item)
+      setCurrentList((prev: any[]) => prev.map((p) => (p.id === item.id ? item : p)))
+      if (item.type === "service" && onUpdateService) onUpdateService(item.id, item)
+      if (item.type === "product" && onUpdateProduct) onUpdateProduct(item.id, item)
     } else {
       // new
       item.id = Math.random().toString(36).slice(2)
@@ -143,76 +139,112 @@ export default function Source({
   }
 
   function duplicate(item: any) {
-    const copy = { ...item, id: Math.random().toString(36).slice(2), title: item.title + " Copy", updatedAt: new Date().toISOString() }
+    const copy = {
+      ...item,
+      id: Math.random().toString(36).slice(2),
+      title: item.title + " Copy",
+      updatedAt: new Date().toISOString(),
+    }
     if (activeTab === "services") setServices((p) => [...p, copy])
     else setProducts((p) => [...p, copy])
   }
 
   return (
     <div
-      className="min-h-screen bg-[#111315] text-[#E6E6E6]"
-      style={{ fontFamily: "ui-sans-serif, system-ui" }}
+      className="min-h-screen bg-[#05070B] text-gray-200"
+      style={{ fontFamily: "Inter, ui-sans-serif, system-ui" }}
     >
-      <HeaderBar
-        onNewService={() => {
-          setDrawer({ type: "service", open: true, draft: null })
-          setActiveTab("services")
-        }}
-        onNewProduct={() => {
-          setDrawer({ type: "product", open: true, draft: null })
-          setActiveTab("products")
-        }}
-      />
-      <div className="border-b border-[#2F343A] flex">
-        <TabButton active={activeTab === "services"} onClick={() => setActiveTab("services")}>Services</TabButton>
-        <TabButton active={activeTab === "products"} onClick={() => setActiveTab("products")}>Products</TabButton>
-      </div>
-
-      <div className="p-4 space-y-4">
-        <InsightsRow />
-        <div className="flex items-center gap-2">
-          <SubTab active={subTab === "draft"} onClick={() => setSubTab("draft")}>Drafts</SubTab>
-          <SubTab active={subTab === "published"} onClick={() => setSubTab("published")}>Published</SubTab>
-          <SearchBox value={rawSearch} onChange={setRawSearch} />
+      <div className="mx-auto w-full max-w-6xl px-4 pb-16">
+        <HeaderBar
+          onNewService={() => {
+            setDrawer({ type: "service", open: true, draft: null })
+            setActiveTab("services")
+          }}
+          onNewProduct={() => {
+            setDrawer({ type: "product", open: true, draft: null })
+            setActiveTab("products")
+          }}
+        />
+        <div className="mt-10 rounded-2xl border border-white/5 bg-[#0C1119] p-1">
+          <div className="flex rounded-xl bg-black/50 p-1">
+            <TabButton active={activeTab === "services"} onClick={() => setActiveTab("services")}>
+              Services
+            </TabButton>
+            <TabButton active={activeTab === "products"} onClick={() => setActiveTab("products")}>
+              Products
+            </TabButton>
+          </div>
         </div>
 
-        {loading ? (
-          <div className="grid grid-cols-2 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
+        <div className="mt-10 space-y-8">
+          <InsightsRow />
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-[#0C1119] p-4">
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10 text-xs font-semibold uppercase tracking-wide text-gray-100">
+                {activeTab === "services" ? "Svc" : "Prd"}
+              </span>
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Active View</p>
+                <p className="text-sm font-medium text-gray-100">
+                  {activeTab === "services" ? "Service Catalog" : "Product Catalog"}
+                </p>
+              </div>
+            </div>
+            <div className="hidden h-8 w-px bg-white/10 md:block" aria-hidden />
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <QuickBadge label="Top Rated" />
+              <QuickBadge label="Low Inventory" />
+              <QuickBadge label="Recently Updated" />
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <SubTab active={subTab === "draft"} onClick={() => setSubTab("draft")}>
+                Drafts
+              </SubTab>
+              <SubTab active={subTab === "published"} onClick={() => setSubTab("published")}>
+                Published
+              </SubTab>
+              <SearchBox value={rawSearch} onChange={setRawSearch} />
+            </div>
           </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            onCreate={() =>
-              setDrawer({
-                type: activeTab === "services" ? "service" : "product",
-                open: true,
-                draft: null,
-              })
-            }
-          />
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {filtered.map((item) => (
-              <CatalogCard
-                key={item.id}
-                item={item}
-                type={activeTab === "services" ? "service" : "product"}
-                onEdit={(it) =>
-                  setDrawer({ type: activeTab === "services" ? "service" : "product", open: true, draft: it })
-                }
-                onDuplicate={duplicate}
-                onToggleStatus={(it) => {
-                  const upd = { ...it, status: it.status === "draft" ? "published" : "draft" }
-                  setCurrentList((prev: any[]) => prev.map((p) => (p.id === upd.id ? upd : p)))
-                }}
-                onDelete={(it) => setConfirm({ type: activeTab === "services" ? "service" : "product", id: it.id })}
-                onPreview={(it) => setPreview({ type: activeTab === "services" ? "service" : "product", item: it })}
-              />
-            ))}
-          </div>
-        )}
+
+          {loading ? (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              onCreate={() =>
+                setDrawer({
+                  type: activeTab === "services" ? "service" : "product",
+                  open: true,
+                  draft: null,
+                })
+              }
+            />
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {filtered.map((item) => (
+                <CatalogCard
+                  key={item.id}
+                  item={item}
+                  type={activeTab === "services" ? "service" : "product"}
+                  onEdit={(it) =>
+                    setDrawer({ type: activeTab === "services" ? "service" : "product", open: true, draft: it })
+                  }
+                  onDuplicate={duplicate}
+                  onToggleStatus={(it) => {
+                    const upd = { ...it, status: it.status === "draft" ? "published" : "draft" }
+                    setCurrentList((prev: any[]) => prev.map((p) => (p.id === upd.id ? upd : p)))
+                  }}
+                  onDelete={(it) => setConfirm({ type: activeTab === "services" ? "service" : "product", id: it.id })}
+                  onPreview={(it) => setPreview({ type: activeTab === "services" ? "service" : "product", item: it })}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {drawer.open && (
@@ -254,24 +286,34 @@ function HeaderBar({
   onNewProduct: () => void
 }) {
   return (
-    <header className="p-4 border-b border-[#2F343A]">
-      <h1 className="text-lg font-semibold">Pro Dashboard</h1>
-      <p className="text-sm text-[#A6A6A6] mt-1">
-        Create products & services for your profile
-      </p>
-      <div className="mt-4 flex gap-2">
-        <button
-          onClick={onNewService}
-          className="px-3 py-2 bg-[#9966CC] text-white rounded-md text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#9966CC]"
-        >
-          New Service
-        </button>
-        <button
-          onClick={onNewProduct}
-          className="px-3 py-2 bg-[#9966CC] text-white rounded-md text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#9966CC]"
-        >
-          New Product
-        </button>
+    <header className="relative mt-12 overflow-hidden rounded-3xl border border-white/5 bg-[#0C1018] px-8 py-10 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+      <div className="absolute inset-x-0 top-0 h-px bg-white/5" aria-hidden />
+      <div className="relative flex flex-col gap-10 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-[11px] uppercase tracking-[0.28em] text-gray-400">
+            <span className="h-2 w-2 rounded-full bg-gray-300" />
+            Creator Source
+          </div>
+          <h1 className="mt-6 text-3xl font-semibold leading-tight text-gray-100 sm:text-4xl">
+            Curate your catalog with a composed, dark workspace
+          </h1>
+          <p className="mt-4 max-w-xl text-sm text-gray-400">
+            Build consistent listings, keep inventory aligned, and publish with confidence in a calm interface tuned for focus.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-3 text-xs text-gray-400">
+            <BadgePill label="Studio-Grade" />
+            <BadgePill label="Smart Availability" />
+            <BadgePill label="Integrated Checkout" />
+          </div>
+        </div>
+        <div className="relative flex flex-col gap-4 rounded-2xl border border-white/5 bg-[#111620] p-6 text-sm text-gray-400">
+          <p className="text-xs uppercase tracking-[0.3em] text-gray-500">Quick actions</p>
+          <ActionButton icon="✨" label="New service" onClick={onNewService} />
+          <ActionButton icon="🛒" label="Add product" onClick={onNewProduct} />
+          <div className="rounded-xl border border-white/5 bg-black/30 px-4 py-3 text-xs leading-relaxed text-gray-400">
+            Tip: Build a consistent naming system to help clients compare offerings at a glance.
+          </div>
+        </div>
       </div>
     </header>
   )
@@ -290,8 +332,10 @@ function TabButton({
     <button
       onClick={onClick}
       className={classNames(
-        "flex-1 py-2 text-sm border-b-2",
-        active ? "border-[#9966CC]" : "border-transparent text-[#A6A6A6]"
+        "flex-1 rounded-xl px-6 py-3 text-sm font-medium transition-all duration-200",
+        active
+          ? "bg-white/10 text-gray-100 shadow-[0_14px_30px_rgba(0,0,0,0.35)]"
+          : "text-gray-500 hover:text-gray-200"
       )}
     >
       {children}
@@ -312,10 +356,10 @@ function SubTab({
     <button
       onClick={onClick}
       className={classNames(
-        "px-3 py-1 rounded-md text-sm",
+        "rounded-full px-4 py-1.5 text-sm transition-all",
         active
-          ? "bg-[#22262A] text-[#E6E6E6]"
-          : "text-[#A6A6A6]"
+          ? "bg-white/15 text-gray-100 shadow-[0_10px_24px_rgba(0,0,0,0.4)]"
+          : "border border-white/10 text-gray-400 hover:text-gray-200"
       )}
     >
       {children}
@@ -331,13 +375,16 @@ function SearchBox({
   onChange(v: string): void
 }) {
   return (
-    <input
-      aria-label="Search"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="Search"
-      className="ml-auto px-3 py-1.5 rounded-md bg-[#1C1F22] text-sm border border-[#2F343A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9966CC]"
-    />
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-500">🔍</span>
+      <input
+        aria-label="Search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search collection"
+        className="ml-auto w-48 rounded-full border border-white/10 bg-[#0C1118] py-2 pl-9 pr-4 text-sm text-gray-200 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+      />
+    </div>
   )
 }
 
@@ -345,10 +392,11 @@ function StatusPill({ status }: { status: "draft" | "published" }) {
   return (
     <span
       className={classNames(
-        "px-2 py-0.5 text-xs rounded-full",
+        "px-3 py-1 text-xs font-medium uppercase tracking-[0.25em]",
+        "rounded-full",
         status === "published"
-          ? "bg-[#6DD3A8]/20 text-[#6DD3A8]"
-          : "bg-[#E8C268]/20 text-[#E8C268]"
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+          : "border-white/10 bg-white/5 text-gray-300"
       )}
     >
       {status === "published" ? "Published" : "Draft"}
@@ -375,93 +423,103 @@ function CatalogCard({
 }) {
   const [menu, setMenu] = useState(false)
   return (
-    <div
-      className="relative bg-[#1C1F22] border border-[#2F343A] rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-[#9966CC] transition-transform hover:scale-[1.02]"
-    >
-      {item.thumbnail ? (
-        <img
-          src={item.thumbnail}
-          alt=""
-          className="w-full h-32 object-cover"
-        />
-      ) : (
-        <div className="h-32 bg-[#22262A] flex items-center justify-center text-[#7C838A] text-sm">
-          No Image
-        </div>
-      )}
-      <div className="p-2 text-sm space-y-1">
-        <div className="flex justify-between items-start">
-          <h3 className="font-medium leading-tight">{item.title}</h3>
-          <StatusPill status={item.status} />
-        </div>
-        <div className="flex justify-between text-[#A6A6A6] text-xs">
-          <span>{formatUSD(item.price)}</span>
-          {type === "service" && item.durationMins && (
-            <span>{item.durationMins}m</span>
+    <div className="group relative">
+      <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0F1420] text-sm shadow-[0_20px_50px_rgba(0,0,0,0.55)] transition-transform duration-300 group-hover:-translate-y-1">
+        <div className="relative">
+          {item.thumbnail ? (
+            <img src={item.thumbnail} alt="" className="h-36 w-full object-cover" />
+          ) : (
+            <div className="flex h-36 items-center justify-center bg-[#151B27] text-xs text-gray-500">
+              Add a cover image to personalise this card
+            </div>
           )}
-          {type === "product" && item.inventory !== undefined && (
-            <span>{item.inventory} in stock</span>
-          )}
-        </div>
-        <div className="flex justify-between items-center mt-1">
-          <button
-            className="text-[#9966CC] text-xs"
-            onClick={() => onPreview(item)}
-          >
-            Preview
-          </button>
-          <div className="relative">
-            <button
-              aria-label="More"
-              onClick={() => setMenu((m) => !m)}
-              className="px-2"
-            >
-              ⋯
-            </button>
-            {menu && (
-              <div className="absolute right-0 mt-1 w-36 bg-[#22262A] border border-[#2F343A] rounded-md z-20 text-xs">
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
-                  onClick={() => {
-                    setMenu(false)
-                    onEdit(item)
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
-                  onClick={() => {
-                    setMenu(false)
-                    onDuplicate(item)
-                  }}
-                >
-                  Duplicate
-                </button>
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
-                  onClick={() => {
-                    setMenu(false)
-                    onToggleStatus(item)
-                  }}
-                >
-                  {item.status === "draft" ? "Publish" : "Move to Draft"}
-                </button>
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22] text-[#E8C268]"
-                  onClick={() => {
-                    setMenu(false)
-                    onDelete(item)
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
-            )}
+          <div className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-1 text-[10px] uppercase tracking-[0.25em] text-gray-300">
+            {type === "service" ? "Service" : "Product"}
           </div>
         </div>
-        <div className="text-[10px] text-[#7C838A]">
-          Last updated {timeAgo(item.updatedAt)}
+        <div className="flex flex-1 flex-col gap-4 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-base font-medium leading-tight text-gray-100">{item.title}</h3>
+              <p className="mt-1 text-xs text-gray-400">
+                {type === "service"
+                  ? item.durationMins
+                    ? `${item.durationMins} minute experience`
+                    : "Tailor the perfect experience"
+                  : item.inventory !== undefined
+                  ? `${item.inventory} pieces available`
+                  : "Curate your inventory"}
+              </p>
+            </div>
+            <StatusPill status={item.status} />
+          </div>
+          <div className="flex items-center justify-between text-xs text-gray-400">
+            <span className="text-lg font-semibold text-gray-100">{formatUSD(item.price)}</span>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-gray-400">
+                Catalog
+              </span>
+              <span className="text-[10px] text-gray-500">Updated {timeAgo(item.updatedAt)}</span>
+            </div>
+          </div>
+          <div className="mt-auto flex items-center justify-between">
+            <button
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-medium text-gray-100 transition-colors hover:bg-white/15"
+              onClick={() => onPreview(item)}
+            >
+              Preview
+            </button>
+            <div className="relative">
+              <button
+                aria-label="More"
+                onClick={() => setMenu((m) => !m)}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-lg text-gray-300 hover:text-gray-100"
+              >
+                ⋯
+              </button>
+              {menu && (
+                <div className="absolute right-0 top-10 w-44 overflow-hidden rounded-xl border border-white/10 bg-[#0A0E15] text-xs shadow-[0_22px_45px_rgba(0,0,0,0.55)]">
+                  <div className="bg-white/5 px-4 py-2 text-[10px] uppercase tracking-[0.3em] text-gray-500">Manage</div>
+                  <button
+                    className="block w-full px-4 py-2 text-left text-gray-300 hover:bg-white/5"
+                    onClick={() => {
+                      setMenu(false)
+                      onEdit(item)
+                    }}
+                  >
+                    Edit details
+                  </button>
+                  <button
+                    className="block w-full px-4 py-2 text-left text-gray-300 hover:bg-white/5"
+                    onClick={() => {
+                      setMenu(false)
+                      onDuplicate(item)
+                    }}
+                  >
+                    Duplicate card
+                  </button>
+                  <button
+                    className="block w-full px-4 py-2 text-left text-gray-300 hover:bg-white/5"
+                    onClick={() => {
+                      setMenu(false)
+                      onToggleStatus(item)
+                    }}
+                  >
+                    {item.status === "draft" ? "Publish now" : "Return to draft"}
+                  </button>
+                  <button
+                    className="block w-full px-4 py-2 text-left text-red-400 hover:bg-white/5"
+                    onClick={() => {
+                      setMenu(false)
+                      onDelete(item)
+                    }}
+                  >
+                    Delete showcase
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -500,96 +558,91 @@ function Drawer({
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex justify-end" role="dialog" aria-modal>
-      <div className="w-full max-w-sm h-full overflow-y-auto bg-[#1C1F22] border-l border-[#2F343A] p-4 space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">
-            {draft ? "Edit" : "New"} {type === "service" ? "Service" : "Product"}
-          </h2>
-          <button onClick={onClose} aria-label="Close">✕</button>
+    <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/70 backdrop-blur-md" role="dialog" aria-modal>
+      <div className="relative flex h-full w-full max-w-md flex-col gap-6 overflow-y-auto border-l border-white/10 bg-[#0B1019] p-6 text-sm text-gray-400 shadow-[0_-20px_50px_rgba(0,0,0,0.45)]">
+        <div className="sticky top-0 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/40 p-4 backdrop-blur">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500">{draft ? "Edit" : "Create"}</p>
+            <h2 className="mt-2 text-xl font-semibold text-gray-100">
+              {type === "service" ? "Service details" : "Product details"}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-lg text-gray-400 transition hover:text-gray-200"
+          >
+            ✕
+          </button>
         </div>
-        <div className="space-y-3 text-sm">
+        <div className="space-y-4">
           <FieldRow label="Cover Image">
-            <div className="h-32 bg-[#22262A] flex items-center justify-center rounded-md text-[#7C838A]">
-              Upload
+            <div className="flex h-36 items-center justify-center rounded-2xl border border-dashed border-white/15 bg-[#111722] text-xs text-gray-500">
+              Upload or drop an image preview
             </div>
           </FieldRow>
           <FieldRow label="Title">
             <input
               value={item.title}
               onChange={(e) => update("title", e.target.value)}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full rounded-xl border border-white/10 bg-[#0F1420] px-3 py-2 text-gray-100 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
             />
           </FieldRow>
           <FieldRow label="Description">
             <textarea
               value={item.description}
               onChange={(e) => update("description", e.target.value)}
-              className="w-full h-24 px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full rounded-xl border border-white/10 bg-[#0F1420] px-3 py-2 text-gray-100 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+              rows={4}
             />
           </FieldRow>
-          <FieldRow label="Price (USD)">
-            <input
-              type="number"
-              value={item.price}
-              onChange={(e) => update("price", parseFloat(e.target.value))}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
-            />
-          </FieldRow>
-          {type === "service" && (
-            <FieldRow label="Duration (mins)">
+          <div className="grid grid-cols-2 gap-3">
+            <FieldRow label="Price">
               <input
                 type="number"
-                value={item.durationMins || ""}
-                onChange={(e) => update("durationMins", parseInt(e.target.value))}
-                className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+                value={item.price}
+                onChange={(e) => update("price", Number(e.target.value))}
+                className="w-full rounded-xl border border-white/10 bg-[#0F1420] px-3 py-2 text-gray-100 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
               />
             </FieldRow>
-          )}
-          {type === "product" && (
-            <>
-              <FieldRow label="Inventory">
-                <input
-                  type="number"
-                  value={item.inventory || 0}
-                  onChange={(e) => update("inventory", parseInt(e.target.value))}
-                  className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
-                />
-              </FieldRow>
-              <FieldRow label="SKU">
-                <input
-                  value={item.sku || ""}
-                  onChange={(e) => update("sku", e.target.value)}
-                  className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
-                />
-              </FieldRow>
-            </>
-          )}
-          <FieldRow label="Visibility">
+            <FieldRow label={type === "service" ? "Duration (mins)" : "Inventory"}>
+              <input
+                type="number"
+                value={type === "service" ? item.durationMins ?? "" : item.inventory ?? ""}
+                onChange={(e) =>
+                  update(
+                    type === "service" ? "durationMins" : "inventory",
+                    e.target.value ? Number(e.target.value) : undefined
+                  )
+                }
+                className="w-full rounded-xl border border-white/10 bg-[#0F1420] px-3 py-2 text-gray-100 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
+              />
+            </FieldRow>
+          </div>
+          <FieldRow label="Status">
             <select
               value={item.status}
               onChange={(e) => update("status", e.target.value)}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full rounded-xl border border-white/10 bg-[#0F1420] px-3 py-2 text-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/15"
             >
               <option value="draft">Draft</option>
               <option value="published">Published</option>
             </select>
           </FieldRow>
-        </div>
-        <div className="flex gap-2 pt-2">
-          <button
-            onClick={() => onSave(item)}
-            className="flex-1 px-3 py-2 bg-[#9966CC] text-white rounded-md"
-          >
-            Save
-          </button>
-          <button
-            onClick={() => onPreview(item)}
-            className="flex-1 px-3 py-2 bg-[#22262A] rounded-md"
-          >
-            Preview
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onPreview(item)}
+              className="flex-1 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-medium text-gray-100 hover:bg-white/15"
+            >
+              Preview
+            </button>
+            <button
+              onClick={() => onSave(item)}
+              className="flex-1 rounded-xl bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-200"
+            >
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -599,7 +652,7 @@ function Drawer({
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block text-sm">
-      <span className="text-[#A6A6A6] mb-1 block">{label}</span>
+      <span className="mb-2 block text-xs uppercase tracking-[0.3em] text-gray-500">{label}</span>
       {children}
     </label>
   )
@@ -617,35 +670,44 @@ function PreviewSheet({
   onEdit(): void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex justify-center items-end" role="dialog" aria-modal>
-      <div className="w-full max-w-md bg-[#1C1F22] border-t border-[#2F343A] p-4 rounded-t-lg space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">Preview</h2>
-          <button onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="space-y-2 text-sm">
-          {item.thumbnail && (
-            <img src={item.thumbnail} alt="" className="w-full h-40 object-cover rounded" />
-          )}
-          <h3 className="text-base font-medium">{item.title}</h3>
-          <p className="text-[#A6A6A6]">{item.description}</p>
-          <div>{formatUSD(item.price)}</div>
-          <button className="w-full mt-2 py-2 bg-[#9966CC] text-white rounded-md">
-            {type === "service" ? "Book Now" : "Buy Now"}
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/70 backdrop-blur" role="dialog" aria-modal>
+      <div className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-white/10 bg-[#0B1019] p-6 text-sm text-gray-400 shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-100">Preview</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/40 text-gray-300 hover:text-gray-100"
+          >
+            ✕
           </button>
         </div>
-        <div className="flex gap-2 pt-2">
+        <div className="mt-4 space-y-4">
+          {item.thumbnail && <img src={item.thumbnail} alt="" className="h-48 w-full rounded-2xl object-cover" />}
+          <div className="flex flex-col gap-2">
+            <span className="inline-flex w-max items-center gap-1 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.25em] text-gray-300">
+              {type === "service" ? "Service" : "Product"}
+            </span>
+            <h3 className="text-2xl font-semibold text-gray-100">{item.title}</h3>
+            <p className="text-sm leading-relaxed text-gray-400">{item.description || "Craft a concise description to guide clients."}</p>
+            <div className="text-2xl font-semibold text-gray-100">{formatUSD(item.price)}</div>
+          </div>
+          <button className="w-full rounded-full border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-gray-100 hover:bg-white/15">
+            {type === "service" ? "Book service" : "Add to cart"}
+          </button>
+        </div>
+        <div className="mt-6 flex gap-3">
           <button
             onClick={onEdit}
-            className="flex-1 px-3 py-2 bg-[#22262A] rounded-md"
+            className="flex-1 rounded-full border border-white/10 bg-white/10 px-4 py-3 text-sm font-medium text-gray-100 hover:bg-white/15"
           >
-            Edit
+            Refine details
           </button>
           <button
             onClick={onClose}
-            className="flex-1 px-3 py-2 bg-[#22262A] rounded-md"
+            className="flex-1 rounded-full border border-white/10 bg-black/40 px-4 py-3 text-sm text-gray-400 hover:text-gray-200"
           >
-            Close
+            Close preview
           </button>
         </div>
       </div>
@@ -661,16 +723,27 @@ function ConfirmDelete({
   onConfirm(): void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center" role="dialog" aria-modal>
-      <div className="bg-[#1C1F22] border border-[#2F343A] rounded-md p-4 w-72 space-y-4 text-sm">
-        <p>Delete this item? This action cannot be undone.</p>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-3 py-1.5 rounded-md bg-[#22262A]">
-            Cancel
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur" role="dialog" aria-modal>
+      <div className="w-full max-w-sm space-y-6 rounded-3xl border border-white/10 bg-[#0B1019] p-8 text-sm text-gray-400 shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
+        <div className="space-y-2 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-red-500/40 bg-red-500/10 text-2xl text-red-300">
+            ⚠️
+          </div>
+          <h3 className="text-lg font-semibold text-gray-100">Confirm removal</h3>
+          <p className="text-xs leading-relaxed text-gray-400">
+            Delete this item? This action cannot be undone and removes it from your catalog.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="rounded-full border border-white/10 bg-black/40 px-5 py-2 text-sm text-gray-400 hover:text-gray-200"
+          >
+            Keep item
           </button>
           <button
             onClick={onConfirm}
-            className="px-3 py-1.5 rounded-md bg-[#E8C268] text-black"
+            className="rounded-full bg-red-500 px-5 py-2 text-sm font-semibold text-white shadow-[0_14px_35px_rgba(220,38,38,0.35)] hover:bg-red-400"
           >
             Delete
           </button>
@@ -682,13 +755,19 @@ function ConfirmDelete({
 
 function EmptyState({ onCreate }: { onCreate(): void }) {
   return (
-    <div className="text-center py-20 text-sm text-[#A6A6A6]">
-      <p>No items found.</p>
+    <div className="rounded-3xl border border-dashed border-white/15 bg-[#0C1119] py-24 text-center text-sm text-gray-400">
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/10 text-2xl text-gray-200">
+        ✨
+      </div>
+      <p className="mt-6 text-base font-medium text-gray-100">No items found</p>
+      <p className="mt-2 mx-auto max-w-sm text-xs text-gray-400">
+        Create your first offer to unlock analytics, conversion flows, and checkout tools.
+      </p>
       <button
         onClick={onCreate}
-        className="mt-4 px-3 py-2 bg-[#9966CC] text-white rounded-md"
+        className="mt-6 rounded-full border border-white/10 bg-white/10 px-6 py-3 text-sm font-semibold text-gray-100 hover:bg-white/15"
       >
-        Create your first
+        Create your first showcase
       </button>
     </div>
   )
@@ -696,26 +775,97 @@ function EmptyState({ onCreate }: { onCreate(): void }) {
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse bg-[#1C1F22] border border-[#2F343A] rounded-md h-48" />
+    <div className="h-52 animate-pulse rounded-2xl border border-white/5 bg-[#111722]" />
   )
 }
 
 function InsightsRow() {
   return (
-    <div className="flex gap-2 text-xs">
-      <StatChip label="Views" value={123} />
-      <StatChip label="Clicks" value={45} />
-      <StatChip label="Sales" value={8} />
+    <div className="grid gap-4 md:grid-cols-3">
+      <StatCard
+        label="Views"
+        value="12.4k"
+        trend="↑ 18%"
+        description="Audience touchpoints in the last 7 days"
+      />
+      <StatCard
+        label="Clicks"
+        value="3.1k"
+        trend="↑ 9%"
+        description="High-intent visitors exploring your offers"
+      />
+      <StatCard
+        label="Sales"
+        value="286"
+        trend="↑ 24%"
+        description="Completed checkouts across all listings"
+      />
     </div>
   )
 }
 
-function StatChip({ label, value }: { label: string; value: number }) {
+function StatCard({
+  label,
+  value,
+  trend,
+  description,
+}: {
+  label: string
+  value: string
+  trend: string
+  description: string
+}) {
   return (
-    <div className="px-3 py-1 bg-[#1C1F22] border border-[#2F343A] rounded-md">
-      <span className="text-[#A6A6A6] mr-1">{label}</span>
-      <span>{value}</span>
+    <div className="rounded-2xl border border-white/10 bg-[#0D121C] p-6 text-sm text-gray-400 shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
+      <div className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.3em] text-gray-500">{label}</p>
+        <div className="flex items-baseline gap-3">
+          <span className="text-3xl font-semibold text-gray-100">{value}</span>
+          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.3em] text-emerald-300">
+            {trend}
+          </span>
+        </div>
+        <p className="text-xs leading-relaxed text-gray-400">{description}</p>
+      </div>
     </div>
+  )
+}
+
+function BadgePill({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-4 py-1 text-[11px] font-medium text-gray-300">
+      <span className="h-1.5 w-1.5 rounded-full bg-gray-300" />
+      {label}
+    </span>
+  )
+}
+
+function ActionButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: string
+  label: string
+  onClick(): void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/10 px-5 py-3 text-sm font-semibold text-gray-100 transition hover:bg-white/15"
+    >
+      <span className="text-lg">{icon}</span>
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function QuickBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-[11px] text-gray-400">
+      <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+      {label}
+    </span>
   )
 }
 
