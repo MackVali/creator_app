@@ -135,6 +135,9 @@ const RECURRENCE_OPTIONS: ChoiceOption[] = [
   { value: "yearly", label: "Yearly" },
 ];
 
+const DEFAULT_SKILL_ICON = "✦";
+const getSkillIcon = (icon?: string | null) => icon?.trim() || DEFAULT_SKILL_ICON;
+
 interface FormState {
   name: string;
   description: string;
@@ -314,7 +317,9 @@ function SkillMultiSelect({
     ? selectedSkills.length === 0
       ? "Select skills..."
       : selectedSkills.length <= 2
-      ? selectedSkills.map((skill) => skill.name).join(", ")
+      ? selectedSkills
+          .map((skill) => `${getSkillIcon(skill.icon)} ${skill.name}`)
+          .join(", ")
       : `${selectedSkills.length} skills selected`
     : "No skills available";
 
@@ -371,7 +376,12 @@ function SkillMultiSelect({
                       isSelected && "bg-blue-500/15 text-white"
                     )}
                   >
-                    <span>{skill.name}</span>
+                    <span className="flex items-center gap-2 truncate">
+                      <span className="text-base leading-none">
+                        {getSkillIcon(skill.icon)}
+                      </span>
+                      <span className="truncate">{skill.name}</span>
+                    </span>
                     {isSelected ? (
                       <CheckSquare className="h-4 w-4 text-blue-400" />
                     ) : null}
@@ -392,9 +402,12 @@ function SkillMultiSelect({
             <Badge
               key={skill.id}
               variant="outline"
-              className="border-white/15 bg-white/[0.05] px-3 py-1 text-xs text-zinc-100"
+              className="flex items-center gap-1 border-white/15 bg-white/[0.05] px-3 py-1 text-xs text-zinc-100"
             >
-              {skill.name}
+              <span className="text-sm leading-none">
+                {getSkillIcon(skill.icon)}
+              </span>
+              <span>{skill.name}</span>
             </Badge>
           ))}
         </div>
@@ -503,7 +516,9 @@ function SkillSearchSelect({
   }, [hasSkills]);
 
   const summaryText = hasSkills
-    ? selectedSkill?.name ?? placeholder
+    ? selectedSkill
+      ? `${getSkillIcon(selectedSkill.icon)} ${selectedSkill.name}`
+      : placeholder
     : "No skills available";
 
   const handleSelect = (skillId: string) => {
@@ -546,22 +561,30 @@ function SkillSearchSelect({
           </div>
           <div className="max-h-60 overflow-y-auto">
             {filteredSkills.length > 0 ? (
-              filteredSkills.map((skill) => (
-                <button
-                  key={skill.id}
-                  type="button"
-                  onClick={() => handleSelect(skill.id)}
-                  className={cn(
-                    "flex w-full items-center justify-between px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5",
-                    skill.id === selectedId && "bg-blue-500/15 text-white"
-                  )}
-                >
-                  <span>{skill.name}</span>
-                  {skill.id === selectedId ? (
-                    <CheckSquare className="h-4 w-4 text-blue-400" />
-                  ) : null}
-                </button>
-              ))
+              filteredSkills.map((skill) => {
+                const isSelected = skill.id === selectedId;
+                return (
+                  <button
+                    key={skill.id}
+                    type="button"
+                    onClick={() => handleSelect(skill.id)}
+                    className={cn(
+                      "flex w-full items-center justify-between px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5",
+                      isSelected && "bg-blue-500/15 text-white"
+                    )}
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <span className="text-base leading-none">
+                        {getSkillIcon(skill.icon)}
+                      </span>
+                      <span className="truncate">{skill.name}</span>
+                    </span>
+                    {isSelected ? (
+                      <CheckSquare className="h-4 w-4 text-blue-400" />
+                    ) : null}
+                  </button>
+                );
+              })
             ) : (
               <p className="px-3 py-2 text-xs text-zinc-500">
                 No skills match your search.
