@@ -263,10 +263,10 @@ export async function scheduleBacklog(
   }
 
   queue.sort((a, b) => {
-    const weightDiff = b.weight - a.weight
-    if (weightDiff !== 0) return weightDiff
     const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
     if (energyDiff !== 0) return energyDiff
+    const weightDiff = b.weight - a.weight
+    if (weightDiff !== 0) return weightDiff
     return a.id.localeCompare(b.id)
   })
 

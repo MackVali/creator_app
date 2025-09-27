@@ -21,6 +21,7 @@ import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
 import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
+import { RefreshCcw } from 'lucide-react'
 import {
   getChildView,
   getParentView,
@@ -396,6 +397,8 @@ export default function SchedulePage() {
   const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
+  const [isScheduling, setIsScheduling] = useState(false)
+  const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null)
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -416,6 +419,32 @@ export default function SchedulePage() {
   const isSchedulingRef = useRef(false)
   const autoScheduledForRef = useRef<string | null>(null)
 
+  const persistAutoRunDate = useCallback(
+    (dateKey: string) => {
+      if (!userId) return
+      if (typeof window === 'undefined') return
+      const storageKey = `schedule:lastAutoRun:${userId}`
+      try {
+        window.localStorage.setItem(storageKey, dateKey)
+      } catch (error) {
+        console.warn('Failed to store schedule auto-run timestamp', error)
+      }
+    },
+    [userId]
+  )
+
+  const readLastAutoRunDate = useCallback((): string | null => {
+    if (!userId) return null
+    if (typeof window === 'undefined') return null
+    const storageKey = `schedule:lastAutoRun:${userId}`
+    try {
+      return window.localStorage.getItem(storageKey)
+    } catch (error) {
+      console.warn('Failed to read schedule auto-run timestamp', error)
+      return null
+    }
+  }, [userId])
+
   const startHour = 0
   const pxPerMin = 2
   const year = currentDate.getFullYear()
@@ -428,6 +457,8 @@ export default function SchedulePage() {
 
   useEffect(() => {
     setSchedulerDebug(null)
+    autoScheduledForRef.current = null
+    setHasAutoRunToday(null)
   }, [userId])
 
   useEffect(() => {
@@ -873,6 +904,7 @@ export default function SchedulePage() {
     }
     if (isSchedulingRef.current) return
     isSchedulingRef.current = true
+    setIsScheduling(true)
     try {
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
@@ -937,6 +969,7 @@ export default function SchedulePage() {
       })
     } finally {
       isSchedulingRef.current = false
+      setIsScheduling(false)
       try {
         await loadInstancesRef.current()
       } catch (error) {
@@ -949,10 +982,6 @@ export default function SchedulePage() {
       }
     }
   }, [userId, refreshScheduledProjectIds])
-
-  useEffect(() => {
-    autoScheduledForRef.current = null
-  }, [userId, currentDate])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -968,21 +997,38 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId) return
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
-    if (instances.length > 0) return
+    const todayKey = formatLocalDateKey(new Date())
+    const stored = readLastAutoRunDate()
+    if (stored === todayKey) {
+      if (hasAutoRunToday !== true) setHasAutoRunToday(true)
+      return
+    }
+    if (hasAutoRunToday !== false) setHasAutoRunToday(false)
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDate)
-    const key = `${userId}:${startUTC}`
-    if (autoScheduledForRef.current === key) return
-    autoScheduledForRef.current = key
-    void runScheduler()
+    if (autoScheduledForRef.current === todayKey) return
+    autoScheduledForRef.current = todayKey
+    void (async () => {
+      await runScheduler()
+      persistAutoRunDate(todayKey)
+      setHasAutoRunToday(true)
+    })()
   }, [
     userId,
-    currentDate,
     metaStatus,
     instancesStatus,
-    instances.length,
     runScheduler,
+    readLastAutoRunDate,
+    persistAutoRunDate,
+    hasAutoRunToday,
   ])
+
+  const handleRescheduleClick = useCallback(async () => {
+    if (!userId) return
+    const todayKey = formatLocalDateKey(new Date())
+    await runScheduler()
+    persistAutoRunDate(todayKey)
+    setHasAutoRunToday(true)
+  }, [userId, runScheduler, persistAutoRunDate])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -1016,6 +1062,36 @@ export default function SchedulePage() {
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         >
+          <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={handleRescheduleClick}
+              disabled={isScheduling}
+              className="group relative inline-flex items-center gap-2 rounded-full border border-white/40 bg-[linear-gradient(140deg,_#f4f5f9_0%,_#d6d9e0_45%,_#a1a6b4_100%)] px-5 py-2 text-sm font-semibold text-[#1f2733] shadow-[0_12px_26px_rgba(10,12,18,0.55),_0_5px_12px_rgba(0,0,0,0.35),_inset_0_1px_0_rgba(255,255,255,0.85)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(8,10,16,0.6),_0_8px_18px_rgba(0,0,0,0.4),_inset_0_1px_0_rgba(255,255,255,0.9)] disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-80 disabled:shadow-[0_12px_26px_rgba(10,12,18,0.4),_0_5px_12px_rgba(0,0,0,0.25),_inset_0_1px_0_rgba(255,255,255,0.6)]"
+            >
+              <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),_0_4px_8px_rgba(0,0,0,0.25)]">
+                <RefreshCcw
+                  strokeWidth={2.6}
+                  className={`h-[18px] w-[18px] text-[#111b27] ${
+                    isScheduling ? 'animate-spin' : 'group-hover:rotate-6'
+                  } transition-transform duration-200 ease-out`}
+                />
+              </div>
+              <span className="tracking-wide">
+                {isScheduling ? 'Rescheduling…' : 'Reschedule'}
+              </span>
+            </button>
+            {hasAutoRunToday === false && (
+              <span className="text-[11px] font-medium text-white/75 drop-shadow">
+                Auto-rescheduling now from your current time…
+              </span>
+            )}
+            {hasAutoRunToday === true && (
+              <span className="text-[11px] font-medium text-white/70 drop-shadow">
+                Automatic reschedule already ran today. Use the button to refresh.
+              </span>
+            )}
+          </div>
           <AnimatePresence mode="wait" initial={false}>
             {view === 'year' && (
               <ScheduleViewShell key="year">
