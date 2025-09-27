@@ -309,6 +309,7 @@ export async function scheduleBacklog(
         client: supabase,
         reuseInstanceId: item.instanceId,
         ignoreProjectIds,
+        notBefore: offset === 0 ? baseDate : undefined,
       })
 
       if (!('status' in placed)) {

@@ -327,7 +327,8 @@ async function scheduleBacklog(
         item,
         windows,
         item.instanceId,
-        queueProjectIds
+        queueProjectIds,
+        offset === 0 ? baseDate : undefined
       )
       if (placedInstance) {
         placed.push(placedInstance)
@@ -757,17 +758,32 @@ async function placeItemInWindows(
     key?: string
   }>,
   reuseInstanceId: string | null | undefined,
-  ignoreProjectIds?: Set<string>
+  ignoreProjectIds?: Set<string>,
+  notBefore?: Date
 ): Promise<ScheduleInstance | null> {
+  const notBeforeMs = notBefore ? notBefore.getTime() : null
+  const durationMs = Math.max(0, item.duration_min) * 60000
+
   for (const window of windows) {
-    const start = new Date(window.availableStartLocal ?? window.startLocal)
-    const end = new Date(window.endLocal)
+    const windowStart = new Date(window.availableStartLocal ?? window.startLocal)
+    const windowEnd = new Date(window.endLocal)
+
+    const windowStartMs = windowStart.getTime()
+    const windowEndMs = windowEnd.getTime()
+
+    if (typeof notBeforeMs === 'number' && windowEndMs <= notBeforeMs) {
+      continue
+    }
+
+    const startMs =
+      typeof notBeforeMs === 'number' ? Math.max(windowStartMs, notBeforeMs) : windowStartMs
+    const start = new Date(startMs)
 
     const { data: taken, error } = await client
       .from('schedule_instances')
       .select('*')
       .eq('user_id', userId)
-      .lt('start_utc', end.toISOString())
+      .lt('start_utc', windowEnd.toISOString())
       .gt('end_utc', start.toISOString())
       .neq('status', 'canceled')
 
@@ -791,34 +807,51 @@ async function placeItemInWindows(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     )
 
-    let cursor = start
-    const durMin = item.duration_min
+    let cursorMs = startMs
 
     for (const block of sorted) {
-      const blockStart = new Date(block.start_utc)
-      const blockEnd = new Date(block.end_utc)
-      if (diffMin(cursor, blockStart) >= durMin) {
+      const blockStartMs = new Date(block.start_utc).getTime()
+      const blockEndMs = new Date(block.end_utc).getTime()
+
+      if (typeof notBeforeMs === 'number' && blockEndMs <= notBeforeMs) {
+        continue
+      }
+
+      const effectiveBlockStartMs =
+        typeof notBeforeMs === 'number'
+          ? Math.max(blockStartMs, notBeforeMs)
+          : blockStartMs
+
+      if (cursorMs + durationMs <= effectiveBlockStartMs) {
+        const startDate = new Date(cursorMs)
         return await persistPlacement(
           client,
           userId,
           item,
           window.id,
-          cursor,
-          durMin,
+          startDate,
+          item.duration_min,
           reuseInstanceId
         )
       }
-      if (blockEnd > cursor) cursor = blockEnd
+
+      if (blockEndMs > cursorMs) {
+        cursorMs = blockEndMs
+        if (typeof notBeforeMs === 'number' && cursorMs < notBeforeMs) {
+          cursorMs = notBeforeMs
+        }
+      }
     }
 
-    if (diffMin(cursor, end) >= durMin) {
+    if (cursorMs + durationMs <= windowEndMs) {
+      const startDate = new Date(cursorMs)
       return await persistPlacement(
         client,
         userId,
         item,
         window.id,
-        cursor,
-        durMin,
+        startDate,
+        item.duration_min,
         reuseInstanceId
       )
     }
@@ -977,10 +1010,6 @@ function resolveWindowEnd(window: WindowRecord, date: Date, timeZone: string) {
 
 function addMin(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000)
-}
-
-function diffMin(a: Date, b: Date) {
-  return Math.floor((b.getTime() - a.getTime()) / 60_000)
 }
 
 function energyIndex(level?: string | null, options?: { fallback?: number }) {

@@ -1432,6 +1432,123 @@ describe("scheduleBacklog", () => {
     expect(placements[0]?.startUTC.startsWith("2024-01-02")).toBe(true);
   });
 
+  it("moves future scheduled projects into the earliest window later today", async () => {
+    instances = [
+      createInstanceRecord({
+        id: "inst-future-high",
+        source_id: "proj-high-energy",
+        status: "scheduled",
+        start_utc: "2024-01-03T15:00:00Z",
+        end_utc: "2024-01-03T16:30:00Z",
+        window_id: "win-tomorrow-high",
+        duration_min: 90,
+        energy_resolved: "HIGH",
+        weight_snapshot: 80,
+      }),
+    ];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-high-energy": {
+        id: "proj-high-energy",
+        name: "High energy",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 90,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+      const day = date.toISOString().slice(0, 10);
+      if (day === "2024-01-02") {
+        return [
+          {
+            id: "win-today-early-high",
+            label: "Afternoon deep focus",
+            energy: "HIGH",
+            start_local: "14:00",
+            end_local: "16:00",
+            days: [date.getDay()],
+          },
+          {
+            id: "win-today-late-high",
+            label: "Evening focus",
+            energy: "HIGH",
+            start_local: "18:00",
+            end_local: "20:00",
+            days: [date.getDay()],
+          },
+        ];
+      }
+      if (day === "2024-01-03") {
+        return [
+          {
+            id: "win-tomorrow-high",
+            label: "Tomorrow high energy",
+            energy: "HIGH",
+            start_local: "15:00",
+            end_local: "17:00",
+            days: [date.getDay()],
+          },
+        ];
+      }
+      return [];
+    });
+
+    const placements: Array<{
+      windowId: string;
+      reuseInstanceId: string | null;
+      startUTC: string;
+      notBefore: Date | undefined;
+    }> = [];
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async params => {
+      const window = params.windows[0];
+      if (!window) {
+        return { error: "NO_FIT" as const };
+      }
+      const start = new Date(window.availableStartLocal ?? window.startLocal);
+      const end = new Date(start.getTime() + params.item.duration_min * 60000);
+      placements.push({
+        windowId: window.id,
+        reuseInstanceId: params.reuseInstanceId ?? null,
+        startUTC: start.toISOString(),
+        notBefore: params.notBefore,
+      });
+      return {
+        data: createInstanceRecord({
+          id: "inst-future-high",
+          source_id: params.item.id,
+          start_utc: start.toISOString(),
+          end_utc: end.toISOString(),
+          duration_min: params.item.duration_min,
+          window_id: window.id,
+          status: "scheduled",
+        }),
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, baseDate, mockClient);
+
+    expect(result.failures).toHaveLength(0);
+    expect(result.error).toBeUndefined();
+    expect(result.placed).toHaveLength(1);
+    expect(placements).toHaveLength(1);
+    expect(placements[0]?.windowId).toBe("win-today-early-high");
+    expect(placements[0]?.reuseInstanceId).toBe("inst-future-high");
+    expect(placements[0]?.startUTC.startsWith("2024-01-02")).toBe(true);
+    const placedStart = new Date(placements[0]?.startUTC ?? 0).getTime();
+    expect(placedStart).toBeGreaterThanOrEqual(baseDate.getTime());
+    expect(placements[0]?.notBefore?.toISOString()).toBe(baseDate.toISOString());
+  });
+
   it("treats queued projects as free when evaluating earlier windows", async () => {
     instances = [];
 
