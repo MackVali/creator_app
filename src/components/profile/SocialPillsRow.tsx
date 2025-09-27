@@ -23,8 +23,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
   const platformConfig = {
     instagram: {
       icon: Instagram,
-      color:
-        "bg-gradient-to-br from-[#ff9a9e] via-[#fad0c4] to-[#fad0c4]/80 text-black",
+      color: "bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700",
       label: "Instagram",
     },
     x: {
@@ -34,12 +33,12 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     twitter: {
       icon: Twitter,
-      color: "bg-[#1d9bf0]",
+      color: "bg-neutral-900",
       label: "Twitter",
     },
     youtube: {
       icon: Youtube,
-      color: "bg-[#ff0000]",
+      color: "bg-neutral-900",
       label: "YouTube",
     },
     tiktok: {
@@ -49,32 +48,32 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     linkedin: {
       icon: Linkedin,
-      color: "bg-[#0a66c2]",
+      color: "bg-neutral-900",
       label: "LinkedIn",
     },
     email: {
       icon: Mail,
-      color: "bg-slate-600",
+      color: "bg-neutral-800",
       label: "Email",
     },
     website: {
       icon: Globe,
-      color: "bg-gradient-to-br from-blue-500 to-purple-500",
+      color: "bg-gradient-to-br from-black via-neutral-900 to-neutral-700",
       label: "Website",
     },
     github: {
       icon: Github,
-      color: "bg-slate-900",
+      color: "bg-black",
       label: "GitHub",
     },
     discord: {
       icon: MessageCircle,
-      color: "bg-[#5865f2]",
+      color: "bg-neutral-900",
       label: "Discord",
     },
     facebook: {
       icon: Facebook,
-      color: "bg-[#1877f2]",
+      color: "bg-neutral-900",
       label: "Facebook",
     },
   } as const;
@@ -126,7 +125,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
             target="_blank"
             rel="noopener noreferrer"
             title={config.label}
-            className="group relative inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/10 shadow-[0_18px_35px_rgba(15,23,42,0.45)] transition-all duration-200 hover:-translate-y-1 hover:border-white/35 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            className="group relative inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-black/40 shadow-[0_22px_40px_rgba(2,6,23,0.55)] transition-all duration-200 hover:-translate-y-1 hover:border-white/25 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
           >
             <span
               className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-white shadow-lg transition-transform duration-200 group-hover:scale-[1.05] ${config.color}`}

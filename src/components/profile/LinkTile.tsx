@@ -22,9 +22,9 @@ export default function LinkTile({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+      className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
     >
-      <article className="relative flex h-72 flex-col overflow-hidden rounded-[30px] border border-white/10 bg-slate-900/70 shadow-[0_28px_60px_rgba(15,23,42,0.55)] transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:shadow-[0_32px_80px_rgba(15,23,42,0.6)]">
+      <article className="relative flex h-72 flex-col overflow-hidden rounded-[32px] border border-white/10 bg-black/70 shadow-[0_32px_70px_rgba(2,6,23,0.65)] transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_36px_90px_rgba(2,6,23,0.7)]">
         <div className="absolute inset-0">
           {thumbUrl ? (
             <Image
@@ -43,7 +43,7 @@ export default function LinkTile({
         <div className="absolute inset-0 bg-gradient-to-b from-slate-900/10 via-slate-900/40 to-slate-950/85" />
 
         <div className="absolute right-5 top-5">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white transition-colors duration-200 group-hover:border-white/35 group-hover:bg-black/55">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-white transition-colors duration-200 group-hover:border-white/30 group-hover:bg-black/70">
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </span>
         </div>

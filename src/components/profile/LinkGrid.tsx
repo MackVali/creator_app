@@ -19,7 +19,7 @@ export default function LinkGrid({ links, loading = false }: LinkGridProps) {
         {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={`link-skeleton-${index}`}
-            className="h-64 rounded-[30px] border border-white/10 bg-white/5 animate-pulse"
+            className="h-64 rounded-[32px] border border-white/10 bg-black/50 animate-pulse"
           />
         ))}
       </div>
@@ -28,8 +28,8 @@ export default function LinkGrid({ links, loading = false }: LinkGridProps) {
 
   if (activeLinks.length === 0) {
     return (
-      <div className="rounded-[32px] border border-white/10 bg-slate-900/70 p-10 text-center shadow-[0_25px_45px_rgba(15,23,42,0.45)]">
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-white/5 text-white/50">
+      <div className="rounded-[34px] border border-white/10 bg-black/65 p-10 text-center shadow-[0_32px_70px_rgba(2,6,23,0.6)]">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-black/60 text-white/50">
           <svg
             className="h-8 w-8"
             fill="none"
