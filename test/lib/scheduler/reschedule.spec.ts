@@ -145,7 +145,7 @@ describe("scheduleBacklog", () => {
       {
         id: "win-1",
         label: "Any",
-        energy: "NO",
+        energy: "LOW",
         start_local: "09:00",
         end_local: "10:00",
         days: [2],
@@ -455,7 +455,7 @@ describe("scheduleBacklog", () => {
         {
           id: "win-primary",
           label: "Primary",
-          energy: "NO",
+          energy: "HIGH",
           start_local: "10:00",
           end_local: "14:00",
           days: [date.getDay()],
@@ -655,7 +655,7 @@ describe("scheduleBacklog", () => {
         {
           id: "win-daily",
           label: "Daily focus",
-          energy: "NO",
+          energy: "HIGH",
           start_local: "10:00",
           end_local: "14:00",
           days: [date.getDay()],
@@ -782,7 +782,7 @@ describe("scheduleBacklog", () => {
         {
           id: "win-overnight",
           label: "Overnight",
-          energy: "NO",
+          energy: "HIGH",
           start_local: "22:00",
           end_local: "02:00",
           days: [date.getDay()],
@@ -902,7 +902,7 @@ describe("scheduleBacklog", () => {
         {
           id: "win-range",
           label: "Daily slot",
-          energy: "NO",
+          energy: "HIGH",
           start_local: "09:00",
           end_local: "10:00",
           days: [date.getDay()],
@@ -1033,7 +1033,7 @@ describe("scheduleBacklog", () => {
             {
               id: "win-today",
               label: "Tonight",
-              energy: "NO",
+              energy: "HIGH",
               start_local: "21:00",
               end_local: "23:00",
               days: [date.getDay()],
@@ -1045,7 +1045,7 @@ describe("scheduleBacklog", () => {
             {
               id: "win-tomorrow",
               label: "Tomorrow",
-              energy: "NO",
+              energy: "HIGH",
               start_local: "09:00",
               end_local: "15:00",
               days: [date.getDay()],
@@ -1145,7 +1145,7 @@ describe("scheduleBacklog", () => {
     },
   );
 
-  it("allows low-energy projects to use neutral-energy windows on the same day", async () => {
+  it("skips windows marked with NO energy when finding the earliest slot", async () => {
     instances = [];
 
     const backlogResponse: BacklogResponse = {
@@ -1186,11 +1186,19 @@ describe("scheduleBacklog", () => {
       if (day === "2024-01-02") {
         return [
           {
-            id: "win-today-neutral",
-            label: "Today neutral",
+            id: "win-today-no",
+            label: "Today blocked",
             energy: "NO",
             start_local: "14:00",
-            end_local: "16:00",
+            end_local: "15:00",
+            days: [date.getDay()],
+          },
+          {
+            id: "win-today-low",
+            label: "Today low",
+            energy: "LOW",
+            start_local: "15:00",
+            end_local: "17:00",
             days: [date.getDay()],
           },
         ];
@@ -1221,6 +1229,7 @@ describe("scheduleBacklog", () => {
     const placements: Array<{ windowId: string; startUTC: string }> = [];
 
     (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async params => {
+      expect(params.windows.map(window => window.id)).not.toContain("win-today-no");
       const window = params.windows[0];
       if (!window) {
         return { error: "NO_FIT" as const };
@@ -1230,7 +1239,7 @@ describe("scheduleBacklog", () => {
       placements.push({ windowId: window.id, startUTC: start.toISOString() });
       return {
         data: createInstanceRecord({
-          id: "inst-neutral-placement",
+          id: "inst-low-placement",
           source_id: params.item.id,
           start_utc: start.toISOString(),
           end_utc: end.toISOString(),
@@ -1253,7 +1262,7 @@ describe("scheduleBacklog", () => {
     expect(result.error).toBeUndefined();
     expect(result.placed).toHaveLength(1);
     expect(placements).toHaveLength(1);
-    expect(placements[0]?.windowId).toBe("win-today-neutral");
+    expect(placements[0]?.windowId).toBe("win-today-low");
     expect(placements[0]?.startUTC.startsWith("2024-01-02")).toBe(true);
   });
 
