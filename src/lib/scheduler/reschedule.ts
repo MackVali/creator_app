@@ -289,6 +289,7 @@ export async function scheduleBacklog(
       }
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
       const windows = await fetchCompatibleWindowsForItem(
+        userId,
         supabase,
         day,
         item,
@@ -501,6 +502,7 @@ async function dedupeScheduledProjects(
 }
 
 async function fetchCompatibleWindowsForItem(
+  userId: string,
   supabase: Client,
   date: Date,
   item: { energy: string; duration_min: number },
@@ -517,7 +519,7 @@ async function fetchCompatibleWindowsForItem(
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(date, supabase, timeZone)
+    windows = await fetchWindowsForDate(date, userId, supabase, timeZone)
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)

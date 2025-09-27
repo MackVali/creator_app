@@ -48,6 +48,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
 
 export async function fetchWindowsForDate(
   date: Date,
+  userId: string,
   client?: Client,
   timeZone?: string | null,
 ): Promise<WindowLite[]> {
@@ -66,12 +67,18 @@ export async function fetchWindowsForDate(
     supabase
       .from('windows')
       .select(columns)
+      .eq('user_id', userId)
       .contains('days', [weekday]),
     supabase
       .from('windows')
       .select(columns)
+      .eq('user_id', userId)
       .contains('days', [prevWeekday]),
-    supabase.from('windows').select(columns).is('days', null),
+    supabase
+      .from('windows')
+      .select(columns)
+      .eq('user_id', userId)
+      .is('days', null),
   ]);
 
   if (errToday || errPrev || errRecurring) {
