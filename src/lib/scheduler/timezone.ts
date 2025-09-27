@@ -25,6 +25,7 @@ type DateParts = {
   hour: number
   minute: number
   second: number
+  millisecond: number
 }
 
 function getDateTimeParts(date: Date, timeZone: string): DateParts {
@@ -49,12 +50,13 @@ function getDateTimeParts(date: Date, timeZone: string): DateParts {
   let hour = result.hour ?? date.getUTCHours()
   const minute = result.minute ?? date.getUTCMinutes()
   const second = result.second ?? date.getUTCSeconds()
+  const millisecond = date.getUTCMilliseconds()
 
   if (hour === 24) {
     hour = 0
   }
 
-  return { year, month, day, hour, minute, second }
+  return { year, month, day, hour, minute, second, millisecond }
 }
 
 function getTimeZoneOffset(date: Date, timeZone: string) {
@@ -93,6 +95,22 @@ function makeZonedDate(input: ZonedDateInput, timeZone: string) {
   const utc = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond))
   const offset = getTimeZoneOffset(utc, timeZone)
   return new Date(utc.getTime() - offset)
+}
+
+export function toZonedDate(date: Date, timeZone: string) {
+  const parts = getDateTimeParts(date, timeZone)
+  return makeZonedDate(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: parts.hour,
+      minute: parts.minute,
+      second: parts.second,
+      millisecond: parts.millisecond,
+    },
+    timeZone,
+  )
 }
 
 export function normalizeTimeZone(timeZone?: string | null) {
