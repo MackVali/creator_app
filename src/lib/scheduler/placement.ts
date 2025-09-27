@@ -34,10 +34,11 @@ type PlaceParams = {
   date: Date
   client?: Client
   reuseInstanceId?: string | null
+  ignoreProjectIds?: Set<string>
 }
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
-  const { userId, item, windows, client, reuseInstanceId } = params
+  const { userId, item, windows, client, reuseInstanceId, ignoreProjectIds } = params
   let best: null | {
     window: (typeof windows)[number]
     windowIndex: number
@@ -58,7 +59,16 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       return { error }
     }
 
-    const filtered = (taken ?? []).filter(inst => inst.id !== reuseInstanceId)
+    const filtered = (taken ?? []).filter(inst => {
+      if (inst.id === reuseInstanceId) return false
+      if (ignoreProjectIds && inst.source_type === 'PROJECT') {
+        const projectId = inst.source_id ?? ''
+        if (projectId && ignoreProjectIds.has(projectId)) {
+          return false
+        }
+      }
+      return true
+    })
 
     const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()

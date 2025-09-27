@@ -15,7 +15,7 @@ import {
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 
-const GRACE_MIN = 60
+const START_GRACE_MIN = 1
 const DEFAULT_PROJECT_DURATION_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
 const BASE_LOOKAHEAD_DAYS = 28
@@ -101,13 +101,13 @@ async function resolveUserTimeZone(client: Client, userId: string) {
 }
 
 async function markMissedAndQueue(client: Client, userId: string, now: Date) {
-  const cutoff = new Date(now.getTime() - GRACE_MIN * 60_000).toISOString()
+  const cutoff = new Date(now.getTime() - START_GRACE_MIN * 60_000).toISOString()
   return await client
     .from('schedule_instances')
     .update({ status: 'missed' })
     .eq('user_id', userId)
     .eq('status', 'scheduled')
-    .lt('end_utc', cutoff)
+    .lt('start_utc', cutoff)
 }
 
 async function scheduleBacklog(
@@ -326,7 +326,8 @@ async function scheduleBacklog(
         userId,
         item,
         windows,
-        item.instanceId
+        item.instanceId,
+        queueProjectIds
       )
       if (placedInstance) {
         placed.push(placedInstance)
@@ -620,7 +621,9 @@ async function fetchCompatibleWindowsForItem(
   }> = []
 
   for (const window of windows) {
-    const energyIdx = energyIndex(window.energy)
+    const energyLabel = window.energy ? String(window.energy).toUpperCase() : null
+    if (energyLabel === 'NO') continue
+    const energyIdx = energyIndex(energyLabel, { fallback: ENERGY_ORDER.length })
     if (energyIdx < itemIdx) continue
 
     const startLocal = resolveWindowStart(window, date, timeZone)
@@ -753,7 +756,8 @@ async function placeItemInWindows(
     availableStartLocal?: Date
     key?: string
   }>,
-  reuseInstanceId?: string | null
+  reuseInstanceId: string | null | undefined,
+  ignoreProjectIds?: Set<string>
 ): Promise<ScheduleInstance | null> {
   for (const window of windows) {
     const start = new Date(window.availableStartLocal ?? window.startLocal)
@@ -772,7 +776,16 @@ async function placeItemInWindows(
       continue
     }
 
-    const filtered = (taken ?? []).filter(instance => instance.id !== reuseInstanceId)
+    const filtered = (taken ?? []).filter(instance => {
+      if (instance.id === reuseInstanceId) return false
+      if (ignoreProjectIds && instance.source_type === 'PROJECT') {
+        const projectId = instance.source_id ?? ''
+        if (projectId && ignoreProjectIds.has(projectId)) {
+          return false
+        }
+      }
+      return true
+    })
 
     const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
@@ -970,10 +983,12 @@ function diffMin(a: Date, b: Date) {
   return Math.floor((b.getTime() - a.getTime()) / 60_000)
 }
 
-function energyIndex(level?: string | null) {
-  if (!level) return -1
+function energyIndex(level?: string | null, options?: { fallback?: number }) {
+  const fallback = options?.fallback ?? -1
+  if (!level) return fallback
   const upper = level.toUpperCase()
-  return ENERGY_ORDER.indexOf(upper as (typeof ENERGY_ORDER)[number])
+  const index = ENERGY_ORDER.indexOf(upper as (typeof ENERGY_ORDER)[number])
+  return index === -1 ? fallback : index
 }
 
 const TASK_PRIORITY_WEIGHT: Record<string, number> = {
