@@ -9,14 +9,14 @@ export const TASK_PRIORITY_WEIGHT = {
   LOW: 1,
   MEDIUM: 2,
   HIGH: 3,
-  Critical: 4,
-  "Ultra-Critical": 5,
+  CRITICAL: 4,
+  "ULTRA-CRITICAL": 5,
 };
 
 export const TASK_STAGE_WEIGHT = {
-  Prepare: 30,
-  Produce: 20,
-  Perfect: 10,
+  PREPARE: 30,
+  PRODUCE: 20,
+  PERFECT: 10,
 };
 
 export const PROJECT_PRIORITY_WEIGHT = {
@@ -24,8 +24,8 @@ export const PROJECT_PRIORITY_WEIGHT = {
   LOW: 1,
   MEDIUM: 2,
   HIGH: 3,
-  Critical: 4,
-  "Ultra-Critical": 5,
+  CRITICAL: 4,
+  "ULTRA-CRITICAL": 5,
 };
 
 export const PROJECT_STAGE_WEIGHT = {
@@ -41,7 +41,7 @@ export const GOAL_PRIORITY_WEIGHT = {
   LOW: 10,
   MEDIUM: 20,
   HIGH: 30,
-  Critical: 40,
-  "Ultra-Critical": 50,
+  CRITICAL: 40,
+  "ULTRA-CRITICAL": 50,
 };
 

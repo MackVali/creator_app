@@ -1031,14 +1031,14 @@ const TASK_PRIORITY_WEIGHT: Record<string, number> = {
   LOW: 1,
   MEDIUM: 2,
   HIGH: 3,
-  Critical: 4,
-  'Ultra-Critical': 5,
+  CRITICAL: 4,
+  'ULTRA-CRITICAL': 5,
 }
 
 const TASK_STAGE_WEIGHT: Record<string, number> = {
-  Prepare: 30,
-  Produce: 20,
-  Perfect: 10,
+  PREPARE: 30,
+  PRODUCE: 20,
+  PERFECT: 10,
 }
 
 const PROJECT_PRIORITY_WEIGHT: Record<string, number> = {
@@ -1046,8 +1046,8 @@ const PROJECT_PRIORITY_WEIGHT: Record<string, number> = {
   LOW: 1,
   MEDIUM: 2,
   HIGH: 3,
-  Critical: 4,
-  'Ultra-Critical': 5,
+  CRITICAL: 4,
+  'ULTRA-CRITICAL': 5,
 }
 
 const PROJECT_STAGE_WEIGHT: Record<string, number> = {
