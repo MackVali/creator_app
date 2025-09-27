@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Facebook,
   Github,
   Globe,
   Instagram,
@@ -22,7 +23,8 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
   const platformConfig = {
     instagram: {
       icon: Instagram,
-      color: "bg-gradient-to-r from-purple-500 to-pink-500",
+      color:
+        "bg-gradient-to-br from-[#ff9a9e] via-[#fad0c4] to-[#fad0c4]/80 text-black",
       label: "Instagram",
     },
     x: {
@@ -32,12 +34,12 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     twitter: {
       icon: Twitter,
-      color: "bg-blue-400",
+      color: "bg-[#1d9bf0]",
       label: "Twitter",
     },
     youtube: {
       icon: Youtube,
-      color: "bg-red-600",
+      color: "bg-[#ff0000]",
       label: "YouTube",
     },
     tiktok: {
@@ -47,60 +49,70 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
     },
     linkedin: {
       icon: Linkedin,
-      color: "bg-blue-700",
+      color: "bg-[#0a66c2]",
       label: "LinkedIn",
     },
     email: {
       icon: Mail,
-      color: "bg-gray-600",
+      color: "bg-slate-600",
       label: "Email",
     },
     website: {
       icon: Globe,
-      color: "bg-blue-500",
+      color: "bg-gradient-to-br from-blue-500 to-purple-500",
       label: "Website",
     },
     github: {
       icon: Github,
-      color: "bg-gray-800",
+      color: "bg-slate-900",
       label: "GitHub",
     },
     discord: {
       icon: MessageCircle,
-      color: "bg-indigo-600",
+      color: "bg-[#5865f2]",
       label: "Discord",
     },
-  };
+    facebook: {
+      icon: Facebook,
+      color: "bg-[#1877f2]",
+      label: "Facebook",
+    },
+  } as const;
 
   // Filter out undefined URLs and sort by platform priority
+  const priority = [
+    "instagram",
+    "x",
+    "twitter",
+    "youtube",
+    "tiktok",
+    "linkedin",
+    "facebook",
+    "email",
+    "website",
+    "github",
+    "discord",
+  ];
+
+  const getPriority = (platform: string) => {
+    const index = priority.indexOf(platform);
+    return index === -1 ? priority.length : index;
+  };
+
   const availableSocials = Object.entries(socials)
     .filter(([, url]) => url && url !== "#")
-    .sort(([a], [b]) => {
-      const priority = [
-        "instagram",
-        "x",
-        "twitter",
-        "youtube",
-        "tiktok",
-        "linkedin",
-        "email",
-        "website",
-        "github",
-        "discord",
-      ];
-      return priority.indexOf(a) - priority.indexOf(b);
-    });
+    .sort(([a], [b]) => getPriority(a) - getPriority(b));
 
   if (availableSocials.length === 0) {
     return (
-      <div className="text-center py-8">
-        <p className="text-white/50 text-sm">No social links added yet</p>
+      <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-5 text-center text-sm text-white/60">
+        No social links added yet
       </div>
     );
   }
 
   return (
-    <div className="flex flex-wrap justify-center gap-3">
+    <div className="flex flex-wrap justify-center gap-4">
       {availableSocials.map(([platform, url]) => {
         const config = platformConfig[platform as keyof typeof platformConfig];
         if (!config || !url) return null;
@@ -113,14 +125,15 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="group inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/80 transition-all hover:border-white/30 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            title={config.label}
+            className="group relative inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/10 shadow-[0_18px_35px_rgba(15,23,42,0.45)] transition-all duration-200 hover:-translate-y-1 hover:border-white/35 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
           >
             <span
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-white shadow-lg ${config.color}`}
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-white shadow-lg transition-transform duration-200 group-hover:scale-[1.05] ${config.color}`}
             >
-              <IconComponent className="h-4 w-4" aria-hidden="true" />
+              <IconComponent className="h-5 w-5" aria-hidden="true" />
             </span>
-            <span>{config.label}</span>
+            <span className="sr-only">{config.label}</span>
           </Link>
         );
       })}
