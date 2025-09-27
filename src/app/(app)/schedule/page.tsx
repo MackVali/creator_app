@@ -902,6 +902,16 @@ export default function SchedulePage() {
       console.warn('No user session available for scheduler run')
       return
     }
+    const localNow = new Date()
+    let timeZone: string | null = null
+    try {
+      const options = Intl.DateTimeFormat().resolvedOptions()
+      if (options.timeZone && options.timeZone.trim()) {
+        timeZone = options.timeZone
+      }
+    } catch (error) {
+      console.warn('Unable to determine local time zone', error)
+    }
     if (isSchedulingRef.current) return
     isSchedulingRef.current = true
     setIsScheduling(true)
@@ -909,6 +919,13 @@ export default function SchedulePage() {
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
         cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          localTimeIso: localNow.toISOString(),
+          timeZone,
+        }),
       })
       let payload: unknown = null
       let parseError: unknown = null
