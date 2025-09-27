@@ -7,7 +7,6 @@ import { Profile, SocialLink, ContentCard } from "@/lib/types";
 import { getProfileByHandle, getProfileLinks } from "@/lib/db";
 import { getSocialLinks } from "@/lib/db/profile-management";
 import HeroHeader from "@/components/profile/HeroHeader";
-import SocialPillsRow from "@/components/profile/SocialPillsRow";
 import LinkGrid from "@/components/profile/LinkGrid";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 
@@ -104,8 +103,8 @@ export default function ProfileByHandlePage() {
     return (
       <div className="relative flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute left-1/2 top-[-20%] h-[320px] w-[320px] -translate-x-1/2 rounded-full bg-blue-500/10 blur-[160px]" />
-          <div className="absolute bottom-[-25%] right-[-15%] h-[260px] w-[260px] rounded-full bg-purple-500/10 blur-[200px]" />
+          <div className="absolute left-1/2 top-[-20%] h-[320px] w-[320px] -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[160px]" />
+          <div className="absolute bottom-[-25%] right-[-15%] h-[260px] w-[260px] rounded-full bg-neutral-800/15 blur-[200px]" />
         </div>
 
         <div className="relative z-10 w-full max-w-md rounded-3xl border border-white/10 bg-slate-900/70 p-8 text-center shadow-[0_25px_45px_rgba(15,23,42,0.45)] backdrop-blur">
@@ -115,7 +114,7 @@ export default function ProfileByHandlePage() {
           </p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="mt-6 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition-colors hover:border-white/25 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            className="mt-6 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
           >
             Back to Dashboard
           </button>
@@ -140,37 +139,26 @@ export default function ProfileByHandlePage() {
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-[-18%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-blue-500/15 blur-[160px]" />
-        <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-purple-500/10 blur-[200px]" />
+        <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/30 via-neutral-900/25 to-transparent blur-[140px]" />
+        <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/30 via-neutral-950/25 to-transparent blur-[160px]" />
+        <div className="absolute left-1/2 top-[15%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[170px]" />
+        <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-neutral-800/20 blur-[200px]" />
       </div>
 
-      <main className="relative z-10 py-12">
-        <HeroHeader profile={profile} onShare={handleShare} onBack={handleBack} />
+      <main className="relative z-10 py-14">
+        <HeroHeader
+          profile={profile}
+          socials={socialsData}
+          stats={{ linkCount: activeLinkCount, socialCount: activeSocialCount }}
+          onShare={handleShare}
+          onBack={handleBack}
+        />
 
-        <section className="mx-auto mt-10 w-full max-w-4xl px-4">
-          <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-6 shadow-[0_25px_45px_rgba(15,23,42,0.45)] backdrop-blur">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-white/60">
-              <div className="font-semibold uppercase tracking-[0.35em] text-white/50">
-                Connect
-              </div>
-              {activeSocialCount > 0 ? (
-                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/60">
-                  {activeSocialCount} {activeSocialCount === 1 ? "network" : "networks"}
-                </span>
-              ) : null}
-            </div>
-
-            <div className="mt-4">
-              <SocialPillsRow socials={socialsData} />
-            </div>
-          </div>
-        </section>
-
-        <section className="mx-auto mt-12 w-full max-w-5xl px-4 pb-16">
+        <section className="mx-auto mt-14 w-full max-w-5xl px-4 pb-20">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-semibold text-white">Featured links</h2>
-              <p className="mt-1 text-sm text-white/50">
+              <p className="mt-1 text-sm text-white/55">
                 {activeLinkCount > 0
                   ? "Curated highlights from across this creator's world."
                   : "Links you add will appear here for your audience."}
@@ -178,13 +166,14 @@ export default function ProfileByHandlePage() {
             </div>
 
             {activeLinkCount > 0 ? (
-              <span className="rounded-full border border-white/10 bg-white/5 px-4 py-1 text-sm font-medium text-white/70">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
+                <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
                 {activeLinkCount} {activeLinkCount === 1 ? "link" : "links"}
               </span>
             ) : null}
           </div>
 
-          <div className="mt-6">
+          <div className="mt-8">
             <LinkGrid links={contentCards} />
           </div>
         </section>
