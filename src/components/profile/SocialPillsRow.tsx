@@ -23,57 +23,46 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
   const platformConfig = {
     instagram: {
       icon: Instagram,
-      color: "bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700",
       label: "Instagram",
     },
     x: {
       icon: Twitter,
-      color: "bg-black",
       label: "X (Twitter)",
     },
     twitter: {
       icon: Twitter,
-      color: "bg-neutral-900",
       label: "Twitter",
     },
     youtube: {
       icon: Youtube,
-      color: "bg-neutral-900",
       label: "YouTube",
     },
     tiktok: {
       icon: Music,
-      color: "bg-black",
       label: "TikTok",
     },
     linkedin: {
       icon: Linkedin,
-      color: "bg-neutral-900",
       label: "LinkedIn",
     },
     email: {
       icon: Mail,
-      color: "bg-neutral-800",
       label: "Email",
     },
     website: {
       icon: Globe,
-      color: "bg-gradient-to-br from-black via-neutral-900 to-neutral-700",
       label: "Website",
     },
     github: {
       icon: Github,
-      color: "bg-black",
       label: "GitHub",
     },
     discord: {
       icon: MessageCircle,
-      color: "bg-neutral-900",
       label: "Discord",
     },
     facebook: {
       icon: Facebook,
-      color: "bg-neutral-900",
       label: "Facebook",
     },
   } as const;
@@ -111,7 +100,7 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
   }
 
   return (
-    <div className="flex flex-wrap justify-center gap-4">
+    <div className="flex flex-wrap justify-center gap-3 lg:justify-start">
       {availableSocials.map(([platform, url]) => {
         const config = platformConfig[platform as keyof typeof platformConfig];
         if (!config || !url) return null;
@@ -125,14 +114,14 @@ export default function SocialPillsRow({ socials }: SocialPillsRowProps) {
             target="_blank"
             rel="noopener noreferrer"
             title={config.label}
-            className="group relative inline-flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-black/40 shadow-[0_22px_40px_rgba(2,6,23,0.55)] transition-all duration-200 hover:-translate-y-1 hover:border-white/25 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            className="group inline-flex items-center gap-3 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm font-medium text-white/75 shadow-[0_16px_36px_rgba(2,6,23,0.55)] transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           >
-            <span
-              className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-white shadow-lg transition-transform duration-200 group-hover:scale-[1.05] ${config.color}`}
-            >
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/70 text-white shadow-[0_12px_24px_rgba(2,6,23,0.6)] transition-transform duration-200 group-hover:scale-105">
               <IconComponent className="h-5 w-5" aria-hidden="true" />
             </span>
-            <span className="sr-only">{config.label}</span>
+            <span className="pr-1 text-xs uppercase tracking-[0.25em] text-white/60 transition-colors duration-200 group-hover:text-white/80">
+              {config.label}
+            </span>
           </Link>
         );
       })}

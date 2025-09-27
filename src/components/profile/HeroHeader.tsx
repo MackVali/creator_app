@@ -6,6 +6,7 @@ import {
   ExternalLink,
   MapPin,
   Share2,
+  Sparkles,
 } from "lucide-react";
 import Image from "next/image";
 import { Profile } from "@/lib/types";
@@ -72,33 +73,23 @@ export default function HeroHeader({
   const socialCount = stats?.socialCount ?? 0;
 
   return (
-    <section className="relative mx-auto w-full max-w-5xl px-4">
-      <div className="absolute inset-x-0 -top-24 -z-10 flex justify-center">
-        <div className="h-56 w-56 rounded-full bg-neutral-500/20 blur-[140px]" />
+    <section className="relative mx-auto w-full max-w-6xl px-4">
+      <div className="absolute inset-x-0 -top-36 -z-10 flex justify-center">
+        <div className="h-72 w-72 rounded-full bg-gradient-to-br from-neutral-500/35 via-neutral-900/20 to-transparent blur-[160px]" />
       </div>
 
-      <article className="relative overflow-hidden rounded-[36px] border border-white/10 bg-black/70 shadow-[0_40px_70px_-20px_rgba(2,6,23,0.85)] backdrop-blur-2xl">
-        <div className="relative h-48 sm:h-60">
-          {profile.banner_url ? (
-            <Image
-              src={profile.banner_url}
-              alt="Profile banner"
-              fill
-              priority
-              unoptimized
-              sizes="(min-width: 640px) 1024px, 100vw"
-              className="object-cover"
-            />
-          ) : (
-            <div className="h-full w-full bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950" />
-          )}
+      <article className="relative overflow-hidden rounded-[44px] border border-white/12 bg-gradient-to-br from-[#050505] via-[#101010] to-[#1d1d1d] shadow-[0_60px_120px_-35px_rgba(2,6,23,0.9)]">
+        <div className="absolute inset-0">
+          <div className="absolute -left-12 -top-20 h-64 w-64 rounded-full bg-gradient-to-br from-white/10 via-white/0 to-transparent blur-[120px]" />
+          <div className="absolute right-[-15%] top-16 h-72 w-72 rounded-full bg-gradient-to-bl from-white/8 via-transparent to-transparent blur-[160px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
+        </div>
 
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/10 via-slate-950/40 to-slate-950/80" />
-
-          <div className="absolute inset-x-6 top-6 flex items-center justify-between text-white">
-            <div className="inline-flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.4em] text-white/80">
-              <span className="h-2 w-2 rounded-full bg-white/50" />
-              <span>Bio Link</span>
+        <div className="relative flex flex-col gap-12 px-6 pb-12 pt-10 sm:px-10 md:px-14 md:pt-12">
+          <header className="flex flex-wrap items-center justify-between gap-4 text-white/80">
+            <div className="inline-flex items-center gap-3 rounded-full bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.4em]">
+              <Sparkles className="h-4 w-4 text-white/50" aria-hidden="true" />
+              <span>Creator Spotlight</span>
             </div>
 
             <div className="flex items-center gap-3">
@@ -106,7 +97,7 @@ export default function HeroHeader({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white/80 transition-colors hover:border-white/40 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white transition-colors hover:border-white/30 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                 >
                   <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                   <span className="sr-only">Back</span>
@@ -117,113 +108,151 @@ export default function HeroHeader({
                 <button
                   type="button"
                   onClick={onShare}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/40 text-white/80 transition-colors hover:border-white/40 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white transition-colors hover:border-white/30 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                 >
                   <Share2 className="h-4 w-4" aria-hidden="true" />
                   <span className="sr-only">Share profile</span>
                 </button>
               ) : null}
             </div>
-          </div>
-        </div>
+          </header>
 
-        <div className="-mt-14 px-6 pb-10 sm:-mt-20 sm:px-10">
-          <div className="flex flex-col gap-7 sm:flex-row sm:items-end">
-            <div className="relative mx-auto flex items-center justify-center sm:mx-0">
-              <div className="absolute inset-0 -z-10 rounded-[32px] bg-gradient-to-br from-neutral-500/35 via-neutral-800/30 to-black/30 blur-xl" />
-              <div className="relative h-28 w-28 overflow-hidden rounded-[26px] border border-white/15 bg-black shadow-[0_30px_55px_rgba(2,6,23,0.65)] sm:h-32 sm:w-32">
-                {profile.avatar_url ? (
-                  <Image
-                    src={profile.avatar_url}
-                    alt={`${displayName}'s avatar`}
-                    fill
-                    sizes="(min-width: 640px) 128px, 112px"
-                    unoptimized
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-slate-800 text-3xl font-bold text-white">
-                    {initials}
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="grid gap-10 text-white lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-start">
+            <div className="flex flex-col gap-10">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
+                <div className="relative mx-auto aspect-square w-36 overflow-hidden rounded-[32px] border border-white/15 bg-black shadow-[0_40px_90px_rgba(2,6,23,0.65)] lg:mx-0">
+                  {profile.avatar_url ? (
+                    <Image
+                      src={profile.avatar_url}
+                      alt={`${displayName}'s avatar`}
+                      fill
+                      sizes="(min-width: 1024px) 144px, (min-width: 640px) 160px, 144px"
+                      unoptimized
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black text-4xl font-semibold text-white">
+                      {initials}
+                    </div>
+                  )}
+                  <div className="pointer-events-none absolute inset-0 rounded-[32px] ring-1 ring-white/10" />
+                </div>
 
-            <div className="flex-1 text-center sm:text-left">
-              <div className="mx-auto flex flex-col gap-4 sm:mx-0">
-                <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-                  <h1 className="text-3xl font-semibold text-white sm:text-4xl">{displayName}</h1>
-                  {profile.verified ? (
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-black/80 shadow-[0_8px_16px_rgba(2,6,23,0.6)]">
-                      <svg className="h-3.5 w-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
+                <div className="flex-1 text-center lg:text-left">
+                  <div className="flex flex-col items-center gap-4 lg:items-start">
+                    <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+                      <h1 className="text-3xl font-semibold sm:text-4xl">{displayName}</h1>
+                      {profile.verified ? (
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/30 bg-black/80 shadow-[0_12px_30px_rgba(2,6,23,0.55)]">
+                          <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                              fillRule="evenodd"
+                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/80 shadow-[0_14px_32px_rgba(15,23,42,0.45)]">
+                      <ExternalLink className="h-4 w-4 text-white/40" aria-hidden="true" />
+                      @{profile.username}
                     </span>
+                  </div>
+
+                  <p className="mt-6 text-base leading-relaxed text-white/70">{tagline}</p>
+
+                  <div className="mt-6 flex flex-wrap justify-center gap-3 text-sm text-white/65 lg:justify-start">
+                    {profile.city ? (
+                      <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                        <MapPin className="h-4 w-4 text-white/55" aria-hidden="true" />
+                        <span>{profile.city}</span>
+                      </span>
+                    ) : null}
+
+                    {joinedDate ? (
+                      <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                        <Calendar className="h-4 w-4 text-white/55" aria-hidden="true" />
+                        <span>Joined {joinedDate}</span>
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {bioSegments.length ? (
+                    <div className="mt-7 flex flex-wrap justify-center gap-2 lg:justify-start">
+                      {bioSegments.slice(0, 4).map((segment) => (
+                        <span
+                          key={segment}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.25em] text-white/55"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-white/40" />
+                          {segment}
+                        </span>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
+              </div>
 
-                <div className="flex justify-center sm:justify-start">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_8px_20px_rgba(15,23,42,0.35)]">
-                    <ExternalLink className="h-4 w-4 text-white/40" aria-hidden="true" />
-                    @{profile.username}
-                  </span>
+              <div className="flex flex-col gap-6">
+                <div className="flex flex-wrap justify-center gap-4 lg:justify-start">
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                  >
+                    Follow
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition-all duration-200 hover:border-white/35 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                  >
+                    Message
+                  </button>
                 </div>
-              </div>
 
-              <p className="mt-6 mx-auto max-w-3xl text-base leading-relaxed text-white/75 sm:mx-0">
-                {tagline}
-              </p>
-
-              <div className="mt-5 flex flex-wrap justify-center gap-3 text-sm text-white/65 sm:justify-start">
-                {profile.city ? (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    <MapPin className="h-4 w-4 text-white/60" aria-hidden="true" />
-                    <span>{profile.city}</span>
-                  </span>
-                ) : null}
-
-                {joinedDate ? (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
-                    <Calendar className="h-4 w-4 text-white/60" aria-hidden="true" />
-                    <span>Joined {joinedDate}</span>
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="mt-7">
                 <SocialPillsRow socials={socials || {}} />
               </div>
+            </div>
 
-              <div className="mt-8 flex flex-wrap justify-center gap-4 sm:justify-start">
-                <div className="min-w-[160px] rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-left shadow-[0_18px_35px_rgba(15,23,42,0.45)]">
-                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-white/45">
-                    Featured
-                  </span>
-                  <span className="mt-2 block text-3xl font-semibold text-white">
-                    {linkCount}
-                  </span>
-                  <span className="text-xs text-white/55">
-                    {linkCount === 1 ? "live link" : "live links"}
+            <aside className="relative overflow-hidden rounded-[34px] border border-white/12 bg-gradient-to-br from-white/6 via-white/2 to-transparent px-8 py-9 shadow-[0_30px_60px_-25px_rgba(2,6,23,0.7)]">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.15),_transparent_70%)]" />
+              <div className="relative flex flex-col gap-8">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/45">Snapshot</p>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-white/50">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/70" />
+                    Live
                   </span>
                 </div>
 
-                <div className="min-w-[160px] rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-left shadow-[0_18px_35px_rgba(15,23,42,0.45)]">
-                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-white/45">
-                    Networks
-                  </span>
-                  <span className="mt-2 block text-3xl font-semibold text-white">
-                    {socialCount}
-                  </span>
-                  <span className="text-xs text-white/55">
-                    {socialCount === 1 ? "connected account" : "connected accounts"}
-                  </span>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div className="rounded-3xl border border-white/10 bg-black/60 px-5 py-6 text-center">
+                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-white/45">Featured</span>
+                    <p className="mt-3 text-4xl font-semibold text-white">{linkCount}</p>
+                    <p className="text-xs text-white/55">
+                      {linkCount === 1 ? "Curated link" : "Curated links"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-3xl border border-white/10 bg-black/60 px-5 py-6 text-center">
+                    <span className="text-xs font-semibold uppercase tracking-[0.35em] text-white/45">Networks</span>
+                    <p className="mt-3 text-4xl font-semibold text-white">{socialCount}</p>
+                    <p className="text-xs text-white/55">
+                      {socialCount === 1 ? "Social channel" : "Social channels"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-black/50 px-6 py-5 text-sm leading-relaxed text-white/70">
+                  <p>
+                    {profile.bio
+                      ? profile.bio
+                      : "Add a longer story in your bio to help visitors understand your craft, mission, and offerings."}
+                  </p>
                 </div>
               </div>
-            </div>
+            </aside>
           </div>
         </div>
       </article>
