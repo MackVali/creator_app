@@ -615,6 +615,79 @@ describe("scheduleBacklog", () => {
     expect(result.placed[0]?.window_id).toBe("win-any");
   });
 
+  it("allows 'NO' energy windows to host projects that still need placement", async () => {
+    instances = [];
+
+    const emptyBacklog: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      emptyBacklog,
+    );
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-low": {
+        id: "proj-low",
+        name: "Low energy project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-no",
+        label: "Neutral",
+        energy: "NO",
+        start_local: "10:00",
+        end_local: "11:00",
+        days: [baseDate.getDay()],
+      },
+    ]);
+
+    let observedWindowIds: string[] | null = null;
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item, windows }) => {
+        observedWindowIds = windows.map((win) => win.id);
+        const start = (windows[0]?.availableStartLocal ?? windows[0]?.startLocal)!;
+        const end = new Date(start.getTime() + item.duration_min * 60000);
+        return {
+          data: createInstanceRecord({
+            id: "inst-no",
+            source_id: item.id,
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: item.duration_min,
+            window_id: windows[0]?.id ?? "win-no",
+            weight_snapshot: item.weight,
+            energy_resolved: item.energy,
+            status: "scheduled",
+          }),
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      },
+    );
+
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, baseDate, mockClient);
+
+    expect(result.error).toBeUndefined();
+    expect(result.failures).toHaveLength(0);
+    expect(observedWindowIds).toEqual(["win-no"]);
+  });
+
   it("rolls overflow into future days when a single window recurs daily", async () => {
     instances = [];
 
@@ -1145,7 +1218,7 @@ describe("scheduleBacklog", () => {
     },
   );
 
-  it("skips windows marked with NO energy when finding the earliest slot", async () => {
+  it("prefers neutral 'NO' energy windows when they are the earliest option", async () => {
     instances = [];
 
     const backlogResponse: BacklogResponse = {
@@ -1229,7 +1302,6 @@ describe("scheduleBacklog", () => {
     const placements: Array<{ windowId: string; startUTC: string }> = [];
 
     (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async params => {
-      expect(params.windows.map(window => window.id)).not.toContain("win-today-no");
       const window = params.windows[0];
       if (!window) {
         return { error: "NO_FIT" as const };
@@ -1262,7 +1334,7 @@ describe("scheduleBacklog", () => {
     expect(result.error).toBeUndefined();
     expect(result.placed).toHaveLength(1);
     expect(placements).toHaveLength(1);
-    expect(placements[0]?.windowId).toBe("win-today-low");
+    expect(placements[0]?.windowId).toBe("win-today-no");
     expect(placements[0]?.startUTC.startsWith("2024-01-02")).toBe(true);
   });
 

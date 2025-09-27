@@ -532,8 +532,8 @@ async function fetchCompatibleWindowsForItem(
   }>
 
   for (const win of windows) {
-    const energyLabel = win.energy ? String(win.energy).toUpperCase() : null
-    if (energyLabel === 'NO') continue
+    const energyRaw = win.energy ? String(win.energy).toUpperCase().trim() : ''
+    const energyLabel = energyRaw === 'NO' ? null : energyRaw || null
     const energyIdx = energyIndex(energyLabel, { fallback: ENERGY.LIST.length })
     if (energyIdx < itemIdx) continue
 
