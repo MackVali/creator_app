@@ -40,8 +40,8 @@ import {
   type ScheduleInstance,
 } from '@/lib/scheduler/instanceRepo'
 import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
-import { buildProjectItems } from '@/lib/scheduler/projects'
-import { windowRect } from '@/lib/scheduler/windowRect'
+import { buildProjectItems, type ProjectItem } from '@/lib/scheduler/projects'
+import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 
@@ -367,6 +367,195 @@ function describeSchedulerFailure(
   }
 }
 
+type WindowReportEntry = {
+  key: string
+  top: number
+  height: number
+  windowLabel: string
+  summary: string
+  details: string[]
+  energyLabel: (typeof ENERGY.LIST)[number]
+  durationLabel: string
+  rangeLabel: string
+}
+
+function normalizeEnergyLabel(level?: string | null): (typeof ENERGY.LIST)[number] {
+  const raw = typeof level === 'string' ? level.trim().toUpperCase() : ''
+  return ENERGY.LIST.includes(raw as (typeof ENERGY.LIST)[number])
+    ? (raw as (typeof ENERGY.LIST)[number])
+    : 'NO'
+}
+
+function energyIndexFromLabel(level: string): number {
+  return ENERGY.LIST.indexOf(level as (typeof ENERGY.LIST)[number])
+}
+
+function windowDurationForDay(window: RepoWindow, startHour: number): number {
+  const startMin = timeToMin(window.start_local)
+  const endMin = timeToMin(window.end_local)
+  const dayStartMin = startHour * 60
+  if (window.fromPrevDay) {
+    return Math.max(0, endMin - dayStartMin)
+  }
+  if (endMin <= startMin) {
+    return Math.max(0, 24 * 60 - startMin)
+  }
+  return Math.max(0, endMin - startMin)
+}
+
+function formatDurationLabel(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '0m'
+  const rounded = Math.max(0, Math.round(minutes))
+  const hours = Math.floor(rounded / 60)
+  const mins = rounded % 60
+  const parts: string[] = []
+  if (hours > 0) parts.push(`${hours}h`)
+  if (mins > 0) parts.push(`${mins}m`)
+  if (parts.length === 0) return '0m'
+  return parts.join(' ')
+}
+
+function formatClockLabel(localTime: string): string {
+  const [hour = 0, minute = 0] = localTime.split(':').map(Number)
+  const d = new Date()
+  d.setHours(hour, minute, 0, 0)
+  return TIME_FORMATTER.format(d)
+}
+
+function formatWindowRange(window: RepoWindow): string {
+  return `${formatClockLabel(window.start_local)} – ${formatClockLabel(window.end_local)}`
+}
+
+function describeEmptyWindowReport({
+  windowLabel,
+  energyLabel,
+  durationMinutes,
+  unscheduledProjects,
+  schedulerFailureByProjectId,
+  diagnosticsAvailable,
+}: {
+  windowLabel: string
+  energyLabel: (typeof ENERGY.LIST)[number]
+  durationMinutes: number
+  unscheduledProjects: ProjectItem[]
+  schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>
+  diagnosticsAvailable: boolean
+}): { summary: string; details: string[] } {
+  const details: string[] = []
+
+  if (energyLabel === 'NO') {
+    return {
+      summary: `${windowLabel} is marked with NO energy, so the scheduler intentionally leaves it open.`,
+      details,
+    }
+  }
+
+  if (durationMinutes <= 0) {
+    return {
+      summary: `${windowLabel} does not offer any usable minutes on this day, so nothing can be scheduled here.`,
+      details,
+    }
+  }
+
+  if (unscheduledProjects.length === 0) {
+    return {
+      summary: `No ready projects were waiting when the scheduler last ran, leaving ${windowLabel} open.`,
+      details,
+    }
+  }
+
+  const windowEnergyIndex = energyIndexFromLabel(energyLabel)
+  const energyMatches = unscheduledProjects.filter(project => {
+    const projectIdx = energyIndexFromLabel(project.energy)
+    return projectIdx !== -1 && projectIdx <= windowEnergyIndex
+  })
+
+  if (energyMatches.length === 0) {
+    const maxEnergyIdx = Math.max(...unscheduledProjects.map(project => energyIndexFromLabel(project.energy)))
+    if (maxEnergyIdx >= 0) {
+      const requiredEnergy = ENERGY.LIST[maxEnergyIdx]
+      return {
+        summary: `Remaining projects require ${requiredEnergy} energy or higher, which ${windowLabel} cannot provide.`,
+        details,
+      }
+    }
+    return {
+      summary: `Remaining projects do not have a compatible energy rating for ${windowLabel}.`,
+      details,
+    }
+  }
+
+  const durationMatches = energyMatches.filter(project => {
+    const projectDuration = Math.max(0, Math.round(project.duration_min))
+    return projectDuration > 0 && projectDuration <= durationMinutes
+  })
+
+  if (durationMatches.length === 0) {
+    const shortestDuration = Math.min(
+      ...energyMatches.map(project => {
+        const value = Math.max(0, Math.round(project.duration_min))
+        return value > 0 ? value : Number.POSITIVE_INFINITY
+      })
+    )
+    if (!Number.isFinite(shortestDuration)) {
+      return {
+        summary: `Projects matching ${windowLabel}'s energy are missing duration estimates, so the scheduler skipped this window.`,
+        details,
+      }
+    }
+    return {
+      summary: `Projects matching ${windowLabel}'s energy need at least ${formatDurationLabel(shortestDuration)}, but this window has only ${formatDurationLabel(durationMinutes)} available.`,
+      details,
+    }
+  }
+
+  const diagnostics: string[] = []
+  const fallbackDetails: string[] = []
+
+  for (const project of durationMatches.slice(0, 3)) {
+    const failures = schedulerFailureByProjectId[project.id] ?? []
+    if (failures.length === 0) {
+      fallbackDetails.push(
+        `${project.name || 'Untitled project'} · ${formatDurationLabel(
+          Math.max(0, Math.round(project.duration_min))
+        )} · ${project.energy}`
+      )
+      continue
+    }
+    for (const failure of failures) {
+      const description = describeSchedulerFailure(failure, {
+        durationMinutes: project.duration_min,
+        energy: project.energy,
+      })
+      const detailText = description.detail
+        ? `${description.message} ${description.detail}`
+        : description.message
+      diagnostics.push(`${project.name || 'Untitled project'}: ${detailText}`)
+    }
+  }
+
+  if (diagnostics.length > 0) {
+    return {
+      summary: `Scheduler could not fit ${durationMatches.length} compatible project${
+        durationMatches.length === 1 ? '' : 's'
+      } into ${windowLabel}.`,
+      details: diagnostics.slice(0, 4),
+    }
+  }
+
+  if (diagnosticsAvailable) {
+    return {
+      summary: `${durationMatches.length} compatible project${durationMatches.length === 1 ? '' : 's'} are still waiting to be scheduled elsewhere.`,
+      details: fallbackDetails,
+    }
+  }
+
+  return {
+    summary: `${windowLabel} remained open because matching projects still need to be rescheduled. Run the scheduler to capture diagnostics.`,
+    details: fallbackDetails,
+  }
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const pathname = usePathname()
@@ -605,7 +794,7 @@ export default function SchedulePage() {
         assignedWindow: RepoWindow | null
       } => value !== null)
       .sort((a, b) => a.start.getTime() - b.start.getTime())
-  }, [instances, projectMap, projectItems, windowMap])
+  }, [instances, projectMap, windowMap])
 
   const projectInstanceIds = useMemo(() => {
     const set = new Set<string>()
@@ -642,6 +831,61 @@ export default function SchedulePage() {
       {}
     )
   }, [schedulerDebug])
+
+  const windowReports = useMemo<WindowReportEntry[]>(() => {
+    if (windows.length === 0) return []
+    const assignments = new Map<string, number>()
+    for (const { instance } of projectInstances) {
+      const windowId = instance.window_id
+      if (!windowId) continue
+      assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
+    }
+
+    const diagnosticsAvailable = Boolean(schedulerDebug)
+    const reports: WindowReportEntry[] = []
+
+    for (const win of windows) {
+      const assigned = assignments.get(win.id) ?? 0
+      if (assigned > 0) continue
+
+      const { top, height } = windowRect(win, startHour, pxPerMin)
+      if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) continue
+
+      const durationMinutes = windowDurationForDay(win, startHour)
+      const windowLabel = win.label?.trim() || 'Untitled window'
+      const energyLabel = normalizeEnergyLabel(win.energy)
+      const description = describeEmptyWindowReport({
+        windowLabel,
+        energyLabel,
+        durationMinutes,
+        unscheduledProjects,
+        schedulerFailureByProjectId,
+        diagnosticsAvailable,
+      })
+
+      reports.push({
+        key: `${win.id}-${win.fromPrevDay ? 'prev' : 'curr'}-${win.start_local}-${win.end_local}`,
+        top,
+        height,
+        windowLabel,
+        summary: description.summary,
+        details: description.details,
+        energyLabel,
+        durationLabel: formatDurationLabel(durationMinutes),
+        rangeLabel: formatWindowRange(win),
+      })
+    }
+
+    return reports
+  }, [
+    windows,
+    projectInstances,
+    startHour,
+    pxPerMin,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+  ])
 
   const schedulerRunSummary = useMemo(() => {
     if (!schedulerDebug) return null
@@ -1160,6 +1404,34 @@ export default function SchedulePage() {
                       </div>
                     )
                   })}
+                  {windowReports.map(report => (
+                    <div
+                      key={report.key}
+                      className="absolute left-16 right-2"
+                      style={{ top: report.top, height: report.height }}
+                    >
+                      <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                          Window report · {report.windowLabel}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                          <span>{report.rangeLabel}</span>
+                          <span>Energy: {report.energyLabel}</span>
+                          <span>Duration: {report.durationLabel}</span>
+                        </div>
+                        <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                          {report.summary}
+                        </p>
+                        {report.details.length > 0 && (
+                          <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                            {report.details.map((detail, index) => (
+                              <li key={`${report.key}-detail-${index}`}>{detail}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                   {projectInstances.map(({ instance, project, start, end, assignedWindow }, index) => {
                     const projectId = project.id
                     const startMin = start.getHours() * 60 + start.getMinutes()
