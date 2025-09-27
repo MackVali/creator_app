@@ -25,9 +25,14 @@ interface ProjectWithGoal extends ProjectRecord {
   goal_name: string;
 }
 
-type ProjectSkillRow = { project_id: string | null };
-type TaskLinkRow = { project_id: string | null };
+type ProjectSkillLink = { skill_id: string | null };
+type TaskLink = { skill_id: string | null };
 type GoalSummaryRow = { id: string; name: string | null };
+
+type ProjectQueryRow = ProjectRecord & {
+  project_skills: ProjectSkillLink[] | null;
+  tasks: TaskLink[] | null;
+};
 
 const skeletonItems = Array.from({ length: 3 });
 
@@ -88,71 +93,49 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
           throw new Error("User not authenticated");
         }
 
-        const projectIds = new Set<string>();
-
-        const { data: projectSkillData, error: projectSkillError } = await supabase
-          .from<ProjectSkillRow>("project_skills")
-          .select("project_id")
-          .eq("skill_id", skillId);
-
-        if (projectSkillError) {
-          throw projectSkillError;
-        }
-
-        projectSkillData?.forEach((row) => {
-          if (row.project_id) {
-            projectIds.add(row.project_id);
-          }
-        });
-
-        const { data: tasksData, error: tasksError } = await supabase
-          .from<TaskLinkRow>("tasks")
-          .select("project_id")
-          .eq("skill_id", skillId)
-          .eq("user_id", user.id);
-
-        if (tasksError) {
-          throw tasksError;
-        }
-
-        tasksData?.forEach((task) => {
-          if (task.project_id) {
-            projectIds.add(task.project_id);
-          }
-        });
-
-        if (projectIds.size === 0) {
-          if (!cancelled) {
-            setProjects([]);
-            setLoading(false);
-          }
-          return;
-        }
-
-        const projectIdsArray = Array.from(projectIds);
         const { data: projectsData, error: projectsError } = await supabase
-          .from<ProjectRecord>("projects")
+          .from<ProjectQueryRow>("projects")
           .select(
-            "id, name, goal_id, priority, energy, stage, due_date, created_at"
+            `
+              id,
+              name,
+              goal_id,
+              priority,
+              energy,
+              stage,
+              due_date,
+              created_at,
+              project_skills ( skill_id ),
+              tasks ( skill_id )
+            `
           )
-          .eq("user_id", user.id)
-          .in("id", projectIdsArray);
+          .eq("user_id", user.id);
 
         if (projectsError) {
           throw projectsError;
         }
 
-        if (!projectsData || projectsData.length === 0) {
+        const relevantProjects = (projectsData ?? []).filter((project) => {
+          const skillFromProject = project.project_skills?.some(
+            (link) => link.skill_id === skillId
+          );
+          const skillFromTasks = project.tasks?.some(
+            (link) => link.skill_id === skillId
+          );
+
+          return Boolean(skillFromProject || skillFromTasks);
+        });
+
+        if (relevantProjects.length === 0) {
           if (!cancelled) {
             setProjects([]);
             setLoading(false);
           }
           return;
         }
-
         const goalIds = Array.from(
           new Set(
-            projectsData
+            relevantProjects
               .map((project) => project.goal_id)
               .filter((goalId): goalId is string => Boolean(goalId))
           )
@@ -177,16 +160,18 @@ export function SkillProjectsGrid({ skillId }: SkillProjectsGridProps) {
           });
         }
 
-        const mappedProjects: ProjectWithGoal[] = projectsData.map((project) => {
-          const goalName = project.goal_id
+        const mappedProjects: ProjectWithGoal[] = relevantProjects.map(
+          ({ project_skills: _projectSkills, tasks: _tasks, ...project }) => {
+            const goalName = project.goal_id
             ? goalsMap[project.goal_id] ?? "Untitled goal"
             : "Unassigned goal";
 
-          return {
-            ...project,
-            goal_name: goalName,
-          };
-        });
+            return {
+              ...project,
+              goal_name: goalName,
+            };
+          }
+        );
 
         mappedProjects.sort((a, b) => {
           const aDue = a.due_date ? Date.parse(a.due_date) : Number.POSITIVE_INFINITY;
