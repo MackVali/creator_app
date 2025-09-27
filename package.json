@@ -19,7 +19,8 @@
     "test:env": "vitest run test/env.spec.ts",
     "test:ui": "vitest -c vitest.jsdom.config.ts",
     "test:ci": "vitest run --coverage",
-    "prepare": "husky"
+    "prepare": "husky",
+    "schedule": "tsx src/cli/scheduler.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
@@ -60,7 +61,8 @@
     "tailwindcss": "^4.0.0",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.0.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "tsx": "^4.19.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

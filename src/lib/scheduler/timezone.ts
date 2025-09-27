@@ -176,3 +176,15 @@ export function makeDateInTimeZone(
 ) {
   return makeZonedDate({ ...input, second: 0, millisecond: 0 }, timeZone)
 }
+
+export function clampToDayInTimeZone(
+  now: Date,
+  day: Date,
+  timeZone: string,
+): Date | null {
+  const dayStart = startOfDayInTimeZone(day, timeZone)
+  const dayEnd = addDaysInTimeZone(dayStart, 1, timeZone)
+  if (now >= dayEnd) return null
+  if (now <= dayStart) return new Date(dayStart)
+  return new Date(now)
+}
