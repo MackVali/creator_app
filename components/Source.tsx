@@ -500,18 +500,42 @@ function Drawer({
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex justify-end" role="dialog" aria-modal>
-      <div className="w-full max-w-sm h-full overflow-y-auto bg-[#1C1F22] border-l border-[#2F343A] p-4 space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">
-            {draft ? "Edit" : "New"} {type === "service" ? "Service" : "Product"}
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal>
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-gray-800 p-6 shadow-xl">
+        <div className="mb-4 flex items-start justify-between">
+          <h2 className="text-lg font-semibold text-white">
+            {draft ? "Edit" : "Create"} {type === "service" ? "Service" : "Product"}
           </h2>
-          <button onClick={onClose} aria-label="Close">✕</button>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded p-1 text-gray-400 transition hover:bg-gray-700 hover:text-white"
+          >
+            ✕
+          </button>
         </div>
-        <div className="space-y-3 text-sm">
+        <form
+          className="flex flex-1 flex-col gap-4 overflow-y-auto"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const nextItem = {
+              ...item,
+              price: item.price === "" || item.price === undefined ? 0 : item.price,
+              durationMins:
+                item.durationMins === "" || item.durationMins === undefined
+                  ? undefined
+                  : Number(item.durationMins),
+              inventory:
+                item.inventory === "" || item.inventory === undefined
+                  ? undefined
+                  : Number(item.inventory),
+            }
+            onSave(nextItem)
+          }}
+        >
           <FieldRow label="Cover Image">
-            <div className="h-32 bg-[#22262A] flex items-center justify-center rounded-md text-[#7C838A]">
+            <div className="flex h-32 items-center justify-center rounded-md border border-gray-700 bg-gray-900 text-sm text-gray-400">
               Upload
             </div>
           </FieldRow>
@@ -519,31 +543,41 @@ function Drawer({
             <input
               value={item.title}
               onChange={(e) => update("title", e.target.value)}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+              required
             />
           </FieldRow>
           <FieldRow label="Description">
             <textarea
               value={item.description}
               onChange={(e) => update("description", e.target.value)}
-              className="w-full h-24 px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="h-28 w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
             />
           </FieldRow>
           <FieldRow label="Price (USD)">
             <input
               type="number"
-              value={item.price}
-              onChange={(e) => update("price", parseFloat(e.target.value))}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              value={item.price ?? ""}
+              onChange={(e) => {
+                const { value } = e.target
+                update("price", value === "" ? "" : parseFloat(value))
+              }}
+              className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+              min={0}
+              step="0.01"
             />
           </FieldRow>
           {type === "service" && (
             <FieldRow label="Duration (mins)">
               <input
                 type="number"
-                value={item.durationMins || ""}
-                onChange={(e) => update("durationMins", parseInt(e.target.value))}
-                className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+                value={item.durationMins ?? ""}
+                onChange={(e) => {
+                  const { value } = e.target
+                  update("durationMins", value === "" ? "" : parseInt(value, 10))
+                }}
+                className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                min={0}
               />
             </FieldRow>
           )}
@@ -552,16 +586,20 @@ function Drawer({
               <FieldRow label="Inventory">
                 <input
                   type="number"
-                  value={item.inventory || 0}
-                  onChange={(e) => update("inventory", parseInt(e.target.value))}
-                  className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+                  value={item.inventory ?? ""}
+                  onChange={(e) => {
+                    const { value } = e.target
+                    update("inventory", value === "" ? "" : parseInt(value, 10))
+                  }}
+                  className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                  min={0}
                 />
               </FieldRow>
               <FieldRow label="SKU">
                 <input
                   value={item.sku || ""}
                   onChange={(e) => update("sku", e.target.value)}
-                  className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+                  className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
                 />
               </FieldRow>
             </>
@@ -570,27 +608,35 @@ function Drawer({
             <select
               value={item.status}
               onChange={(e) => update("status", e.target.value)}
-              className="w-full px-2 py-1 rounded-md bg-[#1C1F22] border border-[#2F343A]"
+              className="w-full rounded-md border border-gray-700 bg-gray-700 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
             >
               <option value="draft">Draft</option>
               <option value="published">Published</option>
             </select>
           </FieldRow>
-        </div>
-        <div className="flex gap-2 pt-2">
-          <button
-            onClick={() => onSave(item)}
-            className="flex-1 px-3 py-2 bg-[#9966CC] text-white rounded-md"
-          >
-            Save
-          </button>
-          <button
-            onClick={() => onPreview(item)}
-            className="flex-1 px-3 py-2 bg-[#22262A] rounded-md"
-          >
-            Preview
-          </button>
-        </div>
+          <div className="mt-auto flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md bg-gray-700 px-3 py-2 text-sm text-white transition hover:bg-gray-600"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => onPreview(item)}
+              className="rounded-md bg-gray-700 px-3 py-2 text-sm text-white transition hover:bg-gray-600"
+            >
+              Preview
+            </button>
+            <button
+              type="submit"
+              className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
+            >
+              {draft ? "Save" : "Create"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -598,8 +644,8 @@ function Drawer({
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block text-sm">
-      <span className="text-[#A6A6A6] mb-1 block">{label}</span>
+    <label className="flex flex-col text-sm text-gray-200">
+      <span className="mb-1 font-medium text-gray-300">{label}</span>
       {children}
     </label>
   )
