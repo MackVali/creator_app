@@ -32,7 +32,7 @@ export default function LinkTile({
       rel="noopener noreferrer"
       className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
     >
-      <article className="relative flex h-80 flex-col overflow-hidden rounded-[38px] border border-white/12 bg-gradient-to-br from-[#0a0a0a] via-[#121212] to-[#1f1f1f] shadow-[0_38px_90px_-30px_rgba(2,6,23,0.75)] transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:shadow-[0_42px_110px_-28px_rgba(2,6,23,0.85)]">
+      <article className="relative flex h-64 flex-col overflow-hidden rounded-[30px] border border-white/12 bg-gradient-to-br from-[#0a0a0a] via-[#121212] to-[#1f1f1f] shadow-[0_38px_90px_-30px_rgba(2,6,23,0.75)] transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:shadow-[0_42px_110px_-28px_rgba(2,6,23,0.85)] sm:h-72 sm:rounded-[34px] lg:h-80 lg:rounded-[38px]">
         <div className="absolute inset-0">
           {thumbUrl ? (
             <Image
@@ -52,30 +52,30 @@ export default function LinkTile({
 
         <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-white/30 via-transparent to-white/20 opacity-50 transition-opacity duration-300 group-hover:opacity-100" />
 
-        <div className="absolute right-6 top-6 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/50 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-white/60 transition-colors duration-200 group-hover:border-white/30 group-hover:bg-black/70">
+        <div className="absolute right-5 top-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/50 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.3em] text-white/60 transition-colors duration-200 group-hover:border-white/30 group-hover:bg-black/70 sm:right-6 sm:top-6 sm:text-[0.65rem]">
           <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           Visit
         </div>
 
-        <div className="relative mt-auto flex flex-col gap-5 px-7 pb-8 pt-28">
+        <div className="relative mt-auto flex flex-col gap-5 px-6 pb-7 pt-24 sm:px-7 sm:pb-8 sm:pt-28">
           <div className="flex flex-col gap-3">
-            <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] uppercase tracking-[0.35em] text-white/55">
+            <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.6rem] uppercase tracking-[0.35em] text-white/55 sm:text-[0.65rem]">
               Highlight
             </span>
-            <h3 className="text-2xl font-semibold text-white transition-colors duration-200 group-hover:text-white/90">
+            <h3 className="text-xl font-semibold text-white transition-colors duration-200 group-hover:text-white/90 sm:text-2xl">
               {title}
             </h3>
           </div>
 
           {description ? (
-            <p className="line-clamp-3 text-sm leading-relaxed text-white/70">
+            <p className="line-clamp-3 text-sm leading-relaxed text-white/75">
               {description}
             </p>
           ) : (
             <p className="text-sm text-white/55">Tap to explore this feature in a new window.</p>
           )}
 
-          <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-white/50">
+          <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-[0.3em] text-white/50">
             <div className="flex items-center gap-2">
               <span className="h-1 w-6 rounded-full bg-white/30" />
               <span>Open link</span>
