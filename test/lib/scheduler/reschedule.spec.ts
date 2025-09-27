@@ -251,6 +251,39 @@ describe("scheduleBacklog", () => {
     expect(callOrder[1]).toBe("proj-low");
   });
 
+  it("considers 'NO' energy windows for scheduling", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-no": {
+        id: "proj-no",
+        name: "No energy project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 30,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-no",
+        label: "Quiet time",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+      },
+    ]);
+
+    attemptedProjectIds = [];
+
+    const mockClient = {} as ScheduleBacklogClient;
+    await scheduleBacklog(userId, baseDate, mockClient);
+
+    expect(attemptedProjectIds).toContain("proj-no");
+  });
+
   it("prioritizes upcoming windows closest to now before later options", async () => {
     instances = [];
 
