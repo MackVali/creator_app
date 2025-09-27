@@ -10,12 +10,13 @@ import {
   normalizeTimeZone,
   setTimeInTimeZone,
   startOfDayInTimeZone,
+  weekdayInTimeZone,
 } from '../../../src/lib/scheduler/timezone.ts'
 
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 
-const GRACE_MIN = 60
+const START_GRACE_MIN = 1
 const DEFAULT_PROJECT_DURATION_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
 const BASE_LOOKAHEAD_DAYS = 28
@@ -101,13 +102,13 @@ async function resolveUserTimeZone(client: Client, userId: string) {
 }
 
 async function markMissedAndQueue(client: Client, userId: string, now: Date) {
-  const cutoff = new Date(now.getTime() - GRACE_MIN * 60_000).toISOString()
+  const cutoff = new Date(now.getTime() - START_GRACE_MIN * 60_000).toISOString()
   return await client
     .from('schedule_instances')
     .update({ status: 'missed' })
     .eq('user_id', userId)
     .eq('status', 'scheduled')
-    .lt('end_utc', cutoff)
+    .lt('start_utc', cutoff)
 }
 
 async function scheduleBacklog(
@@ -326,7 +327,9 @@ async function scheduleBacklog(
         userId,
         item,
         windows,
-        item.instanceId
+        item.instanceId,
+        queueProjectIds,
+        offset === 0 ? baseDate : undefined
       )
       if (placedInstance) {
         placed.push(placedInstance)
@@ -601,7 +604,7 @@ async function fetchCompatibleWindowsForItem(
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(client, userId, date)
+    windows = await fetchWindowsForDate(client, userId, date, timeZone)
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)
@@ -620,7 +623,9 @@ async function fetchCompatibleWindowsForItem(
   }> = []
 
   for (const window of windows) {
-    const energyIdx = energyIndex(window.energy)
+    const energyLabel = window.energy ? String(window.energy).toUpperCase() : null
+    if (energyLabel === 'NO') continue
+    const energyIdx = energyIndex(energyLabel, { fallback: ENERGY_ORDER.length })
     if (energyIdx < itemIdx) continue
 
     const startLocal = resolveWindowStart(window, date, timeZone)
@@ -688,8 +693,13 @@ type WindowRecord = {
   fromPrevDay?: boolean
 }
 
-async function fetchWindowsForDate(client: Client, userId: string, date: Date) {
-  const weekday = date.getUTCDay()
+async function fetchWindowsForDate(
+  client: Client,
+  userId: string,
+  date: Date,
+  timeZone: string,
+) {
+  const weekday = weekdayInTimeZone(date, timeZone)
   const prevWeekday = (weekday + 6) % 7
 
   const columns = 'id, label, energy, start_local, end_local, days'
@@ -753,17 +763,33 @@ async function placeItemInWindows(
     availableStartLocal?: Date
     key?: string
   }>,
-  reuseInstanceId?: string | null
+  reuseInstanceId: string | null | undefined,
+  ignoreProjectIds?: Set<string>,
+  notBefore?: Date
 ): Promise<ScheduleInstance | null> {
+  const notBeforeMs = notBefore ? notBefore.getTime() : null
+  const durationMs = Math.max(0, item.duration_min) * 60000
+
   for (const window of windows) {
-    const start = new Date(window.availableStartLocal ?? window.startLocal)
-    const end = new Date(window.endLocal)
+    const windowStart = new Date(window.availableStartLocal ?? window.startLocal)
+    const windowEnd = new Date(window.endLocal)
+
+    const windowStartMs = windowStart.getTime()
+    const windowEndMs = windowEnd.getTime()
+
+    if (typeof notBeforeMs === 'number' && windowEndMs <= notBeforeMs) {
+      continue
+    }
+
+    const startMs =
+      typeof notBeforeMs === 'number' ? Math.max(windowStartMs, notBeforeMs) : windowStartMs
+    const start = new Date(startMs)
 
     const { data: taken, error } = await client
       .from('schedule_instances')
       .select('*')
       .eq('user_id', userId)
-      .lt('start_utc', end.toISOString())
+      .lt('start_utc', windowEnd.toISOString())
       .gt('end_utc', start.toISOString())
       .neq('status', 'canceled')
 
@@ -772,40 +798,66 @@ async function placeItemInWindows(
       continue
     }
 
-    const filtered = (taken ?? []).filter(instance => instance.id !== reuseInstanceId)
+    const filtered = (taken ?? []).filter(instance => {
+      if (instance.id === reuseInstanceId) return false
+      if (ignoreProjectIds && instance.source_type === 'PROJECT') {
+        const projectId = instance.source_id ?? ''
+        if (projectId && ignoreProjectIds.has(projectId)) {
+          return false
+        }
+      }
+      return true
+    })
 
     const sorted = filtered.sort(
       (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime()
     )
 
-    let cursor = start
-    const durMin = item.duration_min
+    let cursorMs = startMs
 
     for (const block of sorted) {
-      const blockStart = new Date(block.start_utc)
-      const blockEnd = new Date(block.end_utc)
-      if (diffMin(cursor, blockStart) >= durMin) {
+      const blockStartMs = new Date(block.start_utc).getTime()
+      const blockEndMs = new Date(block.end_utc).getTime()
+
+      if (typeof notBeforeMs === 'number' && blockEndMs <= notBeforeMs) {
+        continue
+      }
+
+      const effectiveBlockStartMs =
+        typeof notBeforeMs === 'number'
+          ? Math.max(blockStartMs, notBeforeMs)
+          : blockStartMs
+
+      if (cursorMs + durationMs <= effectiveBlockStartMs) {
+        const startDate = new Date(cursorMs)
         return await persistPlacement(
           client,
           userId,
           item,
           window.id,
-          cursor,
-          durMin,
+          startDate,
+          item.duration_min,
           reuseInstanceId
         )
       }
-      if (blockEnd > cursor) cursor = blockEnd
+
+      if (blockEndMs > cursorMs) {
+        cursorMs = blockEndMs
+        if (typeof notBeforeMs === 'number' && cursorMs < notBeforeMs) {
+          cursorMs = notBeforeMs
+        }
+      }
     }
 
-    if (diffMin(cursor, end) >= durMin) {
+    if (cursorMs + durationMs <= windowEndMs) {
+      const startDate = new Date(cursorMs)
       return await persistPlacement(
         client,
         userId,
         item,
         window.id,
-        cursor,
-        durMin,
+        startDate,
+        item.duration_min,
         reuseInstanceId
       )
     }
@@ -966,14 +1018,12 @@ function addMin(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000)
 }
 
-function diffMin(a: Date, b: Date) {
-  return Math.floor((b.getTime() - a.getTime()) / 60_000)
-}
-
-function energyIndex(level?: string | null) {
-  if (!level) return -1
+function energyIndex(level?: string | null, options?: { fallback?: number }) {
+  const fallback = options?.fallback ?? -1
+  if (!level) return fallback
   const upper = level.toUpperCase()
-  return ENERGY_ORDER.indexOf(upper as (typeof ENERGY_ORDER)[number])
+  const index = ENERGY_ORDER.indexOf(upper as (typeof ENERGY_ORDER)[number])
+  return index === -1 ? fallback : index
 }
 
 const TASK_PRIORITY_WEIGHT: Record<string, number> = {

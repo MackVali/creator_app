@@ -25,7 +25,7 @@ import {
 
 type Client = SupabaseClient<Database>
 
-const GRACE_MIN = 60
+const START_GRACE_MIN = 1
 const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
@@ -72,13 +72,13 @@ export async function markMissedAndQueue(
   client?: Client
 ) {
   const supabase = await ensureClient(client)
-  const cutoff = new Date(now.getTime() - GRACE_MIN * 60000).toISOString()
+  const cutoff = new Date(now.getTime() - START_GRACE_MIN * 60000).toISOString()
   return await supabase
     .from('schedule_instances')
     .update({ status: 'missed' })
     .eq('user_id', userId)
     .eq('status', 'scheduled')
-    .lt('end_utc', cutoff)
+    .lt('start_utc', cutoff)
 }
 
 export async function scheduleBacklog(
@@ -262,11 +262,13 @@ export async function scheduleBacklog(
     reuseInstanceByProject.delete(item.id)
   }
 
+  const ignoreProjectIds = new Set(finalQueueProjectIds)
+
   queue.sort((a, b) => {
-    const weightDiff = b.weight - a.weight
-    if (weightDiff !== 0) return weightDiff
     const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
     if (energyDiff !== 0) return energyDiff
+    const weightDiff = b.weight - a.weight
+    if (weightDiff !== 0) return weightDiff
     return a.id.localeCompare(b.id)
   })
 
@@ -306,6 +308,8 @@ export async function scheduleBacklog(
         date: day,
         client: supabase,
         reuseInstanceId: item.instanceId,
+        ignoreProjectIds,
+        notBefore: offset === 0 ? baseDate : undefined,
       })
 
       if (!('status' in placed)) {
@@ -513,7 +517,7 @@ async function fetchCompatibleWindowsForItem(
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(date, supabase)
+    windows = await fetchWindowsForDate(date, supabase, timeZone)
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)
@@ -532,7 +536,10 @@ async function fetchCompatibleWindowsForItem(
   }>
 
   for (const win of windows) {
-    const energyIdx = energyIndex(win.energy)
+    const energyRaw = win.energy ? String(win.energy).toUpperCase().trim() : ''
+    if (energyRaw === 'NO') continue
+    const energyLabel = energyRaw || null
+    const energyIdx = energyIndex(energyLabel, { fallback: ENERGY.LIST.length })
     if (energyIdx < itemIdx) continue
 
     const startLocal = resolveWindowStart(win, date, timeZone)
@@ -623,10 +630,12 @@ function dateCacheKey(date: Date) {
   return date.toISOString()
 }
 
-function energyIndex(level?: string | null) {
-  if (!level) return -1
+function energyIndex(level?: string | null, options?: { fallback?: number }) {
+  const fallback = options?.fallback ?? -1
+  if (!level) return fallback
   const up = level.toUpperCase()
-  return ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
+  const index = ENERGY.LIST.indexOf(up as (typeof ENERGY.LIST)[number])
+  return index === -1 ? fallback : index
 }
 
 function resolveWindowStart(win: WindowLite, date: Date, timeZone: string) {
