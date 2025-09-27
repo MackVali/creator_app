@@ -550,6 +550,11 @@ export interface Database {
           weight_snapshot: number;
           energy_resolved: string;
           completed_at: string | null;
+          run_id: string | null;
+          plan_version: number | null;
+          placed_at: string | null;
+          score: number | null;
+          rejected_reason: string | null;
         };
         Insert: {
           id?: string;
@@ -566,6 +571,11 @@ export interface Database {
           weight_snapshot: number;
           energy_resolved: string;
           completed_at?: string | null;
+          run_id?: string | null;
+          plan_version?: number | null;
+          placed_at?: string | null;
+          score?: number | null;
+          rejected_reason?: string | null;
         };
         Update: {
           id?: string;
@@ -582,6 +592,11 @@ export interface Database {
           weight_snapshot?: number;
           energy_resolved?: string;
           completed_at?: string | null;
+          run_id?: string | null;
+          plan_version?: number | null;
+          placed_at?: string | null;
+          score?: number | null;
+          rejected_reason?: string | null;
         };
       };
     };

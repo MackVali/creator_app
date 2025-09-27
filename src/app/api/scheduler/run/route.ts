@@ -2,15 +2,36 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
 
+type SchedulerRequestBody = {
+  runId?: string
+  dryRun?: boolean
+  lookaheadDays?: number
+  stabilityLockMinutes?: number
+  collectTrace?: boolean
+  trace?: string
+  traceToFile?: boolean
+}
+
+function generateRunId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 export const runtime = 'nodejs'
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient()
   if (!supabase) {
     return NextResponse.json(
       { error: 'supabase client unavailable' },
       { status: 500 }
     )
+  }
+
+  let body: SchedulerRequestBody = {}
+  try {
+    body = (await request.json()) as SchedulerRequestBody
+  } catch {
+    body = {}
   }
 
   const {
@@ -31,6 +52,13 @@ export async function POST() {
 
   const now = new Date()
 
+  const runId = typeof body.runId === 'string' && body.runId.trim() ? body.runId : generateRunId()
+  const dryRun = body.dryRun === true
+  const lookaheadDays = typeof body.lookaheadDays === 'number' ? body.lookaheadDays : undefined
+  const stabilityLockMinutes = typeof body.stabilityLockMinutes === 'number' ? body.stabilityLockMinutes : undefined
+  const collectTrace = body.collectTrace === true || body.trace === 'full'
+  const traceToFile = collectTrace && body.traceToFile === true
+
   const markResult = await markMissedAndQueue(user.id, now, supabase)
   if (markResult.error) {
     return NextResponse.json(
@@ -42,11 +70,19 @@ export async function POST() {
   const userTimeZone = extractUserTimeZone(user)
   const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
     timeZone: userTimeZone,
+    RUN_ID: runId,
+    DRY_RUN: dryRun,
+    lookaheadDays,
+    stabilityLockMinutes,
+    collectTrace,
+    traceToFile,
   })
   const status = scheduleResult.error ? 500 : 200
 
   return NextResponse.json(
     {
+      runId,
+      dryRun,
       marked: {
         count: markResult.count ?? null,
         error: markResult.error ?? null,
