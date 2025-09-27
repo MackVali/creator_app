@@ -69,6 +69,11 @@ export async function createInstance(
     durationMin: number
     weightSnapshot: number
     energyResolved: string
+    runId?: string
+    planVersion?: number | null
+    placedAtUTC?: string | null
+    score?: number | null
+    rejectedReason?: string | null
   },
   client?: Client
 ) {
@@ -86,6 +91,11 @@ export async function createInstance(
       status: 'scheduled',
       weight_snapshot: input.weightSnapshot,
       energy_resolved: input.energyResolved,
+      run_id: input.runId ?? null,
+      plan_version: input.planVersion ?? null,
+      placed_at: input.placedAtUTC ?? new Date().toISOString(),
+      score: input.score ?? null,
+      rejected_reason: input.rejectedReason ?? null,
     })
     .select('*')
     .single()
@@ -100,6 +110,11 @@ export async function rescheduleInstance(
     durationMin: number
     weightSnapshot: number
     energyResolved: string
+    runId?: string
+    planVersion?: number | null
+    placedAtUTC?: string | null
+    score?: number | null
+    rejectedReason?: string | null
   },
   client?: Client
 ) {
@@ -115,6 +130,11 @@ export async function rescheduleInstance(
       weight_snapshot: input.weightSnapshot,
       energy_resolved: input.energyResolved,
       completed_at: null,
+      run_id: input.runId ?? null,
+      plan_version: input.planVersion ?? null,
+      placed_at: input.placedAtUTC ?? new Date().toISOString(),
+      score: input.score ?? null,
+      rejected_reason: input.rejectedReason ?? null,
     })
     .eq('id', id)
     .select('*')

@@ -1,5 +1,7 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { promises as fs } from 'fs'
+import path from 'path'
 import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
@@ -13,10 +15,11 @@ import {
   fetchProjectsMap,
   type WindowLite,
 } from './repo'
-import { placeItemInWindows } from './placement'
-import { ENERGY } from './config'
+import { placeItemInWindows, type CandidateEvaluation } from './placement'
+import { ENERGY, SCORING_WEIGHTS, STABILITY_LOCK_MINUTES, type RejectedReason } from './config'
 import {
   addDaysInTimeZone,
+  clampToDayInTimeZone,
   differenceInCalendarDaysInTimeZone,
   normalizeTimeZone,
   setTimeInTimeZone,
@@ -32,8 +35,47 @@ const MAX_LOOKAHEAD_DAYS = 365
 
 type ScheduleFailure = {
   itemId: string
-  reason: string
+  reason: RejectedReason
   detail?: unknown
+}
+
+type TraceEntry =
+  | {
+      type: 'consider'
+      itemId: string
+      dayOffset: number
+      effectiveNow: string | null
+      windowCount: number
+      candidates?: CandidateTrace[]
+    }
+  | {
+      type: 'place'
+      itemId: string
+      windowId: string | null
+      startUTC: string
+      endUTC: string
+      score: number
+      candidates?: CandidateTrace[]
+    }
+  | {
+      type: 'reject'
+      itemId: string
+      dayOffset: number
+      reason: RejectedReason
+      detail?: unknown
+      candidates?: CandidateTrace[]
+    }
+  | {
+      type: 'skip-day'
+      itemId: string
+      dayOffset: number
+      reason: 'DayInPast'
+    }
+
+type CandidateTrace = {
+  windowId: string
+  availableStartUTC: string
+  score: number
 }
 
 type ScheduleDraftPlacement = {
@@ -50,6 +92,7 @@ type ScheduleBacklogResult = {
   failures: ScheduleFailure[]
   error?: PostgrestError | null
   timeline: ScheduleDraftPlacement[]
+  trace: TraceEntry[]
 }
 
 async function ensureClient(client?: Client): Promise<Client> {
@@ -85,11 +128,22 @@ export async function scheduleBacklog(
   userId: string,
   baseDate = new Date(),
   client?: Client,
-  options?: { timeZone?: string | null }
+  options?: {
+    timeZone?: string | null
+    RUN_ID?: string
+    DRY_RUN?: boolean
+    lookaheadDays?: number
+    stabilityLockMinutes?: number
+    traceToFile?: boolean
+  }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
-  const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
+  const trace: TraceEntry[] = []
+  const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [], trace }
   const timeZone = normalizeTimeZone(options?.timeZone)
+  const runId = options?.RUN_ID ?? createRunId()
+  const dryRun = options?.DRY_RUN === true
+  const stabilityLockMinutes = options?.stabilityLockMinutes ?? STABILITY_LOCK_MINUTES
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
   if (missed.error) {
@@ -134,7 +188,7 @@ export async function scheduleBacklog(
         .select('id, source_id')
         .single()
       if (dedupe.error) {
-        result.failures.push({ itemId: m.source_id, reason: 'error', detail: dedupe.error })
+        result.failures.push({ itemId: m.source_id, reason: 'Unknown', detail: dedupe.error })
       }
       continue
     }
@@ -272,32 +326,57 @@ export async function scheduleBacklog(
 
   const windowAvailabilityByDay = new Map<number, Map<string, Date>>()
   const windowCache = new Map<string, WindowLite[]>()
-  const lookaheadDays = Math.min(
+  const autoLookahead = Math.min(
     MAX_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
   )
+  const lookaheadDays = options?.lookaheadDays
+    ? Math.max(1, Math.min(MAX_LOOKAHEAD_DAYS, Math.floor(options.lookaheadDays)))
+    : autoLookahead
 
   for (const item of queue) {
     let scheduled = false
+    let lastFailure: { reason: RejectedReason; detail?: unknown; candidates?: CandidateTrace[] } | null = null
+
     for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
-      let windowAvailability = windowAvailabilityByDay.get(offset)
-      if (!windowAvailability) {
-        windowAvailability = new Map<string, Date>()
-        windowAvailabilityByDay.set(offset, windowAvailability)
-      }
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
+      const effectiveNow = clampToDayInTimeZone(baseDate, day, timeZone)
+      if (effectiveNow === null) {
+        trace.push({ type: 'skip-day', itemId: item.id, dayOffset: offset, reason: 'DayInPast' })
+        continue
+      }
+
+      let baseAvailability = windowAvailabilityByDay.get(offset)
+      if (!baseAvailability) {
+        baseAvailability = new Map<string, Date>()
+        windowAvailabilityByDay.set(offset, baseAvailability)
+      }
+      const availabilitySnapshot = new Map(baseAvailability)
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
         item,
         timeZone,
         {
-          availability: windowAvailability,
-          now: offset === 0 ? baseDate : undefined,
+          availability: availabilitySnapshot,
+          effectiveNow,
           cache: windowCache,
         }
       )
-      if (windows.length === 0) continue
+
+      const considerIndex = trace.push({
+        type: 'consider',
+        itemId: item.id,
+        dayOffset: offset,
+        effectiveNow: effectiveNow ? effectiveNow.toISOString() : null,
+        windowCount: windows.length,
+      }) - 1
+
+      if (windows.length === 0) {
+        lastFailure = { reason: 'NoCompatibleWindow', candidates: [] }
+        trace[considerIndex] = { ...trace[considerIndex], candidates: [] }
+        continue
+      }
 
       const placed = await placeItemInWindows({
         userId,
@@ -306,53 +385,67 @@ export async function scheduleBacklog(
         date: day,
         client: supabase,
         reuseInstanceId: item.instanceId,
+        runId,
+        dryRun,
+        runStart: baseDate,
+        stabilityLockMinutes,
+        effectiveNow,
+        weights: SCORING_WEIGHTS,
       })
 
-      if (!('status' in placed)) {
-        if (placed.error !== 'NO_FIT') {
-          result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
-        }
-        continue
-      }
+      const candidatesTrace = summarizeCandidates(placed.considered)
+      trace[considerIndex] = { ...trace[considerIndex], candidates: candidatesTrace }
 
-      if (placed.error) {
-        result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
-        continue
-      }
-
-      if (placed.data) {
-        result.placed.push(placed.data)
-        const placementWindow = findPlacementWindow(
-          windows,
-          placed.data
-        )
-        if (placementWindow?.key) {
-          windowAvailability.set(
-            placementWindow.key,
-            new Date(placed.data.end_utc)
-          )
-        }
-        const decision: ScheduleDraftPlacement['decision'] = item.instanceId
-          ? 'rescheduled'
-          : 'new'
-        result.timeline.push({
-          instance: placed.data,
-          projectId: placed.data.source_id ?? item.id,
-          decision,
-          scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? offset,
-          availableStartLocal: placementWindow?.availableStartLocal
-            ? placementWindow.availableStartLocal.toISOString()
-            : undefined,
-          windowStartLocal: placementWindow?.startLocal
-            ? placementWindow.startLocal.toISOString()
-            : undefined,
+      if (!placed.ok) {
+        lastFailure = { reason: placed.reason ?? 'NoCompatibleWindow', detail: placed.error, candidates: candidatesTrace }
+        trace.push({
+          type: 'reject',
+          itemId: item.id,
+          dayOffset: offset,
+          reason: lastFailure.reason,
+          detail: placed.error,
+          candidates: candidatesTrace,
         })
-        scheduled = true
+        continue
       }
+
+      const placementWindow = findPlacementWindow(windows, placed.instance)
+      if (placementWindow?.key) {
+        baseAvailability.set(placementWindow.key, new Date(placed.instance.end_utc))
+      }
+
+      result.placed.push(placed.instance)
+      const decision: ScheduleDraftPlacement['decision'] = item.instanceId
+        ? 'rescheduled'
+        : 'new'
+      result.timeline.push({
+        instance: placed.instance,
+        projectId: placed.instance.source_id ?? item.id,
+        decision,
+        scheduledDayOffset: dayOffsetFor(placed.instance.start_utc) ?? offset,
+        availableStartLocal: placementWindow?.availableStartLocal
+          ? placementWindow.availableStartLocal.toISOString()
+          : undefined,
+        windowStartLocal: placementWindow?.startLocal
+          ? placementWindow.startLocal.toISOString()
+          : undefined,
+      })
+      trace.push({
+        type: 'place',
+        itemId: item.id,
+        windowId: placed.instance.window_id ?? null,
+        startUTC: placed.instance.start_utc,
+        endUTC: placed.instance.end_utc,
+        score: placed.score,
+        candidates: candidatesTrace,
+      })
+
+      scheduled = true
     }
 
     if (!scheduled) {
-      result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
+      const reason = lastFailure?.reason ?? 'NoCompatibleWindow'
+      result.failures.push({ itemId: item.id, reason, detail: lastFailure?.detail })
     }
   }
 
@@ -365,6 +458,10 @@ export async function scheduleBacklog(
     }
     return aTime - bTime
   })
+
+  if (options?.traceToFile !== false) {
+    await persistTrace(runId, trace)
+  }
 
   return result
 }
@@ -464,7 +561,7 @@ async function dedupeScheduledProjects(
     if (cancel.error) {
       failures.push({
         itemId: extra.source_id,
-        reason: 'error',
+        reason: 'Unknown',
         detail: cancel.error,
       })
       continue
@@ -502,7 +599,7 @@ async function fetchCompatibleWindowsForItem(
   item: { energy: string; duration_min: number },
   timeZone: string,
   options?: {
-    now?: Date
+    effectiveNow?: Date | null
     availability?: Map<string, Date>
     cache?: Map<string, WindowLite[]>
   }
@@ -517,7 +614,7 @@ async function fetchCompatibleWindowsForItem(
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)
-  const now = options?.now ? new Date(options.now) : null
+  const now = options?.effectiveNow ? new Date(options.effectiveNow) : null
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.availability
@@ -554,12 +651,6 @@ async function fetchCompatibleWindowsForItem(
     if (availableStartMs + durationMs > endMs) continue
 
     const availableStartLocal = new Date(availableStartMs)
-    if (availability) {
-      const existing = availability.get(key)
-      if (!existing || existing.getTime() !== availableStartMs) {
-        availability.set(key, availableStartLocal)
-      }
-    }
 
     compatible.push({
       id: win.id,
@@ -567,6 +658,7 @@ async function fetchCompatibleWindowsForItem(
       startLocal,
       endLocal,
       availableStartLocal,
+      energy: win.energy,
       energyIdx,
     })
   }
@@ -587,6 +679,7 @@ async function fetchCompatibleWindowsForItem(
     startLocal: win.startLocal,
     endLocal: win.endLocal,
     availableStartLocal: win.availableStartLocal,
+    energy: win.energy,
   }))
 }
 
@@ -606,6 +699,35 @@ function findPlacementWindow(
   )
   if (match) return match
   return windows.find(win => win.id === placement.window_id) ?? null
+}
+
+function summarizeCandidates(candidates?: CandidateEvaluation[] | null): CandidateTrace[] {
+  if (!candidates || candidates.length === 0) return []
+  return [...candidates]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map(candidate => ({
+      windowId: candidate.windowId,
+      availableStartUTC: candidate.availableStartUTC,
+      score: candidate.score,
+    }))
+}
+
+async function persistTrace(runId: string, entries: TraceEntry[]) {
+  if (!entries.length) return
+  try {
+    const dir = path.join(process.cwd(), 'logs', 'scheduler')
+    await fs.mkdir(dir, { recursive: true })
+    const file = path.join(dir, `${runId}.jsonl`)
+    const lines = entries.map(entry => JSON.stringify({ runId, ...entry }))
+    await fs.appendFile(file, `${lines.join('\n')}\n`, 'utf8')
+  } catch (error) {
+    console.warn('[scheduler] failed to persist trace', error)
+  }
+}
+
+function createRunId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function isWithinWindow(

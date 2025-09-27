@@ -4,6 +4,26 @@ export const ENERGY = {
 
 export type Energy = (typeof ENERGY.LIST)[number];
 
+export type RejectedReason =
+  | "NoCompatibleWindow"
+  | "FailsHardConstraint"
+  | "ExceedsCapacity"
+  | "LockedByStabilityHorizon"
+  | "SchemaDrift"
+  | "Unknown";
+
+export const SCORING_WEIGHTS = {
+  value: 4,
+  deadlineUrgency: 3,
+  energyFit: 2,
+  contextFit: 1,
+  splitPenalty: 2,
+  switchPenalty: 2,
+  latenessRisk: 3,
+} as const;
+
+export const STABILITY_LOCK_MINUTES = 120;
+
 export const TASK_PRIORITY_WEIGHT = {
   NO: 0,
   LOW: 1,
