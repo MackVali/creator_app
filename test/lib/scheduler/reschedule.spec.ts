@@ -1255,6 +1255,6 @@ describe("scheduleBacklog", () => {
       timeZone: "America/Los_Angeles",
     });
 
-    expect(requestedDates[0]).toBe("2024-01-01T08:00:00.000Z");
+    expect(requestedDates[0]).toBe(base.toISOString());
   });
 });

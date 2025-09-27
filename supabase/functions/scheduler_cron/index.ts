@@ -9,7 +9,7 @@ import {
   addDaysInTimeZone,
   normalizeTimeZone,
   setTimeInTimeZone,
-  startOfDayInTimeZone,
+  toZonedDate,
 } from '../../../src/lib/scheduler/timezone.ts'
 
 type Client = SupabaseClient<Database>
@@ -44,7 +44,11 @@ serve(async req => {
     }
 
     const supabase = createClient<Database>(supabaseUrl, serviceRoleKey)
-    const now = new Date()
+    const rawNow = new Date()
+
+    const timeZoneValue = await resolveUserTimeZone(supabase, userId)
+    const timeZone = normalizeTimeZone(timeZoneValue)
+    const now = toZonedDate(rawNow, timeZone)
 
     const missedResult = await markMissedAndQueue(supabase, userId, now)
     if (missedResult.error) {
@@ -52,12 +56,11 @@ serve(async req => {
       return new Response(JSON.stringify(missedResult), { status: 500 })
     }
 
-    const timeZoneValue = await resolveUserTimeZone(supabase, userId)
     const scheduleResult = await scheduleBacklog(
       supabase,
       userId,
       now,
-      timeZoneValue,
+      timeZone,
     )
     if (scheduleResult.error) {
       console.error('scheduleBacklog error', scheduleResult.error)
@@ -135,7 +138,8 @@ async function scheduleBacklog(
   }
 
   const timeZone = normalizeTimeZone(timeZoneValue)
-  const baseStart = startOfDayInTimeZone(baseDate, timeZone)
+  const localNow = toZonedDate(baseDate, timeZone)
+  const baseStart = localNow
   const queue: QueueItem[] = []
   const failures: { itemId: string; reason: string; detail?: unknown }[] = []
   const seenMissedProjects = new Set<string>()
@@ -315,7 +319,7 @@ async function scheduleBacklog(
         timeZone,
         {
           availability: windowAvailability,
-          now: offset === 0 ? baseDate : undefined,
+          now: offset === 0 ? localNow : undefined,
           cache: windowCache,
         }
       )

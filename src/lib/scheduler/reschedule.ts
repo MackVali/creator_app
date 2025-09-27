@@ -20,7 +20,7 @@ import {
   differenceInCalendarDaysInTimeZone,
   normalizeTimeZone,
   setTimeInTimeZone,
-  startOfDayInTimeZone,
+  toZonedDate,
 } from './timezone'
 
 type Client = SupabaseClient<Database>
@@ -90,6 +90,7 @@ export async function scheduleBacklog(
   const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
   const timeZone = normalizeTimeZone(options?.timeZone)
+  const localNow = toZonedDate(baseDate, timeZone)
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
   if (missed.error) {
@@ -114,7 +115,7 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
-  const baseStart = startOfDayInTimeZone(baseDate, timeZone)
+  const baseStart = localNow
   const dayOffsetFor = (startUTC: string): number | undefined => {
     const start = new Date(startUTC)
     if (Number.isNaN(start.getTime())) return undefined
@@ -293,7 +294,7 @@ export async function scheduleBacklog(
         timeZone,
         {
           availability: windowAvailability,
-          now: offset === 0 ? baseDate : undefined,
+          now: offset === 0 ? localNow : undefined,
           cache: windowCache,
         }
       )
