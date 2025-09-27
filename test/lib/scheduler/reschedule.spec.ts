@@ -3,6 +3,7 @@ import { scheduleBacklog } from "../../../src/lib/scheduler/reschedule";
 import * as instanceRepo from "../../../src/lib/scheduler/instanceRepo";
 import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
+import * as projects from "../../../src/lib/scheduler/projects";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 import type { ProjectLite } from "../../../src/lib/scheduler/weight";
 
@@ -251,6 +252,148 @@ describe("scheduleBacklog", () => {
     expect(callOrder[1]).toBe("proj-low");
   });
 
+  it("fills high-energy windows with matching energy work before lower energy projects", async () => {
+    instances = [];
+
+    const emptyBacklog: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    (instanceRepo.fetchBacklogNeedingSchedule as unknown as vi.Mock).mockResolvedValue(
+      emptyBacklog,
+    );
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-high": {
+        id: "proj-high",
+        name: "High Energy",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 60,
+      },
+      "proj-low": {
+        id: "proj-low",
+        name: "Low Energy",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+
+    vi.spyOn(projects, "buildProjectItems").mockReturnValue([
+      {
+        id: "proj-high",
+        name: "High Energy",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "HIGH",
+        duration_min: 60,
+        weight: 10,
+        taskCount: 0,
+      },
+      {
+        id: "proj-low",
+        name: "Low Energy",
+        priority: "HIGH",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+        weight: 100,
+        taskCount: 0,
+      },
+    ] as Array<ReturnType<typeof projects.buildProjectItems>[number]>);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-high",
+        label: "Deep Work",
+        energy: "HIGH",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+      },
+    ]);
+
+    fetchInstancesForRangeSpy.mockImplementation(async (_userId, startUTC, endUTC) => {
+      const startMs = new Date(startUTC).getTime();
+      const endMs = new Date(endUTC).getTime();
+      const data = instances.filter(inst => {
+        const instStart = new Date(inst.start_utc).getTime();
+        const instEnd = new Date(inst.end_utc).getTime();
+        return instStart < endMs && instEnd > startMs;
+      });
+      return {
+        data,
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      } satisfies InstancesResponse;
+    });
+
+    const createSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockImplementation(async (input) => {
+        const data = createInstanceRecord({
+          id: `inst-${instances.length + 1}`,
+          source_id: input.sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        instances.push(data);
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+      });
+
+    vi.spyOn(instanceRepo, "rescheduleInstance").mockImplementation(async () => {
+      throw new Error("rescheduleInstance should not be called");
+    });
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async (params) => await realPlaceItemInWindows(params),
+    );
+
+    const anchor = new Date("2024-01-02T08:00:00Z");
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, anchor, mockClient);
+
+    expect(result.error).toBeUndefined();
+    expect(result.failures).toHaveLength(0);
+    expect(result.placed).toHaveLength(2);
+    expect(createSpy).toHaveBeenCalledTimes(2);
+
+    const sorted = [...result.placed].sort(
+      (a, b) => new Date(a.start_utc).getTime() - new Date(b.start_utc).getTime(),
+    );
+
+    expect(sorted[0]!.source_id).toBe("proj-high");
+    expect(new Date(sorted[0]!.start_utc).toISOString()).toBe(
+      "2024-01-02T09:00:00.000Z",
+    );
+    expect(sorted[1]!.source_id).toBe("proj-low");
+    expect(new Date(sorted[1]!.start_utc).toISOString()).toBe(
+      "2024-01-02T10:00:00.000Z",
+    );
+  });
+
   it("prioritizes upcoming windows closest to now before later options", async () => {
     instances = [];
 
@@ -322,10 +465,10 @@ describe("scheduleBacklog", () => {
       },
     ]);
 
-    let observedOrder: string[] | null = null;
+    const observedOrder: string[] = [];
     (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(async ({ windows }) => {
-      if (!observedOrder) {
-        observedOrder = windows.map((win) => win.id);
+      if (windows.length > 0) {
+        observedOrder.push(windows[0]!.id);
       }
       return { error: "NO_FIT" as const };
     });
@@ -333,7 +476,8 @@ describe("scheduleBacklog", () => {
     const mockClient = {} as ScheduleBacklogClient;
     await scheduleBacklog(userId, testBaseDate, mockClient);
 
-    expect(observedOrder).toEqual(["win-current", "win-high", "win-next"]);
+    const uniqueOrder = Array.from(new Set(observedOrder));
+    expect(uniqueOrder.slice(0, 3)).toEqual(["win-current", "win-high", "win-next"]);
   });
 
   it("uses the current time as the anchor for partially elapsed windows", async () => {

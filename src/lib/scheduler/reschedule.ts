@@ -263,84 +263,173 @@ export async function scheduleBacklog(
     reuseInstanceByProject.delete(item.id)
   }
 
-  queue.sort((a, b) => {
-    const weightDiff = b.weight - a.weight
-    if (weightDiff !== 0) return weightDiff
-    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
-    if (energyDiff !== 0) return energyDiff
-    return a.id.localeCompare(b.id)
-  })
+  const lookaheadItemCount = queue.length
+  const lookaheadDays = Math.min(
+    MAX_LOOKAHEAD_DAYS,
+    BASE_LOOKAHEAD_DAYS + lookaheadItemCount * LOOKAHEAD_PER_ITEM_DAYS,
+  )
+
+  const buckets = new Map<number, QueueItem[]>()
+  for (const item of queue) {
+    const idx = Math.max(0, energyIndex(item.energy))
+    const bucket = buckets.get(idx)
+    if (bucket) {
+      bucket.push(item)
+    } else {
+      buckets.set(idx, [item])
+    }
+  }
+
+  for (const bucket of buckets.values()) {
+    bucket.sort((a, b) => {
+      const weightDiff = b.weight - a.weight
+      if (weightDiff !== 0) return weightDiff
+      return a.id.localeCompare(b.id)
+    })
+  }
+
+  const pending = new Map<string, { item: QueueItem; energyIdx: number }>()
+  for (const [energyIdx, bucket] of buckets.entries()) {
+    for (const item of bucket) {
+      pending.set(item.id, { item, energyIdx })
+    }
+  }
 
   const windowAvailabilityByDay = new Map<number, Map<string, Date>>()
   const windowCache = new Map<string, WindowLite[]>()
-  const lookaheadDays = Math.min(
-    MAX_LOOKAHEAD_DAYS,
-    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
-  )
 
-  for (const item of queue) {
-    let scheduled = false
-    for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
-      let windowAvailability = windowAvailabilityByDay.get(offset)
-      if (!windowAvailability) {
-        windowAvailability = new Map<string, Date>()
-        windowAvailabilityByDay.set(offset, windowAvailability)
-      }
-      const day = addDaysInTimeZone(baseStart, offset, timeZone)
-      const windows = await fetchCompatibleWindowsForItem(
-        supabase,
-        day,
-        item,
-        timeZone,
-        {
-          availability: windowAvailability,
-          now: offset === 0 ? localNow : undefined,
-          cache: windowCache,
+  for (let offset = 0; offset < lookaheadDays; offset += 1) {
+    if (pending.size === 0) break
+
+    let windowAvailability = windowAvailabilityByDay.get(offset)
+    if (!windowAvailability) {
+      windowAvailability = new Map<string, Date>()
+      windowAvailabilityByDay.set(offset, windowAvailability)
+    }
+
+    const day = addDaysInTimeZone(baseStart, offset, timeZone)
+    const windows = await resolveWindowsForDay({
+      cache: windowCache,
+      client: supabase,
+      date: day,
+      timeZone,
+      now: offset === 0 ? localNow : undefined,
+      availability: windowAvailability,
+    })
+
+    for (const window of windows) {
+      if (pending.size === 0) break
+
+      const attempted = new Set<string>()
+      let exhausted = false
+
+      while (!exhausted && pending.size > 0) {
+        const availableStart = windowAvailability.get(window.key) ?? window.initialAvailableStartLocal
+        if (availableStart.getTime() >= window.endLocal.getTime()) {
+          exhausted = true
+          break
         }
-      )
-      if (windows.length === 0) continue
 
-      const placed = await placeItemInWindows({
-        userId,
-        item,
-        windows,
-        date: day,
-        client: supabase,
-        reuseInstanceId: item.instanceId,
-      })
+        const candidate = pickCandidateForWindow({
+          attempted,
+          buckets,
+          windowEnergyIdx: window.energyIdx,
+        })
 
-      if (!('status' in placed)) {
-        if (placed.error !== 'NO_FIT') {
-          result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
+        if (!candidate) {
+          exhausted = true
+          break
         }
-        continue
-      }
 
-      if (placed.error) {
-        result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
-        continue
-      }
+        const placeResult = await placeItemInWindows({
+          userId,
+          item: candidate.item,
+          windows: [
+            {
+              id: window.id,
+              key: window.key,
+              startLocal: window.startLocal,
+              endLocal: window.endLocal,
+              availableStartLocal: availableStart,
+            },
+          ],
+          date: day,
+          client: supabase,
+          reuseInstanceId: candidate.item.instanceId,
+        })
 
-      if (placed.data) {
-        result.placed.push(placed.data)
+        if (!('status' in placeResult)) {
+          if (placeResult.error === 'NO_FIT') {
+            attempted.add(candidate.item.id)
+            if (allCandidatesAttempted(window.energyIdx, buckets, attempted)) {
+              exhausted = true
+            }
+            continue
+          }
+
+          result.failures.push({
+            itemId: candidate.item.id,
+            reason: 'error',
+            detail: placeResult.error,
+          })
+          removeItemFromBucket(buckets, candidate)
+          pending.delete(candidate.item.id)
+          continue
+        }
+
+        if (placeResult.error) {
+          result.failures.push({
+            itemId: candidate.item.id,
+            reason: 'error',
+            detail: placeResult.error,
+          })
+          removeItemFromBucket(buckets, candidate)
+          pending.delete(candidate.item.id)
+          continue
+        }
+
+        const placement = placeResult.data
+        if (!placement) {
+          attempted.add(candidate.item.id)
+          if (allCandidatesAttempted(window.energyIdx, buckets, attempted)) {
+            exhausted = true
+          }
+          continue
+        }
+
+        removeItemFromBucket(buckets, candidate)
+        pending.delete(candidate.item.id)
+        result.placed.push(placement)
+
         const placementWindow = findPlacementWindow(
-          windows,
-          placed.data
+          [
+            {
+              id: window.id,
+              key: window.key,
+              startLocal: window.startLocal,
+              endLocal: window.endLocal,
+              availableStartLocal: availableStart,
+            },
+          ],
+          placement,
         )
+
         if (placementWindow?.key) {
           windowAvailability.set(
             placementWindow.key,
-            new Date(placed.data.end_utc)
+            new Date(placement.end_utc),
           )
         }
-        const decision: ScheduleDraftPlacement['decision'] = item.instanceId
+
+        const decision: ScheduleDraftPlacement['decision'] = candidate.item.instanceId
           ? 'rescheduled'
           : 'new'
+
         result.timeline.push({
-          instance: placed.data,
-          projectId: placed.data.source_id ?? item.id,
+          instance: placement,
+          projectId: placement.source_id ?? candidate.item.id,
           decision,
-          scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? offset,
+          scheduledDayOffset: dayOffsetFor(placement.start_utc) ?? offset,
           availableStartLocal: placementWindow?.availableStartLocal
             ? placementWindow.availableStartLocal.toISOString()
             : undefined,
@@ -348,13 +437,12 @@ export async function scheduleBacklog(
             ? placementWindow.startLocal.toISOString()
             : undefined,
         })
-        scheduled = true
       }
     }
+  }
 
-    if (!scheduled) {
-      result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
-    }
+  for (const pendingItem of pending.values()) {
+    result.failures.push({ itemId: pendingItem.item.id, reason: 'NO_WINDOW' })
   }
 
   result.timeline.sort((a, b) => {
@@ -497,45 +585,37 @@ async function dedupeScheduledProjects(
   }
 }
 
-async function fetchCompatibleWindowsForItem(
-  supabase: Client,
-  date: Date,
-  item: { energy: string; duration_min: number },
-  timeZone: string,
-  options?: {
-    now?: Date
-    availability?: Map<string, Date>
-    cache?: Map<string, WindowLite[]>
-  }
-) {
+async function resolveWindowsForDay(params: {
+  client: Client
+  date: Date
+  timeZone: string
+  now?: Date
+  availability: Map<string, Date>
+  cache?: Map<string, WindowLite[]>
+}) {
+  const { availability, cache, client, date, now, timeZone } = params
   const cacheKey = dateCacheKey(date)
-  const cache = options?.cache
   let windows: WindowLite[]
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(date, supabase)
+    windows = await fetchWindowsForDate(date, client)
     cache?.set(cacheKey, windows)
   }
-  const itemIdx = energyIndex(item.energy)
-  const now = options?.now ? new Date(options.now) : null
-  const nowMs = now?.getTime()
-  const durationMs = Math.max(0, item.duration_min) * 60000
-  const availability = options?.availability
 
-  const compatible = [] as Array<{
+  const nowMs = now?.getTime()
+
+  const resolved = [] as Array<{
     id: string
     key: string
+    energyIdx: number
     startLocal: Date
     endLocal: Date
-    availableStartLocal: Date
-    energyIdx: number
+    initialAvailableStartLocal: Date
   }>
 
   for (const win of windows) {
-    const energyIdx = energyIndex(win.energy)
-    if (energyIdx < itemIdx) continue
-
+    const energyIdx = Math.max(0, energyIndex(win.energy))
     const startLocal = resolveWindowStart(win, date, timeZone)
     const endLocal = resolveWindowEnd(win, date, timeZone)
     const key = windowKey(win.id, startLocal)
@@ -546,49 +626,92 @@ async function fetchCompatibleWindowsForItem(
 
     const baseAvailableStartMs =
       typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
-    const carriedStartMs = availability?.get(key)?.getTime()
+    const carriedStartMs = availability.get(key)?.getTime()
     const availableStartMs =
       typeof carriedStartMs === 'number'
         ? Math.max(baseAvailableStartMs, carriedStartMs)
         : baseAvailableStartMs
-    if (availableStartMs >= endMs) continue
-    if (availableStartMs + durationMs > endMs) continue
 
-    const availableStartLocal = new Date(availableStartMs)
-    if (availability) {
-      const existing = availability.get(key)
-      if (!existing || existing.getTime() !== availableStartMs) {
-        availability.set(key, availableStartLocal)
-      }
+    if (availableStartMs >= endMs) continue
+
+    const existing = availability.get(key)
+    if (!existing || existing.getTime() !== availableStartMs) {
+      const initial = new Date(availableStartMs)
+      availability.set(key, initial)
+      resolved.push({
+        id: win.id,
+        key,
+        energyIdx,
+        startLocal,
+        endLocal,
+        initialAvailableStartLocal: initial,
+      })
+      continue
     }
 
-    compatible.push({
+    resolved.push({
       id: win.id,
       key,
+      energyIdx,
       startLocal,
       endLocal,
-      availableStartLocal,
-      energyIdx,
+      initialAvailableStartLocal: existing,
     })
   }
 
-  compatible.sort((a, b) => {
-    const startDiff = a.availableStartLocal.getTime() - b.availableStartLocal.getTime()
+  resolved.sort((a, b) => {
+    const startDiff =
+      a.initialAvailableStartLocal.getTime() - b.initialAvailableStartLocal.getTime()
     if (startDiff !== 0) return startDiff
-    const energyDiff = a.energyIdx - b.energyIdx
-    if (energyDiff !== 0) return energyDiff
-    const rawStartDiff = a.startLocal.getTime() - b.startLocal.getTime()
-    if (rawStartDiff !== 0) return rawStartDiff
+    const startLocalDiff = a.startLocal.getTime() - b.startLocal.getTime()
+    if (startLocalDiff !== 0) return startLocalDiff
     return a.id.localeCompare(b.id)
   })
 
-  return compatible.map(win => ({
-    id: win.id,
-    key: win.key,
-    startLocal: win.startLocal,
-    endLocal: win.endLocal,
-    availableStartLocal: win.availableStartLocal,
-  }))
+  return resolved
+}
+
+function pickCandidateForWindow(params: {
+  buckets: Map<number, QueueItem[]>
+  windowEnergyIdx: number
+  attempted: Set<string>
+}) {
+  const { attempted, buckets, windowEnergyIdx } = params
+
+  for (let idx = windowEnergyIdx; idx >= 0; idx -= 1) {
+    const bucket = buckets.get(idx)
+    if (!bucket || bucket.length === 0) continue
+    for (let position = 0; position < bucket.length; position += 1) {
+      const item = bucket[position]
+      if (attempted.has(item.id)) continue
+      return { bucketIdx: idx, item, position }
+    }
+  }
+
+  return null
+}
+
+function removeItemFromBucket(
+  buckets: Map<number, QueueItem[]>,
+  candidate: { bucketIdx: number; position: number }
+) {
+  const bucket = buckets.get(candidate.bucketIdx)
+  if (!bucket) return
+  bucket.splice(candidate.position, 1)
+}
+
+function allCandidatesAttempted(
+  windowEnergyIdx: number,
+  buckets: Map<number, QueueItem[]>,
+  attempted: Set<string>,
+) {
+  for (let idx = windowEnergyIdx; idx >= 0; idx -= 1) {
+    const bucket = buckets.get(idx)
+    if (!bucket || bucket.length === 0) continue
+    const hasUnattempted = bucket.some(item => !attempted.has(item.id))
+    if (hasUnattempted) return false
+  }
+  return true
 }
 
 function findPlacementWindow(
