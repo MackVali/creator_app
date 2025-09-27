@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
+import { RefreshCcw } from 'lucide-react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -373,6 +374,14 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const { session } = useAuth()
   const userId = session?.user.id ?? null
+  const localTimeZone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
+    } catch (error) {
+      console.warn('Unable to resolve local timezone', error)
+      return null
+    }
+  }, [])
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -453,7 +462,7 @@ export default function SchedulePage() {
     async function load() {
       try {
         const [ws, ts, pm, scheduledIds] = await Promise.all([
-          fetchWindowsForDate(currentDate),
+          fetchWindowsForDate(currentDate, undefined, { timeZone: localTimeZone }),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
@@ -486,7 +495,7 @@ export default function SchedulePage() {
     return () => {
       active = false
     }
-  }, [currentDate, userId])
+  }, [currentDate, userId, localTimeZone])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -864,7 +873,13 @@ export default function SchedulePage() {
       active = false
       clearInterval(id)
     }
-  }, [userId, currentDate])
+  }, [userId, currentDate, localTimeZone])
+
+  const [isScheduling, setIsScheduling] = useState(false)
+  const schedulerHistoryStorageKey = useMemo(() => {
+    if (!userId) return null
+    return `scheduler:last-auto:${userId}`
+  }, [userId])
 
   const runScheduler = useCallback(async () => {
     if (!userId) {
@@ -873,10 +888,20 @@ export default function SchedulePage() {
     }
     if (isSchedulingRef.current) return
     isSchedulingRef.current = true
+    setIsScheduling(true)
     try {
+      const localNow = new Date()
+      const timeZone = localTimeZone
+
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
         cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          timeZone,
+          localNow: localNow.toISOString(),
+          offsetMinutes: -localNow.getTimezoneOffset(),
+        }),
       })
       let payload: unknown = null
       let parseError: unknown = null
@@ -937,6 +962,7 @@ export default function SchedulePage() {
       })
     } finally {
       isSchedulingRef.current = false
+      setIsScheduling(false)
       try {
         await loadInstancesRef.current()
       } catch (error) {
@@ -952,7 +978,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     autoScheduledForRef.current = null
-  }, [userId, currentDate])
+  }, [userId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -968,21 +994,49 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId) return
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
-    if (instances.length > 0) return
     if (isSchedulingRef.current) return
-    const { startUTC } = utcDayRange(currentDate)
-    const key = `${userId}:${startUTC}`
-    if (autoScheduledForRef.current === key) return
-    autoScheduledForRef.current = key
+    if (typeof window === 'undefined') return
+
+    const now = new Date()
+    const localDateKey = formatLocalDateKey(now)
+    const storageKey = schedulerHistoryStorageKey
+    if (!storageKey) return
+    let storedKey: string | null = null
+    try {
+      storedKey = window.localStorage.getItem(storageKey)
+    } catch (error) {
+      console.warn('Unable to access localStorage for scheduler history', error)
+    }
+    if (storedKey === localDateKey) return
+    if (autoScheduledForRef.current === localDateKey) return
+    autoScheduledForRef.current = localDateKey
+    try {
+      window.localStorage.setItem(storageKey, localDateKey)
+    } catch (error) {
+      console.warn('Unable to persist scheduler history', error)
+    }
     void runScheduler()
   }, [
     userId,
     currentDate,
     metaStatus,
     instancesStatus,
-    instances.length,
     runScheduler,
+    schedulerHistoryStorageKey,
   ])
+
+  const rescheduleButtonStyles = useMemo<CSSProperties>(() => {
+    return {
+      background:
+        'linear-gradient(160deg, rgba(244,244,247,1) 0%, rgba(214,214,223,1) 38%, rgba(176,176,187,1) 100%)',
+      borderRadius: '9999px',
+      border: '1px solid rgba(255,255,255,0.38)',
+      boxShadow: isScheduling
+        ? 'inset 0 2px 6px rgba(0,0,0,0.25), inset 0 -2px 6px rgba(255,255,255,0.2)'
+        : '0 12px 28px rgba(12,12,16,0.42), 0 4px 10px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.6)',
+      color: '#1f1f20',
+    }
+  }, [isScheduling])
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX
@@ -1011,6 +1065,43 @@ export default function SchedulePage() {
           onBack={handleBack}
           onToday={handleToday}
         />
+        <div className="px-4">
+          <button
+            type="button"
+            onClick={() => {
+              const key = formatLocalDateKey(new Date())
+              autoScheduledForRef.current = key
+              if (schedulerHistoryStorageKey && typeof window !== 'undefined') {
+                try {
+                  window.localStorage.setItem(schedulerHistoryStorageKey, key)
+                } catch (error) {
+                  console.warn('Unable to persist scheduler history', error)
+                }
+              }
+              void runScheduler()
+            }}
+            disabled={isScheduling}
+            className="relative inline-flex items-center gap-2 px-4 py-2 font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-white/90 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-80"
+            style={rescheduleButtonStyles}
+          >
+            <span
+              className="flex h-7 w-7 items-center justify-center rounded-full"
+              style={{
+                background:
+                  'linear-gradient(145deg, rgba(236,236,240,1) 0%, rgba(198,198,206,1) 45%, rgba(160,160,170,1) 100%)',
+                boxShadow:
+                  'inset 0 1px 2px rgba(255,255,255,0.6), inset 0 -2px 3px rgba(0,0,0,0.15)',
+              }}
+            >
+              <RefreshCcw
+                className="h-5 w-5 text-zinc-700"
+                strokeWidth={3}
+                aria-hidden="true"
+              />
+            </span>
+            <span>{isScheduling ? 'Rescheduling…' : 'Reschedule'}</span>
+          </button>
+        </div>
         <div
           className="relative bg-[var(--surface)]"
           onTouchStart={handleTouchStart}

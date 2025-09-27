@@ -218,9 +218,23 @@ export default function SchedulerPage() {
     setError(null);
 
     try {
+      const localNow = new Date();
+      let timeZone: string | null = null;
+      try {
+        timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+      } catch (resolveError) {
+        console.warn("Unable to resolve local timezone", resolveError);
+      }
+
       const response = await fetch("/api/scheduler/run", {
         method: "POST",
         cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          timeZone,
+          localNow: localNow.toISOString(),
+          offsetMinutes: -localNow.getTimezoneOffset(),
+        }),
       });
 
       let payload: unknown = null;
