@@ -1114,34 +1114,10 @@ export default function SchedulePage() {
       appearance === 'light'
         ? 'focus-visible:outline-black/40'
         : 'focus-visible:outline-white/60'
-    const borderClass = isCompleted
-      ? appearance === 'light'
-        ? 'border-zinc-900'
-        : 'border-white'
-      : appearance === 'light'
-        ? 'border-zinc-300'
-        : 'border-white/50'
-    const strokeColor = appearance === 'light' ? '#ffffff' : '#f4f4f5'
-    const buttonShadow = appearance === 'light'
-      ? isCompleted
-        ? '0 12px 26px rgba(24,24,27,0.35), 0 0 0 1px rgba(24,24,27,0.18)'
-        : '0 8px 18px rgba(24,24,27,0.22)'
-      : isCompleted
-        ? '0 14px 32px rgba(56,189,248,0.45), 0 0 0 1px rgba(255,255,255,0.18)'
-        : '0 10px 26px rgba(8,47,73,0.6)'
-    const fillBackground =
-      appearance === 'light'
-        ? 'linear-gradient(135deg, rgba(24,24,27,0.92) 0%, rgba(63,63,70,0.88) 45%, rgba(113,113,122,0.82) 100%)'
-        : 'linear-gradient(135deg, rgba(9,9,11,0.95) 0%, rgba(24,24,27,0.9) 50%, rgba(39,39,42,0.85) 100%)'
-    const sheenBackground =
-      appearance === 'light'
-        ? 'linear-gradient(180deg, rgba(250,250,250,0.55) 0%, rgba(250,250,250,0.12) 45%, rgba(24,24,27,0) 100%)'
-        : 'linear-gradient(180deg, rgba(244,244,245,0.18) 0%, rgba(39,39,42,0.1) 45%, rgba(9,9,11,0) 100%)'
-    const rippleColor = appearance === 'light'
-      ? 'rgba(24,24,27,0.22)'
-      : 'rgba(244,244,245,0.35)'
+    const borderClass = 'border-black'
+    const xColor = '#ffffff'
     const baseButtonClass =
-      'relative flex h-6 w-6 items-center justify-center rounded-[10px] border transition-[color,background,transform,box-shadow] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 overflow-hidden'
+      'relative flex h-6 w-6 items-center justify-center border rounded-none transition-[color,background,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-60'
 
     return (
       <div
@@ -1160,33 +1136,7 @@ export default function SchedulePage() {
           aria-label="Toggle project completion"
           disabled={pending || !canToggle}
           className={`${baseButtonClass} ${borderClass} ${baseFocusClass}`}
-          style={{ boxShadow: buttonShadow }}
           initial={false}
-          animate={
-            prefersReducedMotion
-              ? undefined
-              : {
-                  boxShadow: buttonShadow,
-                }
-          }
-          transition={{
-            duration: 0.22,
-            ease: [0.33, 1, 0.68, 1],
-          }}
-          whileTap={
-            prefersReducedMotion
-              ? undefined
-              : {
-                  scale: 0.92,
-                }
-          }
-          whileHover={
-            prefersReducedMotion
-              ? undefined
-              : {
-                  scale: 1.04,
-                }
-          }
           onClick={event => {
             event.stopPropagation()
             if (pending || !canToggle) return
@@ -1195,45 +1145,13 @@ export default function SchedulePage() {
           }}
         >
           <motion.span
-            className="pointer-events-none absolute inset-0 rounded-[10px]"
+            className="pointer-events-none absolute inset-0"
             initial={false}
             animate={{
-              scale: isCompleted ? 1 : 0.6,
-              opacity: isCompleted ? 1 : 0,
+              backgroundColor: isCompleted ? '#000000' : 'transparent',
             }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-            style={{
-              transformOrigin: 'center',
-              background: fillBackground,
-            }}
+            transition={{ duration: 0.12, ease: [0.4, 0, 0.2, 1] }}
           />
-          <motion.span
-            className="pointer-events-none absolute inset-0 rounded-[10px]"
-            initial={false}
-            animate={{
-              opacity: isCompleted ? 1 : 0,
-            }}
-            transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
-            style={{
-              background: sheenBackground,
-              mixBlendMode: appearance === 'light' ? 'screen' : 'overlay',
-            }}
-          />
-          <AnimatePresence initial={false}>
-            {isCompleted && !prefersReducedMotion ? (
-              <motion.span
-                key="ripple"
-                className="pointer-events-none absolute inset-0 rounded-[12px]"
-                initial={{ opacity: 0, scale: 0.7 }}
-                animate={{ opacity: 0, scale: 1.35 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                style={{
-                  boxShadow: `0 0 0 6px ${rippleColor}`,
-                }}
-              />
-            ) : null}
-          </AnimatePresence>
           <motion.svg
             className="pointer-events-none relative h-3.5 w-3.5"
             viewBox="0 0 16 16"
@@ -1241,9 +1159,21 @@ export default function SchedulePage() {
             initial={false}
           >
             <motion.path
-              d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
-              stroke={strokeColor}
-              strokeWidth={1.6}
+              d="M3.5 3.5 L12.5 12.5"
+              stroke={xColor}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              animate={{
+                pathLength: isCompleted ? 1 : 0,
+                opacity: isCompleted ? 1 : 0,
+              }}
+              transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
+            />
+            <motion.path
+              d="M12.5 3.5 L3.5 12.5"
+              stroke={xColor}
+              strokeWidth={1.8}
               strokeLinecap="round"
               strokeLinejoin="round"
               animate={{
