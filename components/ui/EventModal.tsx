@@ -149,7 +149,6 @@ interface FormState {
   skill_id: string;
   skill_ids: string[];
   duration_min: string;
-  effective_duration_min: number;
   stage: string;
   type: string;
   recurrence: string;
@@ -168,7 +167,6 @@ const createInitialFormState = (
   skill_id: "",
   skill_ids: [],
   duration_min: "",
-  effective_duration_min: 0,
   stage:
     eventType === "PROJECT"
       ? PROJECT_STAGE_OPTIONS[0].value
@@ -1391,38 +1389,23 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Duration (minutes)
-                      </Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={formData.duration_min}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            duration_min: e.target.value,
-                          })
-                        }
-                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Effective duration
-                      </Label>
-                      <Input
-                        value={formData.effective_duration_min}
-                        readOnly
-                        className="h-11 cursor-not-allowed rounded-xl border border-white/5 bg-white/[0.02] text-sm text-zinc-500"
-                      />
-                      <p className="text-xs text-zinc-500">
-                        Calculated automatically as the project evolves.
-                      </p>
-                    </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Duration (minutes)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={formData.duration_min}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          duration_min: e.target.value,
+                        })
+                      }
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      required
+                    />
                   </div>
                 </>
               ) : null}
