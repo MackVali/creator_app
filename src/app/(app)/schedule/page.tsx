@@ -1141,7 +1141,7 @@ export default function SchedulePage() {
           aria-checked={isCompleted}
           aria-label="Toggle project completion"
           disabled={pending || !canToggle}
-          className={`relative flex h-6 w-6 items-center justify-center rounded-sm border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${borderClass} ${baseFocusClass}`}
+          className={`relative flex h-6 w-6 items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${borderClass} ${baseFocusClass}`}
           onClick={event => {
             event.stopPropagation()
             if (pending || !canToggle) return
@@ -1150,7 +1150,7 @@ export default function SchedulePage() {
           }}
         >
           <motion.span
-            className={`absolute inset-0 rounded-[2px] ${fillClass}`}
+            className={`absolute inset-0 ${fillClass}`}
             initial={false}
             animate={{ scale: isCompleted ? 1 : 0 }}
             transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
