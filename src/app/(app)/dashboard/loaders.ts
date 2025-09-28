@@ -109,7 +109,7 @@ export async function getSkillsAndGoals(
   const [catsRes, goalsRes] = await Promise.all([
     supabase
       .from("skills_by_cats_v")
-      .select("cat_id,cat_name,user_id,skill_count,skills"),
+      .select("cat_id,cat_name,user_id,skill_count,skills,color_hex,sort_order,emoji"),
     supabase.from("goals").select("id,name,created_at").limit(3),
   ]);
 

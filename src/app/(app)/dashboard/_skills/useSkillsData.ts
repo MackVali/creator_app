@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 export interface Category {
@@ -8,6 +8,7 @@ export interface Category {
   name: string;
   color_hex?: string | null;
   order?: number | null;
+  emoji?: string | null;
 }
 
 export interface Skill {
@@ -24,7 +25,7 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const { data, error } = await supabase
     .from("cats")
-    .select("id,name,color_hex,sort_order")
+    .select("id,name,color_hex,sort_order,emoji")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true });
@@ -37,13 +38,19 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
       .order("sort_order", { ascending: true, nullsFirst: false })
       .order("name", { ascending: true });
     if (fallback.error) return [];
-    return (fallback.data ?? []).map((c) => ({ id: c.id, name: c.name, order: c.sort_order }));
+    return (fallback.data ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      order: c.sort_order,
+      emoji: null,
+    }));
   }
   return (data ?? []).map((c) => ({
     id: c.id,
     name: c.name,
     color_hex: c.color_hex || "#000000",
     order: c.sort_order,
+    emoji: c.emoji || null,
   }));
 }
 
@@ -112,39 +119,42 @@ export function useSkillsData() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const supabase = getSupabaseBrowser();
-        if (!supabase) throw new Error("Supabase client not available");
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) throw new Error("No user");
-        const [cats, skills] = await Promise.all([
-          fetchCategories(user.id).catch(() => []),
-          fetchSkills(user.id),
-        ]);
-        const grouped = groupByCategory(skills);
-        setSkillsByCategory(grouped);
-        if (cats.length > 0) {
-          setCategories(cats);
-        } else if (Object.keys(grouped).length > 0) {
-          // derive a single fallback category so skills still render
-          setCategories([{ id: "uncategorized", name: "Skills" }]);
-        } else {
-          setCategories([]);
-        }
-      } catch (e) {
-        setError(e as Error);
-      } finally {
-        setIsLoading(false);
+  const load = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const supabase = getSupabaseBrowser();
+      if (!supabase) throw new Error("Supabase client not available");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user");
+      const [cats, skills] = await Promise.all([
+        fetchCategories(user.id).catch(() => []),
+        fetchSkills(user.id),
+      ]);
+      const grouped = groupByCategory(skills);
+      setSkillsByCategory(grouped);
+      if (cats.length > 0) {
+        setCategories(cats);
+      } else if (Object.keys(grouped).length > 0) {
+        // derive a single fallback category so skills still render
+        setCategories([{ id: "uncategorized", name: "Skills", emoji: null }]);
+      } else {
+        setCategories([]);
       }
-    };
-    load();
+    } catch (e) {
+      setError(e as Error);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { categories, skillsByCategory, isLoading, error };
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { categories, skillsByCategory, isLoading, error, refresh: load };
 }
 
 export default useSkillsData;

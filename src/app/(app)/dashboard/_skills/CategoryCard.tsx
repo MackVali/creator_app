@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor, updateCatEmoji, updateCatOrder } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -59,6 +59,7 @@ interface Props {
   skills: Skill[];
   active: boolean;
   onSkillDrag: (dragging: boolean) => void;
+  onCategoryUpdate?: () => void;
 }
 
 export default function CategoryCard({
@@ -66,6 +67,7 @@ export default function CategoryCard({
   skills,
   active,
   onSkillDrag,
+  onCategoryUpdate,
 }: Props) {
   const [color, setColor] = useState(category.color_hex || "#000000");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -73,6 +75,9 @@ export default function CategoryCard({
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
+  const [emoji, setEmoji] = useState(category.emoji || "");
+  const [emojiValue, setEmojiValue] = useState(category.emoji || "");
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const dragging = useRef(false);
   const router = useRouter();
 
@@ -85,6 +90,10 @@ export default function CategoryCard({
   useEffect(() => {
     setLocalSkills([...skills]);
   }, [skills]);
+  useEffect(() => {
+    setEmoji(category.emoji || "");
+    setEmojiValue(category.emoji || "");
+  }, [category.emoji]);
 
   const palette = useMemo(() => {
     const base = color || "#6366f1";
@@ -130,6 +139,7 @@ export default function CategoryCard({
     if (!menuOpen) {
       setPickerOpen(false);
       setOrderOpen(false);
+      setEmojiOpen(false);
     }
   }, [menuOpen]);
 
@@ -137,10 +147,13 @@ export default function CategoryCard({
     setColor(newColor);
     try {
       await updateCatColor(category.id, newColor);
+      if (onCategoryUpdate) void onCategoryUpdate();
+      router.refresh();
     } catch (e) {
       console.error("Failed to update category color", e);
     } finally {
       setPickerOpen(false);
+      setEmojiOpen(false);
       setMenuOpen(false);
     }
   };
@@ -148,14 +161,39 @@ export default function CategoryCard({
   const handleOrderSave = async () => {
     try {
       await updateCatOrder(category.id, orderValue);
+      if (onCategoryUpdate) void onCategoryUpdate();
       router.refresh();
     } catch (e) {
       console.error("Failed to update category order", e);
     } finally {
       setOrderOpen(false);
+      setEmojiOpen(false);
       setMenuOpen(false);
     }
   };
+
+  const handleEmojiSave = async (value: string) => {
+    const trimmed = value.trim();
+    const nextEmoji = trimmed.length > 0 ? trimmed : null;
+    try {
+      await updateCatEmoji(category.id, nextEmoji);
+      setEmoji(nextEmoji || "");
+      setEmojiValue(nextEmoji || "");
+      if (onCategoryUpdate) void onCategoryUpdate();
+      router.refresh();
+    } catch (e) {
+      console.error("Failed to update category icon", e);
+    } finally {
+      setEmojiOpen(false);
+      setMenuOpen(false);
+    }
+  };
+
+  const handleEmojiClear = async () => {
+    await handleEmojiSave("");
+  };
+
+  const displayEmoji = emoji.trim() ? emoji.trim() : "";
 
   return (
     <div className="relative h-full">
@@ -201,7 +239,12 @@ export default function CategoryCard({
               }}
               onClick={() => setMenuOpen((o) => !o)}
             >
-              <span className="pr-3">{category.name}</span>
+              <span className="pr-3 flex items-center gap-2">
+                {displayEmoji ? (
+                  <span className="text-base leading-none">{displayEmoji}</span>
+                ) : null}
+                <span>{category.name}</span>
+              </span>
               <span
                 aria-hidden
                 className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
@@ -242,13 +285,64 @@ export default function CategoryCard({
                       Save order
                     </button>
                   </div>
+                ) : emojiOpen ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={emojiValue}
+                        onChange={(e) => setEmojiValue(e.target.value)}
+                        placeholder="Enter emoji"
+                        className="w-full rounded border border-black/20 p-2 text-lg"
+                      />
+                      <span className="text-2xl" aria-hidden>
+                        {emojiValue.trim() || "🐾"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-medium">
+                      <button type="button" className="underline" onClick={() => void handleEmojiClear()}>
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => void handleEmojiSave(emojiValue)}
+                      >
+                        Save icon
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-2">
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
+                    <button
+                      className="block text-left text-sm font-medium underline"
+                      onClick={() => {
+                        setPickerOpen(true);
+                        setOrderOpen(false);
+                        setEmojiOpen(false);
+                      }}
+                    >
                       Change color
                     </button>
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
+                    <button
+                      className="block text-left text-sm font-medium underline"
+                      onClick={() => {
+                        setOrderOpen(true);
+                        setPickerOpen(false);
+                        setEmojiOpen(false);
+                      }}
+                    >
                       Change order
+                    </button>
+                    <button
+                      className="block text-left text-sm font-medium underline"
+                      onClick={() => {
+                        setEmojiOpen(true);
+                        setPickerOpen(false);
+                        setOrderOpen(false);
+                      }}
+                    >
+                      Change icon
                     </button>
                   </div>
                 )}
