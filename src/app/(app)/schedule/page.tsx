@@ -1092,7 +1092,7 @@ export default function SchedulePage() {
 
   const renderInstanceActions = (
     instanceId: string,
-    options?: { appearance?: 'light' | 'dark' }
+    options?: { appearance?: 'light' | 'dark'; className?: string }
   ) => {
     const pending = pendingInstanceIds.has(instanceId)
     const appearance = options?.appearance ?? 'dark'
@@ -1100,8 +1100,8 @@ export default function SchedulePage() {
     const isCompleted = status === 'completed'
     const containerClass =
       appearance === 'light'
-        ? 'absolute top-1 right-8 flex items-center text-zinc-800/80'
-        : 'absolute top-1 right-8 flex items-center text-white/70'
+        ? 'flex items-center gap-2 text-zinc-800/80'
+        : 'flex items-center gap-2 text-white/70'
     const checkboxClass =
       appearance === 'light'
         ? 'h-6 w-6 appearance-none rounded-none border border-zinc-300 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60 checked:border-zinc-900 checked:bg-zinc-900'
@@ -1109,7 +1109,9 @@ export default function SchedulePage() {
 
     return (
       <label
-        className={containerClass}
+        className={[containerClass, options?.className]
+          .filter(Boolean)
+          .join(' ')}
         onClick={event => {
           event.stopPropagation()
         }}
@@ -1649,31 +1651,34 @@ export default function SchedulePage() {
                                     }
                               }
                             >
-                              {renderInstanceActions(instance.id)}
-                              <div className="flex flex-col">
-                                <span className="truncate text-sm font-medium">
-                                  {project.name}
-                                </span>
-                                <div className="text-xs text-zinc-200/70">
-                                  {detailText}
+                              <div className="flex min-w-0 flex-1 items-start gap-3">
+                                {renderInstanceActions(instance.id, {
+                                  className: 'flex-shrink-0 pt-[2px]',
+                                })}
+                                <div className="min-w-0">
+                                  <span className="block truncate text-sm font-medium">
+                                    {project.name}
+                                  </span>
+                                  <div className="text-xs text-zinc-200/70">
+                                    {detailText}
+                                  </div>
                                 </div>
                               </div>
-                              {project.skill_icon && (
-                                <span
-                                  className="ml-2 text-lg leading-none flex-shrink-0"
-                                  aria-hidden
-                                >
-                                  {project.skill_icon}
-                                </span>
-                              )}
-                              <FlameEmber
-                                level={
-                                  (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                                  'NO'
-                                }
-                                size="sm"
-                                className="absolute -top-1 -right-1"
-                              />
+                              <div className="flex flex-shrink-0 items-center gap-2">
+                                {project.skill_icon && (
+                                  <span className="text-lg leading-none" aria-hidden>
+                                    {project.skill_icon}
+                                  </span>
+                                )}
+                                <FlameEmber
+                                  level={
+                                    (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                                    'NO'
+                                  }
+                                  size="sm"
+                                  className="flex-shrink-0"
+                                />
+                              </div>
                             </motion.div>
                           ) : (
                             <motion.div
@@ -1826,6 +1831,8 @@ export default function SchedulePage() {
                                     {kind === 'scheduled' && instanceId
                                       ? renderInstanceActions(instanceId, {
                                           appearance: 'light',
+                                          className:
+                                            'absolute right-3 top-2',
                                         })
                                       : null}
                                     <div className="flex flex-col">
@@ -1900,7 +1907,10 @@ export default function SchedulePage() {
                           prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
                         }
                       >
-                        {renderInstanceActions(instance.id, { appearance: 'light' })}
+                        {renderInstanceActions(instance.id, {
+                          appearance: 'light',
+                          className: 'absolute right-3 top-2',
+                        })}
                         <div className="flex flex-col">
                           <span className="truncate text-sm font-medium">
                             {task.name}
