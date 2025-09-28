@@ -1551,33 +1551,13 @@ export default function SchedulePage() {
                     const durationMinutes = Math.round(
                       (end.getTime() - start.getTime()) / 60000
                     )
-                    const trimmedWindowLabel =
-                      typeof assignedWindow?.label === 'string'
-                        ? assignedWindow.label.trim()
-                        : ''
-                    const hasWindow = Boolean(instance.window_id)
-                    let windowDescriptor = `Window: ${
-                      trimmedWindowLabel.length > 0
-                        ? trimmedWindowLabel
-                        : assignedWindow
-                          ? 'Unnamed'
-                          : hasWindow
-                            ? 'Unknown'
-                            : 'Unassigned'
-                    }`
-                    if (assignedWindow?.fromPrevDay) {
-                      windowDescriptor = `${windowDescriptor} (previous day)`
-                    }
                     const tasksLabel =
                       project.taskCount > 0
                         ? `${project.taskCount} ${
                             project.taskCount === 1 ? 'task' : 'tasks'
                           }`
                         : null
-                    const detailParts = [
-                      windowDescriptor,
-                      `${durationMinutes}m`,
-                    ]
+                    const detailParts = [`${durationMinutes}m`]
                     if (tasksLabel) detailParts.push(tasksLabel)
                     let detailText = detailParts.join(' · ')
                     const positionStyle: CSSProperties = {
