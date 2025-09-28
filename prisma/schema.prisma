@@ -1,0 +1,56 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Business {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  stripeAccountId String?
+  feeBps          Int      @default(500)
+  taxEnabled      Boolean  @default(false)
+  tipEnabled      Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  MenuItems MenuItem[]
+  Orders    Order[]
+}
+
+model MenuItem {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  priceCents  Int
+  optionsJson String   @default("[]")
+  Business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                     String      @id @default(cuid())
+  businessId             String
+  status                 OrderStatus @default(CREATED)
+  subtotalCents          Int
+  tipCents               Int         @default(0)
+  taxCents               Int         @default(0)
+  feeCents               Int         @default(0)
+  stripePaymentIntentId  String?
+  stripeCheckoutSessionId String?
+  metadataJson           String      @default("{}")
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  Business               Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+enum OrderStatus {
+  CREATED
+  PAID
+  FULFILLED
+  CANCELED
+  REFUNDED
+}
