@@ -56,6 +56,8 @@ import {
   type SchedulerRunFailure,
 } from '@/lib/scheduler/windowReports'
 
+type ParticleKind = 'dot' | 'xp' | 'confetti'
+
 type ParticleConfig = {
   id: string
   angle: number
@@ -64,8 +66,11 @@ type ParticleConfig = {
   duration: number
   delay: number
   color: string
-  kind: 'dot' | 'xp'
+  kind: ParticleKind
   rotation: number
+  spin: number
+  width?: number
+  height?: number
 }
 
 function createSeededRng(seed: number) {
@@ -77,21 +82,28 @@ function createSeededRng(seed: number) {
   }
 }
 
-const PARTICLE_COLORS = ['#86efac', '#34d399', '#4ade80', '#22c55e', '#bbf7d0']
+const PARTICLE_COLORS = ['#bbf7d0', '#86efac', '#34d399', '#22c55e', '#166534']
 
 function buildParticleConfigs(seed: number): ParticleConfig[] {
   const rng = createSeededRng(seed)
-  const total = 22
+  const total = 42
   const configs: ParticleConfig[] = []
   for (let index = 0; index < total; index += 1) {
     const angle = rng() * Math.PI * 2
-    const distance = 48 + rng() * 80
-    const size = 4 + rng() * 8
-    const duration = 0.6 + rng() * 0.45
-    const delay = rng() * 0.08
+    const distance = 36 + rng() * 120
+    const size = 4 + rng() * 10
+    const duration = 0.7 + rng() * 0.55
+    const delay = rng() * 0.12
     const color = PARTICLE_COLORS[Math.floor(rng() * PARTICLE_COLORS.length)]
-    const kind: ParticleConfig['kind'] = index % 5 === 0 ? 'xp' : 'dot'
-    const rotation = (rng() - 0.5) * 60
+    const chance = rng()
+    let kind: ParticleKind
+    if (chance > 0.7) kind = 'xp'
+    else if (chance > 0.35) kind = 'confetti'
+    else kind = 'dot'
+    const rotation = (rng() - 0.5) * 120
+    const spin = (rng() - 0.5) * 240
+    const width = kind === 'confetti' ? 6 + rng() * 10 : undefined
+    const height = kind === 'confetti' ? 10 + rng() * 18 : undefined
     configs.push({
       id: `${seed}-${index}`,
       angle,
@@ -102,6 +114,9 @@ function buildParticleConfigs(seed: number): ParticleConfig[] {
       color,
       kind,
       rotation,
+      spin,
+      width,
+      height,
     })
   }
   return configs
@@ -140,7 +155,7 @@ function ParticleBurst({
               initial={{ opacity: 0.95, scale: 0.6, x: 0, y: 0, rotate: 0 }}
               animate={{
                 opacity: 0,
-                scale: 1.18,
+                scale: 1.32,
                 x,
                 y,
                 rotate: particle.rotation,
@@ -153,6 +168,38 @@ function ParticleBurst({
             >
               XP
             </motion.span>
+          )
+        }
+
+        if (particle.kind === 'confetti') {
+          const width = particle.width ?? particle.size * 1.8
+          const height = particle.height ?? particle.size * 2.4
+          return (
+            <motion.span
+              key={particle.id}
+              className="absolute left-1/2 top-1/2 block origin-center rounded-[2px] mix-blend-screen"
+              style={{
+                width,
+                height,
+                background:
+                  `linear-gradient(130deg, ${particle.color} 10%, rgba(255,255,255,0.65) 55%, ${particle.color} 90%)`,
+                marginLeft: -width / 2,
+                marginTop: -height / 2,
+              }}
+              initial={{ opacity: 0.95, scale: 0.6, x: 0, y: 0, rotate: particle.rotation }}
+              animate={{
+                opacity: 0,
+                scale: 1.25,
+                x,
+                y,
+                rotate: particle.rotation + particle.spin,
+              }}
+              transition={{
+                duration: particle.duration,
+                delay: particle.delay,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            />
           )
         }
 
