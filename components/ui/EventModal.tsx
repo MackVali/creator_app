@@ -181,8 +181,6 @@ type EventMeta = {
   title: string;
   badge: string;
   eyebrow: string;
-  description: string;
-  highlight: string;
   accent: string;
   iconBg: string;
   icon: LucideIcon;
@@ -190,20 +188,16 @@ type EventMeta = {
 
 interface FormSectionProps {
   title: string;
-  description?: string;
   children: ReactNode;
 }
 
-function FormSection({ title, description, children }: FormSectionProps) {
+function FormSection({ title, children }: FormSectionProps) {
   return (
     <section className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.8)] sm:p-5">
       <div className="space-y-1">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
           {title}
         </p>
-        {description ? (
-          <p className="text-sm text-zinc-300">{description}</p>
-        ) : null}
       </div>
       <div className="mt-4 space-y-4">{children}</div>
     </section>
@@ -601,7 +595,6 @@ interface OptionGridProps {
   onChange: (value: string) => void;
   className?: string;
   columnsClassName?: string;
-  showDescriptions?: boolean;
   layout?: "grid" | "list";
 }
 
@@ -611,7 +604,6 @@ function OptionGrid({
   onChange,
   className,
   columnsClassName,
-  showDescriptions = true,
   layout = "grid",
 }: OptionGridProps) {
   const computedColumns =
@@ -622,8 +614,6 @@ function OptionGrid({
       : options.length > 4
       ? "grid-cols-2 sm:grid-cols-3"
       : "grid-cols-2 sm:grid-cols-2";
-
-  const selectedOption = options.find((option) => option.value === value);
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -668,25 +658,10 @@ function OptionGrid({
                 {iconNode}
                 {option.label}
               </span>
-              {showDescriptions && option.description ? (
-                <span
-                  className={cn(
-                    "mt-1 text-[11px] leading-snug text-zinc-400",
-                    layout !== "list" && "hidden sm:block"
-                  )}
-                >
-                  {option.description}
-                </span>
-              ) : null}
             </button>
           );
         })}
       </div>
-      {showDescriptions && layout !== "list" && selectedOption?.description ? (
-        <p className="text-[11px] leading-snug text-zinc-400 sm:hidden">
-          {selectedOption.description}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -758,11 +733,6 @@ function OptionDropdown({
                   <span className="text-sm font-semibold text-zinc-100">
                     {option.label}
                   </span>
-                  {option.description ? (
-                    <span className="text-xs text-zinc-400">
-                      {option.description}
-                    </span>
-                  ) : null}
                 </div>
               </div>
             </SelectItem>
@@ -1129,8 +1099,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         title: "Create New Goal",
         badge: "Goal",
         eyebrow: "North Star",
-        description: "Define the outcome you want to drive.",
-        highlight: "Clear goals make it easier to align projects and tasks.",
         accent: "from-sky-500/25 via-sky-500/10 to-transparent",
         iconBg: "border-sky-500/40 bg-sky-500/10 text-sky-100",
         icon: Target,
@@ -1139,8 +1107,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         title: "Create New Project",
         badge: "Project",
         eyebrow: "Initiative",
-        description: "Outline the initiative that advances a goal.",
-        highlight: "Link a goal so work ladders up to your strategy.",
         accent: "from-purple-500/30 via-purple-500/10 to-transparent",
         iconBg: "border-purple-500/40 bg-purple-500/10 text-purple-100",
         icon: FolderKanban,
@@ -1149,8 +1115,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         title: "Create New Task",
         badge: "Task",
         eyebrow: "Next Action",
-        description: "Break the project into a focused piece of work.",
-        highlight: "Make it small enough to schedule in a single sitting.",
         accent: "from-emerald-500/25 via-emerald-500/10 to-transparent",
         iconBg: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
         icon: CheckSquare,
@@ -1159,8 +1123,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         title: "Create New Habit",
         badge: "Habit",
         eyebrow: "Rhythm",
-        description: "Design the routine that compounds progress.",
-        highlight: "Consistency beats intensity—keep it small and trackable.",
         accent: "from-blue-500/25 via-blue-500/10 to-transparent",
         iconBg: "border-blue-500/40 bg-blue-500/10 text-blue-100",
         icon: Repeat,
@@ -1176,8 +1138,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         title: "Create New Chore",
         badge: "Chore",
         eyebrow: "Upkeep",
-        description: "Capture recurring maintenance so nothing slips.",
-        highlight: "Chores clear mental clutter—schedule them before they stack.",
         accent: "from-amber-500/30 via-amber-500/10 to-transparent",
         iconBg: "border-amber-500/40 bg-amber-500/10 text-amber-100",
         icon: Sparkles,
@@ -1185,40 +1145,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
 
     return base[eventType];
-  }, [eventType, formData.type]);
-
-  const overviewDescription = useMemo(() => {
-    switch (eventType) {
-      case "GOAL":
-        return "Give your goal a name. You can capture the motivation at the end.";
-      case "PROJECT":
-        return "Summarise what you’re building and the impact you expect.";
-      case "TASK":
-        return "Describe the specific piece of work you\'ll complete.";
-      case "HABIT":
-        return formData.type === "CHORE"
-          ? "Clarify the recurring upkeep so it’s easier to delegate or schedule."
-          : "Spell out the routine you want to reinforce.";
-      default:
-        return "";
-    }
-  }, [eventType, formData.type]);
-
-  const intensityDescription = useMemo(() => {
-    switch (eventType) {
-      case "GOAL":
-        return "Prioritise the goal and capture the energy it will demand.";
-      case "PROJECT":
-        return "Help future-you schedule this project realistically.";
-      case "TASK":
-        return "Set expectations so the task lands in the right time slot.";
-      case "HABIT":
-        return formData.type === "CHORE"
-          ? "How heavy is this chore when it shows up?"
-          : "Gauge the effort required to stay consistent.";
-      default:
-        return "";
-    }
   }, [eventType, formData.type]);
 
   const submitLabel = loading || isSaving
@@ -1266,9 +1192,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     <h2 className="text-lg font-semibold leading-snug text-white sm:text-xl">
                       {eventMeta.title}
                     </h2>
-                    <p className="text-[11px] text-zinc-200 sm:text-sm">
-                      {eventMeta.description}
-                    </p>
                   </div>
                 </div>
               </div>
@@ -1280,16 +1203,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="border-t border-white/10 px-4 py-1.5 text-[11px] text-zinc-400 sm:px-6 sm:py-2">
-              {eventMeta.highlight}
-            </div>
           </div>
 
         <form
           onSubmit={handleSubmit}
           className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
         >
-          <FormSection title="Overview" description={overviewDescription}>
+          <FormSection title="Overview">
             <div className="grid gap-4">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -1318,13 +1238,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
                     className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                   />
-                  <p className="text-xs text-zinc-500">Optional, but recommended.</p>
                 </div>
               ) : null}
             </div>
           </FormSection>
 
-          <FormSection title="Intensity" description={intensityDescription}>
+          <FormSection title="Intensity">
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -1374,16 +1293,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                             label={option.label}
                             className="px-4 py-3"
                           >
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-white">
-                                {option.label}
-                              </span>
-                              {option.description ? (
-                                <span className="text-xs text-zinc-400">
-                                  {option.description}
-                                </span>
-                              ) : null}
-                            </div>
+                            <span className="text-sm font-medium text-white">
+                              {option.label}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1431,16 +1343,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                             label={option.label}
                             className="px-4 py-3"
                           >
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-white">
-                                {option.label}
-                              </span>
-                              {option.description ? (
-                                <span className="text-xs text-zinc-400">
-                                  {option.description}
-                                </span>
-                              ) : null}
-                            </div>
+                            <span className="text-sm font-medium text-white">
+                              {option.label}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1470,10 +1375,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           </FormSection>
 
           {eventType === "GOAL" ? (
-            <FormSection
-              title="Relations"
-              description="Link this goal to a monument so the progress has a home."
-            >
+            <FormSection title="Relations">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Monument
@@ -1493,21 +1395,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     ))}
                   </SelectContent>
                 </Select>
-                {monuments.length === 0 ? (
-                  <p className="text-xs text-zinc-500">
-                    Create a monument first to connect this goal.
-                  </p>
-                ) : null}
               </div>
             </FormSection>
           ) : null}
 
           {eventType === "PROJECT" ? (
             <>
-              <FormSection
-                title="Context"
-                description="Anchor this project to a goal and spotlight the skills involved."
-              >
+              <FormSection title="Context">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -1528,11 +1422,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         ))}
                       </SelectContent>
                     </Select>
-                    {goals.length === 0 ? (
-                      <p className="text-xs text-zinc-500">
-                        Create a goal first to keep projects aligned.
-                      </p>
-                    ) : null}
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -1543,12 +1432,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       selectedIds={formData.skill_ids}
                       onToggle={toggleSkill}
                     />
-                    {skills.length === 0 ? (
-                      <p className="text-xs text-zinc-500">
-                        Skills will appear here once you’ve added them to your
-                        workspace.
-                      </p>
-                    ) : null}
                   </div>
                 </div>
               </FormSection>
@@ -1557,10 +1440,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
           {eventType === "TASK" ? (
             <>
-              <FormSection
-                title="Context"
-                description="Filter by goal and pick the project this task pushes forward."
-              >
+              <FormSection title="Context">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -1579,9 +1459,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-zinc-500">
-                      Selecting a goal narrows the project list.
-                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -1602,13 +1479,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         ))}
                       </SelectContent>
                     </Select>
-                    {projects.length === 0 ? (
-                      <p className="text-xs text-zinc-500">
-                        {formData.goal_id
-                          ? "No projects under this goal yet."
-                          : "Choose a goal to see its projects."}
-                      </p>
-                    ) : null}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1620,21 +1490,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     selectedId={formData.skill_id}
                     onSelect={handleTaskSkillSelect}
                   />
-                  {skills.length === 0 ? (
-                    <p className="text-xs text-zinc-500">
-                      Add skills to your workspace to connect tasks to them.
-                    </p>
-                  ) : null}
                 </div>
               </FormSection>
             </>
           ) : null}
 
           {eventType === "HABIT" ? (
-            <FormSection
-              title="Rhythm"
-              description="Decide whether this is a habit or chore and how often it repeats."
-            >
+            <FormSection title="Rhythm">
               <div className="space-y-4">
                 <div className="space-y-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
@@ -1665,10 +1527,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           ) : null}
 
           {eventType === "GOAL" ? (
-            <FormSection
-              title="Why?"
-              description="Capture the motivation or vision fueling this goal."
-            >
+            <FormSection title="Why?">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Why this matters (optional)
@@ -1681,9 +1540,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   placeholder="Capture the motivation or vision for this goal"
                   className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                 />
-                <p className="text-xs text-zinc-500">
-                  Optional, but it helps keep the goal anchored to a clear purpose.
-                </p>
               </div>
             </FormSection>
           ) : null}
