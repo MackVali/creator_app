@@ -1669,6 +1669,7 @@ export default function SchedulePage() {
                                   )}
                                 </div>
                                 <div className="flex flex-shrink-0 items-center gap-2">
+                                  {renderInstanceActions(instance.id)}
                                   <FlameEmber
                                     level={
                                       (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
@@ -1677,7 +1678,6 @@ export default function SchedulePage() {
                                     size="sm"
                                     className="flex-shrink-0"
                                   />
-                                  {renderInstanceActions(instance.id)}
                                 </div>
                               </div>
                             </motion.div>
@@ -1849,16 +1849,16 @@ export default function SchedulePage() {
                                         )}
                                       </div>
                                       <div className="flex flex-shrink-0 items-center gap-2">
-                                        <FlameEmber
-                                          level={energyLevel}
-                                          size="sm"
-                                          className="flex-shrink-0"
-                                        />
                                         {kind === 'scheduled' && instanceId
                                           ? renderInstanceActions(instanceId, {
                                               appearance: 'light',
                                             })
                                           : null}
+                                        <FlameEmber
+                                          level={energyLevel}
+                                          size="sm"
+                                          className="flex-shrink-0"
+                                        />
                                       </div>
                                     </div>
                                     {progressValue > 0 && (
@@ -1932,12 +1932,12 @@ export default function SchedulePage() {
                             )}
                           </div>
                           <div className="flex flex-shrink-0 items-center gap-2">
+                            {renderInstanceActions(instance.id, { appearance: 'light' })}
                             <FlameEmber
                               level={(task.energy as FlameLevel) || 'NO'}
                               size="sm"
                               className="flex-shrink-0"
                             />
-                            {renderInstanceActions(instance.id, { appearance: 'light' })}
                           </div>
                         </div>
                         <div
