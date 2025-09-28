@@ -44,6 +44,7 @@ import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
+import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
   DATE_WITH_TIME_FORMATTER,
   TIME_FORMATTER,
@@ -102,15 +103,6 @@ function WindowLabel({
       {label}
     </span>
   )
-}
-
-function utcDayRange(d: Date) {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const day = d.getUTCDate()
-  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
-  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
-  return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
 function formatDayViewLabel(date: Date, timeZone: string) {
@@ -885,19 +877,47 @@ export default function SchedulePage() {
   const windowReports = useMemo<WindowReportEntry[]>(() => {
     if (windows.length === 0) return []
     const assignments = new Map<string, number>()
-    for (const { instance } of projectInstances) {
-      const windowId = instance.window_id
-      if (!windowId) continue
-      assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
-    }
+    const projectSpans = projectInstances
+      .map(({ instance, start, end, assignedWindow }) => {
+        if (!start || !end) return null
+        const startMs = start.getTime()
+        const endMs = end.getTime()
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
+        const windowId = instance.window_id || assignedWindow?.id || null
+        if (windowId) {
+          assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
+        }
+        return { windowId, start, end }
+      })
+      .filter((value): value is { windowId: string | null; start: Date; end: Date } => value !== null)
+
+    const scheduledSpans = [
+      ...projectSpans,
+      ...schedulerTimelinePlacements
+        .map(({ start, end }) => {
+          if (!start || !end) return null
+          const startMs = start.getTime()
+          const endMs = end.getTime()
+          if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
+          return { windowId: null, start, end }
+        })
+        .filter((value): value is { windowId: string | null; start: Date; end: Date } => value !== null),
+    ]
 
     const diagnosticsAvailable = Boolean(schedulerDebug)
     const runStartedAt = schedulerDebug ? new Date(schedulerDebug.runAt) : null
     const reports: WindowReportEntry[] = []
 
     for (const win of windows) {
+      const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(win, currentDate)
       const assigned = assignments.get(win.id) ?? 0
       if (assigned > 0) continue
+
+      const windowHasScheduledProject = scheduledSpans.some(span => {
+        if (span.windowId === win.id) return true
+        return span.start < windowEnd && span.end > windowStart
+      })
+      if (windowHasScheduledProject) continue
 
       const { top, height } = windowRect(win, startHour, pxPerMin)
       if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) continue
@@ -905,7 +925,6 @@ export default function SchedulePage() {
       const durationMinutes = windowDurationForDay(win, startHour)
       const windowLabel = win.label?.trim() || 'Untitled window'
       const energyLabel = normalizeEnergyLabel(win.energy)
-      const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(win, currentDate)
       const windowEnergyIndex = energyIndexFromLabel(energyLabel)
       const futurePlacements = schedulerTimelinePlacements
         .filter(entry => entry.start.getTime() >= windowEnd.getTime())
@@ -1195,7 +1214,11 @@ export default function SchedulePage() {
       if (!active) return
       setInstancesStatus('loading')
       try {
-        const { startUTC, endUTC } = utcDayRange(currentDate)
+        const timeZone = localTimeZone ?? 'UTC'
+        const dayStart = startOfDayInTimeZone(currentDate, timeZone)
+        const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
+        const startUTC = dayStart.toISOString()
+        const endUTC = nextDayStart.toISOString()
         const { data, error } = await fetchInstancesForRange(
           userId,
           startUTC,
@@ -1227,7 +1250,7 @@ export default function SchedulePage() {
       active = false
       clearInterval(id)
     }
-  }, [userId, currentDate])
+  }, [userId, currentDate, localTimeZone])
 
   const runScheduler = useCallback(async () => {
     if (!userId) {

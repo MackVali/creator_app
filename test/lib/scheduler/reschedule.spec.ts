@@ -3,6 +3,7 @@ import { scheduleBacklog } from "../../../src/lib/scheduler/reschedule";
 import * as instanceRepo from "../../../src/lib/scheduler/instanceRepo";
 import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
+import { getDatePartsInTimeZone } from "../../../src/lib/scheduler/timezone";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 import type { ProjectLite } from "../../../src/lib/scheduler/weight";
 
@@ -249,6 +250,39 @@ describe("scheduleBacklog", () => {
     expect(callOrder.length).toBeGreaterThanOrEqual(2);
     expect(callOrder[0]).toBe("proj-high");
     expect(callOrder[1]).toBe("proj-low");
+  });
+
+  it("considers 'NO' energy windows for scheduling", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-no": {
+        id: "proj-no",
+        name: "No energy project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "NO",
+        duration_min: 30,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-no",
+        label: "Quiet time",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+      },
+    ]);
+
+    attemptedProjectIds = [];
+
+    const mockClient = {} as ScheduleBacklogClient;
+    await scheduleBacklog(userId, baseDate, mockClient);
+
+    expect(attemptedProjectIds).toContain("proj-no");
   });
 
   it("prioritizes upcoming windows closest to now before later options", async () => {
@@ -1547,6 +1581,346 @@ describe("scheduleBacklog", () => {
     const placedStart = new Date(placements[0]?.startUTC ?? 0).getTime();
     expect(placedStart).toBeGreaterThanOrEqual(baseDate.getTime());
     expect(placements[0]?.notBefore?.toISOString()).toBe(baseDate.toISOString());
+  });
+
+  it("keeps new placements on the requested local day for positive UTC offsets", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-local-day": {
+        id: "proj-local-day",
+        name: "Local Day",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-morning",
+        label: "Morning",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [0],
+      },
+    ]);
+
+    const createSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockImplementation(async input => {
+        const data = createInstanceRecord({
+          id: "inst-local-day",
+          source_id: input.sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        instances.push(data);
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+      });
+
+    vi.spyOn(instanceRepo, "rescheduleInstance").mockImplementation(async () => {
+      throw new Error("rescheduleInstance should not be called");
+    });
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => await realPlaceItemInWindows(params),
+    );
+
+    const anchor = new Date("2024-01-27T09:00:00+13:00");
+    const { client: supabase } = createSupabaseMock();
+
+    const result = await scheduleBacklog(userId, anchor, supabase, {
+      timeZone: "Pacific/Auckland",
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.placed).toHaveLength(1);
+    expect(createSpy).toHaveBeenCalledOnce();
+
+    const placed = result.placed[0];
+    expect(placed).toBeDefined();
+    if (!placed) throw new Error("expected placement");
+    const localParts = getDatePartsInTimeZone(
+      new Date(placed.start_utc),
+      "Pacific/Auckland",
+    );
+    expect(localParts).toEqual({ year: 2024, month: 1, day: 27 });
+  });
+
+  it("keeps new placements on the requested local day for negative UTC offsets", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-local-day": {
+        id: "proj-local-day",
+        name: "Local Day",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-morning",
+        label: "Morning",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [0],
+      },
+    ]);
+
+    const createSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockImplementation(async input => {
+        const data = createInstanceRecord({
+          id: "inst-local-day",
+          source_id: input.sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        instances.push(data);
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+      });
+
+    vi.spyOn(instanceRepo, "rescheduleInstance").mockImplementation(async () => {
+      throw new Error("rescheduleInstance should not be called");
+    });
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => await realPlaceItemInWindows(params),
+    );
+
+    const anchor = new Date("2024-01-27T09:00:00-08:00");
+    const { client: supabase } = createSupabaseMock();
+
+    const result = await scheduleBacklog(userId, anchor, supabase, {
+      timeZone: "America/Los_Angeles",
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.placed).toHaveLength(1);
+    expect(createSpy).toHaveBeenCalledOnce();
+
+    const placed = result.placed[0];
+    expect(placed).toBeDefined();
+    if (!placed) throw new Error("expected placement");
+    const localParts = getDatePartsInTimeZone(
+      new Date(placed.start_utc),
+      "America/Los_Angeles",
+    );
+    expect(localParts).toEqual({ year: 2024, month: 1, day: 27 });
+  });
+
+  it("keeps scheduled day offsets aligned across DST transitions", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-dst": {
+        id: "proj-dst",
+        name: "DST Boundary",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    const requestedDates: string[] = [];
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+      const day = date.toISOString().slice(0, 10);
+      requestedDates.push(day);
+      if (day === "2024-03-10") {
+        return [
+          {
+            id: "win-dst",
+            label: "DST Morning",
+            energy: "NO",
+            start_local: "09:00",
+            end_local: "11:00",
+            days: [0],
+          },
+        ];
+      }
+      return [];
+    });
+
+    const createSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockImplementation(async input => {
+        const data = createInstanceRecord({
+          id: "inst-dst",
+          source_id: input.sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        instances.push(data);
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+      });
+
+    vi.spyOn(instanceRepo, "rescheduleInstance").mockImplementation(async () => {
+      throw new Error("rescheduleInstance should not be called");
+    });
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => await realPlaceItemInWindows(params),
+    );
+
+    const anchor = new Date("2024-03-09T15:00:00-08:00");
+    const { client: supabase } = createSupabaseMock();
+
+    const result = await scheduleBacklog(userId, anchor, supabase, {
+      timeZone: "America/Los_Angeles",
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.placed).toHaveLength(1);
+    expect(createSpy).toHaveBeenCalledOnce();
+
+    const timelineEntry = result.timeline[0];
+    expect(timelineEntry?.scheduledDayOffset).toBe(1);
+
+    const placed = result.placed[0];
+    expect(placed).toBeDefined();
+    if (!placed) throw new Error("expected placement");
+    const localParts = getDatePartsInTimeZone(
+      new Date(placed.start_utc),
+      "America/Los_Angeles",
+    );
+    expect(localParts).toEqual({ year: 2024, month: 3, day: 10 });
+    expect(requestedDates).toContain("2024-03-10");
+  });
+
+  it("does not shift projects scheduled in late-night windows to the next day", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-late-night": {
+        id: "proj-late-night",
+        name: "Late Night",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    } satisfies Record<string, ProjectLite>);
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+      const day = date.toISOString().slice(0, 10);
+      if (day === "2024-01-27") {
+        return [
+          {
+            id: "win-late", 
+            label: "Late", 
+            energy: "NO",
+            start_local: "23:00",
+            end_local: "01:00",
+            days: [0],
+          },
+        ];
+      }
+      return [];
+    });
+
+    const createSpy = vi
+      .spyOn(instanceRepo, "createInstance")
+      .mockImplementation(async input => {
+        const data = createInstanceRecord({
+          id: "inst-late-night",
+          source_id: input.sourceId,
+          start_utc: input.startUTC,
+          end_utc: input.endUTC,
+          duration_min: input.durationMin,
+          window_id: input.windowId ?? null,
+          weight_snapshot: input.weightSnapshot,
+          energy_resolved: input.energyResolved,
+          status: "scheduled",
+        });
+        instances.push(data);
+        return {
+          data,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof instanceRepo.createInstance>>;
+      });
+
+    vi.spyOn(instanceRepo, "rescheduleInstance").mockImplementation(async () => {
+      throw new Error("rescheduleInstance should not be called");
+    });
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => await realPlaceItemInWindows(params),
+    );
+
+    const anchor = new Date("2024-01-27T05:00:00-08:00");
+    const { client: supabase } = createSupabaseMock();
+
+    const result = await scheduleBacklog(userId, anchor, supabase, {
+      timeZone: "America/Los_Angeles",
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.placed).toHaveLength(1);
+    expect(createSpy).toHaveBeenCalledOnce();
+
+    const placed = result.placed[0];
+    expect(placed).toBeDefined();
+    if (!placed) throw new Error("expected placement");
+    const localParts = getDatePartsInTimeZone(
+      new Date(placed.start_utc),
+      "America/Los_Angeles",
+    );
+    expect(localParts).toEqual({ year: 2024, month: 1, day: 27 });
+    const timelineEntry = result.timeline[0];
+    expect(timelineEntry?.scheduledDayOffset).toBe(0);
   });
 
   it("treats queued projects as free when evaluating earlier windows", async () => {

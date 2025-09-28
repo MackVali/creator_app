@@ -164,13 +164,6 @@ export function describeEmptyWindowReport({
 }): { summary: string; details: string[] } {
   const details: string[] = []
 
-  if (energyLabel === 'NO') {
-    return {
-      summary: `${windowLabel} is marked with NO energy, so the scheduler intentionally leaves it open.`,
-      details,
-    }
-  }
-
   if (durationMinutes <= 0) {
     return {
       summary: `${windowLabel} does not offer any usable minutes on this day, so nothing can be scheduled here.`,
