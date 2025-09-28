@@ -126,24 +126,6 @@ function formatDayViewLabel(date: Date, timeZone: string) {
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
 const MAX_FALLBACK_TASKS = 12
 
-const SCHEDULE_CARD_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
-
-function formatScheduleCardDate(date: Date) {
-  try {
-    return SCHEDULE_CARD_DATE_FORMATTER.format(date)
-  } catch (error) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('Unable to format schedule card date', error)
-    }
-    return date.toDateString()
-  }
-}
-
 function formatTimeRangeLabel(start: Date, end: Date) {
   return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
 }
@@ -1569,36 +1551,13 @@ export default function SchedulePage() {
                     const durationMinutes = Math.round(
                       (end.getTime() - start.getTime()) / 60000
                     )
-                    const timeRangeLabel = formatTimeRangeLabel(start, end)
-                    const trimmedWindowLabel =
-                      typeof assignedWindow?.label === 'string'
-                        ? assignedWindow.label.trim()
-                        : ''
-                    const hasWindow = Boolean(instance.window_id)
-                    let windowDescriptor = `Window: ${
-                      trimmedWindowLabel.length > 0
-                        ? trimmedWindowLabel
-                        : assignedWindow
-                          ? 'Unnamed'
-                          : hasWindow
-                            ? 'Unknown'
-                            : 'Unassigned'
-                    }`
-                    if (assignedWindow?.fromPrevDay) {
-                      windowDescriptor = `${windowDescriptor} (previous day)`
-                    }
                     const tasksLabel =
                       project.taskCount > 0
                         ? `${project.taskCount} ${
                             project.taskCount === 1 ? 'task' : 'tasks'
                           }`
                         : null
-                    const detailParts = [
-                      formatScheduleCardDate(start),
-                      windowDescriptor,
-                      timeRangeLabel,
-                      `${durationMinutes}m`,
-                    ]
+                    const detailParts = [`${durationMinutes}m`]
                     if (tasksLabel) detailParts.push(tasksLabel)
                     let detailText = detailParts.join(' · ')
                     const positionStyle: CSSProperties = {
