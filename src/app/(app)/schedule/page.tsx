@@ -1114,16 +1114,10 @@ export default function SchedulePage() {
       appearance === 'light'
         ? 'focus-visible:outline-black/40'
         : 'focus-visible:outline-white/60'
-    const borderClass = isCompleted
-      ? appearance === 'light'
-        ? 'border-zinc-900'
-        : 'border-white'
-      : appearance === 'light'
-        ? 'border-zinc-300'
-        : 'border-white/50'
-    const fillClass =
-      appearance === 'light' ? 'bg-zinc-900' : 'bg-white'
-    const strokeColor = appearance === 'light' ? '#ffffff' : '#09090b'
+    const borderClass = 'border-black'
+    const xColor = '#ffffff'
+    const baseButtonClass =
+      'relative flex h-6 w-6 items-center justify-center border rounded-none transition-[color,background,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-60'
 
     return (
       <div
@@ -1135,13 +1129,14 @@ export default function SchedulePage() {
         }}
         title="Toggle project completion"
       >
-        <button
+        <motion.button
           type="button"
           role="checkbox"
           aria-checked={isCompleted}
           aria-label="Toggle project completion"
           disabled={pending || !canToggle}
-          className={`relative flex h-6 w-6 items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${borderClass} ${baseFocusClass}`}
+          className={`${baseButtonClass} ${borderClass} ${baseFocusClass}`}
+          initial={false}
           onClick={event => {
             event.stopPropagation()
             if (pending || !canToggle) return
@@ -1150,11 +1145,12 @@ export default function SchedulePage() {
           }}
         >
           <motion.span
-            className={`absolute inset-0 ${fillClass}`}
+            className="pointer-events-none absolute inset-0"
             initial={false}
-            animate={{ scale: isCompleted ? 1 : 0 }}
-            transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
-            style={{ transformOrigin: 'center' }}
+            animate={{
+              backgroundColor: isCompleted ? '#000000' : 'transparent',
+            }}
+            transition={{ duration: 0.12, ease: [0.4, 0, 0.2, 1] }}
           />
           <motion.svg
             className="pointer-events-none relative h-3.5 w-3.5"
@@ -1163,15 +1159,31 @@ export default function SchedulePage() {
             initial={false}
           >
             <motion.path
-              d="M4 4 L12 12 M12 4 L4 12"
-              stroke={strokeColor}
-              strokeWidth={1.5}
+              d="M3.5 3.5 L12.5 12.5"
+              stroke={xColor}
+              strokeWidth={1.8}
               strokeLinecap="round"
-              animate={{ pathLength: isCompleted ? 1 : 0 }}
-              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+              strokeLinejoin="round"
+              animate={{
+                pathLength: isCompleted ? 1 : 0,
+                opacity: isCompleted ? 1 : 0,
+              }}
+              transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
+            />
+            <motion.path
+              d="M12.5 3.5 L3.5 12.5"
+              stroke={xColor}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              animate={{
+                pathLength: isCompleted ? 1 : 0,
+                opacity: isCompleted ? 1 : 0,
+              }}
+              transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
             />
           </motion.svg>
-        </button>
+        </motion.button>
       </div>
     )
   }
