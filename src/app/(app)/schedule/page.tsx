@@ -1120,7 +1120,7 @@ export default function SchedulePage() {
         <input
           type="checkbox"
           className={checkboxClass}
-          checked={isCompleted}
+          checked={pending || isCompleted}
           disabled={pending || isCompleted}
           aria-label="Mark project complete"
           onChange={(event: ChangeEvent<HTMLInputElement>) => {
