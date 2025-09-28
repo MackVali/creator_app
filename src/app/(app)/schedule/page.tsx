@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ChangeEvent,
   type ReactNode,
 } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
@@ -1037,12 +1038,16 @@ export default function SchedulePage() {
     return items
   }, [instances, taskMap, projectInstanceIds])
 
-  const handleInstanceStatusChange = useCallback(
-    async (
-      instanceId: string,
-      status: 'completed' | 'canceled',
-      options?: { projectId?: string }
-    ) => {
+  const instanceStatusById = useMemo(() => {
+    const map: Record<string, ScheduleInstance['status'] | null> = {}
+    for (const inst of instances) {
+      map[inst.id] = inst.status ?? null
+    }
+    return map
+  }, [instances])
+
+  const handleMarkCompleted = useCallback(
+    async (instanceId: string) => {
       if (!userId) {
         console.warn('No user session available for status update')
         return
@@ -1055,31 +1060,23 @@ export default function SchedulePage() {
       })
 
       try {
-        const { error } = await updateInstanceStatus(instanceId, status)
+        const { error } = await updateInstanceStatus(instanceId, 'completed')
         if (error) {
           console.error(error)
           return
         }
 
-        setInstances(prev => {
-          const updated = prev.map(inst =>
+        setInstances(prev =>
+          prev.map(inst =>
             inst.id === instanceId
               ? {
                   ...inst,
-                  status,
-                  completed_at:
-                    status === 'completed' ? new Date().toISOString() : null,
+                  status: 'completed',
+                  completed_at: new Date().toISOString(),
                 }
               : inst
           )
-          return status === 'canceled'
-            ? updated.filter(inst => inst.id !== instanceId)
-            : updated
-        })
-
-        if (status === 'canceled' && options?.projectId) {
-          setProjectExpansion(options.projectId, false)
-        }
+        )
       } catch (error) {
         console.error(error)
       } finally {
@@ -1090,66 +1087,57 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances, setProjectExpansion]
-  )
-
-  const handleMarkCompleted = useCallback(
-    (instanceId: string, options?: { projectId?: string }) =>
-      handleInstanceStatusChange(instanceId, 'completed', options),
-    [handleInstanceStatusChange]
-  )
-
-  const handleCancelInstance = useCallback(
-    (instanceId: string, options?: { projectId?: string }) =>
-      handleInstanceStatusChange(instanceId, 'canceled', options),
-    [handleInstanceStatusChange]
+    [userId, setInstances]
   )
 
   const renderInstanceActions = (
     instanceId: string,
-    options?: { projectId?: string; appearance?: 'light' | 'dark' }
+    options?: { appearance?: 'light' | 'dark' }
   ) => {
     const pending = pendingInstanceIds.has(instanceId)
     const appearance = options?.appearance ?? 'dark'
-    const projectOptions = options?.projectId
-      ? { projectId: options.projectId }
-      : undefined
+    const status = instanceStatusById[instanceId] ?? null
+    const isCompleted = status === 'completed'
     const containerClass =
       appearance === 'light'
-        ? 'absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-zinc-800/80'
-        : 'absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-white/70'
-    const buttonClass =
+        ? 'absolute top-1 right-8 flex items-center text-zinc-800/80'
+        : 'absolute top-1 right-8 flex items-center text-white/70'
+    const checkboxClass =
       appearance === 'light'
-        ? 'rounded bg-black/10 px-2 py-0.5 tracking-wide hover:bg-black/20 disabled:cursor-not-allowed disabled:opacity-40'
-        : 'rounded bg-white/10 px-2 py-0.5 tracking-wide hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40'
+        ? 'h-6 w-6 appearance-none rounded-none border border-zinc-300 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60 checked:border-zinc-900 checked:bg-zinc-900'
+        : 'h-6 w-6 appearance-none rounded-none border border-white/50 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed disabled:opacity-60 checked:border-white checked:bg-white'
 
     return (
-      <div className={containerClass}>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={pending}
-          onClick={event => {
+      <label
+        className={containerClass}
+        onClick={event => {
+          event.stopPropagation()
+        }}
+        title="Mark project complete"
+      >
+        <input
+          type="checkbox"
+          className={checkboxClass}
+          checked={isCompleted}
+          disabled={pending || isCompleted}
+          aria-label="Mark project complete"
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
             event.stopPropagation()
-            if (pending) return
-            void handleMarkCompleted(instanceId, projectOptions)
+            if (pending || isCompleted) {
+              event.preventDefault()
+              return
+            }
+            const confirmed = window.confirm(
+              'Mark this project as completed?'
+            )
+            if (!confirmed) {
+              event.preventDefault()
+              return
+            }
+            void handleMarkCompleted(instanceId)
           }}
-        >
-          done
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={pending}
-          onClick={event => {
-            event.stopPropagation()
-            if (pending) return
-            void handleCancelInstance(instanceId, projectOptions)
-          }}
-        >
-          cancel
-        </button>
-      </div>
+        />
+      </label>
     )
   }
 
@@ -1661,7 +1649,7 @@ export default function SchedulePage() {
                                     }
                               }
                             >
-                              {renderInstanceActions(instance.id, { projectId })}
+                              {renderInstanceActions(instance.id)}
                               <div className="flex flex-col">
                                 <span className="truncate text-sm font-medium">
                                   {project.name}
@@ -1837,7 +1825,6 @@ export default function SchedulePage() {
                                   >
                                     {kind === 'scheduled' && instanceId
                                       ? renderInstanceActions(instanceId, {
-                                          projectId,
                                           appearance: 'light',
                                         })
                                       : null}
