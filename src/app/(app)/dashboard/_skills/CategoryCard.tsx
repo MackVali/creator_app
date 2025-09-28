@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor, updateCatIcon, updateCatOrder } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -59,6 +59,12 @@ interface Props {
   skills: Skill[];
   active: boolean;
   onSkillDrag: (dragging: boolean) => void;
+  colorOverride?: string | null;
+  iconOverride?: string | null;
+  onColorChange?: (color: string) => void;
+  onIconChange?: (icon: string | null) => void;
+  menuOpen?: boolean;
+  onMenuOpenChange?: (open: boolean) => void;
 }
 
 export default function CategoryCard({
@@ -66,25 +72,65 @@ export default function CategoryCard({
   skills,
   active,
   onSkillDrag,
+  colorOverride,
+  iconOverride,
+  onColorChange,
+  onIconChange,
+  menuOpen: menuOpenProp,
+  onMenuOpenChange,
 }: Props) {
-  const [color, setColor] = useState(category.color_hex || "#000000");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
+  const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
+  const [icon, setIcon] = useState<string>(iconOverride || category.icon_emoji || "");
+  const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon_emoji || "");
   const dragging = useRef(false);
   const router = useRouter();
 
+  const menuOpen = menuOpenProp ?? menuOpenState;
+  const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    setMenuOpenState((prevState) => {
+      const previous = menuOpenProp ?? prevState;
+      const value = typeof next === "function" ? next(previous) : next;
+      onMenuOpenChange?.(value);
+      return value;
+    });
+  };
+
   useEffect(() => {
-    setColor(category.color_hex || "#000000");
-  }, [category.color_hex]);
+    setColor(colorOverride || category.color_hex || "#000000");
+  }, [category.color_hex, colorOverride]);
   useEffect(() => {
     setOrderValue(category.order ?? 0);
   }, [category.order]);
   useEffect(() => {
     setLocalSkills([...skills]);
   }, [skills]);
+  useEffect(() => {
+    const nextIcon = iconOverride ?? category.icon_emoji ?? "";
+    setIcon(nextIcon);
+    setIconDraft(nextIcon);
+  }, [category.icon_emoji, iconOverride]);
+
+  const extractFirstGlyph = (value: string): string => {
+    if (!value) return "";
+    if (typeof Intl !== "undefined") {
+      const SegmenterCtor = (Intl as typeof Intl & {
+        Segmenter?: typeof Intl.Segmenter;
+      }).Segmenter;
+      if (typeof SegmenterCtor === "function") {
+        const segmenter = new SegmenterCtor(undefined, { granularity: "grapheme" });
+        const iterator = segmenter.segment(value)[Symbol.iterator]();
+        const first = iterator.next();
+        return first.done ? "" : first.value.segment;
+      }
+    }
+    return Array.from(value)[0] ?? "";
+  };
 
   const palette = useMemo(() => {
     const base = color || "#6366f1";
@@ -130,6 +176,7 @@ export default function CategoryCard({
     if (!menuOpen) {
       setPickerOpen(false);
       setOrderOpen(false);
+      setIconPickerOpen(false);
     }
   }, [menuOpen]);
 
@@ -137,10 +184,27 @@ export default function CategoryCard({
     setColor(newColor);
     try {
       await updateCatColor(category.id, newColor);
+      onColorChange?.(newColor);
     } catch (e) {
       console.error("Failed to update category color", e);
     } finally {
       setPickerOpen(false);
+      setMenuOpen(false);
+    }
+  };
+
+  const handleIconSave = async (nextIcon: string) => {
+    const trimmed = nextIcon.trim();
+    const normalized = trimmed ? extractFirstGlyph(trimmed) : "";
+    setIcon(normalized);
+    setIconDraft(normalized);
+    try {
+      await updateCatIcon(category.id, normalized || null);
+      onIconChange?.(normalized || null);
+    } catch (e) {
+      console.error("Failed to update category icon", e);
+    } finally {
+      setIconPickerOpen(false);
       setMenuOpen(false);
     }
   };
@@ -190,24 +254,110 @@ export default function CategoryCard({
           />
         </div>
         <div className="relative z-10 flex h-full flex-col">
-          <header className="mb-3 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
-              style={{
-                color: palette.on,
-                backgroundColor: palette.badgeBg,
-                border: `1px solid ${palette.badgeBorder}`,
-              }}
-              onClick={() => setMenuOpen((o) => !o)}
-            >
-              <span className="pr-3">{category.name}</span>
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
-                style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
-              />
-            </button>
+          <header className="mb-3 flex items-start justify-between gap-3">
+            <div className="relative inline-flex flex-col">
+              <button
+                type="button"
+                className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
+                style={{
+                  color: palette.on,
+                  backgroundColor: palette.badgeBg,
+                  border: `1px solid ${palette.badgeBorder}`,
+                }}
+                onClick={() => setMenuOpen((o) => !o)}
+              >
+                {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
+                <span className="pr-3">{category.name}</span>
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
+                  style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
+                />
+              </button>
+              {menuOpen && (
+                <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl border border-black/10 bg-white/95 p-3 text-sm text-slate-900 shadow-xl backdrop-blur">
+                  {pickerOpen ? (
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(e) => handleColorChange(e.target.value)}
+                      className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
+                    />
+                  ) : iconPickerOpen ? (
+                    <div className="space-y-3">
+                      <label className="block text-xs font-semibold uppercase text-slate-500">Choose an emoji</label>
+                      <input
+                        type="text"
+                        value={iconDraft}
+                        onChange={(e) => setIconDraft(e.target.value)}
+                        maxLength={8}
+                        className="w-full rounded border border-black/20 p-2 text-base"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        {["🐱", "🐈", "😺", "🐾", "✨", "🌟", "🧠", "🛠️"].map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => handleIconSave(emoji)}
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white text-xl shadow-sm transition hover:border-black/20"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex justify-end gap-2 text-xs font-medium uppercase">
+                        <button
+                          type="button"
+                          className="text-slate-500"
+                          onClick={() => {
+                            setIconPickerOpen(false);
+                            setIconDraft(icon);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button type="button" className="text-blue-600" onClick={() => handleIconSave(iconDraft)}>
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : orderOpen ? (
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="number"
+                        value={orderValue}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          setOrderValue(Number.isNaN(next) ? 0 : next);
+                        }}
+                        className="w-full rounded border border-black/20 p-2"
+                      />
+                      <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
+                        Save order
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
+                        Change color
+                      </button>
+                      <button
+                        className="block text-left text-sm font-medium underline"
+                        onClick={() => {
+                          setIconDraft(icon);
+                          setIconPickerOpen(true);
+                        }}
+                      >
+                        Change icon
+                      </button>
+                      <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
+                        Change order
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <span
               className="rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide"
               style={{
@@ -218,42 +368,6 @@ export default function CategoryCard({
             >
               {skills.length} skills
             </span>
-            {menuOpen && (
-              <div className="absolute right-0 top-full z-20 mt-2 w-48 rounded-2xl border border-black/10 bg-white/95 p-3 text-sm text-slate-900 shadow-xl backdrop-blur">
-                {pickerOpen ? (
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => handleColorChange(e.target.value)}
-                    className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
-                  />
-                ) : orderOpen ? (
-                  <div className="flex flex-col gap-2">
-                    <input
-                      type="number"
-                      value={orderValue}
-                      onChange={(e) => {
-                        const next = Number(e.target.value);
-                        setOrderValue(Number.isNaN(next) ? 0 : next);
-                      }}
-                      className="w-full rounded border border-black/20 p-2"
-                    />
-                    <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
-                      Save order
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
-                      Change color
-                    </button>
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
-                      Change order
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </header>
           <Reorder.Group
             axis="y"

@@ -48,6 +48,24 @@ export default function SkillsCarousel() {
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [skillDragging, setSkillDragging] = useState(false);
+  const [catOverrides, setCatOverrides] = useState<
+    Record<string, { color?: string | null; icon?: string | null }>
+  >({});
+  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCatOverrides((prev) => {
+      const next: Record<string, { color?: string | null; icon?: string | null }> = {};
+      for (const category of categories) {
+        const existing = prev[category.id];
+        next[category.id] = {
+          color: existing?.color ?? category.color_hex ?? FALLBACK_COLOR,
+          icon: existing?.icon ?? category.icon_emoji ?? null,
+        };
+      }
+      return next;
+    });
+  }, [categories]);
 
   const scrollToIndex = useCallback(
     (index: number, options: { instant?: boolean; skipUrl?: boolean } = {}) => {
@@ -141,6 +159,14 @@ export default function SkillsCarousel() {
   }, [categories.length, scrollToIndex]);
 
   useEffect(() => {
+    setOpenMenuFor((current) => {
+      if (!current) return null;
+      const activeCategory = categories[activeIndex];
+      return activeCategory?.id === current ? current : null;
+    });
+  }, [activeIndex, categories]);
+
+  useEffect(() => {
     if (categories.length === 0) return;
 
     const initialId = search.get("cat") || undefined;
@@ -201,7 +227,14 @@ export default function SkillsCarousel() {
     return <div className="py-8 text-center text-zinc-400">No skills yet</div>;
   }
 
-  const activeColor = categories[activeIndex]?.color_hex || FALLBACK_COLOR;
+  const getCategoryColor = (category: (typeof categories)[number]) =>
+    catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
+  const getCategoryIcon = (category: (typeof categories)[number]) =>
+    catOverrides[category.id]?.icon ?? category.icon_emoji ?? null;
+
+  const activeColor = categories[activeIndex]
+    ? getCategoryColor(categories[activeIndex]) || FALLBACK_COLOR
+    : FALLBACK_COLOR;
   const canGoPrev = activeIndex > 0;
   const canGoNext = activeIndex < categories.length - 1;
 
@@ -285,6 +318,37 @@ export default function SkillsCarousel() {
                   skills={skillsByCategory[category.id] || []}
                   active={isActive}
                   onSkillDrag={setSkillDragging}
+                  colorOverride={getCategoryColor(category)}
+                  iconOverride={getCategoryIcon(category)}
+                  menuOpen={openMenuFor === category.id}
+                  onMenuOpenChange={(open) => {
+                    setOpenMenuFor((current) => {
+                      if (open) {
+                        return category.id;
+                      }
+                      return current === category.id ? null : current;
+                    });
+                  }}
+                  onColorChange={(color) =>
+                    setCatOverrides((prev) => ({
+                      ...prev,
+                      [category.id]: {
+                        ...(prev[category.id] || {}),
+                        color,
+                        icon: prev[category.id]?.icon ?? category.icon_emoji ?? null,
+                      },
+                    }))
+                  }
+                  onIconChange={(icon) =>
+                    setCatOverrides((prev) => ({
+                      ...prev,
+                      [category.id]: {
+                        ...(prev[category.id] || {}),
+                        icon,
+                        color: prev[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR,
+                      },
+                    }))
+                  }
                 />
               </div>
             );
@@ -295,8 +359,9 @@ export default function SkillsCarousel() {
         {categories.map((category, idx) => {
           const isActive = idx === activeIndex;
           const previewSkill = (skillsByCategory[category.id] || []).find((skill) => skill.emoji)?.emoji;
-          const preview = previewSkill || category.name.charAt(0).toUpperCase();
-          const chipColor = category.color_hex || FALLBACK_COLOR;
+          const catIcon = getCategoryIcon(category);
+          const preview = catIcon || previewSkill || category.name.charAt(0).toUpperCase();
+          const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
 
           return (
             <button
@@ -304,7 +369,16 @@ export default function SkillsCarousel() {
               role="tab"
               aria-selected={isActive}
               aria-label={`Go to ${category.name}`}
-              onClick={() => scrollToIndex(idx)}
+              onClick={() => {
+                const alreadyActive = idx === activeIndexRef.current;
+                scrollToIndex(idx);
+                setOpenMenuFor((current) => {
+                  if (!alreadyActive) {
+                    return null;
+                  }
+                  return current === category.id ? null : category.id;
+                });
+              }}
               className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
                 isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"
               }`}

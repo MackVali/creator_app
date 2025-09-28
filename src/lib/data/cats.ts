@@ -7,7 +7,7 @@ export async function getCatsForUser(userId: string) {
 
   const { data, error } = await sb
     .from("cats")
-    .select("id,name,user_id,created_at,color_hex,sort_order")
+    .select("id,name,user_id,created_at,color_hex,sort_order,icon_emoji")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -16,6 +16,7 @@ export async function getCatsForUser(userId: string) {
   return (data ?? []).map((c) => ({
     ...c,
     color_hex: c.color_hex || "#000000",
+    icon_emoji: c.icon_emoji || null,
   })) as CatRow[];
 }
 
@@ -35,6 +36,16 @@ export async function updateCatOrder(catId: string, order: number) {
   const { error } = await sb
     .from("cats")
     .update({ sort_order: order })
+    .eq("id", catId);
+  if (error) throw error;
+}
+
+export async function updateCatIcon(catId: string, icon: string | null) {
+  const sb = getSupabaseBrowser();
+  if (!sb) throw new Error("Supabase client not available");
+  const { error } = await sb
+    .from("cats")
+    .update({ icon_emoji: icon })
     .eq("id", catId);
   if (error) throw error;
 }
