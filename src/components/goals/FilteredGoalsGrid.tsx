@@ -110,6 +110,7 @@ export function FilteredGoalsGrid({
   const [active, setActive] = useState("Active");
   const [goalFolders, setGoalFolders] = useState<Goal[]>([]);
   const [projLoading, setProjLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const isMinimal = displayMode === "minimal";
 
@@ -137,20 +138,33 @@ export function FilteredGoalsGrid({
       if (!goals || goals.length === 0) {
         setGoalFolders([]);
         setProjLoading(false);
+        setProjectsError(null);
         setShowAll(false);
         return;
       }
 
       const supabase = getSupabaseBrowser();
-      if (!supabase) return;
+      if (!supabase) {
+        setProjectsError("Supabase client not available");
+        setProjLoading(false);
+        return;
+      }
 
       setProjLoading(true);
+      setProjectsError(null);
 
       const goalIds = goals.map((g) => g.id);
-      const { data: projectsData } = await supabase
+      const { data: projectsData, error: goalProjectsError } = await supabase
         .from("projects")
         .select("id,name,goal_id,stage,energy,due_date")
         .in("goal_id", goalIds);
+
+      if (goalProjectsError) {
+        console.error("Failed to load goal projects", goalProjectsError);
+        setProjectsError(goalProjectsError.message ?? "Failed to load related projects.");
+        setProjLoading(false);
+        return;
+      }
 
       const projectsByGoal: Record<string, Project[]> = {};
       projectsData?.forEach((p) => {
@@ -199,6 +213,7 @@ export function FilteredGoalsGrid({
 
       setGoalFolders(mapped);
       setProjLoading(false);
+      setProjectsError(null);
     };
 
     if (!goalsLoading) {
@@ -231,7 +246,20 @@ export function FilteredGoalsGrid({
       return <GridSkeleton />;
     }
 
-    if (error || !hasGoals || !hasFilteredGoals) {
+    if (error) {
+      return null;
+    }
+
+    if (projectsError) {
+      return (
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+          <p className="text-red-300 mb-2">We couldn’t load the projects linked to these goals.</p>
+          <p className="text-[#A7B0BD]">{projectsError}</p>
+        </Card>
+      );
+    }
+
+    if (!hasGoals || !hasFilteredGoals) {
       return null;
     }
 
@@ -302,6 +330,11 @@ export function FilteredGoalsGrid({
           <p className="text-red-400 mb-2">Error loading goals</p>
           <p className="text-sm text-gray-400">{error}</p>
         </div>
+      ) : projectsError ? (
+        <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 text-center text-sm shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
+          <p className="text-red-300 mb-2">We couldn’t load the projects linked to these goals.</p>
+          <p className="text-[#A7B0BD]">{projectsError}</p>
+        </Card>
       ) : !hasGoals ? (
         <Card className="rounded-2xl border border-white/5 bg-[#111520] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)]">
           <p className="text-[#A7B0BD] mb-4">{emptyStateMessage}</p>
