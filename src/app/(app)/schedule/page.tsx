@@ -1652,9 +1652,6 @@ export default function SchedulePage() {
                               }
                             >
                               <div className="flex min-w-0 flex-1 items-start gap-3">
-                                {renderInstanceActions(instance.id, {
-                                  className: 'flex-shrink-0 pt-[2px]',
-                                })}
                                 <div className="min-w-0">
                                   <span className="block truncate text-sm font-medium">
                                     {project.name}
@@ -1670,6 +1667,9 @@ export default function SchedulePage() {
                                     {project.skill_icon}
                                   </span>
                                 )}
+                                {renderInstanceActions(instance.id, {
+                                  className: 'flex-shrink-0',
+                                })}
                                 <FlameEmber
                                   level={
                                     (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
