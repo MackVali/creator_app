@@ -254,25 +254,110 @@ export default function CategoryCard({
           />
         </div>
         <div className="relative z-10 flex h-full flex-col">
-          <header className="mb-3 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
-              style={{
-                color: palette.on,
-                backgroundColor: palette.badgeBg,
-                border: `1px solid ${palette.badgeBorder}`,
-              }}
-              onClick={() => setMenuOpen((o) => !o)}
-            >
-              {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
-              <span className="pr-3">{category.name}</span>
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
-                style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
-              />
-            </button>
+          <header className="mb-3 flex items-start justify-between gap-3">
+            <div className="relative inline-flex flex-col">
+              <button
+                type="button"
+                className="relative inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
+                style={{
+                  color: palette.on,
+                  backgroundColor: palette.badgeBg,
+                  border: `1px solid ${palette.badgeBorder}`,
+                }}
+                onClick={() => setMenuOpen((o) => !o)}
+              >
+                {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
+                <span className="pr-3">{category.name}</span>
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-full transition-opacity duration-300"
+                  style={{ background: palette.sheen, mixBlendMode: "screen", opacity: active ? 0.55 : 0.4 }}
+                />
+              </button>
+              {menuOpen && (
+                <div className="absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl border border-black/10 bg-white/95 p-3 text-sm text-slate-900 shadow-xl backdrop-blur">
+                  {pickerOpen ? (
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(e) => handleColorChange(e.target.value)}
+                      className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
+                    />
+                  ) : iconPickerOpen ? (
+                    <div className="space-y-3">
+                      <label className="block text-xs font-semibold uppercase text-slate-500">Choose an emoji</label>
+                      <input
+                        type="text"
+                        value={iconDraft}
+                        onChange={(e) => setIconDraft(e.target.value)}
+                        maxLength={8}
+                        className="w-full rounded border border-black/20 p-2 text-base"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        {["🐱", "🐈", "😺", "🐾", "✨", "🌟", "🧠", "🛠️"].map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => handleIconSave(emoji)}
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white text-xl shadow-sm transition hover:border-black/20"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex justify-end gap-2 text-xs font-medium uppercase">
+                        <button
+                          type="button"
+                          className="text-slate-500"
+                          onClick={() => {
+                            setIconPickerOpen(false);
+                            setIconDraft(icon);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button type="button" className="text-blue-600" onClick={() => handleIconSave(iconDraft)}>
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : orderOpen ? (
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="number"
+                        value={orderValue}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          setOrderValue(Number.isNaN(next) ? 0 : next);
+                        }}
+                        className="w-full rounded border border-black/20 p-2"
+                      />
+                      <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
+                        Save order
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
+                        Change color
+                      </button>
+                      <button
+                        className="block text-left text-sm font-medium underline"
+                        onClick={() => {
+                          setIconDraft(icon);
+                          setIconPickerOpen(true);
+                        }}
+                      >
+                        Change icon
+                      </button>
+                      <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
+                        Change order
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <span
               className="rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide"
               style={{
@@ -283,89 +368,6 @@ export default function CategoryCard({
             >
               {skills.length} skills
             </span>
-            {menuOpen && (
-              <div className="absolute right-0 top-full z-20 mt-2 w-48 rounded-2xl border border-black/10 bg-white/95 p-3 text-sm text-slate-900 shadow-xl backdrop-blur">
-                {pickerOpen ? (
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => handleColorChange(e.target.value)}
-                    className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
-                  />
-                ) : iconPickerOpen ? (
-                  <div className="space-y-3">
-                    <label className="block text-xs font-semibold uppercase text-slate-500">Choose an emoji</label>
-                    <input
-                      type="text"
-                      value={iconDraft}
-                      onChange={(e) => setIconDraft(e.target.value)}
-                      maxLength={8}
-                      className="w-full rounded border border-black/20 p-2 text-base"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {["🐱", "🐈", "😺", "🐾", "✨", "🌟", "🧠", "🛠️"].map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => handleIconSave(emoji)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white text-xl shadow-sm transition hover:border-black/20"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex justify-end gap-2 text-xs font-medium uppercase">
-                      <button
-                        type="button"
-                        className="text-slate-500"
-                        onClick={() => {
-                          setIconPickerOpen(false);
-                          setIconDraft(icon);
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button type="button" className="text-blue-600" onClick={() => handleIconSave(iconDraft)}>
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                ) : orderOpen ? (
-                  <div className="flex flex-col gap-2">
-                    <input
-                      type="number"
-                      value={orderValue}
-                      onChange={(e) => {
-                        const next = Number(e.target.value);
-                        setOrderValue(Number.isNaN(next) ? 0 : next);
-                      }}
-                      className="w-full rounded border border-black/20 p-2"
-                    />
-                    <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
-                      Save order
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
-                      Change color
-                    </button>
-                    <button
-                      className="block text-left text-sm font-medium underline"
-                      onClick={() => {
-                        setIconDraft(icon);
-                        setIconPickerOpen(true);
-                      }}
-                    >
-                      Change icon
-                    </button>
-                    <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
-                      Change order
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </header>
           <Reorder.Group
             axis="y"
