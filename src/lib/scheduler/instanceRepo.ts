@@ -123,7 +123,7 @@ export async function rescheduleInstance(
 
 export async function updateInstanceStatus(
   id: string,
-  status: 'completed' | 'canceled',
+  status: 'completed' | 'canceled' | 'scheduled',
   completedAtUTC?: string,
   client?: Client
 ) {

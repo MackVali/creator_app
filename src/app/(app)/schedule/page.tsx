@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type ChangeEvent,
   type ReactNode,
 } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
@@ -530,7 +529,9 @@ export default function SchedulePage() {
   const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
   const [schedulerDebug, setSchedulerDebug] = useState<SchedulerDebugState | null>(null)
-  const [pendingInstanceIds, setPendingInstanceIds] = useState<Set<string>>(new Set())
+  const [pendingInstanceStatuses, setPendingInstanceStatuses] = useState<
+    Map<string, ScheduleInstance['status']>
+  >(new Map())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
   const [isScheduling, setIsScheduling] = useState(false)
@@ -1046,21 +1047,21 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
-  const handleMarkCompleted = useCallback(
-    async (instanceId: string) => {
+  const handleToggleInstanceCompletion = useCallback(
+    async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
         console.warn('No user session available for status update')
         return
       }
 
-      setPendingInstanceIds(prev => {
-        const next = new Set(prev)
-        next.add(instanceId)
+      setPendingInstanceStatuses(prev => {
+        const next = new Map(prev)
+        next.set(instanceId, nextStatus)
         return next
       })
 
       try {
-        const { error } = await updateInstanceStatus(instanceId, 'completed')
+        const { error } = await updateInstanceStatus(instanceId, nextStatus)
         if (error) {
           console.error(error)
           return
@@ -1071,8 +1072,11 @@ export default function SchedulePage() {
             inst.id === instanceId
               ? {
                   ...inst,
-                  status: 'completed',
-                  completed_at: new Date().toISOString(),
+                  status: nextStatus,
+                  completed_at:
+                    nextStatus === 'completed'
+                      ? new Date().toISOString()
+                      : null,
                 }
               : inst
           )
@@ -1080,8 +1084,8 @@ export default function SchedulePage() {
       } catch (error) {
         console.error(error)
       } finally {
-        setPendingInstanceIds(prev => {
-          const next = new Set(prev)
+        setPendingInstanceStatuses(prev => {
+          const next = new Map(prev)
           next.delete(instanceId)
           return next
         })
@@ -1094,52 +1098,81 @@ export default function SchedulePage() {
     instanceId: string,
     options?: { appearance?: 'light' | 'dark'; className?: string }
   ) => {
-    const pending = pendingInstanceIds.has(instanceId)
+    const pendingStatus = pendingInstanceStatuses.get(instanceId)
+    const pending = pendingStatus !== undefined
     const appearance = options?.appearance ?? 'dark'
-    const status = instanceStatusById[instanceId] ?? null
-    const isCompleted = status === 'completed'
+    const status = pendingStatus ?? instanceStatusById[instanceId] ?? null
+    const effectiveStatus: ScheduleInstance['status'] = status ?? 'scheduled'
+    const isCompleted = effectiveStatus === 'completed'
+    const canToggle =
+      effectiveStatus === 'completed' || effectiveStatus === 'scheduled'
     const containerClass =
       appearance === 'light'
         ? 'flex items-center gap-2 text-zinc-800/80'
         : 'flex items-center gap-2 text-white/70'
-    const checkboxClass =
+    const baseFocusClass =
       appearance === 'light'
-        ? 'h-6 w-6 appearance-none rounded-none border border-zinc-300 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60 checked:border-zinc-900 checked:bg-zinc-900'
-        : 'h-6 w-6 appearance-none rounded-none border border-white/50 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed disabled:opacity-60 checked:border-white checked:bg-white'
+        ? 'focus-visible:outline-black/40'
+        : 'focus-visible:outline-white/60'
+    const borderClass = isCompleted
+      ? appearance === 'light'
+        ? 'border-zinc-900'
+        : 'border-white'
+      : appearance === 'light'
+        ? 'border-zinc-300'
+        : 'border-white/50'
+    const fillClass =
+      appearance === 'light' ? 'bg-zinc-900' : 'bg-white'
+    const strokeColor = appearance === 'light' ? '#ffffff' : '#09090b'
 
     return (
-      <label
+      <div
         className={[containerClass, options?.className]
           .filter(Boolean)
           .join(' ')}
         onClick={event => {
           event.stopPropagation()
         }}
-        title="Mark project complete"
+        title="Toggle project completion"
       >
-        <input
-          type="checkbox"
-          className={checkboxClass}
-          checked={pending || isCompleted}
-          disabled={pending || isCompleted}
-          aria-label="Mark project complete"
-          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={isCompleted}
+          aria-label="Toggle project completion"
+          disabled={pending || !canToggle}
+          className={`relative flex h-6 w-6 items-center justify-center rounded-sm border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${borderClass} ${baseFocusClass}`}
+          onClick={event => {
             event.stopPropagation()
-            if (pending || isCompleted) {
-              event.preventDefault()
-              return
-            }
-            const confirmed = window.confirm(
-              'Mark this project as completed?'
-            )
-            if (!confirmed) {
-              event.preventDefault()
-              return
-            }
-            void handleMarkCompleted(instanceId)
+            if (pending || !canToggle) return
+            const nextStatus = isCompleted ? 'scheduled' : 'completed'
+            void handleToggleInstanceCompletion(instanceId, nextStatus)
           }}
-        />
-      </label>
+        >
+          <motion.span
+            className={`absolute inset-0 rounded-[2px] ${fillClass}`}
+            initial={false}
+            animate={{ scale: isCompleted ? 1 : 0 }}
+            transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
+            style={{ transformOrigin: 'center' }}
+          />
+          <motion.svg
+            className="pointer-events-none relative h-3.5 w-3.5"
+            viewBox="0 0 16 16"
+            fill="none"
+            initial={false}
+          >
+            <motion.path
+              d="M4 4 L12 12 M12 4 L4 12"
+              stroke={strokeColor}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              animate={{ pathLength: isCompleted ? 1 : 0 }}
+              transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            />
+          </motion.svg>
+        </button>
+      </div>
     )
   }
 
