@@ -44,6 +44,7 @@ import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
+import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
   DATE_WITH_TIME_FORMATTER,
   TIME_FORMATTER,
@@ -102,15 +103,6 @@ function WindowLabel({
       {label}
     </span>
   )
-}
-
-function utcDayRange(d: Date) {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const day = d.getUTCDate()
-  const startUTC = new Date(Date.UTC(y, m, day, 0, 0, 0, 0))
-  const endUTC = new Date(Date.UTC(y, m, day + 1, 0, 0, 0, 0))
-  return { startUTC: startUTC.toISOString(), endUTC: endUTC.toISOString() }
 }
 
 function formatDayViewLabel(date: Date, timeZone: string) {
@@ -1222,7 +1214,11 @@ export default function SchedulePage() {
       if (!active) return
       setInstancesStatus('loading')
       try {
-        const { startUTC, endUTC } = utcDayRange(currentDate)
+        const timeZone = localTimeZone ?? 'UTC'
+        const dayStart = startOfDayInTimeZone(currentDate, timeZone)
+        const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
+        const startUTC = dayStart.toISOString()
+        const endUTC = nextDayStart.toISOString()
         const { data, error } = await fetchInstancesForRange(
           userId,
           startUTC,
@@ -1254,7 +1250,7 @@ export default function SchedulePage() {
       active = false
       clearInterval(id)
     }
-  }, [userId, currentDate])
+  }, [userId, currentDate, localTimeZone])
 
   const runScheduler = useCallback(async () => {
     if (!userId) {
