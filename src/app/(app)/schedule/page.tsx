@@ -1100,12 +1100,12 @@ export default function SchedulePage() {
     const isCompleted = status === 'completed'
     const containerClass =
       appearance === 'light'
-        ? 'absolute top-1 right-8 flex items-center gap-1 text-[10px] uppercase text-zinc-800/80'
-        : 'absolute top-1 right-8 flex items-center gap-1 text-[10px] uppercase text-white/70'
+        ? 'absolute top-1 right-8 flex items-center text-zinc-800/80'
+        : 'absolute top-1 right-8 flex items-center text-white/70'
     const checkboxClass =
       appearance === 'light'
-        ? 'h-3.5 w-3.5 rounded border border-zinc-400 bg-white text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60'
-        : 'h-3.5 w-3.5 rounded border border-white/40 bg-black/30 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed disabled:opacity-60'
+        ? 'h-5 w-5 appearance-none rounded-sm border border-zinc-300 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60 checked:border-zinc-900 checked:bg-zinc-900'
+        : 'h-5 w-5 appearance-none rounded-sm border border-white/50 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed disabled:opacity-60 checked:border-white checked:bg-white'
 
     return (
       <label
@@ -1113,12 +1113,14 @@ export default function SchedulePage() {
         onClick={event => {
           event.stopPropagation()
         }}
+        title="Mark project complete"
       >
         <input
           type="checkbox"
           className={checkboxClass}
           checked={isCompleted}
           disabled={pending || isCompleted}
+          aria-label="Mark project complete"
           onChange={(event: ChangeEvent<HTMLInputElement>) => {
             event.stopPropagation()
             if (pending || isCompleted) {
@@ -1135,7 +1137,6 @@ export default function SchedulePage() {
             void handleMarkCompleted(instanceId)
           }}
         />
-        <span>Completed</span>
       </label>
     )
   }
