@@ -63,6 +63,8 @@ interface Props {
   iconOverride?: string | null;
   onColorChange?: (color: string) => void;
   onIconChange?: (icon: string | null) => void;
+  menuOpen?: boolean;
+  onMenuOpenChange?: (open: boolean) => void;
 }
 
 export default function CategoryCard({
@@ -74,9 +76,11 @@ export default function CategoryCard({
   iconOverride,
   onColorChange,
   onIconChange,
+  menuOpen: menuOpenProp,
+  onMenuOpenChange,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
@@ -86,6 +90,16 @@ export default function CategoryCard({
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon_emoji || "");
   const dragging = useRef(false);
   const router = useRouter();
+
+  const menuOpen = menuOpenProp ?? menuOpenState;
+  const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    setMenuOpenState((prevState) => {
+      const previous = menuOpenProp ?? prevState;
+      const value = typeof next === "function" ? next(previous) : next;
+      onMenuOpenChange?.(value);
+      return value;
+    });
+  };
 
   useEffect(() => {
     setColor(colorOverride || category.color_hex || "#000000");
@@ -104,11 +118,16 @@ export default function CategoryCard({
 
   const extractFirstGlyph = (value: string): string => {
     if (!value) return "";
-    if (typeof Intl !== "undefined" && typeof (Intl as any).Segmenter === "function") {
-      const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-      const iterator = segmenter.segment(value)[Symbol.iterator]();
-      const first = iterator.next();
-      return first.done ? "" : first.value.segment;
+    if (typeof Intl !== "undefined") {
+      const SegmenterCtor = (Intl as typeof Intl & {
+        Segmenter?: typeof Intl.Segmenter;
+      }).Segmenter;
+      if (typeof SegmenterCtor === "function") {
+        const segmenter = new SegmenterCtor(undefined, { granularity: "grapheme" });
+        const iterator = segmenter.segment(value)[Symbol.iterator]();
+        const first = iterator.next();
+        return first.done ? "" : first.value.segment;
+      }
     }
     return Array.from(value)[0] ?? "";
   };
