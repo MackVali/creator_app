@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ChangeEvent,
   type ReactNode,
 } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
@@ -125,24 +126,6 @@ function formatDayViewLabel(date: Date, timeZone: string) {
 
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
 const MAX_FALLBACK_TASKS = 12
-
-const SCHEDULE_CARD_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
-
-function formatScheduleCardDate(date: Date) {
-  try {
-    return SCHEDULE_CARD_DATE_FORMATTER.format(date)
-  } catch (error) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('Unable to format schedule card date', error)
-    }
-    return date.toDateString()
-  }
-}
 
 function formatTimeRangeLabel(start: Date, end: Date) {
   return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
@@ -1055,12 +1038,16 @@ export default function SchedulePage() {
     return items
   }, [instances, taskMap, projectInstanceIds])
 
-  const handleInstanceStatusChange = useCallback(
-    async (
-      instanceId: string,
-      status: 'completed' | 'canceled',
-      options?: { projectId?: string }
-    ) => {
+  const instanceStatusById = useMemo(() => {
+    const map: Record<string, ScheduleInstance['status'] | null> = {}
+    for (const inst of instances) {
+      map[inst.id] = inst.status ?? null
+    }
+    return map
+  }, [instances])
+
+  const handleMarkCompleted = useCallback(
+    async (instanceId: string) => {
       if (!userId) {
         console.warn('No user session available for status update')
         return
@@ -1073,31 +1060,23 @@ export default function SchedulePage() {
       })
 
       try {
-        const { error } = await updateInstanceStatus(instanceId, status)
+        const { error } = await updateInstanceStatus(instanceId, 'completed')
         if (error) {
           console.error(error)
           return
         }
 
-        setInstances(prev => {
-          const updated = prev.map(inst =>
+        setInstances(prev =>
+          prev.map(inst =>
             inst.id === instanceId
               ? {
                   ...inst,
-                  status,
-                  completed_at:
-                    status === 'completed' ? new Date().toISOString() : null,
+                  status: 'completed',
+                  completed_at: new Date().toISOString(),
                 }
               : inst
           )
-          return status === 'canceled'
-            ? updated.filter(inst => inst.id !== instanceId)
-            : updated
-        })
-
-        if (status === 'canceled' && options?.projectId) {
-          setProjectExpansion(options.projectId, false)
-        }
+        )
       } catch (error) {
         console.error(error)
       } finally {
@@ -1108,66 +1087,56 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances, setProjectExpansion]
-  )
-
-  const handleMarkCompleted = useCallback(
-    (instanceId: string, options?: { projectId?: string }) =>
-      handleInstanceStatusChange(instanceId, 'completed', options),
-    [handleInstanceStatusChange]
-  )
-
-  const handleCancelInstance = useCallback(
-    (instanceId: string, options?: { projectId?: string }) =>
-      handleInstanceStatusChange(instanceId, 'canceled', options),
-    [handleInstanceStatusChange]
+    [userId, setInstances]
   )
 
   const renderInstanceActions = (
     instanceId: string,
-    options?: { projectId?: string; appearance?: 'light' | 'dark' }
+    options?: { appearance?: 'light' | 'dark' }
   ) => {
     const pending = pendingInstanceIds.has(instanceId)
     const appearance = options?.appearance ?? 'dark'
-    const projectOptions = options?.projectId
-      ? { projectId: options.projectId }
-      : undefined
+    const status = instanceStatusById[instanceId] ?? null
+    const isCompleted = status === 'completed'
     const containerClass =
       appearance === 'light'
-        ? 'absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-zinc-800/80'
-        : 'absolute top-1 right-8 flex gap-1 text-[10px] uppercase text-white/70'
-    const buttonClass =
+        ? 'absolute top-1 right-8 flex items-center gap-1 text-[10px] uppercase text-zinc-800/80'
+        : 'absolute top-1 right-8 flex items-center gap-1 text-[10px] uppercase text-white/70'
+    const checkboxClass =
       appearance === 'light'
-        ? 'rounded bg-black/10 px-2 py-0.5 tracking-wide hover:bg-black/20 disabled:cursor-not-allowed disabled:opacity-40'
-        : 'rounded bg-white/10 px-2 py-0.5 tracking-wide hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40'
+        ? 'h-3.5 w-3.5 rounded border border-zinc-400 bg-white text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60'
+        : 'h-3.5 w-3.5 rounded border border-white/40 bg-black/30 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed disabled:opacity-60'
 
     return (
-      <div className={containerClass}>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={pending}
-          onClick={event => {
+      <label
+        className={containerClass}
+        onClick={event => {
+          event.stopPropagation()
+        }}
+      >
+        <input
+          type="checkbox"
+          className={checkboxClass}
+          checked={isCompleted}
+          disabled={pending || isCompleted}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
             event.stopPropagation()
-            if (pending) return
-            void handleMarkCompleted(instanceId, projectOptions)
+            if (pending || isCompleted) {
+              event.preventDefault()
+              return
+            }
+            const confirmed = window.confirm(
+              'Mark this project as completed?'
+            )
+            if (!confirmed) {
+              event.preventDefault()
+              return
+            }
+            void handleMarkCompleted(instanceId)
           }}
-        >
-          done
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          disabled={pending}
-          onClick={event => {
-            event.stopPropagation()
-            if (pending) return
-            void handleCancelInstance(instanceId, projectOptions)
-          }}
-        >
-          cancel
-        </button>
-      </div>
+        />
+        <span>Completed</span>
+      </label>
     )
   }
 
@@ -1569,36 +1538,13 @@ export default function SchedulePage() {
                     const durationMinutes = Math.round(
                       (end.getTime() - start.getTime()) / 60000
                     )
-                    const timeRangeLabel = formatTimeRangeLabel(start, end)
-                    const trimmedWindowLabel =
-                      typeof assignedWindow?.label === 'string'
-                        ? assignedWindow.label.trim()
-                        : ''
-                    const hasWindow = Boolean(instance.window_id)
-                    let windowDescriptor = `Window: ${
-                      trimmedWindowLabel.length > 0
-                        ? trimmedWindowLabel
-                        : assignedWindow
-                          ? 'Unnamed'
-                          : hasWindow
-                            ? 'Unknown'
-                            : 'Unassigned'
-                    }`
-                    if (assignedWindow?.fromPrevDay) {
-                      windowDescriptor = `${windowDescriptor} (previous day)`
-                    }
                     const tasksLabel =
                       project.taskCount > 0
                         ? `${project.taskCount} ${
                             project.taskCount === 1 ? 'task' : 'tasks'
                           }`
                         : null
-                    const detailParts = [
-                      formatScheduleCardDate(start),
-                      windowDescriptor,
-                      timeRangeLabel,
-                      `${durationMinutes}m`,
-                    ]
+                    const detailParts = [`${durationMinutes}m`]
                     if (tasksLabel) detailParts.push(tasksLabel)
                     let detailText = detailParts.join(' · ')
                     const positionStyle: CSSProperties = {
@@ -1702,7 +1648,7 @@ export default function SchedulePage() {
                                     }
                               }
                             >
-                              {renderInstanceActions(instance.id, { projectId })}
+                              {renderInstanceActions(instance.id)}
                               <div className="flex flex-col">
                                 <span className="truncate text-sm font-medium">
                                   {project.name}
@@ -1878,7 +1824,6 @@ export default function SchedulePage() {
                                   >
                                     {kind === 'scheduled' && instanceId
                                       ? renderInstanceActions(instanceId, {
-                                          projectId,
                                           appearance: 'light',
                                         })
                                       : null}
