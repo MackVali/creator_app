@@ -1354,6 +1354,135 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   placeholder="Select energy..."
                 />
               </div>
+              {eventType === "PROJECT" ? (
+                <>
+                  <div className="space-y-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                      Stage
+                    </p>
+                    <Select
+                      value={formData.stage}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, stage: value })
+                      }
+                      triggerClassName="h-12 px-4 text-left"
+                      contentWrapperClassName="bg-[#0b1222]"
+                    >
+                      <SelectContent className="space-y-1">
+                        {PROJECT_STAGE_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            label={option.label}
+                            className="px-4 py-3"
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-white">
+                                {option.label}
+                              </span>
+                              {option.description ? (
+                                <span className="text-xs text-zinc-400">
+                                  {option.description}
+                                </span>
+                              ) : null}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Duration (minutes)
+                      </Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={formData.duration_min}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            duration_min: e.target.value,
+                          })
+                        }
+                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Effective duration
+                      </Label>
+                      <Input
+                        value={formData.effective_duration_min}
+                        readOnly
+                        className="h-11 cursor-not-allowed rounded-xl border border-white/5 bg-white/[0.02] text-sm text-zinc-500"
+                      />
+                      <p className="text-xs text-zinc-500">
+                        Calculated automatically as the project evolves.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+              {eventType === "TASK" ? (
+                <>
+                  <div className="space-y-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                      Stage
+                    </p>
+                    <Select
+                      value={formData.stage}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, stage: value })
+                      }
+                      triggerClassName="h-12 px-4 text-left"
+                      contentWrapperClassName="bg-[#0b1222]"
+                    >
+                      <SelectContent className="space-y-1">
+                        {TASK_STAGE_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            label={option.label}
+                            className="px-4 py-3"
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium text-white">
+                                {option.label}
+                              </span>
+                              {option.description ? (
+                                <span className="text-xs text-zinc-400">
+                                  {option.description}
+                                </span>
+                              ) : null}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Duration (minutes)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={formData.duration_min}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          duration_min: e.target.value,
+                        })
+                      }
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      required
+                    />
+                  </div>
+                </>
+              ) : null}
             </div>
           </FormSection>
 
@@ -1440,80 +1569,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   </div>
                 </div>
               </FormSection>
-
-              <FormSection
-                title="Workflow"
-                description="Capture the time commitment and where this work sits in your pipeline."
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Duration (minutes)
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={formData.duration_min}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          duration_min: e.target.value,
-                        })
-                      }
-                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Effective duration
-                    </Label>
-                    <Input
-                      value={formData.effective_duration_min}
-                      readOnly
-                      className="h-11 cursor-not-allowed rounded-xl border border-white/5 bg-white/[0.02] text-sm text-zinc-500"
-                    />
-                    <p className="text-xs text-zinc-500">
-                      Calculated automatically as the project evolves.
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Stage
-                  </p>
-                  <Select
-                    value={formData.stage}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, stage: value })
-                    }
-                    triggerClassName="h-12 px-4 text-left"
-                    contentWrapperClassName="bg-[#0b1222]"
-                  >
-                    <SelectContent className="space-y-1">
-                      {PROJECT_STAGE_OPTIONS.map((option) => (
-                        <SelectItem
-                          key={option.value}
-                          value={option.value}
-                          label={option.label}
-                          className="px-4 py-3"
-                        >
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-white">
-                              {option.label}
-                            </span>
-                            {option.description ? (
-                              <span className="text-xs text-zinc-400">
-                                {option.description}
-                              </span>
-                            ) : null}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </FormSection>
             </>
           ) : null}
 
@@ -1587,67 +1642,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       Add skills to your workspace to connect tasks to them.
                     </p>
                   ) : null}
-                </div>
-              </FormSection>
-
-              <FormSection
-                title="Workflow"
-                description="Estimate the effort and mark the stage this task belongs to."
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Duration (minutes)
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={formData.duration_min}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          duration_min: e.target.value,
-                        })
-                      }
-                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                    Stage
-                  </p>
-                  <Select
-                    value={formData.stage}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, stage: value })
-                    }
-                    triggerClassName="h-12 px-4 text-left"
-                    contentWrapperClassName="bg-[#0b1222]"
-                  >
-                    <SelectContent className="space-y-1">
-                      {TASK_STAGE_OPTIONS.map((option) => (
-                        <SelectItem
-                          key={option.value}
-                          value={option.value}
-                          label={option.label}
-                          className="px-4 py-3"
-                        >
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-white">
-                              {option.label}
-                            </span>
-                            {option.description ? (
-                              <span className="text-xs text-zinc-400">
-                                {option.description}
-                              </span>
-                            ) : null}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
               </FormSection>
             </>
