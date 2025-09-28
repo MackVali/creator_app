@@ -1104,8 +1104,8 @@ export default function SchedulePage() {
         : 'absolute top-1 right-8 flex items-center text-white/70'
     const checkboxClass =
       appearance === 'light'
-        ? 'h-5 w-5 appearance-none rounded-sm border border-zinc-300 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60 checked:border-zinc-900 checked:bg-zinc-900'
-        : 'h-5 w-5 appearance-none rounded-sm border border-white/50 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed disabled:opacity-60 checked:border-white checked:bg-white'
+        ? 'h-6 w-6 appearance-none rounded-none border border-zinc-300 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40 disabled:cursor-not-allowed disabled:opacity-60 checked:border-zinc-900 checked:bg-zinc-900'
+        : 'h-6 w-6 appearance-none rounded-none border border-white/50 bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:cursor-not-allowed disabled:opacity-60 checked:border-white checked:bg-white'
 
     return (
       <label
