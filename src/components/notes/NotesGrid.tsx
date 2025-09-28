@@ -6,7 +6,7 @@ import { Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { NoteCard } from "./NoteCard";
 import type { Note } from "@/lib/types/note";
-import { getNotes, saveNotes } from "@/lib/notesStorage";
+import { fetchSkillNotes } from "@/lib/notesStorage";
 
 interface NotesGridProps {
   skillId: string;
@@ -16,12 +16,20 @@ export function NotesGrid({ skillId }: NotesGridProps) {
   const [notes, setNotes] = useState<Note[]>([]);
 
   useEffect(() => {
-    setNotes(getNotes(skillId));
-  }, [skillId]);
+    let active = true;
 
-  useEffect(() => {
-    saveNotes(skillId, notes);
-  }, [skillId, notes]);
+    const loadNotes = async () => {
+      const data = await fetchSkillNotes(skillId);
+      if (!active) return;
+      setNotes(data);
+    };
+
+    loadNotes();
+
+    return () => {
+      active = false;
+    };
+  }, [skillId]);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
