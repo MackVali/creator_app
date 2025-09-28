@@ -37,7 +37,7 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 }
 
 export default function SkillsCarousel() {
-  const { categories, skillsByCategory, isLoading } = useSkillsData();
+  const { categories, skillsByCategory, isLoading, refresh } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
 
@@ -285,6 +285,7 @@ export default function SkillsCarousel() {
                   skills={skillsByCategory[category.id] || []}
                   active={isActive}
                   onSkillDrag={setSkillDragging}
+                  onCategoryUpdate={refresh}
                 />
               </div>
             );
@@ -294,8 +295,9 @@ export default function SkillsCarousel() {
       <div className="mt-6 flex flex-wrap justify-center gap-2.5" role="tablist">
         {categories.map((category, idx) => {
           const isActive = idx === activeIndex;
+          const previewEmoji = category.emoji?.trim();
           const previewSkill = (skillsByCategory[category.id] || []).find((skill) => skill.emoji)?.emoji;
-          const preview = previewSkill || category.name.charAt(0).toUpperCase();
+          const preview = previewEmoji || previewSkill || category.name.charAt(0).toUpperCase();
           const chipColor = category.color_hex || FALLBACK_COLOR;
 
           return (

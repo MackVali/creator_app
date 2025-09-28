@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS public.cats (
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   color_hex text DEFAULT '#000000'::text,
+  emoji text,
   sort_order integer,
   UNIQUE(user_id, name)
 );
@@ -47,6 +48,7 @@ SELECT
   c.name as cat_name,
   c.user_id,
   COALESCE(c.color_hex, '#000000') as color_hex,
+  c.emoji,
   c.sort_order,
   COUNT(s.id) as skill_count,
   ARRAY_AGG(
@@ -60,7 +62,7 @@ SELECT
   ) FILTER (WHERE s.id IS NOT NULL) as skills
 FROM public.cats c
 LEFT JOIN public.skills s ON c.id = s.cat_id
-GROUP BY c.id, c.name, c.user_id, c.color_hex, c.sort_order
+GROUP BY c.id, c.name, c.user_id, c.color_hex, c.emoji, c.sort_order
 ORDER BY c.sort_order NULLS LAST, c.name;
 
 -- 6. Grant permissions on new view

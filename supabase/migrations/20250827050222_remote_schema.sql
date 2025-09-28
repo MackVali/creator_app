@@ -23,6 +23,7 @@ create table "public"."cats" (
   "name" text not null,
   "created_at" timestamp with time zone not null default now(),
   "color_hex" text default '#000000'::text,
+  "emoji" text,
   "sort_order" integer
 );
 
