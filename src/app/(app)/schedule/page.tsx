@@ -56,6 +56,132 @@ import {
   type SchedulerRunFailure,
 } from '@/lib/scheduler/windowReports'
 
+type ParticleConfig = {
+  id: string
+  angle: number
+  distance: number
+  size: number
+  duration: number
+  delay: number
+  color: string
+  kind: 'dot' | 'xp'
+  rotation: number
+}
+
+function createSeededRng(seed: number) {
+  let value = Math.abs(Math.floor(seed)) % 2147483647
+  if (value === 0) value = 2147483646
+  return () => {
+    value = (value * 16807) % 2147483647
+    return (value - 1) / 2147483646
+  }
+}
+
+const PARTICLE_COLORS = ['#86efac', '#34d399', '#4ade80', '#22c55e', '#bbf7d0']
+
+function buildParticleConfigs(seed: number): ParticleConfig[] {
+  const rng = createSeededRng(seed)
+  const total = 22
+  const configs: ParticleConfig[] = []
+  for (let index = 0; index < total; index += 1) {
+    const angle = rng() * Math.PI * 2
+    const distance = 48 + rng() * 80
+    const size = 4 + rng() * 8
+    const duration = 0.6 + rng() * 0.45
+    const delay = rng() * 0.08
+    const color = PARTICLE_COLORS[Math.floor(rng() * PARTICLE_COLORS.length)]
+    const kind: ParticleConfig['kind'] = index % 5 === 0 ? 'xp' : 'dot'
+    const rotation = (rng() - 0.5) * 60
+    configs.push({
+      id: `${seed}-${index}`,
+      angle,
+      distance,
+      size,
+      duration,
+      delay,
+      color,
+      kind,
+      rotation,
+    })
+  }
+  return configs
+}
+
+function ParticleBurst({
+  seed,
+  disabled,
+}: {
+  seed?: number
+  disabled?: boolean
+}) {
+  const particles = useMemo(() => {
+    if (!seed || disabled) return []
+    return buildParticleConfigs(seed)
+  }, [seed, disabled])
+
+  if (!seed || disabled) return null
+
+  return (
+    <div className="pointer-events-none absolute -inset-6 z-10 overflow-visible">
+      {particles.map(particle => {
+        const x = Math.cos(particle.angle) * particle.distance
+        const y = Math.sin(particle.angle) * particle.distance
+        if (particle.kind === 'xp') {
+          return (
+            <motion.span
+              key={particle.id}
+              className="absolute left-1/2 top-1/2 select-none text-[10px] font-semibold uppercase tracking-[0.18em]"
+              style={{
+                color: particle.color,
+                textShadow: `0 0 12px ${particle.color}`,
+                marginLeft: -8,
+                marginTop: -8,
+              }}
+              initial={{ opacity: 0.95, scale: 0.6, x: 0, y: 0, rotate: 0 }}
+              animate={{
+                opacity: 0,
+                scale: 1.18,
+                x,
+                y,
+                rotate: particle.rotation,
+              }}
+              transition={{
+                duration: particle.duration,
+                delay: particle.delay,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            >
+              XP
+            </motion.span>
+          )
+        }
+
+        return (
+          <motion.span
+            key={particle.id}
+            className="absolute left-1/2 top-1/2 block rounded-full"
+            style={{
+              width: particle.size,
+              height: particle.size,
+              background: particle.color,
+              boxShadow: `0 0 14px ${particle.color}`,
+              marginLeft: -particle.size / 2,
+              marginTop: -particle.size / 2,
+            }}
+            initial={{ opacity: 0.9, scale: 0.55, x: 0, y: 0 }}
+            animate={{ opacity: 0, scale: 1.25, x, y }}
+            transition={{
+              duration: particle.duration,
+              delay: particle.delay,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
   if (prefersReducedMotion) return <div>{children}</div>
@@ -534,6 +660,12 @@ export default function SchedulePage() {
   >(new Map())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
+  const celebrationTimeouts = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>()
+  )
+  const [celebrationSeeds, setCelebrationSeeds] = useState<Map<string, number>>(
+    new Map()
+  )
   const [isScheduling, setIsScheduling] = useState(false)
   const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null)
   const localTimeZone = useMemo(() => {
@@ -1047,6 +1179,56 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
+  const clearCelebration = useCallback((instanceId: string) => {
+    const timeoutId = celebrationTimeouts.current.get(instanceId)
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      celebrationTimeouts.current.delete(instanceId)
+    }
+    setCelebrationSeeds(prev => {
+      if (!prev.has(instanceId)) return prev
+      const next = new Map(prev)
+      next.delete(instanceId)
+      return next
+    })
+  }, [])
+
+  const triggerCelebration = useCallback(
+    (instanceId: string) => {
+      const seed = Date.now() + Math.floor(Math.random() * 1000)
+      setCelebrationSeeds(prev => {
+        const next = new Map(prev)
+        next.set(instanceId, seed)
+        return next
+      })
+      const timeoutId = celebrationTimeouts.current.get(instanceId)
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+      const newTimeout = setTimeout(() => {
+        celebrationTimeouts.current.delete(instanceId)
+        setCelebrationSeeds(prev => {
+          if (!prev.has(instanceId)) return prev
+          const next = new Map(prev)
+          next.delete(instanceId)
+          return next
+        })
+      }, 1600)
+      celebrationTimeouts.current.set(instanceId, newTimeout)
+    },
+    []
+  )
+
+  useEffect(() => {
+    const timeouts = celebrationTimeouts.current
+    return () => {
+      timeouts.forEach(timeoutId => {
+        clearTimeout(timeoutId)
+      })
+      timeouts.clear()
+    }
+  }, [])
+
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
@@ -1081,6 +1263,11 @@ export default function SchedulePage() {
               : inst
           )
         )
+        if (nextStatus === 'completed') {
+          triggerCelebration(instanceId)
+        } else {
+          clearCelebration(instanceId)
+        }
       } catch (error) {
         console.error(error)
       } finally {
@@ -1091,7 +1278,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances]
+    [userId, setInstances, triggerCelebration, clearCelebration]
   )
 
   const renderInstanceActions = (
@@ -1555,6 +1742,10 @@ export default function SchedulePage() {
                     const height =
                       ((end.getTime() - start.getTime()) / 60000) * pxPerMin
                     const isExpanded = expandedProjects.has(projectId)
+                    const pendingStatus = pendingInstanceStatuses.get(instance.id)
+                    const resolvedStatus = pendingStatus ?? instance.status ?? null
+                    const isInstanceCompleted = resolvedStatus === 'completed'
+                    const celebrationSeed = celebrationSeeds.get(instance.id)
                     const projectTaskCandidates =
                       taskInstancesByProject[projectId] ?? []
                     const scheduledCards: ProjectTaskCard[] =
@@ -1639,6 +1830,21 @@ export default function SchedulePage() {
                       ? Math.max(0, backlogTasks.length - displayCards.length)
                       : 0
                     const canExpand = displayCards.length > 0
+                    const projectCardStyle: CSSProperties = {
+                      boxShadow: isInstanceCompleted
+                        ? '0 32px 64px rgba(12, 72, 48, 0.58), 0 12px 28px rgba(14, 90, 58, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                        : cardStyle.boxShadow,
+                      outline: isInstanceCompleted
+                        ? '1px solid rgba(60, 164, 116, 0.85)'
+                        : cardStyle.outline,
+                      outlineOffset: cardStyle.outlineOffset,
+                      background: isInstanceCompleted
+                        ? 'radial-gradient(circle at 16% 0%, rgba(64, 160, 112, 0.35), transparent 60%), linear-gradient(140deg, rgba(6, 40, 28, 0.96) 0%, rgba(16, 70, 46, 0.94) 45%, rgba(34, 104, 68, 0.92) 100%)'
+                        : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)',
+                      transition:
+                        'background 0.45s ease, box-shadow 0.45s ease, outline-color 0.45s ease',
+                    }
+
                     return (
                       <motion.div
                         key={instance.id}
@@ -1660,14 +1866,14 @@ export default function SchedulePage() {
                                 if (!canExpand) return
                                 setProjectExpansion(projectId)
                               }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border border-black/70 shadow-[0_28px_54px_rgba(0,0,0,0.62)]${
+                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${
+                                isInstanceCompleted
+                                  ? 'border-emerald-300/70'
+                                  : 'border-black/70'
+                              } shadow-[0_28px_54px_rgba(0,0,0,0.62)] transition-[transform,filter] duration-300 ease-out${
                                 canExpand ? ' cursor-pointer' : ''
                               }`}
-                              style={{
-                                ...cardStyle,
-                                background:
-                                  'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)',
-                              }}
+                              style={projectCardStyle}
                               initial={
                                 prefersReducedMotion ? false : { opacity: 0, y: 4 }
                               }
@@ -1677,12 +1883,22 @@ export default function SchedulePage() {
                                   : {
                                       opacity: 1,
                                       y: 0,
+                                      scale:
+                                        celebrationSeed && !prefersReducedMotion
+                                          ? 1.02
+                                          : 1,
                                       transition: {
                                         delay: hasInteractedWithProjects
                                           ? 0
                                           : index * 0.02,
                                         duration: 0.18,
                                         ease: [0.4, 0, 0.2, 1],
+                                        scale: {
+                                          duration: celebrationSeed ? 0.4 : 0.2,
+                                          ease: celebrationSeed
+                                            ? [0.16, 1, 0.3, 1]
+                                            : [0.4, 0, 0.2, 1],
+                                        },
                                       },
                                     }
                               }
@@ -1724,6 +1940,10 @@ export default function SchedulePage() {
                                   className="flex-shrink-0"
                                 />
                               </div>
+                              <ParticleBurst
+                                seed={celebrationSeed}
+                                disabled={prefersReducedMotion}
+                              />
                             </motion.div>
                           ) : (
                             <motion.div
