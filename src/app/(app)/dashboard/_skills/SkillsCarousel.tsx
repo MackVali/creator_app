@@ -227,8 +227,8 @@ export default function SkillsCarousel() {
         }
       }}
     >
-      <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/70 px-2 py-6 shadow-lg sm:px-4">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-900/60 via-slate-950/70 to-slate-950" aria-hidden />
+      <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black" aria-hidden />
         {categories.length > 1 && (
           <>
             <button
@@ -309,21 +309,21 @@ export default function SkillsCarousel() {
                 isActive ? "text-slate-100" : "text-slate-300/85 hover:text-slate-100"
               }`}
               style={{
-                backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(15, 23, 42, 0.65)",
+                backgroundColor: isActive ? withAlpha(chipColor, 0.24) : "rgba(0, 0, 0, 0.65)",
                 borderColor: isActive ? withAlpha(chipColor, 0.45) : "rgba(148, 163, 184, 0.25)",
                 boxShadow: isActive
                   ? `0 16px 32px ${withAlpha(chipColor, 0.28)}`
-                  : "0 6px 18px rgba(15, 23, 42, 0.3)",
+                  : "0 6px 18px rgba(0, 0, 0, 0.3)",
               }}
             >
               <span
                 className="flex h-6 w-6 items-center justify-center rounded-full text-base font-semibold shadow"
                 style={{
                   backgroundColor: isActive ? withAlpha(chipColor, 0.55) : withAlpha(chipColor, 0.18),
-                  color: isActive ? "rgba(15, 23, 42, 0.85)" : "rgba(255,255,255,0.92)",
+                  color: isActive ? "rgba(0, 0, 0, 0.85)" : "rgba(255,255,255,0.92)",
                   boxShadow: isActive
                     ? `0 12px 24px ${withAlpha(chipColor, 0.32)}`
-                    : "0 6px 14px rgba(15,23,42,0.28)",
+                    : "0 6px 14px rgba(0,0,0,0.28)",
                 }}
               >
                 {preview}
