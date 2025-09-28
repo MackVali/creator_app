@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Folder } from "./Folder";
-import type { Goal } from "@/app/(app)/goals/types";
+import type { Goal, Project } from "@/app/(app)/goals/types";
 import { cn } from "@/lib/utils";
 
 type GoalFolderCardProps = {
@@ -22,6 +22,40 @@ const folderThemes: Record<Goal["priority"], { base: string; gradient: string }>
   Low: { base: "#6B7280", gradient: darkGrayGradient },
 };
 
+const MAX_FOLDER_SHEETS = 5;
+
+function formatDueDate(value?: string) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function groupProjectsBySheet(projects: Project[]) {
+  if (!projects.length) {
+    return [] as Project[][];
+  }
+
+  const sheetCount = Math.min(MAX_FOLDER_SHEETS, projects.length);
+  const grouped: Project[][] = [];
+  let cursor = 0;
+
+  for (let index = 0; index < sheetCount; index += 1) {
+    const remaining = projects.length - cursor;
+    const slotsLeft = sheetCount - index;
+    const chunkSize = Math.ceil(remaining / slotsLeft);
+    grouped.push(projects.slice(cursor, cursor + chunkSize));
+    cursor += chunkSize;
+  }
+
+  return grouped;
+}
+
 export function GoalFolderCard({
   goal,
   onEdit: _onEdit,
@@ -31,41 +65,55 @@ export function GoalFolderCard({
 }: GoalFolderCardProps) {
   void _onEdit;
   void _onToggleActive;
-  const projectsToShow = goal.projects.slice(0, 5);
-  const extraProjects = Math.max(goal.projects.length - projectsToShow.length, 0);
   const theme = folderThemes[goal.priority] ?? folderThemes.High;
+  const groupedProjects = groupProjectsBySheet(goal.projects);
 
-  const projectCards: ReactNode[] = projectsToShow.map((project, index) => {
-    const showOverflow = index === projectsToShow.length - 1 && extraProjects > 0;
+  const folderItems: ReactNode[] = groupedProjects.length
+    ? groupedProjects.map((sheet, sheetIndex) => (
+        <div
+          key={sheet[0]?.id ?? `sheet-${sheetIndex}`}
+          className="flex h-full w-full flex-col text-left text-slate-900"
+        >
+          <div className="flex-1 overflow-hidden rounded-xl border border-slate-200/70 bg-white/90 p-2 shadow-sm">
+            <ul className="flex h-full flex-col gap-2 overflow-y-auto pr-1">
+              {sheet.map((project) => {
+                const dueDate = formatDueDate(project.dueDate);
+                const meta: string[] = [project.status];
+                if (dueDate) {
+                  meta.push(`Due ${dueDate}`);
+                }
+                if (project.energy && project.energy !== "No") {
+                  meta.push(`${project.energy} energy`);
+                }
 
-    return (
-      <div
-        className="flex h-full w-full flex-col text-left text-slate-900"
-        key={project.id}
-      >
-        <p className="min-w-0 flex-1 whitespace-normal break-words text-[11px] font-semibold leading-snug">
-          {project.name}
-        </p>
-        {showOverflow && (
-          <div className="mt-2 rounded-md bg-slate-100/90 px-1.5 py-1 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-600">
-            +{extraProjects} more
+                return (
+                  <li
+                    key={project.id}
+                    className="rounded-lg border border-slate-200/70 bg-white px-2 py-1.5 shadow-sm"
+                  >
+                    <p className="text-[11px] font-semibold leading-snug">
+                      {project.name}
+                    </p>
+                    {meta.length ? (
+                      <p className="mt-1 text-[9px] font-medium uppercase tracking-wide text-slate-500">
+                        {meta.join(" • ")}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-        )}
-      </div>
-    );
-  });
-
-  const folderItems: ReactNode[] =
-    projectCards.length > 0
-      ? projectCards
-      : [
-          <div
-            key="empty"
-            className="flex h-full w-full flex-col items-center justify-center rounded-lg border border-dashed border-slate-300/70 bg-white/75 p-3 text-center text-[10px] font-medium text-slate-500"
-          >
-            No projects linked yet.
-          </div>,
-        ];
+        </div>
+      ))
+    : [
+        <div
+          key="empty"
+          className="flex h-full w-full flex-col items-center justify-center rounded-lg border border-dashed border-slate-300/70 bg-white/75 p-3 text-center text-[10px] font-medium text-slate-500"
+        >
+          No projects linked yet.
+        </div>,
+      ];
 
   const folderLabel = (
     <div className="flex items-center gap-1.5">
