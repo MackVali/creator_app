@@ -24,18 +24,6 @@ const folderThemes: Record<Goal["priority"], { base: string; gradient: string }>
 
 const MAX_FOLDER_SHEETS = 5;
 
-function formatDueDate(value?: string) {
-  if (!value) return null;
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date);
-}
-
 function groupProjectsBySheet(projects: Project[]) {
   if (!projects.length) {
     return [] as Project[][];
@@ -77,11 +65,7 @@ export function GoalFolderCard({
           <div className="flex-1 overflow-hidden rounded-xl border border-slate-200/70 bg-white/90 p-2 shadow-sm">
             <ul className="flex h-full flex-col gap-2 overflow-y-auto pr-1">
               {sheet.map((project) => {
-                const dueDate = formatDueDate(project.dueDate);
                 const meta: string[] = [project.status];
-                if (dueDate) {
-                  meta.push(`Due ${dueDate}`);
-                }
                 if (project.energy && project.energy !== "No") {
                   meta.push(`${project.energy} energy`);
                 }

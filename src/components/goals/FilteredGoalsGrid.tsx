@@ -156,7 +156,7 @@ export function FilteredGoalsGrid({
       const goalIds = goals.map((g) => g.id);
       const { data: projectsData, error: goalProjectsError } = await supabase
         .from("projects")
-        .select("id,name,goal_id,stage,energy,due_date")
+        .select("id,name,goal_id,stage,energy")
         .in("goal_id", goalIds);
 
       if (goalProjectsError) {
@@ -175,7 +175,6 @@ export function FilteredGoalsGrid({
           progress: 0,
           energy: mapEnergy(p.energy),
           tasks: [],
-          dueDate: p.due_date || undefined,
         };
         projectsByGoal[p.goal_id] = projectsByGoal[p.goal_id] || [];
         projectsByGoal[p.goal_id].push(proj);
