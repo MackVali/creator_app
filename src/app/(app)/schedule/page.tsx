@@ -1121,7 +1121,7 @@ export default function SchedulePage() {
       : appearance === 'light'
         ? 'border-zinc-300'
         : 'border-white/50'
-    const strokeColor = appearance === 'light' ? '#ffffff' : '#09090b'
+    const strokeColor = appearance === 'light' ? '#ffffff' : '#f4f4f5'
     const buttonShadow = appearance === 'light'
       ? isCompleted
         ? '0 12px 26px rgba(24,24,27,0.35), 0 0 0 1px rgba(24,24,27,0.18)'
@@ -1132,11 +1132,11 @@ export default function SchedulePage() {
     const fillBackground =
       appearance === 'light'
         ? 'linear-gradient(135deg, rgba(24,24,27,0.92) 0%, rgba(63,63,70,0.88) 45%, rgba(113,113,122,0.82) 100%)'
-        : 'linear-gradient(135deg, rgba(250,250,250,0.96) 0%, rgba(228,228,231,0.9) 45%, rgba(212,212,216,0.85) 100%)'
+        : 'linear-gradient(135deg, rgba(9,9,11,0.95) 0%, rgba(24,24,27,0.9) 50%, rgba(39,39,42,0.85) 100%)'
     const sheenBackground =
       appearance === 'light'
         ? 'linear-gradient(180deg, rgba(250,250,250,0.55) 0%, rgba(250,250,250,0.12) 45%, rgba(24,24,27,0) 100%)'
-        : 'linear-gradient(180deg, rgba(24,24,27,0.45) 0%, rgba(24,24,27,0.15) 45%, rgba(250,250,250,0) 100%)'
+        : 'linear-gradient(180deg, rgba(244,244,245,0.18) 0%, rgba(39,39,42,0.1) 45%, rgba(9,9,11,0) 100%)'
     const rippleColor = appearance === 'light'
       ? 'rgba(24,24,27,0.22)'
       : 'rgba(244,244,245,0.35)'
