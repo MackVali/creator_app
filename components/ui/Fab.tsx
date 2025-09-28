@@ -217,9 +217,15 @@ export function Fab({ className = "" }: FabProps) {
         ref={buttonRef}
         onClick={toggleMenu}
         aria-label={isOpen ? "Close add events menu" : "Add new item"}
-        className={`flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-br from-gray-900 to-black text-gray-300 drop-shadow-lg hover:scale-110 transition ${
+        className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition ${
           isOpen ? "rotate-45" : ""
         }`}
+        style={{
+          background:
+            "linear-gradient(145deg, rgba(75, 85, 99, 0.95) 0%, rgba(31, 41, 55, 0.98) 55%, rgba(15, 23, 42, 1) 100%)",
+          boxShadow:
+            "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+        }}
       >
         {isOpen ? (
           <X className="h-8 w-8" aria-hidden="true" />
