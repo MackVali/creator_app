@@ -19,6 +19,7 @@ export type CatItem = {
   skill_count: number;
   color_hex?: string | null;
   order?: number | null;
+  icon_emoji?: string | null;
   skills: SkillItem[];
 };
 

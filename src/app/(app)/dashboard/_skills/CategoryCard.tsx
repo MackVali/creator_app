@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor, updateCatIcon, updateCatOrder } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -59,6 +59,10 @@ interface Props {
   skills: Skill[];
   active: boolean;
   onSkillDrag: (dragging: boolean) => void;
+  colorOverride?: string | null;
+  iconOverride?: string | null;
+  onColorChange?: (color: string) => void;
+  onIconChange?: (icon: string | null) => void;
 }
 
 export default function CategoryCard({
@@ -66,25 +70,48 @@ export default function CategoryCard({
   skills,
   active,
   onSkillDrag,
+  colorOverride,
+  iconOverride,
+  onColorChange,
+  onIconChange,
 }: Props) {
-  const [color, setColor] = useState(category.color_hex || "#000000");
+  const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
+  const [icon, setIcon] = useState<string>(iconOverride || category.icon_emoji || "");
+  const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon_emoji || "");
   const dragging = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
-    setColor(category.color_hex || "#000000");
-  }, [category.color_hex]);
+    setColor(colorOverride || category.color_hex || "#000000");
+  }, [category.color_hex, colorOverride]);
   useEffect(() => {
     setOrderValue(category.order ?? 0);
   }, [category.order]);
   useEffect(() => {
     setLocalSkills([...skills]);
   }, [skills]);
+  useEffect(() => {
+    const nextIcon = iconOverride ?? category.icon_emoji ?? "";
+    setIcon(nextIcon);
+    setIconDraft(nextIcon);
+  }, [category.icon_emoji, iconOverride]);
+
+  const extractFirstGlyph = (value: string): string => {
+    if (!value) return "";
+    if (typeof Intl !== "undefined" && typeof (Intl as any).Segmenter === "function") {
+      const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+      const iterator = segmenter.segment(value)[Symbol.iterator]();
+      const first = iterator.next();
+      return first.done ? "" : first.value.segment;
+    }
+    return Array.from(value)[0] ?? "";
+  };
 
   const palette = useMemo(() => {
     const base = color || "#6366f1";
@@ -130,6 +157,7 @@ export default function CategoryCard({
     if (!menuOpen) {
       setPickerOpen(false);
       setOrderOpen(false);
+      setIconPickerOpen(false);
     }
   }, [menuOpen]);
 
@@ -137,10 +165,27 @@ export default function CategoryCard({
     setColor(newColor);
     try {
       await updateCatColor(category.id, newColor);
+      onColorChange?.(newColor);
     } catch (e) {
       console.error("Failed to update category color", e);
     } finally {
       setPickerOpen(false);
+      setMenuOpen(false);
+    }
+  };
+
+  const handleIconSave = async (nextIcon: string) => {
+    const trimmed = nextIcon.trim();
+    const normalized = trimmed ? extractFirstGlyph(trimmed) : "";
+    setIcon(normalized);
+    setIconDraft(normalized);
+    try {
+      await updateCatIcon(category.id, normalized || null);
+      onIconChange?.(normalized || null);
+    } catch (e) {
+      console.error("Failed to update category icon", e);
+    } finally {
+      setIconPickerOpen(false);
       setMenuOpen(false);
     }
   };
@@ -201,6 +246,7 @@ export default function CategoryCard({
               }}
               onClick={() => setMenuOpen((o) => !o)}
             >
+              {icon && <span className="mr-2 text-lg leading-none">{icon}</span>}
               <span className="pr-3">{category.name}</span>
               <span
                 aria-hidden
@@ -227,6 +273,44 @@ export default function CategoryCard({
                     onChange={(e) => handleColorChange(e.target.value)}
                     className="h-24 w-full cursor-pointer rounded border-0 bg-transparent p-0"
                   />
+                ) : iconPickerOpen ? (
+                  <div className="space-y-3">
+                    <label className="block text-xs font-semibold uppercase text-slate-500">Choose an emoji</label>
+                    <input
+                      type="text"
+                      value={iconDraft}
+                      onChange={(e) => setIconDraft(e.target.value)}
+                      maxLength={8}
+                      className="w-full rounded border border-black/20 p-2 text-base"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {["🐱", "🐈", "😺", "🐾", "✨", "🌟", "🧠", "🛠️"].map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => handleIconSave(emoji)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white text-xl shadow-sm transition hover:border-black/20"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex justify-end gap-2 text-xs font-medium uppercase">
+                      <button
+                        type="button"
+                        className="text-slate-500"
+                        onClick={() => {
+                          setIconPickerOpen(false);
+                          setIconDraft(icon);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button type="button" className="text-blue-600" onClick={() => handleIconSave(iconDraft)}>
+                        Save
+                      </button>
+                    </div>
+                  </div>
                 ) : orderOpen ? (
                   <div className="flex flex-col gap-2">
                     <input
@@ -246,6 +330,15 @@ export default function CategoryCard({
                   <div className="space-y-2">
                     <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
                       Change color
+                    </button>
+                    <button
+                      className="block text-left text-sm font-medium underline"
+                      onClick={() => {
+                        setIconDraft(icon);
+                        setIconPickerOpen(true);
+                      }}
+                    >
+                      Change icon
                     </button>
                     <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
                       Change order
