@@ -1047,22 +1047,27 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
-  const launchCompletionConfetti = useCallback(() => {
+  const launchCompletionSplash = useCallback(() => {
     if (prefersReducedMotion) return
 
     void import('canvas-confetti')
-      .then(({ default: confetti }) =>
+      .then(({ default: confetti }) => {
+        const burstSize = 120
         confetti({
-          particleCount: 140,
-          spread: 70,
-          scalar: 0.9,
+          particleCount: burstSize,
+          spread: 85,
+          startVelocity: 32,
+          gravity: 1.3,
+          scalar: 1.2,
           disableForReducedMotion: true,
-          colors: ['#22c55e', '#16a34a', '#bbf7d0'],
+          shapes: ['circle'],
+          ticks: 180,
+          colors: ['#38bdf8', '#0ea5e9', '#06b6d4', '#bae6fd'],
           origin: { y: 0.6 },
         })
-      )
+      })
       .catch(error => {
-        console.error('Failed to load confetti', error)
+        console.error('Failed to load completion splash effect', error)
       })
   }, [prefersReducedMotion])
 
@@ -1102,7 +1107,7 @@ export default function SchedulePage() {
         )
 
         if (nextStatus === 'completed') {
-          launchCompletionConfetti()
+          launchCompletionSplash()
         }
       } catch (error) {
         console.error(error)
@@ -1114,7 +1119,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances, launchCompletionConfetti]
+    [userId, setInstances, launchCompletionSplash]
   )
 
   const renderInstanceActions = (
