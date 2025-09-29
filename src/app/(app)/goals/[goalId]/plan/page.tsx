@@ -61,6 +61,26 @@ const getPriorityLabel = (value: string) =>
 const getEnergyLabel = (value: string) =>
   ENERGY_OPTIONS.find((option) => option.value === value)?.label ?? value;
 
+const normalizeTask = <T extends { id: string } & Partial<Record<string, string | null>>>(
+  task: T
+) => ({
+  id: task.id,
+  name: task.name ?? "",
+  stage: task.stage ?? PROJECT_STAGE_OPTIONS[0].value,
+  priority: task.priority ?? DEFAULT_PRIORITY,
+  energy: task.energy ?? DEFAULT_ENERGY,
+  notes: task.notes ?? null,
+});
+
+interface DraftTask {
+  id: string;
+  name: string;
+  stage: string;
+  priority: string;
+  energy: string;
+  notes: string;
+}
+
 interface DraftProject {
   id: string;
   name: string;
@@ -68,6 +88,23 @@ interface DraftProject {
   why: string;
   priority: string;
   energy: string;
+  tasks: DraftTask[];
+}
+
+function createDraftTask(): DraftTask {
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+  return {
+    id,
+    name: "",
+    stage: PROJECT_STAGE_OPTIONS[0].value,
+    priority: DEFAULT_PRIORITY,
+    energy: DEFAULT_ENERGY,
+    notes: "",
+  };
 }
 
 function createDraftProject(): DraftProject {
@@ -82,6 +119,7 @@ function createDraftProject(): DraftProject {
     why: "",
     priority: DEFAULT_PRIORITY,
     energy: DEFAULT_ENERGY,
+    tasks: [createDraftTask()],
   };
 }
 
@@ -92,6 +130,19 @@ export default function PlanGoalPage() {
 
   const [goal, setGoal] = useState<Goal | null>(null);
   const [existingProjects, setExistingProjects] = useState<Project[]>([]);
+  const [projectTasks, setProjectTasks] = useState<
+    Record<
+      string,
+      {
+        id: string;
+        name: string;
+        stage: string;
+        priority: string;
+        energy: string;
+        notes: string | null;
+      }[]
+    >
+  >({});
   const [drafts, setDrafts] = useState<DraftProject[]>([createDraftProject()]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -112,11 +163,49 @@ export default function PlanGoalPage() {
       try {
         const goalData = await getGoalById(goalId);
         const projectsData = await getProjectsForGoal(goalId);
+        const supabase = getSupabaseBrowser();
+
+        if (!supabase) {
+          throw new Error("Supabase client not available");
+        }
+
+        const projectIds = projectsData.map((project) => project.id);
+        let tasksMap: typeof projectTasks = {};
+
+        if (projectIds.length > 0) {
+          const { data: tasksData, error: tasksError } = await supabase
+            .from("tasks")
+            .select(
+              "id, project_id, name, stage, priority, energy, notes"
+            )
+            .eq("goal_id", goalId)
+            .in("project_id", projectIds);
+
+          if (tasksError) {
+            console.error("Error loading tasks:", tasksError);
+            throw tasksError;
+          }
+
+          tasksMap = (tasksData || []).reduce<typeof projectTasks>(
+            (acc, task) => {
+              const projectId = task.project_id;
+              if (!projectId) {
+                return acc;
+              }
+
+              const existing = acc[projectId] || [];
+              acc[projectId] = [...existing, normalizeTask(task)];
+              return acc;
+            },
+            {}
+          );
+        }
 
         if (!active) return;
 
         setGoal(goalData);
         setExistingProjects(projectsData);
+        setProjectTasks(tasksMap);
 
         if (!goalData) {
           toast.error(
@@ -158,13 +247,68 @@ export default function PlanGoalPage() {
     return "Spin up the projects that will bring this goal to life. We'll link every project to this goal automatically.";
   }, [goal]);
 
-  const handleDraftChange = (id: string, field: keyof DraftProject, value: string) => {
+  const handleDraftChange = (
+    id: string,
+    field: "name" | "stage" | "why" | "priority" | "energy",
+    value: string
+  ) => {
     setDrafts((prev) =>
       prev.map((draft) =>
         draft.id === id
           ? {
               ...draft,
               [field]: value,
+            }
+          : draft
+      )
+    );
+  };
+
+  const handleTaskChange = (
+    projectId: string,
+    taskId: string,
+    field: keyof DraftTask,
+    value: string
+  ) => {
+    setDrafts((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: draft.tasks.map((task) =>
+                task.id === taskId
+                  ? {
+                      ...task,
+                      [field]: value,
+                    }
+                  : task
+              ),
+            }
+          : draft
+      )
+    );
+  };
+
+  const handleAddTask = (projectId: string) => {
+    setDrafts((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: [...draft.tasks, createDraftTask()],
+            }
+          : draft
+      )
+    );
+  };
+
+  const handleRemoveTask = (projectId: string, taskId: string) => {
+    setDrafts((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: draft.tasks.filter((task) => task.id !== taskId),
             }
           : draft
       )
@@ -195,6 +339,11 @@ export default function PlanGoalPage() {
         ...draft,
         name: draft.name.trim(),
         why: draft.why.trim(),
+        tasks: draft.tasks.map((task) => ({
+          ...task,
+          name: task.name.trim(),
+          notes: task.notes.trim(),
+        })),
       }))
       .filter((draft) => draft.name.length > 0);
 
@@ -248,16 +397,110 @@ export default function PlanGoalPage() {
         return;
       }
 
-      toast.success(
-        "Projects saved",
-        "Your projects are linked to this goal."
-      );
+      const insertedProjects = (data as Project[]) || [];
+
+      if (insertedProjects.length !== projectsToSave.length) {
+        console.error("Mismatch between inserted projects and drafts", {
+          insertedProjects,
+          projectsToSave,
+        });
+        toast.error(
+          "Error",
+          "We saved the projects, but couldn't confirm their tasks."
+        );
+      }
+
+      const tasksPayload =
+        insertedProjects.length === projectsToSave.length
+          ? projectsToSave.flatMap((draft, index) => {
+              const project = insertedProjects[index];
+              if (!project) {
+                return [];
+              }
+
+              return draft.tasks
+                .map((task) => ({
+                  user_id: user.id,
+                  goal_id: goalId,
+                  project_id: project.id,
+                  name: task.name,
+                  stage: task.stage || PROJECT_STAGE_OPTIONS[0].value,
+                  priority: task.priority || DEFAULT_PRIORITY,
+                  energy: task.energy || DEFAULT_ENERGY,
+                  notes: task.notes.length > 0 ? task.notes : null,
+                }))
+                .filter((task) => task.name.length > 0);
+            })
+          : [];
+
+      let insertedTasks: {
+        id: string;
+        project_id: string;
+        name: string;
+        stage: string;
+        priority: string;
+        energy: string;
+        notes: string | null;
+      }[] = [];
+      let tasksFailed = false;
+
+      if (tasksPayload.length > 0) {
+        const { data: tasksData, error: tasksError } = await supabase
+          .from("tasks")
+          .insert(tasksPayload)
+          .select(
+            "id, project_id, name, stage, priority, energy, notes"
+          );
+
+        if (tasksError) {
+          console.error("Error saving tasks:", tasksError);
+          toast.error(
+            "Error",
+            "Projects were saved, but we couldn't save their tasks."
+          );
+          tasksFailed = true;
+        } else {
+          insertedTasks = tasksData || [];
+        }
+      }
+
+      if (tasksFailed) {
+        toast.warning(
+          "Projects saved",
+          "Projects were saved, but we couldn't add their tasks."
+        );
+      } else {
+        toast.success(
+          "Projects saved",
+          "Your projects are linked to this goal."
+        );
+      }
 
       setDrafts([createDraftProject()]);
       setExistingProjects((prev) => [
-        ...(data as Project[]),
+        ...insertedProjects,
         ...prev,
       ]);
+      setProjectTasks((prev) => {
+        const next = { ...prev };
+
+        insertedProjects.forEach((project) => {
+          if (!next[project.id]) {
+            next[project.id] = [];
+          }
+        });
+
+        insertedTasks.forEach((task) => {
+          const projectId = task.project_id;
+          if (!projectId) {
+            return;
+          }
+
+          next[projectId] = [normalizeTask(task), ...(next[projectId] || [])];
+        });
+
+        return next;
+      });
     } catch (error) {
       console.error("Error creating projects:", error);
       toast.error("Error", "We couldn't save those projects.");
@@ -413,6 +656,189 @@ export default function PlanGoalPage() {
                             </Select>
                           </div>
                         </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Tasks
+                            </Label>
+                            <Button
+                              type="button"
+                              onClick={() => handleAddTask(draft.id)}
+                              size="sm"
+                              variant="outline"
+                              className="h-8 rounded-lg border-white/10 bg-white/[0.03] px-2 text-xs font-medium text-white hover:border-white/30 hover:bg-white/10"
+                            >
+                              <Plus className="mr-1 h-3 w-3" aria-hidden="true" />
+                              Add task
+                            </Button>
+                          </div>
+
+                          {draft.tasks.length > 0 ? (
+                            <div className="space-y-3">
+                              {draft.tasks.map((task, taskIndex) => (
+                                <div
+                                  key={task.id}
+                                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                >
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                                    <div className="flex-1 space-y-3">
+                                      <div className="space-y-1">
+                                        <Label
+                                          htmlFor={`task-name-${draft.id}-${task.id}`}
+                                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500"
+                                        >
+                                          Task {taskIndex + 1}
+                                        </Label>
+                                        <Input
+                                          id={`task-name-${draft.id}-${task.id}`}
+                                          value={task.name}
+                                          onChange={(event) =>
+                                            handleTaskChange(
+                                              draft.id,
+                                              task.id,
+                                              "name",
+                                              event.target.value
+                                            )
+                                          }
+                                          placeholder="Name this task"
+                                          className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                        />
+                                      </div>
+
+                                      <div className="grid gap-3 sm:grid-cols-3">
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                            Stage
+                                          </Label>
+                                          <Select
+                                            value={task.stage}
+                                            onValueChange={(value) =>
+                                              handleTaskChange(
+                                                draft.id,
+                                                task.id,
+                                                "stage",
+                                                value
+                                              )
+                                            }
+                                          >
+                                            <SelectTrigger className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                              <SelectValue placeholder="Choose a stage" />
+                                            </SelectTrigger>
+                                            <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                              {PROJECT_STAGE_OPTIONS.map((option) => (
+                                                <SelectItem
+                                                  key={option.value}
+                                                  value={option.value}
+                                                >
+                                                  {option.label}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                            Priority
+                                          </Label>
+                                          <Select
+                                            value={task.priority}
+                                            onValueChange={(value) =>
+                                              handleTaskChange(
+                                                draft.id,
+                                                task.id,
+                                                "priority",
+                                                value
+                                              )
+                                            }
+                                          >
+                                            <SelectTrigger className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                              <SelectValue placeholder="Choose a priority" />
+                                            </SelectTrigger>
+                                            <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                              {PRIORITY_OPTIONS.map((option) => (
+                                                <SelectItem
+                                                  key={option.value}
+                                                  value={option.value}
+                                                >
+                                                  {option.label}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                            Energy
+                                          </Label>
+                                          <Select
+                                            value={task.energy}
+                                            onValueChange={(value) =>
+                                              handleTaskChange(
+                                                draft.id,
+                                                task.id,
+                                                "energy",
+                                                value
+                                              )
+                                            }
+                                          >
+                                            <SelectTrigger className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                              <SelectValue placeholder="Choose energy" />
+                                            </SelectTrigger>
+                                            <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                              {ENERGY_OPTIONS.map((option) => (
+                                                <SelectItem
+                                                  key={option.value}
+                                                  value={option.value}
+                                                >
+                                                  {option.label}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-1">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                          Notes (optional)
+                                        </Label>
+                                        <Textarea
+                                          value={task.notes}
+                                          onChange={(event) =>
+                                            handleTaskChange(
+                                              draft.id,
+                                              task.id,
+                                              "notes",
+                                              event.target.value
+                                            )
+                                          }
+                                          placeholder="Add context about this task"
+                                          className="min-h-[60px] rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRemoveTask(draft.id, task.id)}
+                                      className="self-start text-zinc-400 hover:text-white"
+                                      aria-label="Remove task"
+                                    >
+                                      <X className="h-4 w-4" aria-hidden="true" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="rounded-lg border border-dashed border-white/10 bg-white/[0.03] p-3 text-[13px] text-zinc-400">
+                              Add tasks to break this project into actionable steps.
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       {drafts.length > 1 ? (
@@ -492,7 +918,42 @@ export default function PlanGoalPage() {
                       <Badge className="border-white/10 bg-white/[0.08] text-white">
                         Energy: {getEnergyLabel(project.energy)}
                       </Badge>
+                      <Badge className="border-white/10 bg-white/[0.08] text-white">
+                        {projectTasks[project.id]?.length || 0} task
+                        {projectTasks[project.id] && projectTasks[project.id].length === 1
+                          ? ""
+                          : "s"}
+                      </Badge>
                     </div>
+                    {projectTasks[project.id] &&
+                    projectTasks[project.id].length > 0 ? (
+                      <ul className="mt-3 space-y-2 text-xs text-zinc-300">
+                        {projectTasks[project.id].map((task) => (
+                          <li
+                            key={task.id}
+                            className="rounded-lg border border-white/5 bg-white/[0.03] p-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-white">
+                                {task.name}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-[0.2em] text-blue-200/70">
+                                {task.stage}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-400">
+                              <span>Priority: {getPriorityLabel(task.priority)}</span>
+                              <span>Energy: {getEnergyLabel(task.energy)}</span>
+                            </div>
+                            {task.notes ? (
+                              <p className="mt-1 text-[11px] text-zinc-400">
+                                {task.notes}
+                              </p>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </li>
                 ))}
               </ul>
