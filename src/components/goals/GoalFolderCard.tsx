@@ -65,9 +65,9 @@ export function GoalFolderCard({
           {sheet.map((project) => (
             <div
               key={project.id}
-              className="flex aspect-square items-center justify-center rounded-lg bg-white text-center text-[9px] font-semibold leading-tight text-slate-900 shadow"
+              className="flex aspect-square items-center justify-center rounded-lg bg-white px-1 text-center text-[9px] font-semibold leading-tight text-slate-900 shadow"
             >
-              <span className="line-clamp-3 px-1">{project.name}</span>
+              {project.name}
             </div>
           ))}
         </div>
