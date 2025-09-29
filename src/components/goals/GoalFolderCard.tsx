@@ -62,8 +62,8 @@ export function GoalFolderCard({
           key={sheet[0]?.id ?? `sheet-${sheetIndex}`}
           className="flex h-full w-full flex-col text-left text-slate-900"
         >
-          <div className="flex-1 overflow-hidden rounded-xl border border-slate-200/70 bg-white/90 p-2 shadow-sm">
-            <ul className="flex h-full flex-col gap-2 overflow-y-auto pr-1">
+          <div className="flex-1 overflow-hidden rounded-xl border border-slate-200/70 bg-white/90 p-1.5 shadow-sm">
+            <ul className="flex h-full flex-col gap-1.5 overflow-y-auto pr-0.5">
               {sheet.map((project) => {
                 const meta: string[] = [project.status];
                 if (project.energy && project.energy !== "No") {
@@ -73,13 +73,13 @@ export function GoalFolderCard({
                 return (
                   <li
                     key={project.id}
-                    className="rounded-lg border border-slate-200/70 bg-white px-2 py-1.5 shadow-sm"
+                    className="rounded-lg border border-slate-200/70 bg-white px-1.5 py-1 shadow-sm"
                   >
-                    <p className="text-[11px] font-semibold leading-snug">
+                    <p className="text-[10px] font-semibold leading-snug">
                       {project.name}
                     </p>
                     {meta.length ? (
-                      <p className="mt-1 text-[9px] font-medium uppercase tracking-wide text-slate-500">
+                      <p className="mt-0.5 text-[8px] font-medium uppercase tracking-wide text-slate-500">
                         {meta.join(" • ")}
                       </p>
                     ) : null}
