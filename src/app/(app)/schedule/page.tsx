@@ -1599,7 +1599,7 @@ export default function SchedulePage() {
                       top,
                       height,
                     }
-                    const cardStyle: CSSProperties = {
+                    const sharedCardStyle: CSSProperties = {
                       boxShadow:
                         '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
                       outline: '1px solid rgba(10, 10, 12, 0.85)',
@@ -1639,6 +1639,26 @@ export default function SchedulePage() {
                       ? Math.max(0, backlogTasks.length - displayCards.length)
                       : 0
                     const canExpand = displayCards.length > 0
+                    const pendingStatus = pendingInstanceStatuses.get(instance.id)
+                    const effectiveStatus =
+                      pendingStatus ?? instance.status ?? 'scheduled'
+                    const isCompleted = effectiveStatus === 'completed'
+                    const projectBackground = isCompleted
+                      ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
+                      : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
+                    const projectCardStyle: CSSProperties = {
+                      ...sharedCardStyle,
+                      boxShadow: isCompleted
+                        ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                        : sharedCardStyle.boxShadow,
+                      outline: isCompleted
+                        ? '1px solid rgba(16, 185, 129, 0.55)'
+                        : sharedCardStyle.outline,
+                      background: projectBackground,
+                    }
+                    const projectBorderClass = isCompleted
+                      ? 'border-emerald-400/60'
+                      : 'border-black/70'
                     return (
                       <motion.div
                         key={instance.id}
@@ -1653,21 +1673,17 @@ export default function SchedulePage() {
                       >
                         <AnimatePresence mode="wait" initial={false}>
                           {!isExpanded || !canExpand ? (
-                            <motion.div
-                              key="project"
-                              aria-label={`Project ${project.name}`}
-                              onClick={() => {
-                                if (!canExpand) return
-                                setProjectExpansion(projectId)
-                              }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border border-black/70 shadow-[0_28px_54px_rgba(0,0,0,0.62)]${
-                                canExpand ? ' cursor-pointer' : ''
-                              }`}
-                              style={{
-                                ...cardStyle,
-                                background:
-                                  'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)',
-                              }}
+                          <motion.div
+                            key="project"
+                            aria-label={`Project ${project.name}`}
+                            onClick={() => {
+                              if (!canExpand) return
+                              setProjectExpansion(projectId)
+                            }}
+                            className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                              canExpand ? ' cursor-pointer' : ''
+                            }`}
+                            style={projectCardStyle}
                               initial={
                                 prefersReducedMotion ? false : { opacity: 0, y: 4 }
                               }
@@ -1794,7 +1810,7 @@ export default function SchedulePage() {
                                 const tStyle: CSSProperties = {
                                   top: `${topPercent}%`,
                                   height: `${heightPercent}%`,
-                                  ...cardStyle,
+                                  ...sharedCardStyle,
                                 }
                                 const baseTaskClasses =
                                   'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
