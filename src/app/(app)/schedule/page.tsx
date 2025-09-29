@@ -13,6 +13,7 @@ import {
 } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import clsx from 'clsx'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -55,6 +56,80 @@ import {
   formatSchedulerDetail,
   type SchedulerRunFailure,
 } from '@/lib/scheduler/windowReports'
+
+type CompletionStage = 'idle' | 'molten' | 'explosion' | 'resolved'
+
+type BurstBaseConfig = {
+  angle: number
+  distance: number
+}
+
+type ShardConfig = BurstBaseConfig & {
+  width: number
+  height: number
+  startRotation?: number
+  endRotation?: number
+}
+
+type ConfettiConfig = BurstBaseConfig & {
+  width: number
+  height: number
+  endRotation: number
+  hue: number
+}
+
+type BurstVector<T extends BurstBaseConfig> = T & {
+  tx: number
+  ty: number
+  delay: number
+}
+
+const COMPLETION_SHARDS: Array<BurstVector<ShardConfig>> = buildBurstVectors(
+  [
+    { angle: -18, distance: 110, width: 26, height: 12, startRotation: -8, endRotation: -46 },
+    { angle: 12, distance: 118, width: 22, height: 10, startRotation: 4, endRotation: 52 },
+    { angle: -52, distance: 96, width: 18, height: 10, startRotation: -24, endRotation: -88 },
+    { angle: 48, distance: 102, width: 24, height: 12, startRotation: 18, endRotation: 64 },
+    { angle: 86, distance: 88, width: 20, height: 9, startRotation: 10, endRotation: 96 },
+    { angle: -94, distance: 92, width: 20, height: 10, startRotation: -16, endRotation: -104 },
+    { angle: -140, distance: 86, width: 18, height: 9, startRotation: -32, endRotation: -140 },
+    { angle: 152, distance: 84, width: 18, height: 10, startRotation: 22, endRotation: 140 },
+  ],
+  45
+)
+
+const COMPLETION_CONFETTI: Array<BurstVector<ConfettiConfig>> = buildBurstVectors(
+  [
+    { angle: -76, distance: 142, width: 6, height: 14, endRotation: -120, hue: 140 },
+    { angle: -38, distance: 168, width: 7, height: 16, endRotation: -64, hue: 144 },
+    { angle: -8, distance: 158, width: 6, height: 15, endRotation: -18, hue: 148 },
+    { angle: 22, distance: 164, width: 6, height: 16, endRotation: 38, hue: 152 },
+    { angle: 54, distance: 150, width: 7, height: 16, endRotation: 76, hue: 156 },
+    { angle: 86, distance: 134, width: 6, height: 14, endRotation: 112, hue: 160 },
+    { angle: 126, distance: 126, width: 5, height: 12, endRotation: 148, hue: 166 },
+    { angle: -128, distance: 132, width: 5, height: 12, endRotation: -156, hue: 136 },
+    { angle: 168, distance: 118, width: 5, height: 11, endRotation: 176, hue: 172 },
+    { angle: -158, distance: 120, width: 5, height: 12, endRotation: -172, hue: 132 },
+  ],
+  35
+)
+
+function buildBurstVectors<T extends BurstBaseConfig>(
+  config: T[],
+  delayStep: number
+): Array<BurstVector<T>> {
+  return config.map((item, index) => {
+    const angleRad = (item.angle * Math.PI) / 180
+    const tx = Math.cos(angleRad) * item.distance
+    const ty = Math.sin(angleRad) * item.distance
+    return {
+      ...item,
+      tx,
+      ty,
+      delay: index * delayStep,
+    }
+  })
+}
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
@@ -102,6 +177,235 @@ function WindowLabel({
     >
       {label}
     </span>
+  )
+}
+
+function TimelineProjectCardFrame({
+  ariaLabel,
+  canExpand,
+  children,
+  hasInteractedWithProjects,
+  index,
+  isCompleted,
+  onClick,
+  prefersReducedMotion,
+  sharedCardStyle,
+}: {
+  ariaLabel: string
+  canExpand: boolean
+  children: ReactNode
+  hasInteractedWithProjects: boolean
+  index: number
+  isCompleted: boolean
+  onClick: () => void
+  prefersReducedMotion: boolean
+  sharedCardStyle: CSSProperties
+}) {
+  const [completionStage, setCompletionStage] = useState<CompletionStage>(() => {
+    if (prefersReducedMotion) {
+      return isCompleted ? 'resolved' : 'idle'
+    }
+    return isCompleted ? 'resolved' : 'idle'
+  })
+  const [hasAnimatedCompletion, setHasAnimatedCompletion] = useState(isCompleted)
+  const [resolvedSweepId, setResolvedSweepId] = useState(0)
+  const lastStageRef = useRef<CompletionStage>(completionStage)
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setCompletionStage(isCompleted ? 'resolved' : 'idle')
+      setHasAnimatedCompletion(isCompleted)
+      return
+    }
+
+    if (isCompleted && !hasAnimatedCompletion) {
+      setCompletionStage('molten')
+      setHasAnimatedCompletion(true)
+      return
+    }
+
+    if (!isCompleted) {
+      setCompletionStage('idle')
+      setHasAnimatedCompletion(false)
+      return
+    }
+
+    if (isCompleted && hasAnimatedCompletion && completionStage === 'idle') {
+      setCompletionStage('resolved')
+    }
+  }, [
+    completionStage,
+    hasAnimatedCompletion,
+    isCompleted,
+    prefersReducedMotion,
+  ])
+
+  useEffect(() => {
+    if (prefersReducedMotion) return
+
+    if (completionStage === 'molten') {
+      const timer = setTimeout(() => setCompletionStage('explosion'), 900)
+      return () => clearTimeout(timer)
+    }
+
+    if (completionStage === 'explosion') {
+      const timer = setTimeout(() => setCompletionStage('resolved'), 620)
+      return () => clearTimeout(timer)
+    }
+
+    return undefined
+  }, [completionStage, prefersReducedMotion])
+
+  useEffect(() => {
+    if (completionStage === 'resolved' && lastStageRef.current !== 'resolved') {
+      setResolvedSweepId(id => id + 1)
+    }
+    lastStageRef.current = completionStage
+  }, [completionStage])
+
+  const displayCompletionStage: CompletionStage = prefersReducedMotion
+    ? isCompleted
+      ? 'resolved'
+      : 'idle'
+    : completionStage
+
+  let background =
+    'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
+  let boxShadow = sharedCardStyle.boxShadow as string
+  let outline = sharedCardStyle.outline as string
+
+  if (displayCompletionStage === 'resolved') {
+    background =
+      'radial-gradient(circle at 4% 0%, rgba(45, 212, 191, 0.25), transparent 62%), linear-gradient(140deg, rgba(5, 46, 22, 0.96) 0%, rgba(6, 78, 59, 0.94) 44%, rgba(16, 185, 129, 0.9) 100%)'
+    boxShadow =
+      '0 28px 58px rgba(2, 48, 31, 0.65), 0 14px 30px rgba(4, 120, 87, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
+    outline = '1px solid rgba(34, 197, 94, 0.6)'
+  } else if (displayCompletionStage === 'explosion') {
+    background =
+      'radial-gradient(circle at 50% 45%, rgba(134, 239, 172, 0.18), transparent 68%), linear-gradient(150deg, rgba(6, 9, 8, 0.97) 0%, rgba(10, 20, 14, 0.95) 54%, rgba(4, 15, 9, 0.92) 100%)'
+    boxShadow =
+      '0 26px 56px rgba(9, 48, 27, 0.62), 0 14px 32px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(16, 185, 129, 0.28)'
+    outline = '1px solid rgba(16, 185, 129, 0.5)'
+  } else if (displayCompletionStage === 'molten') {
+    background =
+      'radial-gradient(circle at 18% 12%, rgba(16, 185, 129, 0.15), transparent 55%), linear-gradient(160deg, rgba(7, 7, 9, 0.98) 0%, rgba(12, 16, 14, 0.97) 48%, rgba(5, 12, 8, 0.95) 100%)'
+    boxShadow =
+      '0 26px 56px rgba(4, 32, 18, 0.66), 0 12px 28px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(16, 185, 129, 0.22)'
+    outline = '1px solid rgba(16, 185, 129, 0.45)'
+  } else if (isCompleted) {
+    background =
+      'radial-gradient(circle at 10% 4%, rgba(16, 185, 129, 0.12), transparent 60%), linear-gradient(150deg, rgba(6, 10, 8, 0.97) 0%, rgba(10, 18, 12, 0.95) 52%, rgba(6, 10, 7, 0.92) 100%)'
+    boxShadow =
+      '0 26px 52px rgba(4, 28, 18, 0.62), 0 12px 28px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(16, 185, 129, 0.18)'
+    outline = '1px solid rgba(16, 185, 129, 0.35)'
+  }
+
+  const projectCardStyle: CSSProperties = {
+    ...sharedCardStyle,
+    background,
+    boxShadow,
+    outline,
+  }
+
+  const projectBorderClass =
+    displayCompletionStage === 'resolved'
+      ? 'border-emerald-300/80'
+      : isCompleted
+        ? 'border-emerald-400/55'
+        : 'border-black/70'
+
+  const showMolten = !prefersReducedMotion && displayCompletionStage === 'molten'
+  const showExplosion = !prefersReducedMotion && displayCompletionStage === 'explosion'
+  const showResolvedEffects =
+    !prefersReducedMotion && displayCompletionStage === 'resolved'
+
+  const cardClassName = clsx(
+    'completion-card relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+    projectBorderClass,
+    canExpand && 'cursor-pointer'
+  )
+
+  return (
+    <motion.div
+      key="project"
+      aria-label={ariaLabel}
+      onClick={onClick}
+      className={cardClassName}
+      style={projectCardStyle}
+      data-completion-stage={
+        prefersReducedMotion ? undefined : displayCompletionStage
+      }
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+      animate={
+        prefersReducedMotion
+          ? undefined
+          : {
+              opacity: 1,
+              y: 0,
+              transition: {
+                delay: hasInteractedWithProjects ? 0 : index * 0.02,
+                duration: 0.18,
+                ease: [0.4, 0, 0.2, 1],
+              },
+            }
+      }
+      exit={
+        prefersReducedMotion
+          ? undefined
+          : {
+              opacity: 0,
+              y: 4,
+              transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+            }
+      }
+    >
+      {children}
+      {!prefersReducedMotion && (
+        <div className="completion-effects" aria-hidden>
+          {showMolten && <div className="completion-molten" />}
+          {showExplosion && (
+            <div className="completion-explosion">
+              <span className="completion-explosion-core" />
+              {COMPLETION_SHARDS.map((shard, shardIndex) => (
+                <span
+                  key={`shard-${shardIndex}`}
+                  className="completion-shard"
+                  style={{
+                    '--tx': `${shard.tx}px`,
+                    '--ty': `${shard.ty}px`,
+                    '--delay': `${shard.delay}ms`,
+                    '--start-rot': `${shard.startRotation ?? 0}deg`,
+                    '--end-rot': `${shard.endRotation ?? 0}deg`,
+                    '--width': `${shard.width}px`,
+                    '--height': `${shard.height}px`,
+                  } as CSSProperties}
+                />
+              ))}
+              {COMPLETION_CONFETTI.map((confetti, confettiIndex) => (
+                <span
+                  key={`confetti-${confettiIndex}`}
+                  className="completion-confetti"
+                  style={{
+                    '--tx': `${confetti.tx}px`,
+                    '--ty': `${confetti.ty}px`,
+                    '--delay': `${confetti.delay}ms`,
+                    '--rot': `${confetti.endRotation}deg`,
+                    '--width': `${confetti.width}px`,
+                    '--height': `${confetti.height}px`,
+                    '--hue': `${confetti.hue}`,
+                  } as CSSProperties}
+                />
+              ))}
+            </div>
+          )}
+          {showResolvedEffects && (
+            <div key={resolvedSweepId} className="completion-resolved">
+              <span className="completion-resolved-sparkles" />
+            </div>
+          )}
+        </div>
+      )}
+    </motion.div>
   )
 }
 
@@ -1643,22 +1947,6 @@ export default function SchedulePage() {
                     const effectiveStatus =
                       pendingStatus ?? instance.status ?? 'scheduled'
                     const isCompleted = effectiveStatus === 'completed'
-                    const projectBackground = isCompleted
-                      ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
-                      : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
-                    const projectCardStyle: CSSProperties = {
-                      ...sharedCardStyle,
-                      boxShadow: isCompleted
-                        ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
-                        : sharedCardStyle.boxShadow,
-                      outline: isCompleted
-                        ? '1px solid rgba(16, 185, 129, 0.55)'
-                        : sharedCardStyle.outline,
-                      background: projectBackground,
-                    }
-                    const projectBorderClass = isCompleted
-                      ? 'border-emerald-400/60'
-                      : 'border-black/70'
                     return (
                       <motion.div
                         key={instance.id}
@@ -1673,44 +1961,19 @@ export default function SchedulePage() {
                       >
                         <AnimatePresence mode="wait" initial={false}>
                           {!isExpanded || !canExpand ? (
-                          <motion.div
-                            key="project"
-                            aria-label={`Project ${project.name}`}
-                            onClick={() => {
-                              if (!canExpand) return
-                              setProjectExpansion(projectId)
-                            }}
-                            className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
-                              canExpand ? ' cursor-pointer' : ''
-                            }`}
-                            style={projectCardStyle}
-                              initial={
-                                prefersReducedMotion ? false : { opacity: 0, y: 4 }
-                              }
-                              animate={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : {
-                                      opacity: 1,
-                                      y: 0,
-                                      transition: {
-                                        delay: hasInteractedWithProjects
-                                          ? 0
-                                          : index * 0.02,
-                                        duration: 0.18,
-                                        ease: [0.4, 0, 0.2, 1],
-                                      },
-                                    }
-                              }
-                              exit={
-                                prefersReducedMotion
-                                  ? undefined
-                                  : {
-                                      opacity: 0,
-                                      y: 4,
-                                      transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                                    }
-                              }
+                            <TimelineProjectCardFrame
+                              key="project"
+                              ariaLabel={`Project ${project.name}`}
+                              canExpand={canExpand}
+                              hasInteractedWithProjects={hasInteractedWithProjects}
+                              index={index}
+                              isCompleted={isCompleted}
+                              onClick={() => {
+                                if (!canExpand) return
+                                setProjectExpansion(projectId)
+                              }}
+                              prefersReducedMotion={prefersReducedMotion}
+                              sharedCardStyle={sharedCardStyle}
                             >
                               <div className="flex min-w-0 flex-1 items-start gap-3">
                                 <div className="min-w-0">
@@ -1740,7 +2003,7 @@ export default function SchedulePage() {
                                   className="flex-shrink-0"
                                 />
                               </div>
-                            </motion.div>
+                            </TimelineProjectCardFrame>
                           ) : (
                             <motion.div
                               key="tasks"
