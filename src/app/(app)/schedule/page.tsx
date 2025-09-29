@@ -1065,33 +1065,51 @@ export default function SchedulePage() {
         const sharedConfig = {
           disableForReducedMotion: true,
           shapes: [dropletShape],
-          colors: ['#0ea5e9', '#06b6d4', '#38bdf8', '#22d3ee'],
+          colors: ['#0ea5e9', '#06b6d4', '#38bdf8', '#22d3ee', '#67e8f9'],
         }
 
-        confetti({
-          ...sharedConfig,
-          particleCount: 70,
-          spread: 75,
-          gravity: 0.85,
-          scalar: 1.5,
-          startVelocity: 38,
-          ticks: 220,
-          origin: { y: 0.62 },
-        })
+        for (const angle of [78, 90, 102]) {
+          confetti({
+            ...sharedConfig,
+            particleCount: 16,
+            spread: 16,
+            gravity: 1.08,
+            scalar: 1.35,
+            startVelocity: 58,
+            ticks: 200,
+            origin: { y: 0.74 },
+            angle,
+          })
+        }
 
         window.setTimeout(() => {
           confetti({
             ...sharedConfig,
-            particleCount: 45,
-            spread: 55,
-            gravity: 1.05,
-            scalar: 1.2,
-            startVelocity: 28,
-            ticks: 180,
-            drift: -0.35,
-            origin: { y: 0.66 },
+            particleCount: 65,
+            spread: 130,
+            gravity: 1.2,
+            scalar: 1.55,
+            startVelocity: 34,
+            ticks: 190,
+            origin: { y: 0.68 },
           })
         }, 120)
+
+        window.setTimeout(() => {
+          for (const drift of [-0.45, 0.45]) {
+            confetti({
+              ...sharedConfig,
+              particleCount: 28,
+              spread: 160,
+              gravity: 0.6,
+              scalar: 1,
+              startVelocity: 22,
+              ticks: 260,
+              drift,
+              origin: { y: 0.62 },
+            })
+          }
+        }, 260)
       })
       .catch(error => {
         console.error('Failed to load completion splash effect', error)
