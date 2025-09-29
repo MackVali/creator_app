@@ -1051,20 +1051,47 @@ export default function SchedulePage() {
     if (prefersReducedMotion) return
 
     void import('canvas-confetti')
-      .then(({ default: confetti }) => {
-        const burstSize = 120
-        confetti({
-          particleCount: burstSize,
-          spread: 85,
-          startVelocity: 32,
-          gravity: 1.3,
-          scalar: 1.2,
+      .then(module => {
+        const confetti = module.default
+        if (!confetti) return
+
+        type ShapeFromPath = (options: { path: string; size?: number }) => string
+        const shapeFromPath = (module as { shapeFromPath?: ShapeFromPath }).shapeFromPath
+        const dropletShape =
+          shapeFromPath?.({
+            path: 'M16 0C16 0 30 15 30 24C30 31.1797 24.1797 37 16 37C7.8203 37 2 31.1797 2 24C2 15 16 0 16 0Z',
+          }) ?? 'circle'
+
+        const sharedConfig = {
           disableForReducedMotion: true,
-          shapes: ['circle'],
-          ticks: 180,
-          colors: ['#38bdf8', '#0ea5e9', '#06b6d4', '#bae6fd'],
-          origin: { y: 0.6 },
+          shapes: [dropletShape],
+          colors: ['#0ea5e9', '#06b6d4', '#38bdf8', '#22d3ee'],
+        }
+
+        confetti({
+          ...sharedConfig,
+          particleCount: 70,
+          spread: 75,
+          gravity: 0.85,
+          scalar: 1.5,
+          startVelocity: 38,
+          ticks: 220,
+          origin: { y: 0.62 },
         })
+
+        window.setTimeout(() => {
+          confetti({
+            ...sharedConfig,
+            particleCount: 45,
+            spread: 55,
+            gravity: 1.05,
+            scalar: 1.2,
+            startVelocity: 28,
+            ticks: 180,
+            drift: -0.35,
+            origin: { y: 0.66 },
+          })
+        }, 120)
       })
       .catch(error => {
         console.error('Failed to load completion splash effect', error)
