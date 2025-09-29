@@ -25,6 +25,16 @@ import {
   getProjectsForGoal,
   type Project,
 } from "@/lib/queries/projects";
+import {
+  DEFAULT_ENERGY,
+  DEFAULT_PRIORITY,
+  DEFAULT_TASK_STAGE,
+  createDraftProject,
+  createDraftTask,
+  type DraftProject,
+  type DraftTask,
+  normalizeTask,
+} from "@/lib/drafts/projects";
 
 const PROJECT_STAGE_OPTIONS = [
   { value: "RESEARCH", label: "Research" },
@@ -33,9 +43,6 @@ const PROJECT_STAGE_OPTIONS = [
   { value: "REFINE", label: "Refine" },
   { value: "RELEASE", label: "Release" },
 ];
-
-const DEFAULT_PRIORITY = "NO";
-const DEFAULT_ENERGY = "NO";
 
 const PRIORITY_OPTIONS = [
   { value: "NO", label: "No Priority" },
@@ -61,67 +68,6 @@ const getPriorityLabel = (value: string) =>
 const getEnergyLabel = (value: string) =>
   ENERGY_OPTIONS.find((option) => option.value === value)?.label ?? value;
 
-const normalizeTask = <T extends { id: string } & Partial<Record<string, string | null>>>(
-  task: T
-) => ({
-  id: task.id,
-  name: task.name ?? "",
-  stage: task.stage ?? PROJECT_STAGE_OPTIONS[0].value,
-  priority: task.priority ?? DEFAULT_PRIORITY,
-  energy: task.energy ?? DEFAULT_ENERGY,
-  notes: task.notes ?? null,
-});
-
-interface DraftTask {
-  id: string;
-  name: string;
-  stage: string;
-  priority: string;
-  energy: string;
-  notes: string;
-}
-
-interface DraftProject {
-  id: string;
-  name: string;
-  stage: string;
-  why: string;
-  priority: string;
-  energy: string;
-  tasks: DraftTask[];
-}
-
-function createDraftTask(): DraftTask {
-  const id =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-
-  return {
-    id,
-    name: "",
-    stage: PROJECT_STAGE_OPTIONS[0].value,
-    priority: DEFAULT_PRIORITY,
-    energy: DEFAULT_ENERGY,
-    notes: "",
-  };
-}
-
-function createDraftProject(): DraftProject {
-  const id =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-  return {
-    id,
-    name: "",
-    stage: PROJECT_STAGE_OPTIONS[0].value,
-    why: "",
-    priority: DEFAULT_PRIORITY,
-    energy: DEFAULT_ENERGY,
-    tasks: [createDraftTask()],
-  };
-}
 
 export default function PlanGoalPage() {
   const params = useParams<{ goalId?: string }>();
@@ -412,25 +358,25 @@ export default function PlanGoalPage() {
 
       const tasksPayload =
         insertedProjects.length === projectsToSave.length
-          ? projectsToSave.flatMap((draft, index) => {
-              const project = insertedProjects[index];
-              if (!project) {
-                return [];
-              }
+            ? projectsToSave.flatMap((draft, index) => {
+                const project = insertedProjects[index];
+                if (!project) {
+                  return [];
+                }
 
-              return draft.tasks
-                .map((task) => ({
-                  user_id: user.id,
-                  goal_id: goalId,
-                  project_id: project.id,
-                  name: task.name,
-                  stage: task.stage || PROJECT_STAGE_OPTIONS[0].value,
-                  priority: task.priority || DEFAULT_PRIORITY,
-                  energy: task.energy || DEFAULT_ENERGY,
-                  notes: task.notes.length > 0 ? task.notes : null,
-                }))
-                .filter((task) => task.name.length > 0);
-            })
+                return draft.tasks
+                  .map((task) => ({
+                    user_id: user.id,
+                    goal_id: goalId,
+                    project_id: project.id,
+                    name: task.name,
+                    stage: task.stage || DEFAULT_TASK_STAGE,
+                    priority: task.priority || DEFAULT_PRIORITY,
+                    energy: task.energy || DEFAULT_ENERGY,
+                    notes: task.notes.length > 0 ? task.notes : null,
+                  }))
+                  .filter((task) => task.name.length > 0);
+              })
           : [];
 
       let insertedTasks: {
