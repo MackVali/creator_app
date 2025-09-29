@@ -14,6 +14,7 @@ type FolderProps = {
   items?: ReactNode[];
   label?: ReactNode;
   className?: string;
+  bareItems?: boolean;
 };
 
 const MAX_ITEMS = 5;
@@ -60,6 +61,7 @@ export function Folder({
   items = [],
   label,
   className,
+  bareItems = false,
 }: FolderProps) {
   const visibleItems = items.filter((item) => item != null).slice(0, MAX_ITEMS);
   const positions = computePositions(visibleItems.length);
@@ -146,7 +148,9 @@ export function Folder({
             return (
               <div
                 key={index}
-                className={styles.paper}
+                className={cn(
+                  bareItems ? styles.paperBare : styles.paper
+                )}
                 onMouseMove={(event) => handlePaperMouseMove(event, index)}
                 onMouseLeave={(event) => handlePaperMouseLeave(event, index)}
                 style={magnetStyle}

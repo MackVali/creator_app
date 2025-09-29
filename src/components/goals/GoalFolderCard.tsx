@@ -107,6 +107,7 @@ export function GoalFolderCard({
         items={folderItems}
         size={size}
         label={folderLabel}
+        bareItems
       />
     </div>
   );
