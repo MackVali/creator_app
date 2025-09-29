@@ -16,7 +16,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
-import { FocusTimeline } from '@/components/schedule/FocusTimeline'
+import { FocusTimeline, type FocusTimelineEntry } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
 import { MonthView } from '@/components/schedule/MonthView'
@@ -1047,6 +1047,34 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
+  const focusTimelineEntries = useMemo<FocusTimelineEntry[]>(() => {
+    if (projectInstances.length === 0) return []
+    const now = new Date()
+    const horizonMs = now.getTime() + 3 * 60 * 60 * 1000
+
+    return projectInstances
+      .filter(({ start, end }) => {
+        const startMs = start.getTime()
+        const endMs = end.getTime()
+        return endMs >= now.getTime() && startMs <= horizonMs
+      })
+      .map(({ instance, project, start, end }) => {
+        const pendingStatus = pendingInstanceStatuses.get(instance.id)
+        const status = pendingStatus ?? instance.status ?? null
+        const isCompleted =
+          pendingStatus === 'completed' || status === 'completed'
+        return {
+          id: instance.id,
+          title: project.name,
+          start,
+          end,
+          completedAt: instance.completed_at ?? null,
+          completed: isCompleted,
+          isPending: pendingStatus !== undefined,
+        }
+      })
+  }, [projectInstances, pendingInstanceStatuses])
+
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
@@ -1092,6 +1120,20 @@ export default function SchedulePage() {
       }
     },
     [userId, setInstances]
+  )
+
+  const handleFocusComplete = useCallback(
+    (instanceId: string) => {
+      void handleToggleInstanceCompletion(instanceId, 'completed')
+    },
+    [handleToggleInstanceCompletion]
+  )
+
+  const handleFocusUndo = useCallback(
+    (instanceId: string) => {
+      void handleToggleInstanceCompletion(instanceId, 'scheduled')
+    },
+    [handleToggleInstanceCompletion]
   )
 
   const renderInstanceActions = (
@@ -1989,7 +2031,11 @@ export default function SchedulePage() {
             )}
             {view === 'focus' && (
               <ScheduleViewShell key="focus">
-                <FocusTimeline />
+                <FocusTimeline
+                  entries={focusTimelineEntries}
+                  onComplete={handleFocusComplete}
+                  onUndo={handleFocusUndo}
+                />
               </ScheduleViewShell>
             )}
           </AnimatePresence>
