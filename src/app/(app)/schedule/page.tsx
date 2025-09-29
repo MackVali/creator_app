@@ -137,7 +137,7 @@ function ParticleBurst({
   if (!seed || disabled) return null
 
   return (
-    <div className="pointer-events-none absolute -inset-6 z-10 overflow-visible">
+    <div className="pointer-events-none absolute -inset-6 z-50 overflow-visible">
       {particles.map(particle => {
         const x = Math.cos(particle.angle) * particle.distance
         const y = Math.sin(particle.angle) * particle.distance
@@ -1913,7 +1913,7 @@ export default function SchedulePage() {
                                 if (!canExpand) return
                                 setProjectExpansion(projectId)
                               }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${
+                              className={`relative isolate flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${
                                 isInstanceCompleted
                                   ? 'border-emerald-300/70'
                                   : 'border-black/70'
