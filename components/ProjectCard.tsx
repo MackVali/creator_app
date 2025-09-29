@@ -286,7 +286,10 @@ export function ProjectCard({
       {showUndo && (
         <button
           type="button"
-          onClick={handleUndo}
+          onClick={event => {
+            event.stopPropagation();
+            handleUndo();
+          }}
           className="flex items-center gap-1 rounded-full bg-black/30 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-100/90 shadow-inner shadow-emerald-500/20 transition-opacity hover:opacity-100"
         >
           <Undo2 className="h-3 w-3" />

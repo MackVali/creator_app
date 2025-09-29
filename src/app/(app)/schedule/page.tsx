@@ -17,6 +17,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { FocusTimeline, type FocusTimelineEntry } from '@/components/schedule/FocusTimeline'
+import { ProjectCard } from '@/components/ProjectCard'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
 import { MonthView } from '@/components/schedule/MonthView'
@@ -1637,11 +1638,21 @@ export default function SchedulePage() {
                     const detailParts = [`${durationMinutes}m`]
                     if (tasksLabel) detailParts.push(tasksLabel)
                     let detailText = detailParts.join(' · ')
+                    const timeRangeLabel = `${TIME_FORMATTER.format(
+                      start
+                    )} – ${TIME_FORMATTER.format(end)}`
                     const positionStyle: CSSProperties = {
                       top,
                       height,
                     }
                     const cardStyle: CSSProperties = {
+                      boxShadow:
+                        '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                      outline: '1px solid rgba(10, 10, 12, 0.85)',
+                      outlineOffset: '-1px',
+                    }
+                    const collapsedCardStyle: CSSProperties = {
+                      height: '100%',
                       boxShadow:
                         '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
                       outline: '1px solid rgba(10, 10, 12, 0.85)',
@@ -1677,10 +1688,21 @@ export default function SchedulePage() {
                     if (usingFallback) {
                       detailText = `${detailText} · Backlog preview`
                     }
+                    const timeAndDetailLabel = [
+                      timeRangeLabel,
+                      detailText,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
                     const hiddenFallbackCount = usingFallback
                       ? Math.max(0, backlogTasks.length - displayCards.length)
                       : 0
                     const canExpand = displayCards.length > 0
+                    const pendingStatus = pendingInstanceStatuses.get(instance.id)
+                    const isPending = pendingStatus !== undefined
+                    const resolvedStatus =
+                      pendingStatus ?? instanceStatusById[instance.id] ?? instance.status ?? 'scheduled'
+                    const isCompleted = resolvedStatus === 'completed'
                     return (
                       <motion.div
                         key={instance.id}
@@ -1702,14 +1724,9 @@ export default function SchedulePage() {
                                 if (!canExpand) return
                                 setProjectExpansion(projectId)
                               }}
-                              className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border border-black/70 shadow-[0_28px_54px_rgba(0,0,0,0.62)]${
+                              className={`relative h-full w-full${
                                 canExpand ? ' cursor-pointer' : ''
                               }`}
-                              style={{
-                                ...cardStyle,
-                                background:
-                                  'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)',
-                              }}
                               initial={
                                 prefersReducedMotion ? false : { opacity: 0, y: 4 }
                               }
@@ -1738,25 +1755,27 @@ export default function SchedulePage() {
                                     }
                               }
                             >
-                              <div className="flex min-w-0 flex-1 items-start gap-3">
-                                <div className="min-w-0">
-                                  <span className="block truncate text-sm font-medium">
-                                    {project.name}
-                                  </span>
-                                  <div className="text-xs text-zinc-200/70">
-                                    {detailText}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex flex-shrink-0 items-center gap-2">
+                              <ProjectCard
+                                id={instance.id}
+                                title={project.name}
+                                timeRange={timeAndDetailLabel}
+                                completed={isCompleted}
+                                completedAt={instance.completed_at}
+                                disabled={isPending}
+                                className="h-full w-full pr-16 !shadow-[0_28px_54px_rgba(0,0,0,0.62)]"
+                                style={collapsedCardStyle}
+                                onComplete={handleFocusComplete}
+                                onUndo={handleFocusUndo}
+                              />
+                              <div
+                                className="pointer-events-none absolute right-3 top-2 flex items-center gap-2 text-white"
+                                aria-hidden
+                              >
                                 {project.skill_icon && (
-                                  <span className="text-lg leading-none" aria-hidden>
+                                  <span className="text-lg leading-none">
                                     {project.skill_icon}
                                   </span>
                                 )}
-                                {renderInstanceActions(instance.id, {
-                                  className: 'flex-shrink-0',
-                                })}
                                 <FlameEmber
                                   level={
                                     (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
