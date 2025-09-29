@@ -101,20 +101,15 @@ export default function ProfileByHandlePage() {
 
   if (error || !profile) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute left-1/2 top-[-20%] h-[320px] w-[320px] -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[160px]" />
-          <div className="absolute bottom-[-25%] right-[-15%] h-[260px] w-[260px] rounded-full bg-neutral-800/15 blur-[200px]" />
-        </div>
-
-        <div className="relative z-10 w-full max-w-md rounded-3xl border border-white/10 bg-slate-900/70 p-8 text-center shadow-[0_25px_45px_rgba(15,23,42,0.45)] backdrop-blur">
+      <div className="relative flex min-h-screen items-center justify-center bg-[#050505] px-4 text-white">
+        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-black/60 p-8 text-center shadow-[0_25px_45px_rgba(15,23,42,0.45)]">
           <h1 className="text-2xl font-semibold text-white">{error || "Profile not found"}</h1>
           <p className="mt-3 text-sm text-white/60">
             Something went wrong while loading this profile. Try again or head back to your dashboard.
           </p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="mt-6 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            className="mt-6 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050505]"
           >
             Back to Dashboard
           </button>
@@ -137,15 +132,8 @@ export default function ProfileByHandlePage() {
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
 
   return (
-    <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/30 via-neutral-900/25 to-transparent blur-[140px]" />
-        <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/30 via-neutral-950/25 to-transparent blur-[160px]" />
-        <div className="absolute left-1/2 top-[15%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[170px]" />
-        <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-neutral-800/20 blur-[200px]" />
-      </div>
-
-      <main className="relative z-10 py-14">
+    <div className="relative min-h-screen bg-[#050505] pb-[env(safe-area-inset-bottom)] text-white">
+      <main className="py-14">
         <HeroHeader
           profile={profile}
           socials={socialsData}
