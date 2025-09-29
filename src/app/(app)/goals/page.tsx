@@ -368,40 +368,51 @@ export default function GoalsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-900 text-white pb-24">
-        <GoalsHeader onCreate={() => setDrawer(true)} />
-        <GoalsUtilityBar
-          search={search}
-          onSearch={setSearch}
-          energy={energy}
-          onEnergy={setEnergy}
-          priority={priority}
-          onPriority={setPriority}
-          sort={sort}
-          onSort={setSort}
-          monuments={monuments}
-          monument={monument}
-          onMonument={setMonument}
-          skills={skills}
-          skill={skill}
-          onSkill={setSkill}
-        />
-        {loading ? (
-          <LoadingSkeleton />
-        ) : filteredGoals.length === 0 ? (
-          <EmptyState onCreate={() => setDrawer(true)} />
-        ) : (
-          <div className="flex flex-col gap-4 p-4">
-            {filteredGoals.map((goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                onEdit={() => handleEdit(goal)}
-                onToggleActive={() => handleToggleActive(goal)}
-              />
-            ))}
-          </div>
-        )}
+      <div className="relative min-h-screen overflow-hidden bg-[#05070c] text-white">
+        <div className="pointer-events-none absolute inset-0 -z-10 opacity-80">
+          <div className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-indigo-500/20 blur-3xl" />
+          <div className="absolute bottom-0 left-10 h-72 w-72 rounded-full bg-sky-500/20 blur-3xl" />
+          <div className="absolute -right-32 top-32 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl" />
+        </div>
+        <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pb-28 sm:px-6 lg:px-8">
+          <GoalsHeader onCreate={() => setDrawer(true)} />
+          <GoalsUtilityBar
+            search={search}
+            onSearch={setSearch}
+            energy={energy}
+            onEnergy={setEnergy}
+            priority={priority}
+            onPriority={setPriority}
+            sort={sort}
+            onSort={setSort}
+            monuments={monuments}
+            monument={monument}
+            onMonument={setMonument}
+            skills={skills}
+            skill={skill}
+            onSkill={setSkill}
+          />
+          {loading ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur">
+              <LoadingSkeleton />
+            </div>
+          ) : filteredGoals.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.02] p-10 text-center backdrop-blur">
+              <EmptyState onCreate={() => setDrawer(true)} />
+            </div>
+          ) : (
+            <div className="grid gap-6 pb-8 sm:grid-cols-2">
+              {filteredGoals.map((goal) => (
+                <GoalCard
+                  key={goal.id}
+                  goal={goal}
+                  onEdit={() => handleEdit(goal)}
+                  onToggleActive={() => handleToggleActive(goal)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
         <GoalDrawer
           open={drawer}
           onClose={() => {
