@@ -358,9 +358,8 @@ export default function SkillsCarousel() {
       <div className="mt-6 flex flex-wrap justify-center gap-2.5" role="tablist">
         {categories.map((category, idx) => {
           const isActive = idx === activeIndex;
-          const previewSkill = (skillsByCategory[category.id] || []).find((skill) => skill.emoji)?.emoji;
           const catIcon = getCategoryIcon(category);
-          const preview = catIcon || previewSkill || category.name.charAt(0).toUpperCase();
+          const preview = catIcon ?? category.name.charAt(0).toUpperCase();
           const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
 
           return (
