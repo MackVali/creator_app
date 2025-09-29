@@ -2,13 +2,62 @@ import { describe, it, expect, vi } from "vitest";
 
 import { fetchWindowsForDate, type WindowLite } from "../../../src/lib/scheduler/repo";
 
+type WindowRecord = WindowLite & { user_id: string };
+
+function createSupabaseStub(rows: WindowRecord[]) {
+  const queries: Array<{
+    eq: ReturnType<typeof vi.fn>;
+    contains?: ReturnType<typeof vi.fn>;
+    is?: ReturnType<typeof vi.fn>;
+  }> = [];
+
+  const select = vi.fn(() => {
+    const query: {
+      eq: ReturnType<typeof vi.fn>;
+      contains?: ReturnType<typeof vi.fn>;
+      is?: ReturnType<typeof vi.fn>;
+    } = {} as never;
+
+    query.eq = vi.fn((_column: string, value: string) => {
+      const contains = vi.fn(async (_containsColumn: string, values: number[]) => {
+        const data = rows
+          .filter(row => row.user_id === value)
+          .filter(row => Array.isArray(row.days) && values.every(v => row.days?.includes(v)))
+          .map(({ user_id: _userId, ...rest }) => rest);
+        return { data, error: null } as const;
+      });
+
+      const is = vi.fn(async (_isColumn: string, valueToMatch: number[] | null) => {
+        const data = rows
+          .filter(row => row.user_id === value)
+          .filter(row => row.days === valueToMatch)
+          .map(({ user_id: _userId, ...rest }) => rest);
+        return { data, error: null } as const;
+      });
+
+      query.contains = contains;
+      query.is = is;
+
+      return { contains, is } as const;
+    });
+
+    queries.push(query);
+    return { eq: query.eq } as const;
+  });
+
+  const from = vi.fn(() => ({ select }));
+
+  return { from, queries } as const;
+}
+
 describe("fetchWindowsForDate", () => {
   it("includes recurring windows without day restrictions and their prior-day carryover", async () => {
     const date = new Date("2024-01-02T00:00:00Z");
     const weekday = date.getDay();
     const prevWeekday = (weekday + 6) % 7;
+    const userId = "user-123";
 
-    const todayWindows: WindowLite[] = [
+    const todayWindows: WindowRecord[] = [
       {
         id: "win-today",
         label: "Today only",
@@ -16,10 +65,11 @@ describe("fetchWindowsForDate", () => {
         start_local: "10:00",
         end_local: "12:00",
         days: [weekday],
+        user_id: userId,
       },
     ];
 
-    const prevWindows: WindowLite[] = [
+    const prevWindows: WindowRecord[] = [
       {
         id: "win-prev-cross",
         label: "Yesterday overnight",
@@ -27,10 +77,11 @@ describe("fetchWindowsForDate", () => {
         start_local: "23:00",
         end_local: "01:00",
         days: [prevWeekday],
+        user_id: userId,
       },
     ];
 
-    const recurringWindows: WindowLite[] = [
+    const recurringWindows: WindowRecord[] = [
       {
         id: "win-recurring",
         label: "Every day",
@@ -38,6 +89,7 @@ describe("fetchWindowsForDate", () => {
         start_local: "08:00",
         end_local: "09:00",
         days: null,
+        user_id: userId,
       },
       {
         id: "win-recurring-cross",
@@ -46,33 +98,17 @@ describe("fetchWindowsForDate", () => {
         start_local: "22:00",
         end_local: "02:00",
         days: null,
+        user_id: userId,
       },
     ];
 
-    const containsResponses = new Map<string, WindowLite[]>([
-      [JSON.stringify([weekday]), todayWindows],
-      [JSON.stringify([prevWeekday]), prevWindows],
+    const client = createSupabaseStub([
+      ...todayWindows,
+      ...prevWindows,
+      ...recurringWindows,
     ]);
 
-    const select = vi.fn(() => ({
-      contains: vi.fn(async (_column: string, value: number[]) => {
-        const key = JSON.stringify(value);
-        const data = containsResponses.get(key) ?? [];
-        return { data, error: null } as const;
-      }),
-      is: vi.fn(async (_column: string, value: number[] | null) => {
-        if (value === null) {
-          return { data: recurringWindows, error: null } as const;
-        }
-        return { data: [], error: null } as const;
-      }),
-    }));
-
-    const client = {
-      from: vi.fn(() => ({ select })),
-    } as const;
-
-    const windows = await fetchWindowsForDate(date, client as never, 'UTC');
+    const windows = await fetchWindowsForDate(date, userId, client as never, 'UTC');
 
     expect(windows).toEqual(
       expect.arrayContaining([
@@ -96,19 +132,82 @@ describe("fetchWindowsForDate", () => {
 
   it("derives the weekday using the provided timezone", async () => {
     const date = new Date("2024-01-01T11:00:00Z");
-    const containsMock = vi.fn(async (_column: string, value: number[]) => ({
-      data: [],
-      error: null,
-    } as const));
-    const isMock = vi.fn(async () => ({ data: [], error: null } as const));
-    const select = vi.fn(() => ({ contains: containsMock, is: isMock }));
-    const client = { from: vi.fn(() => ({ select })) } as const;
+    const client = createSupabaseStub([]);
 
-    await fetchWindowsForDate(date, client as never, "Pacific/Auckland");
+    await fetchWindowsForDate(date, "user-123", client as never, "Pacific/Auckland");
 
-    expect(containsMock).toHaveBeenCalledWith("days", [2]);
-    expect(containsMock).toHaveBeenCalledWith("days", [1]);
-    expect(isMock).toHaveBeenCalledWith("days", null);
+    const [todayQuery, prevQuery, recurringQuery] = client.queries;
+
+    expect(todayQuery.contains).toHaveBeenCalledWith("days", [2]);
+    expect(prevQuery.contains).toHaveBeenCalledWith("days", [1]);
+    expect(recurringQuery.is).toHaveBeenCalledWith("days", null);
+  });
+
+  it("only includes windows for the requested user", async () => {
+    const date = new Date("2024-05-01T00:00:00Z");
+    const weekday = date.getDay();
+    const otherDay = (weekday + 1) % 7;
+
+    const sharedWindows: WindowRecord[] = [
+      {
+        id: "user-a-today",
+        label: "User A",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [weekday],
+        user_id: "user-a",
+      },
+      {
+        id: "user-b-today",
+        label: "User B",
+        energy: "NO",
+        start_local: "11:00",
+        end_local: "12:00",
+        days: [weekday],
+        user_id: "user-b",
+      },
+      {
+        id: "user-b-prev",
+        label: "User B prev",
+        energy: "NO",
+        start_local: "23:00",
+        end_local: "01:00",
+        days: [otherDay],
+        user_id: "user-b",
+      },
+      {
+        id: "user-a-recurring",
+        label: "User A recurring",
+        energy: "NO",
+        start_local: "20:00",
+        end_local: "22:00",
+        days: null,
+        user_id: "user-a",
+      },
+      {
+        id: "user-b-recurring",
+        label: "User B recurring",
+        energy: "NO",
+        start_local: "18:00",
+        end_local: "19:00",
+        days: null,
+        user_id: "user-b",
+      },
+    ];
+
+    const client = createSupabaseStub(sharedWindows);
+
+    const windowsForA = await fetchWindowsForDate(date, "user-a", client as never, "UTC");
+
+    expect(windowsForA.map(win => win.id)).toEqual(
+      expect.arrayContaining(["user-a-today", "user-a-recurring"]),
+    );
+    expect(windowsForA.some(win => win.id.startsWith("user-b"))).toBe(false);
+
+    for (const query of client.queries) {
+      expect(query.eq).toHaveBeenCalledWith("user_id", expect.any(String));
+    }
   });
 });
 

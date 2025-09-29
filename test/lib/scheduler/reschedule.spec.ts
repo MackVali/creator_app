@@ -321,7 +321,7 @@ describe("scheduleBacklog", () => {
 
     const testBaseDate = new Date("2024-01-02T10:30:00Z");
 
-    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async () => [
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (_date: Date, _userId: string) => [
       {
         id: "win-past",
         label: "Past",
@@ -485,7 +485,7 @@ describe("scheduleBacklog", () => {
     });
 
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
-      async (date: Date) => [
+      async (date: Date, _userId: string) => [
         {
           id: "win-primary",
           label: "Primary",
@@ -733,7 +733,7 @@ describe("scheduleBacklog", () => {
     (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue(projectDefs);
 
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
-      async (date: Date) => [
+      async (date: Date, _userId: string) => [
         {
           id: "win-daily",
           label: "Daily focus",
@@ -860,7 +860,7 @@ describe("scheduleBacklog", () => {
     (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue(projectDefs);
 
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
-      async (date: Date) => [
+      async (date: Date, _userId: string) => [
         {
           id: "win-overnight",
           label: "Overnight",
@@ -980,7 +980,7 @@ describe("scheduleBacklog", () => {
     (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue(projectDefs);
 
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
-      async (date: Date) => [
+      async (date: Date, _userId: string) => [
         {
           id: "win-range",
           label: "Daily slot",
@@ -1108,7 +1108,7 @@ describe("scheduleBacklog", () => {
 
       (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
 
-      (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+      (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date, _userId: string) => {
         const isoDay = date.toISOString().slice(0, 10);
         if (isoDay === "2024-01-02") {
           return [
@@ -1263,7 +1263,7 @@ describe("scheduleBacklog", () => {
 
     (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
 
-    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date, _userId: string) => {
       const day = date.toISOString().slice(0, 10);
       if (day === "2024-01-02") {
         return [
@@ -1383,7 +1383,7 @@ describe("scheduleBacklog", () => {
 
     (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
 
-    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date, _userId: string) => {
       const day = date.toISOString().slice(0, 10);
       if (day === "2024-01-02") {
         return [
@@ -1494,7 +1494,7 @@ describe("scheduleBacklog", () => {
 
     (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
 
-    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date, _userId: string) => {
       const day = date.toISOString().slice(0, 10);
       if (day === "2024-01-02") {
         return [
@@ -2049,7 +2049,7 @@ describe("scheduleBacklog", () => {
 
     (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
 
-    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date) => {
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(async (date: Date, _userId: string) => {
       const day = date.toISOString().slice(0, 10);
       if (day === "2024-01-02") {
         return [
@@ -2263,7 +2263,7 @@ describe("scheduleBacklog", () => {
 
     const requestedDates: string[] = [];
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockImplementation(
-      async (date: Date) => {
+      async (date: Date, _userId: string) => {
         requestedDates.push(date.toISOString());
         return [
           {

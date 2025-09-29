@@ -638,9 +638,10 @@ export default function SchedulePage() {
     setMetaStatus('loading')
 
     async function load() {
+      if (!userId) return
       try {
         const [ws, ts, pm, scheduledIds] = await Promise.all([
-          fetchWindowsForDate(currentDate, undefined, localTimeZone),
+          fetchWindowsForDate(currentDate, userId, undefined, localTimeZone),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
