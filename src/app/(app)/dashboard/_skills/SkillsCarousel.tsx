@@ -60,7 +60,7 @@ export default function SkillsCarousel() {
         const existing = prev[category.id];
         next[category.id] = {
           color: existing?.color ?? category.color_hex ?? FALLBACK_COLOR,
-          icon: existing?.icon ?? category.icon_emoji ?? null,
+          icon: existing?.icon ?? category.icon ?? null,
         };
       }
       return next;
@@ -230,7 +230,7 @@ export default function SkillsCarousel() {
   const getCategoryColor = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
-    catOverrides[category.id]?.icon ?? category.icon_emoji ?? null;
+    catOverrides[category.id]?.icon ?? category.icon ?? null;
 
   const activeColor = categories[activeIndex]
     ? getCategoryColor(categories[activeIndex]) || FALLBACK_COLOR
@@ -335,7 +335,7 @@ export default function SkillsCarousel() {
                       [category.id]: {
                         ...(prev[category.id] || {}),
                         color,
-                        icon: prev[category.id]?.icon ?? category.icon_emoji ?? null,
+                        icon: prev[category.id]?.icon ?? category.icon ?? null,
                       },
                     }))
                   }
@@ -358,9 +358,15 @@ export default function SkillsCarousel() {
       <div className="mt-6 flex flex-wrap justify-center gap-2.5" role="tablist">
         {categories.map((category, idx) => {
           const isActive = idx === activeIndex;
-          const previewSkill = (skillsByCategory[category.id] || []).find((skill) => skill.emoji)?.emoji;
+          const previewSkill = (skillsByCategory[category.id] || []).find(
+            (skill) => skill.emoji
+          )?.emoji;
           const catIcon = getCategoryIcon(category);
-          const preview = catIcon || previewSkill || category.name.charAt(0).toUpperCase();
+          const resolvedIcon = catIcon?.trim();
+          const preview =
+            resolvedIcon && resolvedIcon.length > 0
+              ? resolvedIcon
+              : previewSkill || category.name.charAt(0).toUpperCase();
           const chipColor = getCategoryColor(category) || FALLBACK_COLOR;
 
           return (

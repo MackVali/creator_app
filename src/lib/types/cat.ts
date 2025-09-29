@@ -5,5 +5,5 @@ export type CatRow = {
   created_at?: string | null;
   color_hex?: string | null;
   sort_order?: number | null;
-  icon_emoji?: string | null;
+  icon?: string | null;
 };

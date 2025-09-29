@@ -86,8 +86,8 @@ export default function CategoryCard({
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
-  const [icon, setIcon] = useState<string>(iconOverride || category.icon_emoji || "");
-  const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon_emoji || "");
+  const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
+  const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
   const dragging = useRef(false);
   const router = useRouter();
 
@@ -111,10 +111,10 @@ export default function CategoryCard({
     setLocalSkills([...skills]);
   }, [skills]);
   useEffect(() => {
-    const nextIcon = iconOverride ?? category.icon_emoji ?? "";
+    const nextIcon = iconOverride ?? category.icon ?? "";
     setIcon(nextIcon);
     setIconDraft(nextIcon);
-  }, [category.icon_emoji, iconOverride]);
+  }, [category.icon, iconOverride]);
 
   const extractFirstGlyph = (value: string): string => {
     if (!value) return "";

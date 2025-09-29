@@ -36,7 +36,7 @@ export async function GET() {
       .order("created_at", { ascending: false }),
     supabase
       .from("cats")
-      .select("id,name,user_id,color_hex,sort_order,icon_emoji")
+      .select("id,name,user_id,color_hex,sort_order,icon")
       .eq("user_id", user.id)
       .order("sort_order", { ascending: true, nullsFirst: false }),
   ]);
@@ -60,14 +60,14 @@ export async function GET() {
         user_id: string;
         color_hex?: string | null;
         sort_order?: number | null;
-        icon_emoji?: string | null;
+        icon?: string | null;
       }) => cat.id === skill.cat_id
     );
     return {
       ...skill,
       cat_name: category?.name || "Uncategorized",
       cat_color_hex: category?.color_hex || "#000000",
-      cat_icon_emoji: category?.icon_emoji || null,
+      cat_icon: category?.icon || null,
     };
   });
 
@@ -116,7 +116,7 @@ export async function GET() {
       skill: SkillRow & {
         cat_name: string;
         cat_color_hex: string | null;
-        cat_icon_emoji: string | null;
+        cat_icon: string | null;
       }
     ) => {
       const catId = skill.cat_id;
@@ -130,7 +130,7 @@ export async function GET() {
           user_id: skill.user_id,
           skill_count: 0,
           color_hex: catId ? skill.cat_color_hex || "#000000" : "#000000",
-          icon_emoji: skill.cat_icon_emoji,
+          icon: skill.cat_icon,
           skills: [],
         };
       }
@@ -161,7 +161,7 @@ export async function GET() {
     user_id: string;
     color_hex?: string | null;
     sort_order?: number | null;
-    icon_emoji?: string | null;
+    icon?: string | null;
   }[];
 
   // Create a complete list of CATs with their skills (or empty skills array)
@@ -173,7 +173,7 @@ export async function GET() {
         ...catSkills,
         color_hex: cat.color_hex || catSkills.color_hex || "#000000",
         order: cat.sort_order ?? null,
-        icon_emoji: cat.icon_emoji ?? catSkills.icon_emoji ?? null,
+        icon: cat.icon ?? catSkills.icon ?? null,
       }; // Return CAT with its skills
     } else {
       // CAT exists but has no skills
@@ -184,7 +184,7 @@ export async function GET() {
         skill_count: 0,
         color_hex: cat.color_hex || "#000000",
         order: cat.sort_order ?? null,
-        icon_emoji: cat.icon_emoji ?? null,
+        icon: cat.icon ?? null,
         skills: [],
       };
     }
@@ -197,7 +197,7 @@ export async function GET() {
       ...uncategorizedCat,
       color_hex: uncategorizedCat.color_hex || "#000000",
       order: null,
-      icon_emoji: uncategorizedCat.icon_emoji || null,
+      icon: uncategorizedCat.icon || null,
     });
   }
 
