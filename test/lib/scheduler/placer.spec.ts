@@ -11,8 +11,8 @@ describe("placeByEnergyWeight", () => {
       { id: "w2", label: "Low", energy: "LOW", start_local: "10:00", end_local: "11:00" },
     ];
     const tasks = [
-      { id: "t1", name: "M", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "MEDIUM", weight: 1 },
-      { id: "t2", name: "L", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "LOW", weight: 1 },
+      { id: "t1", name: "M", priority: "LOW", stage: "PREPARE", duration_min: 60, energy: "MEDIUM", weight: 1 },
+      { id: "t2", name: "L", priority: "LOW", stage: "PREPARE", duration_min: 60, energy: "LOW", weight: 1 },
     ];
     const result = placeByEnergyWeight(tasks, windows, date);
     expect(result.placements).toHaveLength(2);
@@ -27,7 +27,7 @@ describe("placeByEnergyWeight", () => {
       { id: "w1", label: "Low", energy: "LOW", start_local: "09:00", end_local: "10:00" },
     ];
     const tasks = [
-      { id: "t1", name: "H", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "HIGH", weight: 1 },
+      { id: "t1", name: "H", priority: "LOW", stage: "PREPARE", duration_min: 60, energy: "HIGH", weight: 1 },
     ];
     const result = placeByEnergyWeight(tasks, windows, date);
     expect(result.placements).toHaveLength(0);
@@ -40,7 +40,7 @@ describe("placeByEnergyWeight", () => {
       { id: "w1", label: "Night", energy: "LOW", start_local: "22:00", end_local: "02:00", fromPrevDay: true },
     ];
     const tasks = [
-      { id: "t1", name: "T", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "LOW", weight: 1 },
+      { id: "t1", name: "T", priority: "LOW", stage: "PREPARE", duration_min: 60, energy: "LOW", weight: 1 },
     ];
     const result = placeByEnergyWeight(tasks, windows, date);
     expect(result.placements).toHaveLength(1);
@@ -57,7 +57,7 @@ describe("placeByEnergyWeight", () => {
       { id: "p1", name: "Proj", priority: "LOW", stage: "RESEARCH", energy: null },
     ];
     const tasks: TaskLite[] = [
-      { id: "t1", name: "T", priority: "LOW", stage: "Prepare", duration_min: 60, energy: "high", project_id: "p1" },
+      { id: "t1", name: "T", priority: "LOW", stage: "PREPARE", duration_min: 60, energy: "high", project_id: "p1" },
     ];
     const items = buildProjectItems(projects, tasks);
     const result = placeByEnergyWeight(items, windows, date);
