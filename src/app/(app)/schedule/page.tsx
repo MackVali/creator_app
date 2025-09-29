@@ -1047,6 +1047,25 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
+  const launchCompletionConfetti = useCallback(() => {
+    if (prefersReducedMotion) return
+
+    void import('canvas-confetti')
+      .then(({ default: confetti }) =>
+        confetti({
+          particleCount: 140,
+          spread: 70,
+          scalar: 0.9,
+          disableForReducedMotion: true,
+          colors: ['#22c55e', '#16a34a', '#bbf7d0'],
+          origin: { y: 0.6 },
+        })
+      )
+      .catch(error => {
+        console.error('Failed to load confetti', error)
+      })
+  }, [prefersReducedMotion])
+
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
@@ -1081,6 +1100,10 @@ export default function SchedulePage() {
               : inst
           )
         )
+
+        if (nextStatus === 'completed') {
+          launchCompletionConfetti()
+        }
       } catch (error) {
         console.error(error)
       } finally {
@@ -1091,7 +1114,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances]
+    [userId, setInstances, launchCompletionConfetti]
   )
 
   const renderInstanceActions = (
