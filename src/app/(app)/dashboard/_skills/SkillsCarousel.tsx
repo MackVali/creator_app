@@ -60,7 +60,7 @@ export default function SkillsCarousel() {
         const existing = prev[category.id];
         next[category.id] = {
           color: existing?.color ?? category.color_hex ?? FALLBACK_COLOR,
-          icon: existing?.icon ?? category.icon_emoji ?? null,
+          icon: existing?.icon ?? category.icon ?? null,
         };
       }
       return next;
@@ -230,7 +230,7 @@ export default function SkillsCarousel() {
   const getCategoryColor = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
-    catOverrides[category.id]?.icon ?? category.icon_emoji ?? null;
+    catOverrides[category.id]?.icon ?? category.icon ?? null;
 
   const activeColor = categories[activeIndex]
     ? getCategoryColor(categories[activeIndex]) || FALLBACK_COLOR
@@ -335,7 +335,7 @@ export default function SkillsCarousel() {
                       [category.id]: {
                         ...(prev[category.id] || {}),
                         color,
-                        icon: prev[category.id]?.icon ?? category.icon_emoji ?? null,
+                        icon: prev[category.id]?.icon ?? category.icon ?? null,
                       },
                     }))
                   }

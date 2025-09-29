@@ -8,7 +8,7 @@ export interface Category {
   name: string;
   color_hex?: string | null;
   order?: number | null;
-  icon_emoji?: string | null;
+  icon?: string | null;
 }
 
 export interface Skill {
@@ -25,7 +25,7 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
   if (!supabase) throw new Error("Supabase client not available");
   const { data, error } = await supabase
     .from("cats")
-    .select("id,name,color_hex,sort_order,icon_emoji")
+    .select("id,name,color_hex,sort_order,icon")
     .eq("user_id", userId)
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true });
@@ -39,11 +39,11 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
       .order("name", { ascending: true });
     if (fallback.error) return [];
     return (fallback.data ?? []).map(
-      (c: { id: string; name: string; sort_order?: number | null; icon_emoji?: string | null }) => ({
+      (c: { id: string; name: string; sort_order?: number | null; icon?: string | null }) => ({
         id: c.id,
         name: c.name,
         order: c.sort_order,
-        icon_emoji: c.icon_emoji ?? null,
+        icon: c.icon ?? null,
       })
     );
   }
@@ -52,7 +52,7 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
     name: c.name,
     color_hex: c.color_hex || "#000000",
     order: c.sort_order,
-    icon_emoji: c.icon_emoji || null,
+    icon: c.icon || null,
   }));
 }
 
