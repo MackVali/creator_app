@@ -173,18 +173,14 @@
     rgba(15, 23, 42, 0.35);
 }
 
-.paper {
+.paper,
+.paperBare {
   position: absolute;
   inset: calc(26px * var(--folder-scale, 1)) calc(26px * var(--folder-scale, 1))
     calc(30px * var(--folder-scale, 1));
   display: flex;
   flex-direction: column;
-  gap: clamp(4px, calc(10px * var(--folder-scale, 1)), 18px);
   border-radius: clamp(9px, calc(15px * var(--folder-scale, 1)), 22px);
-  background: var(--paper-color, rgba(255, 255, 255, 0.96));
-  box-shadow: 0 calc(20px * var(--folder-scale, 1)) calc(40px * var(--folder-scale, 1))
-    rgba(15, 23, 42, 0.14);
-  padding: clamp(6px, calc(12px * var(--folder-scale, 1)), 16px);
   transform: translate3d(0, calc(24px * var(--folder-scale, 1)), 0) scale(0.9);
   opacity: 0;
   pointer-events: none;
@@ -201,7 +197,23 @@
   z-index: var(--paper-z);
 }
 
-.open .paper {
+.paper {
+  gap: clamp(4px, calc(10px * var(--folder-scale, 1)), 18px);
+  background: var(--paper-color, rgba(255, 255, 255, 0.96));
+  box-shadow: 0 calc(20px * var(--folder-scale, 1)) calc(40px * var(--folder-scale, 1))
+    rgba(15, 23, 42, 0.14);
+  padding: clamp(6px, calc(12px * var(--folder-scale, 1)), 16px);
+}
+
+.paperBare {
+  gap: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.open .paper,
+.open .paperBare {
   opacity: 1;
   pointer-events: auto;
   transform: translate3d(
@@ -213,6 +225,10 @@
   box-shadow: 0 calc(26px * var(--folder-scale, 1)) calc(52px * var(--folder-scale, 1))
     rgba(15, 23, 42, 0.2);
   transition-delay: calc(var(--paper-delay) + 0.04s);
+}
+
+.open .paperBare {
+  box-shadow: none;
 }
 
 .paper:hover {

@@ -60,20 +60,16 @@ export function GoalFolderCard({
     ? groupedProjects.map((sheet, sheetIndex) => (
         <div
           key={sheet[0]?.id ?? `sheet-${sheetIndex}`}
-          className="flex h-full w-full flex-col text-left text-slate-900"
+          className="grid h-full w-full grid-cols-2 gap-1 overflow-y-auto text-left text-slate-900"
         >
-          <div className="flex-1 overflow-hidden rounded-xl border border-slate-200/60 bg-white/85 p-1.5 shadow-sm">
-            <div className="grid h-full grid-cols-2 gap-1 overflow-y-auto pr-0.5">
-              {sheet.map((project) => (
-                <div
-                  key={project.id}
-                  className="flex aspect-square items-center justify-center rounded-lg bg-white text-center text-[9px] font-semibold leading-tight text-slate-900 shadow"
-                >
-                  <span className="line-clamp-3 px-1">{project.name}</span>
-                </div>
-              ))}
+          {sheet.map((project) => (
+            <div
+              key={project.id}
+              className="flex aspect-square items-center justify-center rounded-lg bg-white px-1 text-center text-[9px] font-semibold leading-tight text-slate-900 shadow"
+            >
+              {project.name}
             </div>
-          </div>
+          ))}
         </div>
       ))
     : [
@@ -111,6 +107,7 @@ export function GoalFolderCard({
         items={folderItems}
         size={size}
         label={folderLabel}
+        bareItems
       />
     </div>
   );
