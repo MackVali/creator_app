@@ -282,6 +282,7 @@ export default function GoalsPage() {
             projects: projList,
             monumentId: g.monument_id ?? null,
             skills: Array.from(skillsByGoal.get(g.id) || []),
+            why: g.why || undefined,
           };
         });
 
@@ -422,6 +423,7 @@ export default function GoalsPage() {
           }}
           onAdd={addGoal}
           initialGoal={editing}
+          monuments={monuments}
           onUpdate={async (goal) => {
             const supabase = getSupabaseBrowser();
             if (supabase) {
@@ -429,10 +431,35 @@ export default function GoalsPage() {
                 .from("goals")
                 .update({
                   name: goal.title,
-                  priority: goal.priority,
-                  energy: goal.energy,
+                  priority:
+                    goal.priority === "High"
+                      ? "HIGH"
+                      : goal.priority === "Medium"
+                      ? "MEDIUM"
+                      : "LOW",
+                  energy:
+                    goal.energy === "Extreme"
+                      ? "EXTREME"
+                      : goal.energy === "Ultra"
+                      ? "ULTRA"
+                      : goal.energy === "High"
+                      ? "HIGH"
+                      : goal.energy === "Medium"
+                      ? "MEDIUM"
+                      : goal.energy === "Low"
+                      ? "LOW"
+                      : "NO",
                   active: goal.active,
-                  status: goal.status,
+                  status:
+                    goal.status === "Completed"
+                      ? "COMPLETED"
+                      : goal.status === "Overdue"
+                      ? "OVERDUE"
+                      : goal.status === "Inactive"
+                      ? "INACTIVE"
+                      : "ACTIVE",
+                  why: goal.why ?? null,
+                  monument_id: goal.monumentId || null,
                 })
                 .eq("id", goal.id);
             }
