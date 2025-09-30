@@ -60,19 +60,22 @@ type DayTransitionDirection = -1 | 0 | 1
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
-    opacity: direction === 0 ? 1 : 0,
-    x: direction === 0 ? 0 : direction > 0 ? 64 : -64,
+    opacity: direction === 0 ? 1 : 0.6,
+    x: direction === 0 ? 0 : direction > 0 ? 40 : -40,
+    scale: 0.995,
   }),
-  center: { opacity: 1, x: 0 },
+  center: { opacity: 1, x: 0, scale: 1 },
   exit: (direction: DayTransitionDirection) => ({
-    opacity: direction === 0 ? 1 : 0,
-    x: direction === 0 ? 0 : direction > 0 ? -64 : 64,
+    opacity: direction === 0 ? 0 : 0.6,
+    x: direction === 0 ? 0 : direction > 0 ? -40 : 40,
+    scale: 0.995,
   }),
 }
 
 const dayTimelineTransition = {
-  duration: 0.28,
-  ease: [0.24, 0.9, 0.3, 1] as const,
+  x: { type: 'spring', stiffness: 280, damping: 28, mass: 0.9 },
+  opacity: { duration: 0.22, ease: [0.33, 1, 0.68, 1] as const },
+  scale: { duration: 0.24, ease: [0.2, 0.8, 0.2, 1] as const },
 }
 
 function ScheduleViewShell({ children }: { children: ReactNode }) {
@@ -2052,7 +2055,11 @@ export default function SchedulePage() {
                 {prefersReducedMotion ? (
                   dayTimelineNode
                 ) : (
-                  <AnimatePresence mode="wait" initial={false} custom={dayTransitionDirection}>
+                  <AnimatePresence
+                    mode="sync"
+                    initial={false}
+                    custom={dayTransitionDirection}
+                  >
                     <motion.div
                       key={dayViewDateKey}
                       custom={dayTransitionDirection}
