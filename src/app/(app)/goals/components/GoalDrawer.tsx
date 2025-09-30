@@ -72,13 +72,6 @@ const ENERGY_OPTIONS: {
   },
 ];
 
-const STATUS_OPTIONS: Goal["status"][] = [
-  "Active",
-  "Completed",
-  "Overdue",
-  "Inactive",
-];
-
 export function GoalDrawer({
   open,
   onClose,
@@ -89,10 +82,8 @@ export function GoalDrawer({
 }: GoalDrawerProps) {
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
-  const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Goal["priority"]>("Low");
   const [energy, setEnergy] = useState<Goal["energy"]>("No");
-  const [status, setStatus] = useState<Goal["status"]>("Active");
   const [active, setActive] = useState(true);
   const [why, setWhy] = useState("");
   const [monumentId, setMonumentId] = useState<string>("");
@@ -103,20 +94,16 @@ export function GoalDrawer({
     if (initialGoal) {
       setTitle(initialGoal.title);
       setEmoji(initialGoal.emoji || "");
-      setDueDate(initialGoal.dueDate || "");
       setPriority(initialGoal.priority);
       setEnergy(initialGoal.energy);
-      setStatus(initialGoal.status);
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
       setMonumentId(initialGoal.monumentId || "");
     } else {
       setTitle("");
       setEmoji("");
-      setDueDate("");
       setPriority("Low");
       setEnergy("No");
-      setStatus("Active");
       setActive(true);
       setWhy("");
       setMonumentId("");
@@ -134,13 +121,18 @@ export function GoalDrawer({
     e.preventDefault();
     if (!canSubmit) return;
 
-    const computedStatus = active ? status : "Inactive";
+    const preservedStatus = initialGoal?.status ?? "Active";
+    const computedStatus = active
+      ? preservedStatus === "Inactive"
+        ? "Active"
+        : preservedStatus
+      : "Inactive";
     const computedActive = computedStatus !== "Inactive";
     const nextGoal: Goal = {
       id: initialGoal?.id || Date.now().toString(),
       title: title.trim(),
       emoji: emoji.trim() || undefined,
-      dueDate: dueDate || undefined,
+      dueDate: initialGoal?.dueDate,
       priority,
       energy,
       progress: initialGoal?.progress ?? 0,
@@ -229,40 +221,26 @@ export function GoalDrawer({
                 />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="goal-due" className="text-white/70">
-                    Target date
-                  </Label>
-                  <Input
-                    id="goal-due"
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-white/70">Monument link</Label>
-                  <Select
-                    value={monumentId}
-                    onValueChange={(value) => setMonumentId(value)}
-                    placeholder="Not linked"
-                    className="w-full"
-                    triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04]"
-                  >
-                    <SelectContent>
-                      <SelectItem value="" label="Not linked">
-                        <span className="text-sm text-white/70">Not linked</span>
+              <div className="space-y-2">
+                <Label className="text-white/70">Monument link</Label>
+                <Select
+                  value={monumentId}
+                  onValueChange={(value) => setMonumentId(value)}
+                  placeholder="Not linked"
+                  className="w-full"
+                  triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04]"
+                >
+                  <SelectContent>
+                    <SelectItem value="" label="Not linked">
+                      <span className="text-sm text-white/70">Not linked</span>
+                    </SelectItem>
+                    {monumentOptions.map((monument) => (
+                      <SelectItem key={monument.id} value={monument.id}>
+                        {monument.title}
                       </SelectItem>
-                      {monumentOptions.map((monument) => (
-                        <SelectItem key={monument.id} value={monument.id}>
-                          {monument.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-3">
@@ -313,30 +291,6 @@ export function GoalDrawer({
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <Label className="text-white/70">Status</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {STATUS_OPTIONS.map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => {
-                        setStatus(value);
-                        setActive(value !== "Inactive");
-                      }}
-                      className={cn(
-                        "rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-sm font-medium text-white/80 transition",
-                        "hover:border-violet-400/50 hover:bg-violet-500/10",
-                        status === value &&
-                          "border-violet-400/60 bg-violet-500/15 text-white shadow-[0_0_0_1px_rgba(139,92,246,0.35)]"
-                      )}
-                    >
-                      {value}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
                 <div>
                   <p className="text-sm font-medium text-white">Goal visibility</p>
@@ -351,17 +305,7 @@ export function GoalDrawer({
                     "rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide",
                     active ? "bg-emerald-500 text-black" : "text-white/80"
                   )}
-                  onClick={() =>
-                    setActive((prev) => {
-                      const next = !prev;
-                      if (!next) {
-                        setStatus("Inactive");
-                      } else if (status === "Inactive") {
-                        setStatus("Active");
-                      }
-                      return next;
-                    })
-                  }
+                  onClick={() => setActive((prev) => !prev)}
                 >
                   {active ? "Active" : "Inactive"}
                 </Button>
