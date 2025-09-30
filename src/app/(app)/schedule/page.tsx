@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -84,34 +85,43 @@ type BurstVector<T extends BurstBaseConfig> = T & {
   delay: number
 }
 
+const MOLTEN_CRACK_PATHS = [
+  'M10 216 L122 168 L92 18',
+  'M130 170 L204 82 L258 220',
+  'M84 134 L222 208 L392 144',
+  'M210 84 L334 118 L370 30',
+  'M176 196 L158 272 L276 252',
+  'M240 156 L322 214 L392 184',
+]
+
 const COMPLETION_SHARDS: Array<BurstVector<ShardConfig>> = buildBurstVectors(
   [
-    { angle: -18, distance: 110, width: 26, height: 12, startRotation: -8, endRotation: -46 },
-    { angle: 12, distance: 118, width: 22, height: 10, startRotation: 4, endRotation: 52 },
-    { angle: -52, distance: 96, width: 18, height: 10, startRotation: -24, endRotation: -88 },
-    { angle: 48, distance: 102, width: 24, height: 12, startRotation: 18, endRotation: 64 },
-    { angle: 86, distance: 88, width: 20, height: 9, startRotation: 10, endRotation: 96 },
-    { angle: -94, distance: 92, width: 20, height: 10, startRotation: -16, endRotation: -104 },
-    { angle: -140, distance: 86, width: 18, height: 9, startRotation: -32, endRotation: -140 },
-    { angle: 152, distance: 84, width: 18, height: 10, startRotation: 22, endRotation: 140 },
+    { angle: -18, distance: 92, width: 24, height: 12, startRotation: -8, endRotation: -46 },
+    { angle: 12, distance: 98, width: 20, height: 10, startRotation: 6, endRotation: 44 },
+    { angle: -52, distance: 82, width: 18, height: 10, startRotation: -24, endRotation: -82 },
+    { angle: 48, distance: 84, width: 22, height: 12, startRotation: 18, endRotation: 56 },
+    { angle: 86, distance: 74, width: 18, height: 9, startRotation: 10, endRotation: 88 },
+    { angle: -94, distance: 78, width: 18, height: 10, startRotation: -16, endRotation: -96 },
+    { angle: -140, distance: 72, width: 16, height: 9, startRotation: -30, endRotation: -128 },
+    { angle: 152, distance: 70, width: 16, height: 10, startRotation: 22, endRotation: 124 },
   ],
-  45
+  40
 )
 
 const COMPLETION_CONFETTI: Array<BurstVector<ConfettiConfig>> = buildBurstVectors(
   [
-    { angle: -76, distance: 142, width: 6, height: 14, endRotation: -120, hue: 140 },
-    { angle: -38, distance: 168, width: 7, height: 16, endRotation: -64, hue: 144 },
-    { angle: -8, distance: 158, width: 6, height: 15, endRotation: -18, hue: 148 },
-    { angle: 22, distance: 164, width: 6, height: 16, endRotation: 38, hue: 152 },
-    { angle: 54, distance: 150, width: 7, height: 16, endRotation: 76, hue: 156 },
-    { angle: 86, distance: 134, width: 6, height: 14, endRotation: 112, hue: 160 },
-    { angle: 126, distance: 126, width: 5, height: 12, endRotation: 148, hue: 166 },
-    { angle: -128, distance: 132, width: 5, height: 12, endRotation: -156, hue: 136 },
-    { angle: 168, distance: 118, width: 5, height: 11, endRotation: 176, hue: 172 },
-    { angle: -158, distance: 120, width: 5, height: 12, endRotation: -172, hue: 132 },
+    { angle: -76, distance: 120, width: 6, height: 14, endRotation: -110, hue: 140 },
+    { angle: -38, distance: 132, width: 6, height: 16, endRotation: -60, hue: 144 },
+    { angle: -8, distance: 126, width: 5, height: 15, endRotation: -20, hue: 148 },
+    { angle: 22, distance: 130, width: 5, height: 15, endRotation: 34, hue: 152 },
+    { angle: 54, distance: 118, width: 6, height: 15, endRotation: 72, hue: 156 },
+    { angle: 86, distance: 110, width: 5, height: 14, endRotation: 100, hue: 160 },
+    { angle: 126, distance: 106, width: 4, height: 12, endRotation: 144, hue: 166 },
+    { angle: -128, distance: 108, width: 4, height: 12, endRotation: -148, hue: 136 },
+    { angle: 168, distance: 96, width: 4, height: 11, endRotation: 170, hue: 172 },
+    { angle: -158, distance: 98, width: 4, height: 12, endRotation: -162, hue: 132 },
   ],
-  35
+  32
 )
 
 function buildBurstVectors<T extends BurstBaseConfig>(
@@ -210,6 +220,7 @@ function TimelineProjectCardFrame({
   const [hasAnimatedCompletion, setHasAnimatedCompletion] = useState(isCompleted)
   const [resolvedSweepId, setResolvedSweepId] = useState(0)
   const lastStageRef = useRef<CompletionStage>(completionStage)
+  const moltenGradientId = useId()
 
   useEffect(() => {
     if (prefersReducedMotion) {
@@ -244,12 +255,12 @@ function TimelineProjectCardFrame({
     if (prefersReducedMotion) return
 
     if (completionStage === 'molten') {
-      const timer = setTimeout(() => setCompletionStage('explosion'), 900)
+      const timer = setTimeout(() => setCompletionStage('explosion'), 940)
       return () => clearTimeout(timer)
     }
 
     if (completionStage === 'explosion') {
-      const timer = setTimeout(() => setCompletionStage('resolved'), 620)
+      const timer = setTimeout(() => setCompletionStage('resolved'), 760)
       return () => clearTimeout(timer)
     }
 
@@ -362,7 +373,33 @@ function TimelineProjectCardFrame({
       {children}
       {!prefersReducedMotion && (
         <div className="completion-effects" aria-hidden>
-          {showMolten && <div className="completion-molten" />}
+          {showMolten && (
+            <div className="completion-molten">
+              <svg
+                className="completion-molten-cracks"
+                viewBox="0 0 400 280"
+                preserveAspectRatio="xMidYMid slice"
+              >
+                <defs>
+                  <linearGradient id={moltenGradientId} x1="0" x2="1" y1="0" y2="1">
+                    <stop offset="0%" stopColor="rgba(190, 242, 100, 0.2)" />
+                    <stop offset="40%" stopColor="rgba(190, 242, 100, 0.65)" />
+                    <stop offset="100%" stopColor="rgba(52, 211, 153, 0.9)" />
+                  </linearGradient>
+                </defs>
+                {MOLTEN_CRACK_PATHS.map((path, pathIndex) => (
+                  <path
+                    key={`crack-${pathIndex}`}
+                    d={path}
+                    style={{
+                      '--molten-stroke': `url(#${moltenGradientId})`,
+                    } as CSSProperties}
+                  />
+                ))}
+              </svg>
+              <div className="completion-molten-glow" />
+            </div>
+          )}
           {showExplosion && (
             <div className="completion-explosion">
               <span className="completion-explosion-core" />
