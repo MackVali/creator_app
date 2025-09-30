@@ -4,15 +4,35 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  useEffect,
+  useState,
   type ReactNode,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import { Fab } from "@/components/ui/Fab";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "./DayTimeline";
 
 interface FocusTimelineProps {
   children?: ReactNode;
+}
+
+function FocusTimelineFab() {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
+    return null;
+  }
+
+  return createPortal(
+    <Fab className="fixed bottom-6 right-6 z-[60] sm:bottom-8 sm:right-8" />,
+    document.body
+  );
 }
 
 export function FocusTimeline({ children }: FocusTimelineProps) {
@@ -37,7 +57,7 @@ export function FocusTimeline({ children }: FocusTimelineProps) {
       <DayTimeline startHour={startHour} endHour={endHour} date={now}>
         {enhancedChildren}
       </DayTimeline>
-      <Fab className="fixed bottom-6 right-6 z-50 sm:bottom-8 sm:right-8" />
+      <FocusTimelineFab />
     </div>
   );
 }
