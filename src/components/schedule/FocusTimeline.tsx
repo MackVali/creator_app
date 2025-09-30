@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
+import { Fab } from "@/components/ui/Fab";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "./DayTimeline";
 
@@ -32,10 +33,11 @@ export function FocusTimeline({ children }: FocusTimelineProps) {
   });
 
   return (
-    <div className="-ml-4 -mr-2 sm:mx-0">
+    <div className="relative -ml-4 -mr-2 sm:mx-0">
       <DayTimeline startHour={startHour} endHour={endHour} date={now}>
         {enhancedChildren}
       </DayTimeline>
+      <Fab className="fixed bottom-6 right-6 z-50 sm:bottom-8 sm:right-8" />
     </div>
   );
 }
