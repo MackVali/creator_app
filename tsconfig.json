@@ -20,8 +20,9 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*", "./components/*", "./lib/*"],
+      "@/*": ["./src/*", "./components/*", "./lib/*", "./hooks/*"],
       "@/components/*": ["./src/components/*", "./components/*"],
+      "@/hooks/*": ["./src/hooks/*", "./hooks/*"],
       "@/lib/*": ["./src/lib/*", "./lib/*"],
       "@/types/*": ["./src/types/*"]
     }
