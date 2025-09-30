@@ -15,6 +15,7 @@ declare
   new_task public.tasks%rowtype;
   project_elem jsonb;
   task_elem jsonb;
+  task_array jsonb;
   inserted_projects jsonb := '[]'::jsonb;
   inserted_tasks jsonb := '[]'::jsonb;
   goal_user_id uuid := coalesce((payload->>'user_id')::uuid, auth_id);
@@ -77,38 +78,42 @@ begin
       )
     );
 
-    for task_elem in
-      select value from jsonb_array_elements(coalesce(project_elem->'tasks', '[]'::jsonb))
-    loop
-      if coalesce(btrim(task_elem->>'name'), '') = '' then
-        continue;
-      end if;
+    task_array := coalesce(project_elem->'tasks', '[]'::jsonb);
 
-      insert into public.tasks (user_id, goal_id, project_id, name, stage, priority, energy, notes)
-      values (
-        goal_user_id,
-        new_goal.id,
-        new_project.id,
-        task_elem->>'name',
-        coalesce(task_elem->>'stage', 'PREPARE'),
-        coalesce(task_elem->>'priority', 'NO'),
-        coalesce(task_elem->>'energy', 'NO'),
-        nullif(task_elem->>'notes', '')
-      )
-      returning * into new_task;
+    if jsonb_typeof(task_array) = 'array' then
+      for task_elem in
+        select value from jsonb_array_elements(task_array)
+      loop
+        if coalesce(btrim(task_elem->>'name'), '') = '' then
+          continue;
+        end if;
 
-      inserted_tasks := inserted_tasks || jsonb_build_array(
-        jsonb_build_object(
-          'id', new_task.id,
-          'name', new_task.name,
-          'project_id', new_task.project_id,
-          'stage', new_task.stage,
-          'priority', new_task.priority,
-          'energy', new_task.energy,
-          'notes', new_task.notes
+        insert into public.tasks (user_id, goal_id, project_id, name, stage, priority, energy, notes)
+        values (
+          goal_user_id,
+          new_goal.id,
+          new_project.id,
+          task_elem->>'name',
+          coalesce(task_elem->>'stage', 'PREPARE'),
+          coalesce(task_elem->>'priority', 'NO'),
+          coalesce(task_elem->>'energy', 'NO'),
+          nullif(task_elem->>'notes', '')
         )
-      );
-    end loop;
+        returning * into new_task;
+
+        inserted_tasks := inserted_tasks || jsonb_build_array(
+          jsonb_build_object(
+            'id', new_task.id,
+            'name', new_task.name,
+            'project_id', new_task.project_id,
+            'stage', new_task.stage,
+            'priority', new_task.priority,
+            'energy', new_task.energy,
+            'notes', new_task.notes
+          )
+        );
+      end loop;
+    end if;
   end loop;
 
   return jsonb_build_object(

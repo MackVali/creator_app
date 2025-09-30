@@ -1227,12 +1227,21 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         const goalPayload = (data as { goal?: { id?: string } } | null) ?? null;
         const createdGoalId = goalPayload?.goal?.id;
+        const projectCount = projectsToSave.length;
+        const totalTasks = projectsToSave.reduce(
+          (sum, project) => sum + project.tasks.length,
+          0
+        );
+        const successMessage =
+          projectCount === 0
+            ? "Goal created successfully"
+            : totalTasks > 0
+            ? "Goal, projects, and tasks created successfully"
+            : "Goal and projects created successfully";
 
         toast.success(
           "Saved",
-          projectsToSave.length > 0
-            ? "Goal, projects, and tasks created successfully"
-            : "Goal created successfully"
+          successMessage
         );
 
         resetGoalWizard();
@@ -1377,10 +1386,34 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     0,
     GOAL_WIZARD_STEPS.findIndex((step) => step.key === goalWizardStep)
   );
+  const plannedTaskCount = useMemo(
+    () =>
+      draftProjects.reduce((count, project) => {
+        const nextCount = project.tasks.reduce(
+          (taskTotal, task) =>
+            task.name.trim().length > 0 ? taskTotal + 1 : taskTotal,
+          0
+        );
+        return count + nextCount;
+      }, 0),
+    [draftProjects]
+  );
   const wizardPrimaryDisabled =
     isSaving ||
     (goalWizardStep === "GOAL" &&
       (loading || !goalForm.name.trim() || !goalForm.monument_id));
+  const wizardPrimaryLabel = (() => {
+    if (goalWizardStep === "TASKS") {
+      if (isSaving) {
+        return "Saving...";
+      }
+      return plannedTaskCount > 0 ? "Save goal & launch" : "Save goal";
+    }
+    if (goalWizardStep === "PROJECTS") {
+      return "Continue to tasks";
+    }
+    return "Continue to projects";
+  })();
 
   if (!isOpen || !mounted || !eventType) {
     return null;
@@ -2195,13 +2228,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     disabled={wizardPrimaryDisabled}
                     className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSaving && goalWizardStep === "TASKS"
-                      ? "Saving..."
-                      : goalWizardStep === "TASKS"
-                      ? "Save goal & launch"
-                      : goalWizardStep === "PROJECTS"
-                      ? "Continue to tasks"
-                      : "Continue to projects"}
+                    {wizardPrimaryLabel}
                   </Button>
                 </div>
               </div>
