@@ -10,9 +10,15 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import {
+  AnimatePresence,
+  motion,
+  useAnimationControls,
+  useReducedMotion,
+} from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -57,6 +63,11 @@ import {
 } from '@/lib/scheduler/windowReports'
 
 type DayTransitionDirection = -1 | 0 | 1
+
+type PeekState = {
+  direction: DayTransitionDirection
+  offset: number
+}
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -323,6 +334,69 @@ function buildFallbackTaskCards({
   return fallbackCards
 }
 
+function DayPeekOverlays({
+  peekState,
+  previousLabel,
+  nextLabel,
+  previousKey,
+  nextKey,
+  containerRef,
+}: {
+  peekState: PeekState
+  previousLabel: string
+  nextLabel: string
+  previousKey: string
+  nextKey: string
+  containerRef: RefObject<HTMLDivElement | null>
+}) {
+  const containerWidth = containerRef.current?.offsetWidth ?? 0
+  const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
+  const offset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
+  if (!offset || peekState.direction === 0) return null
+
+  const progress = maxPeekWidth > 0 ? Math.min(1, offset / maxPeekWidth) : 0
+  const translate = (1 - progress) * 35
+  const opacity = 0.25 + progress * 0.6
+  const scale = 0.94 + progress * 0.06
+  const shadowOpacity = 0.45 + progress * 0.3
+
+  const isNext = peekState.direction === 1
+  const label = isNext ? nextLabel : previousLabel
+  const keyLabel = isNext ? nextKey : previousKey
+  const alignment = isNext ? 'items-end text-right' : 'items-start text-left'
+  const cornerClass = isNext
+    ? 'rounded-l-[var(--radius-lg)]'
+    : 'rounded-r-[var(--radius-lg)]'
+  const transformOrigin = isNext ? 'right center' : 'left center'
+
+  return (
+    <div className="pointer-events-none absolute inset-0 flex">
+      <div className={`relative flex h-full flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}>
+        <div
+          className={`pointer-events-none flex h-full flex-col justify-center gap-1 border border-white/10 bg-white/8 px-5 py-4 text-white backdrop-blur-md ${alignment} ${cornerClass}`}
+          style={{
+            width: offset,
+            opacity,
+            transform: `translateX(${isNext ? translate : -translate}%) scale(${scale})`,
+            transformOrigin,
+            boxShadow: `0 28px 58px rgba(3, 3, 6, ${shadowOpacity})`,
+          }}
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
+            {isNext ? 'Next day' : 'Previous day'}
+          </span>
+          <span className="text-base font-semibold leading-tight drop-shadow">
+            {label}
+          </span>
+          <span className="text-[11px] font-medium uppercase tracking-wide text-white/60">
+            {keyLabel}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function parseSchedulerFailures(input: unknown): SchedulerRunFailure[] {
   if (!Array.isArray(input)) return []
   const results: SchedulerRunFailure[] = []
@@ -560,10 +634,24 @@ export default function SchedulePage() {
   const [hasAutoRunToday, setHasAutoRunToday] = useState<boolean | null>(null)
   const [dayTransitionDirection, setDayTransitionDirection] =
     useState<DayTransitionDirection>(0)
+  const [isSwipingDayView, setIsSwipingDayView] = useState(false)
+  const [skipNextDayAnimation, setSkipNextDayAnimation] = useState(false)
+  const sliderControls = useAnimationControls()
+  const [peekState, setPeekState] = useState<PeekState>({
+    direction: 0,
+    offset: 0,
+  })
 
   const updateCurrentDate = useCallback(
-    (nextDate: Date, options?: { direction?: DayTransitionDirection }) => {
-      if (!prefersReducedMotion && view === 'day') {
+    (
+      nextDate: Date,
+      options?: {
+        direction?: DayTransitionDirection
+        animate?: boolean
+      }
+    ) => {
+      const shouldAnimate = options?.animate ?? true
+      if (!prefersReducedMotion && view === 'day' && shouldAnimate) {
         const resolvedDirection = options?.direction ?? (() => {
           const diff = nextDate.getTime() - currentDate.getTime()
           if (diff === 0) return 0 as DayTransitionDirection
@@ -583,6 +671,14 @@ export default function SchedulePage() {
       setDayTransitionDirection(0)
     }
   }, [view])
+
+  useEffect(() => {
+    if (!skipNextDayAnimation) return
+    const id = requestAnimationFrame(() => {
+      setSkipNextDayAnimation(false)
+    })
+    return () => cancelAnimationFrame(id)
+  }, [skipNextDayAnimation])
   const localTimeZone = useMemo(() => {
     try {
       const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -602,6 +698,32 @@ export default function SchedulePage() {
     () => formatLocalDateKey(currentDate),
     [currentDate]
   )
+  const previousDayDate = useMemo(() => {
+    const prev = new Date(currentDate)
+    prev.setDate(currentDate.getDate() - 1)
+    return prev
+  }, [currentDate])
+  const nextDayDate = useMemo(() => {
+    const next = new Date(currentDate)
+    next.setDate(currentDate.getDate() + 1)
+    return next
+  }, [currentDate])
+  const previousDayLabel = useMemo(
+    () => formatDayViewLabel(previousDayDate, localTimeZone),
+    [previousDayDate, localTimeZone]
+  )
+  const nextDayLabel = useMemo(
+    () => formatDayViewLabel(nextDayDate, localTimeZone),
+    [nextDayDate, localTimeZone]
+  )
+  const previousDayKey = useMemo(
+    () => formatLocalDateKey(previousDayDate),
+    [previousDayDate]
+  )
+  const nextDayKey = useMemo(
+    () => formatLocalDateKey(nextDayDate),
+    [nextDayDate]
+  )
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -617,6 +739,8 @@ export default function SchedulePage() {
     [setExpandedProjects, setHasInteractedWithProjects]
   )
   const touchStartX = useRef<number | null>(null)
+  const touchStartWidth = useRef<number>(0)
+  const swipeDeltaRef = useRef(0)
   const navLock = useRef(false)
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
   const isSchedulingRef = useRef(false)
@@ -1460,22 +1584,86 @@ export default function SchedulePage() {
     setHasAutoRunToday(true)
   }, [userId, runScheduler, persistAutoRunDate])
 
+  const swipeContainerRef = useRef<HTMLDivElement | null>(null)
+
   function handleTouchStart(e: React.TouchEvent) {
+    if (view !== 'day' || prefersReducedMotion) {
+      touchStartX.current = null
+      return
+    }
     touchStartX.current = e.touches[0].clientX
+    touchStartWidth.current = swipeContainerRef.current?.offsetWidth ?? 0
+    swipeDeltaRef.current = 0
+    sliderControls.stop()
   }
 
-  function handleTouchEnd(e: React.TouchEvent) {
-    if (view !== 'day') return
+  function handleTouchMove(e: React.TouchEvent) {
+    if (view !== 'day' || prefersReducedMotion) return
     if (touchStartX.current === null) return
-    const diff = e.changedTouches[0].clientX - touchStartX.current
-    const threshold = 50
-    if (Math.abs(diff) > threshold) {
+    const width =
+      touchStartWidth.current || swipeContainerRef.current?.offsetWidth || 1
+    const diff = e.touches[0].clientX - touchStartX.current
+    const clamped = Math.max(Math.min(diff, width), -width)
+    swipeDeltaRef.current = clamped
+    sliderControls.set({ x: clamped })
+    if (!isSwipingDayView && Math.abs(clamped) > 4) {
+      setIsSwipingDayView(true)
+    }
+    const direction: DayTransitionDirection =
+      clamped === 0 ? 0 : clamped < 0 ? 1 : -1
+    const offset = Math.abs(clamped)
+    setPeekState(prev => {
+      if (prev.direction === direction && Math.abs(prev.offset - offset) < 1) {
+        return prev
+      }
+      return { direction, offset }
+    })
+  }
+
+  async function handleTouchEnd() {
+    if (view !== 'day' || prefersReducedMotion) {
+      touchStartX.current = null
+      setIsSwipingDayView(false)
+      setPeekState({ direction: 0, offset: 0 })
+      return
+    }
+    if (touchStartX.current === null) {
+      setIsSwipingDayView(false)
+      setPeekState({ direction: 0, offset: 0 })
+      return
+    }
+    const width =
+      touchStartWidth.current || swipeContainerRef.current?.offsetWidth || 1
+    const diff = swipeDeltaRef.current
+    const threshold = Math.min(140, width * 0.28)
+    const absDiff = Math.abs(diff)
+    if (absDiff > threshold) {
       const direction: DayTransitionDirection = diff < 0 ? 1 : -1
+      const target = direction === 1 ? -width : width
+      await sliderControls.start({
+        x: target,
+        transition: { type: 'spring', stiffness: 280, damping: 32 },
+      })
       const nextDate = new Date(currentDate)
       nextDate.setDate(currentDate.getDate() + direction)
-      updateCurrentDate(nextDate, { direction })
+      setSkipNextDayAnimation(true)
+      updateCurrentDate(nextDate, { direction, animate: false })
+    } else {
+      await sliderControls.start({
+        x: 0,
+        transition: { type: 'spring', stiffness: 280, damping: 32 },
+      })
     }
+    sliderControls.set({ x: 0 })
+    swipeDeltaRef.current = 0
     touchStartX.current = null
+    touchStartWidth.current = 0
+    setPeekState({ direction: 0, offset: 0 })
+    setIsSwipingDayView(false)
+  }
+
+  const handleTouchCancel = () => {
+    void handleTouchEnd()
   }
 
   const dayTimelineNode = (
@@ -2008,8 +2196,13 @@ export default function SchedulePage() {
         />
         <div
           className="relative bg-[var(--surface)]"
+          ref={swipeContainerRef}
           onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={() => {
+            void handleTouchEnd()
+          }}
+          onTouchCancel={handleTouchCancel}
         >
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
             <RescheduleButton
@@ -2054,6 +2247,22 @@ export default function SchedulePage() {
                 <div className="text-[10px] opacity-60 px-2">data source: schedule_instances</div>
                 {prefersReducedMotion ? (
                   dayTimelineNode
+                ) : isSwipingDayView ? (
+                  <div className="relative overflow-hidden">
+                    <motion.div animate={sliderControls} initial={false}>
+                      {dayTimelineNode}
+                    </motion.div>
+                    <DayPeekOverlays
+                      peekState={peekState}
+                      previousLabel={previousDayLabel}
+                      nextLabel={nextDayLabel}
+                      previousKey={previousDayKey}
+                      nextKey={nextDayKey}
+                      containerRef={swipeContainerRef}
+                    />
+                  </div>
+                ) : skipNextDayAnimation ? (
+                  <div key={dayViewDateKey}>{dayTimelineNode}</div>
                 ) : (
                   <AnimatePresence
                     mode="sync"
