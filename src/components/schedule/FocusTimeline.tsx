@@ -30,7 +30,9 @@ function FocusTimelineFab() {
   }
 
   return createPortal(
-    <Fab className="fixed bottom-6 right-6 z-[60] sm:bottom-8 sm:right-8" />,
+    <Fab
+      className="fixed bottom-6 right-6 z-[2147483647] sm:bottom-8 sm:right-8"
+    />,
     document.body
   );
 }
