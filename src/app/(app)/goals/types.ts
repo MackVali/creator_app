@@ -30,4 +30,5 @@ export interface Goal {
   /** Associated skill IDs */
   skills?: string[];
   weight?: number;
+  why?: string;
 }
