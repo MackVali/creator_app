@@ -221,7 +221,7 @@ export default function SkillDetailPage() {
             <div className="absolute inset-x-10 -top-28 h-64 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.28),_transparent_70%)] blur-3xl" />
             <div className="absolute -bottom-24 -right-16 h-60 w-60 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.25),_transparent_65%)] blur-3xl" />
           </div>
-          <div className="relative flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
+          <div className="relative flex flex-col gap-8 md:flex-row md:items-center">
             <div className="flex items-start gap-5">
               <span
                 className="flex h-[88px] w-[88px] items-center justify-center rounded-3xl bg-white/10 text-5xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/20"
@@ -241,10 +241,6 @@ export default function SkillDetailPage() {
                   Everything connected to {skill.name} lives here — goals, notes, and the progress you&apos;re making along the way.
                 </p>
               </div>
-            </div>
-            <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/5 p-4 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur sm:w-[220px]">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">Current focus</p>
-              <p className="text-sm leading-relaxed text-white/80">{describeLevel(skill.level)}</p>
             </div>
           </div>
           <dl className="relative mt-8 grid gap-3 sm:grid-cols-3">
