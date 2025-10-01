@@ -1136,81 +1136,6 @@ export default function SchedulePage() {
     () => formatLocalDateKey(nextDayDate),
     [nextDayDate]
   )
-  useEffect(() => {
-    if (!userId || view !== 'day') {
-      setPeekModels({})
-      return
-    }
-
-    let cancelled = false
-    const timeZone = localTimeZone ?? 'UTC'
-
-    async function load(direction: 'previous' | 'next', date: Date) {
-      setPeekModels(prev => ({ ...prev, [direction]: prev[direction] ?? null }))
-      try {
-        const dayStart = startOfDayInTimeZone(date, timeZone)
-        const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
-        const startUTC = dayStart.toISOString()
-        const endUTC = nextDayStart.toISOString()
-        const [ws, instanceResult] = await Promise.all([
-          fetchWindowsForDate(date, undefined, localTimeZone),
-          fetchInstancesForRange(userId, startUTC, endUTC),
-        ])
-        if (cancelled) return
-        if (instanceResult.error) {
-          console.error(instanceResult.error)
-        }
-        const instancesForDay = instanceResult.data ?? []
-        const model = buildDayTimelineModel({
-          date,
-          windows: ws,
-          instances: instancesForDay,
-          projectMap,
-          taskMap,
-          tasksByProjectId,
-          startHour,
-          pxPerMin,
-          unscheduledProjects,
-          schedulerFailureByProjectId,
-          schedulerDebug,
-          schedulerTimelinePlacements,
-          timeZoneShortName,
-          friendlyTimeZone,
-          localTimeZone,
-        })
-        setPeekModels(prev => ({ ...prev, [direction]: model }))
-      } catch (error) {
-        console.error('Failed to load adjacent day preview', error)
-        if (cancelled) return
-        setPeekModels(prev => ({ ...prev, [direction]: null }))
-      }
-    }
-
-    void load('previous', previousDayDate)
-    void load('next', nextDayDate)
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    userId,
-    view,
-    previousDayDate,
-    nextDayDate,
-    localTimeZone,
-    projectMap,
-    taskMap,
-    tasksByProjectId,
-    startHour,
-    pxPerMin,
-    unscheduledProjects,
-    schedulerFailureByProjectId,
-    schedulerDebug,
-    schedulerTimelinePlacements,
-    timeZoneShortName,
-    friendlyTimeZone,
-  ])
-
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -1568,6 +1493,81 @@ export default function SchedulePage() {
       computeStandaloneTaskInstancesForDay(instances, taskMap, projectInstanceIds),
     [instances, taskMap, projectInstanceIds]
   )
+
+  useEffect(() => {
+    if (!userId || view !== 'day') {
+      setPeekModels({})
+      return
+    }
+
+    let cancelled = false
+    const timeZone = localTimeZone ?? 'UTC'
+
+    async function load(direction: 'previous' | 'next', date: Date) {
+      setPeekModels(prev => ({ ...prev, [direction]: prev[direction] ?? null }))
+      try {
+        const dayStart = startOfDayInTimeZone(date, timeZone)
+        const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
+        const startUTC = dayStart.toISOString()
+        const endUTC = nextDayStart.toISOString()
+        const [ws, instanceResult] = await Promise.all([
+          fetchWindowsForDate(date, undefined, localTimeZone),
+          fetchInstancesForRange(userId, startUTC, endUTC),
+        ])
+        if (cancelled) return
+        if (instanceResult.error) {
+          console.error(instanceResult.error)
+        }
+        const instancesForDay = instanceResult.data ?? []
+        const model = buildDayTimelineModel({
+          date,
+          windows: ws,
+          instances: instancesForDay,
+          projectMap,
+          taskMap,
+          tasksByProjectId,
+          startHour,
+          pxPerMin,
+          unscheduledProjects,
+          schedulerFailureByProjectId,
+          schedulerDebug,
+          schedulerTimelinePlacements,
+          timeZoneShortName,
+          friendlyTimeZone,
+          localTimeZone,
+        })
+        setPeekModels(prev => ({ ...prev, [direction]: model }))
+      } catch (error) {
+        console.error('Failed to load adjacent day preview', error)
+        if (cancelled) return
+        setPeekModels(prev => ({ ...prev, [direction]: null }))
+      }
+    }
+
+    void load('previous', previousDayDate)
+    void load('next', nextDayDate)
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    userId,
+    view,
+    previousDayDate,
+    nextDayDate,
+    localTimeZone,
+    projectMap,
+    taskMap,
+    tasksByProjectId,
+    startHour,
+    pxPerMin,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    timeZoneShortName,
+    friendlyTimeZone,
+  ])
 
   const instanceStatusById = useMemo(() => {
     const map: Record<string, ScheduleInstance['status'] | null> = {}
