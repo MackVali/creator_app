@@ -153,6 +153,40 @@ function formatDayViewLabel(date: Date, timeZone: string) {
   }
 }
 
+function resolveDayViewDetails(date: Date, timeZone: string) {
+  try {
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone,
+    })
+    const parts = formatter.formatToParts(date)
+    const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find(part => part.type === type)?.value ?? ''
+    const weekday = getPart('weekday') || formatDayViewLabel(date, timeZone)
+    const month = getPart('month')
+    const day = getPart('day')
+    const year = getPart('year')
+    const fullDate = [month, day].filter(Boolean).join(' ')
+    const composed = fullDate && year ? `${fullDate}, ${year}` : fullDate || weekday
+    return {
+      weekday,
+      fullDate: composed,
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('Unable to resolve day view parts', error)
+    }
+    const fallback = formatDayViewLabel(date, timeZone)
+    return {
+      weekday: fallback,
+      fullDate: fallback,
+    }
+  }
+}
+
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
 const MAX_FALLBACK_TASKS = 12
 
@@ -197,6 +231,25 @@ type TaskInstanceInfo = {
   start: Date
   end: Date
 }
+
+type ProjectItem = ReturnType<typeof buildProjectItems>[number]
+type DayTimelineModel = {
+  date: Date
+  isViewingToday: boolean
+  dayViewDateKey: string
+  dayViewDetails: ReturnType<typeof resolveDayViewDetails>
+  timeZoneShortName: string
+  friendlyTimeZone: string
+  startHour: number
+  pxPerMin: number
+  windows: RepoWindow[]
+  projectInstances: ReturnType<typeof computeProjectInstances>
+  taskInstancesByProject: Record<string, TaskInstanceInfo[]>
+  tasksByProjectId: Record<string, TaskLite[]>
+  standaloneTaskInstances: TaskInstanceInfo[]
+  windowReports: WindowReportEntry[]
+}
+
 
 type ProjectTaskCard = {
   key: string
@@ -309,6 +362,295 @@ function buildFallbackTaskCards({
   return fallbackCards
 }
 
+function buildWindowMap(windows: RepoWindow[]) {
+  const map: Record<string, RepoWindow> = {}
+  for (const w of windows) {
+    map[w.id] = w
+  }
+  return map
+}
+
+function computeProjectInstances(
+  instances: ScheduleInstance[],
+  projectMap: Record<string, ProjectItem>,
+  windowMap: Record<string, RepoWindow>
+) {
+  return instances
+    .filter(inst => inst.source_type === 'PROJECT')
+    .map(inst => {
+      const project = projectMap[inst.source_id]
+      if (!project) return null
+      return {
+        instance: inst,
+        project,
+        start: toLocal(inst.start_utc),
+        end: toLocal(inst.end_utc),
+        assignedWindow: inst.window_id ? windowMap[inst.window_id] ?? null : null,
+      }
+    })
+    .filter(
+      (value): value is {
+        instance: ScheduleInstance
+        project: ProjectItem
+        start: Date
+        end: Date
+        assignedWindow: RepoWindow | null
+      } => value !== null
+    )
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+}
+
+function collectProjectInstanceIds(projectInstances: ReturnType<typeof computeProjectInstances>) {
+  const set = new Set<string>()
+  for (const item of projectInstances) {
+    set.add(item.project.id)
+  }
+  return set
+}
+
+function computeTaskInstancesByProjectForDay(
+  instances: ScheduleInstance[],
+  taskMap: Record<string, TaskLite>,
+  projectInstanceIds: Set<string>
+) {
+  const map: Record<string, TaskInstanceInfo[]> = {}
+  for (const inst of instances) {
+    if (inst.source_type !== 'TASK') continue
+    const task = taskMap[inst.source_id]
+    const projectId = task?.project_id ?? null
+    if (!task || !projectId) continue
+    if (!projectInstanceIds.has(projectId)) continue
+    const bucket = map[projectId] ?? []
+    bucket.push({
+      instance: inst,
+      task,
+      start: toLocal(inst.start_utc),
+      end: toLocal(inst.end_utc),
+    })
+    map[projectId] = bucket
+  }
+  for (const key of Object.keys(map)) {
+    map[key].sort((a, b) => a.start.getTime() - b.start.getTime())
+  }
+  return map
+}
+
+function computeStandaloneTaskInstancesForDay(
+  instances: ScheduleInstance[],
+  taskMap: Record<string, TaskLite>,
+  projectInstanceIds: Set<string>
+) {
+  const items: TaskInstanceInfo[] = []
+  for (const inst of instances) {
+    if (inst.source_type !== 'TASK') continue
+    const task = taskMap[inst.source_id]
+    if (!task) continue
+    const projectId = task.project_id ?? undefined
+    if (projectId && projectInstanceIds.has(projectId)) continue
+    items.push({
+      instance: inst,
+      task,
+      start: toLocal(inst.start_utc),
+      end: toLocal(inst.end_utc),
+    })
+  }
+  items.sort((a, b) => a.start.getTime() - b.start.getTime())
+  return items
+}
+
+function computeWindowReportsForDay({
+  windows,
+  projectInstances,
+  startHour,
+  pxPerMin,
+  unscheduledProjects,
+  schedulerFailureByProjectId,
+  schedulerDebug,
+  schedulerTimelinePlacements,
+  currentDate,
+}: {
+  windows: RepoWindow[]
+  projectInstances: ReturnType<typeof computeProjectInstances>
+  startHour: number
+  pxPerMin: number
+  unscheduledProjects: ProjectItem[]
+  schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>
+  schedulerDebug: SchedulerDebugState | null
+  schedulerTimelinePlacements: SchedulerTimelinePlacement[]
+  currentDate: Date
+}): WindowReportEntry[] {
+  if (windows.length === 0) return []
+  const assignments = new Map<string, number>()
+  const projectSpans = projectInstances
+    .map(({ instance, start, end, assignedWindow }) => {
+      if (!start || !end) return null
+      const startMs = start.getTime()
+      const endMs = end.getTime()
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
+      const windowId = instance.window_id || assignedWindow?.id || null
+      if (windowId) {
+        assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
+      }
+      return { windowId, start, end }
+    })
+    .filter((value): value is { windowId: string | null; start: Date; end: Date } => value !== null)
+
+  const scheduledSpans = [
+    ...projectSpans,
+    ...schedulerTimelinePlacements
+      .map(({ start, end }) => {
+        if (!start || !end) return null
+        const startMs = start.getTime()
+        const endMs = end.getTime()
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
+        return { windowId: null, start, end }
+      })
+      .filter((value): value is { windowId: string | null; start: Date; end: Date } => value !== null),
+  ]
+
+  const diagnosticsAvailable = Boolean(schedulerDebug)
+  const runStartedAt = schedulerDebug ? new Date(schedulerDebug.runAt) : null
+  const reports: WindowReportEntry[] = []
+
+  for (const win of windows) {
+    const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(win, currentDate)
+    const assigned = assignments.get(win.id) ?? 0
+    if (assigned > 0) continue
+
+    const windowHasScheduledProject = scheduledSpans.some(span => {
+      if (span.windowId === win.id) return true
+      return span.start < windowEnd && span.end > windowStart
+    })
+    if (windowHasScheduledProject) continue
+
+    const { top, height } = windowRect(win, startHour, pxPerMin)
+    if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) continue
+
+    const durationMinutes = windowDurationForDay(win, startHour)
+    const windowLabel = win.label?.trim() || 'Untitled window'
+    const energyLabel = normalizeEnergyLabel(win.energy)
+    const windowEnergyIndex = energyIndexFromLabel(energyLabel)
+    const futurePlacements = schedulerTimelinePlacements
+      .filter(entry => entry.start.getTime() >= windowEnd.getTime())
+      .filter(entry => {
+        const entryEnergyIndex = energyIndexFromLabel(entry.energyLabel)
+        return entryEnergyIndex !== -1 && entryEnergyIndex <= windowEnergyIndex
+      })
+      .map(entry => ({
+        projectId: entry.projectId,
+        projectName: entry.projectName,
+        start: entry.start,
+        durationMinutes: entry.durationMinutes,
+        sameDay: formatLocalDateKey(entry.start) === formatLocalDateKey(windowEnd),
+        fits:
+          typeof entry.durationMinutes === 'number' && Number.isFinite(entry.durationMinutes)
+            ? entry.durationMinutes <= durationMinutes
+            : null,
+      }))
+
+    const description = describeEmptyWindowReport({
+      windowLabel,
+      energyLabel,
+      durationMinutes,
+      unscheduledProjects,
+      schedulerFailureByProjectId,
+      diagnosticsAvailable,
+      runStartedAt,
+      futurePlacements,
+    })
+
+    reports.push({
+      key: `${win.id}-${win.fromPrevDay ? 'prev' : 'curr'}-${win.start_local}-${win.end_local}`,
+      top,
+      height,
+      windowLabel,
+      summary: description.summary,
+      details: description.details,
+      energyLabel,
+      durationLabel: formatDurationLabel(durationMinutes),
+      rangeLabel: formatWindowRange(win),
+    })
+  }
+
+  return reports
+}
+function buildDayTimelineModel({
+  date,
+  windows,
+  instances,
+  projectMap,
+  taskMap,
+  tasksByProjectId,
+  startHour,
+  pxPerMin,
+  unscheduledProjects,
+  schedulerFailureByProjectId,
+  schedulerDebug,
+  schedulerTimelinePlacements,
+  timeZoneShortName,
+  friendlyTimeZone,
+  localTimeZone,
+}: {
+  date: Date
+  windows: RepoWindow[]
+  instances: ScheduleInstance[]
+  projectMap: Record<string, ProjectItem>
+  taskMap: Record<string, TaskLite>
+  tasksByProjectId: Record<string, TaskLite[]>
+  startHour: number
+  pxPerMin: number
+  unscheduledProjects: ProjectItem[]
+  schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>
+  schedulerDebug: SchedulerDebugState | null
+  schedulerTimelinePlacements: SchedulerTimelinePlacement[]
+  timeZoneShortName: string
+  friendlyTimeZone: string
+  localTimeZone: string
+}): DayTimelineModel {
+  const windowMap = buildWindowMap(windows)
+  const projectInstances = computeProjectInstances(instances, projectMap, windowMap)
+  const projectInstanceIds = collectProjectInstanceIds(projectInstances)
+  const taskInstancesByProject = computeTaskInstancesByProjectForDay(
+    instances,
+    taskMap,
+    projectInstanceIds
+  )
+  const standaloneTaskInstances = computeStandaloneTaskInstancesForDay(
+    instances,
+    taskMap,
+    projectInstanceIds
+  )
+  const windowReports = computeWindowReportsForDay({
+    windows,
+    projectInstances,
+    startHour,
+    pxPerMin,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    currentDate: date,
+  })
+  const dayViewDateKey = formatLocalDateKey(date)
+  return {
+    date,
+    isViewingToday: formatLocalDateKey(new Date()) === dayViewDateKey,
+    dayViewDateKey,
+    dayViewDetails: resolveDayViewDetails(date, localTimeZone),
+    timeZoneShortName,
+    friendlyTimeZone,
+    startHour,
+    pxPerMin,
+    windows,
+    projectInstances,
+    taskInstancesByProject,
+    tasksByProjectId,
+    standaloneTaskInstances,
+    windowReports,
+  }
+}
+
+
 function DayPeekOverlays({
   peekState,
   previousLabel,
@@ -316,6 +658,9 @@ function DayPeekOverlays({
   previousKey,
   nextKey,
   containerRef,
+  previousModel,
+  nextModel,
+  renderPreview,
 }: {
   peekState: PeekState
   previousLabel: string
@@ -323,6 +668,9 @@ function DayPeekOverlays({
   previousKey: string
   nextKey: string
   containerRef: RefObject<HTMLDivElement | null>
+  previousModel?: DayTimelineModel | null
+  nextModel?: DayTimelineModel | null
+  renderPreview: (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => ReactNode
 }) {
   const container = containerRef.current
   const containerWidth = container?.offsetWidth ?? 0
@@ -339,6 +687,7 @@ function DayPeekOverlays({
   const isNext = peekState.direction === 1
   const label = isNext ? nextLabel : previousLabel
   const keyLabel = isNext ? nextKey : previousKey
+  const previewModel = isNext ? nextModel : previousModel
   const alignment = isNext ? 'items-end text-right' : 'items-start text-left'
   const cornerClass = isNext
     ? 'rounded-l-[var(--radius-lg)]'
@@ -373,7 +722,7 @@ function DayPeekOverlays({
     >
       <div className={`relative flex flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}>
         <div
-          className={`pointer-events-none flex flex-col justify-center gap-1 border border-white/10 bg-white/8 px-5 py-4 text-white backdrop-blur-md ${alignment} ${cornerClass}`}
+          className={`pointer-events-none flex flex-col gap-3 border border-white/10 bg-white/8 px-5 py-4 text-white backdrop-blur-md ${alignment} ${cornerClass}`}
           style={{
             width: offset,
             opacity,
@@ -382,15 +731,34 @@ function DayPeekOverlays({
             boxShadow: `0 28px 58px rgba(3, 3, 6, ${shadowOpacity})`,
           }}
         >
-          <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
-            {isNext ? 'Next day' : 'Previous day'}
-          </span>
-          <span className="text-base font-semibold leading-tight drop-shadow">
-            {label}
-          </span>
-          <span className="text-[11px] font-medium uppercase tracking-wide text-white/60">
-            {keyLabel}
-          </span>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
+              {isNext ? 'Next day' : 'Previous day'}
+            </span>
+            <span className="text-base font-semibold leading-tight drop-shadow">
+              {label}
+            </span>
+            <span className="text-[11px] font-medium uppercase tracking-wide text-white/60">
+              {keyLabel}
+            </span>
+          </div>
+          <div className="overflow-hidden rounded-[var(--radius-lg)] border border-white/10 bg-black/40">
+            {previewModel ? (
+              <div
+                className="pointer-events-none"
+                style={{
+                  transform: 'scale(0.94)',
+                  transformOrigin,
+                }}
+              >
+                {renderPreview(previewModel, { disableInteractions: true })}
+              </div>
+            ) : (
+              <div className="flex h-36 items-center justify-center text-[11px] text-white/70">
+                Loading schedule…
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -637,6 +1005,11 @@ export default function SchedulePage() {
   const [isSwipingDayView, setIsSwipingDayView] = useState(false)
   const [skipNextDayAnimation, setSkipNextDayAnimation] = useState(false)
   const sliderControls = useAnimationControls()
+  const [peekModels, setPeekModels] = useState<{
+    previous?: DayTimelineModel | null
+    next?: DayTimelineModel | null
+  }>({})
+
   const [peekState, setPeekState] = useState<PeekState>({
     direction: 0,
     offset: 0,
@@ -702,39 +1075,10 @@ export default function SchedulePage() {
     () => formatLocalDateKey(new Date()) === dayViewDateKey,
     [dayViewDateKey]
   )
-  const dayViewDetails = useMemo(() => {
-    try {
-      const formatter = new Intl.DateTimeFormat(undefined, {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-        timeZone: localTimeZone,
-      })
-      const parts = formatter.formatToParts(currentDate)
-      const getPart = (type: Intl.DateTimeFormatPartTypes) =>
-        parts.find(part => part.type === type)?.value ?? ''
-      const weekday = getPart('weekday') || dayViewLabel
-      const month = getPart('month')
-      const day = getPart('day')
-      const year = getPart('year')
-      const fullDate = [month, day].filter(Boolean).join(' ')
-      const composed =
-        fullDate && year ? `${fullDate}, ${year}` : fullDate || dayViewLabel
-      return {
-        weekday,
-        fullDate: composed,
-      }
-    } catch (error) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn('Unable to resolve day view parts', error)
-      }
-      return {
-        weekday: dayViewLabel,
-        fullDate: dayViewLabel,
-      }
-    }
-  }, [currentDate, dayViewLabel, localTimeZone])
+  const dayViewDetails = useMemo(
+    () => resolveDayViewDetails(currentDate, localTimeZone),
+    [currentDate, localTimeZone]
+  )
   const timeZoneShortName = useMemo(() => {
     try {
       const formatter = new Intl.DateTimeFormat(undefined, {
@@ -792,6 +1136,81 @@ export default function SchedulePage() {
     () => formatLocalDateKey(nextDayDate),
     [nextDayDate]
   )
+  useEffect(() => {
+    if (!userId || view !== 'day') {
+      setPeekModels({})
+      return
+    }
+
+    let cancelled = false
+    const timeZone = localTimeZone ?? 'UTC'
+
+    async function load(direction: 'previous' | 'next', date: Date) {
+      setPeekModels(prev => ({ ...prev, [direction]: prev[direction] ?? null }))
+      try {
+        const dayStart = startOfDayInTimeZone(date, timeZone)
+        const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
+        const startUTC = dayStart.toISOString()
+        const endUTC = nextDayStart.toISOString()
+        const [ws, instanceResult] = await Promise.all([
+          fetchWindowsForDate(date, undefined, localTimeZone),
+          fetchInstancesForRange(userId, startUTC, endUTC),
+        ])
+        if (cancelled) return
+        if (instanceResult.error) {
+          console.error(instanceResult.error)
+        }
+        const instancesForDay = instanceResult.data ?? []
+        const model = buildDayTimelineModel({
+          date,
+          windows: ws,
+          instances: instancesForDay,
+          projectMap,
+          taskMap,
+          tasksByProjectId,
+          startHour,
+          pxPerMin,
+          unscheduledProjects,
+          schedulerFailureByProjectId,
+          schedulerDebug,
+          schedulerTimelinePlacements,
+          timeZoneShortName,
+          friendlyTimeZone,
+          localTimeZone,
+        })
+        setPeekModels(prev => ({ ...prev, [direction]: model }))
+      } catch (error) {
+        console.error('Failed to load adjacent day preview', error)
+        if (cancelled) return
+        setPeekModels(prev => ({ ...prev, [direction]: null }))
+      }
+    }
+
+    void load('previous', previousDayDate)
+    void load('next', nextDayDate)
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    userId,
+    view,
+    previousDayDate,
+    nextDayDate,
+    localTimeZone,
+    projectMap,
+    taskMap,
+    tasksByProjectId,
+    startHour,
+    pxPerMin,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    timeZoneShortName,
+    friendlyTimeZone,
+  ])
+
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -945,11 +1364,7 @@ export default function SchedulePage() {
     return map
   }, [projectItems])
 
-  const windowMap = useMemo(() => {
-    const map: Record<string, RepoWindow> = {}
-    for (const w of windows) map[w.id] = w
-    return map
-  }, [windows])
+  const windowMap = useMemo(() => buildWindowMap(windows), [windows])
 
   const dayEnergies = useMemo(() => {
     const map: Record<string, FlameLevel> = {}
@@ -965,39 +1380,15 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
-  const projectInstances = useMemo(() => {
-    return instances
-      .filter(inst => inst.source_type === 'PROJECT')
-      .map(inst => {
-        const project = projectMap[inst.source_id]
-        if (!project) return null
-        return {
-          instance: inst,
-          project,
-          start: toLocal(inst.start_utc),
-          end: toLocal(inst.end_utc),
-          assignedWindow: inst.window_id
-            ? windowMap[inst.window_id] ?? null
-            : null,
-        }
-      })
-      .filter((value): value is {
-        instance: ScheduleInstance
-        project: typeof projectItems[number]
-        start: Date
-        end: Date
-        assignedWindow: RepoWindow | null
-      } => value !== null)
-      .sort((a, b) => a.start.getTime() - b.start.getTime())
-  }, [instances, projectMap, windowMap])
+  const projectInstances = useMemo(
+    () => computeProjectInstances(instances, projectMap, windowMap),
+    [instances, projectMap, windowMap]
+  )
 
-  const projectInstanceIds = useMemo(() => {
-    const set = new Set<string>()
-    for (const item of projectInstances) {
-      set.add(item.project.id)
-    }
-    return set
-  }, [projectInstances])
+  const projectInstanceIds = useMemo(
+    () => collectProjectInstanceIds(projectInstances),
+    [projectInstances]
+  )
 
   const unscheduledProjects = useMemo(() => {
     return projectItems.filter(project => {
@@ -1166,47 +1557,17 @@ export default function SchedulePage() {
     currentDate,
   ])
 
-  const taskInstancesByProject = useMemo(() => {
-    const map: Record<string, TaskInstanceInfo[]> = {}
-    for (const inst of instances) {
-      if (inst.source_type !== 'TASK') continue
-      const task = taskMap[inst.source_id]
-      const projectId = task?.project_id ?? null
-      if (!task || !projectId) continue
-      if (!projectInstanceIds.has(projectId)) continue
-      const bucket = map[projectId] ?? []
-      bucket.push({
-        instance: inst,
-        task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
-      })
-      map[projectId] = bucket
-    }
-    for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => a.start.getTime() - b.start.getTime())
-    }
-    return map
-  }, [instances, taskMap, projectInstanceIds])
+  const taskInstancesByProject = useMemo(
+    () =>
+      computeTaskInstancesByProjectForDay(instances, taskMap, projectInstanceIds),
+    [instances, taskMap, projectInstanceIds]
+  )
 
-  const standaloneTaskInstances = useMemo(() => {
-    const items: TaskInstanceInfo[] = []
-    for (const inst of instances) {
-      if (inst.source_type !== 'TASK') continue
-      const task = taskMap[inst.source_id]
-      if (!task) continue
-      const projectId = task.project_id ?? undefined
-      if (projectId && projectInstanceIds.has(projectId)) continue
-      items.push({
-        instance: inst,
-        task,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
-      })
-    }
-    items.sort((a, b) => a.start.getTime() - b.start.getTime())
-    return items
-  }, [instances, taskMap, projectInstanceIds])
+  const standaloneTaskInstances = useMemo(
+    () =>
+      computeStandaloneTaskInstancesForDay(instances, taskMap, projectInstanceIds),
+    [instances, taskMap, projectInstanceIds]
+  )
 
   const instanceStatusById = useMemo(() => {
     const map: Record<string, ScheduleInstance['status'] | null> = {}
@@ -1664,544 +2025,1225 @@ export default function SchedulePage() {
     void handleTouchEnd()
   }
 
-  const dayTimelineNode = (
-    <>
-      <div className="pl-16 pr-6 pt-4 pb-3 text-white">
-        <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[0_10px_30px_rgba(8,8,12,0.28)] backdrop-blur">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
-                <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.12] px-2 py-0.5 text-[10px] font-medium tracking-[0.18em] text-white/75">
-                  {dayViewDateKey}
-                </span>
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-                {dayViewDetails.weekday}
-              </h2>
-              <p className="text-xs text-white/60 sm:text-sm">
-                {dayViewDetails.fullDate}
-              </p>
-            </div>
-            <div className="flex flex-col gap-1 text-left text-[11px] text-white/60 sm:items-end sm:text-right">
-              {timeZoneShortName ? (
-                <span className="text-sm font-semibold tracking-wide text-white/80 sm:text-base">
-                  {timeZoneShortName}
-                </span>
-              ) : null}
-              <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
-                {friendlyTimeZone}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <DayTimeline
-        date={currentDate}
-        startHour={startHour}
-        pxPerMin={pxPerMin}
-      >
-        {windows.map(w => {
-          const { top, height } = windowRect(w, startHour, pxPerMin)
-          const windowHeightPx =
-            typeof height === 'number' ? Math.max(0, height) : 0
-          return (
-            <div
-              key={w.id}
-              aria-label={w.label}
-              className="absolute left-0 flex"
-              style={{ top, height }}
-            >
-              <div className="w-0.5 bg-zinc-700 opacity-50" />
-              <WindowLabel
-                label={w.label ?? ''}
-                availableHeight={windowHeightPx}
-              />
-            </div>
-          )
-        })}
-        {windowReports.map(report => (
-          <div
-            key={report.key}
-            className="absolute left-16 right-2"
-            style={{ top: report.top, height: report.height }}
-          >
-            <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
-                Window report · {report.windowLabel}
-              </div>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
-                <span>{report.rangeLabel}</span>
-                <span>Energy: {report.energyLabel}</span>
-                <span>Duration: {report.durationLabel}</span>
-              </div>
-              <p className="mt-2 text-[11px] leading-snug text-sky-50">
-                {report.summary}
-              </p>
-              {report.details.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
-                  {report.details.map((detail, index) => (
-                    <li key={`${report.key}-detail-${index}`}>{detail}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        ))}
-        {projectInstances.map(({ instance, project, start, end }, index) => {
-          const projectId = project.id
-          const startMin = start.getHours() * 60 + start.getMinutes()
-          const top = (startMin - startHour * 60) * pxPerMin
-          const height =
-            ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-          const isExpanded = expandedProjects.has(projectId)
-          const projectTaskCandidates =
-            taskInstancesByProject[projectId] ?? []
-          const scheduledCards: ProjectTaskCard[] =
-            projectTaskCandidates
-              .filter(taskInfo =>
-                taskMatchesProjectInstance(
-                  taskInfo,
-                  instance,
-                  start,
-                  end
-                )
-              )
-              .map(taskInfo => ({
-                key: `scheduled:${taskInfo.instance.id}`,
-                kind: 'scheduled' as const,
-                task: taskInfo.task,
-                start: taskInfo.start,
-                end: taskInfo.end,
-                instanceId: taskInfo.instance.id,
-                displayDurationMinutes: Math.max(
-                  1,
-                  Math.round(
-                    (taskInfo.end.getTime() - taskInfo.start.getTime()) /
-                      60000
-                  )
-                ),
-              }))
-          const hasScheduledBreakdown = scheduledCards.length > 0
-          const durationMinutes = Math.round(
-            (end.getTime() - start.getTime()) / 60000
-          )
-          const tasksLabel =
-            project.taskCount > 0
-              ? `${project.taskCount} ${
-                  project.taskCount === 1 ? 'task' : 'tasks'
-                }`
-              : null
-          const detailParts = [`${durationMinutes}m`]
-          if (tasksLabel) detailParts.push(tasksLabel)
-          let detailText = detailParts.join(' · ')
-          const positionStyle: CSSProperties = {
-            top,
-            height,
-          }
-          const sharedCardStyle: CSSProperties = {
-            boxShadow:
-              '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-            outline: '1px solid rgba(10, 10, 12, 0.85)',
-            outlineOffset: '-1px',
-          }
-          const projectDurationMs = Math.max(
-            end.getTime() - start.getTime(),
-            1
-          )
-          const projectHeightPx = Math.max(typeof height === 'number' ? height : 0, 1)
-          const minHeightRatio = Math.min(1, 4 / projectHeightPx)
-          const backlogTasks = tasksByProjectId[projectId] ?? []
-          const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
-          const fallbackLimit = Math.min(
-            MAX_FALLBACK_TASKS,
-            Math.max(1, Math.floor(1 / safeMinHeightRatio)),
-            backlogTasks.length
-          )
-          const fallbackCards =
-            !hasScheduledBreakdown && fallbackLimit > 0
-              ? buildFallbackTaskCards({
-                  tasks: backlogTasks,
-                  projectStart: start,
-                  projectEnd: end,
-                  instanceId: instance.id,
-                  maxCount: fallbackLimit,
-                })
-              : []
-          const displayCards =
-            hasScheduledBreakdown ? scheduledCards : fallbackCards
-          const usingFallback =
-            !hasScheduledBreakdown && displayCards.length > 0
-          if (usingFallback) {
-            detailText = `${detailText} · Backlog preview`
-          }
-          const hiddenFallbackCount = usingFallback
-            ? Math.max(0, backlogTasks.length - displayCards.length)
-            : 0
-          const canExpand = displayCards.length > 0
-          const pendingStatus = pendingInstanceStatuses.get(instance.id)
-          const effectiveStatus =
-            pendingStatus ?? instance.status ?? 'scheduled'
-          const isCompleted = effectiveStatus === 'completed'
-          const projectBackground = isCompleted
-            ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
-            : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
-          const projectCardStyle: CSSProperties = {
-            ...sharedCardStyle,
-            boxShadow: isCompleted
-              ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
-              : sharedCardStyle.boxShadow,
-            outline: isCompleted
-              ? '1px solid rgba(16, 185, 129, 0.55)'
-              : sharedCardStyle.outline,
-            background: projectBackground,
-          }
-          const projectBorderClass = isCompleted
-            ? 'border-emerald-400/60'
-            : 'border-black/70'
-          return (
-            <motion.div
-              key={instance.id}
-              className="absolute left-16 right-2"
-              style={positionStyle}
-              layout={!prefersReducedMotion}
-              transition={
-                prefersReducedMotion
-                  ? undefined
-                  : { type: 'spring', stiffness: 320, damping: 32 }
-              }
-            >
-              <AnimatePresence mode="wait" initial={false}>
-                {!isExpanded || !canExpand ? (
-                <motion.div
-                  key="project"
-                  aria-label={`Project ${project.name}`}
-                  onClick={() => {
-                    if (!canExpand) return
-                    setProjectExpansion(projectId)
-                  }}
-                  className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
-                    canExpand ? ' cursor-pointer' : ''
-                  }`}
-                  style={projectCardStyle}
-                    initial={
-                      prefersReducedMotion ? false : { opacity: 0, y: 4 }
-                    }
-                    animate={
-                      prefersReducedMotion
-                        ? undefined
-                        : {
-                            opacity: 1,
-                            y: 0,
-                            transition: {
-                              delay: hasInteractedWithProjects
-                                ? 0
-                                : index * 0.02,
-                              duration: 0.18,
-                              ease: [0.4, 0, 0.2, 1],
-                            },
-                          }
-                    }
-                    exit={
-                      prefersReducedMotion
-                        ? undefined
-                        : {
-                            opacity: 0,
-                            y: 4,
-                            transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                          }
-                    }
-                  >
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      <div className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
-                          {project.name}
-                        </span>
-                        <div className="text-xs text-zinc-200/70">
-                          {detailText}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-shrink-0 items-center gap-2">
-                      {project.skill_icon && (
-                        <span className="text-lg leading-none" aria-hidden>
-                          {project.skill_icon}
-                        </span>
-                      )}
-                      {renderInstanceActions(instance.id, {
-                        className: 'flex-shrink-0',
-                      })}
-                      <FlameEmber
-                        level={
-                          (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                          'NO'
-                        }
-                        size="sm"
-                        className="flex-shrink-0"
-                      />
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="tasks"
-                    className="relative h-full w-full"
-                    initial={
-                      prefersReducedMotion
-                        ? false
-                        : { opacity: 0, y: 4 }
-                    }
-                    animate={
-                      prefersReducedMotion
-                        ? undefined
-                        : {
-                            opacity: 1,
-                            y: 0,
-                            transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
-                          }
-                    }
-                    exit={
-                      prefersReducedMotion
-                        ? undefined
-                        : {
-                            opacity: 0,
-                            y: 4,
-                            transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                          }
-                    }
-                  >
-                    {displayCards.map(taskCard => {
-                      const {
-                        task,
-                        start: taskStart,
-                        end: taskEnd,
-                        kind,
-                        key,
-                        instanceId,
-                        displayDurationMinutes,
-                      } = taskCard
-                      const startOffsetMs =
-                        taskStart.getTime() - start.getTime()
-                      const endOffsetMs = taskEnd.getTime() - start.getTime()
-                      const rawStartRatio = startOffsetMs / projectDurationMs
-                      const rawEndRatio = endOffsetMs / projectDurationMs
-                      const clampRatio = (value: number) =>
-                        Number.isFinite(value)
-                          ? Math.min(Math.max(value, 0), 1)
-                          : 0
-                      let startRatio = clampRatio(rawStartRatio)
-                      let endRatio = clampRatio(rawEndRatio)
-                      if (endRatio <= startRatio) {
-                        endRatio = Math.min(1, startRatio + minHeightRatio)
-                      }
-                      let heightRatio = Math.max(endRatio - startRatio, 0)
-                      if (heightRatio < minHeightRatio) {
-                        heightRatio = minHeightRatio
-                      }
-                      if (startRatio + heightRatio > 1) {
-                        const overflow = startRatio + heightRatio - 1
-                        startRatio = Math.max(0, startRatio - overflow)
-                        heightRatio = Math.min(heightRatio, 1 - startRatio)
-                      }
-                      const topPercent = startRatio * 100
-                      const heightPercent = Math.max(
-                        heightRatio * 100,
-                        minHeightRatio * 100
-                      )
-                      const tStyle: CSSProperties = {
-                        top: `${topPercent}%`,
-                        height: `${heightPercent}%`,
-                        ...sharedCardStyle,
-                      }
-                      const baseTaskClasses =
-                        'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
-                      const shinyTaskClasses =
-                        'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
-                      const fallbackTaskClasses =
-                        'bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]'
-                      const cardClasses =
-                        kind === 'scheduled'
-                          ? `${baseTaskClasses} ${shinyTaskClasses}`
-                          : `${baseTaskClasses} ${fallbackTaskClasses}`
-                      const progressValue =
-                        kind === 'scheduled'
-                          ? Math.max(
-                              0,
-                              Math.min(
-                                100,
-                                (task as { progress?: number }).progress ?? 0
-                              )
-                            )
-                          : 0
-                      const durationLabel =
-                        kind === 'fallback'
-                          ? `~${displayDurationMinutes}m`
-                          : `${displayDurationMinutes}m`
-                      const metaTextClass = 'text-xs text-zinc-200/75'
-                      const progressBarClass =
-                        kind === 'scheduled'
-                          ? 'absolute left-0 bottom-0 h-[3px] bg-white/40'
-                          : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
-                      const resolvedEnergyRaw = (
-                        task.energy ?? project.energy ?? 'NO'
-                      ).toString()
-                      const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
-                      const energyLevel = ENERGY.LIST.includes(
-                        resolvedEnergyUpper as FlameLevel
-                      )
-                        ? (resolvedEnergyUpper as FlameLevel)
-                        : 'NO'
-                      return (
-                        <motion.div
-                          key={key}
-                          aria-label={`Task ${task.name}`}
-                          className={cardClasses}
-                          style={tStyle}
-                          onClick={() =>
-                            setProjectExpansion(projectId, false)
-                          }
-                          initial={
-                            prefersReducedMotion
-                              ? false
-                              : { opacity: 0, y: 6 }
-                          }
-                          animate={
-                            prefersReducedMotion
-                              ? undefined
-                              : {
-                                  opacity: 1,
-                                  y: 0,
-                                  transition: {
-                                    duration: 0.18,
-                                    ease: [0.4, 0, 0.2, 1],
-                                  },
-                                }
-                          }
-                          exit={
-                            prefersReducedMotion
-                              ? undefined
-                              : {
-                                  opacity: 0,
-                                  y: 6,
-                                  transition: {
-                                    duration: 0.14,
-                                    ease: [0.4, 0, 0.2, 1],
-                                  },
-                                }
-                          }
-                        >
-                          {kind === 'scheduled' && instanceId
-                            ? renderInstanceActions(instanceId, {
-                                appearance: 'light',
-                                className:
-                                  'absolute right-3 top-2',
-                              })
-                            : null}
-                          <div className="flex flex-col">
-                            <span className="truncate text-sm font-medium">
-                              {task.name}
-                            </span>
-                            <div className={metaTextClass}>
-                              {durationLabel}
-                            </div>
-                          </div>
-                          {task.skill_icon && (
-                            <span
-                              className="ml-2 text-lg leading-none flex-shrink-0"
-                              aria-hidden
-                            >
-                              {task.skill_icon}
-                            </span>
-                          )}
-                          <FlameEmber
-                            level={energyLevel}
-                            size="sm"
-                            className="absolute -top-1 -right-1"
-                          />
-                          {progressValue > 0 && (
-                            <div
-                              className={progressBarClass}
-                              style={{ width: `${progressValue}%` }}
-                            />
-                          )}
-                        </motion.div>
-                      )
-                    })}
-                    {usingFallback && hiddenFallbackCount > 0 && (
-                      <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
-                        <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
-                          +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
-                        </span>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )
-        })}
-        {standaloneTaskInstances.map(({ instance, task, start, end }) => {
-          const startMin = start.getHours() * 60 + start.getMinutes()
-          const top = (startMin - startHour * 60) * pxPerMin
-          const height =
-            ((end.getTime() - start.getTime()) / 60000) * pxPerMin
-          const style: CSSProperties = {
-            top,
-            height,
-            boxShadow: 'var(--elev-card)',
-            outline: '1px solid var(--event-border)',
-            outlineOffset: '-1px',
-          }
-          const progress = (task as { progress?: number }).progress ?? 0
-          return (
-            <motion.div
-              key={instance.id}
-              aria-label={`Task ${task.name}`}
-              className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]"
-              style={style}
-              initial={
-                prefersReducedMotion ? false : { opacity: 0, y: 4 }
-              }
-              animate={
-                prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
-              }
-              exit={
-                prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
-              }
-            >
-              {renderInstanceActions(instance.id, {
-                appearance: 'light',
-                className: 'absolute right-3 top-2',
-              })}
-              <div className="flex flex-col">
-                <span className="truncate text-sm font-medium">
-                  {task.name}
-                </span>
-                <div className="text-xs text-zinc-700/80">
-                  {Math.round((end.getTime() - start.getTime()) / 60000)}m
+  const dayTimelineModel = useMemo(
+    () =>
+      buildDayTimelineModel({
+        date: currentDate,
+        windows,
+        instances,
+        projectMap,
+        taskMap,
+        tasksByProjectId,
+        startHour,
+        pxPerMin,
+        unscheduledProjects,
+        schedulerFailureByProjectId,
+        schedulerDebug,
+        schedulerTimelinePlacements,
+        timeZoneShortName,
+        friendlyTimeZone,
+        localTimeZone,
+      }),
+    [
+      currentDate,
+      windows,
+      instances,
+      projectMap,
+      taskMap,
+      tasksByProjectId,
+      startHour,
+      pxPerMin,
+      unscheduledProjects,
+      schedulerFailureByProjectId,
+      schedulerDebug,
+      schedulerTimelinePlacements,
+      timeZoneShortName,
+      friendlyTimeZone,
+      localTimeZone,
+    ]
+  )
+
+  const renderDayTimeline = useCallback(
+    (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => {
+      const {
+        isViewingToday,
+        dayViewDateKey,
+        dayViewDetails,
+        timeZoneShortName,
+        friendlyTimeZone,
+        date: currentDate,
+        startHour,
+        pxPerMin,
+        windows,
+        projectInstances,
+        taskInstancesByProject,
+        tasksByProjectId,
+        standaloneTaskInstances,
+        windowReports,
+      } = model
+
+      const containerClass = options?.disableInteractions
+        ? 'pointer-events-none select-none'
+        : ''
+
+      return (
+        <div className={containerClass}>
+          <div className="pl-16 pr-6 pt-4 pb-3 text-white">
+            <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[0_10px_30px_rgba(8,8,12,0.28)] backdrop-blur">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
+                    <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
+                    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.12] px-2 py-0.5 text-[10px] font-medium tracking-[0.18em] text-white/75">
+                      {dayViewDateKey}
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                    {dayViewDetails.weekday}
+                  </h2>
+                  <p className="text-xs text-white/60 sm:text-sm">
+                    {dayViewDetails.fullDate}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1 text-left text-[11px] text-white/60 sm:items-end sm:text-right">
+                  {timeZoneShortName ? (
+                    <span className="text-sm font-semibold tracking-wide text-white/80 sm:text-base">
+                      {timeZoneShortName}
+                    </span>
+                  ) : null}
+                  <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
+                    {friendlyTimeZone}
+                  </span>
                 </div>
               </div>
-              {task.skill_icon && (
-                <span
-                  className="ml-2 text-lg leading-none flex-shrink-0"
-                  aria-hidden
+            </div>
+          </div>
+          <DayTimeline date={currentDate} startHour={startHour} pxPerMin={pxPerMin}>
+            {windows.map(w => {
+              const { top, height } = windowRect(w, startHour, pxPerMin)
+              const windowHeightPx =
+                typeof height === 'number' ? Math.max(0, height) : 0
+              return (
+                <div
+                  key={w.id}
+                  aria-label={w.label}
+                  className="absolute left-0 flex"
+                  style={{ top, height }}
                 >
-                  {task.skill_icon}
-                </span>
-              )}
-              <FlameEmber
-                level={(task.energy as FlameLevel) || 'NO'}
-                size="sm"
-                className="absolute -top-1 -right-1"
-              />
+                  <div className="w-0.5 bg-zinc-700 opacity-50" />
+                  <WindowLabel
+                    label={w.label ?? ''}
+                    availableHeight={windowHeightPx}
+                  />
+                </div>
+              )
+            })}
+            {windowReports.map(report => (
               <div
-                className="absolute left-0 bottom-0 h-[3px] bg-zinc-900/25"
-                style={{ width: `${progress}%` }}
-              />
-            </motion.div>
-          )
-        })}
-      </DayTimeline>
-    </>
+                key={report.key}
+                className="absolute left-16 right-2"
+                style={{ top: report.top, height: report.height }}
+              >
+                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                    Window report · {report.windowLabel}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                    <span>{report.rangeLabel}</span>
+                    <span>Energy: {report.energyLabel}</span>
+                    <span>Duration: {report.durationLabel}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                    {report.summary}
+                  </p>
+                  {report.details.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                      {report.details.map((detail, index) => (
+                        <li key={`${report.key}-detail-${index}`}>{detail}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ))}
+            {projectInstances.map(({ instance, project, start, end }, index) => {
+              const projectId = project.id
+              const startMin = start.getHours() * 60 + start.getMinutes()
+              const top = (startMin - startHour * 60) * pxPerMin
+              const height =
+                ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+              const isExpanded = expandedProjects.has(projectId)
+              const projectTaskCandidates =
+                taskInstancesByProject[projectId] ?? []
+              const scheduledCards: ProjectTaskCard[] =
+                projectTaskCandidates
+                  .filter(taskInfo =>
+                    taskMatchesProjectInstance(
+                      taskInfo,
+                      instance,
+                      start,
+                      end
+                    )
+                  )
+                  .map(taskInfo => ({
+                    key: `scheduled:${taskInfo.instance.id}`,
+                    kind: 'scheduled' as const,
+                    task: taskInfo.task,
+                    start: taskInfo.start,
+                    end: taskInfo.end,
+                    instanceId: taskInfo.instance.id,
+                    displayDurationMinutes: Math.max(
+                      1,
+                      Math.round(
+                        (taskInfo.end.getTime() - taskInfo.start.getTime()) /
+                          60000
+                      )
+                    ),
+                  }))
+              const hasScheduledBreakdown = scheduledCards.length > 0
+              const durationMinutes = Math.round(
+                (end.getTime() - start.getTime()) / 60000
+              )
+              const tasksLabel =
+                project.taskCount > 0
+                  ? `${project.taskCount} ${
+                      project.taskCount === 1 ? 'task' : 'tasks'
+                    }`
+                  : null
+              const detailParts = [`${durationMinutes}m`]
+              if (tasksLabel) detailParts.push(tasksLabel)
+              let detailText = detailParts.join(' · ')
+              const positionStyle: CSSProperties = {
+                top,
+                height,
+              }
+              const sharedCardStyle: CSSProperties = {
+                boxShadow:
+                  '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                outline: '1px solid rgba(10, 10, 12, 0.85)',
+                outlineOffset: '-1px',
+              }
+              const projectDurationMs = Math.max(
+                end.getTime() - start.getTime(),
+                1
+              )
+              const projectHeightPx = Math.max(
+                typeof height === 'number' ? height : 0,
+                1
+              )
+              const minHeightRatio = Math.min(1, 4 / projectHeightPx)
+              const backlogTasks = tasksByProjectId[projectId] ?? []
+              const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
+              const fallbackLimit = Math.min(
+                MAX_FALLBACK_TASKS,
+                Math.max(1, Math.floor(1 / safeMinHeightRatio)),
+                backlogTasks.length
+              )
+              const fallbackCards =
+                !hasScheduledBreakdown && fallbackLimit > 0
+                  ? buildFallbackTaskCards({
+                      tasks: backlogTasks,
+                      projectStart: start,
+                      projectEnd: end,
+                      instanceId: instance.id,
+                      maxCount: fallbackLimit,
+                    })
+                  : []
+              const displayCards =
+                hasScheduledBreakdown ? scheduledCards : fallbackCards
+              const usingFallback =
+                !hasScheduledBreakdown && displayCards.length > 0
+              if (usingFallback) {
+                detailText = `${detailText} · Backlog preview`
+              }
+              const hiddenFallbackCount = usingFallback
+                ? Math.max(0, backlogTasks.length - displayCards.length)
+                : 0
+              const canExpand = displayCards.length > 0
+              const pendingStatus = pendingInstanceStatuses.get(instance.id)
+              const effectiveStatus =
+                pendingStatus ?? instance.status ?? 'scheduled'
+              const isCompleted = effectiveStatus === 'completed'
+              const projectBackground = isCompleted
+                ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
+                : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
+              const projectCardStyle: CSSProperties = {
+                ...sharedCardStyle,
+                boxShadow: isCompleted
+                  ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                  : sharedCardStyle.boxShadow,
+                outline: isCompleted
+                  ? '1px solid rgba(16, 185, 129, 0.55)'
+                  : sharedCardStyle.outline,
+                background: projectBackground,
+              }
+              const projectBorderClass = isCompleted
+                ? 'border-emerald-400/60'
+                : 'border-black/70'
+              return (
+                <motion.div
+                  key={instance.id}
+                  className="absolute left-16 right-2"
+                  style={positionStyle}
+                  layout={!prefersReducedMotion}
+                  transition={
+                    prefersReducedMotion
+                      ? undefined
+                      : { type: 'spring', stiffness: 320, damping: 32 }
+                  }
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    {!isExpanded || !canExpand ? (
+                      <motion.div
+                        key="project"
+                        aria-label={`Project ${project.name}`}
+                        onClick={() => {
+                          if (!canExpand) return
+                          setProjectExpansion(projectId)
+                        }}
+                        className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                          canExpand ? ' cursor-pointer' : ''
+                        }`}
+                        style={projectCardStyle}
+                        initial={
+                          prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                        }
+                        animate={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 1,
+                                y: 0,
+                                transition: {
+                                  delay: hasInteractedWithProjects
+                                    ? 0
+                                    : index * 0.02,
+                                  duration: 0.18,
+                                  ease: [0.4, 0, 0.2, 1],
+                                },
+                              }
+                        }
+                        exit={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 0,
+                                y: 4,
+                                transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                              }
+                        }
+                      >
+                        <div className="flex min-w-0 flex-1 items-start gap-3">
+                          <div className="min-w-0">
+                            <span className="block truncate text-sm font-medium">
+                              {project.name}
+                            </span>
+                            <div className="text-xs text-zinc-200/70">
+                              {detailText}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-shrink-0 items-center gap-2">
+                          {project.skill_icon && (
+                            <span className="text-lg leading-none" aria-hidden>
+                              {project.skill_icon}
+                            </span>
+                          )}
+                          {renderInstanceActions(instance.id, {
+                            className: 'flex-shrink-0',
+                          })}
+                          <FlameEmber
+                            level={
+                              (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                              'NO'
+                            }
+                            size="sm"
+                            className="flex-shrink-0"
+                          />
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="tasks"
+                        className="relative h-full w-full"
+                        initial={
+                          prefersReducedMotion
+                            ? false
+                            : { opacity: 0, y: 4 }
+                        }
+                        animate={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 1,
+                                y: 0,
+                                transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
+                              }
+                        }
+                        exit={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 0,
+                                y: 4,
+                                transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                              }
+                        }
+                      >
+                        <motion.button
+                          type="button"
+                          className="absolute right-2 top-2 z-10 rounded-full border border-white/30 bg-white/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white shadow-[0_10px_18px_rgba(0,0,0,0.45)] backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                          onClick={event => {
+                            event.stopPropagation()
+                            setProjectExpansion(projectId, false)
+                          }}
+                        >
+                          Back
+                        </motion.button>
+                        <div
+                          className="absolute inset-0 overflow-hidden rounded-[var(--radius-lg)] border border-white/20 bg-white/10"
+                          style={sharedCardStyle}
+                        />
+                        <div className="relative h-full w-full overflow-hidden p-2">
+                          {displayCards.map(taskCard => {
+                            const {
+                              key,
+                              task,
+                              start: taskStart,
+                              end: taskEnd,
+                              kind,
+                              instanceId,
+                              displayDurationMinutes,
+                            } = taskCard
+                            const startOffsetMs =
+                              taskStart.getTime() - start.getTime()
+                            const endOffsetMs = taskEnd.getTime() - start.getTime()
+                            const rawStartRatio = startOffsetMs / projectDurationMs
+                            const rawEndRatio = endOffsetMs / projectDurationMs
+                            const clampRatio = (value: number) =>
+                              Number.isFinite(value)
+                                ? Math.min(Math.max(value, 0), 1)
+                                : 0
+                            let startRatio = clampRatio(rawStartRatio)
+                            let endRatio = clampRatio(rawEndRatio)
+                            if (endRatio <= startRatio) {
+                              endRatio = Math.min(1, startRatio + minHeightRatio)
+                            }
+                            let heightRatio = Math.max(endRatio - startRatio, 0)
+                            if (heightRatio < minHeightRatio) {
+                              heightRatio = minHeightRatio
+                            }
+                            if (startRatio + heightRatio > 1) {
+                              const overflow = startRatio + heightRatio - 1
+                              startRatio = Math.max(0, startRatio - overflow)
+                              heightRatio = Math.min(heightRatio, 1 - startRatio)
+                            }
+                            const topPercent = startRatio * 100
+                            const heightPercent = Math.max(
+                              heightRatio * 100,
+                              minHeightRatio * 100
+                            )
+                            const tStyle: CSSProperties = {
+                              top: `${topPercent}%`,
+                              height: `${heightPercent}%`,
+                              ...sharedCardStyle,
+                            }
+                            const baseTaskClasses =
+                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                            const shinyTaskClasses =
+                              'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
+                            const fallbackTaskClasses =
+                              'bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]'
+                            const cardClasses =
+                              kind === 'scheduled'
+                                ? `${baseTaskClasses} ${shinyTaskClasses}`
+                                : `${baseTaskClasses} ${fallbackTaskClasses}`
+                            const progressValue =
+                              kind === 'scheduled'
+                                ? Math.max(
+                                    0,
+                                    Math.min(
+                                      100,
+                                      (task as { progress?: number }).progress ?? 0
+                                    )
+                                  )
+                                : 0
+                            const durationLabel =
+                              kind === 'fallback'
+                                ? `~${displayDurationMinutes}m`
+                                : `${displayDurationMinutes}m`
+                            const metaTextClass = 'text-xs text-zinc-200/75'
+                            const progressBarClass =
+                              kind === 'scheduled'
+                                ? 'absolute left-0 bottom-0 h-[3px] bg-white/40'
+                                : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
+                            const resolvedEnergyRaw = (
+                              task.energy ?? project.energy ?? 'NO'
+                            ).toString()
+                            const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
+                            const energyLevel = ENERGY.LIST.includes(
+                              resolvedEnergyUpper as FlameLevel
+                            )
+                              ? (resolvedEnergyUpper as FlameLevel)
+                              : 'NO'
+                            return (
+                              <motion.div
+                                key={key}
+                                aria-label={`Task ${task.name}`}
+                                className={cardClasses}
+                                style={tStyle}
+                                onClick={() =>
+                                  setProjectExpansion(projectId, false)
+                                }
+                                initial={
+                                  prefersReducedMotion
+                                    ? false
+                                    : { opacity: 0, y: 6 }
+                                }
+                                animate={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 1,
+                                        y: 0,
+                                        transition: {
+                                          duration: 0.18,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                                exit={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 0,
+                                        y: 6,
+                                        transition: {
+                                          duration: 0.14,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                              >
+                                {kind === 'scheduled' && instanceId
+                                  ? renderInstanceActions(instanceId, {
+                                      appearance: 'light',
+                                      className:
+                                        'absolute right-3 top-2',
+                                    })
+                                  : null}
+                                <div className="flex flex-col">
+                                  <span className="truncate text-sm font-medium">
+                                    {task.name}
+                                  </span>
+                                  <div className={metaTextClass}>
+                                    {durationLabel}
+                                  </div>
+                                </div>
+                                {task.skill_icon && (
+                                  <span
+                                    className="ml-2 text-lg leading-none flex-shrink-0"
+                                    aria-hidden
+                                  >
+                                    {task.skill_icon}
+                                  </span>
+                                )}
+                                <FlameEmber
+                                  level={energyLevel}
+                                  size="sm"
+                                  className="absolute -top-1 -right-1"
+                                />
+                                {progressValue > 0 && (
+                                  <div
+                                    className={progressBarClass}
+                                    style={{ width: `${progressValue}%` }}
+                                  />
+                                )}
+                              </motion.div>
+                            )
+                          })}
+                          {usingFallback && hiddenFallbackCount > 0 && (
+                            <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
+                              <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
+                                +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              )
+            })}
+            {standaloneTaskInstances.map(({ instance, task, start, end }) => {
+              const startMin = start.getHours() * 60 + start.getMinutes()
+              const top = (startMin - startHour * 60) * pxPerMin
+              const height =
+                ((end.getTime() - start.getTime()) / 60000) * pxPerMin
+              const style: CSSProperties = {
+                top,
+                height,
+                boxShadow: 'var(--elev-card)',
+                outline: '1px solid var(--event-border)',
+                outlineOffset: '-1px',
+              }
+              const progress = (task as { progress?: number }).progress ?? 0
+              return (
+                <motion.div
+                  key={instance.id}
+                  aria-label={`Task ${task.name}`}
+                  className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]"
+                  style={style}
+                  initial={
+                    prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                  }
+                  animate={
+                    prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
+                  }
+                  exit={
+                    prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
+                  }
+                >
+                  {renderInstanceActions(instance.id, {
+                    appearance: 'light',
+                    className: 'absolute right-3 top-2',
+                  })}
+                  <div className="flex flex-col">
+                    <span className="truncate text-sm font-medium">
+                      {task.name}
+                    </span>
+                    <div className="text-xs text-zinc-700/80">
+                      {Math.round((end.getTime() - start.getTime()) / 60000)}m
+                    </div>
+                  </div>
+                  {task.skill_icon && (
+                    <span
+                      className="ml-2 text-lg leading-none flex-shrink-0"
+                      aria-hidden
+                    >
+                      {task.skill_icon}
+                    </span>
+                  )}
+                  <FlameEmber
+                    level={(task.energy as FlameLevel) || 'NO'}
+                    size="sm"
+                    className="absolute -top-1 -right-1"
+                  />
+                  <div
+                    className="absolute left-0 bottom-0 h-[3px] bg-zinc-900/25"
+                    style={{ width: `${progress}%` }}
+                  />
+                </motion.div>
+              )
+            })}
+          </DayTimeline>
+        </div>
+      )
+    },
+    [
+      prefersReducedMotion,
+      hasInteractedWithProjects,
+      setProjectExpansion,
+      expandedProjects,
+      renderInstanceActions,
+    ]
+  )
+
+  const dayTimelineNode = useMemo(
+    () => renderDayTimeline(dayTimelineModel),
+    [renderDayTimeline, dayTimelineModel]
+  )
+
+  const renderDayTimeline = useCallback(
+    (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => {
+      const {
+        isViewingToday,
+        dayViewDateKey,
+        dayViewDetails,
+        timeZoneShortName: modelTimeZoneShortName,
+        friendlyTimeZone: modelFriendlyTimeZone,
+        date,
+        startHour: modelStartHour,
+        pxPerMin: modelPxPerMin,
+        windows: modelWindows,
+        projectInstances: modelProjectInstances,
+        taskInstancesByProject: modelTaskInstancesByProject,
+        tasksByProjectId: modelTasksByProjectId,
+        standaloneTaskInstances: modelStandaloneTaskInstances,
+        windowReports: modelWindowReports,
+      } = model
+
+      const containerClass = options?.disableInteractions
+        ? 'pointer-events-none select-none'
+        : ''
+
+      return (
+        <div className={containerClass}>
+          <div className="pl-16 pr-6 pt-4 pb-3 text-white">
+            <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[0_10px_30px_rgba(8,8,12,0.28)] backdrop-blur">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
+                    <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
+                    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.12] px-2 py-0.5 text-[10px] font-medium tracking-[0.18em] text-white/75">
+                      {dayViewDateKey}
+                    </span>
+                  </div>
+                  <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                    {dayViewDetails.weekday}
+                  </h2>
+                  <p className="text-xs text-white/60 sm:text-sm">
+                    {dayViewDetails.fullDate}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1 text-left text-[11px] text-white/60 sm:items-end sm:text-right">
+                  {modelTimeZoneShortName ? (
+                    <span className="text-sm font-semibold tracking-wide text-white/80 sm:text-base">
+                      {modelTimeZoneShortName}
+                    </span>
+                  ) : null}
+                  <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
+                    {modelFriendlyTimeZone}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DayTimeline date={date} startHour={modelStartHour} pxPerMin={modelPxPerMin}>
+            {modelWindows.map(w => {
+              const { top, height } = windowRect(w, modelStartHour, modelPxPerMin)
+              const windowHeightPx =
+                typeof height === 'number' ? Math.max(0, height) : 0
+              return (
+                <div
+                  key={w.id}
+                  aria-label={w.label}
+                  className="absolute left-0 flex"
+                  style={{ top, height }}
+                >
+                  <div className="w-0.5 bg-zinc-700 opacity-50" />
+                  <WindowLabel
+                    label={w.label ?? ''}
+                    availableHeight={windowHeightPx}
+                  />
+                </div>
+              )
+            })}
+            {modelWindowReports.map(report => (
+              <div
+                key={report.key}
+                className="absolute left-16 right-2"
+                style={{ top: report.top, height: report.height }}
+              >
+                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                    Window report · {report.windowLabel}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                    <span>{report.rangeLabel}</span>
+                    <span>Energy: {report.energyLabel}</span>
+                    <span>Duration: {report.durationLabel}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                    {report.summary}
+                  </p>
+                  {report.details.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                      {report.details.map((detail, index) => (
+                        <li key={`${report.key}-detail-${index}`}>{detail}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ))}
+            {modelProjectInstances.map(({ instance, project, start, end }, index) => {
+              const projectId = project.id
+              const startMin = start.getHours() * 60 + start.getMinutes()
+              const top = (startMin - modelStartHour * 60) * modelPxPerMin
+              const height =
+                ((end.getTime() - start.getTime()) / 60000) * modelPxPerMin
+              const isExpanded = expandedProjects.has(projectId)
+              const projectTaskCandidates =
+                modelTaskInstancesByProject[projectId] ?? []
+              const scheduledCards: ProjectTaskCard[] =
+                projectTaskCandidates
+                  .filter(taskInfo =>
+                    taskMatchesProjectInstance(
+                      taskInfo,
+                      instance,
+                      start,
+                      end
+                    )
+                  )
+                  .map(taskInfo => ({
+                    key: `scheduled:${taskInfo.instance.id}`,
+                    kind: 'scheduled' as const,
+                    task: taskInfo.task,
+                    start: taskInfo.start,
+                    end: taskInfo.end,
+                    instanceId: taskInfo.instance.id,
+                    displayDurationMinutes: Math.max(
+                      1,
+                      Math.round(
+                        (taskInfo.end.getTime() - taskInfo.start.getTime()) /
+                          60000
+                      )
+                    ),
+                  }))
+              const hasScheduledBreakdown = scheduledCards.length > 0
+              const durationMinutes = Math.round(
+                (end.getTime() - start.getTime()) / 60000
+              )
+              const tasksLabel =
+                project.taskCount > 0
+                  ? `${project.taskCount} ${
+                      project.taskCount === 1 ? 'task' : 'tasks'
+                    }`
+                  : null
+              const detailParts = [`${durationMinutes}m`]
+              if (tasksLabel) detailParts.push(tasksLabel)
+              let detailText = detailParts.join(' · ')
+              const positionStyle: CSSProperties = {
+                top,
+                height,
+              }
+              const sharedCardStyle: CSSProperties = {
+                boxShadow:
+                  '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                outline: '1px solid rgba(10, 10, 12, 0.85)',
+                outlineOffset: '-1px',
+              }
+              const projectDurationMs = Math.max(
+                end.getTime() - start.getTime(),
+                1
+              )
+              const projectHeightPx = Math.max(
+                typeof height === 'number' ? height : 0,
+                1
+              )
+              const minHeightRatio = Math.min(1, 4 / projectHeightPx)
+              const backlogTasks = modelTasksByProjectId[projectId] ?? []
+              const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
+              const fallbackLimit = Math.min(
+                MAX_FALLBACK_TASKS,
+                Math.max(1, Math.floor(1 / safeMinHeightRatio)),
+                backlogTasks.length
+              )
+              const fallbackCards =
+                !hasScheduledBreakdown && fallbackLimit > 0
+                  ? buildFallbackTaskCards({
+                      tasks: backlogTasks,
+                      projectStart: start,
+                      projectEnd: end,
+                      instanceId: instance.id,
+                      maxCount: fallbackLimit,
+                    })
+                  : []
+              const displayCards =
+                hasScheduledBreakdown ? scheduledCards : fallbackCards
+              const usingFallback =
+                !hasScheduledBreakdown && displayCards.length > 0
+              if (usingFallback) {
+                detailText = `${detailText} · Backlog preview`
+              }
+              const hiddenFallbackCount = usingFallback
+                ? Math.max(0, backlogTasks.length - displayCards.length)
+                : 0
+              const canExpand = displayCards.length > 0
+              const pendingStatus = pendingInstanceStatuses.get(instance.id)
+              const effectiveStatus =
+                pendingStatus ?? instance.status ?? 'scheduled'
+              const isCompleted = effectiveStatus === 'completed'
+              const projectBackground = isCompleted
+                ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
+                : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
+              const projectCardStyle: CSSProperties = {
+                ...sharedCardStyle,
+                boxShadow: isCompleted
+                  ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                  : sharedCardStyle.boxShadow,
+                outline: isCompleted
+                  ? '1px solid rgba(16, 185, 129, 0.55)'
+                  : sharedCardStyle.outline,
+                background: projectBackground,
+              }
+              const projectBorderClass = isCompleted
+                ? 'border-emerald-400/60'
+                : 'border-black/70'
+              return (
+                <motion.div
+                  key={instance.id}
+                  className="absolute left-16 right-2"
+                  style={positionStyle}
+                  layout={!prefersReducedMotion}
+                  transition={
+                    prefersReducedMotion
+                      ? undefined
+                      : { type: 'spring', stiffness: 320, damping: 32 }
+                  }
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    {!isExpanded || !canExpand ? (
+                      <motion.div
+                        key="project"
+                        aria-label={`Project ${project.name}`}
+                        onClick={() => {
+                          if (!canExpand) return
+                          setProjectExpansion(projectId)
+                        }}
+                        className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                          canExpand ? ' cursor-pointer' : ''
+                        }`}
+                        style={projectCardStyle}
+                        initial={
+                          prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                        }
+                        animate={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 1,
+                                y: 0,
+                                transition: {
+                                  delay: hasInteractedWithProjects
+                                    ? 0
+                                    : index * 0.02,
+                                  duration: 0.18,
+                                  ease: [0.4, 0, 0.2, 1],
+                                },
+                              }
+                        }
+                        exit={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 0,
+                                y: 4,
+                                transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                              }
+                        }
+                      >
+                        <div className="flex min-w-0 flex-1 items-start gap-3">
+                          <div className="min-w-0">
+                            <span className="block truncate text-sm font-medium">
+                              {project.name}
+                            </span>
+                            <div className="text-xs text-zinc-200/70">
+                              {detailText}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-shrink-0 items-center gap-2">
+                          {project.skill_icon && (
+                            <span className="text-lg leading-none" aria-hidden>
+                              {project.skill_icon}
+                            </span>
+                          )}
+                          {renderInstanceActions(instance.id, {
+                            className: 'flex-shrink-0',
+                          })}
+                          <FlameEmber
+                            level={
+                              (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                              'NO'
+                            }
+                            size="sm"
+                            className="flex-shrink-0"
+                          />
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="tasks"
+                        className="relative h-full w-full"
+                        initial={
+                          prefersReducedMotion
+                            ? false
+                            : { opacity: 0, y: 4 }
+                        }
+                        animate={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 1,
+                                y: 0,
+                                transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
+                              }
+                        }
+                        exit={
+                          prefersReducedMotion
+                            ? undefined
+                            : {
+                                opacity: 0,
+                                y: 4,
+                                transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                              }
+                        }
+                      >
+                        <motion.button
+                          type="button"
+                          className="absolute right-2 top-2 z-10 rounded-full border border-white/30 bg-white/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white shadow-[0_10px_18px_rgba(0,0,0,0.45)] backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                          onClick={event => {
+                            event.stopPropagation()
+                            setProjectExpansion(projectId, false)
+                          }}
+                        >
+                          Back
+                        </motion.button>
+                        <div className="absolute inset-0 overflow-hidden rounded-[var(--radius-lg)] border border-white/20 bg-white/10"
+                          style={sharedCardStyle}
+                        />
+                        <div className="relative h-full w-full overflow-hidden p-2">
+                          {displayCards.map(taskCard => {
+                            const {
+                              key,
+                              task,
+                              start: taskStart,
+                              end: taskEnd,
+                              kind,
+                              instanceId,
+                              displayDurationMinutes,
+                            } = taskCard
+                            const startOffsetMs =
+                              taskStart.getTime() - start.getTime()
+                            const endOffsetMs = taskEnd.getTime() - start.getTime()
+                            const rawStartRatio = startOffsetMs / projectDurationMs
+                            const rawEndRatio = endOffsetMs / projectDurationMs
+                            const clampRatio = (value: number) =>
+                              Number.isFinite(value)
+                                ? Math.min(Math.max(value, 0), 1)
+                                : 0
+                            let startRatio = clampRatio(rawStartRatio)
+                            let endRatio = clampRatio(rawEndRatio)
+                            if (endRatio <= startRatio) {
+                              endRatio = Math.min(1, startRatio + minHeightRatio)
+                            }
+                            let heightRatio = Math.max(endRatio - startRatio, 0)
+                            if (heightRatio < minHeightRatio) {
+                              heightRatio = minHeightRatio
+                            }
+                            if (startRatio + heightRatio > 1) {
+                              const overflow = startRatio + heightRatio - 1
+                              startRatio = Math.max(0, startRatio - overflow)
+                              heightRatio = Math.min(heightRatio, 1 - startRatio)
+                            }
+                            const topPercent = startRatio * 100
+                            const heightPercent = Math.max(
+                              heightRatio * 100,
+                              minHeightRatio * 100
+                            )
+                            const tStyle: CSSProperties = {
+                              top: `${topPercent}%`,
+                              height: `${heightPercent}%`,
+                              ...sharedCardStyle,
+                            }
+                            const baseTaskClasses =
+                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                            const shinyTaskClasses =
+                              'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
+                            const fallbackTaskClasses =
+                              'bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]'
+                            const cardClasses =
+                              kind === 'scheduled'
+                                ? `${baseTaskClasses} ${shinyTaskClasses}`
+                                : `${baseTaskClasses} ${fallbackTaskClasses}`
+                            const progressValue =
+                              kind === 'scheduled'
+                                ? Math.max(
+                                    0,
+                                    Math.min(
+                                      100,
+                                      (task as { progress?: number }).progress ?? 0
+                                    )
+                                  )
+                                : 0
+                            const durationLabel =
+                              kind === 'fallback'
+                                ? `~${displayDurationMinutes}m`
+                                : `${displayDurationMinutes}m`
+                            const metaTextClass = 'text-xs text-zinc-200/75'
+                            const progressBarClass =
+                              kind === 'scheduled'
+                                ? 'absolute left-0 bottom-0 h-[3px] bg-white/40'
+                                : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
+                            const resolvedEnergyRaw = (
+                              task.energy ?? project.energy ?? 'NO'
+                            ).toString()
+                            const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
+                            const energyLevel = ENERGY.LIST.includes(
+                              resolvedEnergyUpper as FlameLevel
+                            )
+                              ? (resolvedEnergyUpper as FlameLevel)
+                              : 'NO'
+                            return (
+                              <motion.div
+                                key={key}
+                                aria-label={`Task ${task.name}`}
+                                className={cardClasses}
+                                style={tStyle}
+                                onClick={() =>
+                                  setProjectExpansion(projectId, false)
+                                }
+                                initial={
+                                  prefersReducedMotion
+                                    ? false
+                                    : { opacity: 0, y: 6 }
+                                }
+                                animate={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 1,
+                                        y: 0,
+                                        transition: {
+                                          duration: 0.18,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                                exit={
+                                  prefersReducedMotion
+                                    ? undefined
+                                    : {
+                                        opacity: 0,
+                                        y: 6,
+                                        transition: {
+                                          duration: 0.14,
+                                          ease: [0.4, 0, 0.2, 1],
+                                        },
+                                      }
+                                }
+                              >
+                                {kind === 'scheduled' && instanceId
+                                  ? renderInstanceActions(instanceId, {
+                                      appearance: 'light',
+                                      className:
+                                        'absolute right-3 top-2',
+                                    })
+                                  : null}
+                                <div className="flex flex-col">
+                                  <span className="truncate text-sm font-medium">
+                                    {task.name}
+                                  </span>
+                                  <div className={metaTextClass}>
+                                    {durationLabel}
+                                  </div>
+                                </div>
+                                {task.skill_icon && (
+                                  <span
+                                    className="ml-2 text-lg leading-none flex-shrink-0"
+                                    aria-hidden
+                                  >
+                                    {task.skill_icon}
+                                  </span>
+                                )}
+                                <FlameEmber
+                                  level={energyLevel}
+                                  size="sm"
+                                  className="absolute -top-1 -right-1"
+                                />
+                                {progressValue > 0 && (
+                                  <div
+                                    className={progressBarClass}
+                                    style={{ width: `${progressValue}%` }}
+                                  />
+                                )}
+                              </motion.div>
+                            )
+                          })}
+                          {usingFallback && hiddenFallbackCount > 0 && (
+                            <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
+                              <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
+                                +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              )
+            })}
+            {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
+              const startMin = start.getHours() * 60 + start.getMinutes()
+              const top = (startMin - modelStartHour * 60) * modelPxPerMin
+              const height =
+                ((end.getTime() - start.getTime()) / 60000) * modelPxPerMin
+              const style: CSSProperties = {
+                top,
+                height,
+                boxShadow: 'var(--elev-card)',
+                outline: '1px solid var(--event-border)',
+                outlineOffset: '-1px',
+              }
+              const progress = (task as { progress?: number }).progress ?? 0
+              return (
+                <motion.div
+                  key={instance.id}
+                  aria-label={`Task ${task.name}`}
+                  className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]"
+                  style={style}
+                  initial={
+                    prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                  }
+                  animate={
+                    prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
+                  }
+                  exit={
+                    prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
+                  }
+                >
+                  {renderInstanceActions(instance.id, {
+                    appearance: 'light',
+                    className: 'absolute right-3 top-2',
+                  })}
+                  <div className="flex flex-col">
+                    <span className="truncate text-sm font-medium">
+                      {task.name}
+                    </span>
+                    <div className="text-xs text-zinc-700/80">
+                      {Math.round((end.getTime() - start.getTime()) / 60000)}m
+                    </div>
+                  </div>
+                  {task.skill_icon && (
+                    <span
+                      className="ml-2 text-lg leading-none flex-shrink-0"
+                      aria-hidden
+                    >
+                      {task.skill_icon}
+                    </span>
+                  )}
+                  <FlameEmber
+                    level={(task.energy as FlameLevel) || 'NO'}
+                    size="sm"
+                    className="absolute -top-1 -right-1"
+                  />
+                  <div
+                    className="absolute left-0 bottom-0 h-[3px] bg-zinc-900/25"
+                    style={{ width: `${progress}%` }}
+                  />
+                </motion.div>
+              )
+            })}
+          </DayTimeline>
+        </div>
+      )
+    },
+    [
+      prefersReducedMotion,
+      hasInteractedWithProjects,
+      setProjectExpansion,
+      expandedProjects,
+      renderInstanceActions,
+    ]
+  )
+
+  const dayTimelineNode = useMemo(
+    () => renderDayTimeline(dayTimelineModel),
+    [renderDayTimeline, dayTimelineModel]
   )
 
   return (
@@ -2277,6 +3319,9 @@ export default function SchedulePage() {
                       previousKey={previousDayKey}
                       nextKey={nextDayKey}
                       containerRef={swipeContainerRef}
+                      previousModel={peekModels.previous}
+                      nextModel={peekModels.next}
+                      renderPreview={renderDayTimeline}
                     />
                   </div>
                 ) : skipNextDayAnimation ? (
