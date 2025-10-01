@@ -222,19 +222,25 @@ type EventMeta = {
 };
 
 interface FormSectionProps {
-  title: string;
+  title?: string;
   children: ReactNode;
 }
 
 function FormSection({ title, children }: FormSectionProps) {
   return (
     <section className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.8)] sm:p-5">
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-          {title}
-        </p>
-      </div>
-      <div className="mt-4 space-y-4">{children}</div>
+      {title ? (
+        <>
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+              {title}
+            </p>
+          </div>
+          <div className="mt-4 space-y-4">{children}</div>
+        </>
+      ) : (
+        <div className="space-y-4">{children}</div>
+      )}
     </section>
   );
 }
@@ -1569,7 +1575,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     </div>
                   </FormSection>
 
-                  <FormSection title="Narrative">
+                  <FormSection>
                     <div className="space-y-2">
                       <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                         Why?
