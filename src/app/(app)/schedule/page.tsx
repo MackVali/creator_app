@@ -698,6 +698,74 @@ export default function SchedulePage() {
     () => formatLocalDateKey(currentDate),
     [currentDate]
   )
+  const isViewingToday = useMemo(
+    () => formatLocalDateKey(new Date()) === dayViewDateKey,
+    [dayViewDateKey]
+  )
+  const dayViewDetails = useMemo(() => {
+    try {
+      const formatter = new Intl.DateTimeFormat(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: localTimeZone,
+      })
+      const parts = formatter.formatToParts(currentDate)
+      const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find(part => part.type === type)?.value ?? ''
+      const weekday = getPart('weekday') || dayViewLabel
+      const month = getPart('month')
+      const day = getPart('day')
+      const year = getPart('year')
+      const fullDate = [month, day].filter(Boolean).join(' ')
+      const composed =
+        fullDate && year ? `${fullDate}, ${year}` : fullDate || dayViewLabel
+      return {
+        weekday,
+        fullDate: composed,
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Unable to resolve day view parts', error)
+      }
+      return {
+        weekday: dayViewLabel,
+        fullDate: dayViewLabel,
+      }
+    }
+  }, [currentDate, dayViewLabel, localTimeZone])
+  const timeZoneShortName = useMemo(() => {
+    try {
+      const formatter = new Intl.DateTimeFormat(undefined, {
+        timeZone: localTimeZone,
+        timeZoneName: 'short',
+      })
+      const part = formatter
+        .formatToParts(currentDate)
+        .find(item => item.type === 'timeZoneName')
+      return part?.value ?? ''
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Unable to format time zone name', error)
+      }
+      return ''
+    }
+  }, [currentDate, localTimeZone])
+  const friendlyTimeZone = useMemo(() => {
+    if (!localTimeZone) return 'UTC'
+    const segments = localTimeZone.split('/')
+    const city = segments.pop()
+    const region = segments.length > 0 ? segments.join(' / ') : ''
+    const readableCity = city?.replace(/_/g, ' ')
+    const readableRegion = region.replace(/_/g, ' ')
+    if (readableCity && readableRegion) {
+      return `${readableCity} · ${readableRegion}`
+    }
+    if (readableCity) return readableCity
+    if (readableRegion) return readableRegion
+    return localTimeZone.replace(/_/g, ' ')
+  }, [localTimeZone])
   const previousDayDate = useMemo(() => {
     const prev = new Date(currentDate)
     prev.setDate(currentDate.getDate() - 1)
@@ -1669,13 +1737,33 @@ export default function SchedulePage() {
   const dayTimelineNode = (
     <>
       <div className="pl-16 pr-6 pt-6 pb-4 text-white">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            {dayViewLabel}
-          </h2>
-          <span className="text-sm font-medium text-white/60">
-            {dayViewDateKey}
-          </span>
+        <div className="rounded-xl border border-white/5 bg-white/[0.04] px-5 py-4 shadow-lg shadow-black/20">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.32em] text-white/50">
+                <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
+                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[10px] font-medium tracking-[0.2em] text-white/70">
+                  {dayViewDateKey}
+                </span>
+              </div>
+              <h2 className="text-3xl font-semibold tracking-tight text-white">
+                {dayViewDetails.weekday}
+              </h2>
+              <p className="text-sm text-white/60">
+                {dayViewDetails.fullDate}
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-1 text-right text-xs text-white/50 sm:items-end">
+              {timeZoneShortName ? (
+                <span className="text-sm font-semibold tracking-wide text-white/80">
+                  {timeZoneShortName}
+                </span>
+              ) : null}
+              <span className="text-[11px] uppercase tracking-[0.28em] text-white/40">
+                {friendlyTimeZone}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
       <DayTimeline
