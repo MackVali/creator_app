@@ -15,6 +15,7 @@ interface Project {
   priority: string;
   energy: string;
   stage: string;
+  duration_min: number | null;
   created_at: string;
 }
 

@@ -53,7 +53,7 @@ begin
       continue;
     end if;
 
-    insert into public.projects (user_id, goal_id, name, stage, priority, energy, why)
+    insert into public.projects (user_id, goal_id, name, stage, priority, energy, why, duration_min)
     values (
       goal_user_id,
       new_goal.id,
@@ -61,7 +61,12 @@ begin
       coalesce(project_elem->>'stage', 'RESEARCH'),
       coalesce(project_elem->>'priority', 'NO'),
       coalesce(project_elem->>'energy', 'NO'),
-      nullif(project_elem->>'why', '')
+      nullif(project_elem->>'why', ''),
+      case
+        when trim(coalesce(project_elem->>'duration_min', '')) ~ '^[0-9]+$'
+          then greatest(1, (project_elem->>'duration_min')::integer)
+        else null
+      end
     )
     returning * into new_project;
 
@@ -73,7 +78,8 @@ begin
         'stage', new_project.stage,
         'priority', new_project.priority,
         'energy', new_project.energy,
-        'why', new_project.why
+        'why', new_project.why,
+        'duration_min', new_project.duration_min
       )
     );
 

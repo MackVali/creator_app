@@ -195,7 +195,7 @@ export default function PlanGoalPage() {
 
   const handleDraftChange = (
     id: string,
-    field: "name" | "stage" | "why" | "priority" | "energy",
+    field: "name" | "stage" | "why" | "priority" | "energy" | "duration",
     value: string
   ) => {
     setDrafts((prev) =>
@@ -285,6 +285,7 @@ export default function PlanGoalPage() {
         ...draft,
         name: draft.name.trim(),
         why: draft.why.trim(),
+        duration: draft.duration.trim(),
         tasks: draft.tasks.map((task) => ({
           ...task,
           name: task.name.trim(),
@@ -320,21 +321,28 @@ export default function PlanGoalPage() {
         return;
       }
 
-      const payload = projectsToSave.map((draft) => ({
-        user_id: user.id,
-        goal_id: goalId,
-        name: draft.name,
-        stage: draft.stage,
-        why: draft.why || null,
-        priority: draft.priority || DEFAULT_PRIORITY,
-        energy: draft.energy || DEFAULT_ENERGY,
-      }));
+      const payload = projectsToSave.map((draft) => {
+        const durationMinutes = Number(draft.duration);
+        const hasValidDuration =
+          Number.isFinite(durationMinutes) && durationMinutes > 0;
+
+        return {
+          user_id: user.id,
+          goal_id: goalId,
+          name: draft.name,
+          stage: draft.stage,
+          why: draft.why || null,
+          priority: draft.priority || DEFAULT_PRIORITY,
+          energy: draft.energy || DEFAULT_ENERGY,
+          duration_min: hasValidDuration ? Math.round(durationMinutes) : null,
+        };
+      });
 
       const { data, error } = await supabase
         .from("projects")
         .insert(payload)
         .select(
-          "id, name, goal_id, priority, energy, stage, why, created_at"
+          "id, name, goal_id, priority, energy, stage, why, duration_min, created_at"
         );
 
       if (error) {
@@ -540,19 +548,21 @@ export default function PlanGoalPage() {
                           </div>
                           <div className="space-y-2">
                             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                              Notes (optional)
+                              Duration (minutes)
                             </Label>
-                            <Textarea
-                              value={draft.why}
+                            <Input
+                              value={draft.duration}
                               onChange={(event) =>
                                 handleDraftChange(
                                   draft.id,
-                                  "why",
+                                  "duration",
                                   event.target.value
                                 )
                               }
-                              placeholder="Capture context or success criteria"
-                              className="min-h-[72px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              placeholder="e.g. 90"
+                              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                             />
                           </div>
                         </div>
@@ -785,6 +795,24 @@ export default function PlanGoalPage() {
                             </p>
                           )}
                         </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                            Why?
+                          </Label>
+                          <Textarea
+                            value={draft.why}
+                            onChange={(event) =>
+                              handleDraftChange(
+                                draft.id,
+                                "why",
+                                event.target.value
+                              )
+                            }
+                            placeholder="Capture context or success criteria"
+                            className="min-h-[88px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                          />
+                        </div>
                       </div>
 
                       {drafts.length > 1 ? (
@@ -864,6 +892,13 @@ export default function PlanGoalPage() {
                       <Badge className="border-white/10 bg-white/[0.08] text-white">
                         Energy: {getEnergyLabel(project.energy)}
                       </Badge>
+                      {typeof project.duration_min === "number" &&
+                      Number.isFinite(project.duration_min) &&
+                      project.duration_min > 0 ? (
+                        <Badge className="border-white/10 bg-white/[0.08] text-white">
+                          Duration: {Math.round(project.duration_min)}m
+                        </Badge>
+                      ) : null}
                       <Badge className="border-white/10 bg-white/[0.08] text-white">
                         {projectTasks[project.id]?.length || 0} task
                         {projectTasks[project.id] && projectTasks[project.id].length === 1
