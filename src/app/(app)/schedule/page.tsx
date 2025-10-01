@@ -101,6 +101,34 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
   )
 }
 
+function ProjectCrackOverlay({
+  prefersReducedMotion,
+}: {
+  prefersReducedMotion: boolean
+}) {
+  const [isVisible, setIsVisible] = useState(true)
+
+  useEffect(() => {
+    if (prefersReducedMotion) return
+    const timeout = window.setTimeout(() => setIsVisible(false), 1400)
+    return () => window.clearTimeout(timeout)
+  }, [prefersReducedMotion])
+
+  if (prefersReducedMotion || !isVisible) {
+    return null
+  }
+
+  return (
+    <div className="project-crack-overlay" aria-hidden>
+      <span className="project-crack project-crack--left" />
+      <span className="project-crack project-crack--top" />
+      <span className="project-crack project-crack--bottom" />
+      <span className="project-crack project-crack--diagonal" />
+      <span className="project-crack project-crack--splinter" />
+    </div>
+  )
+}
+
 function WindowLabel({
   label,
   availableHeight,
@@ -1915,6 +1943,11 @@ export default function SchedulePage() {
                         className="flex-shrink-0"
                       />
                     </div>
+                    {isCompleted && (
+                      <ProjectCrackOverlay
+                        prefersReducedMotion={prefersReducedMotion}
+                      />
+                    )}
                   </motion.div>
                 ) : (
                   <motion.div
