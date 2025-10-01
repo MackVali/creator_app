@@ -128,7 +128,7 @@ export default function PlanGoalPage() {
           const { data: tasksData, error: tasksError } = await supabase
             .from("tasks")
             .select(
-              "id, project_id, name, stage, priority, energy, notes"
+              "id, project_id, name, stage, priority, energy, description"
             )
             .eq("goal_id", goalId)
             .in("project_id", projectIds);
@@ -387,7 +387,7 @@ export default function PlanGoalPage() {
                     stage: task.stage || DEFAULT_TASK_STAGE,
                     priority: task.priority || DEFAULT_PRIORITY,
                     energy: task.energy || DEFAULT_ENERGY,
-                    notes: task.notes.length > 0 ? task.notes : null,
+                    description: task.notes.length > 0 ? task.notes : null,
                   }))
                   .filter((task) => task.name.length > 0);
               })
@@ -400,7 +400,7 @@ export default function PlanGoalPage() {
         stage: string;
         priority: string;
         energy: string;
-        notes: string | null;
+        description: string | null;
       }[] = [];
       let tasksFailed = false;
 
@@ -409,7 +409,7 @@ export default function PlanGoalPage() {
           .from("tasks")
           .insert(tasksPayload)
           .select(
-            "id, project_id, name, stage, priority, energy, notes"
+            "id, project_id, name, stage, priority, energy, description"
           );
 
         if (tasksError) {
