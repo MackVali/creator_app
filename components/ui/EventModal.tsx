@@ -1271,30 +1271,38 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       return;
     }
 
-    if (goalWizardStep === "GOAL") {
-      if (!goalForm.name.trim()) {
-        toast.error("Name required", "Give your goal a descriptive name.");
-        return;
-      }
-
-      if (!goalForm.monument_id) {
-        toast.error(
-          "Monument required",
-          "Select a monument to ground this goal."
-        );
-        return;
-      }
-
-      setGoalWizardStep("PROJECTS");
-      return;
-    }
-
-    if (goalWizardStep === "PROJECTS") {
-      setGoalWizardStep("TASKS");
-      return;
-    }
-
     await handleCompleteGoalWizard();
+  };
+
+  const handleWizardContinue = () => {
+    if (isSaving) {
+      return;
+    }
+
+    setGoalWizardStep((prev) => {
+      if (prev === "GOAL") {
+        if (!goalForm.name.trim()) {
+          toast.error("Name required", "Give your goal a descriptive name.");
+          return prev;
+        }
+
+        if (!goalForm.monument_id) {
+          toast.error(
+            "Monument required",
+            "Select a monument to ground this goal."
+          );
+          return prev;
+        }
+
+        return "PROJECTS";
+      }
+
+      if (prev === "PROJECTS") {
+        return "TASKS";
+      }
+
+      return prev;
+    });
   };
 
   const handlePlanGoal = async () => {
@@ -1388,10 +1396,19 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     0,
     GOAL_WIZARD_STEPS.findIndex((step) => step.key === goalWizardStep)
   );
-  const wizardPrimaryDisabled =
-    isSaving ||
-    (goalWizardStep === "GOAL" &&
-      (loading || !goalForm.name.trim() || !goalForm.monument_id));
+  const goalBasicsIncomplete =
+    !goalForm.name.trim() || !goalForm.monument_id;
+  const wizardSaveDisabled =
+    isSaving || (goalWizardStep === "GOAL" && loading) || goalBasicsIncomplete;
+  const wizardContinueDisabled =
+    isSaving || (goalWizardStep === "GOAL" && (loading || goalBasicsIncomplete));
+  const wizardSaveLabel = isSaving
+    ? "Saving..."
+    : goalWizardStep === "TASKS"
+    ? "Save goal & launch"
+    : goalWizardStep === "PROJECTS"
+    ? "Save goal & projects"
+    : "Save goal";
 
   if (!isOpen || !mounted || !eventType) {
     return null;
@@ -2226,17 +2243,24 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   ) : null}
                   <Button
                     type="submit"
-                    disabled={wizardPrimaryDisabled}
+                    disabled={wizardSaveDisabled}
                     className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSaving && goalWizardStep === "TASKS"
-                      ? "Saving..."
-                      : goalWizardStep === "TASKS"
-                      ? "Save goal & launch"
-                      : goalWizardStep === "PROJECTS"
-                      ? "Continue (tasks optional)"
-                      : "Continue to projects"}
+                    {wizardSaveLabel}
                   </Button>
+                  {goalWizardStep !== "TASKS" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleWizardContinue}
+                      disabled={wizardContinueDisabled}
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.03] px-6 text-sm font-semibold text-zinc-200 hover:border-white/20 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {goalWizardStep === "PROJECTS"
+                        ? "Continue to tasks (optional)"
+                        : "Continue to projects"}
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             ) : (
