@@ -18,7 +18,7 @@ interface FocusTimelineProps {
   children?: ReactNode;
 }
 
-function FocusTimelineFab() {
+export function FocusTimelineFab() {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
