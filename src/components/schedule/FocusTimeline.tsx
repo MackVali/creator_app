@@ -31,6 +31,7 @@ function FocusTimelineFab() {
 
   return createPortal(
     <Fab
+      data-testid="focus-timeline-fab"
       className="fixed bottom-6 right-6 z-[2147483647] sm:bottom-8 sm:right-8"
     />,
     document.body
