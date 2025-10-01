@@ -274,7 +274,7 @@ function SkillsPageContent() {
   const monumentLookup = useMemo(() => {
     const map = new Map<string, string>();
     monuments.forEach((monument) => {
-      map.set(monument.id, monument.title);
+      map.set(monument.id, monument.name);
     });
     return map;
   }, [monuments]);

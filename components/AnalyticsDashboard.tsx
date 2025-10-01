@@ -53,7 +53,7 @@ interface Project {
 
 interface Monument {
   id: string;
-  title: string;
+  name: string;
   progress: number;
 }
 
@@ -249,16 +249,16 @@ export default function AnalyticsDashboard() {
 
   const monumentData: Record<string, Monument[]> = {
     "7d": [
-      { id: "1", title: "Pyramid", progress: 40 },
-      { id: "2", title: "Colossus", progress: 20 },
+      { id: "1", name: "Pyramid", progress: 40 },
+      { id: "2", name: "Colossus", progress: 20 },
     ],
     "30d": [
-      { id: "1", title: "Pyramid", progress: 60 },
-      { id: "2", title: "Colossus", progress: 30 },
+      { id: "1", name: "Pyramid", progress: 60 },
+      { id: "2", name: "Colossus", progress: 30 },
     ],
     "90d": [
-      { id: "1", title: "Pyramid", progress: 80 },
-      { id: "2", title: "Colossus", progress: 50 },
+      { id: "1", name: "Pyramid", progress: 80 },
+      { id: "2", name: "Colossus", progress: 50 },
     ],
   };
 
@@ -622,7 +622,7 @@ function MonumentCard({ monument }: { monument: Monument }) {
   return (
     <div
       className="bg-[#1C1F22] p-4 rounded flex flex-col items-center"
-      aria-label={`${monument.title} progress`}
+      aria-label={`${monument.name} progress`}
     >
       <svg width="40" height="40">
         <circle
@@ -645,7 +645,7 @@ function MonumentCard({ monument }: { monument: Monument }) {
           strokeLinecap="round"
         />
       </svg>
-      <div className="mt-2 font-semibold">{monument.title}</div>
+      <div className="mt-2 font-semibold">{monument.name}</div>
     </div>
   );
 }

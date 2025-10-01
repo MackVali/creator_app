@@ -26,7 +26,7 @@ interface GoalDrawerProps {
   initialGoal?: Goal | null;
   /** Callback when updating an existing goal */
   onUpdate?(goal: Goal): void;
-  monuments?: { id: string; title: string }[];
+  monuments?: { id: string; name: string }[];
 }
 
 const PRIORITY_OPTIONS: {
@@ -111,8 +111,8 @@ export function GoalDrawer({
   }, [initialGoal, open]);
 
   const monumentOptions = useMemo(() => {
-    if (!monuments.length) return [] as { id: string; title: string }[];
-    return [...monuments].sort((a, b) => a.title.localeCompare(b.title));
+    if (!monuments.length) return [] as { id: string; name: string }[];
+    return [...monuments].sort((a, b) => a.name.localeCompare(b.name));
   }, [monuments]);
 
   const canSubmit = title.trim().length > 0;
@@ -223,7 +223,7 @@ export function GoalDrawer({
                     </SelectItem>
                     {monumentOptions.map((monument) => (
                       <SelectItem key={monument.id} value={monument.id}>
-                        {monument.title}
+                        {monument.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

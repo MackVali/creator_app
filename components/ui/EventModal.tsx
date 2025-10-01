@@ -1587,7 +1587,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           ) : (
                             monuments.map((monument) => (
                               <SelectItem key={monument.id} value={monument.id}>
-                                {monument.title}
+                                {monument.name}
                               </SelectItem>
                             ))
                           )}

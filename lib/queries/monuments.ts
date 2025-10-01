@@ -2,7 +2,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 
 export interface Monument {
   id: string;
-  title: string;
+  name: string;
 }
 
 export async function getMonumentsForUser(
@@ -15,7 +15,7 @@ export async function getMonumentsForUser(
 
   const { data, error } = await supabase
     .from("monuments")
-    .select("id, title")
+    .select("id, name")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 

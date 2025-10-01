@@ -74,13 +74,13 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
               <span
                 className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl bg-white/10 text-4xl text-white shadow-inner"
                 role="img"
-                aria-label={`Monument: ${monument.title}`}
+                aria-label={`Monument: ${monument.name}`}
               >
                 {monument.emoji || "\uD83D\uDDFC\uFE0F"}
               </span>
               <div className="space-y-3">
                 <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                  {monument.title}
+                  {monument.name}
                 </h1>
                 <p className="max-w-xl text-sm text-white/70 sm:text-base">
                   Track the momentum of this monument with goals and notes that feel as polished as the vision.
