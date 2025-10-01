@@ -66,6 +66,14 @@ type PeekState = {
   offset: number
 }
 
+const DAY_PEEK_WIDTH_RATIO = 0.45
+const MAX_DAY_PEEK_WIDTH = 280
+
+function getDayPeekWidth(containerWidth: number) {
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) return 0
+  return Math.min(containerWidth * DAY_PEEK_WIDTH_RATIO, MAX_DAY_PEEK_WIDTH)
+}
+
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
     opacity: direction === 0 ? 1 : 0.6,
@@ -325,7 +333,7 @@ function DayPeekOverlays({
   containerRef: RefObject<HTMLDivElement | null>
 }) {
   const containerWidth = containerRef.current?.offsetWidth ?? 0
-  const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
+  const maxPeekWidth = getDayPeekWidth(containerWidth)
   const offset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
   if (!offset || peekState.direction === 0) return null
 
@@ -1608,7 +1616,7 @@ export default function SchedulePage() {
     const width =
       touchStartWidth.current || swipeContainerRef.current?.offsetWidth || 1
     const diff = swipeDeltaRef.current
-    const threshold = Math.min(140, width * 0.28)
+    const threshold = getDayPeekWidth(width)
     const absDiff = Math.abs(diff)
     if (absDiff > threshold) {
       const direction: DayTransitionDirection = diff < 0 ? 1 : -1
