@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 export interface Category {
@@ -47,13 +47,20 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
       })
     );
   }
-  return (data ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    color_hex: c.color_hex || "#000000",
-    order: c.sort_order,
-    icon: c.icon || null,
-  }));
+  return (data ?? []).map((c, idx) => {
+    const fallbackOrder = idx + 1;
+    const resolvedOrder =
+      typeof c.sort_order === "number" && Number.isFinite(c.sort_order) && c.sort_order > 0
+        ? Math.floor(c.sort_order)
+        : fallbackOrder;
+    return {
+      id: c.id,
+      name: c.name,
+      color_hex: c.color_hex || "#000000",
+      order: resolvedOrder,
+      icon: c.icon || null,
+    };
+  });
 }
 
 export async function fetchSkills(userId: string): Promise<Skill[]> {
@@ -121,39 +128,84 @@ export function useSkillsData() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const supabase = getSupabaseBrowser();
-        if (!supabase) throw new Error("Supabase client not available");
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) throw new Error("No user");
-        const [cats, skills] = await Promise.all([
-          fetchCategories(user.id).catch(() => []),
-          fetchSkills(user.id),
-        ]);
-        const grouped = groupByCategory(skills);
-        setSkillsByCategory(grouped);
-        if (cats.length > 0) {
-          setCategories(cats);
-        } else if (Object.keys(grouped).length > 0) {
-          // derive a single fallback category so skills still render
-          setCategories([{ id: "uncategorized", name: "Skills" }]);
-        } else {
-          setCategories([]);
-        }
-      } catch (e) {
-        setError(e as Error);
-      } finally {
-        setIsLoading(false);
+  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) throw new Error("Supabase client not available");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user");
+      const [cats, skills] = await Promise.all([
+        fetchCategories(user.id).catch(() => []),
+        fetchSkills(user.id),
+      ]);
+      const grouped = groupByCategory(skills);
+      setSkillsByCategory(grouped);
+      if (cats.length > 0) {
+        setCategories(cats);
+      } else if (Object.keys(grouped).length > 0) {
+        // derive a single fallback category so skills still render
+        setCategories([{ id: "uncategorized", name: "Skills" }]);
+      } else {
+        setCategories([]);
       }
-    };
-    load();
+      setError(null);
+    } catch (e) {
+      setError(e as Error);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { categories, skillsByCategory, isLoading, error };
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const refresh = useCallback(() => load({ silent: true }), [load]);
+
+  const applyCategoryOrder = useCallback(
+    (ordered: ReadonlyArray<Pick<Category, "id">>) => {
+      setCategories((previous) => {
+        if (previous.length === 0 || ordered.length === 0) {
+          return previous;
+        }
+
+        const existingById = new Map(previous.map((cat) => [cat.id, cat]));
+        const seen = new Set<string>();
+        const next: Category[] = [];
+
+        ordered.forEach((entry, index) => {
+          if (!entry?.id) return;
+          const current = existingById.get(entry.id);
+          if (!current) return;
+
+          seen.add(entry.id);
+          next.push({
+            ...current,
+            order: index + 1,
+          });
+        });
+
+        if (next.length === 0) {
+          return previous;
+        }
+
+        previous.forEach((cat) => {
+          if (seen.has(cat.id)) return;
+          next.push(cat);
+        });
+
+        return next;
+      });
+    },
+    []
+  );
+
+  return { categories, skillsByCategory, isLoading, error, refresh, applyCategoryOrder };
 }
 
 export default useSkillsData;
