@@ -1512,66 +1512,66 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     </div>
                   </FormSection>
 
-                  <FormSection title="Intensity">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Priority
-                        </Label>
-                        <OptionDropdown
-                          value={goalForm.priority}
-                          options={PRIORITY_OPTIONS}
-                          onChange={(value) =>
-                            handleGoalFormChange("priority", value)
-                          }
-                          placeholder="Select priority..."
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Energy
-                        </Label>
-                        <OptionDropdown
-                          value={goalForm.energy}
-                          options={ENERGY_OPTIONS}
-                          onChange={(value) =>
-                            handleGoalFormChange("energy", value)
-                          }
-                          placeholder="Select energy..."
-                        />
-                      </div>
-                    </div>
-                  </FormSection>
-
                   <FormSection title="Relations">
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Monument
-                      </Label>
-                      <Select
-                        value={goalForm.monument_id}
-                        onValueChange={(value) =>
-                          handleGoalFormChange("monument_id", value)
-                        }
-                        placeholder={loading ? "Loading monuments..." : "Select monument..."}
-                        triggerClassName="h-12"
-                      >
-                        <SelectContent>
-                          {monuments.length === 0 ? (
-                            <SelectItem value="" disabled>
-                              {loading
-                                ? "Loading monuments..."
-                                : "No monuments found"}
-                            </SelectItem>
-                          ) : (
-                            monuments.map((monument) => (
-                              <SelectItem key={monument.id} value={monument.id}>
-                                {monument.title}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                          Monument
+                        </Label>
+                        <Select
+                          value={goalForm.monument_id}
+                          onValueChange={(value) =>
+                            handleGoalFormChange("monument_id", value)
+                          }
+                          placeholder={loading ? "Loading monuments..." : "Select monument..."}
+                          triggerClassName="h-12"
+                        >
+                          <SelectContent>
+                            {monuments.length === 0 ? (
+                              <SelectItem value="" disabled>
+                                {loading
+                                  ? "Loading monuments..."
+                                  : "No monuments found"}
                               </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                            ) : (
+                              monuments.map((monument) => (
+                                <SelectItem key={monument.id} value={monument.id}>
+                                  {monument.title}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                            Priority
+                          </Label>
+                          <OptionDropdown
+                            value={goalForm.priority}
+                            options={PRIORITY_OPTIONS}
+                            onChange={(value) =>
+                              handleGoalFormChange("priority", value)
+                            }
+                            placeholder="Select priority..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                            Energy
+                          </Label>
+                          <OptionDropdown
+                            value={goalForm.energy}
+                            options={ENERGY_OPTIONS}
+                            onChange={(value) =>
+                              handleGoalFormChange("energy", value)
+                            }
+                            placeholder="Select energy..."
+                          />
+                        </div>
+                      </div>
                     </div>
                   </FormSection>
 
