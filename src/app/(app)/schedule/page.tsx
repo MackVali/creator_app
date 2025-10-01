@@ -19,6 +19,7 @@ import {
   useAnimationControls,
   useReducedMotion,
 } from 'framer-motion'
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Sparkles } from 'lucide-react'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -1642,31 +1643,104 @@ export default function SchedulePage() {
   const dayTimelineNode = (
     <>
       <div className="pl-16 pr-6 pt-6 pb-4 text-white">
-        <div className="rounded-xl border border-white/5 bg-white/[0.04] px-5 py-4 shadow-lg shadow-black/20">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.32em] text-white/50">
-                <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[10px] font-medium tracking-[0.2em] text-white/70">
-                  {dayViewDateKey}
+        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-6 shadow-[0_30px_60px_-40px_rgba(0,0,0,0.9)] backdrop-blur">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -top-24 left-12 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl" />
+            <div className="absolute -bottom-28 right-0 h-48 w-48 rounded-full bg-sky-500/25 blur-[90px]" />
+            <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-black/40 opacity-60" />
+          </div>
+          <div className="relative flex flex-col gap-6">
+            <div className="flex flex-wrap items-start justify-between gap-6">
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.32em] text-white/70">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-white">
+                    {isViewingToday ? (
+                      <>
+                        <Sparkles className="h-3 w-3" />
+                        Today
+                      </>
+                    ) : (
+                      <>
+                        <CalendarDays className="h-3 w-3" />
+                        Selected Day
+                      </>
+                    )}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.12] px-3 py-1 text-[10px] font-medium tracking-[0.24em] text-white/80">
+                    {dayViewDateKey}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-sm font-medium uppercase tracking-[0.32em] text-white/40">
+                    {dayViewLabel}
+                  </span>
+                  <h2 className="text-4xl font-semibold tracking-tight text-white">
+                    {dayViewDetails.weekday}
+                  </h2>
+                  <p className="text-base text-white/70">
+                    {dayViewDetails.fullDate}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col items-start gap-3 text-right text-xs text-white/60 sm:items-end">
+                {timeZoneShortName ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-white/80">
+                    <Clock className="h-3.5 w-3.5" />
+                    {timeZoneShortName}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-white/70">
+                  <MapPin className="h-4 w-4 text-white/50" />
+                  {friendlyTimeZone}
                 </span>
               </div>
-              <h2 className="text-3xl font-semibold tracking-tight text-white">
-                {dayViewDetails.weekday}
-              </h2>
-              <p className="text-sm text-white/60">
-                {dayViewDetails.fullDate}
-              </p>
             </div>
-            <div className="flex flex-col items-start gap-1 text-right text-xs text-white/50 sm:items-end">
-              {timeZoneShortName ? (
-                <span className="text-sm font-semibold tracking-wide text-white/80">
-                  {timeZoneShortName}
-                </span>
-              ) : null}
-              <span className="text-[11px] uppercase tracking-[0.28em] text-white/40">
-                {friendlyTimeZone}
-              </span>
+            <div className="grid gap-3 text-sm text-white/70 sm:grid-cols-3">
+              <div className="group rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 shadow-inner shadow-black/20 transition hover:border-white/20 hover:bg-white/[0.08]">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400/20 text-emerald-200">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-white/50">
+                      Schedule Windows
+                    </p>
+                    <p className="text-lg font-semibold text-white">
+                      {windows.length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="group rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 shadow-inner shadow-black/20 transition hover:border-white/20 hover:bg-white/[0.08]">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
+                    <ChevronLeft className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-white/50">
+                      Previous Day
+                    </p>
+                    <p className="text-sm font-medium text-white">
+                      {previousDayLabel}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="group rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 shadow-inner shadow-black/20 transition hover:border-white/20 hover:bg-white/[0.08]">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
+                    <ChevronRight className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-white/50">
+                      Next Day
+                    </p>
+                    <p className="text-sm font-medium text-white">
+                      {nextDayLabel}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
