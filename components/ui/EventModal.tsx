@@ -641,6 +641,8 @@ interface OptionGridProps {
   className?: string;
   columnsClassName?: string;
   layout?: "grid" | "list";
+  selectedClassName?: string;
+  unselectedClassName?: string;
 }
 
 function OptionGrid({
@@ -650,6 +652,8 @@ function OptionGrid({
   className,
   columnsClassName,
   layout = "grid",
+  selectedClassName,
+  unselectedClassName,
 }: OptionGridProps) {
   const computedColumns =
     layout === "list"
@@ -695,8 +699,10 @@ function OptionGrid({
                 "rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-0",
                 layout === "list" && "w-full",
                 selected
-                  ? "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
-                  : "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
+                  ? selectedClassName ??
+                    "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
+                  : unselectedClassName ??
+                    "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
               )}
             >
               <span className="flex items-center gap-2 text-[13px] font-semibold leading-tight">
@@ -1909,19 +1915,21 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Description
-                    </Label>
-                    <Textarea
-                      value={formData.description}
-                      onChange={(event) =>
-                        setFormData({ ...formData, description: event.target.value })
-                      }
-                      placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
-                      className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                    />
-                  </div>
+                  {eventType !== "HABIT" ? (
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Description
+                      </Label>
+                      <Textarea
+                        value={formData.description}
+                        onChange={(event) =>
+                          setFormData({ ...formData, description: event.target.value })
+                        }
+                        placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
+                        className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </FormSection>
 
@@ -2187,6 +2195,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         onChange={(value) =>
                           setFormData({ ...formData, recurrence: value })
                         }
+                        selectedClassName="border-black bg-black text-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+                        unselectedClassName="border-black/50 bg-black/40 text-zinc-200 hover:border-black hover:bg-black/60 hover:text-white"
                       />
                     </div>
                   </div>
