@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 export interface Category {
@@ -121,39 +121,46 @@ export function useSkillsData() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const supabase = getSupabaseBrowser();
-        if (!supabase) throw new Error("Supabase client not available");
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) throw new Error("No user");
-        const [cats, skills] = await Promise.all([
-          fetchCategories(user.id).catch(() => []),
-          fetchSkills(user.id),
-        ]);
-        const grouped = groupByCategory(skills);
-        setSkillsByCategory(grouped);
-        if (cats.length > 0) {
-          setCategories(cats);
-        } else if (Object.keys(grouped).length > 0) {
-          // derive a single fallback category so skills still render
-          setCategories([{ id: "uncategorized", name: "Skills" }]);
-        } else {
-          setCategories([]);
-        }
-      } catch (e) {
-        setError(e as Error);
-      } finally {
-        setIsLoading(false);
+  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) throw new Error("Supabase client not available");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("No user");
+      const [cats, skills] = await Promise.all([
+        fetchCategories(user.id).catch(() => []),
+        fetchSkills(user.id),
+      ]);
+      const grouped = groupByCategory(skills);
+      setSkillsByCategory(grouped);
+      if (cats.length > 0) {
+        setCategories(cats);
+      } else if (Object.keys(grouped).length > 0) {
+        // derive a single fallback category so skills still render
+        setCategories([{ id: "uncategorized", name: "Skills" }]);
+      } else {
+        setCategories([]);
       }
-    };
-    load();
+      setError(null);
+    } catch (e) {
+      setError(e as Error);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  return { categories, skillsByCategory, isLoading, error };
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const refresh = useCallback(() => load({ silent: true }), [load]);
+
+  return { categories, skillsByCategory, isLoading, error, refresh };
 }
 
 export default useSkillsData;

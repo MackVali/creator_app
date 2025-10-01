@@ -65,6 +65,7 @@ interface Props {
   onIconChange?: (icon: string | null) => void;
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
+  onOrderChange?: (order: number) => void;
 }
 
 export default function CategoryCard({
@@ -78,6 +79,7 @@ export default function CategoryCard({
   onIconChange,
   menuOpen: menuOpenProp,
   onMenuOpenChange,
+  onOrderChange,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
@@ -213,6 +215,7 @@ export default function CategoryCard({
     try {
       await updateCatOrder(category.id, orderValue);
       router.refresh();
+      onOrderChange?.(orderValue);
     } catch (e) {
       console.error("Failed to update category order", e);
     } finally {

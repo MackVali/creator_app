@@ -37,7 +37,7 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 }
 
 export default function SkillsCarousel() {
-  const { categories, skillsByCategory, isLoading } = useSkillsData();
+  const { categories, skillsByCategory, isLoading, refresh } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
 
@@ -349,6 +349,9 @@ export default function SkillsCarousel() {
                       },
                     }))
                   }
+                  onOrderChange={() => {
+                    refresh();
+                  }}
                 />
               </div>
             );
