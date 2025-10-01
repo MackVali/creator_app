@@ -19,8 +19,6 @@ import { getSkillsForUser } from "../../../lib/data/skills";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
 import type { SkillRow } from "@/lib/types/skill";
 import {
-  LayoutGrid,
-  List as ListIcon,
   Plus,
   MoreVertical,
   ChevronRight,
@@ -54,7 +52,6 @@ function SkillsPageContent() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 200);
   const [selectedCat, setSelectedCat] = useState("all");
-  const [view, setView] = useState<"grid" | "list">("grid");
   const [sort, setSort] = useState("name");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Skill | null>(null);
@@ -232,20 +229,6 @@ function SkillsPageContent() {
     }
   };
 
-  const handleRemoveCategory = async (id: string) => {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
-    setSkills((prev) =>
-      prev.map((s) => (s.cat_id === id ? { ...s, cat_id: null } : s))
-    );
-    if (selectedCat === id) {
-      setSelectedCat("all");
-    }
-    const { error } = await deleteRecord("cats", id);
-    if (error) {
-      console.error("Error deleting category:", error);
-    }
-  };
-
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const totalSkills = skills.length;
@@ -395,32 +378,6 @@ function SkillsPageContent() {
                   onChange={(e) => setSearch(e.target.value)}
                   className="h-12 flex-1 rounded-2xl border border-white/10 bg-white/5 text-white placeholder:text-white/40 focus:border-white/30 focus:ring-white/30"
                 />
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={() => setView("grid")}
-                    variant="ghost"
-                    className={`h-11 w-11 rounded-2xl border p-0 ${
-                      view === "grid"
-                        ? "border-white bg-white text-slate-900 shadow-[0_15px_30px_-20px_rgba(148,163,184,0.85)] hover:bg-white/90"
-                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:bg-white/10"
-                    }`}
-                  >
-                    <LayoutGrid className="h-5 w-5" />
-                    <span className="sr-only">Grid view</span>
-                  </Button>
-                  <Button
-                    onClick={() => setView("list")}
-                    variant="ghost"
-                    className={`h-11 w-11 rounded-2xl border p-0 ${
-                      view === "list"
-                        ? "border-white bg-white text-slate-900 shadow-[0_15px_30px_-20px_rgba(148,163,184,0.85)] hover:bg-white/90"
-                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:bg-white/10"
-                    }`}
-                  >
-                    <ListIcon className="h-5 w-5" />
-                    <span className="sr-only">List view</span>
-                  </Button>
-                </div>
               </div>
               <select
                 value={sort}
@@ -460,19 +417,6 @@ function SkillsPageContent() {
                       <span>{cat.name}</span>
                       <span className={isActive ? "text-slate-600" : "text-white/50"}>{count}</span>
                     </button>
-                    {cat.id !== "all" && cat.id !== "uncategorized" && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemoveCategory(cat.id);
-                        }}
-                        className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/40 bg-white/80 text-[10px] font-bold text-slate-900 shadow-sm transition hover:bg-white"
-                        aria-label={`Delete ${cat.name}`}
-                      >
-                        ×
-                      </button>
-                    )}
                   </div>
                 );
               })}
@@ -501,104 +445,6 @@ function SkillsPageContent() {
                   Add your first skill
                 </Button>
               </div>
-            </div>
-          ) : view === "grid" ? (
-            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((skill) => {
-                const categoryName = categoryLookup.get(skill.cat_id || "uncategorized");
-                const linkedMonument = skill.monument_id
-                  ? monumentLookup.get(skill.monument_id)
-                  : null;
-                return (
-                  <Link
-                    key={skill.id}
-                    href={`/skills/${skill.id}`}
-                    className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#090b14] via-[#141826] to-[#1c2132] p-6 text-left shadow-[0_35px_100px_-65px_rgba(99,102,241,0.7)] transition hover:border-white/20 hover:shadow-[0_45px_120px_-65px_rgba(56,189,248,0.65)]"
-                  >
-                    <div className="absolute inset-0">
-                      <div className="absolute -right-20 -top-16 h-44 w-44 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.32),_transparent_60%)] opacity-40 transition group-hover:opacity-80" />
-                      <div className="absolute -bottom-24 left-12 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(56,189,248,0.2),_transparent_60%)] opacity-40 transition group-hover:opacity-80" />
-                    </div>
-                    <div className="relative flex flex-col gap-6">
-                      <div className="flex items-start justify-between gap-4">
-                        <span
-                          className="flex h-[72px] w-[72px] items-center justify-center rounded-3xl bg-white/10 text-4xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/15"
-                          role="img"
-                          aria-label={`Skill: ${skill.name}`}
-                        >
-                          {skill.icon}
-                        </span>
-                        <div className="flex flex-col items-end gap-2">
-                          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                            Lv {skill.level}
-                          </span>
-                          {skill.created_at && (
-                            <span className="text-[11px] uppercase tracking-[0.25em] text-white/40">
-                              Added {new Date(skill.created_at).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-2">
-                            <h3 className="text-lg font-semibold text-white">{skill.name}</h3>
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
-                              <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white/70">
-                                {categoryName || "Uncategorized"}
-                              </span>
-                              {linkedMonument && (
-                                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-emerald-200">
-                                  <Goal className="h-3 w-3" aria-hidden="true" />
-                                  {linkedMonument}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-sm leading-relaxed text-white/60">
-                          Open to review milestones, notes, and goals tied to this capability.
-                        </p>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/70 opacity-0 transition hover:text-white group-hover:opacity-100"
-                            aria-label="More"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }}
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-40 border border-white/10 bg-[#0f111a]/95 text-white backdrop-blur">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              startEdit(skill);
-                            }}
-                          >
-                            Edit skill
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleRemoveSkill(skill.id);
-                            }}
-                          >
-                            Remove skill
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </Link>
-                );
-              })}
             </div>
           ) : (
             <div className="space-y-4">
