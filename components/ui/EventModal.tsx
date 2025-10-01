@@ -1855,8 +1855,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     onClick={() =>
                                       handleRemoveTaskFromDraft(draft.id, task.id)
                                     }
-                                    disabled={draft.tasks.length === 1}
-                                    className="h-9 w-9 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+                                    className="h-9 w-9 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -1866,7 +1865,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           </div>
                         ) : (
                           <p className="mt-4 text-xs text-zinc-500">
-                            No tasks yet. Add at least one to outline the next moves.
+                            No tasks planned. Add tasks if you want to break this project into steps, or continue to save without them.
                           </p>
                         )}
                       </div>

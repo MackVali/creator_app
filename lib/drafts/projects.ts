@@ -55,7 +55,7 @@ export function createDraftProject(
     why = "",
     priority = DEFAULT_PRIORITY,
     energy = DEFAULT_ENERGY,
-    tasks = [createDraftTask()],
+    tasks = [],
   } = overrides;
 
   return { id, name, stage, why, priority, energy, tasks };
