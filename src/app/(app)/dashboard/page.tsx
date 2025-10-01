@@ -4,7 +4,7 @@ import { getSupabaseServer } from "@/lib/supabase";
 import { type Monument } from "@/components/monuments/MonumentsList";
 
 export default async function DashboardPage() {
-  const cookieStore = await cookies();
+  const cookieStore = cookies();
   const supabase = getSupabaseServer(cookieStore);
 
   let monuments: Monument[] = [];

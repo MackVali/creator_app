@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import {
   MonumentDetail,
@@ -20,7 +20,7 @@ export default async function MonumentDetailPage({
   const supabase = getSupabaseServer(cookieStore);
 
   if (!supabase) {
-    return notFound();
+    redirect("/monuments");
   }
 
   const { data: monument, error } = await supabase
@@ -30,7 +30,7 @@ export default async function MonumentDetailPage({
     .single<MonumentDetailMonument>();
 
   if (error || !monument) {
-    return notFound();
+    redirect("/monuments");
   }
 
   return <MonumentDetail monument={monument} />;

@@ -8,7 +8,7 @@ import {
 import { MonumentsEmptyState } from "@/components/ui/empty-state";
 
 export default async function MonumentsPage() {
-  const cookieStore = await cookies();
+  const cookieStore = cookies();
   const supabase = getSupabaseServer(cookieStore);
 
   let monuments: Monument[] = [];
