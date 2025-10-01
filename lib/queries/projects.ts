@@ -8,6 +8,7 @@ export interface Project {
   energy: string;
   stage: string;
   why?: string;
+  duration_min: number | null;
   created_at: string;
 }
 
@@ -19,7 +20,9 @@ export async function getProjectsForGoal(goalId: string): Promise<Project[]> {
 
   const { data, error } = await supabase
     .from("projects")
-    .select("id, name, goal_id, priority, energy, stage, why, created_at")
+    .select(
+      "id, name, goal_id, priority, energy, stage, why, duration_min, created_at"
+    )
     .eq("goal_id", goalId)
     .order("created_at", { ascending: false });
 
@@ -39,7 +42,9 @@ export async function getProjectsForUser(userId: string): Promise<Project[]> {
 
   const { data, error } = await supabase
     .from("projects")
-    .select("id, name, goal_id, priority, energy, stage, why, created_at")
+    .select(
+      "id, name, goal_id, priority, energy, stage, why, duration_min, created_at"
+    )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -61,7 +66,9 @@ export async function getProjectById(
 
   const { data, error } = await supabase
     .from("projects")
-    .select("id, name, goal_id, priority, energy, stage, why, created_at")
+    .select(
+      "id, name, goal_id, priority, energy, stage, why, duration_min, created_at"
+    )
     .eq("id", projectId)
     .single();
 

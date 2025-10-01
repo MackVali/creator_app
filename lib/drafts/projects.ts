@@ -17,6 +17,7 @@ export interface DraftProject {
   name: string;
   stage: string;
   why: string;
+  duration: string;
   priority: string;
   energy: string;
   tasks: DraftTask[];
@@ -53,12 +54,13 @@ export function createDraftProject(
     name = "",
     stage = DEFAULT_PROJECT_STAGE,
     why = "",
+    duration = "",
     priority = DEFAULT_PRIORITY,
     energy = DEFAULT_ENERGY,
     tasks = [createDraftTask()],
   } = overrides;
 
-  return { id, name, stage, why, priority, energy, tasks };
+  return { id, name, stage, why, duration, priority, energy, tasks };
 }
 
 export function normalizeTask<

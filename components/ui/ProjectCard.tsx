@@ -19,6 +19,7 @@ interface ProjectCardProps {
     priority: string;
     energy: string;
     stage: string;
+    duration_min?: number | null;
   };
 }
 

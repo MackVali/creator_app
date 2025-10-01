@@ -209,19 +209,6 @@ export function GoalDrawer({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="goal-why" className="text-white/70">
-                  Why does this matter?
-                </Label>
-                <Textarea
-                  id="goal-why"
-                  value={why}
-                  onChange={(e) => setWhy(e.target.value)}
-                  placeholder="Capture the purpose or narrative behind this goal."
-                  className="min-h-[120px] rounded-xl border-white/10 bg-white/[0.04] text-sm"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <Label className="text-white/70">Monument link</Label>
                 <Select
                   value={monumentId}
@@ -309,6 +296,19 @@ export function GoalDrawer({
                 >
                   {active ? "Active" : "Inactive"}
                 </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="goal-why" className="text-white/70">
+                  Why?
+                </Label>
+                <Textarea
+                  id="goal-why"
+                  value={why}
+                  onChange={(e) => setWhy(e.target.value)}
+                  placeholder="Capture the purpose or narrative behind this goal."
+                  className="min-h-[120px] rounded-xl border-white/10 bg-white/[0.04] text-sm"
+                />
               </div>
             </div>
           </div>
