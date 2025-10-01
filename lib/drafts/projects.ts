@@ -3,6 +3,30 @@ export const DEFAULT_ENERGY = "NO";
 export const DEFAULT_PROJECT_STAGE = "RESEARCH";
 export const DEFAULT_TASK_STAGE = "PREPARE";
 
+export const TASK_STAGE_VALUES = [
+  "PREPARE",
+  "PRODUCE",
+  "PERFECT",
+] as const;
+
+export type TaskStage = (typeof TASK_STAGE_VALUES)[number];
+
+const TASK_STAGE_SET = new Set<string>(TASK_STAGE_VALUES);
+
+export const sanitizeTaskStage = (
+  stage: string | null | undefined
+): TaskStage => {
+  if (!stage) {
+    return DEFAULT_TASK_STAGE;
+  }
+
+  const normalized = stage.toUpperCase();
+
+  return TASK_STAGE_SET.has(normalized)
+    ? (normalized as TaskStage)
+    : DEFAULT_TASK_STAGE;
+};
+
 export interface DraftTask {
   id: string;
   name: string;
@@ -40,7 +64,7 @@ export function createDraftTask(
     notes = "",
   } = overrides;
 
-  return { id, name, stage, priority, energy, notes };
+  return { id, name, stage: sanitizeTaskStage(stage), priority, energy, notes };
 }
 
 export function createDraftProject(
@@ -60,7 +84,13 @@ export function createDraftProject(
     tasks = [],
   } = overrides;
 
-  const normalizedTasks = tasks.length > 0 ? [...tasks] : [];
+  const normalizedTasks =
+    tasks.length > 0
+      ? tasks.map((task) => ({
+          ...task,
+          stage: sanitizeTaskStage(task.stage),
+        }))
+      : [];
 
   return {
     id,
@@ -88,7 +118,7 @@ export function normalizeTask<
   return createDraftTask({
     id: task.id,
     name: task.name ?? "",
-    stage: task.stage ?? DEFAULT_TASK_STAGE,
+    stage: sanitizeTaskStage(task.stage),
     priority: task.priority ?? DEFAULT_PRIORITY,
     energy: task.energy ?? DEFAULT_ENERGY,
     notes: task.description ?? task.notes ?? "",

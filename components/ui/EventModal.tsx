@@ -47,6 +47,7 @@ import {
   DEFAULT_ENERGY,
   DEFAULT_PRIORITY,
   DEFAULT_TASK_STAGE,
+  sanitizeTaskStage,
   createDraftProject,
   createDraftTask,
   type DraftProject,
@@ -206,7 +207,7 @@ const createInitialFormState = (
     eventType === "PROJECT"
       ? PROJECT_STAGE_OPTIONS[0].value
       : eventType === "TASK"
-      ? TASK_STAGE_OPTIONS[0].value
+      ? DEFAULT_TASK_STAGE
       : "",
   type: eventType === "HABIT" ? HABIT_TYPE_OPTIONS[0].value : "",
   recurrence: eventType === "HABIT" ? RECURRENCE_OPTIONS[0].value : "",
@@ -972,13 +973,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     field: keyof Omit<DraftTask, "id">,
     value: string
   ) => {
+    const nextValue =
+      field === "stage" ? sanitizeTaskStage(value) : value;
+
     setDraftProjects((prev) =>
       prev.map((draft) =>
         draft.id === projectId
           ? {
               ...draft,
               tasks: draft.tasks.map((task) =>
-                task.id === taskId ? { ...task, [field]: value } : task
+                task.id === taskId ? { ...task, [field]: nextValue } : task
               ),
             }
           : draft
@@ -1189,7 +1193,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             tasks: draft.tasks
               .map((task) => ({
                 name: task.name.trim(),
-                stage: task.stage || DEFAULT_TASK_STAGE,
+                stage: sanitizeTaskStage(task.stage),
                 priority: task.priority || DEFAULT_PRIORITY,
                 energy: task.energy || DEFAULT_ENERGY,
                 notes: task.notes.trim(),
@@ -1221,7 +1225,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   : null,
               tasks: project.tasks.map((task) => ({
                 name: task.name,
-                stage: task.stage,
+                stage: sanitizeTaskStage(task.stage),
                 priority: task.priority,
                 energy: task.energy,
                 notes: task.notes.length > 0 ? task.notes : null,

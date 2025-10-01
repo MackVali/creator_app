@@ -28,7 +28,7 @@ import {
 import {
   DEFAULT_ENERGY,
   DEFAULT_PRIORITY,
-  DEFAULT_TASK_STAGE,
+  sanitizeTaskStage,
   createDraftProject,
   createDraftTask,
   type DraftProject,
@@ -222,6 +222,8 @@ export default function PlanGoalPage() {
     field: keyof DraftTask,
     value: string
   ) => {
+    const nextValue = field === "stage" ? sanitizeTaskStage(value) : value;
+
     setDrafts((prev) =>
       prev.map((draft) =>
         draft.id === projectId
@@ -231,7 +233,7 @@ export default function PlanGoalPage() {
                 task.id === taskId
                   ? {
                       ...task,
-                      [field]: value,
+                      [field]: nextValue,
                     }
                   : task
               ),
@@ -295,6 +297,7 @@ export default function PlanGoalPage() {
         tasks: draft.tasks.map((task) => ({
           ...task,
           name: task.name.trim(),
+          stage: sanitizeTaskStage(task.stage),
           notes: task.notes.trim(),
         })),
       }))
@@ -384,7 +387,7 @@ export default function PlanGoalPage() {
                     goal_id: goalId,
                     project_id: project.id,
                     name: task.name,
-                    stage: task.stage || DEFAULT_TASK_STAGE,
+                    stage: sanitizeTaskStage(task.stage),
                     priority: task.priority || DEFAULT_PRIORITY,
                     energy: task.energy || DEFAULT_ENERGY,
                     description: task.notes.length > 0 ? task.notes : null,
