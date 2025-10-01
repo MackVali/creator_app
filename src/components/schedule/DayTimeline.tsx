@@ -3,12 +3,15 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 interface DayTimelineProps {
   startHour?: number;
   endHour?: number;
   pxPerMin?: number;
   date?: Date;
   children?: ReactNode;
+  className?: string;
 }
 
 export function DayTimeline({
@@ -17,6 +20,7 @@ export function DayTimeline({
   pxPerMin = 2,
   date = new Date(),
   children,
+  className,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
@@ -50,25 +54,28 @@ export function DayTimeline({
   return (
     <>
       <div
-        className="relative w-full pl-16 bg-black overflow-hidden"
+        className={cn(
+          "relative w-full overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(39,39,42,0.35)_0%,_rgba(12,12,18,0.9)_52%,_rgba(6,8,20,0.98)_100%)] pl-16",
+          className
+        )}
         style={{ height: `${timelineHeight}px` }}
       >
         {hours.map(h => {
-          const top = (h - startHour) * 60 * pxPerMin
+          const top = (h - startHour) * 60 * pxPerMin;
           return (
             <Fragment key={h}>
               <div
-                className="pointer-events-none absolute left-16 right-0 border-t border-zinc-800"
+                className="pointer-events-none absolute left-16 right-0 border-t border-white/10"
                 style={{ top }}
               />
               <div
-                className="absolute left-0 w-16 pr-2 text-right text-xs text-zinc-500"
+                className="absolute left-0 w-16 pr-2 text-right text-[11px] font-medium uppercase tracking-[0.18em] text-white/35"
                 style={{ top }}
               >
                 {formatHour(h)}
               </div>
             </Fragment>
-          )
+          );
         })}
 
         {children}
@@ -80,14 +87,14 @@ export function DayTimeline({
               style={{ top: nowTop }}
             />
             <div
-              className="absolute flex items-center gap-1 text-xs text-white"
+              className="absolute flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.22em] text-white/80 shadow-[0_6px_18px_rgba(8,10,24,0.45)]"
               style={{ top: nowTop - 8, left: 4 }}
             >
               <Clock className="h-3 w-3" />
               <span>Now</span>
             </div>
             <div
-              className="absolute right-0 text-xs text-white pr-2"
+              className="absolute right-0 pr-3 text-[11px] font-semibold text-white/80"
               style={{ top: nowTop - 8 }}
             >
               {formatTime(nowMinutes! + startHour * 60)}

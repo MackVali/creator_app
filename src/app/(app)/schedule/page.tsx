@@ -117,7 +117,7 @@ function WindowLabel({
   return (
     <span
       title={label}
-      className="ml-1 text-[10px] leading-none text-zinc-500"
+      className="ml-1 inline-flex text-[10px] uppercase leading-none tracking-[0.18em] text-white/45"
       style={{
         display: 'inline-flex',
         writingMode: 'vertical-rl',
@@ -816,8 +816,35 @@ export default function SchedulePage() {
   }, [userId])
 
   const startHour = 0
-  const pxPerMin = 2
+  const [pxPerMin, setPxPerMin] = useState(2)
   const year = currentDate.getFullYear()
+
+  useEffect(() => {
+    const updateDensity = () => {
+      if (typeof window === 'undefined') return
+      const width = window.innerWidth
+      const height = window.innerHeight
+      if (width <= 640) {
+        if (height < 720) {
+          setPxPerMin(1.25)
+        } else if (height < 900) {
+          setPxPerMin(1.4)
+        } else {
+          setPxPerMin(1.55)
+        }
+      } else {
+        setPxPerMin(2)
+      }
+    }
+
+    updateDensity()
+    window.addEventListener('resize', updateDensity)
+    window.addEventListener('orientationchange', updateDensity)
+    return () => {
+      window.removeEventListener('resize', updateDensity)
+      window.removeEventListener('orientationchange', updateDensity)
+    }
+  }, [])
 
   const refreshScheduledProjectIds = useCallback(async () => {
     if (!userId) return
@@ -1640,42 +1667,45 @@ export default function SchedulePage() {
   }
 
   const dayTimelineNode = (
-    <>
-      <div className="pl-16 pr-6 pt-6 pb-4 text-white">
-        <div className="rounded-xl border border-white/5 bg-white/[0.04] px-5 py-4 shadow-lg shadow-black/20">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.32em] text-white/50">
-                <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[10px] font-medium tracking-[0.2em] text-white/70">
-                  {dayViewDateKey}
-                </span>
-              </div>
-              <h2 className="text-3xl font-semibold tracking-tight text-white">
+    <div className="mx-auto w-full max-w-[640px] px-2 pb-10 sm:px-0">
+      <div className="relative isolate overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(120%_120%_at_50%_-20%,rgba(244,244,245,0.06)_0%,rgba(24,24,27,0.88)_45%,rgba(9,9,11,0.96)_100%)] shadow-[0_28px_60px_rgba(8,10,24,0.58)] backdrop-blur-xl">
+        <div className="pointer-events-none absolute -top-24 right-[-18%] h-60 w-60 rounded-full bg-sky-500/25 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 left-[-22%] h-64 w-64 rounded-full bg-violet-500/15 blur-[120px]" />
+        <div className="relative flex flex-col gap-4 px-5 pt-6 pb-5 text-white sm:px-8 sm:pt-7 sm:pb-6">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/60 sm:text-[11px] sm:tracking-[0.28em]">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white/75">
+              {isViewingToday ? 'Today' : 'Selected Day'}
+            </span>
+            <span className="inline-flex items-center rounded-full bg-white/5 px-3 py-1 text-white/60">
+              {dayViewDateKey}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
                 {dayViewDetails.weekday}
               </h2>
-              <p className="text-sm text-white/60">
+              <p className="text-sm text-white/60 sm:text-base">
                 {dayViewDetails.fullDate}
               </p>
             </div>
-            <div className="flex flex-col items-start gap-1 text-right text-xs text-white/50 sm:items-end">
+            <div className="flex flex-col items-start gap-1 text-[10px] uppercase tracking-[0.22em] text-white/45 sm:items-end sm:text-[11px]">
               {timeZoneShortName ? (
-                <span className="text-sm font-semibold tracking-wide text-white/80">
+                <span className="text-xs font-semibold tracking-[0.18em] text-white/80 sm:text-sm">
                   {timeZoneShortName}
                 </span>
               ) : null}
-              <span className="text-[11px] uppercase tracking-[0.28em] text-white/40">
-                {friendlyTimeZone}
-              </span>
+              <span>{friendlyTimeZone}</span>
             </div>
           </div>
         </div>
-      </div>
-      <DayTimeline
-        date={currentDate}
-        startHour={startHour}
-        pxPerMin={pxPerMin}
-      >
+        <div className="relative border-t border-white/5">
+          <DayTimeline
+            className="rounded-b-[32px] bg-transparent"
+            date={currentDate}
+            startHour={startHour}
+            pxPerMin={pxPerMin}
+          >
         {windows.map(w => {
           const { top, height } = windowRect(w, startHour, pxPerMin)
           const windowHeightPx =
@@ -1687,7 +1717,7 @@ export default function SchedulePage() {
               className="absolute left-0 flex"
               style={{ top, height }}
             >
-              <div className="w-0.5 bg-zinc-700 opacity-50" />
+              <div className="w-0.5 bg-white/10" />
               <WindowLabel
                 label={w.label ?? ''}
                 availableHeight={windowHeightPx}
@@ -2176,7 +2206,9 @@ export default function SchedulePage() {
           )
         })}
       </DayTimeline>
-    </>
+        </div>
+      </div>
+    </div>
   )
 
   return (
