@@ -7,12 +7,18 @@ import { Plus, X } from "lucide-react";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
+import { cn } from "@/lib/utils";
 
 interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
+  menuVariant?: "default" | "timeline";
 }
 
-export function Fab({ className = "", ...wrapperProps }: FabProps) {
+export function Fab({
+  className = "",
+  menuVariant = "default",
+  ...wrapperProps
+}: FabProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [modalEventType, setModalEventType] = useState<
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
@@ -36,35 +42,75 @@ export function Fab({ className = "", ...wrapperProps }: FabProps) {
     return `rgb(${r}, ${g}, ${b})`;
   };
 
-  const addEvents = [
-    {
-      label: "GOAL",
-      eventType: "GOAL" as const,
-      color: "hover:bg-gray-600",
+  const menuConfigs = {
+    default: {
+      primary: [
+        {
+          label: "GOAL",
+          eventType: "GOAL" as const,
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "PROJECT",
+          eventType: "PROJECT" as const,
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "TASK",
+          eventType: "TASK" as const,
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "HABIT",
+          eventType: "HABIT" as const,
+          color: "hover:bg-gray-600",
+        },
+      ],
+      secondary: [
+        { label: "SERVICE" },
+        { label: "PRODUCT" },
+        { label: "REQUEST" },
+        { label: "NOTE" },
+      ],
+      menuClassName: "left-1/2 -translate-x-1/2",
+      itemAlignmentClass: "text-left",
     },
-    {
-      label: "PROJECT",
-      eventType: "PROJECT" as const,
-      color: "hover:bg-gray-600",
+    timeline: {
+      primary: [
+        {
+          label: "TASK",
+          eventType: "TASK" as const,
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "HABIT",
+          eventType: "HABIT" as const,
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "PROJECT",
+          eventType: "PROJECT" as const,
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "GOAL",
+          eventType: "GOAL" as const,
+          color: "hover:bg-gray-600",
+        },
+      ],
+      secondary: [
+        { label: "NOTE" },
+        { label: "REQUEST" },
+        { label: "SERVICE" },
+        { label: "PRODUCT" },
+      ],
+      menuClassName: "right-0 origin-bottom-right text-left",
+      itemAlignmentClass: "text-left",
     },
-    {
-      label: "TASK",
-      eventType: "TASK" as const,
-      color: "hover:bg-gray-600",
-    },
-    {
-      label: "HABIT",
-      eventType: "HABIT" as const,
-      color: "hover:bg-gray-600",
-    },
-  ];
+  } as const;
 
-  const extraEvents = [
-    { label: "SERVICE" },
-    { label: "PRODUCT" },
-    { label: "REQUEST" },
-    { label: "NOTE" },
-  ];
+  const { primary, secondary, menuClassName, itemAlignmentClass } =
+    menuConfigs[menuVariant];
 
   const menuVariants = {
     closed: {
@@ -165,7 +211,7 @@ export function Fab({ className = "", ...wrapperProps }: FabProps) {
   }, [isOpen]);
 
   return (
-    <div className={className} {...wrapperProps}>
+    <div className={cn("relative", className)} {...wrapperProps}>
       {/* AddEvents Menu */}
       <AnimatePresence>
         {isOpen && (
@@ -174,11 +220,15 @@ export function Fab({ className = "", ...wrapperProps }: FabProps) {
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 mb-2 z-50 border border-gray-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px]"
+            className={cn(
+              "absolute bottom-20 mb-2 z-50 min-w-[200px] border border-gray-700 rounded-lg shadow-2xl overflow-hidden",
+              menuClassName
+            )}
             style={{
               backgroundColor: getMenuBackground(),
               transition: "background-color 0.1s linear",
-              transformOrigin: "bottom center",
+              transformOrigin:
+                menuVariant === "timeline" ? "bottom right" : "bottom center",
             }}
             variants={menuVariants}
             initial="closed"
@@ -186,23 +236,30 @@ export function Fab({ className = "", ...wrapperProps }: FabProps) {
             exit="closed"
           >
             {menuPage === 0
-              ? addEvents.map((event) => (
+              ? primary.map((event) => (
                   <motion.button
                     key={event.label}
                     variants={itemVariants}
                     onClick={() => handleEventClick(event.eventType)}
-                    className={`w-full px-6 py-3 text-left text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap ${event.color}`}
+                    className={cn(
+                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+                      itemAlignmentClass,
+                      event.color
+                    )}
                   >
                     <span className="text-sm opacity-80">add</span>{" "}
                     <span className="text-lg font-bold">{event.label}</span>
                   </motion.button>
                 ))
-              : extraEvents.map((event) => (
+              : secondary.map((event) => (
                   <motion.button
                     key={event.label}
                     variants={itemVariants}
                     onClick={() => handleExtraClick(event.label)}
-                    className="w-full px-6 py-3 text-left text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap"
+                    className={cn(
+                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
+                      itemAlignmentClass
+                    )}
                   >
                     <span className="text-sm opacity-80">add</span>{" "}
                     <span className="text-lg font-bold">{event.label}</span>
