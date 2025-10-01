@@ -70,6 +70,7 @@ export async function updateCatOrder(catId: string, order: number) {
 
   const updates = nextOrder.map((id, index) => ({
     id,
+    user_id: target.user_id,
     sort_order: index + 1,
   }));
 
@@ -96,6 +97,13 @@ export async function reorderCats(
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
 
+  const {
+    data: { user },
+    error: userError,
+  } = await sb.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error("No authenticated user");
+
   const normalized = ordering
     .filter((entry) => entry && typeof entry.id === "string" && entry.id.trim().length > 0)
     .map((entry) => ({
@@ -115,6 +123,7 @@ export async function reorderCats(
 
   const updates = deduped.map((entry, index) => ({
     id: entry.id,
+    user_id: user.id,
     sort_order: index + 1,
   }));
 
