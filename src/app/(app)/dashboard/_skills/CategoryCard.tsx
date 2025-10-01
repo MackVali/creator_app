@@ -317,15 +317,17 @@ export default function CategoryCard({
                       >
                         Change icon
                       </button>
-                      <button
-                        className="block text-left text-sm font-medium underline"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          onRequestReorder?.();
-                        }}
-                      >
-                        Change order
-                      </button>
+                  {category.id !== "uncategorized" && (
+                    <button
+                      className="block text-left text-sm font-medium underline"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onRequestReorder?.();
+                      }}
+                    >
+                      Change order
+                    </button>
+                  )}
                     </div>
                   )}
                 </div>

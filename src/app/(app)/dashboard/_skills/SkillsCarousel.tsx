@@ -11,6 +11,7 @@ import ReorderCategoriesModal from "./ReorderCategoriesModal";
 import { reorderCats } from "@/lib/data/cats";
 
 const FALLBACK_COLOR = "#6366f1";
+const FALLBACK_CATEGORY_ID = "uncategorized";
 
 function parseHex(hex?: string | null) {
   if (!hex) {
@@ -59,15 +60,20 @@ export default function SkillsCarousel() {
 
   const handleReorderSubmit = useCallback(
     async (ordered: Category[]) => {
+      const persistable = ordered.filter((category) => category.id !== FALLBACK_CATEGORY_ID);
+      if (persistable.length === 0) {
+        return;
+      }
+
       setReorderSaving(true);
       try {
         await reorderCats(
-          ordered.map((category, index) => ({
+          persistable.map((category, index) => ({
             id: category.id,
             order: index + 1,
           }))
         );
-        applyCategoryOrder(ordered);
+        applyCategoryOrder(persistable);
         await refresh();
         setReorderOpen(false);
       } catch (error) {
