@@ -62,6 +62,9 @@ export default function TopNav() {
             <Link href="/goals">Goals</Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
+            <Link href="/habits">Habits</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
             <Link href="/help">Help</Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
