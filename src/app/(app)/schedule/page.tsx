@@ -52,13 +52,10 @@ import { ENERGY } from '@/lib/scheduler/config'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
-  DATE_WITH_TIME_FORMATTER,
   TIME_FORMATTER,
   describeEmptyWindowReport,
-  describeSchedulerFailure,
   energyIndexFromLabel,
   formatDurationLabel,
-  formatSchedulerDetail,
   type SchedulerRunFailure,
 } from '@/lib/scheduler/windowReports'
 
@@ -159,22 +156,6 @@ function formatDayViewLabel(date: Date, timeZone: string) {
 const TASK_INSTANCE_MATCH_TOLERANCE_MS = 60 * 1000
 const MAX_FALLBACK_TASKS = 12
 
-function formatTimeRangeLabel(start: Date, end: Date) {
-  return `${TIME_FORMATTER.format(start)} – ${TIME_FORMATTER.format(end)}`
-}
-
-function formatPlacementDecision(decision: SchedulerTimelineEntry['decision']) {
-  switch (decision) {
-    case 'kept':
-      return 'Kept'
-    case 'rescheduled':
-      return 'Rescheduled'
-    case 'new':
-    default:
-      return 'New'
-  }
-}
-
 type LoadStatus = 'idle' | 'loading' | 'loaded'
 
 type SchedulerTimelineEntry = {
@@ -199,12 +180,6 @@ type SchedulerTimelinePlacement = {
   durationMinutes: number | null
   energyLabel: (typeof ENERGY.LIST)[number]
   decision: SchedulerTimelineEntry['decision']
-}
-
-type SchedulerProjectPlacementDebug = {
-  projectId: string
-  projectName: string
-  placements: SchedulerTimelinePlacement[]
 }
 
 type SchedulerDebugState = {
@@ -1006,13 +981,6 @@ export default function SchedulePage() {
     })
   }, [projectItems, projectInstanceIds, scheduledProjectIds])
 
-  const unscheduledTaskCount = useMemo(() => {
-    return unscheduledProjects.reduce((sum, project) => {
-      const relatedTasks = tasksByProjectId[project.id] ?? []
-      return sum + relatedTasks.length
-    }, 0)
-  }, [unscheduledProjects, tasksByProjectId])
-
   const schedulerFailureByProjectId = useMemo(() => {
     if (!schedulerDebug) return {}
     return schedulerDebug.failures.reduce<Record<string, SchedulerRunFailure[]>>(
@@ -1063,39 +1031,6 @@ export default function SchedulePage() {
 
     return placements
   }, [schedulerDebug, projectMap])
-
-  const schedulerPlacementsByProject = useMemo<SchedulerProjectPlacementDebug[]>(() => {
-    if (schedulerTimelinePlacements.length === 0) return []
-
-    const map = new Map<string, SchedulerProjectPlacementDebug>()
-    for (const placement of schedulerTimelinePlacements) {
-      const existing = map.get(placement.projectId)
-      if (existing) {
-        existing.placements.push(placement)
-      } else {
-        map.set(placement.projectId, {
-          projectId: placement.projectId,
-          projectName: placement.projectName,
-          placements: [placement],
-        })
-      }
-    }
-
-    const grouped = Array.from(map.values())
-    for (const entry of grouped) {
-      entry.placements.sort((a, b) => a.start.getTime() - b.start.getTime())
-    }
-    grouped.sort((a, b) => {
-      const aStart = a.placements[0]?.start.getTime() ?? Number.POSITIVE_INFINITY
-      const bStart = b.placements[0]?.start.getTime() ?? Number.POSITIVE_INFINITY
-      if (aStart === bStart) {
-        return a.projectName.localeCompare(b.projectName)
-      }
-      return aStart - bStart
-    })
-
-    return grouped
-  }, [schedulerTimelinePlacements])
 
   const windowReports = useMemo<WindowReportEntry[]>(() => {
     if (windows.length === 0) return []
@@ -1205,36 +1140,6 @@ export default function SchedulePage() {
     schedulerTimelinePlacements,
     currentDate,
   ])
-
-  const schedulerRunSummary = useMemo(() => {
-    if (!schedulerDebug) return null
-    const runAt = new Date(schedulerDebug.runAt)
-    const timestamp = Number.isNaN(runAt.getTime())
-      ? null
-      : runAt.toLocaleString(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-    const parts: string[] = []
-    if (timestamp) parts.push(`Last run ${timestamp}`)
-    parts.push(
-      `${schedulerDebug.placedCount} placement${
-        schedulerDebug.placedCount === 1 ? '' : 's'
-      }`
-    )
-    parts.push(
-      `${schedulerDebug.failures.length} failure${
-        schedulerDebug.failures.length === 1 ? '' : 's'
-      }`
-    )
-    return parts.join(' · ')
-  }, [schedulerDebug])
-
-  const schedulerErrorMessage = useMemo(() => {
-    if (!schedulerDebug) return null
-    const text = formatSchedulerDetail(schedulerDebug.error)
-    return text && text.length > 0 ? text : null
-  }, [schedulerDebug])
 
   const taskInstancesByProject = useMemo(() => {
     const map: Record<string, TaskInstanceInfo[]> = {}
@@ -1818,7 +1723,7 @@ export default function SchedulePage() {
             </div>
           </div>
         ))}
-        {projectInstances.map(({ instance, project, start, end, assignedWindow }, index) => {
+        {projectInstances.map(({ instance, project, start, end }, index) => {
           const projectId = project.id
           const startMin = start.getHours() * 60 + start.getMinutes()
           const top = (startMin - startHour * 60) * pxPerMin
@@ -2380,180 +2285,6 @@ export default function SchedulePage() {
             )}
           </AnimatePresence>
         </div>
-        {metaStatus === 'loaded' && instancesStatus === 'loaded' && (
-          <div className="rounded-lg border border-dashed border-amber-500/40 bg-amber-500/10 p-4 text-[11px] text-amber-100">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-amber-200">
-              <span className="font-semibold uppercase tracking-wide">
-                Unscheduled projects (debug)
-              </span>
-              <span>
-                {unscheduledProjects.length} project
-                {unscheduledProjects.length === 1 ? '' : 's'}
-                {unscheduledTaskCount > 0 && (
-                  <>
-                    {' '}
-                    · {unscheduledTaskCount} task
-                    {unscheduledTaskCount === 1 ? '' : 's'}
-                  </>
-                )}
-              </span>
-            </div>
-            {schedulerDebug ? (
-              <div className="mt-2 space-y-1 text-[10px] text-amber-200/70">
-                {schedulerRunSummary && <div>{schedulerRunSummary}</div>}
-                {schedulerErrorMessage && (
-                  <div className="text-amber-200/60">
-                    Scheduler error: {schedulerErrorMessage}
-                  </div>
-                )}
-              </div>
-            ) : (
-              unscheduledProjects.length > 0 && (
-                <p className="mt-2 text-[10px] text-amber-200/60">
-                  Run the scheduler (call{' '}
-                  <code className="rounded bg-amber-500/20 px-1 py-[1px]">
-                    window.__runScheduler()
-                  </code>
-                  ) to capture failure diagnostics for these projects.
-                </p>
-              )
-            )}
-            {schedulerDebug && schedulerPlacementsByProject.length > 0 && (
-              <div className="mt-3 rounded-md border border-amber-500/25 bg-black/20 p-3">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                  Scheduled placements (debug)
-                </div>
-                <ul className="mt-2 space-y-2">
-                  {schedulerPlacementsByProject.map(project => (
-                    <li key={project.projectId}>
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <span className="text-[11px] font-medium text-amber-50">
-                          {project.projectName}
-                        </span>
-                        <span className="text-[9px] uppercase tracking-wide text-amber-200/70">
-                          {project.projectId}
-                        </span>
-                      </div>
-                      <ul className="mt-1 space-y-1">
-                        {project.placements.map((placement, index) => {
-                          const durationLabel =
-                            typeof placement.durationMinutes === 'number' &&
-                            Number.isFinite(placement.durationMinutes)
-                              ? formatDurationLabel(Math.max(0, Math.round(placement.durationMinutes)))
-                              : null
-                          return (
-                            <li
-                              key={`${project.projectId}-${placement.start.getTime()}-${index}`}
-                              className="rounded border border-amber-500/20 bg-black/30 p-2"
-                            >
-                              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                                <span className="text-[10px] font-semibold text-amber-50">
-                                  {DATE_WITH_TIME_FORMATTER.format(placement.start)}
-                                </span>
-                                <span className="text-[9px] uppercase tracking-wide text-amber-200/70">
-                                  {formatPlacementDecision(placement.decision)}
-                                </span>
-                              </div>
-                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-amber-100/70">
-                                <span>{formatTimeRangeLabel(placement.start, placement.end)}</span>
-                                {durationLabel && <span>Duration: {durationLabel}</span>}
-                                <span>Energy: {placement.energyLabel}</span>
-                              </div>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {unscheduledProjects.length === 0 ? (
-              <p className="mt-2 text-amber-200/80">
-                All projects currently have at least one scheduled instance.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-3">
-                {unscheduledProjects.map(project => {
-                  const relatedTasks = tasksByProjectId[project.id] ?? []
-                  const failures = schedulerFailureByProjectId[project.id] ?? []
-                  const diagnostics = failures.map(failure =>
-                    describeSchedulerFailure(failure, {
-                      durationMinutes: project.duration_min,
-                      energy: project.energy,
-                    })
-                  )
-                  return (
-                    <li
-                      key={project.id}
-                      className="rounded-md bg-amber-500/5 p-3 text-amber-100"
-                    >
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <div className="text-sm font-medium text-amber-50">
-                          {project.name || 'Untitled project'}
-                        </div>
-                        <div className="text-[10px] uppercase tracking-wide text-amber-200/70">
-                          {project.id}
-                        </div>
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-amber-200/70">
-                        <span>Stage: {project.stage}</span>
-                        <span>Priority: {project.priority}</span>
-                        <span>Duration: {Math.round(project.duration_min)}m</span>
-                        <span>Energy: {project.energy}</span>
-                      </div>
-                      {relatedTasks.length > 0 ? (
-                        <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-50">
-                          {relatedTasks.map(task => (
-                            <li key={task.id}>
-                              <div className="flex flex-wrap items-baseline justify-between gap-2 text-[11px]">
-                                <span className="font-medium">{task.name}</span>
-                                <span className="text-[10px] text-amber-200/70">
-                                  {task.duration_min}m · {task.priority} · {task.stage}
-                                </span>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="mt-2 text-[10px] text-amber-200/70">
-                          No ready tasks linked to this project.
-                        </p>
-                      )}
-                      <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-2">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                          Scheduler diagnostics
-                        </div>
-                        {diagnostics.length > 0 ? (
-                          <ul className="mt-1 space-y-1 text-[10px] text-amber-200/80">
-                            {diagnostics.map((diag, index) => (
-                              <li key={`${project.id}-diag-${index}`}>
-                                <span>{diag.message}</span>
-                                {diag.detail && (
-                                  <div className="text-amber-200/60">{diag.detail}</div>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : schedulerDebug ? (
-                          <p className="mt-1 text-[10px] text-amber-200/70">
-                            {schedulerErrorMessage
-                              ? `Scheduler run ended with an error: ${schedulerErrorMessage}`
-                              : 'Last scheduler run did not report a project-specific failure.'}
-                          </p>
-                        ) : (
-                          <p className="mt-1 text-[10px] text-amber-200/70">
-                            Diagnostics unavailable until the scheduler runs.
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        )}
       </div>
     </ProtectedRoute>
   )
