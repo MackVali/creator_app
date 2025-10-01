@@ -20,6 +20,7 @@ import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import { useToastHelpers } from "@/components/ui/toast";
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -83,6 +84,47 @@ function goalStatusToStatus(status?: string | null): Goal["status"] {
   }
 }
 
+function priorityToDb(priority: Goal["priority"]): string {
+  switch (priority) {
+    case "High":
+      return "HIGH";
+    case "Medium":
+      return "MEDIUM";
+    default:
+      return "LOW";
+  }
+}
+
+function energyToDb(energy: Goal["energy"]): string {
+  switch (energy) {
+    case "Low":
+      return "LOW";
+    case "Medium":
+      return "MEDIUM";
+    case "High":
+      return "HIGH";
+    case "Ultra":
+      return "ULTRA";
+    case "Extreme":
+      return "EXTREME";
+    default:
+      return "NO";
+  }
+}
+
+function statusToDb(status: Goal["status"]): string {
+  switch (status) {
+    case "Completed":
+      return "COMPLETED";
+    case "Overdue":
+      return "OVERDUE";
+    case "Inactive":
+      return "INACTIVE";
+    default:
+      return "ACTIVE";
+  }
+}
+
 export default function GoalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,6 +140,7 @@ export default function GoalsPage() {
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
+  const toast = useToastHelpers();
 
   useEffect(() => {
     const editId = searchParams.get("edit");
@@ -344,10 +387,75 @@ export default function GoalsPage() {
     return sorted;
   }, [goals, search, energy, priority, monument, skill, sort]);
 
-  const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
-
   const updateGoal = (goal: Goal) =>
     setGoals((gs) => gs.map((g) => (g.id === goal.id ? goal : g)));
+
+  const handleCreateGoal = async (nextGoal: Goal) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      toast.error(
+        "Unable to save goal",
+        "We couldn't connect to the database."
+      );
+      throw new Error("Supabase client not available");
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      toast.error("Authentication required", "Please sign in again.");
+      throw userError ?? new Error("User not authenticated");
+    }
+
+    const { data, error } = await supabase
+      .from("goals")
+      .insert({
+        user_id: user.id,
+        name: nextGoal.title,
+        priority: priorityToDb(nextGoal.priority),
+        energy: energyToDb(nextGoal.energy),
+        active: nextGoal.active,
+        status: statusToDb(nextGoal.status),
+        why: nextGoal.why ?? null,
+        monument_id: nextGoal.monumentId || null,
+      })
+      .select(
+        "id, name, priority, energy, why, created_at, updated_at, active, status, monument_id"
+      )
+      .single();
+
+    if (error || !data) {
+      console.error("Error creating goal:", error);
+      toast.error(
+        "Couldn't save goal",
+        "Something went wrong while saving this goal."
+      );
+      throw error ?? new Error("Goal insert returned no data");
+    }
+
+    const insertedGoal: Goal = {
+      id: data.id,
+      title: data.name,
+      emoji: nextGoal.emoji,
+      priority: mapPriority(data.priority),
+      energy: mapEnergy(data.energy),
+      progress: 0,
+      status: goalStatusToStatus(data.status),
+      active: data.active ?? true,
+      updatedAt:
+        data.updated_at ?? data.created_at ?? new Date().toISOString(),
+      projects: [],
+      monumentId: data.monument_id ?? null,
+      skills: [],
+      why: data.why ?? undefined,
+    };
+
+    setGoals((prev) => [insertedGoal, ...prev]);
+    toast.success("Goal saved", "Your goal is ready for planning.");
+  };
 
   const handleEdit = (goal: Goal) => {
     setEditing(goal);
@@ -421,7 +529,7 @@ export default function GoalsPage() {
             setEditing(null);
             router.replace("/goals");
           }}
-          onAdd={addGoal}
+          onAdd={handleCreateGoal}
           initialGoal={editing}
           monuments={monuments}
           onUpdate={async (goal) => {

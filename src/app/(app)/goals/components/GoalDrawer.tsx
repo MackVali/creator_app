@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -21,11 +22,11 @@ interface GoalDrawerProps {
   open: boolean;
   onClose(): void;
   /** Callback when creating a new goal */
-  onAdd(goal: Goal): void;
+  onAdd(goal: Goal): void | Promise<void>;
   /** Existing goal to edit */
   initialGoal?: Goal | null;
   /** Callback when updating an existing goal */
-  onUpdate?(goal: Goal): void;
+  onUpdate?(goal: Goal): void | Promise<void>;
   monuments?: { id: string; title: string }[];
 }
 
@@ -87,6 +88,7 @@ export function GoalDrawer({
   const [active, setActive] = useState(true);
   const [why, setWhy] = useState("");
   const [monumentId, setMonumentId] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const editing = Boolean(initialGoal);
 
@@ -117,9 +119,17 @@ export function GoalDrawer({
 
   const canSubmit = title.trim().length > 0;
 
-  const submit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!open) {
+      setIsSubmitting(false);
+    }
+  }, [open]);
+
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || isSubmitting) return;
+
+    setIsSubmitting(true);
 
     const preservedStatus = initialGoal?.status ?? "Active";
     const computedStatus = active
@@ -146,12 +156,18 @@ export function GoalDrawer({
       why: why.trim() ? why.trim() : undefined,
     };
 
-    if (editing && onUpdate) {
-      onUpdate(nextGoal);
-    } else {
-      onAdd(nextGoal);
+    try {
+      if (editing && onUpdate) {
+        await onUpdate(nextGoal);
+      } else {
+        await onAdd(nextGoal);
+      }
+      onClose();
+    } catch (error) {
+      console.error("Error saving goal", error);
+    } finally {
+      setIsSubmitting(false);
     }
-    onClose();
   };
 
   return (
@@ -322,8 +338,21 @@ export function GoalDrawer({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!canSubmit} className="w-full sm:w-auto">
-                {editing ? "Save changes" : "Create goal"}
+              <Button
+                type="submit"
+                disabled={!canSubmit || isSubmitting}
+                className="w-full sm:w-auto"
+              >
+                {isSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Saving...
+                  </span>
+                ) : editing ? (
+                  "Save changes"
+                ) : (
+                  "Create goal"
+                )}
               </Button>
             </div>
           </SheetFooter>
