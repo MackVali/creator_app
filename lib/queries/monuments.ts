@@ -1,5 +1,11 @@
 import { getSupabaseBrowser } from "@/lib/supabase";
 
+type SupabaseMonumentRow = {
+  id: string;
+  Title?: string | null;
+  name?: string | null;
+};
+
 export interface Monument {
   id: string;
   name: string;
@@ -15,7 +21,7 @@ export async function getMonumentsForUser(
 
   const { data, error } = await supabase
     .from("monuments")
-    .select("id, name")
+    .select("id, Title")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -24,5 +30,8 @@ export async function getMonumentsForUser(
     throw error;
   }
 
-  return data || [];
+  return (data || []).map((monument: SupabaseMonumentRow) => ({
+    id: monument.id,
+    name: monument.Title ?? monument.name ?? "",
+  }));
 }
