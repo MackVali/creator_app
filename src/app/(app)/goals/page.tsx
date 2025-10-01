@@ -390,7 +390,7 @@ export default function GoalsPage() {
   const updateGoal = (goal: Goal) =>
     setGoals((gs) => gs.map((g) => (g.id === goal.id ? goal : g)));
 
-  const handleCreateGoal = async (nextGoal: Goal) => {
+  const handleCreateGoal = async (nextGoal: Goal): Promise<Goal> => {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       toast.error(
@@ -455,12 +455,18 @@ export default function GoalsPage() {
 
     setGoals((prev) => [insertedGoal, ...prev]);
     toast.success("Goal saved", "Your goal is ready for planning.");
+
+    return insertedGoal;
   };
 
   const handleEdit = (goal: Goal) => {
     setEditing(goal);
     setDrawer(true);
     router.push(`/goals?edit=${goal.id}`);
+  };
+
+  const handleContinueToPlan = (goal: Goal) => {
+    router.push(`/goals/${goal.id}/plan`);
   };
 
   const handleToggleActive = async (goal: Goal) => {
@@ -524,14 +530,17 @@ export default function GoalsPage() {
         </div>
         <GoalDrawer
           open={drawer}
-          onClose={() => {
+          onClose={(intent) => {
             setDrawer(false);
             setEditing(null);
-            router.replace("/goals");
+            if (intent !== "continue") {
+              router.replace("/goals");
+            }
           }}
           onAdd={handleCreateGoal}
           initialGoal={editing}
           monuments={monuments}
+          onContinue={handleContinueToPlan}
           onUpdate={async (goal) => {
             const supabase = getSupabaseBrowser();
             if (supabase) {
