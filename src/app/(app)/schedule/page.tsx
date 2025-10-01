@@ -324,7 +324,8 @@ function DayPeekOverlays({
   nextKey: string
   containerRef: RefObject<HTMLDivElement | null>
 }) {
-  const containerWidth = containerRef.current?.offsetWidth ?? 0
+  const container = containerRef.current
+  const containerWidth = container?.offsetWidth ?? 0
   const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
   const offset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
   if (!offset || peekState.direction === 0) return null
@@ -344,11 +345,35 @@ function DayPeekOverlays({
     : 'rounded-r-[var(--radius-lg)]'
   const transformOrigin = isNext ? 'right center' : 'left center'
 
+  let overlayCenter: number | null = null
+  if (container) {
+    const rect = container.getBoundingClientRect()
+    const height = container.offsetHeight
+    const viewportHeight =
+      typeof window !== 'undefined' ? window.innerHeight : container.offsetHeight
+    const visibleStart = Math.max(0, -rect.top)
+    const visibleEnd = Math.min(height, viewportHeight - rect.top)
+    const visibleHeight = Math.max(0, visibleEnd - visibleStart)
+    if (visibleHeight > 0) {
+      overlayCenter = visibleStart + visibleHeight / 2
+    } else {
+      overlayCenter = height / 2
+    }
+  }
+
+  const overlayStyle: CSSProperties =
+    overlayCenter !== null
+      ? { top: overlayCenter, transform: 'translateY(-50%)' }
+      : { top: '50%', transform: 'translateY(-50%)' }
+
   return (
-    <div className="pointer-events-none absolute inset-0 flex">
-      <div className={`relative flex h-full flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}>
+    <div
+      className="pointer-events-none absolute inset-x-0 flex"
+      style={overlayStyle}
+    >
+      <div className={`relative flex flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}>
         <div
-          className={`pointer-events-none flex h-full flex-col justify-center gap-1 border border-white/10 bg-white/8 px-5 py-4 text-white backdrop-blur-md ${alignment} ${cornerClass}`}
+          className={`pointer-events-none flex flex-col justify-center gap-1 border border-white/10 bg-white/8 px-5 py-4 text-white backdrop-blur-md ${alignment} ${cornerClass}`}
           style={{
             width: offset,
             opacity,
