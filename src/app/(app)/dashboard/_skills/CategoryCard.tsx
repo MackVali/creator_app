@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatIcon, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor, updateCatIcon } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -54,14 +53,6 @@ function withAlpha(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-const resolveOrderValue = (value?: number | null) => {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return 1;
-  }
-  const floored = Math.floor(value);
-  return floored > 0 ? floored : 1;
-};
-
 interface Props {
   category: Category;
   skills: Skill[];
@@ -73,7 +64,7 @@ interface Props {
   onIconChange?: (icon: string | null) => void;
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
-  onOrderChange?: (order: number) => void;
+  onRequestReorder?: () => void;
 }
 
 export default function CategoryCard({
@@ -87,19 +78,16 @@ export default function CategoryCard({
   onIconChange,
   menuOpen: menuOpenProp,
   onMenuOpenChange,
-  onOrderChange,
+  onRequestReorder,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [orderOpen, setOrderOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [orderValue, setOrderValue] = useState<number>(resolveOrderValue(category.order));
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
   const dragging = useRef(false);
-  const router = useRouter();
 
   const menuOpen = menuOpenProp ?? menuOpenState;
   const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
@@ -114,9 +102,6 @@ export default function CategoryCard({
   useEffect(() => {
     setColor(colorOverride || category.color_hex || "#000000");
   }, [category.color_hex, colorOverride]);
-  useEffect(() => {
-    setOrderValue(resolveOrderValue(category.order));
-  }, [category.order]);
   useEffect(() => {
     setLocalSkills([...skills]);
   }, [skills]);
@@ -185,7 +170,6 @@ export default function CategoryCard({
   useEffect(() => {
     if (!menuOpen) {
       setPickerOpen(false);
-      setOrderOpen(false);
       setIconPickerOpen(false);
     }
   }, [menuOpen]);
@@ -215,27 +199,6 @@ export default function CategoryCard({
       console.error("Failed to update category icon", e);
     } finally {
       setIconPickerOpen(false);
-      setMenuOpen(false);
-    }
-  };
-
-  const sanitizeOrder = (value: number) => {
-    if (Number.isNaN(value)) return 1;
-    const floored = Math.floor(value);
-    return floored > 0 ? floored : 1;
-  };
-
-  const handleOrderSave = async () => {
-    const nextOrder = sanitizeOrder(orderValue);
-    setOrderValue(nextOrder);
-    try {
-      await updateCatOrder(category.id, nextOrder);
-      router.refresh();
-      onOrderChange?.(nextOrder);
-    } catch (e) {
-      console.error("Failed to update category order", e);
-    } finally {
-      setOrderOpen(false);
       setMenuOpen(false);
     }
   };
@@ -340,24 +303,6 @@ export default function CategoryCard({
                         </button>
                       </div>
                     </div>
-                  ) : orderOpen ? (
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="number"
-                        min={1}
-                        step={1}
-                        value={orderValue}
-                        onChange={(e) => {
-                          const next = Number(e.target.value);
-                          setOrderValue(Number.isNaN(next) ? 1 : next);
-                        }}
-                        onBlur={() => setOrderValue((current) => sanitizeOrder(current))}
-                        className="w-full rounded border border-black/20 p-2"
-                      />
-                      <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
-                        Save order
-                      </button>
-                    </div>
                   ) : (
                     <div className="space-y-2">
                       <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
@@ -372,7 +317,13 @@ export default function CategoryCard({
                       >
                         Change icon
                       </button>
-                      <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
+                      <button
+                        className="block text-left text-sm font-medium underline"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onRequestReorder?.();
+                        }}
+                      >
                         Change order
                       </button>
                     </div>

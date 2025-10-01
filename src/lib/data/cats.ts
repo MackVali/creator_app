@@ -89,3 +89,39 @@ export async function updateCatIcon(catId: string, icon: string | null) {
     .eq("id", catId);
   if (error) throw error;
 }
+
+export async function reorderCats(
+  ordering: ReadonlyArray<{ id: string; order: number }>
+) {
+  const sb = getSupabaseBrowser();
+  if (!sb) throw new Error("Supabase client not available");
+
+  const normalized = ordering
+    .filter((entry) => entry && typeof entry.id === "string" && entry.id.trim().length > 0)
+    .map((entry) => ({
+      id: entry.id,
+      sort_order:
+        Number.isFinite(entry.order) && entry.order > 0 ? Math.floor(entry.order) : 1,
+    }))
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  const seen = new Set<string>();
+  const deduped: { id: string; sort_order: number }[] = [];
+  for (const entry of normalized) {
+    if (seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    deduped.push(entry);
+  }
+
+  const updates = deduped.map((entry, index) => ({
+    id: entry.id,
+    sort_order: index + 1,
+  }));
+
+  if (updates.length === 0) {
+    return;
+  }
+
+  const { error } = await sb.from("cats").upsert(updates, { onConflict: "id" });
+  if (error) throw error;
+}

@@ -5,8 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import CategoryCard from "./CategoryCard";
-import useSkillsData from "./useSkillsData";
+import useSkillsData, { type Category } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
+import ReorderCategoriesModal from "./ReorderCategoriesModal";
+import { reorderCats } from "@/lib/data/cats";
 
 const FALLBACK_COLOR = "#6366f1";
 
@@ -52,6 +54,29 @@ export default function SkillsCarousel() {
     Record<string, { color?: string | null; icon?: string | null }>
   >({});
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const [reorderSaving, setReorderSaving] = useState(false);
+
+  const handleReorderSubmit = useCallback(
+    async (ordered: Category[]) => {
+      setReorderSaving(true);
+      try {
+        await reorderCats(
+          ordered.map((category, index) => ({
+            id: category.id,
+            order: index + 1,
+          }))
+        );
+        await refresh();
+        setReorderOpen(false);
+      } catch (error) {
+        console.error("Failed to reorder categories", error);
+      } finally {
+        setReorderSaving(false);
+      }
+    },
+    [refresh]
+  );
 
   useEffect(() => {
     setCatOverrides((prev) => {
@@ -239,27 +264,28 @@ export default function SkillsCarousel() {
   const canGoNext = activeIndex < categories.length - 1;
 
   return (
-    <div
-      className="relative"
-      role="region"
-      aria-roledescription="carousel"
-      aria-label="Skill categories"
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === "ArrowLeft") {
-          event.preventDefault();
-          scrollToIndex(activeIndexRef.current - 1);
-        } else if (event.key === "ArrowRight") {
-          event.preventDefault();
-          scrollToIndex(activeIndexRef.current + 1);
-        } else if (event.key === "Enter") {
-          event.preventDefault();
-          cardRefs.current[activeIndexRef.current]
-            ?.querySelector<HTMLButtonElement>("button")
-            ?.click();
-        }
-      }}
-    >
+    <>
+      <div
+        className="relative"
+        role="region"
+        aria-roledescription="carousel"
+        aria-label="Skill categories"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            scrollToIndex(activeIndexRef.current - 1);
+          } else if (event.key === "ArrowRight") {
+            event.preventDefault();
+            scrollToIndex(activeIndexRef.current + 1);
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            cardRefs.current[activeIndexRef.current]
+              ?.querySelector<HTMLButtonElement>("button")
+              ?.click();
+          }
+        }}
+      >
       <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black" aria-hidden />
         {categories.length > 1 && (
@@ -349,8 +375,9 @@ export default function SkillsCarousel() {
                       },
                     }))
                   }
-                  onOrderChange={() => {
-                    refresh();
+                  onRequestReorder={() => {
+                    setOpenMenuFor(null);
+                    setReorderOpen(true);
                   }}
                 />
               </div>
@@ -416,7 +443,19 @@ export default function SkillsCarousel() {
           );
         })}
       </div>
-    </div>
+      </div>
+      <ReorderCategoriesModal
+        open={reorderOpen}
+        categories={categories}
+        onClose={() => {
+          if (!reorderSaving) {
+            setReorderOpen(false);
+          }
+        }}
+        onSubmit={handleReorderSubmit}
+        isSubmitting={reorderSaving}
+      />
+    </>
   );
 }
 
