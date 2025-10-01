@@ -289,13 +289,15 @@ export function Fab({
       </AnimatePresence>
 
       {/* FAB Button - Restored to your original styling */}
-      <button
+      <motion.button
         ref={buttonRef}
         onClick={toggleMenu}
         aria-label={isOpen ? "Close add events menu" : "Add new item"}
         className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition ${
           isOpen ? "rotate-45" : ""
         }`}
+        whileTap={{ scale: 0.9 }}
+        transition={{ type: "spring", stiffness: 500, damping: 25 }}
         style={{
           background:
             "linear-gradient(145deg, rgba(75, 85, 99, 0.95) 0%, rgba(31, 41, 55, 0.98) 55%, rgba(15, 23, 42, 1) 100%)",
@@ -308,7 +310,7 @@ export function Fab({
         ) : (
           <Plus className="h-8 w-8" aria-hidden="true" />
         )}
-      </button>
+      </motion.button>
 
       {/* Event Creation Modal */}
       <EventModal
