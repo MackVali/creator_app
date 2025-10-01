@@ -1032,7 +1032,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
 
     let duration: number | undefined;
-    if (eventType === "PROJECT" || eventType === "TASK") {
+    if (
+      eventType === "PROJECT" ||
+      eventType === "TASK" ||
+      eventType === "HABIT"
+    ) {
       duration = parseInt(formData.duration_min, 10);
       if (!duration || duration <= 0) {
         toast.error("Invalid Duration", "Duration must be greater than 0");
@@ -2197,6 +2201,24 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         }
                         selectedClassName="border-black bg-black text-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
                         unselectedClassName="border-black/50 bg-black/40 text-zinc-200 hover:border-black hover:bg-black/60 hover:text-white"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Duration (minutes)
+                      </Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={formData.duration_min}
+                        onChange={(event) =>
+                          setFormData({
+                            ...formData,
+                            duration_min: event.target.value,
+                          })
+                        }
+                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        required
                       />
                     </div>
                   </div>
