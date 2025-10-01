@@ -1,6 +1,43 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const booleanSetterSpies: Array<
+  vi.Mock<[import("react").SetStateAction<unknown>], unknown>
+> = [];
+
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  const realUseState = actual.useState;
+  return {
+    ...actual,
+    useState: ((initialState: unknown) => {
+      const result = realUseState(initialState as never) as [
+        unknown,
+        import("react").Dispatch<import("react").SetStateAction<unknown>>,
+      ];
+      if (typeof result[0] === "boolean") {
+        const setterSpy = vi.fn(
+          (value: import("react").SetStateAction<unknown>) => value
+        );
+        booleanSetterSpies.push(
+          setterSpy as vi.Mock<
+            [import("react").SetStateAction<unknown>],
+            unknown
+          >
+        );
+        const originalSetter = result[1];
+        const wrappedSetter: typeof originalSetter = (value) => {
+          setterSpy(value);
+          return originalSetter(value);
+        };
+        return [result[0], wrappedSetter] as typeof result;
+      }
+      return result;
+    }) as typeof actual.useState,
+  };
+});
+
 import React from "react";
 import { renderToString } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Ensure components compiled with the classic runtime find React in scope
 (globalThis as unknown as { React: typeof React }).React = React;
@@ -45,6 +82,11 @@ vi.mock("../../src/app/(app)/dashboard/_skills/useSkillsData", () => ({
   }),
 }));
 
+vi.mock("../../src/app/(app)/dashboard/_skills/CategoryCard", () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
 vi.mock("../../src/app/(app)/dashboard/_skills/ReorderCategoriesModal", () => ({
   __esModule: true,
   default: (props: { onSubmit: SubmitHandler }) => {
@@ -70,17 +112,23 @@ describe("SkillsCarousel fallback category", () => {
     refreshMock.mockClear();
     applyCategoryOrderMock.mockClear();
     submitRef.current = null;
+    booleanSetterSpies.splice(0, booleanSetterSpies.length);
   });
 
   it("skips Supabase reorder when only the synthetic category exists", async () => {
     renderToString(<SkillsCarousel />);
 
     expect(typeof submitRef.current).toBe("function");
+    expect(booleanSetterSpies.length).toBeGreaterThan(0);
 
     await submitRef.current?.([{ id: "uncategorized", name: "Skills" }]);
 
     expect(reorderCatsMock).not.toHaveBeenCalled();
     expect(refreshMock).not.toHaveBeenCalled();
     expect(applyCategoryOrderMock).not.toHaveBeenCalled();
+    const recordedValues = booleanSetterSpies.flatMap((spy) =>
+      spy.mock.calls.map(([value]) => value)
+    );
+    expect(recordedValues).toContain(false);
   });
 });

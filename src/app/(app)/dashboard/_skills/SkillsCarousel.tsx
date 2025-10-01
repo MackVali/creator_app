@@ -62,6 +62,7 @@ export default function SkillsCarousel() {
     async (ordered: Category[]) => {
       const persistable = ordered.filter((category) => category.id !== FALLBACK_CATEGORY_ID);
       if (persistable.length === 0) {
+        setReorderOpen(false);
         return;
       }
 
@@ -82,7 +83,7 @@ export default function SkillsCarousel() {
         setReorderSaving(false);
       }
     },
-    [applyCategoryOrder, refresh]
+    [applyCategoryOrder, refresh, setReorderOpen]
   );
 
   useEffect(() => {
