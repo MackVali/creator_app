@@ -1,9 +1,31 @@
-"use client";
-
 import Link from "next/link";
-import { MonumentsList } from "@/components/monuments/MonumentsList";
+import { cookies } from "next/headers";
+import { getSupabaseServer } from "@/lib/supabase";
+import {
+  MonumentsList,
+  type Monument,
+} from "@/components/monuments/MonumentsList";
+import { MonumentsEmptyState } from "@/components/ui/empty-state";
 
-export default function MonumentsPage() {
+export default async function MonumentsPage() {
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
+
+  let monuments: Monument[] = [];
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("monuments")
+      .select("id,title,emoji")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Failed to load monuments", error);
+    }
+
+    monuments = data ?? [];
+  }
+
   return (
     <main className="p-4 space-y-4">
       <div className="mb-2 flex items-center justify-between">
@@ -16,24 +38,11 @@ export default function MonumentsPage() {
         </Link>
       </div>
 
-      <MonumentsList createHref="/monuments/new">
-        {(monuments) => (
-          <ul className="space-y-3">
-            {monuments.map((m) => (
-              <li
-                key={m.id}
-                className="card flex items-center gap-3 p-3"
-                style={{ borderRadius: "var(--radius-sm)" }}
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/10 text-2xl">
-                  {m.emoji || "\uD83C\uDFDB\uFE0F"}
-                </div>
-                <p className="flex-1 truncate font-medium">{m.title}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </MonumentsList>
+      {monuments.length > 0 ? (
+        <MonumentsList monuments={monuments} createHref="/monuments/new" />
+      ) : (
+        <MonumentsEmptyState createHref="/monuments/new" />
+      )}
     </main>
   );
 }

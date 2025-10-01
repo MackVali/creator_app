@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import { getSupabaseBrowser } from "@/lib/supabase";
+import { type ReactNode } from "react";
 import { MonumentsEmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
 
 export interface Monument {
   id: string;
@@ -13,62 +10,40 @@ export interface Monument {
 }
 
 interface MonumentsListProps {
-  limit?: number;
+  monuments: Monument[];
   createHref?: string;
-  children: (monuments: Monument[]) => ReactNode;
+  children?: (monuments: Monument[]) => ReactNode;
 }
 
 export function MonumentsList({
-  limit,
+  monuments,
   createHref = "/monuments/new",
   children,
 }: MonumentsListProps) {
-  const [monuments, setMonuments] = useState<Monument[]>([]);
-  const [loading, setLoading] = useState(true);
-  const supabase = getSupabaseBrowser();
-  const router = useRouter();
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!supabase) return;
-      setLoading(true);
-      await supabase.auth.getSession();
-      let query = supabase
-        .from("monuments")
-        .select("id,title,emoji")
-        .order("created_at", { ascending: false });
-      if (typeof limit === "number") {
-        query = query.range(0, limit - 1);
-      }
-      const { data, error } = await query;
-      if (!cancelled) {
-        if (error) console.error(error);
-        setMonuments(data ?? []);
-        setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase, limit]);
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-4 gap-1">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="aspect-square w-full rounded-2xl bg-[#111520]" />
-        ))}
-      </div>
-    );
-  }
-
   if (monuments.length === 0) {
-    return <MonumentsEmptyState onAction={() => router.push(createHref)} />;
+    return <MonumentsEmptyState createHref={createHref} />;
   }
 
-  return <>{children(monuments)}</>;
+  if (children) {
+    return <>{children(monuments)}</>;
+  }
+
+  return (
+    <ul className="space-y-3">
+      {monuments.map((m) => (
+        <li
+          key={m.id}
+          className="card flex items-center gap-3 p-3"
+          style={{ borderRadius: "var(--radius-sm)" }}
+        >
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/10 text-2xl">
+            {m.emoji || "\uD83C\uDFDB\uFE0F"}
+          </div>
+          <p className="flex-1 truncate font-medium">{m.title}</p>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export default MonumentsList;

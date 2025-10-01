@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ReactNode } from "react";
 import { Button } from "./button";
 import {
@@ -85,17 +86,19 @@ export function SkillsEmptyState({ onAction }: { onAction?: () => void }) {
   );
 }
 
-export function MonumentsEmptyState({ onAction }: { onAction?: () => void }) {
+export function MonumentsEmptyState({ createHref }: { createHref?: string }) {
   return (
     <EmptyState
       title="No monuments yet"
       description="Celebrate your achievements and milestones by creating monuments."
       icon={<Mountain className="h-8 w-8 text-muted-foreground" />}
       cta={
-        onAction ? (
-          <Button onClick={onAction} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Create Monument
+        createHref ? (
+          <Button asChild className="gap-2">
+            <Link href={createHref}>
+              <Plus className="h-4 w-4" />
+              Create Monument
+            </Link>
           </Button>
         ) : null
       }

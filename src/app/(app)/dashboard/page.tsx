@@ -1,11 +1,27 @@
-import React from "react";
 import DashboardClient from "./DashboardClient";
+import { cookies } from "next/headers";
+import { getSupabaseServer } from "@/lib/supabase";
+import { type Monument } from "@/components/monuments/MonumentsList";
 
 export default async function DashboardPage() {
-  // This is now a pure server component that can fetch data
-  // No interactive elements, just data fetching and rendering
+  const cookieStore = await cookies();
+  const supabase = getSupabaseServer(cookieStore);
 
-  // TODO: Add data fetching here when needed
+  let monuments: Monument[] = [];
 
-  return <DashboardClient />;
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("monuments")
+      .select("id,title,emoji")
+      .order("created_at", { ascending: false })
+      .limit(8);
+
+    if (error) {
+      console.error("Failed to load dashboard monuments", error);
+    }
+
+    monuments = data ?? [];
+  }
+
+  return <DashboardClient monuments={monuments} />;
 }
