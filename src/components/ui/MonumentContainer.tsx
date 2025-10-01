@@ -21,7 +21,7 @@ export function MonumentContainer() {
             <MonumentGridWithSharedTransition
               monuments={monuments.map<MonumentCard>((m) => ({
                 id: m.id,
-                emoji: m.emoji || "\uD83C\uDFDB\uFE0F",
+                emoji: m.emoji ?? null,
                 title: m.title,
                 stats: `${m.goalCount} Goal${m.goalCount === 1 ? "" : "s"}`,
               }))}

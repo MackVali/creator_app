@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
-import { MonumentDetail } from "@/components/monuments/MonumentDetail";
+import {
+  MonumentDetail,
+  type MonumentDetailMonument,
+} from "@/components/monuments/MonumentDetail";
 
-export interface Monument {
-  id: string;
-  emoji: string;
-  title: string;
+export interface Monument extends MonumentDetailMonument {
   stats: string; // e.g. "12 Goals"
 }
 
@@ -50,7 +50,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
             className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
           >
             <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
-              {m.emoji}
+              {m.emoji ?? "\uD83C\uDFDB\uFE0F"}
             </motion.div>
             <motion.h3
               layoutId={`title-${m.id}`}
@@ -92,7 +92,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
               >
                 <X className="h-4 w-4" />
               </Button>
-              <MonumentDetail id={selected.id} />
+              <MonumentDetail monument={selected} />
             </motion.div>
           </motion.div>
         )}
