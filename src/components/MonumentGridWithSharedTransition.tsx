@@ -4,7 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
-import { MonumentDetail } from "@/components/monuments/MonumentDetail";
+import {
+  MonumentDetail,
+  type MonumentDetailMonument,
+} from "@/components/monuments/MonumentDetail";
 
 export interface Monument {
   id: string;
@@ -20,6 +23,13 @@ interface MonumentGridProps {
 export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const selected = monuments.find((m) => m.id === activeId) || null;
+  const selectedDetail: MonumentDetailMonument | null = selected
+    ? {
+        id: selected.id,
+        title: selected.title,
+        emoji: selected.emoji,
+      }
+    : null;
 
   const previousFocus = useRef<HTMLElement | null>(null);
 
@@ -64,7 +74,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
       </div>
 
       <AnimatePresence>
-        {selected && (
+        {selectedDetail && (
           <motion.div
             key="overlay"
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
@@ -92,7 +102,7 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
               >
                 <X className="h-4 w-4" />
               </Button>
-              <MonumentDetail id={selected.id} />
+              <MonumentDetail monument={selectedDetail} />
             </motion.div>
           </motion.div>
         )}
