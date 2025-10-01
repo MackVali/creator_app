@@ -1191,6 +1191,75 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
+  const launchCompletionSplash = useCallback(() => {
+    if (prefersReducedMotion) return
+
+    void import('canvas-confetti')
+      .then(module => {
+        const confetti = module.default
+        if (!confetti) return
+
+        type ShapeFromPath = (options: { path: string; size?: number }) => string
+        const shapeFromPath = (module as { shapeFromPath?: ShapeFromPath }).shapeFromPath
+        const dropletShape =
+          shapeFromPath?.({
+            path: 'M16 0C16 0 30 15 30 24C30 31.1797 24.1797 37 16 37C7.8203 37 2 31.1797 2 24C2 15 16 0 16 0Z',
+          }) ?? 'circle'
+
+        const sharedConfig = {
+          disableForReducedMotion: true,
+          shapes: [dropletShape],
+          colors: ['#0ea5e9', '#06b6d4', '#38bdf8', '#22d3ee', '#67e8f9'],
+        }
+
+        for (const angle of [78, 90, 102]) {
+          confetti({
+            ...sharedConfig,
+            particleCount: 16,
+            spread: 16,
+            gravity: 1.08,
+            scalar: 1.35,
+            startVelocity: 58,
+            ticks: 200,
+            origin: { y: 0.74 },
+            angle,
+          })
+        }
+
+        window.setTimeout(() => {
+          confetti({
+            ...sharedConfig,
+            particleCount: 65,
+            spread: 130,
+            gravity: 1.2,
+            scalar: 1.55,
+            startVelocity: 34,
+            ticks: 190,
+            origin: { y: 0.68 },
+          })
+        }, 120)
+
+        window.setTimeout(() => {
+          for (const drift of [-0.45, 0.45]) {
+            confetti({
+              ...sharedConfig,
+              particleCount: 28,
+              spread: 160,
+              gravity: 0.6,
+              scalar: 1,
+              startVelocity: 22,
+              ticks: 260,
+              drift,
+              origin: { y: 0.62 },
+            })
+          }
+        }, 260)
+      })
+      .catch(error => {
+        console.error('Failed to load completion splash effect', error)
+      })
+  }, [prefersReducedMotion])
+
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
@@ -1225,6 +1294,10 @@ export default function SchedulePage() {
               : inst
           )
         )
+
+        if (nextStatus === 'completed') {
+          launchCompletionSplash()
+        }
       } catch (error) {
         console.error(error)
       } finally {
@@ -1235,7 +1308,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances]
+    [userId, setInstances, launchCompletionSplash]
   )
 
   const renderInstanceActions = (
