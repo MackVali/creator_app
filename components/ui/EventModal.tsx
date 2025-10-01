@@ -1792,7 +1792,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     <div className="grid gap-3 sm:grid-cols-3">
                                       <OptionDropdown
                                         value={task.stage}
-                                        options={PROJECT_STAGE_OPTIONS}
+                                        options={TASK_STAGE_OPTIONS}
                                         onChange={(value) =>
                                           handleTaskChange(
                                             draft.id,

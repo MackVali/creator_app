@@ -44,6 +44,12 @@ const PROJECT_STAGE_OPTIONS = [
   { value: "RELEASE", label: "Release" },
 ];
 
+const TASK_STAGE_OPTIONS = [
+  { value: "PREPARE", label: "Prepare" },
+  { value: "PRODUCE", label: "Produce" },
+  { value: "PERFECT", label: "Perfect" },
+];
+
 const PRIORITY_OPTIONS = [
   { value: "NO", label: "No Priority" },
   { value: "LOW", label: "Low" },
@@ -672,7 +678,7 @@ export default function PlanGoalPage() {
                                               <SelectValue placeholder="Choose a stage" />
                                             </SelectTrigger>
                                             <SelectContent className="bg-[#0b101b] text-sm text-white">
-                                              {PROJECT_STAGE_OPTIONS.map((option) => (
+                                              {TASK_STAGE_OPTIONS.map((option) => (
                                                 <SelectItem
                                                   key={option.value}
                                                   value={option.value}
