@@ -1794,7 +1794,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     <div className="grid gap-3 sm:grid-cols-3">
                                       <OptionDropdown
                                         value={task.stage}
-                                        options={PROJECT_STAGE_OPTIONS}
+                                        options={TASK_STAGE_OPTIONS}
                                         onChange={(value) =>
                                           handleTaskChange(
                                             draft.id,
@@ -1857,8 +1857,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     onClick={() =>
                                       handleRemoveTaskFromDraft(draft.id, task.id)
                                     }
-                                    disabled={draft.tasks.length === 1}
-                                    className="h-9 w-9 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+                                    className="h-9 w-9 shrink-0 rounded-full text-zinc-400 hover:bg-red-500/10 hover:text-red-300"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
@@ -1868,7 +1867,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           </div>
                         ) : (
                           <p className="mt-4 text-xs text-zinc-500">
-                            No tasks yet. Add at least one to outline the next moves.
+                            No tasks yet. Add some if you want to outline the next moves.
                           </p>
                         )}
                       </div>
@@ -2235,7 +2234,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       : goalWizardStep === "TASKS"
                       ? "Save goal & launch"
                       : goalWizardStep === "PROJECTS"
-                      ? "Continue to tasks"
+                      ? "Continue (tasks optional)"
                       : "Continue to projects"}
                   </Button>
                 </div>

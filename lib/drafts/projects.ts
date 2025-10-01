@@ -57,10 +57,21 @@ export function createDraftProject(
     duration = "",
     priority = DEFAULT_PRIORITY,
     energy = DEFAULT_ENERGY,
-    tasks = [createDraftTask()],
+    tasks = [],
   } = overrides;
 
-  return { id, name, stage, why, duration, priority, energy, tasks };
+  const normalizedTasks = tasks.length > 0 ? [...tasks] : [];
+
+  return {
+    id,
+    name,
+    stage,
+    why,
+    duration,
+    priority,
+    energy,
+    tasks: normalizedTasks,
+  };
 }
 
 export function normalizeTask<
