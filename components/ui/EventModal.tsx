@@ -68,6 +68,10 @@ type ChoiceOption = {
   renderIcon?: (selected: boolean) => ReactNode;
 };
 
+const formatNameValue = (value: string) => value.toUpperCase();
+const formatNameDisplay = (value?: string | null) =>
+  value ? value.toUpperCase() : "";
+
 const PRIORITY_OPTIONS: ChoiceOption[] = [
   { value: "NO", label: "No Priority" },
   { value: "LOW", label: "Low" },
@@ -931,7 +935,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     key: K,
     value: GoalWizardFormState[K]
   ) {
-    setGoalForm((prev) => ({ ...prev, [key]: value }));
+    setGoalForm((prev) => ({
+      ...prev,
+      [key]: (key === "name"
+        ? formatNameValue(value as string)
+        : value) as GoalWizardFormState[K],
+    }));
   }
 
   const handleDraftProjectChange = (
@@ -939,9 +948,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     field: keyof Omit<DraftProject, "id" | "tasks">,
     value: string
   ) => {
+    const nextValue = field === "name" ? formatNameValue(value) : value;
     setDraftProjects((prev) =>
       prev.map((draft) =>
-        draft.id === projectId ? { ...draft, [field]: value } : draft
+        draft.id === projectId ? { ...draft, [field]: nextValue } : draft
       )
     );
   };
@@ -972,13 +982,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     field: keyof Omit<DraftTask, "id">,
     value: string
   ) => {
+    const nextValue = field === "name" ? formatNameValue(value) : value;
     setDraftProjects((prev) =>
       prev.map((draft) =>
         draft.id === projectId
           ? {
               ...draft,
               tasks: draft.tasks.map((task) =>
-                task.id === taskId ? { ...task, [field]: value } : task
+                task.id === taskId ? { ...task, [field]: nextValue } : task
               ),
             }
           : draft
@@ -1056,7 +1067,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         skill_id?: string;
       } = {
         user_id: user.id,
-        name: formData.name.trim(),
+        name: formatNameValue(formData.name.trim()),
         priority: formData.priority,
         energy: formData.energy,
       };
@@ -1180,7 +1191,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         const projectsToSave = draftProjects
           .map((draft) => ({
-            name: draft.name.trim(),
+            name: formatNameValue(draft.name.trim()),
             stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
             priority: draft.priority || DEFAULT_PRIORITY,
             energy: draft.energy || DEFAULT_ENERGY,
@@ -1188,7 +1199,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             duration: draft.duration.trim(),
             tasks: draft.tasks
               .map((task) => ({
-                name: task.name.trim(),
+                name: formatNameValue(task.name.trim()),
                 stage: task.stage || DEFAULT_TASK_STAGE,
                 priority: task.priority || DEFAULT_PRIORITY,
                 energy: task.energy || DEFAULT_ENERGY,
@@ -1203,7 +1214,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           {
             goal_input: {
               user_id: user.id,
-              name: goalForm.name.trim(),
+              name: formatNameValue(goalForm.name.trim()),
               priority: goalForm.priority || DEFAULT_PRIORITY,
               energy: goalForm.energy || DEFAULT_ENERGY,
               monument_id: goalForm.monument_id,
@@ -1888,7 +1899,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     <Input
                       value={formData.name}
                       onChange={(event) =>
-                        setFormData({ ...formData, name: event.target.value })
+                        setFormData((prev) => ({
+                          ...prev,
+                          name: formatNameValue(event.target.value),
+                        }))
                       }
                       placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
                       className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
@@ -2069,7 +2083,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           <SelectItem value="">Select goal...</SelectItem>
                           {goals.map((goal) => (
                             <SelectItem key={goal.id} value={goal.id}>
-                              {goal.name}
+                              {formatNameDisplay(goal.name)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -2108,7 +2122,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           <SelectItem value="">Select goal...</SelectItem>
                           {goals.map((goal) => (
                             <SelectItem key={goal.id} value={goal.id}>
-                              {goal.name}
+                              {formatNameDisplay(goal.name)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -2128,7 +2142,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           <SelectItem value="">Select project...</SelectItem>
                           {projects.map((project) => (
                             <SelectItem key={project.id} value={project.id}>
-                              {project.name}
+                              {formatNameDisplay(project.name)}
                             </SelectItem>
                           ))}
                         </SelectContent>
