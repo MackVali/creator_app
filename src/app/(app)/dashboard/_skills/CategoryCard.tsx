@@ -54,6 +54,14 @@ function withAlpha(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+const resolveOrderValue = (value?: number | null) => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 1;
+  }
+  const floored = Math.floor(value);
+  return floored > 0 ? floored : 1;
+};
+
 interface Props {
   category: Category;
   skills: Skill[];
@@ -86,7 +94,7 @@ export default function CategoryCard({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
+  const [orderValue, setOrderValue] = useState<number>(resolveOrderValue(category.order));
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
@@ -107,7 +115,7 @@ export default function CategoryCard({
     setColor(colorOverride || category.color_hex || "#000000");
   }, [category.color_hex, colorOverride]);
   useEffect(() => {
-    setOrderValue(category.order ?? 0);
+    setOrderValue(resolveOrderValue(category.order));
   }, [category.order]);
   useEffect(() => {
     setLocalSkills([...skills]);
@@ -211,11 +219,19 @@ export default function CategoryCard({
     }
   };
 
+  const sanitizeOrder = (value: number) => {
+    if (Number.isNaN(value)) return 1;
+    const floored = Math.floor(value);
+    return floored > 0 ? floored : 1;
+  };
+
   const handleOrderSave = async () => {
+    const nextOrder = sanitizeOrder(orderValue);
+    setOrderValue(nextOrder);
     try {
-      await updateCatOrder(category.id, orderValue);
+      await updateCatOrder(category.id, nextOrder);
       router.refresh();
-      onOrderChange?.(orderValue);
+      onOrderChange?.(nextOrder);
     } catch (e) {
       console.error("Failed to update category order", e);
     } finally {
@@ -328,11 +344,14 @@ export default function CategoryCard({
                     <div className="flex flex-col gap-2">
                       <input
                         type="number"
+                        min={1}
+                        step={1}
                         value={orderValue}
                         onChange={(e) => {
                           const next = Number(e.target.value);
-                          setOrderValue(Number.isNaN(next) ? 0 : next);
+                          setOrderValue(Number.isNaN(next) ? 1 : next);
                         }}
+                        onBlur={() => setOrderValue((current) => sanitizeOrder(current))}
                         className="w-full rounded border border-black/20 p-2"
                       />
                       <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>

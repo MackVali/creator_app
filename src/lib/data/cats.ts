@@ -33,10 +33,50 @@ export async function updateCatColor(catId: string, color: string) {
 export async function updateCatOrder(catId: string, order: number) {
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
+
+  const sanitizedOrder = Number.isFinite(order) ? Math.max(1, Math.floor(order)) : 1;
+
+  const {
+    data: target,
+    error: targetError,
+  } = await sb
+    .from("cats")
+    .select("id,user_id")
+    .eq("id", catId)
+    .maybeSingle();
+  if (targetError) throw targetError;
+  if (!target) throw new Error("Category not found");
+
+  const {
+    data: siblings,
+    error: siblingsError,
+  } = await sb
+    .from("cats")
+    .select("id,sort_order,created_at")
+    .eq("user_id", target.user_id)
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
+
+  if (siblingsError) throw siblingsError;
+
+  const orderedIds = (siblings ?? []).map((cat) => cat.id);
+  if (!orderedIds.includes(catId)) {
+    orderedIds.push(catId);
+  }
+
+  const nextOrder = orderedIds.filter((id) => id !== catId);
+  const insertionIndex = Math.min(nextOrder.length, sanitizedOrder - 1);
+  nextOrder.splice(insertionIndex, 0, catId);
+
+  const updates = nextOrder.map((id, index) => ({
+    id,
+    sort_order: index + 1,
+  }));
+
   const { error } = await sb
     .from("cats")
-    .update({ sort_order: order })
-    .eq("id", catId);
+    .upsert(updates, { onConflict: "id" });
+
   if (error) throw error;
 }
 

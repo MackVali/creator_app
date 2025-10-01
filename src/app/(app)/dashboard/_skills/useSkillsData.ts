@@ -47,13 +47,20 @@ export async function fetchCategories(userId: string): Promise<Category[]> {
       })
     );
   }
-  return (data ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    color_hex: c.color_hex || "#000000",
-    order: c.sort_order,
-    icon: c.icon || null,
-  }));
+  return (data ?? []).map((c, idx) => {
+    const fallbackOrder = idx + 1;
+    const resolvedOrder =
+      typeof c.sort_order === "number" && Number.isFinite(c.sort_order) && c.sort_order > 0
+        ? Math.floor(c.sort_order)
+        : fallbackOrder;
+    return {
+      id: c.id,
+      name: c.name,
+      color_hex: c.color_hex || "#000000",
+      order: resolvedOrder,
+      icon: c.icon || null,
+    };
+  });
 }
 
 export async function fetchSkills(userId: string): Promise<Skill[]> {
