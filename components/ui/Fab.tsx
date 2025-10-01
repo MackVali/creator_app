@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type HTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, X } from "lucide-react";
@@ -8,11 +8,11 @@ import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
 
-interface FabProps {
+interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
 }
 
-export function Fab({ className = "" }: FabProps) {
+export function Fab({ className = "", ...wrapperProps }: FabProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [modalEventType, setModalEventType] = useState<
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
@@ -165,7 +165,7 @@ export function Fab({ className = "" }: FabProps) {
   }, [isOpen]);
 
   return (
-    <div className={className}>
+    <div className={className} {...wrapperProps}>
       {/* AddEvents Menu */}
       <AnimatePresence>
         {isOpen && (

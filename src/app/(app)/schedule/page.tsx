@@ -22,7 +22,7 @@ import {
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
-import { FocusTimeline } from '@/components/schedule/FocusTimeline'
+import { FocusTimeline, FocusTimelineFab } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
 import { MonthView } from '@/components/schedule/MonthView'
@@ -2282,6 +2282,7 @@ export default function SchedulePage() {
                     </motion.div>
                   </AnimatePresence>
                 )}
+                <FocusTimelineFab />
               </ScheduleViewShell>
             )}
             {view === 'focus' && (
