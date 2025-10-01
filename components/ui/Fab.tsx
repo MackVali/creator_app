@@ -32,14 +32,33 @@ export function Fab({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
 
-  const getMenuBackground = () => {
+  const clampColorValue = (value: number) => Math.min(255, Math.max(0, value));
+
+  const getMenuBackgroundStyles = () => {
     const progress = menuPage === 1 ? 1 - swipeProgress : swipeProgress;
     const start = [55, 65, 81]; // gray-700
     const end = [0, 0, 0]; // black
     const r = start[0] + (end[0] - start[0]) * progress;
     const g = start[1] + (end[1] - start[1]) * progress;
     const b = start[2] + (end[2] - start[2]) * progress;
-    return `rgb(${r}, ${g}, ${b})`;
+
+    const highlight = [
+      clampColorValue(r + 35),
+      clampColorValue(g + 35),
+      clampColorValue(b + 35),
+    ];
+    const lowlight = [
+      clampColorValue(r - 25),
+      clampColorValue(g - 25),
+      clampColorValue(b - 25),
+    ];
+
+    return {
+      backgroundImage: `radial-gradient(circle at top, rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.65), rgba(${r}, ${g}, ${b}, 0.1) 45%), linear-gradient(160deg, rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.95) 0%, rgba(${r}, ${g}, ${b}, 0.97) 50%, rgba(${lowlight[0]}, ${lowlight[1]}, ${lowlight[2]}, 0.98) 100%)`,
+      boxShadow:
+        "0 18px 36px rgba(15, 23, 42, 0.55), 0 8px 18px rgba(15, 23, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)",
+      borderColor: `rgba(${highlight[0]}, ${highlight[1]}, ${highlight[2]}, 0.35)`,
+    };
   };
 
   const menuConfigs = {
@@ -221,12 +240,12 @@ export function Fab({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             className={cn(
-              "absolute bottom-20 mb-2 z-50 min-w-[200px] border border-gray-700 rounded-lg shadow-2xl overflow-hidden",
+              "absolute bottom-20 mb-2 z-50 min-w-[200px] border rounded-lg shadow-2xl overflow-hidden",
               menuClassName
             )}
             style={{
-              backgroundColor: getMenuBackground(),
-              transition: "background-color 0.1s linear",
+              ...getMenuBackgroundStyles(),
+              transition: "background-image 0.1s linear, border-color 0.1s linear",
               transformOrigin:
                 menuVariant === "timeline" ? "bottom right" : "bottom center",
             }}
