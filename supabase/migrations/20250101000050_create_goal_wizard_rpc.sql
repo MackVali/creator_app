@@ -90,7 +90,16 @@ begin
         continue;
       end if;
 
-      insert into public.tasks (user_id, goal_id, project_id, name, stage, priority, energy, notes)
+      insert into public.tasks (
+        user_id,
+        goal_id,
+        project_id,
+        name,
+        stage,
+        priority,
+        energy,
+        description
+      )
       values (
         goal_user_id,
         new_goal.id,
@@ -111,7 +120,7 @@ begin
           'stage', new_task.stage,
           'priority', new_task.priority,
           'energy', new_task.energy,
-          'notes', new_task.notes
+          'notes', new_task.description
         )
       );
     end loop;
