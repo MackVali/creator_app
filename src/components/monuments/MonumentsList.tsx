@@ -10,6 +10,7 @@ export interface Monument {
   id: string;
   title: string;
   emoji: string | null;
+  goalCount: number;
 }
 
 interface MonumentsListProps {
@@ -44,7 +45,45 @@ export function MonumentsList({
       const { data, error } = await query;
       if (!cancelled) {
         if (error) console.error(error);
-        setMonuments(data ?? []);
+        const monumentsData = (data ?? []) as {
+          id: string;
+          title: string;
+          emoji: string | null;
+        }[];
+
+        let goalCounts: Record<string, number> = {};
+        if (monumentsData.length) {
+          const monumentIds = monumentsData.map((monument) => monument.id);
+          const { data: goalsData, error: goalsError } = await supabase
+            .from("goals")
+            .select("monument_id")
+            .in("monument_id", monumentIds);
+          if (goalsError) {
+            console.error(goalsError);
+          } else {
+            goalCounts = (goalsData ?? []).reduce<Record<string, number>>(
+              (acc, goal) => {
+                const monumentId = goal.monument_id;
+                if (monumentId) {
+                  acc[monumentId] = (acc[monumentId] ?? 0) + 1;
+                }
+                return acc;
+              },
+              {}
+            );
+          }
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setMonuments(
+          monumentsData.map((monument) => ({
+            ...monument,
+            goalCount: goalCounts[monument.id] ?? 0,
+          }))
+        );
         setLoading(false);
       }
     }

@@ -23,7 +23,7 @@ export function MonumentContainer() {
                 id: m.id,
                 emoji: m.emoji || "\uD83C\uDFDB\uFE0F",
                 title: m.title,
-                stats: "0 Goals",
+                stats: `${m.goalCount} Goal${m.goalCount === 1 ? "" : "s"}`,
               }))}
             />
           </div>
