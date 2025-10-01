@@ -167,7 +167,45 @@ export function useSkillsData() {
 
   const refresh = useCallback(() => load({ silent: true }), [load]);
 
-  return { categories, skillsByCategory, isLoading, error, refresh };
+  const applyCategoryOrder = useCallback(
+    (ordered: ReadonlyArray<Pick<Category, "id">>) => {
+      setCategories((previous) => {
+        if (previous.length === 0 || ordered.length === 0) {
+          return previous;
+        }
+
+        const existingById = new Map(previous.map((cat) => [cat.id, cat]));
+        const seen = new Set<string>();
+        const next: Category[] = [];
+
+        ordered.forEach((entry, index) => {
+          if (!entry?.id) return;
+          const current = existingById.get(entry.id);
+          if (!current) return;
+
+          seen.add(entry.id);
+          next.push({
+            ...current,
+            order: index + 1,
+          });
+        });
+
+        if (next.length === 0) {
+          return previous;
+        }
+
+        previous.forEach((cat) => {
+          if (seen.has(cat.id)) return;
+          next.push(cat);
+        });
+
+        return next;
+      });
+    },
+    []
+  );
+
+  return { categories, skillsByCategory, isLoading, error, refresh, applyCategoryOrder };
 }
 
 export default useSkillsData;

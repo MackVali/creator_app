@@ -39,7 +39,7 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 }
 
 export default function SkillsCarousel() {
-  const { categories, skillsByCategory, isLoading, refresh } = useSkillsData();
+  const { categories, skillsByCategory, isLoading, refresh, applyCategoryOrder } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
 
@@ -67,6 +67,7 @@ export default function SkillsCarousel() {
             order: index + 1,
           }))
         );
+        applyCategoryOrder(ordered);
         await refresh();
         setReorderOpen(false);
       } catch (error) {
@@ -75,7 +76,7 @@ export default function SkillsCarousel() {
         setReorderSaving(false);
       }
     },
-    [refresh]
+    [applyCategoryOrder, refresh]
   );
 
   useEffect(() => {
