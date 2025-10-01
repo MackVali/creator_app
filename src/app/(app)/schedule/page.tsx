@@ -261,6 +261,10 @@ type ProjectTaskCard = {
   displayDurationMinutes: number
 }
 
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime())
+}
+
 function taskMatchesProjectInstance(
   taskInfo: TaskInstanceInfo,
   projectInstance: ScheduleInstance,
@@ -380,11 +384,14 @@ function computeProjectInstances(
     .map(inst => {
       const project = projectMap[inst.source_id]
       if (!project) return null
+      const start = toLocal(inst.start_utc)
+      const end = toLocal(inst.end_utc)
+      if (!isValidDate(start) || !isValidDate(end)) return null
       return {
         instance: inst,
         project,
-        start: toLocal(inst.start_utc),
-        end: toLocal(inst.end_utc),
+        start,
+        end,
         assignedWindow: inst.window_id ? windowMap[inst.window_id] ?? null : null,
       }
     })
@@ -420,12 +427,15 @@ function computeTaskInstancesByProjectForDay(
     const projectId = task?.project_id ?? null
     if (!task || !projectId) continue
     if (!projectInstanceIds.has(projectId)) continue
+    const start = toLocal(inst.start_utc)
+    const end = toLocal(inst.end_utc)
+    if (!isValidDate(start) || !isValidDate(end)) continue
     const bucket = map[projectId] ?? []
     bucket.push({
       instance: inst,
       task,
-      start: toLocal(inst.start_utc),
-      end: toLocal(inst.end_utc),
+      start,
+      end,
     })
     map[projectId] = bucket
   }
@@ -447,11 +457,14 @@ function computeStandaloneTaskInstancesForDay(
     if (!task) continue
     const projectId = task.project_id ?? undefined
     if (projectId && projectInstanceIds.has(projectId)) continue
+    const start = toLocal(inst.start_utc)
+    const end = toLocal(inst.end_utc)
+    if (!isValidDate(start) || !isValidDate(end)) continue
     items.push({
       instance: inst,
       task,
-      start: toLocal(inst.start_utc),
-      end: toLocal(inst.end_utc),
+      start,
+      end,
     })
   }
   items.sort((a, b) => a.start.getTime() - b.start.getTime())
@@ -483,10 +496,9 @@ function computeWindowReportsForDay({
   const assignments = new Map<string, number>()
   const projectSpans = projectInstances
     .map(({ instance, start, end, assignedWindow }) => {
-      if (!start || !end) return null
+      if (!isValidDate(start) || !isValidDate(end)) return null
       const startMs = start.getTime()
       const endMs = end.getTime()
-      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
       const windowId = instance.window_id || assignedWindow?.id || null
       if (windowId) {
         assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
@@ -499,7 +511,7 @@ function computeWindowReportsForDay({
     ...projectSpans,
     ...schedulerTimelinePlacements
       .map(({ start, end }) => {
-        if (!start || !end) return null
+        if (!isValidDate(start) || !isValidDate(end)) return null
         const startMs = start.getTime()
         const endMs = end.getTime()
         if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
@@ -1345,7 +1357,7 @@ export default function SchedulePage() {
       if (!entry) continue
       const start = toLocal(entry.startUTC)
       const end = toLocal(entry.endUTC)
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue
+      if (!isValidDate(start) || !isValidDate(end)) continue
       const project = projectMap[entry.projectId]
       const durationMin =
         typeof entry.durationMin === 'number' && Number.isFinite(entry.durationMin)
@@ -2167,6 +2179,7 @@ export default function SchedulePage() {
               </div>
             ))}
             {modelProjectInstances.map(({ instance, project, start, end }, index) => {
+              if (!isValidDate(start) || !isValidDate(end)) return null
               const projectId = project.id
               const startMin = start.getHours() * 60 + start.getMinutes()
               const top = (startMin - modelStartHour * 60) * modelPxPerMin
@@ -2414,6 +2427,9 @@ export default function SchedulePage() {
                               instanceId,
                               displayDurationMinutes,
                             } = taskCard
+                            if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
+                              return null
+                            }
                             const startOffsetMs =
                               taskStart.getTime() - start.getTime()
                             const endOffsetMs = taskEnd.getTime() - start.getTime()
@@ -2576,6 +2592,7 @@ export default function SchedulePage() {
               )
             })}
             {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
+              if (!isValidDate(start) || !isValidDate(end)) return null
               const startMin = start.getHours() * 60 + start.getMinutes()
               const top = (startMin - modelStartHour * 60) * modelPxPerMin
               const height =
