@@ -123,11 +123,11 @@ function ProjectCrackOverlay({
 
   return (
     <div className="project-crack-overlay" aria-hidden>
-      <span className="project-crack project-crack--main" />
-      <span className="project-crack project-crack--branch" />
-      <span className="project-crack project-crack--upper" />
-      <span className="project-crack project-crack--vertical" />
-      <span className="project-crack project-crack--vertical-secondary" />
+      <span className="project-crack project-crack--left" />
+      <span className="project-crack project-crack--top" />
+      <span className="project-crack project-crack--bottom" />
+      <span className="project-crack project-crack--diagonal" />
+      <span className="project-crack project-crack--splinter" />
     </div>
   )
 }
