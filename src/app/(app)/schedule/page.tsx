@@ -1641,30 +1641,30 @@ export default function SchedulePage() {
 
   const dayTimelineNode = (
     <>
-      <div className="pl-16 pr-6 pt-6 pb-4 text-white">
-        <div className="rounded-xl border border-white/5 bg-white/[0.04] px-5 py-4 shadow-lg shadow-black/20">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.32em] text-white/50">
+      <div className="pl-16 pr-6 pt-4 pb-3 text-white">
+        <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[0_10px_30px_rgba(8,8,12,0.28)] backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
                 <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
-                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[10px] font-medium tracking-[0.2em] text-white/70">
+                <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.12] px-2 py-0.5 text-[10px] font-medium tracking-[0.18em] text-white/75">
                   {dayViewDateKey}
                 </span>
               </div>
-              <h2 className="text-3xl font-semibold tracking-tight text-white">
+              <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
                 {dayViewDetails.weekday}
               </h2>
-              <p className="text-sm text-white/60">
+              <p className="text-xs text-white/60 sm:text-sm">
                 {dayViewDetails.fullDate}
               </p>
             </div>
-            <div className="flex flex-col items-start gap-1 text-right text-xs text-white/50 sm:items-end">
+            <div className="flex flex-col gap-1 text-left text-[11px] text-white/60 sm:items-end sm:text-right">
               {timeZoneShortName ? (
-                <span className="text-sm font-semibold tracking-wide text-white/80">
+                <span className="text-sm font-semibold tracking-wide text-white/80 sm:text-base">
                   {timeZoneShortName}
                 </span>
               ) : null}
-              <span className="text-[11px] uppercase tracking-[0.28em] text-white/40">
+              <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
                 {friendlyTimeZone}
               </span>
             </div>
