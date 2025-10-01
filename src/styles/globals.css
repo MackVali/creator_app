@@ -80,3 +80,135 @@ html,body{
 }
 
 body.modal-open [data-bottom-nav] { display: none !important; }
+
+.project-crack-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.project-crack {
+  position: absolute;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.95),
+    rgba(255, 255, 255, 0.08)
+  );
+  border-radius: 999px;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.55));
+  mix-blend-mode: screen;
+}
+
+.project-crack--main {
+  top: 32%;
+  left: 8%;
+  width: 74%;
+  height: 1px;
+  --project-crack-rotation: -6deg;
+  transform-origin: left center;
+  transform: rotate(var(--project-crack-rotation)) scaleX(0);
+  animation: project-crack-horizontal 1.05s ease-out forwards;
+}
+
+.project-crack--branch {
+  top: 56%;
+  left: 22%;
+  width: 48%;
+  height: 1px;
+  --project-crack-rotation: 9deg;
+  transform-origin: left center;
+  transform: rotate(var(--project-crack-rotation)) scaleX(0);
+  animation: project-crack-horizontal 1s ease-out forwards;
+  animation-delay: 90ms;
+}
+
+.project-crack--upper {
+  top: 20%;
+  left: 54%;
+  width: 32%;
+  height: 1px;
+  --project-crack-rotation: -18deg;
+  transform-origin: left center;
+  transform: rotate(var(--project-crack-rotation)) scaleX(0);
+  animation: project-crack-horizontal 0.9s ease-out forwards;
+  animation-delay: 170ms;
+}
+
+.project-crack--vertical,
+.project-crack--vertical-secondary {
+  width: 1.5px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.08),
+    rgba(255, 255, 255, 0.95),
+    rgba(255, 255, 255, 0.08)
+  );
+  transform-origin: center top;
+  transform: rotate(var(--project-crack-rotation, 0deg)) scaleY(0);
+  animation: project-crack-vertical 1.05s ease-out forwards;
+}
+
+.project-crack--vertical {
+  top: 14%;
+  left: 44%;
+  height: 58%;
+  --project-crack-rotation: 3deg;
+  animation-delay: 60ms;
+}
+
+.project-crack--vertical-secondary {
+  top: 36%;
+  left: 66%;
+  height: 36%;
+  --project-crack-rotation: -4deg;
+  animation-delay: 200ms;
+}
+
+@keyframes project-crack-horizontal {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--project-crack-rotation)) scaleX(0);
+  }
+  22% {
+    opacity: 1;
+    transform: rotate(var(--project-crack-rotation)) scaleX(0.6);
+  }
+  55% {
+    opacity: 1;
+    transform: rotate(var(--project-crack-rotation)) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--project-crack-rotation)) scaleX(1.12);
+  }
+}
+
+@keyframes project-crack-vertical {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--project-crack-rotation, 0deg)) scaleY(0);
+  }
+  28% {
+    opacity: 1;
+    transform: rotate(var(--project-crack-rotation, 0deg)) scaleY(0.65);
+  }
+  58% {
+    opacity: 1;
+    transform: rotate(var(--project-crack-rotation, 0deg)) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--project-crack-rotation, 0deg)) scaleY(1.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-crack {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
