@@ -1318,6 +1318,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     await handleCompleteGoalWizard();
   };
 
+  const handleSaveGoalWizard = useCallback(async () => {
+    if (isSaving) {
+      return;
+    }
+    await handleCompleteGoalWizard();
+  }, [handleCompleteGoalWizard, isSaving]);
+
   const handlePlanGoal = async () => {
     if (isSaving) {
       return;
@@ -1413,6 +1420,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     isSaving ||
     (goalWizardStep === "GOAL" &&
       (loading || !goalForm.name.trim() || !goalForm.monument_id));
+  const canSaveGoalWizard =
+    !loading &&
+    !isSaving &&
+    goalForm.name.trim().length > 0 &&
+    goalForm.monument_id.trim().length > 0;
+  const saveButtonLabel = isSaving ? "Saving..." : "Save goal";
 
   if (!isOpen || !mounted || !eventType) {
     return null;
@@ -2269,6 +2282,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       className="h-11 rounded-xl border border-transparent px-6 text-sm font-semibold text-zinc-200 hover:border-white/10 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Back
+                    </Button>
+                  ) : null}
+                  {goalWizardStep !== "TASKS" ? (
+                    <Button
+                      type="button"
+                      onClick={handleSaveGoalWizard}
+                      disabled={!canSaveGoalWizard}
+                      className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {saveButtonLabel}
                     </Button>
                   ) : null}
                   <Button
