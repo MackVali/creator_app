@@ -147,9 +147,21 @@ function formatDayViewLabel(date: Date, timeZone: string) {
     return formatter.format(date)
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn('Unable to format day view label', error)
+      console.warn('schedule/day: unable to format day view label', error)
     }
-    return date.toDateString()
+    try {
+      return date.toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    } catch (fallbackError) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('schedule/day: fallback day label failed', fallbackError)
+      }
+      return date.toDateString()
+    }
   }
 }
 
