@@ -49,3 +49,19 @@ export async function updateCatIcon(catId: string, icon: string | null) {
     .eq("id", catId);
   if (error) throw error;
 }
+
+export async function updateCatsOrderBulk(
+  updates: Array<{ id: string; sort_order: number }>
+) {
+  if (updates.length === 0) return;
+  const sb = getSupabaseBrowser();
+  if (!sb) throw new Error("Supabase client not available");
+
+  for (const { id, sort_order } of updates) {
+    const { error } = await sb
+      .from("cats")
+      .update({ sort_order })
+      .eq("id", id);
+    if (error) throw error;
+  }
+}

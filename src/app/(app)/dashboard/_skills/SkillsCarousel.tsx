@@ -5,8 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import CategoryCard from "./CategoryCard";
-import useSkillsData from "./useSkillsData";
+import useSkillsData, { type Category } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
+import ReorderCatsModal from "./ReorderCatsModal";
+import { updateCatsOrderBulk } from "@/lib/data/cats";
+import { useToastHelpers } from "@/components/ui/toast";
 
 const FALLBACK_COLOR = "#6366f1";
 
@@ -37,7 +40,7 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 }
 
 export default function SkillsCarousel() {
-  const { categories, skillsByCategory, isLoading } = useSkillsData();
+  const { categories: fetchedCategories, skillsByCategory, isLoading } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
 
@@ -46,12 +49,21 @@ export default function SkillsCarousel() {
   const activeIndexRef = useRef(0);
   const scrollFrame = useRef<number | null>(null);
 
+  const [categories, setCategories] = useState<Category[]>(fetchedCategories);
   const [activeIndex, setActiveIndex] = useState(0);
   const [skillDragging, setSkillDragging] = useState(false);
   const [catOverrides, setCatOverrides] = useState<
     Record<string, { color?: string | null; icon?: string | null }>
   >({});
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [pendingActiveId, setPendingActiveId] = useState<string | null>(null);
+  const toast = useToastHelpers();
+
+  useEffect(() => {
+    setCategories(fetchedCategories);
+  }, [fetchedCategories]);
 
   useEffect(() => {
     setCatOverrides((prev) => {
@@ -66,6 +78,26 @@ export default function SkillsCarousel() {
       return next;
     });
   }, [categories]);
+
+  useEffect(() => {
+    if (!pendingActiveId) return;
+    if (categories.length === 0) {
+      setPendingActiveId(null);
+      return;
+    }
+
+    const nextIndex = categories.findIndex((cat) => cat.id === pendingActiveId);
+    const fallbackIndex = nextIndex >= 0 ? nextIndex : 0;
+    activeIndexRef.current = fallbackIndex;
+    setActiveIndex(fallbackIndex);
+
+    const frame = requestAnimationFrame(() => {
+      scrollToIndex(fallbackIndex, { instant: true, skipUrl: true });
+    });
+
+    setPendingActiveId(null);
+    return () => cancelAnimationFrame(frame);
+  }, [categories, pendingActiveId, scrollToIndex]);
 
   const scrollToIndex = useCallback(
     (index: number, options: { instant?: boolean; skipUrl?: boolean } = {}) => {
@@ -219,6 +251,40 @@ export default function SkillsCarousel() {
     return () => window.removeEventListener("resize", handleResize);
   }, [scrollToIndex, syncToNearestCard]);
 
+  const handleSaveCategoryOrder = useCallback(
+    async (orderedList: Category[]) => {
+      if (orderedList.length === 0) return;
+
+      setIsSavingOrder(true);
+      const updates = orderedList.map((cat, index) => ({
+        id: cat.id,
+        sort_order: index,
+      }));
+
+      try {
+        await updateCatsOrderBulk(updates);
+        const newOrdered = orderedList.map((cat, index) => ({
+          ...cat,
+          order: index,
+        }));
+        const currentActiveId = categories[activeIndexRef.current]?.id ?? null;
+        setCategories(newOrdered);
+        setPendingActiveId(currentActiveId ?? newOrdered[0]?.id ?? null);
+        toast.success("Order updated", "Your categories were reordered.");
+      } catch (error) {
+        console.error("Failed to update category order", error);
+        toast.error(
+          "Failed to save order",
+          error instanceof Error ? error.message : "Please try again."
+        );
+        throw error;
+      } finally {
+        setIsSavingOrder(false);
+      }
+    },
+    [categories, toast]
+  );
+
   if (isLoading) {
     return <div className="py-8 text-center text-zinc-400">Loading...</div>;
   }
@@ -349,6 +415,7 @@ export default function SkillsCarousel() {
                       },
                     }))
                   }
+                  onOrderRequest={() => setReorderOpen(true)}
                 />
               </div>
             );
@@ -413,6 +480,13 @@ export default function SkillsCarousel() {
           );
         })}
       </div>
+      <ReorderCatsModal
+        open={reorderOpen}
+        categories={categories}
+        onClose={() => setReorderOpen(false)}
+        onSave={handleSaveCategoryOrder}
+        isSaving={isSavingOrder}
+      />
     </div>
   );
 }

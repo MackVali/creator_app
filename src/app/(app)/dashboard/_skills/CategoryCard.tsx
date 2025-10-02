@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatIcon, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor, updateCatIcon } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -65,6 +64,7 @@ interface Props {
   onIconChange?: (icon: string | null) => void;
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
+  onOrderRequest?: () => void;
 }
 
 export default function CategoryCard({
@@ -78,19 +78,16 @@ export default function CategoryCard({
   onIconChange,
   menuOpen: menuOpenProp,
   onMenuOpenChange,
+  onOrderRequest,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [orderOpen, setOrderOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
   const dragging = useRef(false);
-  const router = useRouter();
-
   const menuOpen = menuOpenProp ?? menuOpenState;
   const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
     setMenuOpenState((prevState) => {
@@ -104,9 +101,6 @@ export default function CategoryCard({
   useEffect(() => {
     setColor(colorOverride || category.color_hex || "#000000");
   }, [category.color_hex, colorOverride]);
-  useEffect(() => {
-    setOrderValue(category.order ?? 0);
-  }, [category.order]);
   useEffect(() => {
     setLocalSkills([...skills]);
   }, [skills]);
@@ -175,7 +169,6 @@ export default function CategoryCard({
   useEffect(() => {
     if (!menuOpen) {
       setPickerOpen(false);
-      setOrderOpen(false);
       setIconPickerOpen(false);
     }
   }, [menuOpen]);
@@ -205,18 +198,6 @@ export default function CategoryCard({
       console.error("Failed to update category icon", e);
     } finally {
       setIconPickerOpen(false);
-      setMenuOpen(false);
-    }
-  };
-
-  const handleOrderSave = async () => {
-    try {
-      await updateCatOrder(category.id, orderValue);
-      router.refresh();
-    } catch (e) {
-      console.error("Failed to update category order", e);
-    } finally {
-      setOrderOpen(false);
       setMenuOpen(false);
     }
   };
@@ -321,21 +302,6 @@ export default function CategoryCard({
                         </button>
                       </div>
                     </div>
-                  ) : orderOpen ? (
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="number"
-                        value={orderValue}
-                        onChange={(e) => {
-                          const next = Number(e.target.value);
-                          setOrderValue(Number.isNaN(next) ? 0 : next);
-                        }}
-                        className="w-full rounded border border-black/20 p-2"
-                      />
-                      <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
-                        Save order
-                      </button>
-                    </div>
                   ) : (
                     <div className="space-y-2">
                       <button className="block text-left text-sm font-medium underline" onClick={() => setPickerOpen(true)}>
@@ -350,7 +316,13 @@ export default function CategoryCard({
                       >
                         Change icon
                       </button>
-                      <button className="block text-left text-sm font-medium underline" onClick={() => setOrderOpen(true)}>
+                      <button
+                        className="block text-left text-sm font-medium underline"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onOrderRequest?.();
+                        }}
+                      >
                         Change order
                       </button>
                     </div>
