@@ -65,6 +65,7 @@ interface Props {
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
   onOrderRequest?: () => void;
+  canReorder?: boolean;
 }
 
 export default function CategoryCard({
@@ -79,6 +80,7 @@ export default function CategoryCard({
   menuOpen: menuOpenProp,
   onMenuOpenChange,
   onOrderRequest,
+  canReorder = true,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
@@ -316,15 +318,17 @@ export default function CategoryCard({
                       >
                         Change icon
                       </button>
-                      <button
-                        className="block text-left text-sm font-medium underline"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          onOrderRequest?.();
-                        }}
-                      >
-                        Change order
-                      </button>
+                      {canReorder && (
+                        <button
+                          className="block text-left text-sm font-medium underline"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            onOrderRequest?.();
+                          }}
+                        >
+                          Change order
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

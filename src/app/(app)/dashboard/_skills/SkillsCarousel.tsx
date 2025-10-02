@@ -12,6 +12,7 @@ import { updateCatsOrderBulk } from "@/lib/data/cats";
 import { useToastHelpers } from "@/components/ui/toast";
 
 const FALLBACK_COLOR = "#6366f1";
+export const PLACEHOLDER_CATEGORY_ID = "uncategorized";
 
 function parseHex(hex?: string | null) {
   if (!hex) {
@@ -255,8 +256,15 @@ export default function SkillsCarousel() {
     async (orderedList: Category[]) => {
       if (orderedList.length === 0) return;
 
+      const persistable = orderedList.filter(
+        (cat) => cat.id !== PLACEHOLDER_CATEGORY_ID
+      );
+      if (persistable.length === 0) {
+        return;
+      }
+
       setIsSavingOrder(true);
-      const updates = orderedList.map((cat, index) => ({
+      const updates = persistable.map((cat, index) => ({
         id: cat.id,
         sort_order: index,
       }));
@@ -293,6 +301,8 @@ export default function SkillsCarousel() {
     return <div className="py-8 text-center text-zinc-400">No skills yet</div>;
   }
 
+  const hasOnlyPlaceholder =
+    categories.length === 1 && categories[0]?.id === PLACEHOLDER_CATEGORY_ID;
   const getCategoryColor = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
@@ -387,6 +397,7 @@ export default function SkillsCarousel() {
                   colorOverride={getCategoryColor(category)}
                   iconOverride={getCategoryIcon(category)}
                   menuOpen={openMenuFor === category.id}
+                  canReorder={!hasOnlyPlaceholder}
                   onMenuOpenChange={(open) => {
                     setOpenMenuFor((current) => {
                       if (open) {
