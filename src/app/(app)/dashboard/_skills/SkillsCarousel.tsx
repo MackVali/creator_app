@@ -79,26 +79,6 @@ export default function SkillsCarousel() {
     });
   }, [categories]);
 
-  useEffect(() => {
-    if (!pendingActiveId) return;
-    if (categories.length === 0) {
-      setPendingActiveId(null);
-      return;
-    }
-
-    const nextIndex = categories.findIndex((cat) => cat.id === pendingActiveId);
-    const fallbackIndex = nextIndex >= 0 ? nextIndex : 0;
-    activeIndexRef.current = fallbackIndex;
-    setActiveIndex(fallbackIndex);
-
-    const frame = requestAnimationFrame(() => {
-      scrollToIndex(fallbackIndex, { instant: true, skipUrl: true });
-    });
-
-    setPendingActiveId(null);
-    return () => cancelAnimationFrame(frame);
-  }, [categories, pendingActiveId, scrollToIndex]);
-
   const scrollToIndex = useCallback(
     (index: number, options: { instant?: boolean; skipUrl?: boolean } = {}) => {
       if (categories.length === 0) return;
@@ -139,6 +119,26 @@ export default function SkillsCarousel() {
     },
     [categories, router, search]
   );
+
+  useEffect(() => {
+    if (!pendingActiveId) return;
+    if (categories.length === 0) {
+      setPendingActiveId(null);
+      return;
+    }
+
+    const nextIndex = categories.findIndex((cat) => cat.id === pendingActiveId);
+    const fallbackIndex = nextIndex >= 0 ? nextIndex : 0;
+    activeIndexRef.current = fallbackIndex;
+    setActiveIndex(fallbackIndex);
+
+    const frame = requestAnimationFrame(() => {
+      scrollToIndex(fallbackIndex, { instant: true, skipUrl: true });
+    });
+
+    setPendingActiveId(null);
+    return () => cancelAnimationFrame(frame);
+  }, [categories, pendingActiveId, scrollToIndex]);
 
   const syncToNearestCard = useCallback(() => {
     const track = trackRef.current;
