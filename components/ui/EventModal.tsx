@@ -822,12 +822,20 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [wizardSubmitIntent, setWizardSubmitIntent] = useState<
+    "continue" | "save" | "launch"
+  >("continue");
+  const wizardSubmitIntentRef = useRef<"continue" | "save" | "launch">(
+    "continue"
+  );
   const router = useRouter();
 
   const resetGoalWizard = useCallback(() => {
     setGoalWizardStep("GOAL");
     setGoalForm(createInitialGoalWizardForm());
     setDraftProjects([createDraftProject()]);
+    wizardSubmitIntentRef.current = "continue";
+    setWizardSubmitIntent("continue");
   }, []);
 
   useEffect(() => {
@@ -1292,30 +1300,56 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       return;
     }
 
-    if (goalWizardStep === "GOAL") {
-      if (!goalForm.name.trim()) {
-        toast.error("Name required", "Give your goal a descriptive name.");
-        return;
-      }
+    const intent = wizardSubmitIntentRef.current;
 
-      if (!goalForm.monument_id) {
+    const hasName = goalForm.name.trim().length > 0;
+    const hasMonument = Boolean(goalForm.monument_id);
+    const detailsValid = hasName && hasMonument;
+
+    if (!detailsValid) {
+      if (!hasName) {
+        toast.error("Name required", "Give your goal a descriptive name.");
+      } else if (!hasMonument) {
         toast.error(
           "Monument required",
           "Select a monument to ground this goal."
         );
+      }
+      wizardSubmitIntentRef.current = "continue";
+      setWizardSubmitIntent("continue");
+      return;
+    }
+
+    try {
+      if (goalWizardStep === "GOAL") {
+        if (intent === "save") {
+          await handleCompleteGoalWizard();
+          return;
+        }
+
+        setGoalWizardStep("PROJECTS");
         return;
       }
 
-      setGoalWizardStep("PROJECTS");
-      return;
-    }
+      if (goalWizardStep === "PROJECTS") {
+        if (intent === "save") {
+          await handleCompleteGoalWizard();
+          return;
+        }
 
-    if (goalWizardStep === "PROJECTS") {
-      setGoalWizardStep("TASKS");
-      return;
-    }
+        setGoalWizardStep("TASKS");
+        return;
+      }
 
-    await handleCompleteGoalWizard();
+      if (intent === "launch") {
+        await handleCompleteGoalWizard({ redirectToPlan: true });
+      } else {
+        await handleCompleteGoalWizard();
+      }
+    } finally {
+      wizardSubmitIntentRef.current = "continue";
+      setWizardSubmitIntent("continue");
+    }
   };
 
   const handlePlanGoal = async () => {
@@ -1409,10 +1443,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     0,
     GOAL_WIZARD_STEPS.findIndex((step) => step.key === goalWizardStep)
   );
-  const wizardPrimaryDisabled =
-    isSaving ||
-    (goalWizardStep === "GOAL" &&
-      (loading || !goalForm.name.trim() || !goalForm.monument_id));
+  const goalDetailsValid =
+    goalForm.name.trim().length > 0 && Boolean(goalForm.monument_id);
+  const saveDisabled = isSaving || loading || !goalDetailsValid;
+  const continueDisabled =
+    isSaving || (goalWizardStep === "GOAL" && (loading || !goalDetailsValid));
 
   if (!isOpen || !mounted || !eventType) {
     return null;
@@ -2234,12 +2269,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   <Button
                     type="button"
                     onClick={handlePlanGoal}
-                    disabled={
-                      loading ||
-                      isSaving ||
-                      !goalForm.name.trim() ||
-                      !goalForm.monument_id
-                    }
+                    disabled={saveDisabled}
                     variant="secondary"
                     className="h-11 rounded-xl bg-white/[0.08] px-5 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(59,130,246,0.45)] transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -2273,16 +2303,38 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   ) : null}
                   <Button
                     type="submit"
-                    disabled={wizardPrimaryDisabled}
+                    variant="secondary"
+                    onClick={() => {
+                      wizardSubmitIntentRef.current = "save";
+                      setWizardSubmitIntent("save");
+                    }}
+                    disabled={saveDisabled}
+                    className="h-11 rounded-xl bg-white/[0.08] px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(59,130,246,0.45)] transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSaving && wizardSubmitIntent === "save"
+                      ? "Saving..."
+                      : "Save goal"}
+                  </Button>
+                  <Button
+                    type="submit"
+                    onClick={() => {
+                      const nextIntent =
+                        goalWizardStep === "TASKS" ? "launch" : "continue";
+                      wizardSubmitIntentRef.current = nextIntent;
+                      setWizardSubmitIntent(nextIntent);
+                    }}
+                    disabled={
+                      goalWizardStep === "TASKS" ? saveDisabled : continueDisabled
+                    }
                     className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {isSaving && goalWizardStep === "TASKS"
-                      ? "Saving..."
-                      : goalWizardStep === "TASKS"
-                      ? "Save goal & launch"
+                    {goalWizardStep === "TASKS"
+                      ? isSaving && wizardSubmitIntent === "launch"
+                        ? "Saving..."
+                        : "Save goal & launch"
                       : goalWizardStep === "PROJECTS"
-                      ? "Continue to tasks"
-                      : "Continue to projects"}
+                      ? "Save & continue to tasks"
+                      : "Save & continue to projects"}
                   </Button>
                 </div>
               </div>

@@ -92,6 +92,9 @@ export default function PlanGoalPage() {
   const [drafts, setDrafts] = useState<DraftProject[]>([createDraftProject()]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingIntent, setPendingIntent] = useState<"save" | "continue" | null>(
+    null
+  );
 
   const router = useRouter();
   const toast = useToastHelpers();
@@ -271,7 +274,7 @@ export default function PlanGoalPage() {
     );
   };
 
-  const handleSaveProjects = async () => {
+  const handleSaveProjects = async (intent: "save" | "continue" = "save") => {
     if (!goalId) {
       toast.error(
         "Goal missing",
@@ -302,7 +305,10 @@ export default function PlanGoalPage() {
       return;
     }
 
+    setPendingIntent(intent);
     setIsSaving(true);
+
+    let savedProjects = false;
 
     try {
       const supabase = getSupabaseBrowser();
@@ -352,6 +358,7 @@ export default function PlanGoalPage() {
       }
 
       const insertedProjects = (data as Project[]) || [];
+      savedProjects = insertedProjects.length > 0;
 
       if (insertedProjects.length !== projectsToSave.length) {
         console.error("Mismatch between inserted projects and drafts", {
@@ -460,6 +467,11 @@ export default function PlanGoalPage() {
       toast.error("Error", "We couldn't save those projects.");
     } finally {
       setIsSaving(false);
+      setPendingIntent(null);
+    }
+
+    if (intent === "continue" && savedProjects) {
+      router.push("/schedule");
     }
   };
 
@@ -832,7 +844,7 @@ export default function PlanGoalPage() {
                 ))}
               </div>
 
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   type="button"
                   variant="outline"
@@ -841,21 +853,38 @@ export default function PlanGoalPage() {
                 >
                   Back to goals
                 </Button>
-                <Button
-                  type="button"
-                  onClick={handleSaveProjects}
-                  disabled={isSaving}
-                  className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(37,99,235,0.7)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      Saving projects...
-                    </>
-                  ) : (
-                    "Save projects"
-                  )}
-                </Button>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button
+                    type="button"
+                    onClick={() => handleSaveProjects("save")}
+                    disabled={isSaving}
+                    className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(37,99,235,0.7)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSaving && pendingIntent === "save" ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Saving projects...
+                      </>
+                    ) : (
+                      "Save projects"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => handleSaveProjects("continue")}
+                    disabled={isSaving}
+                    className="h-11 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-violet-500 px-6 text-sm font-semibold text-white shadow-[0_18px_35px_-18px_rgba(99,102,241,0.65)] transition hover:from-indigo-500/90 hover:via-sky-500/90 hover:to-violet-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSaving && pendingIntent === "continue" ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Save & continue...
+                      </>
+                    ) : (
+                      "Save & continue"
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </section>

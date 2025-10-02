@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -19,14 +20,15 @@ import type { Goal } from "../types";
 
 interface GoalDrawerProps {
   open: boolean;
-  onClose(): void;
+  onClose(intent?: "default" | "continue"): void;
   /** Callback when creating a new goal */
-  onAdd(goal: Goal): void;
+  onAdd(goal: Goal): Promise<Goal>;
   /** Existing goal to edit */
   initialGoal?: Goal | null;
   /** Callback when updating an existing goal */
-  onUpdate?(goal: Goal): void;
+  onUpdate?(goal: Goal): void | Promise<void>;
   monuments?: { id: string; title: string }[];
+  onContinue?(goal: Goal): void;
 }
 
 const PRIORITY_OPTIONS: {
@@ -87,6 +89,10 @@ export function GoalDrawer({
   const [active, setActive] = useState(true);
   const [why, setWhy] = useState("");
   const [monumentId, setMonumentId] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitIntent, setSubmitIntent] = useState<"save" | "continue">("save");
+
+  const submitIntentRef = useRef<"save" | "continue">("save");
 
   const editing = Boolean(initialGoal);
 
@@ -117,9 +123,20 @@ export function GoalDrawer({
 
   const canSubmit = title.trim().length > 0;
 
-  const submit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!open) {
+      setIsSubmitting(false);
+      submitIntentRef.current = "save";
+      setSubmitIntent("save");
+    }
+  }, [open]);
+
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || isSubmitting) return;
+
+    setIsSubmitting(true);
+    const intent = submitIntentRef.current;
 
     const preservedStatus = initialGoal?.status ?? "Active";
     const computedStatus = active
@@ -146,12 +163,26 @@ export function GoalDrawer({
       why: why.trim() ? why.trim() : undefined,
     };
 
-    if (editing && onUpdate) {
-      onUpdate(nextGoal);
-    } else {
-      onAdd(nextGoal);
+    try {
+      if (editing && onUpdate) {
+        await onUpdate(nextGoal);
+        onClose();
+      } else {
+        const savedGoal = await onAdd(nextGoal);
+        if (intent === "continue") {
+          onContinue?.(savedGoal);
+          onClose("continue");
+        } else {
+          onClose();
+        }
+      }
+    } catch (error) {
+      console.error("Error saving goal", error);
+    } finally {
+      setIsSubmitting(false);
+      submitIntentRef.current = "save";
+      setSubmitIntent("save");
     }
-    onClose();
   };
 
   return (
@@ -318,13 +349,52 @@ export function GoalDrawer({
                 type="button"
                 variant="ghost"
                 className="justify-start text-white/70 hover:text-white"
-                onClick={onClose}
+                onClick={() => onClose()}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!canSubmit} className="w-full sm:w-auto">
-                {editing ? "Save changes" : "Create goal"}
-              </Button>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  type="submit"
+                  disabled={!canSubmit || isSubmitting}
+                  className="w-full sm:w-auto"
+                  onClick={() => {
+                    submitIntentRef.current = "save";
+                    setSubmitIntent("save");
+                  }}
+                >
+                  {isSubmitting && submitIntent === "save" ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Saving...
+                    </span>
+                  ) : editing ? (
+                    "Save changes"
+                  ) : (
+                    "Save goal"
+                  )}
+                </Button>
+                {!editing ? (
+                  <Button
+                    type="submit"
+                    disabled={!canSubmit || isSubmitting}
+                    className="w-full sm:w-auto"
+                    onClick={() => {
+                      submitIntentRef.current = "continue";
+                      setSubmitIntent("continue");
+                    }}
+                  >
+                    {isSubmitting && submitIntent === "continue" ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        Saving & continuing...
+                      </span>
+                    ) : (
+                      "Save & continue"
+                    )}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </SheetFooter>
         </form>
