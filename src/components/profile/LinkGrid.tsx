@@ -1,14 +1,21 @@
 "use client";
 
+import Link from "next/link";
+
 import { ContentCard } from "@/lib/types";
 import LinkTile from "./LinkTile";
 
 interface LinkGridProps {
   links: ContentCard[];
   loading?: boolean;
+  isOwner?: boolean;
 }
 
-export default function LinkGrid({ links, loading = false }: LinkGridProps) {
+export default function LinkGrid({
+  links,
+  loading = false,
+  isOwner = false,
+}: LinkGridProps) {
   const activeLinks = (links || [])
     .filter((link) => link.is_active)
     .sort((a, b) => a.position - b.position);
@@ -49,6 +56,16 @@ export default function LinkGrid({ links, loading = false }: LinkGridProps) {
         <p className="mt-3 text-sm text-white/60">
           Publish your first link to unveil the experiences you want to spotlight.
         </p>
+        {isOwner ? (
+          <div className="mt-6">
+            <Link
+              href="/profile/linked-accounts"
+              className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            >
+              Add your first link
+            </Link>
+          </div>
+        ) : null}
       </div>
     );
   }
