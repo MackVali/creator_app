@@ -541,6 +541,86 @@ export default function GoalsPage() {
     updateGoal({ ...goal, active: nextActive, status });
   };
 
+  const handleDelete = async (goal: Goal) => {
+    if (!userId) return;
+
+    const shouldProceed =
+      typeof window === "undefined" ||
+      window.confirm(
+        "Deleting this goal will also delete any related projects and tasks. Are you sure?"
+      );
+
+    if (!shouldProceed) {
+      return;
+    }
+
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    try {
+      const { data: projectRows, error: projectFetchError } = await supabase
+        .from("projects")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("goal_id", goal.id);
+
+      if (projectFetchError) {
+        throw projectFetchError;
+      }
+
+      const projectIds = projectRows?.map((project) => project.id) ?? [];
+
+      if (projectIds.length > 0) {
+        const { error: deleteTasksError } = await supabase
+          .from("tasks")
+          .delete()
+          .eq("user_id", userId)
+          .in("project_id", projectIds);
+
+        if (deleteTasksError) {
+          throw deleteTasksError;
+        }
+
+        const { error: deleteProjectSkillsError } = await supabase
+          .from("project_skills")
+          .delete()
+          .in("project_id", projectIds);
+
+        if (deleteProjectSkillsError) {
+          throw deleteProjectSkillsError;
+        }
+
+        const { error: deleteProjectsError } = await supabase
+          .from("projects")
+          .delete()
+          .in("id", projectIds);
+
+        if (deleteProjectsError) {
+          throw deleteProjectsError;
+        }
+      }
+
+      const { error: deleteGoalError } = await supabase
+        .from("goals")
+        .delete()
+        .eq("id", goal.id);
+
+      if (deleteGoalError) {
+        throw deleteGoalError;
+      }
+
+      setGoals((gs) => gs.filter((g) => g.id !== goal.id));
+
+      if (editing?.id === goal.id) {
+        setEditing(null);
+        setDrawer(false);
+        router.replace("/goals");
+      }
+    } catch (err) {
+      console.error("Error deleting goal:", err);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <div className="relative min-h-screen overflow-hidden bg-[#05070c] text-white">
@@ -583,6 +663,7 @@ export default function GoalsPage() {
                   goal={goal}
                   onEdit={() => handleEdit(goal)}
                   onToggleActive={() => handleToggleActive(goal)}
+                  onDelete={() => handleDelete(goal)}
                 />
               ))}
             </div>

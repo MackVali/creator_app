@@ -15,9 +15,10 @@ interface GoalCardProps {
   goal: Goal;
   onEdit?: () => void;
   onToggleActive?: () => void;
+  onDelete?: () => void;
 }
 
-export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
+export function GoalCard({ goal, onEdit, onToggleActive, onDelete }: GoalCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -106,6 +107,12 @@ export function GoalCard({ goal, onEdit, onToggleActive }: GoalCardProps) {
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => onToggleActive?.()}>
                 {goal.active ? "Mark Inactive" : "Mark Active"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-rose-400 focus:text-rose-300"
+                onSelect={() => onDelete?.()}
+              >
+                Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
