@@ -1,4 +1,5 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
+import { normalizeUuid } from "@/lib/utils/uuid";
 import type { CatRow } from "../types/cat";
 
 export async function getCatsForUser(userId: string) {
@@ -21,31 +22,74 @@ export async function getCatsForUser(userId: string) {
 }
 
 export async function updateCatColor(catId: string, color: string) {
+  const normalizedId = normalizeUuid(catId);
+  if (!normalizedId) {
+    console.warn("Refusing to update color for invalid category id", catId);
+    return;
+  }
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
   const { error } = await sb
     .from("cats")
     .update({ color_hex: color })
-    .eq("id", catId);
+    .eq("id", normalizedId);
   if (error) throw error;
 }
 
 export async function updateCatOrder(catId: string, order: number) {
+  const normalizedId = normalizeUuid(catId);
+  if (!normalizedId) {
+    console.warn("Refusing to update sort order for invalid category id", catId);
+    return;
+  }
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
   const { error } = await sb
     .from("cats")
     .update({ sort_order: order })
-    .eq("id", catId);
+    .eq("id", normalizedId);
   if (error) throw error;
 }
 
 export async function updateCatIcon(catId: string, icon: string | null) {
+  const normalizedId = normalizeUuid(catId);
+  if (!normalizedId) {
+    console.warn("Refusing to update icon for invalid category id", catId);
+    return;
+  }
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
   const { error } = await sb
     .from("cats")
     .update({ icon })
-    .eq("id", catId);
+    .eq("id", normalizedId);
   if (error) throw error;
+}
+
+export async function updateCatsOrderBulk(
+  updates: Array<{ id: string; sort_order: number }>
+) {
+  if (updates.length === 0) return;
+  const sb = getSupabaseBrowser();
+  if (!sb) throw new Error("Supabase client not available");
+
+  const sanitized = updates
+    .map(({ id, sort_order }) => {
+      const normalizedId = normalizeUuid(id);
+      if (!normalizedId) return null;
+      return { id: normalizedId, sort_order };
+    })
+    .filter((entry): entry is { id: string; sort_order: number } => entry !== null);
+
+  if (sanitized.length === 0) {
+    return;
+  }
+
+  for (const { id, sort_order } of sanitized) {
+    const { error } = await sb
+      .from("cats")
+      .update({ sort_order })
+      .eq("id", id);
+    if (error) throw error;
+  }
 }

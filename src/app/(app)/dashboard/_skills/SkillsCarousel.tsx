@@ -5,10 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import CategoryCard from "./CategoryCard";
-import useSkillsData from "./useSkillsData";
+import useSkillsData, { type Category } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
+import ReorderCatsModal from "./ReorderCatsModal";
+import { updateCatsOrderBulk } from "@/lib/data/cats";
+import { normalizeUuid } from "@/lib/utils/uuid";
+import { useToastHelpers } from "@/components/ui/toast";
 
 const FALLBACK_COLOR = "#6366f1";
+export const PLACEHOLDER_CATEGORY_ID = "uncategorized";
 
 function parseHex(hex?: string | null) {
   if (!hex) {
@@ -37,7 +42,7 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 }
 
 export default function SkillsCarousel() {
-  const { categories, skillsByCategory, isLoading } = useSkillsData();
+  const { categories: fetchedCategories, skillsByCategory, isLoading } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
 
@@ -46,12 +51,21 @@ export default function SkillsCarousel() {
   const activeIndexRef = useRef(0);
   const scrollFrame = useRef<number | null>(null);
 
+  const [categories, setCategories] = useState<Category[]>(fetchedCategories);
   const [activeIndex, setActiveIndex] = useState(0);
   const [skillDragging, setSkillDragging] = useState(false);
   const [catOverrides, setCatOverrides] = useState<
     Record<string, { color?: string | null; icon?: string | null }>
   >({});
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [pendingActiveId, setPendingActiveId] = useState<string | null>(null);
+  const toast = useToastHelpers();
+
+  useEffect(() => {
+    setCategories(fetchedCategories);
+  }, [fetchedCategories]);
 
   useEffect(() => {
     setCatOverrides((prev) => {
@@ -107,6 +121,26 @@ export default function SkillsCarousel() {
     },
     [categories, router, search]
   );
+
+  useEffect(() => {
+    if (!pendingActiveId) return;
+    if (categories.length === 0) {
+      setPendingActiveId(null);
+      return;
+    }
+
+    const nextIndex = categories.findIndex((cat) => cat.id === pendingActiveId);
+    const fallbackIndex = nextIndex >= 0 ? nextIndex : 0;
+    activeIndexRef.current = fallbackIndex;
+    setActiveIndex(fallbackIndex);
+
+    const frame = requestAnimationFrame(() => {
+      scrollToIndex(fallbackIndex, { instant: true, skipUrl: true });
+    });
+
+    setPendingActiveId(null);
+    return () => cancelAnimationFrame(frame);
+  }, [categories, pendingActiveId, scrollToIndex]);
 
   const syncToNearestCard = useCallback(() => {
     const track = trackRef.current;
@@ -219,6 +253,84 @@ export default function SkillsCarousel() {
     return () => window.removeEventListener("resize", handleResize);
   }, [scrollToIndex, syncToNearestCard]);
 
+  const handleSaveCategoryOrder = useCallback(
+    async (orderedList: Category[]) => {
+      if (orderedList.length === 0) return;
+
+      const trimmedOrder = orderedList.map((cat) => ({
+        ...cat,
+        id: typeof cat.id === "string" ? cat.id.trim() : cat.id,
+      }));
+
+      const placeholderOnly = trimmedOrder.every(
+        (cat) => cat.id === PLACEHOLDER_CATEGORY_ID
+      );
+
+      if (placeholderOnly) {
+        const newOrdered = trimmedOrder.map((cat, index) => ({
+          ...cat,
+          order: index,
+        }));
+        const currentActiveId = categories[activeIndexRef.current]?.id ?? null;
+        setCategories(newOrdered);
+        setPendingActiveId(currentActiveId ?? newOrdered[0]?.id ?? null);
+        return;
+      }
+
+      const invalidEntries = trimmedOrder.filter(
+        (cat) =>
+          cat.id !== PLACEHOLDER_CATEGORY_ID && normalizeUuid(cat.id) === null
+      );
+
+      if (invalidEntries.length > 0) {
+        const message =
+          "One or more categories are missing valid IDs. Please refresh and try again.";
+        toast.error("Unable to save order", message);
+        throw new Error(message);
+      }
+
+      const persistable = trimmedOrder
+        .map((cat) => {
+          if (cat.id === PLACEHOLDER_CATEGORY_ID) {
+            return null;
+          }
+          const normalizedId = normalizeUuid(cat.id);
+          return normalizedId ? { id: normalizedId, category: cat } : null;
+        })
+        .filter(
+          (entry): entry is { id: string; category: Category } => entry !== null
+        );
+
+      setIsSavingOrder(true);
+      const updates = persistable.map(({ id }, index) => ({
+        id,
+        sort_order: index,
+      }));
+
+      try {
+        await updateCatsOrderBulk(updates);
+        const newOrdered = trimmedOrder.map((cat, index) => ({
+          ...cat,
+          order: index,
+        }));
+        const currentActiveId = categories[activeIndexRef.current]?.id ?? null;
+        setCategories(newOrdered);
+        setPendingActiveId(currentActiveId ?? newOrdered[0]?.id ?? null);
+        toast.success("Order updated", "Your categories were reordered.");
+      } catch (error) {
+        console.error("Failed to update category order", error);
+        toast.error(
+          "Failed to save order",
+          error instanceof Error ? error.message : "Please try again."
+        );
+        throw error;
+      } finally {
+        setIsSavingOrder(false);
+      }
+    },
+    [categories, toast]
+  );
+
   if (isLoading) {
     return <div className="py-8 text-center text-zinc-400">Loading...</div>;
   }
@@ -227,6 +339,8 @@ export default function SkillsCarousel() {
     return <div className="py-8 text-center text-zinc-400">No skills yet</div>;
   }
 
+  const hasOnlyPlaceholder =
+    categories.length === 1 && categories[0]?.id === PLACEHOLDER_CATEGORY_ID;
   const getCategoryColor = (category: (typeof categories)[number]) =>
     catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
   const getCategoryIcon = (category: (typeof categories)[number]) =>
@@ -321,6 +435,7 @@ export default function SkillsCarousel() {
                   colorOverride={getCategoryColor(category)}
                   iconOverride={getCategoryIcon(category)}
                   menuOpen={openMenuFor === category.id}
+                  canReorder={!hasOnlyPlaceholder}
                   onMenuOpenChange={(open) => {
                     setOpenMenuFor((current) => {
                       if (open) {
@@ -349,6 +464,7 @@ export default function SkillsCarousel() {
                       },
                     }))
                   }
+                  onOrderRequest={() => setReorderOpen(true)}
                 />
               </div>
             );
@@ -413,6 +529,13 @@ export default function SkillsCarousel() {
           );
         })}
       </div>
+      <ReorderCatsModal
+        open={reorderOpen}
+        categories={categories}
+        onClose={() => setReorderOpen(false)}
+        onSave={handleSaveCategoryOrder}
+        isSaving={isSavingOrder}
+      />
     </div>
   );
 }
