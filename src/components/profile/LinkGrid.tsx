@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import { ContentCard } from "@/lib/types";
 import LinkTile from "./LinkTile";
 
@@ -9,12 +7,14 @@ interface LinkGridProps {
   links: ContentCard[];
   loading?: boolean;
   isOwner?: boolean;
+  onManageLinks?: () => void;
 }
 
 export default function LinkGrid({
   links,
   loading = false,
   isOwner = false,
+  onManageLinks,
 }: LinkGridProps) {
   const activeLinks = (links || [])
     .filter((link) => link.is_active)
@@ -58,12 +58,13 @@ export default function LinkGrid({
         </p>
         {isOwner ? (
           <div className="mt-6">
-            <Link
-              href="/profile/linked-accounts"
+            <button
+              type="button"
+              onClick={onManageLinks}
               className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
             >
-              Add your first link
-            </Link>
+              Add a featured link
+            </button>
           </div>
         ) : null}
       </div>
