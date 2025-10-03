@@ -42,16 +42,24 @@ INSERT INTO tasks (id, user_id, name, description, energy, priority, stage, crea
 ('770e8400-e29b-41d4-a716-446655440008', :my_uid, 'Complete Lesson 1', 'Finish first Spanish lesson on Duolingo', 'MEDIUM', 'MEDIUM', 'PRODUCE', NOW(), NOW()),
 ('770e8400-e29b-41d4-a716-446655440009', :my_uid, 'Practice with Language Partner', 'Have 30-minute conversation in Spanish', 'MEDIUM', 'HIGH', 'PRODUCE', NOW(), NOW());
 
+-- Sample Windows
+INSERT INTO windows (id, user_id, label, days, start_local, end_local, energy, created_at)
+VALUES
+('99de8400-e29b-41d4-a716-446655440001', :my_uid, 'Morning Focus', ARRAY[1, 2, 3, 4, 5], '06:00', '08:00', 'HIGH', NOW()),
+('99de8400-e29b-41d4-a716-446655440002', :my_uid, 'Midday Momentum', ARRAY[1, 2, 3, 4, 5], '12:00', '14:00', 'MEDIUM', NOW()),
+('99de8400-e29b-41d4-a716-446655440003', :my_uid, 'Evening Recharge', ARRAY[0, 6], '19:00', '21:00', 'LOW', NOW());
+
 -- Sample Habits
-INSERT INTO habits (id, user_id, name, description, habit_type, recurrence, created_at, updated_at) VALUES
-('880e8400-e29b-41d4-a716-446655440001', :my_uid, 'Morning Reading', 'Read for 30 minutes every morning', 'HABIT', 'daily', NOW(), NOW()),
-('880e8400-e29b-41d4-a716-446655440002', :my_uid, 'Exercise', 'Workout for at least 45 minutes', 'HABIT', 'daily', NOW(), NOW()),
-('880e8400-e29b-41d4-a716-446655440003', :my_uid, 'Guitar Practice', 'Practice guitar for 20 minutes', 'HABIT', 'daily', NOW(), NOW()),
-('880e8400-e29b-41d4-a716-446655440004', :my_uid, 'Spanish Study', 'Study Spanish for 15 minutes', 'HABIT', 'daily', NOW(), NOW()),
-('880e8400-e29b-41d4-a716-446655440005', :my_uid, 'Meditation', 'Meditate for 10 minutes', 'HABIT', 'daily', NOW(), NOW()),
-('880e8400-e29b-41d4-a716-446655440006', :my_uid, 'Writing', 'Write 500 words', 'HABIT', 'daily', NOW(), NOW()),
-('880e8400-e29b-41d4-a716-446655440007', :my_uid, 'Water Intake', 'Drink 8 glasses of water', 'HABIT', 'daily', NOW(), NOW()),
-('880e8400-e29b-41d4-a716-446655440008', :my_uid, 'Evening Walk', 'Take a 20-minute walk after dinner', 'HABIT', 'daily', NOW(), NOW());
+INSERT INTO habits (id, user_id, name, description, habit_type, recurrence, duration_minutes, window_id, created_at, updated_at)
+VALUES
+('880e8400-e29b-41d4-a716-446655440001', :my_uid, 'Morning Reading', 'Read for 30 minutes every morning', 'HABIT', 'daily', 30, '99de8400-e29b-41d4-a716-446655440001', NOW(), NOW()),
+('880e8400-e29b-41d4-a716-446655440002', :my_uid, 'Exercise', 'Workout for at least 45 minutes', 'HABIT', 'daily', 45, '99de8400-e29b-41d4-a716-446655440002', NOW(), NOW()),
+('880e8400-e29b-41d4-a716-446655440003', :my_uid, 'Guitar Practice', 'Practice guitar for 20 minutes', 'HABIT', 'daily', 20, '99de8400-e29b-41d4-a716-446655440003', NOW(), NOW()),
+('880e8400-e29b-41d4-a716-446655440004', :my_uid, 'Spanish Study', 'Study Spanish for 15 minutes', 'HABIT', 'daily', 15, '99de8400-e29b-41d4-a716-446655440003', NOW(), NOW()),
+('880e8400-e29b-41d4-a716-446655440005', :my_uid, 'Meditation', 'Meditate for 10 minutes', 'HABIT', 'daily', 10, '99de8400-e29b-41d4-a716-446655440001', NOW(), NOW()),
+('880e8400-e29b-41d4-a716-446655440006', :my_uid, 'Writing', 'Write 500 words', 'HABIT', 'daily', 40, '99de8400-e29b-41d4-a716-446655440001', NOW(), NOW()),
+('880e8400-e29b-41d4-a716-446655440007', :my_uid, 'Water Intake', 'Drink 8 glasses of water', 'HABIT', 'daily', 5, NULL, NOW(), NOW()),
+('880e8400-e29b-41d4-a716-446655440008', :my_uid, 'Evening Walk', 'Take a 20-minute walk after dinner', 'HABIT', 'daily', 20, '99de8400-e29b-41d4-a716-446655440003', NOW(), NOW());
 
 -- Sample Skills
 INSERT INTO skills (id, user_id, name, icon, level, cat_id, created_at, updated_at) VALUES

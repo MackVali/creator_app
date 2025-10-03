@@ -48,26 +48,38 @@ export interface Database {
         Row: {
           id: string;
           created_at: string;
-          recurrence: number | null;
-          Title: string | null;
-          type_id: number;
-          user_id: string | null;
+          updated_at: string;
+          user_id: string;
+          name: string;
+          description: string | null;
+          habit_type: string;
+          recurrence: string | null;
+          duration_minutes: number | null;
+          window_id: string | null;
         };
         Insert: {
           id?: string;
           created_at?: string;
-          recurrence?: number | null;
-          Title?: string | null;
-          type_id?: number;
-          user_id?: string | null;
+          updated_at?: string;
+          user_id: string;
+          name: string;
+          description?: string | null;
+          habit_type?: string;
+          recurrence?: string | null;
+          duration_minutes?: number | null;
+          window_id?: string | null;
         };
         Update: {
           id?: string;
           created_at?: string;
-          recurrence?: number | null;
-          Title?: string | null;
-          type_id?: number;
-          user_id?: string | null;
+          updated_at?: string;
+          user_id?: string;
+          name?: string;
+          description?: string | null;
+          habit_type?: string;
+          recurrence?: string | null;
+          duration_minutes?: number | null;
+          window_id?: string | null;
         };
       };
       projects: {
