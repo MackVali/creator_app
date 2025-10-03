@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   CheckSquare,
+  Clock,
   ChevronDown,
   FolderKanban,
   Plus,
@@ -276,9 +277,71 @@ const TASK_STAGE_OPTIONS: ChoiceOption[] = [
   { value: "PERFECT", label: "Perfect", description: "Review, tidy, and ship it." },
 ];
 
+interface WindowOption {
+  id: string;
+  label: string;
+  start_local: string | null;
+  end_local: string | null;
+  energy: string | null;
+}
+
+function formatTimeLabel(value: string | null | undefined) {
+  if (!value) return null;
+
+  const [hour, minute] = value.split(":");
+  if (typeof hour === "undefined" || typeof minute === "undefined") {
+    return null;
+  }
+
+  const date = new Date();
+  date.setHours(Number(hour), Number(minute), 0, 0);
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatWindowMeta(window: WindowOption) {
+  const start = formatTimeLabel(window.start_local);
+  const end = formatTimeLabel(window.end_local);
+  const energy = window.energy
+    ? window.energy.replace(/[_-]+/g, " ").toLowerCase()
+    : null;
+  const parts: string[] = [];
+
+  if (start && end) {
+    parts.push(`${start} – ${end}`);
+  }
+
+  if (energy) {
+    parts.push(`${energy} energy`);
+  }
+
+  return parts.join(" • ");
+}
+
+function formatWindowSummary(window: WindowOption) {
+  const meta = formatWindowMeta(window);
+  return meta ? `${window.label} • ${meta}` : window.label;
+}
+
 const HABIT_TYPE_OPTIONS: ChoiceOption[] = [
-  { value: "HABIT", label: "Habit", description: "Momentum-building routines." },
-  { value: "CHORE", label: "Chore", description: "Maintenance that keeps life running." },
+  {
+    value: "HABIT",
+    label: "Habit",
+    description: "Momentum-building routines.",
+  },
+  {
+    value: "CHORE",
+    label: "Chore",
+    description: "Maintenance that keeps life running.",
+  },
+  {
+    value: "ASYNC",
+    label: "Async",
+    description: "Self-paced rituals you can do anytime.",
+  },
 ];
 
 const RECURRENCE_OPTIONS: ChoiceOption[] = [
@@ -307,6 +370,7 @@ interface FormState {
   stage: string;
   type: string;
   recurrence: string;
+  window_id: string;
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -354,6 +418,7 @@ const createInitialFormState = (
       : "",
   type: eventType === "HABIT" ? HABIT_TYPE_OPTIONS[0].value : "",
   recurrence: eventType === "HABIT" ? RECURRENCE_OPTIONS[0].value : "",
+  window_id: eventType === "HABIT" ? "none" : "",
 });
 
 type EventMeta = {
@@ -960,6 +1025,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [windows, setWindows] = useState<WindowOption[]>([]);
+  const [windowsLoading, setWindowsLoading] = useState(false);
+  const [windowError, setWindowError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
@@ -1021,8 +1089,47 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
 
       if (eventType === "HABIT") {
-        const goalsData = await getGoalsForUser(user.id);
-        setGoals(goalsData);
+        setWindowsLoading(true);
+        setWindowError(null);
+        try {
+          const goalsData = await getGoalsForUser(user.id);
+          setGoals(goalsData);
+
+          const { data, error: windowsError } = await supabase
+            .from("windows")
+            .select("id, label, start_local, end_local, energy")
+            .eq("user_id", user.id)
+            .order("start_local", { ascending: true });
+
+          if (windowsError) {
+            throw windowsError;
+          }
+
+          const safeWindows: WindowOption[] = (data ?? []).map((window) => ({
+            id: window.id as string,
+            label: (window.label as string | null) ?? "Untitled window",
+            start_local: (window.start_local as string | null) ?? null,
+            end_local: (window.end_local as string | null) ?? null,
+            energy: (window.energy as string | null) ?? null,
+          }));
+
+          setWindows(safeWindows);
+          setFormData((prev) => ({
+            ...prev,
+            window_id:
+              prev.window_id === "none" ||
+              safeWindows.some((option) => option.id === prev.window_id)
+                ? prev.window_id
+                : "none",
+          }));
+        } catch (error) {
+          console.error("Error loading habit helpers:", error);
+          setWindows([]);
+          setWindowError("Unable to load your time windows right now.");
+          setFormData((prev) => ({ ...prev, window_id: "none" }));
+        } finally {
+          setWindowsLoading(false);
+        }
       }
     } catch (error) {
       console.error("Error loading form data:", error);
@@ -1037,6 +1144,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
   }, [isOpen, mounted, eventType, loadFormData]);
 
+  useEffect(() => {
+    if (eventType !== "HABIT") {
+      setWindows([]);
+      setWindowError(null);
+      setWindowsLoading(false);
+    }
+  }, [eventType]);
+
   const sortedSkills = useMemo(
     () =>
       [...skills].sort((a, b) =>
@@ -1044,6 +1159,47 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       ),
     [skills]
   );
+
+  const windowSelectItems = useMemo(() => {
+    if (windowsLoading) {
+      return [
+        <SelectItem key="loading" value="none" label="Loading windows…">
+          Loading windows…
+        </SelectItem>,
+      ];
+    }
+
+    if (windows.length === 0) {
+      return [
+        <SelectItem key="none" value="none" label="No window preference">
+          No window preference
+        </SelectItem>,
+      ];
+    }
+
+    return [
+      <SelectItem key="none" value="none" label="No window preference">
+        No window preference
+      </SelectItem>,
+      ...windows.map((window) => {
+        const meta = formatWindowMeta(window);
+        const summary = formatWindowSummary(window);
+
+        return (
+          <SelectItem key={window.id} value={window.id} label={summary}>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-zinc-100">
+                {window.label}
+              </span>
+              {meta ? (
+                <span className="text-xs text-zinc-400">{meta}</span>
+              ) : null}
+            </div>
+          </SelectItem>
+        );
+      }),
+    ];
+  }, [windows, windowsLoading]);
 
   const handleTaskSkillSelect = (value: string) => {
     setFormData((prev) => ({ ...prev, skill_id: value }));
@@ -1215,6 +1371,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         duration_min?: number;
         monument_id?: string;
         skill_id?: string;
+        window_id?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1257,6 +1414,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
         insertData.recurrence = formData.recurrence;
+        insertData.window_id =
+          formData.window_id === "none" ? null : formData.window_id;
       }
 
       if (duration !== undefined) {
@@ -1577,15 +1736,28 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       return base.GOAL;
     }
 
-    if (eventType === "HABIT" && formData.type === "CHORE") {
-      return {
-        title: "Create New Chore",
-        badge: "Chore",
-        eyebrow: "Upkeep",
-        accent: "from-amber-500/30 via-amber-500/10 to-transparent",
-        iconBg: "border-amber-500/40 bg-amber-500/10 text-amber-100",
-        icon: Sparkles,
-      };
+    if (eventType === "HABIT") {
+      if (formData.type === "CHORE") {
+        return {
+          title: "Create New Chore",
+          badge: "Chore",
+          eyebrow: "Upkeep",
+          accent: "from-amber-500/30 via-amber-500/10 to-transparent",
+          iconBg: "border-amber-500/40 bg-amber-500/10 text-amber-100",
+          icon: Sparkles,
+        };
+      }
+
+      if (formData.type === "ASYNC") {
+        return {
+          title: "Create New Async Habit",
+          badge: "Async Habit",
+          eyebrow: "On Your Time",
+          accent: "from-cyan-500/25 via-cyan-500/10 to-transparent",
+          iconBg: "border-cyan-500/40 bg-cyan-500/10 text-cyan-100",
+          icon: Clock,
+        };
+      }
     }
 
     return base[eventType];
@@ -2420,6 +2592,35 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                         required
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Preferred Window
+                      </Label>
+                      <Select
+                        value={formData.window_id}
+                        onValueChange={(value) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            window_id: value,
+                          }))
+                        }
+                        placeholder="No window preference"
+                      >
+                        <SelectContent className="space-y-1 p-2">
+                          {windowSelectItems}
+                        </SelectContent>
+                      </Select>
+                      {windowError ? (
+                        <p className="text-xs text-rose-400">
+                          {windowError}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-zinc-500">
+                          Link this habit to a focus window to help it find a
+                          home on your schedule.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </FormSection>
