@@ -64,9 +64,11 @@ interface Props {
   onIconChange?: (icon: string | null) => void;
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
-  onReorder?: (direction: "left" | "right") => void;
+  onReorder?: (direction: "left" | "right" | "first" | "last") => void;
   canMoveLeft?: boolean;
   canMoveRight?: boolean;
+  canMoveToStart?: boolean;
+  canMoveToEnd?: boolean;
   isReordering?: boolean;
 }
 
@@ -84,6 +86,8 @@ export default function CategoryCard({
   onReorder,
   canMoveLeft,
   canMoveRight,
+  canMoveToStart,
+  canMoveToEnd,
   isReordering,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
@@ -314,12 +318,21 @@ export default function CategoryCard({
                   ) : orderOpen ? (
                     <div className="space-y-3">
                       <p className="text-xs font-semibold uppercase text-slate-500">Reorder category</p>
-                      <div className="flex items-center justify-between gap-2 rounded-xl border border-black/20 bg-white/90 px-3 py-2">
+                      <div className="flex items-center gap-2 rounded-xl border border-black/20 bg-white/90 px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("first")}
+                          disabled={!onReorder || !canMoveToStart || isReordering}
+                          className="w-[20%] rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Move to first position"
+                        >
+                          <span aria-hidden>⏮</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => onReorder?.("left")}
                           disabled={!onReorder || !canMoveLeft || isReordering}
-                          className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Move left
                         </button>
@@ -327,9 +340,18 @@ export default function CategoryCard({
                           type="button"
                           onClick={() => onReorder?.("right")}
                           disabled={!onReorder || !canMoveRight || isReordering}
-                          className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Move right
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("last")}
+                          disabled={!onReorder || !canMoveToEnd || isReordering}
+                          className="w-[20%] rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Move to last position"
+                        >
+                          <span aria-hidden>⏭</span>
                         </button>
                       </div>
                       <p className="text-xs text-slate-500">

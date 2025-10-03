@@ -243,8 +243,10 @@ export default function SkillsCarousel() {
     }
   }, []);
 
+  type ReorderDirection = "left" | "right" | "first" | "last";
+
   const reorderCategory = useCallback(
-    (categoryId: string, direction: "left" | "right") => {
+    (categoryId: string, direction: ReorderDirection) => {
       if (isSavingOrder) return;
 
       let nextCategories: Category[] | null = null;
@@ -252,17 +254,55 @@ export default function SkillsCarousel() {
         const currentIndex = previous.findIndex((category) => category.id === categoryId);
         if (currentIndex === -1) return previous;
         const targetIndex = direction === "left" ? currentIndex - 1 : currentIndex + 1;
-        if (targetIndex < 0 || targetIndex >= previous.length) return previous;
         if (previous[currentIndex]?.id === "uncategorized") return previous;
-        if (previous[targetIndex]?.id === "uncategorized") return previous;
 
-        const swapped = [...previous];
-        [swapped[currentIndex], swapped[targetIndex]] = [
-          swapped[targetIndex],
-          swapped[currentIndex],
-        ];
+        const firstReorderableIndex = previous.findIndex((category) => category.id !== "uncategorized");
+        const lastReorderableIndex = (() => {
+          for (let idx = previous.length - 1; idx >= 0; idx -= 1) {
+            if (previous[idx]?.id !== "uncategorized") {
+              return idx;
+            }
+          }
+          return -1;
+        })();
 
-        const mapped = swapped.map((category, index) => ({
+        if (firstReorderableIndex === -1 || lastReorderableIndex === -1) {
+          return previous;
+        }
+
+        let updated: Category[] | null = null;
+
+        if (direction === "left" || direction === "right") {
+          if (targetIndex < firstReorderableIndex || targetIndex > lastReorderableIndex) {
+            return previous;
+          }
+          if (previous[targetIndex]?.id === "uncategorized") return previous;
+
+          updated = [...previous];
+          [updated[currentIndex], updated[targetIndex]] = [
+            updated[targetIndex],
+            updated[currentIndex],
+          ];
+        } else if (direction === "first") {
+          if (currentIndex === firstReorderableIndex) return previous;
+          updated = [...previous];
+          const [category] = updated.splice(currentIndex, 1);
+          updated.splice(firstReorderableIndex, 0, category);
+        } else if (direction === "last") {
+          if (currentIndex === lastReorderableIndex) return previous;
+          updated = [...previous];
+          const [category] = updated.splice(currentIndex, 1);
+          // When removing an earlier item, the last index shifts by -1, so insert at updated length constrained by
+          // the last reorderable slot.
+          const insertionIndex = Math.min(lastReorderableIndex, updated.length);
+          updated.splice(insertionIndex, 0, category);
+        }
+
+        if (!updated) {
+          return previous;
+        }
+
+        const mapped = updated.map((category, index) => ({
           ...category,
           order: index + 1,
         }));
@@ -306,6 +346,16 @@ export default function SkillsCarousel() {
     : FALLBACK_COLOR;
   const canGoPrev = activeIndex > 0;
   const canGoNext = activeIndex < categories.length - 1;
+
+  const firstReorderableIndex = categories.findIndex((category) => category.id !== "uncategorized");
+  const lastReorderableIndex = (() => {
+    for (let idx = categories.length - 1; idx >= 0; idx -= 1) {
+      if (categories[idx]?.id !== "uncategorized") {
+        return idx;
+      }
+    }
+    return -1;
+  })();
 
   return (
     <div
@@ -371,6 +421,10 @@ export default function SkillsCarousel() {
         >
           {categories.map((category, idx) => {
             const isActive = idx === activeIndex;
+            const isUncategorized = category.id === "uncategorized";
+            const canMoveLeft = !isUncategorized && idx > firstReorderableIndex && firstReorderableIndex !== -1;
+            const canMoveRight =
+              !isUncategorized && idx < lastReorderableIndex && lastReorderableIndex !== -1;
             return (
               <div
                 key={category.id}
@@ -419,8 +473,10 @@ export default function SkillsCarousel() {
                     }))
                   }
                   onReorder={(direction) => reorderCategory(category.id, direction)}
-                  canMoveLeft={idx > 0 && category.id !== "uncategorized"}
-                  canMoveRight={idx < categories.length - 1 && category.id !== "uncategorized"}
+                  canMoveLeft={canMoveLeft}
+                  canMoveRight={canMoveRight}
+                  canMoveToStart={canMoveLeft}
+                  canMoveToEnd={canMoveRight}
                   isReordering={isSavingOrder}
                 />
               </div>
