@@ -262,6 +262,33 @@ export default function SkillsCarousel() {
         id: typeof cat.id === "string" ? cat.id.trim() : cat.id,
       }));
 
+      const placeholderOnly = trimmedOrder.every(
+        (cat) => cat.id === PLACEHOLDER_CATEGORY_ID
+      );
+
+      if (placeholderOnly) {
+        const newOrdered = trimmedOrder.map((cat, index) => ({
+          ...cat,
+          order: index,
+        }));
+        const currentActiveId = categories[activeIndexRef.current]?.id ?? null;
+        setCategories(newOrdered);
+        setPendingActiveId(currentActiveId ?? newOrdered[0]?.id ?? null);
+        return;
+      }
+
+      const invalidEntries = trimmedOrder.filter(
+        (cat) =>
+          cat.id !== PLACEHOLDER_CATEGORY_ID && normalizeUuid(cat.id) === null
+      );
+
+      if (invalidEntries.length > 0) {
+        const message =
+          "One or more categories are missing valid IDs. Please refresh and try again.";
+        toast.error("Unable to save order", message);
+        throw new Error(message);
+      }
+
       const persistable = trimmedOrder
         .map((cat) => {
           if (cat.id === PLACEHOLDER_CATEGORY_ID) {
@@ -273,17 +300,6 @@ export default function SkillsCarousel() {
         .filter(
           (entry): entry is { id: string; category: Category } => entry !== null
         );
-
-      if (persistable.length === 0) {
-        const newOrdered = trimmedOrder.map((cat, index) => ({
-          ...cat,
-          order: index,
-        }));
-        const currentActiveId = categories[activeIndexRef.current]?.id ?? null;
-        setCategories(newOrdered);
-        setPendingActiveId(currentActiveId ?? newOrdered[0]?.id ?? null);
-        return;
-      }
 
       setIsSavingOrder(true);
       const updates = persistable.map(({ id }, index) => ({

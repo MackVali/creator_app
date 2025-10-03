@@ -22,32 +22,47 @@ export async function getCatsForUser(userId: string) {
 }
 
 export async function updateCatColor(catId: string, color: string) {
+  const normalizedId = normalizeUuid(catId);
+  if (!normalizedId) {
+    console.warn("Refusing to update color for invalid category id", catId);
+    return;
+  }
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
   const { error } = await sb
     .from("cats")
     .update({ color_hex: color })
-    .eq("id", catId);
+    .eq("id", normalizedId);
   if (error) throw error;
 }
 
 export async function updateCatOrder(catId: string, order: number) {
+  const normalizedId = normalizeUuid(catId);
+  if (!normalizedId) {
+    console.warn("Refusing to update sort order for invalid category id", catId);
+    return;
+  }
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
   const { error } = await sb
     .from("cats")
     .update({ sort_order: order })
-    .eq("id", catId);
+    .eq("id", normalizedId);
   if (error) throw error;
 }
 
 export async function updateCatIcon(catId: string, icon: string | null) {
+  const normalizedId = normalizeUuid(catId);
+  if (!normalizedId) {
+    console.warn("Refusing to update icon for invalid category id", catId);
+    return;
+  }
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
   const { error } = await sb
     .from("cats")
     .update({ icon })
-    .eq("id", catId);
+    .eq("id", normalizedId);
   if (error) throw error;
 }
 

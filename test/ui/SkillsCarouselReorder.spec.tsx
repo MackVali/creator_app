@@ -151,7 +151,7 @@ describe("SkillsCarousel reorder handling", () => {
     ]);
   });
 
-  it("ignores non-UUID categories when saving order", async () => {
+  it("surfaces an error when non-UUID categories are present", async () => {
     mockUseSkillsData.mockReturnValueOnce({
       categories: [
         { id: VALID_CAT_A, name: "Arcana" },
@@ -165,17 +165,20 @@ describe("SkillsCarousel reorder handling", () => {
     expect(capturedOnSave).toBeTypeOf("function");
 
     await act(async () => {
-      await capturedOnSave?.([
-        { id: "temp-cat", name: "Temporary" },
-        { id: VALID_CAT_A, name: "Arcana" },
-        { id: VALID_CAT_B, name: "Mysticism" },
-      ]);
+      await expect(
+        capturedOnSave!([
+          { id: "temp-cat", name: "Temporary" },
+          { id: VALID_CAT_A, name: "Arcana" },
+          { id: VALID_CAT_B, name: "Mysticism" },
+        ])
+      ).rejects.toThrow(/missing valid ids/i);
     });
 
-    expect(updateCatsOrderBulk).toHaveBeenCalledWith([
-      { id: VALID_CAT_A, sort_order: 0 },
-      { id: VALID_CAT_B, sort_order: 1 },
-    ]);
+    expect(updateCatsOrderBulk).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith(
+      "Unable to save order",
+      expect.stringMatching(/missing valid ids/i)
+    );
   });
 
   it("trims whitespace from category ids before persisting", async () => {
