@@ -8,6 +8,41 @@ export type Friend = {
   isOnline?: boolean;
 };
 
+export type FriendRequest = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  mutualFriends: number;
+  note?: string;
+};
+
+export type SentInvite = {
+  id: string;
+  email: string;
+  sentAgo: string;
+  status: 'pending' | 'accepted' | 'expired';
+};
+
+export type SuggestedFriend = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  mutualFriends: number;
+  reason: string;
+};
+
+export type DiscoveryProfile = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  mutualFriends: number;
+  highlight: string;
+  role: string;
+};
+
 export const MOCK_FRIENDS: Friend[] = [
   {
     id: 'u1',
@@ -124,5 +159,118 @@ export const MOCK_FRIENDS: Friend[] = [
     avatarUrl:
       'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Ice_Cube_2014.jpg/160px-Ice_Cube_2014.jpg',
     profileUrl: 'https://www.instagram.com/icecube/',
+  },
+];
+
+export const MOCK_FRIEND_REQUESTS: FriendRequest[] = [
+  {
+    id: 'r1',
+    username: 'dualipa',
+    displayName: 'Dua Lipa',
+    avatarUrl: 'https://i.pravatar.cc/96?img=58',
+    mutualFriends: 8,
+    note: 'Hey! Saw you at the listening party—would love to connect.',
+  },
+  {
+    id: 'r2',
+    username: 'postmalone',
+    displayName: 'Post Malone',
+    avatarUrl: 'https://i.pravatar.cc/96?img=12',
+    mutualFriends: 3,
+  },
+  {
+    id: 'r3',
+    username: 'rosalia',
+    displayName: 'ROSALÍA',
+    avatarUrl: 'https://i.pravatar.cc/96?img=22',
+    mutualFriends: 5,
+    note: 'Collaborating on the summer show lineup—let’s team up!',
+  },
+];
+
+export const MOCK_SENT_INVITES: SentInvite[] = [
+  {
+    id: 'i1',
+    email: 'sza@ctrl.world',
+    sentAgo: '3d ago',
+    status: 'pending',
+  },
+  {
+    id: 'i2',
+    email: 'beyonce@renaissance.tour',
+    sentAgo: '5d ago',
+    status: 'accepted',
+  },
+  {
+    id: 'i3',
+    email: 'frank.ocean@blonded.co',
+    sentAgo: '1w ago',
+    status: 'expired',
+  },
+];
+
+export const MOCK_SUGGESTED_FRIENDS: SuggestedFriend[] = [
+  {
+    id: 's1',
+    username: 'badgalriri',
+    displayName: 'Rihanna',
+    avatarUrl: 'https://i.pravatar.cc/96?img=47',
+    mutualFriends: 12,
+    reason: 'Works with three of your collaborators',
+  },
+  {
+    id: 's2',
+    username: 'theweeknd',
+    displayName: 'The Weeknd',
+    avatarUrl: 'https://i.pravatar.cc/96?img=14',
+    mutualFriends: 6,
+    reason: 'Recently joined your “Mix Lab” workspace',
+  },
+  {
+    id: 's3',
+    username: 'dojacat',
+    displayName: 'Doja Cat',
+    avatarUrl: 'https://i.pravatar.cc/96?img=27',
+    mutualFriends: 4,
+    reason: 'Trending in the Creator community this week',
+  },
+];
+
+export const MOCK_DISCOVERY_PROFILES: DiscoveryProfile[] = [
+  {
+    id: 'd1',
+    username: 'mxsunset',
+    displayName: 'Maya Sunset',
+    avatarUrl: 'https://i.pravatar.cc/96?img=37',
+    mutualFriends: 9,
+    highlight: 'Produces immersive live visuals for touring artists.',
+    role: 'Visual Artist',
+  },
+  {
+    id: 'd2',
+    username: 'samplepackking',
+    displayName: 'Leo Fowler',
+    avatarUrl: 'https://i.pravatar.cc/96?img=31',
+    mutualFriends: 4,
+    highlight: 'Shares weekly sound kits and behind-the-scenes breakdowns.',
+    role: 'Producer • Sound Designer',
+  },
+  {
+    id: 'd3',
+    username: 'tourmoments',
+    displayName: 'Aria Bell',
+    avatarUrl: 'https://i.pravatar.cc/96?img=53',
+    mutualFriends: 6,
+    highlight: 'Documented six global tours in the last year.',
+    role: 'Documentary Filmmaker',
+  },
+  {
+    id: 'd4',
+    username: 'loopalchemy',
+    displayName: 'Nikhil Rao',
+    avatarUrl: 'https://i.pravatar.cc/96?img=9',
+    mutualFriends: 2,
+    highlight: 'Hosts collaborative jam sessions every Thursday night.',
+    role: 'Multi-instrumentalist',
   },
 ];

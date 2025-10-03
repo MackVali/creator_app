@@ -1,15 +1,22 @@
 'use client';
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { MOCK_FRIENDS } from '@/lib/mock/friends';
+import {
+  MOCK_FRIENDS,
+  MOCK_FRIEND_REQUESTS,
+  MOCK_SENT_INVITES,
+  MOCK_SUGGESTED_FRIENDS,
+} from '@/lib/mock/friends';
 import FriendsList from '@/components/friends/FriendsList';
 import SearchFriends from '@/components/friends/SearchFriends';
+import RequestsInvites from '@/components/friends/RequestsInvites';
 import { Select, SelectContent, SelectItem } from '@/components/ui/select';
 
 export default function FriendsPage() {
-  const [tab, setTab] = useState<'friends' | 'search'>('friends');
+  const [tab, setTab] = useState<'friends' | 'requests' | 'search'>('friends');
   const [sort, setSort] =
     useState<'default' | 'alphabetical' | 'online'>('default');
   const friendsTabRef = useRef<HTMLButtonElement>(null);
+  const requestsTabRef = useRef<HTMLButtonElement>(null);
   const searchTabRef = useRef<HTMLButtonElement>(null);
 
   const sortedFriends = useMemo(() => {
@@ -42,7 +49,11 @@ export default function FriendsPage() {
 
     event.preventDefault();
 
-    const order: Array<'friends' | 'search'> = ['friends', 'search'];
+    const order: Array<'friends' | 'requests' | 'search'> = [
+      'friends',
+      'requests',
+      'search',
+    ];
     const currentIndex = order.indexOf(tab);
     const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
     const nextIndex = (currentIndex + direction + order.length) % order.length;
@@ -50,7 +61,12 @@ export default function FriendsPage() {
 
     setTab(nextTab);
 
-    const targetRef = nextTab === 'friends' ? friendsTabRef : searchTabRef;
+    const targetRef =
+      nextTab === 'friends'
+        ? friendsTabRef
+        : nextTab === 'requests'
+          ? requestsTabRef
+          : searchTabRef;
     targetRef.current?.focus();
   };
 
@@ -102,6 +118,20 @@ export default function FriendsPage() {
           Friends
         </button>
         <button
+          ref={requestsTabRef}
+          id="requests-tab"
+          role="tab"
+          onClick={() => setTab('requests')}
+          onKeyDown={handleKeyDown}
+          type="button"
+          aria-selected={tab === 'requests'}
+          aria-controls="requests-panel"
+          tabIndex={tab === 'requests' ? 0 : -1}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm transition ${tab === 'requests' ? 'bg-white/15 text-white' : 'text-white/70 hover:bg-white/10'}`}
+        >
+          Requests & Invites
+        </button>
+        <button
           ref={searchTabRef}
           id="search-tab"
           role="tab"
@@ -125,6 +155,18 @@ export default function FriendsPage() {
         hidden={tab !== 'friends'}
       >
         <FriendsList data={sortedFriends} />
+      </section>
+      <section
+        id="requests-panel"
+        role="tabpanel"
+        aria-labelledby="requests-tab"
+        hidden={tab !== 'requests'}
+      >
+        <RequestsInvites
+          requests={MOCK_FRIEND_REQUESTS}
+          invites={MOCK_SENT_INVITES}
+          suggestions={MOCK_SUGGESTED_FRIENDS}
+        />
       </section>
       <section
         id="search-panel"
