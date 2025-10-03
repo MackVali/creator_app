@@ -80,3 +80,15 @@ html,body{
 }
 
 body.modal-open [data-bottom-nav] { display: none !important; }
+
+@keyframes steel-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}

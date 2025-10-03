@@ -503,7 +503,14 @@ export function GoalDrawer({
                 type="submit"
                 size="sm"
                 disabled={!canSubmit}
-                className="hidden sm:inline-flex"
+                className={cn(
+                  "relative hidden overflow-hidden rounded-lg border border-white/10 text-sm font-semibold text-white transition-[filter,transform,box-shadow] duration-300",
+                  "bg-[linear-gradient(135deg,#9ca3af_0%,#6b7280_22%,#1f2937_58%,#0b0f19_100%)] bg-[length:250%_250%] shadow-[0_18px_42px_-26px_rgba(8,13,23,0.85)]",
+                  "hover:scale-[1.02] hover:brightness-110 hover:shadow-[0_24px_60px_-30px_rgba(8,13,23,0.95)] active:scale-[0.98]",
+                  "motion-safe:animate-[steel-shimmer_6s_linear_infinite] motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:hover:brightness-100",
+                  "disabled:animate-none disabled:brightness-100 disabled:opacity-60 disabled:shadow-none",
+                  "sm:inline-flex"
+                )}
               >
                 Save changes
               </Button>
