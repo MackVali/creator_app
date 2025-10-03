@@ -1,13 +1,39 @@
 'use client';
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { MOCK_FRIENDS } from '@/lib/mock/friends';
 import FriendsList from '@/components/friends/FriendsList';
 import SearchFriends from '@/components/friends/SearchFriends';
+import { Select, SelectContent, SelectItem } from '@/components/ui/select';
 
 export default function FriendsPage() {
   const [tab, setTab] = useState<'friends' | 'search'>('friends');
+  const [sort, setSort] =
+    useState<'default' | 'alphabetical' | 'online'>('default');
   const friendsTabRef = useRef<HTMLButtonElement>(null);
   const searchTabRef = useRef<HTMLButtonElement>(null);
+
+  const sortedFriends = useMemo(() => {
+    if (sort === 'alphabetical') {
+      return [...MOCK_FRIENDS].sort((a, b) =>
+        a.displayName.localeCompare(b.displayName)
+      );
+    }
+
+    if (sort === 'online') {
+      return [...MOCK_FRIENDS].sort((a, b) => {
+        const aOnline = a.isOnline ? 1 : 0;
+        const bOnline = b.isOnline ? 1 : 0;
+
+        if (aOnline !== bOnline) {
+          return bOnline - aOnline;
+        }
+
+        return a.displayName.localeCompare(b.displayName);
+      });
+    }
+
+    return [...MOCK_FRIENDS];
+  }, [sort]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
@@ -34,9 +60,23 @@ export default function FriendsPage() {
       <header className="space-y-1">
         <h1 className="text-xl font-semibold text-white">Friends</h1>
         <div className="flex items-center justify-between text-xs text-white/60">
-          <div className="flex items-center gap-2">
-            <span>Sort by <span className="font-semibold text-white">Default</span></span>
-            <span aria-hidden>⇅</span>
+          <div className="flex items-center gap-3">
+            <span className="text-white/60">Sort by</span>
+            <Select
+              value={sort}
+              onValueChange={(value) =>
+                setSort(value as 'default' | 'alphabetical' | 'online')
+              }
+              className="w-36"
+              triggerClassName="h-8 rounded-lg border-white/10 bg-white/[0.07] px-3 text-left text-xs text-white/80 hover:bg-white/10"
+              contentWrapperClassName="bg-slate-900/95"
+            >
+              <SelectContent className="text-xs text-white/80">
+                <SelectItem value="default">Default</SelectItem>
+                <SelectItem value="alphabetical">Alphabetical</SelectItem>
+                <SelectItem value="online">Online first</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </header>
@@ -84,7 +124,7 @@ export default function FriendsPage() {
         aria-labelledby="friends-tab"
         hidden={tab !== 'friends'}
       >
-        <FriendsList data={MOCK_FRIENDS} />
+        <FriendsList data={sortedFriends} />
       </section>
       <section
         id="search-panel"
@@ -92,7 +132,7 @@ export default function FriendsPage() {
         aria-labelledby="search-tab"
         hidden={tab !== 'search'}
       >
-        <SearchFriends data={MOCK_FRIENDS} />
+        <SearchFriends data={sortedFriends} />
       </section>
 
       {/* Bottom padding for safe-area / bottom nav */}
