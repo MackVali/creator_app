@@ -2204,20 +2204,28 @@ export default function SchedulePage() {
                 className="absolute left-16 right-2"
                 style={{ top: report.top, height: report.height }}
               >
-                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-100/55 bg-zinc-100/16 px-3 py-2 text-zinc-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-50/85">
+                <div
+                  className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-white/60 px-3 py-2 text-slate-100 backdrop-blur-md"
+                  style={{
+                    background:
+                      'radial-gradient(140% 160% at 0% 0%, rgba(255,255,255,0.3), rgba(148,163,184,0.06) 60%), linear-gradient(180deg, rgba(148,163,184,0.14), rgba(24,32,48,0.35))',
+                    boxShadow:
+                      '0 0 36px rgba(180, 200, 255, 0.24), 0 20px 44px rgba(8, 12, 28, 0.55)',
+                  }}
+                >
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-50/90">
                     Window report · {report.windowLabel}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-50/80">
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-50/85">
                     <span>{report.rangeLabel}</span>
                     <span>Energy: {report.energyLabel}</span>
                     <span>Duration: {report.durationLabel}</span>
                   </div>
-                  <p className="mt-2 text-[11px] leading-snug text-zinc-50/95">
+                  <p className="mt-2 text-[11px] leading-snug text-slate-50">
                     {report.summary}
                   </p>
                   {report.details.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-zinc-50/85">
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-slate-100/90">
                       {report.details.map((detail, index) => (
                         <li key={`${report.key}-detail-${index}`}>{detail}</li>
                       ))}
