@@ -1461,6 +1461,9 @@ export default function SchedulePage() {
 
     for (const win of windows) {
       const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(win, currentDate)
+      if (!isValidDate(windowStart) || !isValidDate(windowEnd)) {
+        continue
+      }
       const assigned = assignments.get(win.id) ?? 0
       if (assigned > 0) continue
 
