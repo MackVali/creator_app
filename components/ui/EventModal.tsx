@@ -52,6 +52,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
+import type { Json } from "@/types/supabase";
 
 interface EventModalProps {
   isOpen: boolean;
@@ -1199,60 +1200,97 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
-        const projectsToSave = draftProjects
-          .map((draft) => ({
-            name: formatNameValue(draft.name.trim()),
-            stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
-            priority: draft.priority || DEFAULT_PRIORITY,
-            energy: draft.energy || DEFAULT_ENERGY,
-            why: draft.why.trim(),
-            duration: draft.duration.trim(),
-            tasks: draft.tasks
-              .map((task) => ({
-                name: formatNameValue(task.name.trim()),
-                stage: task.stage || DEFAULT_TASK_STAGE,
-                priority: task.priority || DEFAULT_PRIORITY,
-                energy: task.energy || DEFAULT_ENERGY,
-                notes: task.notes.trim(),
-              }))
-              .filter((task) => task.name.length > 0),
-          }))
-          .filter((draft) => draft.name.length > 0);
+        type TaskPayload = {
+          name: string;
+          stage: string;
+          priority: string;
+          energy: string;
+          notes: string | null;
+        };
+
+        type ProjectPayload = {
+          name: string;
+          stage: string;
+          priority: string;
+          energy: string;
+          why: string | null;
+          duration_min: number | null;
+          tasks: TaskPayload[];
+        };
+
+        const sanitizedProjects = draftProjects
+          .map<ProjectPayload | null>((draft) => {
+            const trimmedName = formatNameValue(draft.name.trim());
+            if (!trimmedName) {
+              return null;
+            }
+
+            const trimmedWhy = draft.why.trim();
+            const parsedDuration = Number.parseFloat(draft.duration.trim());
+
+            const tasks = draft.tasks
+              .map<TaskPayload | null>((task) => {
+                const trimmedTaskName = formatNameValue(task.name.trim());
+                if (!trimmedTaskName) {
+                  return null;
+                }
+
+                const trimmedNotes = task.notes.trim();
+
+                return {
+                  name: trimmedTaskName,
+                  stage: task.stage || DEFAULT_TASK_STAGE,
+                  priority: task.priority || DEFAULT_PRIORITY,
+                  energy: task.energy || DEFAULT_ENERGY,
+                  notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+                };
+              })
+              .filter((task): task is TaskPayload => task !== null);
+
+            return {
+              name: trimmedName,
+              stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
+              priority: draft.priority || DEFAULT_PRIORITY,
+              energy: draft.energy || DEFAULT_ENERGY,
+              why: trimmedWhy.length > 0 ? trimmedWhy : null,
+              duration_min:
+                Number.isFinite(parsedDuration) && parsedDuration > 0
+                  ? Math.max(1, Math.round(parsedDuration))
+                  : null,
+              tasks,
+            };
+          })
+          .filter((project): project is ProjectPayload => project !== null);
+
+        const hasProjects = sanitizedProjects.length > 0;
+        const goalWhy = goalForm.why.trim();
+
+        const goalInput = {
+          user_id: user.id,
+          name: formatNameValue(goalForm.name.trim()),
+          priority: goalForm.priority || DEFAULT_PRIORITY,
+          energy: goalForm.energy || DEFAULT_ENERGY,
+          monument_id: goalForm.monument_id,
+          why: goalWhy ? goalWhy : null,
+        } satisfies Record<string, Json>;
 
         const { data, error: rpcError } = await supabase.rpc(
           "create_goal_with_projects_and_tasks",
           {
-            goal_input: {
-              user_id: user.id,
-              name: formatNameValue(goalForm.name.trim()),
-              priority: goalForm.priority || DEFAULT_PRIORITY,
-              energy: goalForm.energy || DEFAULT_ENERGY,
-              monument_id: goalForm.monument_id,
-              why: goalForm.why.trim() ? goalForm.why.trim() : null,
-            },
-            project_inputs: projectsToSave.map((project) => ({
-              name: project.name,
-              stage: project.stage,
-              priority: project.priority,
-              energy: project.energy,
-              why: project.why.length > 0 ? project.why : null,
-              duration_min:
-                project.duration && Number(project.duration) > 0
-                  ? Math.round(Number(project.duration))
-                  : null,
-              tasks: project.tasks.map((task) => ({
-                name: task.name,
-                stage: task.stage,
-                priority: task.priority,
-                energy: task.energy,
-                notes: task.notes.length > 0 ? task.notes : null,
-              })),
-            }))
+            goal_input: goalInput as Json,
+            project_inputs: hasProjects
+              ? (sanitizedProjects as unknown as Json)
+              : ([] as unknown as Json),
           }
         );
 
         if (rpcError) {
-          console.error("Error creating goal with projects:", rpcError);
+          console.error("Error creating goal with projects:", {
+            message: rpcError.message,
+            details: rpcError.details,
+            hint: rpcError.hint,
+            code: rpcError.code,
+          });
           toast.error("Error", "We couldn't save that goal just yet.");
           return;
         }
@@ -1262,7 +1300,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         toast.success(
           "Saved",
-          projectsToSave.length > 0
+          hasProjects
             ? "Goal, projects, and tasks created successfully"
             : "Goal created successfully"
         );
