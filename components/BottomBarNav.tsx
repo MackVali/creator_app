@@ -15,7 +15,9 @@ export interface BottomBarNavProps {
 
 export function BottomBarNav({ items, currentPath, onNavigate }: BottomBarNavProps) {
   const renderItem = (item: BottomBarNavItem) => {
-    const isActive = item.href === currentPath;
+    const isActive =
+      item.href === currentPath ||
+      (item.href !== "/" && currentPath.startsWith(`${item.href}/`));
     return (
       <a
         key={item.key}
