@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import MessageFriendButton from "@/components/friends/MessageFriendButton";
 import { MOCK_FRIENDS } from "@/lib/mock/friends";
 
 function getFriend(username: string) {
@@ -112,12 +113,12 @@ export default function FriendProfilePage({ params }: { params: { username: stri
               </p>
 
               <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-start">
-                <button
-                  type="button"
+                <MessageFriendButton
+                  friend={friend}
                   className="inline-flex items-center justify-center rounded-full bg-white px-6 py-2 text-sm font-semibold text-slate-950 transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                 >
                   Message {firstName}
-                </button>
+                </MessageFriendButton>
                 {isExternalProfile ? (
                   <a
                     href={friend.profileUrl}
