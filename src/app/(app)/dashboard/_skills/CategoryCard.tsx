@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatIcon, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor, updateCatIcon } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -65,6 +64,12 @@ interface Props {
   onIconChange?: (icon: string | null) => void;
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
+  onReorder?: (direction: "left" | "right" | "first" | "last") => void;
+  canMoveLeft?: boolean;
+  canMoveRight?: boolean;
+  canMoveToStart?: boolean;
+  canMoveToEnd?: boolean;
+  isReordering?: boolean;
 }
 
 export default function CategoryCard({
@@ -78,18 +83,22 @@ export default function CategoryCard({
   onIconChange,
   menuOpen: menuOpenProp,
   onMenuOpenChange,
+  onReorder,
+  canMoveLeft,
+  canMoveRight,
+  canMoveToStart,
+  canMoveToEnd,
+  isReordering,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
   const dragging = useRef(false);
-  const router = useRouter();
 
   const menuOpen = menuOpenProp ?? menuOpenState;
   const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
@@ -104,9 +113,6 @@ export default function CategoryCard({
   useEffect(() => {
     setColor(colorOverride || category.color_hex || "#000000");
   }, [category.color_hex, colorOverride]);
-  useEffect(() => {
-    setOrderValue(category.order ?? 0);
-  }, [category.order]);
   useEffect(() => {
     setLocalSkills([...skills]);
   }, [skills]);
@@ -205,18 +211,6 @@ export default function CategoryCard({
       console.error("Failed to update category icon", e);
     } finally {
       setIconPickerOpen(false);
-      setMenuOpen(false);
-    }
-  };
-
-  const handleOrderSave = async () => {
-    try {
-      await updateCatOrder(category.id, orderValue);
-      router.refresh();
-    } catch (e) {
-      console.error("Failed to update category order", e);
-    } finally {
-      setOrderOpen(false);
       setMenuOpen(false);
     }
   };
@@ -322,19 +316,72 @@ export default function CategoryCard({
                       </div>
                     </div>
                   ) : orderOpen ? (
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="number"
-                        value={orderValue}
-                        onChange={(e) => {
-                          const next = Number(e.target.value);
-                          setOrderValue(Number.isNaN(next) ? 0 : next);
-                        }}
-                        className="w-full rounded border border-black/20 p-2"
-                      />
-                      <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
-                        Save order
-                      </button>
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase text-slate-500">Reorder category</p>
+                      <div className="flex items-stretch divide-x divide-black/10 overflow-hidden rounded-full border border-black/10 bg-white/90 text-slate-700 shadow-sm backdrop-blur-sm">
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("first")}
+                          disabled={!onReorder || !canMoveToStart || isReordering}
+                          className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Move to first position"
+                        >
+                          <span aria-hidden className="relative text-base">⏮</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("left")}
+                          disabled={!onReorder || !canMoveLeft || isReordering}
+                          className="group relative flex flex-1 items-center justify-center px-5 text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <span className="relative">Move left</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("right")}
+                          disabled={!onReorder || !canMoveRight || isReordering}
+                          className="group relative flex flex-1 items-center justify-center px-5 text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <span className="relative">Move right</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("last")}
+                          disabled={!onReorder || !canMoveToEnd || isReordering}
+                          className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Move to last position"
+                        >
+                          <span aria-hidden className="relative text-base">⏭</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {isReordering ? "Saving new order…" : "Move this category earlier or later in the carousel."}
+                      </p>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          className="text-xs font-medium uppercase text-slate-500"
+                          onClick={() => setOrderOpen(false)}
+                        >
+                          Done
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-2">
