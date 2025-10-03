@@ -58,7 +58,7 @@ export function DayTimeline({
           "relative w-full overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(39,39,42,0.35)_0%,_rgba(12,12,18,0.9)_52%,_rgba(6,8,20,0.98)_100%)] pl-16",
           className
         )}
-        style={{ height: `${timelineHeight}px` }}
+        style={{ height: timelineHeight }}
       >
         {hours.map(h => {
           const top = (h - startHour) * 60 * pxPerMin;

@@ -832,29 +832,36 @@ export default function SchedulePage() {
   const year = currentDate.getFullYear()
 
   useEffect(() => {
-    const updateDensity = () => {
-      if (typeof window === 'undefined') return
-      const width = window.innerWidth
-      const height = window.innerHeight
+    if (typeof window === 'undefined') return
+
+    const resolveViewportHeight = () =>
+      window.visualViewport?.height ?? window.innerHeight
+
+    const determineDensity = (width: number, height: number) => {
       if (width <= 640) {
-        if (height < 720) {
-          setPxPerMin(1.25)
-        } else if (height < 900) {
-          setPxPerMin(1.4)
-        } else {
-          setPxPerMin(1.55)
-        }
-      } else {
-        setPxPerMin(2)
+        if (height < 720) return 1.25
+        if (height < 900) return 1.4
+        return 1.55
       }
+      return 2
     }
 
-    updateDensity()
-    window.addEventListener('resize', updateDensity)
-    window.addEventListener('orientationchange', updateDensity)
+    const applyDensity = () => {
+      const next = determineDensity(window.innerWidth, resolveViewportHeight())
+      setPxPerMin(current => (current === next ? current : next))
+    }
+
+    const viewport = window.visualViewport
+
+    applyDensity()
+    window.addEventListener('resize', applyDensity)
+    window.addEventListener('orientationchange', applyDensity)
+    viewport?.addEventListener('resize', applyDensity)
+
     return () => {
-      window.removeEventListener('resize', updateDensity)
-      window.removeEventListener('orientationchange', updateDensity)
+      window.removeEventListener('resize', applyDensity)
+      window.removeEventListener('orientationchange', applyDensity)
+      viewport?.removeEventListener('resize', applyDensity)
     }
   }, [])
 
