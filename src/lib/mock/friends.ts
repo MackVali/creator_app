@@ -33,6 +33,16 @@ export type SuggestedFriend = {
   reason: string;
 };
 
+export type DiscoveryProfile = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  mutualFriends: number;
+  highlight: string;
+  role: string;
+};
+
 export const MOCK_FRIENDS: Friend[] = [
   {
     id: 'u1',
@@ -223,5 +233,44 @@ export const MOCK_SUGGESTED_FRIENDS: SuggestedFriend[] = [
     avatarUrl: 'https://i.pravatar.cc/96?img=27',
     mutualFriends: 4,
     reason: 'Trending in the Creator community this week',
+  },
+];
+
+export const MOCK_DISCOVERY_PROFILES: DiscoveryProfile[] = [
+  {
+    id: 'd1',
+    username: 'mxsunset',
+    displayName: 'Maya Sunset',
+    avatarUrl: 'https://i.pravatar.cc/96?img=37',
+    mutualFriends: 9,
+    highlight: 'Produces immersive live visuals for touring artists.',
+    role: 'Visual Artist',
+  },
+  {
+    id: 'd2',
+    username: 'samplepackking',
+    displayName: 'Leo Fowler',
+    avatarUrl: 'https://i.pravatar.cc/96?img=31',
+    mutualFriends: 4,
+    highlight: 'Shares weekly sound kits and behind-the-scenes breakdowns.',
+    role: 'Producer • Sound Designer',
+  },
+  {
+    id: 'd3',
+    username: 'tourmoments',
+    displayName: 'Aria Bell',
+    avatarUrl: 'https://i.pravatar.cc/96?img=53',
+    mutualFriends: 6,
+    highlight: 'Documented six global tours in the last year.',
+    role: 'Documentary Filmmaker',
+  },
+  {
+    id: 'd4',
+    username: 'loopalchemy',
+    displayName: 'Nikhil Rao',
+    avatarUrl: 'https://i.pravatar.cc/96?img=9',
+    mutualFriends: 2,
+    highlight: 'Hosts collaborative jam sessions every Thursday night.',
+    role: 'Multi-instrumentalist',
   },
 ];
