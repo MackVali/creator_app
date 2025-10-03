@@ -52,6 +52,8 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Json } from "@/types/supabase";
 
 interface EventModalProps {
   isOpen: boolean;
@@ -71,6 +73,144 @@ type ChoiceOption = {
 const formatNameValue = (value: string) => value.toUpperCase();
 const formatNameDisplay = (value?: string | null) =>
   value ? value.toUpperCase() : "";
+
+type GoalWizardRpcInput = {
+  user_id: string;
+  name: string;
+  priority: string;
+  energy: string;
+  monument_id: string;
+  why: string | null;
+};
+
+type NormalizedTaskPayload = {
+  name: string;
+  stage: string;
+  priority: string;
+  energy: string;
+  notes: string | null;
+};
+
+type NormalizedProjectPayload = {
+  name: string;
+  stage: string;
+  priority: string;
+  energy: string;
+  why: string | null;
+  duration_min: number | null;
+  tasks: NormalizedTaskPayload[];
+};
+
+async function cleanupGoalHierarchy(
+  supabase: SupabaseClient,
+  goalId: string
+) {
+  const { error: taskCleanupError } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("goal_id", goalId);
+  if (taskCleanupError) {
+    console.error("Error cleaning up tasks for goal:", taskCleanupError);
+  }
+
+  const { error: projectCleanupError } = await supabase
+    .from("projects")
+    .delete()
+    .eq("goal_id", goalId);
+  if (projectCleanupError) {
+    console.error("Error cleaning up projects for goal:", projectCleanupError);
+  }
+
+  const { error: goalCleanupError } = await supabase
+    .from("goals")
+    .delete()
+    .eq("id", goalId);
+  if (goalCleanupError) {
+    console.error("Error cleaning up goal record:", goalCleanupError);
+  }
+}
+
+async function createGoalFallback(
+  supabase: SupabaseClient,
+  goalInput: GoalWizardRpcInput,
+  projects: NormalizedProjectPayload[]
+): Promise<{ success: boolean; goalId: string | null }> {
+  let createdGoalId: string | null = null;
+
+  try {
+    const { data: goalRecord, error: goalError } = await supabase
+      .from("goals")
+      .insert({
+        user_id: goalInput.user_id,
+        name: goalInput.name,
+        priority: goalInput.priority,
+        energy: goalInput.energy,
+        monument_id: goalInput.monument_id,
+        why: goalInput.why,
+      })
+      .select("id")
+      .single();
+
+    if (goalError || !goalRecord?.id) {
+      console.error("Fallback goal insert failed:", goalError);
+      return { success: false, goalId: null };
+    }
+
+    createdGoalId = goalRecord.id;
+
+    for (const project of projects) {
+      const { data: projectRecord, error: projectError } = await supabase
+        .from("projects")
+        .insert({
+          user_id: goalInput.user_id,
+          goal_id: createdGoalId,
+          name: project.name,
+          stage: project.stage,
+          priority: project.priority,
+          energy: project.energy,
+          why: project.why,
+          duration_min: project.duration_min,
+        })
+        .select("id")
+        .single();
+
+      if (projectError || !projectRecord?.id) {
+        console.error("Fallback project insert failed:", projectError);
+        throw projectError ?? new Error("Project insert failed");
+      }
+
+      if (project.tasks.length > 0) {
+        const { error: taskError } = await supabase
+          .from("tasks")
+          .insert(
+            project.tasks.map((task) => ({
+              user_id: goalInput.user_id,
+              goal_id: createdGoalId,
+              project_id: projectRecord.id,
+              name: task.name,
+              stage: task.stage,
+              priority: task.priority,
+              energy: task.energy,
+              notes: task.notes,
+            }))
+          );
+
+        if (taskError) {
+          console.error("Fallback task insert failed:", taskError);
+          throw taskError;
+        }
+      }
+    }
+
+    return { success: true, goalId: createdGoalId };
+  } catch (error) {
+    console.error("Fallback goal creation failed:", error);
+    if (createdGoalId) {
+      await cleanupGoalHierarchy(supabase, createdGoalId);
+    }
+    return { success: false, goalId: null };
+  }
+}
 
 const PRIORITY_OPTIONS: ChoiceOption[] = [
   { value: "NO", label: "No Priority" },
@@ -1170,7 +1310,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
-      if (!goalForm.monument_id) {
+      if (!goalForm.monument_id.trim()) {
         toast.error(
           "Monument required",
           "Select a monument to ground this goal."
@@ -1199,70 +1339,115 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
-        const projectsToSave = draftProjects
-          .map((draft) => ({
-            name: formatNameValue(draft.name.trim()),
-            stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
-            priority: draft.priority || DEFAULT_PRIORITY,
-            energy: draft.energy || DEFAULT_ENERGY,
-            why: draft.why.trim(),
-            duration: draft.duration.trim(),
-            tasks: draft.tasks
-              .map((task) => ({
-                name: formatNameValue(task.name.trim()),
-                stage: task.stage || DEFAULT_TASK_STAGE,
-                priority: task.priority || DEFAULT_PRIORITY,
-                energy: task.energy || DEFAULT_ENERGY,
-                notes: task.notes.trim(),
-              }))
-              .filter((task) => task.name.length > 0),
-          }))
-          .filter((draft) => draft.name.length > 0);
+        const sanitizedProjects = draftProjects
+          .map<NormalizedProjectPayload | null>((draft) => {
+            const rawName = draft.name.trim();
+            const formattedName = formatNameValue(rawName);
+            if (!formattedName) {
+              return null;
+            }
+
+            const trimmedWhy = draft.why.trim();
+            const parsedDuration = Number.parseFloat(draft.duration.trim());
+
+            const tasks = draft.tasks
+              .map<NormalizedTaskPayload | null>((task) => {
+                const rawTaskName = task.name.trim();
+                const formattedTaskName = formatNameValue(rawTaskName);
+                if (!formattedTaskName) {
+                  return null;
+                }
+
+                const trimmedNotes = task.notes.trim();
+
+                return {
+                  name: formattedTaskName,
+                  stage: task.stage || DEFAULT_TASK_STAGE,
+                  priority: task.priority || DEFAULT_PRIORITY,
+                  energy: task.energy || DEFAULT_ENERGY,
+                  notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+                } satisfies NormalizedTaskPayload;
+              })
+              .filter((task): task is NormalizedTaskPayload => task !== null);
+
+            return {
+              name: formattedName,
+              stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
+              priority: draft.priority || DEFAULT_PRIORITY,
+              energy: draft.energy || DEFAULT_ENERGY,
+              why: trimmedWhy.length > 0 ? trimmedWhy : null,
+              duration_min:
+                Number.isFinite(parsedDuration) && parsedDuration > 0
+                  ? Math.max(1, Math.round(parsedDuration))
+                  : null,
+              tasks,
+            } satisfies NormalizedProjectPayload;
+          })
+          .filter(
+            (project): project is NormalizedProjectPayload => project !== null
+          );
+
+        const hasProjects = sanitizedProjects.length > 0;
+        const goalWhy = goalForm.why.trim();
+        const trimmedGoalName = goalForm.name.trim();
+        const selectedMonumentId = goalForm.monument_id.trim();
+
+        const goalInput: GoalWizardRpcInput = {
+          user_id: user.id,
+          name: formatNameValue(trimmedGoalName),
+          priority: goalForm.priority || DEFAULT_PRIORITY,
+          energy: goalForm.energy || DEFAULT_ENERGY,
+          monument_id: selectedMonumentId,
+          why: goalWhy ? goalWhy : null,
+        };
 
         const { data, error: rpcError } = await supabase.rpc(
           "create_goal_with_projects_and_tasks",
           {
-            goal_input: {
-              user_id: user.id,
-              name: formatNameValue(goalForm.name.trim()),
-              priority: goalForm.priority || DEFAULT_PRIORITY,
-              energy: goalForm.energy || DEFAULT_ENERGY,
-              monument_id: goalForm.monument_id,
-              why: goalForm.why.trim() ? goalForm.why.trim() : null,
-            },
-            project_inputs: projectsToSave.map((project) => ({
-              name: project.name,
-              stage: project.stage,
-              priority: project.priority,
-              energy: project.energy,
-              why: project.why.length > 0 ? project.why : null,
-              duration_min:
-                project.duration && Number(project.duration) > 0
-                  ? Math.round(Number(project.duration))
-                  : null,
-              tasks: project.tasks.map((task) => ({
-                name: task.name,
-                stage: task.stage,
-                priority: task.priority,
-                energy: task.energy,
-                notes: task.notes.length > 0 ? task.notes : null,
-              })),
-            }))
+            goal_input: goalInput as unknown as Json,
+            project_inputs: hasProjects
+              ? (sanitizedProjects as unknown as Json)
+              : ([] as unknown as Json),
           }
         );
 
-        if (rpcError) {
-          console.error("Error creating goal with projects:", rpcError);
-          toast.error("Error", "We couldn't save that goal just yet.");
-          return;
-        }
+        let createdGoalId: string | undefined;
 
-        const goalPayload = (data as { goal?: { id?: string } } | null) ?? null;
-        const createdGoalId = goalPayload?.goal?.id;
+        if (rpcError || !data) {
+          if (rpcError) {
+            console.error("Error creating goal with projects via RPC:", {
+              message: rpcError.message,
+              details: rpcError.details,
+              hint: rpcError.hint,
+              code: rpcError.code,
+            });
+          } else {
+            console.error(
+              "RPC returned no data when creating goal with projects."
+            );
+          }
+
+          const fallbackResult = await createGoalFallback(
+            supabase,
+            goalInput,
+            sanitizedProjects
+          );
+
+          if (!fallbackResult.success || !fallbackResult.goalId) {
+            toast.error("Error", "We couldn't save that goal just yet.");
+            return;
+          }
+
+          console.warn("Goal created via fallback inserts.");
+          createdGoalId = fallbackResult.goalId ?? undefined;
+        } else {
+          const goalPayload = (data as { goal?: { id?: string } } | null) ?? null;
+          createdGoalId = goalPayload?.goal?.id;
+        }
 
         toast.success(
           "Saved",
-          projectsToSave.length > 0
+          hasProjects
             ? "Goal, projects, and tasks created successfully"
             : "Goal created successfully"
         );
@@ -1298,7 +1483,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
-      if (!goalForm.monument_id) {
+      if (!goalForm.monument_id.trim()) {
         toast.error(
           "Monument required",
           "Select a monument to ground this goal."
@@ -1317,6 +1502,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
     await handleCompleteGoalWizard();
   };
+
+  const handleSaveGoalWizard = useCallback(async () => {
+    if (isSaving) {
+      return;
+    }
+    await handleCompleteGoalWizard();
+  }, [handleCompleteGoalWizard, isSaving]);
 
   const handlePlanGoal = async () => {
     if (isSaving) {
@@ -1412,7 +1604,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const wizardPrimaryDisabled =
     isSaving ||
     (goalWizardStep === "GOAL" &&
-      (loading || !goalForm.name.trim() || !goalForm.monument_id));
+      (loading ||
+        !goalForm.name.trim() ||
+        !goalForm.monument_id.trim()));
+  const canSaveGoalWizard =
+    !loading &&
+    !isSaving &&
+    goalForm.name.trim().length > 0 &&
+    goalForm.monument_id.trim().length > 0;
+  const saveButtonLabel = isSaving ? "Saving..." : "Save goal";
 
   if (!isOpen || !mounted || !eventType) {
     return null;
@@ -2238,7 +2438,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       loading ||
                       isSaving ||
                       !goalForm.name.trim() ||
-                      !goalForm.monument_id
+                      !goalForm.monument_id.trim()
                     }
                     variant="secondary"
                     className="h-11 rounded-xl bg-white/[0.08] px-5 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(59,130,246,0.45)] transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2269,6 +2469,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       className="h-11 rounded-xl border border-transparent px-6 text-sm font-semibold text-zinc-200 hover:border-white/10 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Back
+                    </Button>
+                  ) : null}
+                  {goalWizardStep !== "TASKS" ? (
+                    <Button
+                      type="button"
+                      onClick={handleSaveGoalWizard}
+                      disabled={!canSaveGoalWizard}
+                      className="h-11 rounded-xl bg-blue-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-12px_rgba(37,99,235,0.65)] transition hover:bg-blue-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {saveButtonLabel}
                     </Button>
                   ) : null}
                   <Button
