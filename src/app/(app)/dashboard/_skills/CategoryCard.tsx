@@ -318,40 +318,56 @@ export default function CategoryCard({
                   ) : orderOpen ? (
                     <div className="space-y-3">
                       <p className="text-xs font-semibold uppercase text-slate-500">Reorder category</p>
-                      <div className="flex items-center gap-2 rounded-xl border border-black/20 bg-white/90 px-3 py-2">
+                      <div className="flex items-stretch divide-x divide-black/10 overflow-hidden rounded-full border border-black/10 bg-white/90 text-slate-700 shadow-sm backdrop-blur-sm">
                         <button
                           type="button"
                           onClick={() => onReorder?.("first")}
                           disabled={!onReorder || !canMoveToStart || isReordering}
-                          className="w-[20%] rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to first position"
                         >
-                          <span aria-hidden>⏮</span>
+                          <span aria-hidden className="relative text-base">⏮</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
                         </button>
                         <button
                           type="button"
                           onClick={() => onReorder?.("left")}
                           disabled={!onReorder || !canMoveLeft || isReordering}
-                          className="flex-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex flex-1 items-center justify-center px-5 text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Move left
+                          <span className="relative">Move left</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
                         </button>
                         <button
                           type="button"
                           onClick={() => onReorder?.("right")}
                           disabled={!onReorder || !canMoveRight || isReordering}
-                          className="flex-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex flex-1 items-center justify-center px-5 text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Move right
+                          <span className="relative">Move right</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
                         </button>
                         <button
                           type="button"
                           onClick={() => onReorder?.("last")}
                           disabled={!onReorder || !canMoveToEnd || isReordering}
-                          className="w-[20%] rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                          className="group relative flex h-9 basis-[18%] items-center justify-center text-xs font-semibold uppercase tracking-wide transition-colors hover:bg-slate-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Move to last position"
                         >
-                          <span aria-hidden>⏭</span>
+                          <span aria-hidden className="relative text-base">⏭</span>
+                          <span
+                            className="pointer-events-none absolute inset-0 opacity-0 transition group-active:opacity-100 group-focus-visible:opacity-100"
+                            style={{ background: withAlpha("#0f172a", 0.04) }}
+                          />
                         </button>
                       </div>
                       <p className="text-xs text-slate-500">
