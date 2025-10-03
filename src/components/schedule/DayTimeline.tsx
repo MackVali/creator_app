@@ -3,12 +3,15 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Clock } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 interface DayTimelineProps {
   startHour?: number;
   endHour?: number;
   pxPerMin?: number;
   date?: Date;
   children?: ReactNode;
+  className?: string;
 }
 
 export function DayTimeline({
@@ -17,6 +20,7 @@ export function DayTimeline({
   pxPerMin = 2,
   date = new Date(),
   children,
+  className,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
@@ -47,55 +51,60 @@ export function DayTimeline({
     hours.push(h);
   }
 
+  const backgroundGradient = [
+    "radial-gradient(140% 140% at 0% 0%, rgba(56, 189, 248, 0.25), rgba(56, 189, 248, 0) 60%)",
+    "radial-gradient(120% 120% at 100% 100%, rgba(192, 132, 252, 0.2), rgba(192, 132, 252, 0) 62%)",
+    "linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.78))",
+  ].join(", ");
+
   return (
-    <>
-      <div
-        className="relative w-full pl-16 bg-black overflow-hidden"
-        style={{ height: `${timelineHeight}px` }}
-      >
-        {hours.map(h => {
-          const top = (h - startHour) * 60 * pxPerMin
-          return (
-            <Fragment key={h}>
-              <div
-                className="pointer-events-none absolute left-16 right-0 border-t border-zinc-800"
-                style={{ top }}
-              />
-              <div
-                className="absolute left-0 w-16 pr-2 text-right text-xs text-zinc-500"
-                style={{ top }}
-              >
-                {formatHour(h)}
-              </div>
-            </Fragment>
-          )
-        })}
-
-        {children}
-
-        {showNowLine && (
-          <>
+    <div
+      className={cn(
+        "relative isolate w-full overflow-hidden rounded-[28px] border border-white/10 pl-20 pr-6",
+        "shadow-[0_22px_48px_rgba(15,23,42,0.4)] backdrop-blur",
+        className
+      )}
+      style={{ height: timelineHeight, background: backgroundGradient }}
+    >
+      {hours.map(h => {
+        const top = (h - startHour) * 60 * pxPerMin;
+        return (
+          <Fragment key={h}>
             <div
-              className="now-line absolute left-0 right-0"
-              style={{ top: nowTop }}
+              className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
+              style={{ top }}
             />
             <div
-              className="absolute flex items-center gap-1 text-xs text-white"
-              style={{ top: nowTop - 8, left: 4 }}
+              className="pointer-events-none absolute left-0 w-20 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
+              style={{ top }}
             >
-              <Clock className="h-3 w-3" />
-              <span>Now</span>
+              {formatHour(h)}
             </div>
-            <div
-              className="absolute right-0 text-xs text-white pr-2"
-              style={{ top: nowTop - 8 }}
-            >
-              {formatTime(nowMinutes! + startHour * 60)}
-            </div>
-          </>
-        )}
-      </div>
-    </>
+          </Fragment>
+        );
+      })}
+
+      {children}
+
+      {showNowLine && (
+        <>
+          <div className="now-line absolute left-20 right-6" style={{ top: nowTop }} />
+          <div
+            className="absolute left-6 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
+            style={{ top: nowTop }}
+          >
+            <Clock className="h-3 w-3 text-slate-700" />
+            <span>Now</span>
+          </div>
+          <div
+            className="absolute right-6 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
+            style={{ top: nowTop }}
+          >
+            {formatTime((nowMinutes ?? 0) + startHour * 60)}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
