@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { updateCatColor, updateCatIcon, updateCatOrder } from "@/lib/data/cats";
+import { updateCatColor, updateCatIcon } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
 import type { Category, Skill } from "./useSkillsData";
 
@@ -65,6 +64,10 @@ interface Props {
   onIconChange?: (icon: string | null) => void;
   menuOpen?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
+  onReorder?: (direction: "left" | "right") => void;
+  canMoveLeft?: boolean;
+  canMoveRight?: boolean;
+  isReordering?: boolean;
 }
 
 export default function CategoryCard({
@@ -78,18 +81,20 @@ export default function CategoryCard({
   onIconChange,
   menuOpen: menuOpenProp,
   onMenuOpenChange,
+  onReorder,
+  canMoveLeft,
+  canMoveRight,
+  isReordering,
 }: Props) {
   const [color, setColor] = useState(colorOverride || category.color_hex || "#000000");
   const [menuOpenState, setMenuOpenState] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [orderValue, setOrderValue] = useState<number>(category.order ?? 0);
   const [localSkills, setLocalSkills] = useState(() => [...skills]);
   const [icon, setIcon] = useState<string>(iconOverride || category.icon || "");
   const [iconDraft, setIconDraft] = useState<string>(iconOverride || category.icon || "");
   const dragging = useRef(false);
-  const router = useRouter();
 
   const menuOpen = menuOpenProp ?? menuOpenState;
   const setMenuOpen = (next: boolean | ((prev: boolean) => boolean)) => {
@@ -104,9 +109,6 @@ export default function CategoryCard({
   useEffect(() => {
     setColor(colorOverride || category.color_hex || "#000000");
   }, [category.color_hex, colorOverride]);
-  useEffect(() => {
-    setOrderValue(category.order ?? 0);
-  }, [category.order]);
   useEffect(() => {
     setLocalSkills([...skills]);
   }, [skills]);
@@ -205,18 +207,6 @@ export default function CategoryCard({
       console.error("Failed to update category icon", e);
     } finally {
       setIconPickerOpen(false);
-      setMenuOpen(false);
-    }
-  };
-
-  const handleOrderSave = async () => {
-    try {
-      await updateCatOrder(category.id, orderValue);
-      router.refresh();
-    } catch (e) {
-      console.error("Failed to update category order", e);
-    } finally {
-      setOrderOpen(false);
       setMenuOpen(false);
     }
   };
@@ -322,19 +312,38 @@ export default function CategoryCard({
                       </div>
                     </div>
                   ) : orderOpen ? (
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="number"
-                        value={orderValue}
-                        onChange={(e) => {
-                          const next = Number(e.target.value);
-                          setOrderValue(Number.isNaN(next) ? 0 : next);
-                        }}
-                        className="w-full rounded border border-black/20 p-2"
-                      />
-                      <button className="self-end text-xs font-medium underline" onClick={handleOrderSave}>
-                        Save order
-                      </button>
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase text-slate-500">Reorder category</p>
+                      <div className="flex items-center justify-between gap-2 rounded-xl border border-black/20 bg-white/90 px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("left")}
+                          disabled={!onReorder || !canMoveLeft || isReordering}
+                          className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Move left
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onReorder?.("right")}
+                          disabled={!onReorder || !canMoveRight || isReordering}
+                          className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Move right
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {isReordering ? "Saving new order…" : "Move this category earlier or later in the carousel."}
+                      </p>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          className="text-xs font-medium uppercase text-slate-500"
+                          onClick={() => setOrderOpen(false)}
+                        >
+                          Done
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-2">

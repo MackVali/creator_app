@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import CategoryCard from "./CategoryCard";
-import useSkillsData from "./useSkillsData";
+import useSkillsData, { type Category } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
+import { updateCatOrder } from "@/lib/data/cats";
 
 const FALLBACK_COLOR = "#6366f1";
 
@@ -37,7 +38,7 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 }
 
 export default function SkillsCarousel() {
-  const { categories, skillsByCategory, isLoading } = useSkillsData();
+  const { categories: fetchedCategories, skillsByCategory, isLoading } = useSkillsData();
   const router = useRouter();
   const search = useSearchParams();
 
@@ -46,12 +47,18 @@ export default function SkillsCarousel() {
   const activeIndexRef = useRef(0);
   const scrollFrame = useRef<number | null>(null);
 
+  const [categories, setCategories] = useState(fetchedCategories);
   const [activeIndex, setActiveIndex] = useState(0);
   const [skillDragging, setSkillDragging] = useState(false);
   const [catOverrides, setCatOverrides] = useState<
     Record<string, { color?: string | null; icon?: string | null }>
   >({});
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+
+  useEffect(() => {
+    setCategories(fetchedCategories);
+  }, [fetchedCategories]);
 
   useEffect(() => {
     setCatOverrides((prev) => {
@@ -219,6 +226,68 @@ export default function SkillsCarousel() {
     return () => window.removeEventListener("resize", handleResize);
   }, [scrollToIndex, syncToNearestCard]);
 
+  const persistCategoryOrder = useCallback(async (nextCategories: Category[]) => {
+    const reorderable = nextCategories.filter((category) => category.id !== "uncategorized");
+    if (reorderable.length === 0) {
+      return;
+    }
+    setIsSavingOrder(true);
+    try {
+      await Promise.all(
+        reorderable.map((category, index) => updateCatOrder(category.id, index + 1))
+      );
+    } catch (error) {
+      console.error("Failed to update category order", error);
+    } finally {
+      setIsSavingOrder(false);
+    }
+  }, []);
+
+  const reorderCategory = useCallback(
+    (categoryId: string, direction: "left" | "right") => {
+      if (isSavingOrder) return;
+
+      let nextCategories: Category[] | null = null;
+      setCategories((previous) => {
+        const currentIndex = previous.findIndex((category) => category.id === categoryId);
+        if (currentIndex === -1) return previous;
+        const targetIndex = direction === "left" ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= previous.length) return previous;
+        if (previous[currentIndex]?.id === "uncategorized") return previous;
+        if (previous[targetIndex]?.id === "uncategorized") return previous;
+
+        const swapped = [...previous];
+        [swapped[currentIndex], swapped[targetIndex]] = [
+          swapped[targetIndex],
+          swapped[currentIndex],
+        ];
+
+        const mapped = swapped.map((category, index) => ({
+          ...category,
+          order: index + 1,
+        }));
+
+        nextCategories = mapped;
+
+        const activeId = previous[activeIndexRef.current]?.id;
+        if (activeId) {
+          const nextActiveIndex = mapped.findIndex((category) => category.id === activeId);
+          if (nextActiveIndex !== -1 && nextActiveIndex !== activeIndexRef.current) {
+            activeIndexRef.current = nextActiveIndex;
+            setActiveIndex(nextActiveIndex);
+          }
+        }
+
+        return mapped;
+      });
+
+      if (nextCategories) {
+        void persistCategoryOrder(nextCategories);
+      }
+    },
+    [isSavingOrder, persistCategoryOrder]
+  );
+
   if (isLoading) {
     return <div className="py-8 text-center text-zinc-400">Loading...</div>;
   }
@@ -349,6 +418,10 @@ export default function SkillsCarousel() {
                       },
                     }))
                   }
+                  onReorder={(direction) => reorderCategory(category.id, direction)}
+                  canMoveLeft={idx > 0 && category.id !== "uncategorized"}
+                  canMoveRight={idx < categories.length - 1 && category.id !== "uncategorized"}
+                  isReordering={isSavingOrder}
                 />
               </div>
             );
