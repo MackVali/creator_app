@@ -2205,7 +2205,7 @@ export default function SchedulePage() {
                 style={{ top: report.top, height: report.height }}
               >
                 <div
-                  className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-white/60 px-3 py-2 text-slate-100 backdrop-blur-md"
+                  className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] px-3 py-2 text-slate-100 backdrop-blur-md"
                   style={{
                     background:
                       'radial-gradient(140% 160% at 0% 0%, rgba(255,255,255,0.3), rgba(148,163,184,0.06) 60%), linear-gradient(180deg, rgba(148,163,184,0.14), rgba(24,32,48,0.35))',
