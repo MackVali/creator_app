@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { GoalsHeader } from "./components/GoalsHeader";
 import {
@@ -13,7 +14,7 @@ import {
 import { GoalCard } from "./components/GoalCard";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { EmptyState } from "./components/EmptyState";
-import { GoalDrawer } from "./components/GoalDrawer";
+import { GoalDrawer, type GoalUpdateContext } from "./components/GoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getGoalsForUser } from "@/lib/queries/goals";
@@ -62,6 +63,164 @@ function projectStageToStatus(stage: string): Project["status"] {
   }
 }
 
+function projectStatusToStage(status: Project["status"]): string {
+  switch (status) {
+    case "Todo":
+      return "RESEARCH";
+    case "Done":
+      return "RELEASE";
+    default:
+      return "BUILD";
+  }
+}
+
+function energyToDbValue(energy: Goal["energy"]): string {
+  switch (energy) {
+    case "Extreme":
+      return "EXTREME";
+    case "Ultra":
+      return "ULTRA";
+    case "High":
+      return "HIGH";
+    case "Medium":
+      return "MEDIUM";
+    case "Low":
+      return "LOW";
+    default:
+      return "NO";
+  }
+}
+
+async function syncProjectsAndTasks(
+  supabase: SupabaseClient,
+  userId: string,
+  goalId: string,
+  context: GoalUpdateContext
+) {
+  const { projects, removedProjectIds, removedTaskIds } = context;
+
+  const uniqueRemovedProjectIds = Array.from(new Set(removedProjectIds));
+  if (uniqueRemovedProjectIds.length > 0) {
+    const { error } = await supabase
+      .from("projects")
+      .delete()
+      .in("id", uniqueRemovedProjectIds);
+    if (error) {
+      console.error("Error deleting projects:", error);
+    }
+  }
+
+  const uniqueRemovedTaskIds = Array.from(new Set(removedTaskIds));
+  if (uniqueRemovedTaskIds.length > 0) {
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .in("id", uniqueRemovedTaskIds);
+    if (error) {
+      console.error("Error deleting tasks:", error);
+    }
+  }
+
+  const newProjects = projects.filter((project) => project.isNew);
+  if (newProjects.length > 0) {
+    const { error } = await supabase.from("projects").insert(
+      newProjects.map((project) => ({
+        id: project.id,
+        name: project.name.trim(),
+        goal_id: goalId,
+        user_id: userId,
+        stage: project.stage ?? projectStatusToStage(project.status),
+        energy: project.energyCode ?? energyToDbValue(project.energy),
+        priority: project.priorityCode ?? "NO",
+      }))
+    );
+    if (error) {
+      console.error("Error inserting projects:", error);
+    }
+  }
+
+  const existingProjects = projects.filter((project) => !project.isNew);
+  if (existingProjects.length > 0) {
+    await Promise.all(
+      existingProjects.map(async (project) => {
+        const { error } = await supabase
+          .from("projects")
+          .update({
+            name: project.name.trim(),
+            stage: project.stage ?? projectStatusToStage(project.status),
+            energy: project.energyCode ?? energyToDbValue(project.energy),
+            priority: project.priorityCode ?? "NO",
+          })
+          .eq("id", project.id);
+        if (error) {
+          console.error("Error updating project:", error);
+        }
+      })
+    );
+  }
+
+  const taskInserts: {
+    id: string;
+    name: string;
+    stage: string;
+    project_id: string;
+    user_id: string;
+  }[] = [];
+  const taskUpdates: {
+    id: string;
+    name: string;
+    stage: string;
+    project_id: string;
+  }[] = [];
+
+  projects.forEach((project) => {
+    project.tasks.forEach((task) => {
+      const trimmedName = task.name.trim();
+      if (task.isNew) {
+        taskInserts.push({
+          id: task.id,
+          name: trimmedName,
+          stage: task.stage,
+          project_id: project.id,
+          user_id: userId,
+        });
+      } else {
+        taskUpdates.push({
+          id: task.id,
+          name: trimmedName,
+          stage: task.stage,
+          project_id: project.id,
+        });
+      }
+    });
+  });
+
+  if (taskInserts.length > 0) {
+    const { error } = await supabase.from("tasks").insert(taskInserts);
+    if (error) {
+      console.error("Error inserting tasks:", error);
+    }
+  }
+
+  if (taskUpdates.length > 0) {
+    await Promise.all(
+      taskUpdates.map(async (task) => {
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            name: task.name,
+            stage: task.stage,
+            project_id: task.project_id,
+          })
+          .eq("id", task.id);
+        if (error) {
+          console.error("Error updating task:", error);
+        }
+      })
+    );
+  }
+}
+
 function goalStatusToStatus(status?: string | null): Goal["status"] {
   switch (status) {
     case "COMPLETED":
@@ -98,6 +257,7 @@ export default function GoalsPage() {
   const [drawer, setDrawer] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const editId = searchParams.get("edit");
@@ -123,9 +283,12 @@ export default function GoalsPage() {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) {
+          setUserId(null);
           setLoading(false);
           return;
         }
+
+        setUserId(user.id);
 
         let goalsData: Awaited<ReturnType<typeof getGoalsForUser>> = [];
         try {
@@ -202,7 +365,7 @@ export default function GoalsPage() {
               id: task.id,
               name: task.name,
               stage: task.stage,
-              skill_id: task.skill_id,
+              skillId: task.skill_id ?? null,
             });
             return acc;
           },
@@ -221,9 +384,9 @@ export default function GoalsPage() {
 
         Object.entries(tasksByProject).forEach(([pid, tasks]) => {
           tasks.forEach((t) => {
-            if (t.skill_id) {
+            if (t.skillId) {
               skillsByProject[pid] = skillsByProject[pid] || new Set();
-              skillsByProject[pid].add(t.skill_id);
+              skillsByProject[pid].add(t.skillId);
             }
           });
         });
@@ -236,13 +399,21 @@ export default function GoalsPage() {
           const done = tasks.filter((t) => t.stage === "PERFECT").length;
           const progress = total ? Math.round((done / total) * 100) : 0;
           const status = projectStageToStatus(p.stage);
+          const normalizedTasks = tasks.map((task) => ({
+            ...task,
+            isNew: false,
+          }));
           const proj: Project = {
             id: p.id,
             name: p.name,
             status,
             progress,
             energy: mapEnergy(p.energy),
-            tasks,
+            energyCode: p.energy,
+            stage: p.stage,
+            priorityCode: p.priority ?? undefined,
+            isNew: false,
+            tasks: normalizedTasks,
           };
           const list = projectsByGoal.get(p.goal_id) || [];
           list.push(proj);
@@ -344,7 +515,10 @@ export default function GoalsPage() {
     return sorted;
   }, [goals, search, energy, priority, monument, skill, sort]);
 
-  const addGoal = (goal: Goal) => setGoals((g) => [goal, ...g]);
+  const addGoal = (_goal: Goal, _context: GoalUpdateContext) => {
+    void _context;
+    setGoals((g) => [_goal, ...g]);
+  };
 
   const updateGoal = (goal: Goal) =>
     setGoals((gs) => gs.map((g) => (g.id === goal.id ? goal : g)));
@@ -424,44 +598,62 @@ export default function GoalsPage() {
           onAdd={addGoal}
           initialGoal={editing}
           monuments={monuments}
-          onUpdate={async (goal) => {
+          onUpdate={async (goal, context) => {
             const supabase = getSupabaseBrowser();
             if (supabase) {
-              await supabase
-                .from("goals")
-                .update({
-                  name: goal.title,
-                  priority:
-                    goal.priority === "High"
-                      ? "HIGH"
-                      : goal.priority === "Medium"
-                      ? "MEDIUM"
-                      : "LOW",
-                  energy:
-                    goal.energy === "Extreme"
-                      ? "EXTREME"
-                      : goal.energy === "Ultra"
-                      ? "ULTRA"
-                      : goal.energy === "High"
-                      ? "HIGH"
-                      : goal.energy === "Medium"
-                      ? "MEDIUM"
-                      : goal.energy === "Low"
-                      ? "LOW"
-                      : "NO",
-                  active: goal.active,
-                  status:
-                    goal.status === "Completed"
-                      ? "COMPLETED"
-                      : goal.status === "Overdue"
-                      ? "OVERDUE"
-                      : goal.status === "Inactive"
-                      ? "INACTIVE"
-                      : "ACTIVE",
-                  why: goal.why ?? null,
-                  monument_id: goal.monumentId || null,
-                })
-                .eq("id", goal.id);
+              try {
+                const { error } = await supabase
+                  .from("goals")
+                  .update({
+                    name: goal.title,
+                    priority:
+                      goal.priority === "High"
+                        ? "HIGH"
+                        : goal.priority === "Medium"
+                        ? "MEDIUM"
+                        : "LOW",
+                    energy: energyToDbValue(goal.energy),
+                    active: goal.active,
+                    status:
+                      goal.status === "Completed"
+                        ? "COMPLETED"
+                        : goal.status === "Overdue"
+                        ? "OVERDUE"
+                        : goal.status === "Inactive"
+                        ? "INACTIVE"
+                        : "ACTIVE",
+                    why: goal.why ?? null,
+                    monument_id: goal.monumentId || null,
+                  })
+                  .eq("id", goal.id);
+
+                if (error) {
+                  console.error("Error updating goal:", error);
+                }
+
+                if (context) {
+                  let ownerId = userId;
+                  if (!ownerId) {
+                    const {
+                      data: authData,
+                      error: authError,
+                    } = await supabase.auth.getUser();
+                    if (authError) {
+                      console.error("Error fetching user for updates:", authError);
+                    }
+                    ownerId = authData.user?.id ?? null;
+                    if (ownerId) {
+                      setUserId(ownerId);
+                    }
+                  }
+
+                  if (ownerId) {
+                    await syncProjectsAndTasks(supabase, ownerId, goal.id, context);
+                  }
+                }
+              } catch (err) {
+                console.error("Unexpected error updating goal:", err);
+              }
             }
             updateGoal(goal);
           }}
