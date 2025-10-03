@@ -1026,6 +1026,7 @@ export default function SchedulePage() {
     direction: 0,
     offset: 0,
   })
+  const [pxPerMin, setPxPerMin] = useState(2)
 
   const updateCurrentDate = useCallback(
     (
@@ -1196,8 +1197,47 @@ export default function SchedulePage() {
     }
   }, [userId])
 
+  const determineDensity = useCallback((viewportHeight?: number | null) => {
+    const height =
+      typeof viewportHeight === 'number' && Number.isFinite(viewportHeight)
+        ? viewportHeight
+        : null
+    if (!height) return 2
+    if (height <= 640) return 1.25
+    if (height <= 780) return 1.4
+    if (height <= 920) return 1.55
+    return 2
+  }, [])
+
+  const applyDensity = useCallback((next: number) => {
+    setPxPerMin(prev => (Math.abs(prev - next) < 0.001 ? prev : next))
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const viewport = window.visualViewport
+
+    const recompute = () => {
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+      const density = determineDensity(viewportHeight)
+      applyDensity(density)
+    }
+
+    recompute()
+
+    window.addEventListener('resize', recompute)
+    window.addEventListener('orientationchange', recompute)
+    viewport?.addEventListener('resize', recompute)
+
+    return () => {
+      window.removeEventListener('resize', recompute)
+      window.removeEventListener('orientationchange', recompute)
+      viewport?.removeEventListener('resize', recompute)
+    }
+  }, [determineDensity, applyDensity])
+
   const startHour = 0
-  const pxPerMin = 2
   const year = currentDate.getFullYear()
 
   const refreshScheduledProjectIds = useCallback(async () => {
