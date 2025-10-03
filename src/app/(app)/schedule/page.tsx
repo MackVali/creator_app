@@ -2204,20 +2204,20 @@ export default function SchedulePage() {
                 className="absolute left-16 right-2"
                 style={{ top: report.top, height: report.height }}
               >
-                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-zinc-200/40 bg-zinc-200/10 px-3 py-2 text-zinc-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-100/80">
                     Window report · {report.windowLabel}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-100/70">
                     <span>{report.rangeLabel}</span>
                     <span>Energy: {report.energyLabel}</span>
                     <span>Duration: {report.durationLabel}</span>
                   </div>
-                  <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                  <p className="mt-2 text-[11px] leading-snug text-zinc-50">
                     {report.summary}
                   </p>
                   {report.details.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-zinc-100/85">
                       {report.details.map((detail, index) => (
                         <li key={`${report.key}-detail-${index}`}>{detail}</li>
                       ))}
