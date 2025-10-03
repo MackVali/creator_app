@@ -2,6 +2,8 @@ export interface Task {
   id: string;
   name: string;
   stage: string;
+  skillId?: string | null;
+  isNew?: boolean;
 }
 
 export interface Project {
@@ -12,6 +14,10 @@ export interface Project {
   dueDate?: string;
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   tasks: Task[];
+  stage?: string;
+  energyCode?: string;
+  priorityCode?: string;
+  isNew?: boolean;
 }
 
 export interface Goal {
