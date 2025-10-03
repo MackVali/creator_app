@@ -24,6 +24,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import {
+  HabitFormFields,
+  HABIT_RECURRENCE_OPTIONS,
+  HABIT_TYPE_OPTIONS,
+  type HabitWindowSelectOption,
+} from "@/components/habits/habit-form-fields";
 import { Button } from "./button";
 import { Input } from "./input";
 import { Label } from "./label";
@@ -321,38 +327,6 @@ function formatWindowMeta(window: WindowOption) {
   return parts.join(" • ");
 }
 
-function formatWindowSummary(window: WindowOption) {
-  const meta = formatWindowMeta(window);
-  return meta ? `${window.label} • ${meta}` : window.label;
-}
-
-const HABIT_TYPE_OPTIONS: ChoiceOption[] = [
-  {
-    value: "HABIT",
-    label: "Habit",
-    description: "Momentum-building routines.",
-  },
-  {
-    value: "CHORE",
-    label: "Chore",
-    description: "Maintenance that keeps life running.",
-  },
-  {
-    value: "ASYNC",
-    label: "Async",
-    description: "Self-paced rituals you can do anytime.",
-  },
-];
-
-const RECURRENCE_OPTIONS: ChoiceOption[] = [
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "bi-weekly", label: "Bi-weekly" },
-  { value: "monthly", label: "Monthly" },
-  { value: "bi-monthly", label: "Bi-monthly" },
-  { value: "yearly", label: "Yearly" },
-];
-
 const DEFAULT_SKILL_ICON = "✦";
 const getSkillIcon = (icon?: string | null) => icon?.trim() || DEFAULT_SKILL_ICON;
 
@@ -417,7 +391,8 @@ const createInitialFormState = (
       ? TASK_STAGE_OPTIONS[0].value
       : "",
   type: eventType === "HABIT" ? HABIT_TYPE_OPTIONS[0].value : "",
-  recurrence: eventType === "HABIT" ? RECURRENCE_OPTIONS[0].value : "",
+  recurrence:
+    eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   window_id: eventType === "HABIT" ? "none" : "",
 });
 
@@ -839,89 +814,6 @@ function SkillSearchSelect({
   );
 }
 
-interface OptionGridProps {
-  value: string;
-  options: ChoiceOption[];
-  onChange: (value: string) => void;
-  className?: string;
-  columnsClassName?: string;
-  layout?: "grid" | "list";
-  selectedClassName?: string;
-  unselectedClassName?: string;
-}
-
-function OptionGrid({
-  value,
-  options,
-  onChange,
-  className,
-  columnsClassName,
-  layout = "grid",
-  selectedClassName,
-  unselectedClassName,
-}: OptionGridProps) {
-  const computedColumns =
-    layout === "list"
-      ? "grid-cols-1"
-      : columnsClassName
-      ? columnsClassName
-      : options.length > 4
-      ? "grid-cols-2 sm:grid-cols-3"
-      : "grid-cols-2 sm:grid-cols-2";
-
-  return (
-    <div className={cn("space-y-2", className)}>
-      <div
-        className={cn(
-          "grid gap-2 sm:gap-3",
-          computedColumns,
-          layout === "list" && "sm:gap-2"
-        )}
-      >
-        {options.map((option) => {
-          const selected = option.value === value;
-          const IconComponent = option.icon;
-          const iconNode = option.renderIcon
-            ? option.renderIcon(selected)
-            : IconComponent
-            ? (
-                <IconComponent
-                  className={cn(
-                    "h-4 w-4",
-                    option.iconClassName ??
-                      (selected ? "text-blue-400" : "text-zinc-400")
-                  )}
-                />
-              )
-            : null;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              aria-pressed={selected}
-              className={cn(
-                "rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-0",
-                layout === "list" && "w-full",
-                selected
-                  ? selectedClassName ??
-                    "border-blue-500/70 bg-blue-500/15 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]"
-                  : unselectedClassName ??
-                    "border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:text-white"
-              )}
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold leading-tight">
-                {iconNode}
-                {option.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 interface OptionDropdownProps {
   value: string;
   options: ChoiceOption[];
@@ -1160,44 +1052,36 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     [skills]
   );
 
-  const windowSelectItems = useMemo(() => {
+  const windowSelectOptions = useMemo<HabitWindowSelectOption[]>(() => {
     if (windowsLoading) {
       return [
-        <SelectItem key="loading" value="none" label="Loading windows…">
-          Loading windows…
-        </SelectItem>,
+        {
+          value: "none",
+          label: "Loading windows…",
+          disabled: true,
+        },
       ];
     }
 
     if (windows.length === 0) {
       return [
-        <SelectItem key="none" value="none" label="No window preference">
-          No window preference
-        </SelectItem>,
+        {
+          value: "none",
+          label: "No window preference",
+        },
       ];
     }
 
     return [
-      <SelectItem key="none" value="none" label="No window preference">
-        No window preference
-      </SelectItem>,
-      ...windows.map((window) => {
-        const meta = formatWindowMeta(window);
-        const summary = formatWindowSummary(window);
-
-        return (
-          <SelectItem key={window.id} value={window.id} label={summary}>
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold text-zinc-100">
-                {window.label}
-              </span>
-              {meta ? (
-                <span className="text-xs text-zinc-400">{meta}</span>
-              ) : null}
-            </div>
-          </SelectItem>
-        );
-      }),
+      {
+        value: "none",
+        label: "No window preference",
+      },
+      ...windows.map((window) => ({
+        value: window.id,
+        label: window.label,
+        description: formatWindowMeta(window),
+      })),
     ];
   }, [windows, windowsLoading]);
 
@@ -1413,7 +1297,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.skill_id = formData.skill_id;
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
-        insertData.recurrence = formData.recurrence;
+        insertData.recurrence =
+          formData.recurrence === "none" ? null : formData.recurrence;
         insertData.window_id =
           formData.window_id === "none" ? null : formData.window_id;
       }
@@ -2270,6 +2155,44 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 </FormSection>
               ) : null}
             </>
+          ) : eventType === "HABIT" ? (
+            <FormSection>
+              <HabitFormFields
+                name={formData.name}
+                description={formData.description}
+                habitType={formData.type}
+                recurrence={formData.recurrence}
+                duration={formData.duration_min}
+                windowId={formData.window_id}
+                windowsLoading={windowsLoading}
+                windowOptions={windowSelectOptions}
+                windowError={windowError}
+                onNameChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    name: formatNameValue(value),
+                  }))
+                }
+                onDescriptionChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    description: value,
+                  }))
+                }
+                onHabitTypeChange={(value) =>
+                  setFormData((prev) => ({ ...prev, type: value }))
+                }
+                onRecurrenceChange={(value) =>
+                  setFormData((prev) => ({ ...prev, recurrence: value }))
+                }
+                onWindowChange={(value) =>
+                  setFormData((prev) => ({ ...prev, window_id: value }))
+                }
+                onDurationChange={(value) =>
+                  setFormData((prev) => ({ ...prev, duration_min: value }))
+                }
+              />
+            </FormSection>
           ) : (
             <>
               <FormSection title="Overview">
@@ -2291,21 +2214,19 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       required
                     />
                   </div>
-                  {eventType !== "HABIT" ? (
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Description
-                      </Label>
-                      <Textarea
-                        value={formData.description}
-                        onChange={(event) =>
-                          setFormData({ ...formData, description: event.target.value })
-                        }
-                        placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
-                        className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                      />
-                    </div>
-                  ) : null}
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Description
+                    </Label>
+                    <Textarea
+                      value={formData.description}
+                      onChange={(event) =>
+                        setFormData({ ...formData, description: event.target.value })
+                      }
+                      placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
+                      className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                    />
+                  </div>
                 </div>
               </FormSection>
 
@@ -2542,86 +2463,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       selectedId={formData.skill_id}
                       onSelect={handleTaskSkillSelect}
                     />
-                  </div>
-                </FormSection>
-              ) : null}
-
-              {eventType === "HABIT" ? (
-                <FormSection title="Rhythm">
-                  <div className="space-y-4">
-                    <div className="space-y-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                        Type
-                      </p>
-                      <OptionGrid
-                        value={formData.type}
-                        options={HABIT_TYPE_OPTIONS}
-                        onChange={(value) =>
-                          setFormData({ ...formData, type: value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                        Recurrence
-                      </p>
-                      <OptionGrid
-                        value={formData.recurrence}
-                        options={RECURRENCE_OPTIONS}
-                        onChange={(value) =>
-                          setFormData({ ...formData, recurrence: value })
-                        }
-                        selectedClassName="border-black bg-black text-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
-                        unselectedClassName="border-black/50 bg-black/40 text-zinc-200 hover:border-black hover:bg-black/60 hover:text-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Duration (minutes)
-                      </Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={formData.duration_min}
-                        onChange={(event) =>
-                          setFormData({
-                            ...formData,
-                            duration_min: event.target.value,
-                          })
-                        }
-                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Preferred Window
-                      </Label>
-                      <Select
-                        value={formData.window_id}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            window_id: value,
-                          }))
-                        }
-                        placeholder="No window preference"
-                      >
-                        <SelectContent className="space-y-1 p-2">
-                          {windowSelectItems}
-                        </SelectContent>
-                      </Select>
-                      {windowError ? (
-                        <p className="text-xs text-rose-400">
-                          {windowError}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-zinc-500">
-                          Link this habit to a focus window to help it find a
-                          home on your schedule.
-                        </p>
-                      )}
-                    </div>
                   </div>
                 </FormSection>
               ) : null}
