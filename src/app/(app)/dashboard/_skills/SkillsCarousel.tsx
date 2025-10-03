@@ -13,6 +13,8 @@ import { useToastHelpers } from "@/components/ui/toast";
 
 const FALLBACK_COLOR = "#6366f1";
 export const PLACEHOLDER_CATEGORY_ID = "uncategorized";
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function parseHex(hex?: string | null) {
   if (!hex) {
@@ -256,9 +258,7 @@ export default function SkillsCarousel() {
     async (orderedList: Category[]) => {
       if (orderedList.length === 0) return;
 
-      const persistable = orderedList.filter(
-        (cat) => cat.id !== PLACEHOLDER_CATEGORY_ID
-      );
+      const persistable = orderedList.filter((cat) => UUID_REGEX.test(cat.id));
       if (persistable.length === 0) {
         return;
       }

@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 
 import SkillsCarousel, {
   PLACEHOLDER_CATEGORY_ID,
@@ -18,6 +18,9 @@ const updateCatsOrderBulk = hoisted.updateCatsOrderBulk;
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 let capturedOnSave: ((ordered: Category[]) => Promise<void>) | undefined;
+const VALID_CAT_A = "11111111-1111-4111-8111-111111111111";
+const VALID_CAT_B = "22222222-2222-4222-8222-222222222222";
+let lastCategoryProps: { canReorder?: boolean } | null = null;
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
@@ -57,6 +60,14 @@ vi.mock("../../src/app/(app)/dashboard/_skills/ReorderCatsModal", () => ({
   },
 }));
 
+vi.mock("../../src/app/(app)/dashboard/_skills/CategoryCard", () => ({
+  __esModule: true,
+  default: (props: { canReorder?: boolean }) => {
+    lastCategoryProps = props;
+    return <div data-testid="mock-category" data-can-reorder={props.canReorder} />;
+  },
+}));
+
 vi.mock("@/lib/data/cats", async () => {
   const actual = await vi.importActual<typeof import("@/lib/data/cats")>(
     "@/lib/data/cats"
@@ -90,6 +101,7 @@ beforeEach(() => {
   toastSuccess.mockReset();
   toastError.mockReset();
   capturedOnSave = undefined;
+  lastCategoryProps = null;
 });
 
 describe("SkillsCarousel reorder handling", () => {
@@ -110,9 +122,59 @@ describe("SkillsCarousel reorder handling", () => {
   it("hides the change order action when only the placeholder category exists", () => {
     render(<SkillsCarousel />);
 
-    const [categoryButton] = screen.getAllByRole("button", { name: /skills/i });
-    fireEvent.click(categoryButton);
+    expect(lastCategoryProps?.canReorder).toBe(false);
+  });
 
-    expect(screen.queryByText(/change order/i)).toBeNull();
+  it("persists order changes for categories with valid UUIDs", async () => {
+    mockUseSkillsData.mockReturnValueOnce({
+      categories: [
+        { id: VALID_CAT_A, name: "Arcana" },
+        { id: VALID_CAT_B, name: "Mysticism" },
+      ],
+      skillsByCategory: {},
+      isLoading: false,
+    });
+
+    render(<SkillsCarousel />);
+    expect(capturedOnSave).toBeTypeOf("function");
+
+    await act(async () => {
+      await capturedOnSave?.([
+        { id: VALID_CAT_B, name: "Mysticism" },
+        { id: VALID_CAT_A, name: "Arcana" },
+      ]);
+    });
+
+    expect(updateCatsOrderBulk).toHaveBeenCalledWith([
+      { id: VALID_CAT_B, sort_order: 0 },
+      { id: VALID_CAT_A, sort_order: 1 },
+    ]);
+  });
+
+  it("ignores non-UUID categories when saving order", async () => {
+    mockUseSkillsData.mockReturnValueOnce({
+      categories: [
+        { id: VALID_CAT_A, name: "Arcana" },
+        { id: VALID_CAT_B, name: "Mysticism" },
+      ],
+      skillsByCategory: {},
+      isLoading: false,
+    });
+
+    render(<SkillsCarousel />);
+    expect(capturedOnSave).toBeTypeOf("function");
+
+    await act(async () => {
+      await capturedOnSave?.([
+        { id: "temp-cat", name: "Temporary" },
+        { id: VALID_CAT_A, name: "Arcana" },
+        { id: VALID_CAT_B, name: "Mysticism" },
+      ]);
+    });
+
+    expect(updateCatsOrderBulk).toHaveBeenCalledWith([
+      { id: VALID_CAT_A, sort_order: 0 },
+      { id: VALID_CAT_B, sort_order: 1 },
+    ]);
   });
 });
