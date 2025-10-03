@@ -1,4 +1,5 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
+import { normalizeUuid } from "@/lib/utils/uuid";
 import type { CatRow } from "../types/cat";
 
 export async function getCatsForUser(userId: string) {
@@ -57,7 +58,19 @@ export async function updateCatsOrderBulk(
   const sb = getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
 
-  for (const { id, sort_order } of updates) {
+  const sanitized = updates
+    .map(({ id, sort_order }) => {
+      const normalizedId = normalizeUuid(id);
+      if (!normalizedId) return null;
+      return { id: normalizedId, sort_order };
+    })
+    .filter((entry): entry is { id: string; sort_order: number } => entry !== null);
+
+  if (sanitized.length === 0) {
+    return;
+  }
+
+  for (const { id, sort_order } of sanitized) {
     const { error } = await sb
       .from("cats")
       .update({ sort_order })

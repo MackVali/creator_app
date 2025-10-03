@@ -177,4 +177,30 @@ describe("SkillsCarousel reorder handling", () => {
       { id: VALID_CAT_B, sort_order: 1 },
     ]);
   });
+
+  it("trims whitespace from category ids before persisting", async () => {
+    mockUseSkillsData.mockReturnValueOnce({
+      categories: [
+        { id: VALID_CAT_A, name: "Arcana" },
+        { id: VALID_CAT_B, name: "Mysticism" },
+      ],
+      skillsByCategory: {},
+      isLoading: false,
+    });
+
+    render(<SkillsCarousel />);
+    expect(capturedOnSave).toBeTypeOf("function");
+
+    await act(async () => {
+      await capturedOnSave?.([
+        { id: `  ${VALID_CAT_B}\n`, name: "Mysticism" },
+        { id: `\t${VALID_CAT_A}  `, name: "Arcana" },
+      ]);
+    });
+
+    expect(updateCatsOrderBulk).toHaveBeenLastCalledWith([
+      { id: VALID_CAT_B, sort_order: 0 },
+      { id: VALID_CAT_A, sort_order: 1 },
+    ]);
+  });
 });

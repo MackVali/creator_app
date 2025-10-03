@@ -9,12 +9,11 @@ import useSkillsData, { type Category } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
 import ReorderCatsModal from "./ReorderCatsModal";
 import { updateCatsOrderBulk } from "@/lib/data/cats";
+import { normalizeUuid } from "@/lib/utils/uuid";
 import { useToastHelpers } from "@/components/ui/toast";
 
 const FALLBACK_COLOR = "#6366f1";
 export const PLACEHOLDER_CATEGORY_ID = "uncategorized";
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function parseHex(hex?: string | null) {
   if (!hex) {
@@ -258,20 +257,43 @@ export default function SkillsCarousel() {
     async (orderedList: Category[]) => {
       if (orderedList.length === 0) return;
 
-      const persistable = orderedList.filter((cat) => UUID_REGEX.test(cat.id));
+      const trimmedOrder = orderedList.map((cat) => ({
+        ...cat,
+        id: typeof cat.id === "string" ? cat.id.trim() : cat.id,
+      }));
+
+      const persistable = trimmedOrder
+        .map((cat) => {
+          if (cat.id === PLACEHOLDER_CATEGORY_ID) {
+            return null;
+          }
+          const normalizedId = normalizeUuid(cat.id);
+          return normalizedId ? { id: normalizedId, category: cat } : null;
+        })
+        .filter(
+          (entry): entry is { id: string; category: Category } => entry !== null
+        );
+
       if (persistable.length === 0) {
+        const newOrdered = trimmedOrder.map((cat, index) => ({
+          ...cat,
+          order: index,
+        }));
+        const currentActiveId = categories[activeIndexRef.current]?.id ?? null;
+        setCategories(newOrdered);
+        setPendingActiveId(currentActiveId ?? newOrdered[0]?.id ?? null);
         return;
       }
 
       setIsSavingOrder(true);
-      const updates = persistable.map((cat, index) => ({
-        id: cat.id,
+      const updates = persistable.map(({ id }, index) => ({
+        id,
         sort_order: index,
       }));
 
       try {
         await updateCatsOrderBulk(updates);
-        const newOrdered = orderedList.map((cat, index) => ({
+        const newOrdered = trimmedOrder.map((cat, index) => ({
           ...cat,
           order: index,
         }));
