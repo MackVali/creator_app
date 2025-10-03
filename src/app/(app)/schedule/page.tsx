@@ -27,6 +27,8 @@ import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { YearView } from '@/components/schedule/YearView'
 import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
+import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
+import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import {
   getChildView,
   getParentView,
@@ -1021,6 +1023,9 @@ export default function SchedulePage() {
     useState<DayTransitionDirection>(0)
   const [isSwipingDayView, setIsSwipingDayView] = useState(false)
   const [skipNextDayAnimation, setSkipNextDayAnimation] = useState(false)
+  const [isJumpToDateOpen, setIsJumpToDateOpen] = useState(false)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null)
   const sliderControls = useAnimationControls()
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
@@ -2085,6 +2090,27 @@ export default function SchedulePage() {
     void handleTouchEnd()
   }
 
+  const handleJumpToDateSelect = (date: Date) => {
+    setIsJumpToDateOpen(false)
+    setSkipNextDayAnimation(true)
+    updateCurrentDate(date, { animate: false })
+    navigate('day')
+  }
+
+  const handleSearchResultSelect = ({
+    instanceId,
+    date,
+  }: {
+    instanceId: string
+    date: Date
+  }) => {
+    setIsSearchOpen(false)
+    setSkipNextDayAnimation(true)
+    updateCurrentDate(date, { animate: false })
+    navigate('day')
+    setFocusInstanceId(instanceId)
+  }
+
   const dayTimelineModel = useMemo(
     () =>
       buildDayTimelineModel({
@@ -2344,6 +2370,7 @@ export default function SchedulePage() {
               return (
                 <motion.div
                   key={instance.id}
+                  data-schedule-instance-id={instance.id}
                   className="absolute left-16 right-2"
                   style={positionStyle}
                   layout={!prefersReducedMotion}
@@ -2552,6 +2579,9 @@ export default function SchedulePage() {
                             return (
                               <motion.div
                                 key={key}
+                                data-schedule-instance-id={
+                                  kind === 'scheduled' && instanceId ? instanceId : undefined
+                                }
                                 aria-label={`Task ${task.name}`}
                                 className={cardClasses}
                                 style={tStyle}
@@ -2656,6 +2686,7 @@ export default function SchedulePage() {
               return (
                 <motion.div
                   key={instance.id}
+                  data-schedule-instance-id={instance.id}
                   aria-label={`Task ${task.name}`}
                   className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]"
                   style={style}
@@ -2719,24 +2750,47 @@ export default function SchedulePage() {
     [renderDayTimeline, dayTimelineModel]
   )
 
+  useEffect(() => {
+    if (!focusInstanceId) return
+    const raf = requestAnimationFrame(() => {
+      const escapeId = (value: string) => {
+        if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+          return CSS.escape(value)
+        }
+        return value.replace(/"/g, '\\"')
+      }
+      const target = document.querySelector<HTMLElement>(
+        `[data-schedule-instance-id="${escapeId(focusInstanceId)}"]`
+      )
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      setFocusInstanceId(null)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [focusInstanceId, dayTimelineModel.dayViewDateKey])
+
   return (
-    <ProtectedRoute>
-      <div className="space-y-4 text-zinc-100">
-        <ScheduleTopBar
-          year={year}
-          onBack={handleBack}
-          onToday={handleToday}
-        />
-        <div
-          className="relative bg-[var(--surface)]"
-          ref={swipeContainerRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={() => {
-            void handleTouchEnd()
-          }}
-          onTouchCancel={handleTouchCancel}
-        >
+    <>
+      <ProtectedRoute>
+        <div className="space-y-4 text-zinc-100">
+          <ScheduleTopBar
+            year={year}
+            onBack={handleBack}
+            onToday={handleToday}
+            onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
+            onOpenSearch={() => setIsSearchOpen(true)}
+          />
+          <div
+            className="relative bg-[var(--surface)]"
+            ref={swipeContainerRef}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={() => {
+              void handleTouchEnd()
+            }}
+            onTouchCancel={handleTouchCancel}
+          >
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
             <RescheduleButton
               onClick={handleRescheduleClick}
@@ -2829,6 +2883,21 @@ export default function SchedulePage() {
           </AnimatePresence>
         </div>
       </div>
-    </ProtectedRoute>
+      </ProtectedRoute>
+      <JumpToDateSheet
+        open={isJumpToDateOpen}
+        onOpenChange={open => setIsJumpToDateOpen(open)}
+        currentDate={currentDate}
+        onSelectDate={handleJumpToDateSelect}
+      />
+      <ScheduleSearchSheet
+        open={isSearchOpen}
+        onOpenChange={open => setIsSearchOpen(open)}
+        instances={instances}
+        taskMap={taskMap}
+        projectMap={projectMap}
+        onSelectResult={handleSearchResultSelect}
+      />
+    </>
   )
 }

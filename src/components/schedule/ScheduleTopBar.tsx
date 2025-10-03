@@ -26,9 +26,18 @@ interface ScheduleTopBarProps {
   onBack: () => void;
   onToday: () => void;
   canGoBack?: boolean;
+  onOpenJumpToDate?: () => void;
+  onOpenSearch?: () => void;
 }
 
-export function ScheduleTopBar({ year, onBack, onToday, canGoBack = true }: ScheduleTopBarProps) {
+export function ScheduleTopBar({
+  year,
+  onBack,
+  onToday,
+  canGoBack = true,
+  onOpenJumpToDate,
+  onOpenSearch,
+}: ScheduleTopBarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -56,10 +65,20 @@ export function ScheduleTopBar({ year, onBack, onToday, canGoBack = true }: Sche
         {year}
       </button>
       <div className="flex items-center gap-2">
-        <button className="p-2">
+        <button
+          type="button"
+          onClick={() => onOpenJumpToDate?.()}
+          aria-label="Open jump to date"
+          className="p-2"
+        >
           <Calendar className="h-5 w-5 text-[var(--accent-red)]" />
         </button>
-        <button className="p-2">
+        <button
+          type="button"
+          onClick={() => onOpenSearch?.()}
+          aria-label="Search schedule"
+          className="p-2"
+        >
           <Search className="h-5 w-5 text-[var(--accent-red)]" />
         </button>
         <Sheet open={open} onOpenChange={setOpen}>
