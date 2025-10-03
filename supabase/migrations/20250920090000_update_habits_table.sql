@@ -12,6 +12,10 @@ CREATE TYPE IF NOT EXISTS public.recurrence_enum AS ENUM (
   'every x days'
 );
 
+-- Allow app roles to insert enum values
+GRANT USAGE ON TYPE public.habit_type_enum TO authenticated, service_role;
+GRANT USAGE ON TYPE public.recurrence_enum TO authenticated, service_role;
+
 -- Ensure we have a helper function for updated_at timestamps
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS trigger
