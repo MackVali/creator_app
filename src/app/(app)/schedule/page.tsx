@@ -2204,41 +2204,25 @@ export default function SchedulePage() {
                 className="absolute left-16 right-2"
                 style={{ top: report.top, height: report.height }}
               >
-                <div
-                  className="relative flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] text-slate-800 backdrop-blur-md"
-                  style={{
-                    boxShadow:
-                      '0 0 46px rgba(220, 230, 255, 0.55), 0 24px 60px rgba(8, 12, 28, 0.46)',
-                  }}
-                >
-                  <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                      background:
-                        'radial-gradient(140% 160% at 6% 4%, rgba(255,255,255,0.9) 0%, rgba(241,245,255,0.55) 48%, rgba(221,231,255,0.35) 100%), linear-gradient(150deg, rgba(248,250,255,0.92) 0%, rgba(232,236,248,0.72) 52%, rgba(200,210,230,0.45) 100%)',
-                      opacity: 0.5,
-                    }}
-                  />
-                  <div className="relative z-10 flex h-full flex-col px-3 py-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                      Window report · {report.windowLabel}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-600">
-                      <span>{report.rangeLabel}</span>
-                      <span>Energy: {report.energyLabel}</span>
-                      <span>Duration: {report.durationLabel}</span>
-                    </div>
-                    <p className="mt-2 text-[11px] leading-snug text-slate-700">
-                      {report.summary}
-                    </p>
-                    {report.details.length > 0 && (
-                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-slate-600">
-                        {report.details.map((detail, index) => (
-                          <li key={`${report.key}-detail-${index}`}>{detail}</li>
-                        ))}
-                      </ul>
-                    )}
+                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                    Window report · {report.windowLabel}
                   </div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                    <span>{report.rangeLabel}</span>
+                    <span>Energy: {report.energyLabel}</span>
+                    <span>Duration: {report.durationLabel}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                    {report.summary}
+                  </p>
+                  {report.details.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                      {report.details.map((detail, index) => (
+                        <li key={`${report.key}-detail-${index}`}>{detail}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             ))}
