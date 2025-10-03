@@ -135,6 +135,7 @@ export default function ProfileByHandlePage() {
     (link) => link.is_active && !!link.url,
   ).length;
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
+  const isOwner = session?.user?.id === profile.user_id;
 
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
@@ -174,7 +175,7 @@ export default function ProfileByHandlePage() {
           </div>
 
           <div className="mt-8">
-            <LinkGrid links={contentCards} />
+            <LinkGrid links={contentCards} isOwner={isOwner} />
           </div>
         </section>
       </main>
