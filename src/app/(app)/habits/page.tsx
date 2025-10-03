@@ -88,6 +88,32 @@ function formatTitleCase(value: string | null | undefined) {
     .join(" ");
 }
 
+function formatTimeLabel(value: string | null | undefined) {
+  if (!value) return null;
+  const [hour, minute] = value.split(":");
+  if (typeof hour === "undefined" || typeof minute === "undefined") {
+    return null;
+  }
+
+  const date = new Date();
+  date.setHours(Number(hour), Number(minute), 0, 0);
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatWindowRange(
+  start: string | null | undefined,
+  end: string | null | undefined
+) {
+  const startLabel = formatTimeLabel(start);
+  const endLabel = formatTimeLabel(end);
+  if (!startLabel || !endLabel) return null;
+  return `${startLabel} – ${endLabel}`;
+}
+
 export default function HabitsPage() {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -290,6 +316,12 @@ export default function HabitsPage() {
                   const durationLabel = hasDuration
                     ? `${habit.duration_minutes} min`
                     : null;
+                  const windowLabel = habit.window?.label ?? null;
+                  const windowRange = formatWindowRange(
+                    habit.window?.start_local,
+                    habit.window?.end_local
+                  );
+                  const windowEnergy = formatTitleCase(habit.window?.energy);
 
                   return (
                     <article
@@ -340,6 +372,16 @@ export default function HabitsPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-base">⏱️</span>
                             <span>Planned for {durationLabel}</span>
+                          </div>
+                        )}
+                        {windowLabel && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">🪟</span>
+                            <span>
+                              {windowLabel}
+                              {windowRange ? ` • ${windowRange}` : ""}
+                              {windowEnergy ? ` • ${windowEnergy}` : ""}
+                            </span>
                           </div>
                         )}
                         <div className="flex items-center gap-2">

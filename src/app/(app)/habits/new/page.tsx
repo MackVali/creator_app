@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -34,6 +34,46 @@ const RECURRENCE_OPTIONS = [
   { label: "Every X Days", value: "every x days" },
 ];
 
+interface WindowOption {
+  id: string;
+  label: string;
+  start_local: string;
+  end_local: string;
+  energy: string;
+}
+
+function formatTimeLabel(value: string | null | undefined) {
+  if (!value) return null;
+  const [hour, minute] = value.split(":");
+  if (typeof hour === "undefined" || typeof minute === "undefined") {
+    return null;
+  }
+
+  const date = new Date();
+  date.setHours(Number(hour), Number(minute), 0, 0);
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatWindowSummary(window: WindowOption) {
+  const start = formatTimeLabel(window.start_local);
+  const end = formatTimeLabel(window.end_local);
+  const energy = window.energy
+    ? window.energy.replace(/[_-]+/g, " ").toLowerCase()
+    : null;
+  const parts = [window.label];
+  if (start && end) {
+    parts.push(`${start} – ${end}`);
+  }
+  if (energy) {
+    parts.push(`${energy} energy`);
+  }
+  return parts.join(" • ");
+}
+
 export default function NewHabitPage() {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -43,8 +83,108 @@ export default function NewHabitPage() {
   const [habitType, setHabitType] = useState("HABIT");
   const [recurrence, setRecurrence] = useState("none");
   const [duration, setDuration] = useState("");
+  const [windowId, setWindowId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [windowOptions, setWindowOptions] = useState<WindowOption[]>([]);
+  const [windowsLoading, setWindowsLoading] = useState(true);
+  const [windowLoadError, setWindowLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchWindows = async () => {
+      if (!supabase) {
+        if (active) {
+          setWindowsLoading(false);
+          setWindowLoadError("Supabase client not available.");
+        }
+        return;
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) throw userError;
+
+        if (!user) {
+          if (active) {
+            setWindowOptions([]);
+            setWindowId("none");
+          }
+          return;
+        }
+
+        const { data, error: windowsError } = await supabase
+          .from("windows")
+          .select("id, label, start_local, end_local, energy")
+          .eq("user_id", user.id)
+          .order("start_local", { ascending: true });
+
+        if (windowsError) throw windowsError;
+
+        if (active) {
+          const safeWindows = data ?? [];
+          setWindowOptions(safeWindows);
+          setWindowLoadError(null);
+          setWindowId((current) => {
+            if (current === "none") return current;
+            return safeWindows.some((option) => option.id === current)
+              ? current
+              : "none";
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load windows:", err);
+        if (active) {
+          setWindowOptions([]);
+          setWindowLoadError("Unable to load your time windows right now.");
+        }
+      } finally {
+        if (active) {
+          setWindowsLoading(false);
+        }
+      }
+    };
+
+    fetchWindows();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const windowSelectItems = useMemo(() => {
+    if (windowsLoading) {
+      return [
+        <SelectItem key="loading" value="none" disabled>
+          Loading windows…
+        </SelectItem>,
+      ];
+    }
+
+    if (windowOptions.length === 0) {
+      return [
+        <SelectItem key="none" value="none">
+          No window preference
+        </SelectItem>,
+      ];
+    }
+
+    return [
+      <SelectItem key="none" value="none">
+        No window preference
+      </SelectItem>,
+      ...windowOptions.map((window) => (
+        <SelectItem key={window.id} value={window.id}>
+          {formatWindowSummary(window)}
+        </SelectItem>
+      )),
+    ];
+  }, [windowOptions, windowsLoading]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,6 +233,7 @@ export default function NewHabitPage() {
         habit_type: habitType,
         recurrence: recurrenceValue,
         duration_minutes: durationMinutes,
+        window_id: windowId === "none" ? null : windowId,
       });
 
       if (insertError) {
@@ -216,6 +357,28 @@ export default function NewHabitPage() {
                   <p className="text-xs text-white/50">
                     Pick the cadence that fits best. You can adjust this later.
                   </p>
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                    Preferred window
+                  </Label>
+                  <Select value={windowId} onValueChange={(value) => setWindowId(value)}>
+                    <SelectTrigger
+                      disabled={windowsLoading}
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                    >
+                      <SelectValue placeholder="Choose when this fits best" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#0b101b] text-sm text-white">
+                      {windowSelectItems}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-white/50">
+                    Anchoring to a window helps scheduling align with your energy.
+                  </p>
+                  {windowLoadError && (
+                    <p className="text-xs text-red-300">{windowLoadError}</p>
+                  )}
                 </div>
                 <div className="space-y-3">
                   <Label
