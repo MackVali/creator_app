@@ -22,6 +22,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 const HABIT_TYPE_OPTIONS = [
   { label: "Habit", value: "HABIT" },
   { label: "Chore", value: "CHORE" },
+  { label: "Async", value: "ASYNC" },
 ];
 
 const RECURRENCE_OPTIONS = [
@@ -330,7 +331,7 @@ export default function NewHabitPage() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-white/50">
-                    Use chores for recurring upkeep tasks; habits track personal rituals.
+                    Use chores for recurring upkeep tasks, async for flexible collaborations, and habits to track personal rituals.
                   </p>
                 </div>
 

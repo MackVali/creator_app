@@ -5,7 +5,7 @@ drop extension if exists "pg_net";
 
 create type "public"."energy_enum" as enum ('NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME');
 
-create type "public"."habit_type_enum" as enum ('HABIT', 'CHORE');
+create type "public"."habit_type_enum" as enum ('HABIT', 'CHORE', 'ASYNC');
 
 create type "public"."priority_enum" as enum ('NO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'ULTRA-CRITICAL');
 
