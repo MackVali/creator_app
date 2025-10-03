@@ -165,6 +165,7 @@ export function GoalDrawer({
   onUpdate,
   monuments = [],
 }: GoalDrawerProps) {
+  const formId = "goal-editor-form";
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
   const [priority, setPriority] = useState<Goal["priority"]>("Low");
@@ -492,15 +493,28 @@ export function GoalDrawer({
         className="border-l border-white/10 bg-[#060911]/95 text-white shadow-[0_40px_120px_-60px_rgba(99,102,241,0.65)] sm:max-w-xl"
       >
         <SheetHeader className="px-6 pt-8">
-          <SheetTitle className="text-left text-2xl font-semibold tracking-tight text-white">
-            {editing ? "Edit goal" : "Create a goal"}
-          </SheetTitle>
+          <div className="flex items-center justify-between gap-3">
+            <SheetTitle className="text-left text-2xl font-semibold tracking-tight text-white">
+              {editing ? "Edit goal" : "Create a goal"}
+            </SheetTitle>
+            {editing ? (
+              <Button
+                form={formId}
+                type="submit"
+                size="sm"
+                disabled={!canSubmit}
+                className="hidden sm:inline-flex"
+              >
+                Save changes
+              </Button>
+            ) : null}
+          </div>
           <SheetDescription className="text-left text-sm text-white/60">
             Shape the focus, energy, and storyline for this goal. Everything you
             update is saved instantly once you hit save.
           </SheetDescription>
         </SheetHeader>
-        <form onSubmit={submit} className="flex h-full flex-col">
+        <form id={formId} onSubmit={submit} className="flex h-full flex-col">
           <div className="flex-1 space-y-8 overflow-y-auto px-6 pb-8 pt-6">
             <div className="grid grid-cols-1 gap-6">
               <div className="grid grid-cols-[90px,1fr] gap-4">
