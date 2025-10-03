@@ -52,9 +52,9 @@ export function DayTimeline({
   }
 
   const backgroundGradient = [
-    "radial-gradient(140% 140% at 0% 0%, rgba(56, 189, 248, 0.25), rgba(56, 189, 248, 0) 60%)",
-    "radial-gradient(120% 120% at 100% 100%, rgba(192, 132, 252, 0.2), rgba(192, 132, 252, 0) 62%)",
-    "linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.78))",
+    "radial-gradient(140% 140% at 0% 0%, rgba(24, 24, 27, 0.65), rgba(24, 24, 27, 0) 60%)",
+    "radial-gradient(120% 120% at 100% 100%, rgba(39, 39, 42, 0.5), rgba(39, 39, 42, 0) 62%)",
+    "linear-gradient(180deg, rgba(10, 10, 10, 0.95), rgba(24, 24, 27, 0.85))",
   ].join(", ");
 
   return (
