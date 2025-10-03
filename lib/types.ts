@@ -204,6 +204,7 @@ export interface ContentCardFormData {
   thumbnail?: File;
   category?: string;
   position?: number;
+  is_active?: boolean;
 }
 
 // Profile Update Result

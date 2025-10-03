@@ -9,6 +9,7 @@ import { getSocialLinks } from "@/lib/db/profile-management";
 import HeroHeader from "@/components/profile/HeroHeader";
 import LinkGrid from "@/components/profile/LinkGrid";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
+import FeaturedLinksSheet from "@/components/profile/FeaturedLinksSheet";
 
 export default function ProfileByHandlePage() {
   const params = useParams();
@@ -19,6 +20,7 @@ export default function ProfileByHandlePage() {
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [featuredLinksOpen, setFeaturedLinksOpen] = useState(false);
 
   const handle = params.handle as string;
 
@@ -166,19 +168,46 @@ export default function ProfileByHandlePage() {
               </p>
             </div>
 
-            {activeLinkCount > 0 ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
-                <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
-                {activeLinkCount} {activeLinkCount === 1 ? "link" : "links"}
-              </span>
-            ) : null}
+            <div className="flex items-center gap-3">
+              {isOwner && activeLinkCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setFeaturedLinksOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/80 transition-colors hover:border-white/25 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                >
+                  Manage featured links
+                </button>
+              ) : null}
+              {activeLinkCount > 0 ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
+                  <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
+                  {activeLinkCount} {activeLinkCount === 1 ? "link" : "links"}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-8">
-            <LinkGrid links={contentCards} isOwner={isOwner} />
+            <LinkGrid
+              links={contentCards}
+              isOwner={isOwner}
+              onManageLinks={isOwner ? () => setFeaturedLinksOpen(true) : undefined}
+            />
           </div>
         </section>
       </main>
+
+      {isOwner ? (
+        <FeaturedLinksSheet
+          userId={profile.user_id}
+          open={featuredLinksOpen}
+          onOpenChange={setFeaturedLinksOpen}
+          initialLinks={contentCards}
+          onLinksUpdated={(updatedLinks) => {
+            setContentCards(updatedLinks);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
