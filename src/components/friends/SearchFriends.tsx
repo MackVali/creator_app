@@ -1,11 +1,16 @@
-'use client';
-import { useEffect, useMemo, useState } from 'react';
-import FriendsList from './FriendsList';
-import type { Friend } from '@/lib/mock/friends';
-import { getSupabaseBrowser } from '@/lib/supabase';
+"use client";
+import { useEffect, useMemo, useState } from "react";
+import FriendsList from "./FriendsList";
+import type { Friend } from "@/lib/mock/friends";
+import { getSupabaseBrowser } from "@/lib/supabase";
 
-export default function SearchFriends({ data }: { data: Friend[] }) {
-  const [q, setQ] = useState('');
+type SearchFriendsProps = {
+  data: Friend[];
+  onRemoveFriend?: (friend: Friend) => void;
+};
+
+export default function SearchFriends({ data, onRemoveFriend }: SearchFriendsProps) {
+  const [q, setQ] = useState("");
   const [me, setMe] = useState<Friend | null>(null);
 
   useEffect(() => {
@@ -14,23 +19,23 @@ export default function SearchFriends({ data }: { data: Friend[] }) {
       if (user) {
         const rawUsername =
           (user.user_metadata?.username as string | undefined) ||
-          user.email?.split('@')[0] ||
-          'me';
+          user.email?.split("@")[0] ||
+          "me";
         const username = rawUsername.toLowerCase();
         const displayName =
           (user.user_metadata?.full_name as string | undefined) ||
           user.email ||
-          'Me';
+          "Me";
         const avatarUrl =
           (user.user_metadata?.avatar_url as string | undefined) ||
-          'https://i.pravatar.cc/96?img=67';
+          "https://i.pravatar.cc/96?img=67";
 
         setMe({
           id: user.id,
           username,
           displayName,
           avatarUrl,
-          profileUrl: username ? `/profile/${username}` : '#',
+          profileUrl: username ? `/profile/${username}` : "#",
         });
       }
     });
@@ -62,7 +67,7 @@ export default function SearchFriends({ data }: { data: Friend[] }) {
       </div>
 
       {filtered.length ? (
-        <FriendsList data={filtered} />
+        <FriendsList data={filtered} onRemoveFriend={onRemoveFriend} />
       ) : (
         <div className="rounded-xl bg-white/5 ring-1 ring-white/10 p-6 text-center text-sm text-white/60">
           No matches found.
