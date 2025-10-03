@@ -42,6 +42,7 @@ export default function NewHabitPage() {
   const [description, setDescription] = useState("");
   const [habitType, setHabitType] = useState("HABIT");
   const [recurrence, setRecurrence] = useState("none");
+  const [duration, setDuration] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +56,12 @@ export default function NewHabitPage() {
 
     if (!name.trim()) {
       setError("Please provide a name for your habit.");
+      return;
+    }
+
+    const durationMinutes = Number(duration);
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      setError("Please enter how many minutes the habit should take.");
       return;
     }
 
@@ -85,6 +92,7 @@ export default function NewHabitPage() {
         description: trimmedDescription || null,
         habit_type: habitType,
         recurrence: recurrenceValue,
+        duration_minutes: durationMinutes,
       });
 
       if (insertError) {
@@ -207,6 +215,29 @@ export default function NewHabitPage() {
                   </Select>
                   <p className="text-xs text-white/50">
                     Pick the cadence that fits best. You can adjust this later.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <Label
+                    htmlFor="duration"
+                    className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+                  >
+                    Duration (minutes)
+                  </Label>
+                  <Input
+                    id="duration"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={duration}
+                    onChange={(event) => setDuration(event.target.value)}
+                    placeholder="e.g. 25"
+                    required
+                    className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                  <p className="text-xs text-white/50">
+                    Estimate how long this habit usually takes so we can track your time investment.
                   </p>
                 </div>
               </div>

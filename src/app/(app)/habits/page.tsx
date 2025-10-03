@@ -284,6 +284,12 @@ export default function HabitsPage() {
                   const initials = habit.name.charAt(0).toUpperCase();
                   const habitType = formatTitleCase(habit.habit_type);
                   const recurrence = formatTitleCase(habit.recurrence);
+                  const hasDuration =
+                    typeof habit.duration_minutes === "number" &&
+                    habit.duration_minutes > 0;
+                  const durationLabel = hasDuration
+                    ? `${habit.duration_minutes} min`
+                    : null;
 
                   return (
                     <article
@@ -308,6 +314,11 @@ export default function HabitsPage() {
                               {recurrence}
                             </span>
                           )}
+                          {durationLabel && (
+                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                              {durationLabel}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -325,6 +336,12 @@ export default function HabitsPage() {
                           <span className="text-base">🕒</span>
                           <span>Updated {formatRelativeTime(habit.updated_at)}</span>
                         </div>
+                        {durationLabel && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">⏱️</span>
+                            <span>Planned for {durationLabel}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <span className="text-base">📅</span>
                           <span>Created {formatRelativeTime(habit.created_at)}</span>
