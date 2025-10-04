@@ -3,12 +3,12 @@ import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import FriendsList from "./FriendsList";
-import type { DiscoveryProfile, Friend } from "@/lib/mock/friends";
-import { MOCK_DISCOVERY_PROFILES } from "@/lib/mock/friends";
+import type { DiscoveryProfile, Friend } from "@/types/friends";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 type SearchFriendsProps = {
   data: Friend[];
+  discoveryProfiles?: DiscoveryProfile[];
   onRemoveFriend?: (friend: Friend) => void;
 };
 
@@ -16,11 +16,15 @@ type DiscoveryProfileState = DiscoveryProfile & {
   status: "idle" | "requested";
 };
 
-export default function SearchFriends({ data, onRemoveFriend }: SearchFriendsProps) {
+export default function SearchFriends({
+  data,
+  discoveryProfiles = [],
+  onRemoveFriend,
+}: SearchFriendsProps) {
   const [q, setQ] = useState("");
   const [me, setMe] = useState<Friend | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryProfileState[]>(() =>
-    MOCK_DISCOVERY_PROFILES.map((profile) => ({ ...profile, status: "idle" }))
+    discoveryProfiles.map((profile) => ({ ...profile, status: "idle" }))
   );
   const [contactsImported, setContactsImported] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -46,21 +50,35 @@ export default function SearchFriends({ data, onRemoveFriend }: SearchFriendsPro
 
         setMe({
           id: user.id,
+          userId: user.id,
           username,
           displayName,
           avatarUrl,
-          profileUrl: username ? `/profile/${username}` : "#",
+          profileUrl: username ? `/profile/${username}` : null,
+          hasRing: false,
+          isOnline: true,
         });
       }
     });
   }, []);
+
+  useEffect(() => {
+    setDiscovery((prev) => {
+      const next = discoveryProfiles.map((profile) => {
+        const existing = prev.find((item) => item.id === profile.id);
+        return { ...profile, status: existing?.status ?? "idle" } as DiscoveryProfileState;
+      });
+      return next;
+    });
+  }, [discoveryProfiles]);
 
   const dataset = useMemo(() => (me ? [me, ...data] : data), [me, data]);
   const filtered = useMemo(() => {
     const v = q.trim().toLowerCase();
     if (!v) return dataset;
     return dataset.filter((f) =>
-      f.username.toLowerCase().includes(v) || f.displayName.toLowerCase().includes(v)
+      f.username.toLowerCase().includes(v) ||
+      (f.displayName || f.username).toLowerCase().includes(v)
     );
   }, [q, dataset]);
 

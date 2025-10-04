@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Friend } from "@/lib/mock/friends";
+import type { Friend } from "@/types/friends";
 
 import MessageFriendButton from "./MessageFriendButton";
 
@@ -24,18 +24,24 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
   const router = useRouter();
   const linkClassName =
     "group flex flex-1 items-center gap-3 min-w-0 pr-2 transition";
-  const isInternalProfile = f.profileUrl.startsWith("/");
+  const defaultProfileHref = `/friends/${encodeURIComponent(f.username)}`;
+  const rawProfileUrl = f.profileUrl ?? defaultProfileHref;
+  const isInternalProfile = rawProfileUrl.startsWith("/");
+  const isExternalProfile = /^https?:\/\//i.test(rawProfileUrl);
   const href = isInternalProfile
-    ? f.profileUrl
-    : `/friends/${encodeURIComponent(f.username)}`;
-  const title = !isInternalProfile && /^https?:\/\//i.test(f.profileUrl)
-    ? f.profileUrl
-    : undefined;
+    ? rawProfileUrl
+    : isExternalProfile
+      ? rawProfileUrl
+      : defaultProfileHref;
+  const title = isExternalProfile ? rawProfileUrl : undefined;
   const statusText = f.isOnline ? "Online now" : "Offline";
   const statusIndicatorClass = f.isOnline
     ? "bg-emerald-500"
     : "bg-white/40";
   const statusTextClass = f.isOnline ? "text-emerald-300" : "text-white/40";
+  const displayName = f.displayName || f.username;
+  const avatarSrc =
+    f.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`;
 
   const linkBody = (
     <>
@@ -50,8 +56,8 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
         >
           <div className="rounded-full bg-black p-[2px]">
             <Image
-              alt={`${f.displayName} avatar`}
-              src={f.avatarUrl}
+              alt={`${displayName} avatar`}
+              src={avatarSrc}
               width={44}
               height={44}
               className="rounded-full object-cover"
@@ -69,7 +75,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
           {f.username}
         </div>
         <div className="truncate text-xs text-white/60 transition-colors group-hover:text-white/70">
-          {f.displayName}
+          {displayName}
         </div>
         <div
           className={`mt-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide ${statusTextClass}`}
@@ -88,7 +94,7 @@ export default function FriendRow({ f, onRemoveFriend }: FriendRowProps) {
         href={href}
         className={linkClassName}
         prefetch={false}
-        aria-label={`View ${f.displayName}'s profile — ${statusText}`}
+        aria-label={`View ${displayName}'s profile — ${statusText}`}
         title={title}
       >
         {linkBody}

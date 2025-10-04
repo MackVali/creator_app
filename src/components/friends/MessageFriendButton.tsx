@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToastHelpers } from "@/components/ui/toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import type { Friend } from "@/lib/mock/friends";
+import type { Friend } from "@/types/friends";
 
 interface MessageFriendButtonProps
   extends Omit<
@@ -59,10 +59,19 @@ export default function MessageFriendButton({
   const firstName = displayName.split(" ")[0] || displayName;
   const triggerLabel = children ?? "Message";
   const computedAriaLabel = ariaLabel ?? `Message ${displayName}`;
+  const isActionable = Boolean(friend.userId);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!message.trim()) {
+      return;
+    }
+
+    if (!friend.userId) {
+      toast.error(
+        "Messaging unavailable",
+        "This contact can't receive messages yet."
+      );
       return;
     }
 
@@ -93,7 +102,7 @@ export default function MessageFriendButton({
           body: JSON.stringify({
             body: message,
             senderId: user.id,
-            recipientId: friend.id,
+            recipientId: friend.userId,
           }),
         }
       );
@@ -115,6 +124,25 @@ export default function MessageFriendButton({
     } finally {
       setIsSending(false);
     }
+  }
+
+  if (!isActionable) {
+    return (
+      <button
+        {...rest}
+        type={type ?? "button"}
+        className={cn(
+          "cursor-not-allowed opacity-50",
+          className
+        )}
+        aria-label={computedAriaLabel}
+        aria-disabled="true"
+        disabled
+        title="This contact can't receive messages yet."
+      >
+        {triggerLabel}
+      </button>
+    );
   }
 
   return (

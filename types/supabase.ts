@@ -198,6 +198,47 @@ export interface Database {
           user_id?: string | null;
         };
       };
+      friend_connections: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          friend_user_id: string | null;
+          friend_username: string;
+          friend_display_name: string | null;
+          friend_avatar_url: string | null;
+          friend_profile_url: string | null;
+          has_ring: boolean;
+          is_online: boolean;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          friend_user_id?: string | null;
+          friend_username: string;
+          friend_display_name?: string | null;
+          friend_avatar_url?: string | null;
+          friend_profile_url?: string | null;
+          has_ring?: boolean;
+          is_online?: boolean;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          friend_user_id?: string | null;
+          friend_username?: string;
+          friend_display_name?: string | null;
+          friend_avatar_url?: string | null;
+          friend_profile_url?: string | null;
+          has_ring?: boolean;
+          is_online?: boolean;
+        };
+      };
       friend_messages: {
         Row: {
           id: string;

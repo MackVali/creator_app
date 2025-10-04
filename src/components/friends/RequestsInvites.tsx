@@ -7,7 +7,7 @@ import type {
   FriendRequest,
   SentInvite,
   SuggestedFriend,
-} from "@/lib/mock/friends";
+} from "@/types/friends";
 
 const actionButtonClass =
   "rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40";
