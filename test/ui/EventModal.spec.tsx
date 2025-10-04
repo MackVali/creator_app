@@ -92,9 +92,6 @@ describe("EventModal habit submission", () => {
     fireEvent.change(screen.getByLabelText(/Habit name/i), {
       target: { value: "Morning focus" },
     });
-    fireEvent.change(screen.getByLabelText(/Description/i), {
-      target: { value: "Deep work" },
-    });
     fireEvent.change(screen.getByLabelText(/Duration \(minutes\)/i), {
       target: { value: "25.4" },
     });
@@ -109,12 +106,12 @@ describe("EventModal habit submission", () => {
     expect(habitPayload).toMatchObject({
       user_id: "user-123",
       name: "MORNING FOCUS",
-      description: "Deep work",
       habit_type: "HABIT",
       recurrence: null,
       duration_minutes: 25,
       window_id: null,
     });
+    expect(habitPayload).not.toHaveProperty("description");
     expect(habitPayload).not.toHaveProperty("priority");
     expect(habitPayload).not.toHaveProperty("energy");
   });

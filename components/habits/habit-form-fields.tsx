@@ -4,7 +4,6 @@ import { ReactNode } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -62,7 +61,6 @@ export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
 
 interface HabitFormFieldsProps {
   name: string;
-  description: string;
   habitType: string;
   recurrence: string;
   duration: string;
@@ -71,7 +69,6 @@ interface HabitFormFieldsProps {
   windowOptions: HabitWindowSelectOption[];
   windowError?: string | null;
   onNameChange: (value: string) => void;
-  onDescriptionChange: (value: string) => void;
   onHabitTypeChange: (value: string) => void;
   onRecurrenceChange: (value: string) => void;
   onWindowChange: (value: string) => void;
@@ -83,7 +80,6 @@ interface HabitFormFieldsProps {
 
 export function HabitFormFields({
   name,
-  description,
   habitType,
   recurrence,
   duration,
@@ -92,7 +88,6 @@ export function HabitFormFields({
   windowOptions,
   windowError,
   onNameChange,
-  onDescriptionChange,
   onHabitTypeChange,
   onRecurrenceChange,
   onWindowChange,
@@ -118,25 +113,6 @@ export function HabitFormFields({
           required
           className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
         />
-      </div>
-
-      <div className="space-y-3">
-        <Label
-          htmlFor="habit-description"
-          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-        >
-          Description
-        </Label>
-        <Textarea
-          id="habit-description"
-          value={description}
-          onChange={(event) => onDescriptionChange(event.target.value)}
-          placeholder="Add any notes that will keep you accountable."
-          className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-        />
-        <p className="text-xs text-white/50">
-          Optional, but a clear intention makes it easier to stay consistent.
-        </p>
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2">

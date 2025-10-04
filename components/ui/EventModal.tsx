@@ -136,7 +136,6 @@ type HabitInsertData = {
   recurrence: string | null;
   duration_minutes: number;
   window_id: string | null;
-  description?: string;
 };
 
 type EventInsertPayload =
@@ -467,10 +466,6 @@ export function createEventInsertPayload({
       duration_minutes: durationMinutes,
       window_id: windowId,
     };
-
-    if (trimmedDescription) {
-      habitData.description = trimmedDescription;
-    }
 
     return { table: "habits", data: habitData };
   }
@@ -2250,10 +2245,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               ) : null}
             </>
           ) : eventType === "HABIT" ? (
-            <FormSection>
+          <FormSection>
               <HabitFormFields
                 name={formData.name}
-                description={formData.description}
                 habitType={formData.type}
                 recurrence={formData.recurrence}
                 duration={formData.duration_min}
@@ -2265,12 +2259,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   setFormData((prev) => ({
                     ...prev,
                     name: formatNameValue(value),
-                  }))
-                }
-                onDescriptionChange={(value) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    description: value,
                   }))
                 }
                 onHabitTypeChange={(value) =>

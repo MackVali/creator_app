@@ -55,7 +55,6 @@ export default function NewHabitPage() {
   const supabase = getSupabaseBrowser();
 
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
   const [habitType, setHabitType] = useState(HABIT_TYPE_OPTIONS[0].value);
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
@@ -206,13 +205,11 @@ export default function NewHabitPage() {
         return;
       }
 
-      const trimmedDescription = description.trim();
       const recurrenceValue = recurrence === "none" ? null : recurrence;
 
       const { error: insertError } = await supabase.from("habits").insert({
         user_id: user.id,
         name: name.trim(),
-        description: trimmedDescription || null,
         habit_type: habitType,
         recurrence: recurrenceValue,
         duration_minutes: normalizedDuration,
@@ -258,7 +255,6 @@ export default function NewHabitPage() {
             <form onSubmit={handleSubmit} className="space-y-8">
               <HabitFormFields
                 name={name}
-                description={description}
                 habitType={habitType}
                 recurrence={recurrence}
                 duration={duration}
@@ -267,7 +263,6 @@ export default function NewHabitPage() {
                 windowOptions={windowSelectOptions}
                 windowError={windowLoadError}
                 onNameChange={setName}
-                onDescriptionChange={setDescription}
                 onHabitTypeChange={setHabitType}
                 onRecurrenceChange={setRecurrence}
                 onWindowChange={setWindowId}
