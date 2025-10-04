@@ -1,16 +1,40 @@
 -- Align habits table with application expectations and grant write access
 
--- Ensure supporting enum types exist
-CREATE TYPE IF NOT EXISTS public.habit_type_enum AS ENUM ('HABIT', 'CHORE', 'ASYNC');
-CREATE TYPE IF NOT EXISTS public.recurrence_enum AS ENUM (
-  'daily',
-  'weekly',
-  'bi-weekly',
-  'monthly',
-  'bi-monthly',
-  'yearly',
-  'every x days'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'public'
+      AND t.typname = 'habit_type_enum'
+  ) THEN
+    CREATE TYPE public.habit_type_enum AS ENUM ('HABIT', 'CHORE', 'ASYNC');
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname = 'public'
+      AND t.typname = 'recurrence_enum'
+  ) THEN
+    CREATE TYPE public.recurrence_enum AS ENUM (
+      'daily',
+      'weekly',
+      'bi-weekly',
+      'monthly',
+      'bi-monthly',
+      'yearly',
+      'every x days'
+    );
+  END IF;
+END
+$$;
 
 -- Allow app roles to insert enum values
 GRANT USAGE ON TYPE public.habit_type_enum TO authenticated, service_role;
@@ -39,13 +63,21 @@ ALTER TABLE public.habits
   ADD COLUMN IF NOT EXISTS duration_minutes integer,
   ADD COLUMN IF NOT EXISTS window_id uuid REFERENCES public.windows(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
-  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT timezone('utc', now()),
-  ADD CONSTRAINT IF NOT EXISTS habits_user_fk FOREIGN KEY (user_id)
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT timezone('utc', now());
+
+ALTER TABLE public.habits
+  DROP CONSTRAINT IF EXISTS habits_user_fk;
+
+ALTER TABLE public.habits
+  ADD CONSTRAINT habits_user_fk FOREIGN KEY (user_id)
     REFERENCES auth.users(id) ON DELETE CASCADE;
 
 -- Enforce positive durations when provided
 ALTER TABLE public.habits
-  ADD CONSTRAINT IF NOT EXISTS habits_duration_positive
+  DROP CONSTRAINT IF EXISTS habits_duration_positive;
+
+ALTER TABLE public.habits
+  ADD CONSTRAINT habits_duration_positive
     CHECK (duration_minutes IS NULL OR duration_minutes > 0);
 
 -- Indexes for performant access patterns
@@ -64,25 +96,38 @@ CREATE TRIGGER habits_set_updated_at
 -- Row level security and policies
 ALTER TABLE public.habits ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS habits_select_own
+DROP POLICY IF EXISTS habits_select_own ON public.habits;
+DROP POLICY IF EXISTS "habits_select_own" ON public.habits;
+
+CREATE POLICY habits_select_own
   ON public.habits
   FOR SELECT
+  TO authenticated
   USING (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS habits_insert_own
+DROP POLICY IF EXISTS habits_insert_own ON public.habits;
+
+CREATE POLICY habits_insert_own
   ON public.habits
   FOR INSERT
+  TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS habits_update_own
+DROP POLICY IF EXISTS habits_update_own ON public.habits;
+
+CREATE POLICY habits_update_own
   ON public.habits
   FOR UPDATE
+  TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS habits_delete_own
+DROP POLICY IF EXISTS habits_delete_own ON public.habits;
+
+CREATE POLICY habits_delete_own
   ON public.habits
   FOR DELETE
+  TO authenticated
   USING (auth.uid() = user_id);
 
 GRANT SELECT, INSERT, UPDATE, DELETE
