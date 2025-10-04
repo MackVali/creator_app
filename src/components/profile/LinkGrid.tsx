@@ -20,14 +20,18 @@ export default function LinkGrid({
     .filter((link) => link.is_active)
     .sort((a, b) => a.position - b.position);
 
+  const listWrapperClass =
+    "mx-auto flex w-full max-w-xl flex-col gap-3 sm:gap-4 lg:max-w-2xl";
+
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2">
+      <div className={listWrapperClass}>
         {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={`link-skeleton-${index}`}
-            className="h-64 rounded-[28px] border border-white/12 bg-white/5 shadow-[0_32px_70px_rgba(2,6,23,0.55)] sm:h-72 sm:rounded-[34px]">
-            <div className="h-full w-full animate-pulse rounded-[28px] bg-gradient-to-br from-black/40 via-black/30 to-black/20 sm:rounded-[34px]" />
+            className="h-20 rounded-full border border-white/10 bg-white/5"
+          >
+            <div className="h-full w-full animate-pulse rounded-full bg-gradient-to-r from-white/5 via-white/10 to-white/5" />
           </div>
         ))}
       </div>
@@ -36,10 +40,10 @@ export default function LinkGrid({
 
   if (activeLinks.length === 0) {
     return (
-      <div className="rounded-[30px] border border-white/12 bg-gradient-to-br from-[#090909] via-[#111111] to-[#1a1a1a] p-10 text-center text-white shadow-[0_40px_90px_-30px_rgba(2,6,23,0.65)] sm:rounded-[38px] sm:p-12">
-        <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-black/50 text-white/60 sm:h-16 sm:w-16">
+      <div className="mx-auto w-full max-w-xl rounded-[32px] border border-white/10 bg-white/5 p-8 text-center text-white shadow-[0_26px_70px_-30px_rgba(2,6,23,0.55)] sm:p-10 lg:max-w-2xl">
+        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white/60 sm:mb-6 sm:h-14 sm:w-14">
           <svg
-            className="h-8 w-8"
+            className="h-6 w-6"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -52,15 +56,15 @@ export default function LinkGrid({
             />
           </svg>
         </div>
-        <h3 className="text-lg font-semibold sm:text-xl">No links yet</h3>
-        <p className="mt-3 text-sm text-white/60">
+        <h3 className="text-base font-semibold sm:text-lg">No links yet</h3>
+        <p className="mt-2 text-sm text-white/60 sm:mt-3">
           Publish your first link to unveil the experiences you want to spotlight.
         </p>
         {isOwner ? (
-          <div className="mt-6">
+          <div className="mt-6 flex justify-center">
             <Link
               href="/profile/linked-accounts"
-              className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+              className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             >
               Add your first link
             </Link>
@@ -71,7 +75,7 @@ export default function LinkGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2">
+    <div className={listWrapperClass}>
       {activeLinks.map((link) => (
         <LinkTile
           key={link.id}
