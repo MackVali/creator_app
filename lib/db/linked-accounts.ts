@@ -101,7 +101,12 @@ export function validateLinkedAccountUrl(
   try {
     const config = PLATFORM_CONFIG[platform];
     const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
-    if (!parsed.hostname.includes(config.domain)) {
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    const domain = config.domain.toLowerCase();
+    const isExactMatch = hostname === domain;
+    const isSubdomainMatch = hostname.endsWith(`.${domain}`);
+
+    if (!isExactMatch && !isSubdomainMatch) {
       return { valid: false, error: `URL must be on ${config.domain}` };
     }
     parsed.search = ""; // remove query params

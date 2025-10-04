@@ -32,16 +32,22 @@ function getEnv() {
 }
 
 // Get Supabase server client
-function getSupabaseServer(cookies: {
+type CookieStore = {
   get(name: string): { name: string; value: string } | undefined;
-  set(name: string, value: string, options: CookieOptions): void;
-}) {
+  set?: (name: string, value: string, options: CookieOptions) => void;
+};
+
+function getSupabaseServer(cookies: CookieStore) {
   const { url, key } = getEnv();
   if (!url || !key) return null;
   return createServerClient(url, key, {
     cookies: {
       get: (name) => cookies.get(name)?.value,
-      set: (name, value, options) => cookies.set(name, value, options),
+      set: (name, value, options) => {
+        if (typeof cookies.set === "function") {
+          cookies.set(name, value, options);
+        }
+      },
     },
   });
 }
