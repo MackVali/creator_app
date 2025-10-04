@@ -198,6 +198,39 @@ export async function getProfileByUserId(
   return data;
 }
 
+export async function updateProfilePreferences(
+  userId: string,
+  preferences: Partial<
+    Pick<Profile, "prefers_dark_mode" | "notifications_enabled">
+  >,
+): Promise<{ data: Profile | null; error: PostgrestError | null }> {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) {
+    return {
+      data: null,
+      error: {
+        message: "Supabase client not initialized",
+      } as PostgrestError,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+      ...preferences,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to update profile preferences:", error);
+  }
+
+  return { data: data as Profile | null, error };
+}
+
 export async function getProfileByUsername(
   username: string
 ): Promise<Profile | null> {

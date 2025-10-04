@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
 import { getCurrentUser } from "@/lib/auth";
 import type { Profile as ProfileType } from "@/lib/types";
+import { updateProfilePreferences } from "@/lib/db";
 import {
   ArrowLeft,
   Bell,
@@ -23,11 +24,16 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 export default function SettingsPage() {
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
-  const { profile } = useProfile();
+  const { profile, userId, refreshProfile } = useProfile();
   const [email, setEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const [savingPreference, setSavingPreference] = useState({
+    darkMode: false,
+    notifications: false,
+  });
   const router = useRouter();
 
   useEffect(() => {
@@ -66,6 +72,65 @@ export default function SettingsPage() {
 
     loadEmail();
   }, []);
+
+  useEffect(() => {
+    if (profile) {
+      setDarkMode(profile.prefers_dark_mode ?? false);
+      setNotifications(profile.notifications_enabled ?? true);
+      setPreferenceError(null);
+    } else {
+      setDarkMode(false);
+      setNotifications(true);
+    }
+  }, [profile]);
+
+  const handleDarkModeToggle = async () => {
+    if (!userId || savingPreference.darkMode) return;
+
+    setPreferenceError(null);
+    const previousValue = darkMode;
+    const nextValue = !darkMode;
+    setDarkMode(nextValue);
+    setSavingPreference((prev) => ({ ...prev, darkMode: true }));
+
+    const { error } = await updateProfilePreferences(userId, {
+      prefers_dark_mode: nextValue,
+    });
+
+    if (error) {
+      console.error("Failed to update dark mode preference:", error);
+      setDarkMode(previousValue);
+      setPreferenceError("We couldn't save your preferences. Please try again.");
+    } else {
+      await refreshProfile();
+    }
+
+    setSavingPreference((prev) => ({ ...prev, darkMode: false }));
+  };
+
+  const handleNotificationsToggle = async () => {
+    if (!userId || savingPreference.notifications) return;
+
+    setPreferenceError(null);
+    const previousValue = notifications;
+    const nextValue = !notifications;
+    setNotifications(nextValue);
+    setSavingPreference((prev) => ({ ...prev, notifications: true }));
+
+    const { error } = await updateProfilePreferences(userId, {
+      notifications_enabled: nextValue,
+    });
+
+    if (error) {
+      console.error("Failed to update notifications preference:", error);
+      setNotifications(previousValue);
+      setPreferenceError("We couldn't save your preferences. Please try again.");
+    } else {
+      await refreshProfile();
+    }
+
+    setSavingPreference((prev) => ({ ...prev, notifications: false }));
+  };
 
   const initials = getInitials(profile?.name || profile?.username || null, email);
 
@@ -140,21 +205,26 @@ export default function SettingsPage() {
             title="Preferences"
             description="Dial in the experience so the interface feels familiar."
           >
+            {preferenceError && (
+              <p className="px-6 pt-4 text-sm text-red-400">{preferenceError}</p>
+            )}
             <SettingsToggleRow
               icon={Moon}
               title="Dark mode"
               description="Reduce eye strain with our midnight palette."
               checked={darkMode}
-              onChange={() => setDarkMode((value) => !value)}
+              onChange={handleDarkModeToggle}
               ariaLabel="Toggle dark mode"
+              disabled={!userId || savingPreference.darkMode}
             />
             <SettingsToggleRow
               icon={Bell}
               title="Notifications"
               description="Get nudges when teammates share something important."
               checked={notifications}
-              onChange={() => setNotifications((value) => !value)}
+              onChange={handleNotificationsToggle}
               ariaLabel="Toggle notifications"
+              disabled={!userId || savingPreference.notifications}
             />
             <SettingsStaticRow
               icon={Globe2}
@@ -395,6 +465,7 @@ type SettingsToggleRowProps = {
   checked: boolean;
   onChange: () => void;
   ariaLabel: string;
+  disabled?: boolean;
 };
 
 function SettingsToggleRow({
@@ -404,6 +475,7 @@ function SettingsToggleRow({
   checked,
   onChange,
   ariaLabel,
+  disabled = false,
 }: SettingsToggleRowProps) {
   return (
     <div className="flex items-center gap-4 px-6 py-4">
@@ -414,7 +486,12 @@ function SettingsToggleRow({
           <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
         )}
       </div>
-      <ToggleSwitch checked={checked} onChange={onChange} ariaLabel={ariaLabel} />
+      <ToggleSwitch
+        checked={checked}
+        onChange={onChange}
+        ariaLabel={ariaLabel}
+        disabled={disabled}
+      />
     </div>
   );
 }
@@ -457,19 +534,21 @@ type ToggleSwitchProps = {
   checked: boolean;
   onChange: () => void;
   ariaLabel: string;
+  disabled?: boolean;
 };
 
-function ToggleSwitch({ checked, onChange, ariaLabel }: ToggleSwitchProps) {
+function ToggleSwitch({ checked, onChange, ariaLabel, disabled = false }: ToggleSwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
+      disabled={disabled}
       onClick={onChange}
       className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
         checked ? "bg-[var(--accent)]" : "bg-white/10"
-      }`}
+      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
     >
       <span
         aria-hidden="true"
