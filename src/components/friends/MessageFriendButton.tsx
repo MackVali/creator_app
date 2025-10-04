@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useState,
   type ButtonHTMLAttributes,
   type FormEvent,
@@ -47,6 +48,12 @@ export default function MessageFriendButton({
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const toast = useToastHelpers();
+
+  useEffect(() => {
+    if (!open) {
+      setMessage("");
+    }
+  }, [open]);
 
   const displayName = friend.displayName || friend.username;
   const firstName = displayName.split(" ")[0] || displayName;
@@ -99,7 +106,6 @@ export default function MessageFriendButton({
       }
 
       toast.success("Message sent", `Your note to ${displayName} is on its way.`);
-      setMessage("");
       setOpen(false);
     } catch (error) {
       console.error("Failed to send friend message", error);
