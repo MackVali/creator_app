@@ -1196,6 +1196,25 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     );
   };
 
+  const getInsertErrorMessage = (error: unknown, fallback: string) => {
+    if (!error) {
+      return fallback;
+    }
+
+    if (error instanceof Error) {
+      return `${fallback}: ${error.message}`;
+    }
+
+    if (typeof error === "object" && error !== null && "message" in error) {
+      const messageValue = (error as { message?: unknown }).message;
+      if (typeof messageValue === "string" && messageValue.trim()) {
+        return `${fallback}: ${messageValue}`;
+      }
+    }
+
+    return fallback;
+  };
+
   const handleStandardSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -1319,8 +1338,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         .single();
 
       if (error) {
+        const fallbackMessage = "Failed to create " + eventType.toLowerCase();
         console.error("Error creating " + eventType.toLowerCase() + ":", error);
-        toast.error("Error", "Failed to create " + eventType.toLowerCase());
+        toast.error("Error", getInsertErrorMessage(error, fallbackMessage));
         return;
       }
 
@@ -1344,8 +1364,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       router.refresh();
       onClose();
     } catch (error) {
-      console.error("Error creating " + eventType.toLowerCase() + ":", error);
-      toast.error("Error", "Failed to create " + eventType.toLowerCase());
+      const fallbackMessage = "Failed to create " + (eventType?.toLowerCase() ?? "event");
+      console.error(
+        "Error creating " + (eventType?.toLowerCase() ?? "event") + ":",
+        error
+      );
+      toast.error("Error", getInsertErrorMessage(error, fallbackMessage));
     } finally {
       setIsSaving(false);
     }
