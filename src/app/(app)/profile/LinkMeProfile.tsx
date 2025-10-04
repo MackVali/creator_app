@@ -2,27 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { 
-  Instagram, 
-  Facebook, 
-  Twitter, 
-  Linkedin, 
-  Youtube, 
-  Music, 
-  Mail, 
-  MapPin, 
-  Edit3,
-  ExternalLink,
-  Share2,
-  Menu,
-  ArrowLeft,
-  Plus
-} from "lucide-react";
+import { MapPin, Edit3, ExternalLink, Share2, Menu, ArrowLeft, Plus } from "lucide-react";
 import { Profile, SocialLink, ContentCard } from "@/lib/types";
-import { getSocialLinks, getContentCards, getPlatformIcon, getPlatformColor } from "@/lib/db/profile-management";
+import { getSocialLinks, getContentCards } from "@/lib/db/profile-management";
+import { SocialIcon, getSocialIconDefinition } from "@/components/profile/SocialIcon";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface LinkMeProfileProps {
   profile: Profile;
@@ -32,6 +19,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
 
   useEffect(() => {
     async function loadProfileData() {
@@ -56,78 +44,11 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
     loadProfileData();
   }, [profile?.user_id]);
 
-  const getInitials = (name: string | null, username: string) => {
-    if (name) {
-      return name
-        .split(" ")
-        .map((word) => word.charAt(0))
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
-    }
-    return username.slice(0, 2).toUpperCase();
-  };
-
-  const initials = getInitials(profile.name || null, profile.username);
-
-  // Default content cards if none exist
-  const defaultContentCards: ContentCard[] = [
-    {
-      id: "default-1",
-      user_id: profile.user_id,
-      title: "Website",
-      description: "Visit my personal website",
-      url: "#",
-      thumbnail_url: null,
-      category: "Personal",
-      position: 0,
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    },
-    {
-      id: "default-2", 
-      user_id: profile.user_id,
-      title: "Portfolio",
-      description: "View my work and projects",
-      url: "#",
-      thumbnail_url: null,
-      category: "Work",
-      position: 1,
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    },
-    {
-      id: "default-3",
-      user_id: profile.user_id,
-      title: "Blog",
-      description: "Read my latest thoughts and insights",
-      url: "#",
-      thumbnail_url: null,
-      category: "Content",
-      position: 2,
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    },
-    {
-      id: "default-4",
-      user_id: profile.user_id,
-      title: "Contact",
-      description: "Get in touch with me",
-      url: "#",
-      thumbnail_url: null,
-      category: "Contact",
-      position: 3,
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
-  ];
-
-  // Use real content cards or fall back to defaults
-  const displayCards = contentCards.length > 0 ? contentCards : defaultContentCards;
+  const isOwner = session?.user?.id === profile.user_id;
+  const activeCards = contentCards
+    .filter((card) => card.is_active)
+    .sort((a, b) => a.position - b.position);
+  const showEmptyState = !loading && activeCards.length === 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
@@ -218,99 +139,145 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             )}
 
             {/* Social Media Links */}
-            <div className="flex justify-center space-x-3 mb-8">
+            <div className="mb-8 flex flex-wrap justify-center gap-3">
               {socialLinks.length > 0 ? (
-                socialLinks.map((link) => (
-                  <a
-                    key={link.id}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`w-12 h-12 ${link.color || getPlatformColor(link.platform)} rounded-full flex items-center justify-center text-white hover:scale-110 transition-transform duration-200 shadow-lg`}
-                    title={link.platform}
-                  >
-                    <span className="text-lg">{link.icon || getPlatformIcon(link.platform)}</span>
-                  </a>
-                ))
+                socialLinks.map((link) => {
+                  const definition = getSocialIconDefinition(link.platform);
+
+                  return (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      aria-label={`Visit ${profile.name || profile.username} on ${definition.label}`}
+                    >
+                      <SocialIcon
+                        platform={link.platform}
+                        className={cn(
+                          "group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:-translate-y-1",
+                          link.color
+                        )}
+                      />
+                    </a>
+                  );
+                })
               ) : (
-                // Default social icons if none exist
-                [
-                  { platform: "instagram", icon: "📷", color: "bg-gradient-to-r from-purple-500 to-pink-500" },
-                  { platform: "facebook", icon: "📘", color: "bg-blue-600" },
-                  { platform: "twitter", icon: "🐦", color: "bg-blue-400" },
-                  { platform: "linkedin", icon: "💼", color: "bg-blue-700" },
-                  { platform: "youtube", icon: "📺", color: "bg-red-600" },
-                  { platform: "tiktok", icon: "🎵", color: "bg-black" },
-                  { platform: "email", icon: "✉️", color: "bg-gray-600" },
-                ].map((social) => (
-                  <div
-                    key={social.platform}
-                    className={`w-12 h-12 ${social.color} rounded-full flex items-center justify-center text-white opacity-50`}
-                    title={`Add ${social.platform}`}
-                  >
-                    <span className="text-lg">{social.icon}</span>
-                  </div>
-                ))
+                ["instagram", "facebook", "twitter", "linkedin", "youtube", "tiktok", "email"].map((platform) => {
+                  const definition = getSocialIconDefinition(platform);
+
+                  return (
+                    <div
+                      key={platform}
+                      className="inline-flex flex-col items-center"
+                      title={`Add ${definition.label}`}
+                    >
+                      <SocialIcon platform={platform} className="opacity-40 shadow-none" />
+                      <span className="sr-only">Add {definition.label}</span>
+                    </div>
+                  );
+                })
               )}
             </div>
 
             {/* Content Links Grid */}
             <div className="space-y-4">
-              {displayCards.map((item) => (
-                <a
-                  key={item.id}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block group"
-                >
-                  <div className="relative overflow-hidden rounded-lg border border-gray-200 hover:border-blue-300 transition-all duration-200 hover:shadow-lg">
-                    {item.thumbnail_url ? (
-                      <div className="aspect-video bg-cover bg-center" style={{ backgroundImage: `url(${item.thumbnail_url})` }} />
-                    ) : (
-                      <div className="aspect-video bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                        <div className="text-center">
-                          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                            <ExternalLink className="h-8 w-8 text-blue-600" />
-                          </div>
-                          <p className="text-sm text-gray-500">{item.category || "Link"}</p>
-                        </div>
-                      </div>
-                    )}
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-                        {item.title}
-                      </h3>
-                      {item.description && (
-                        <p className="text-sm text-gray-600 mt-1">
-                          {item.description}
-                        </p>
-                      )}
-                    </div>
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => (
+                  <div
+                    key={`content-skeleton-${index}`}
+                    className="h-36 animate-pulse rounded-lg border border-gray-200 bg-gray-100"
+                  />
+                ))
+              ) : showEmptyState ? (
+                <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-gray-500 shadow-sm">
+                    <Plus className="h-5 w-5" />
                   </div>
-                </a>
-              ))}
+                  <h3 className="mt-4 text-lg font-semibold text-gray-900">
+                    {isOwner ? "Your link collection is empty" : "No links yet"}
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-600">
+                    {isOwner
+                      ? "Add your first link to start sharing the highlights that matter most."
+                      : "This creator hasn’t shared any links yet. Check back soon!"}
+                  </p>
+                  {isOwner ? (
+                    <div className="mt-4">
+                      <Link href="/profile/edit">
+                        <Button className="inline-flex items-center">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add your first link
+                        </Button>
+                      </Link>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                activeCards.map((item) => (
+                  <a
+                    key={item.id}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block group"
+                  >
+                    <div className="relative overflow-hidden rounded-lg border border-gray-200 transition-all duration-200 hover:border-blue-300 hover:shadow-lg">
+                      {item.thumbnail_url ? (
+                        <div
+                          className="aspect-video bg-cover bg-center"
+                          style={{ backgroundImage: `url(${item.thumbnail_url})` }}
+                        />
+                      ) : (
+                        <div className="aspect-video flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                          <div className="text-center">
+                            <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
+                              <ExternalLink className="h-8 w-8 text-blue-600" />
+                            </div>
+                            <p className="text-sm text-gray-500">{item.category || "Link"}</p>
+                          </div>
+                        </div>
+                      )}
+                      <div className="p-4">
+                        <h3 className="font-semibold text-gray-900 transition-colors group-hover:text-blue-600">
+                          {item.title}
+                        </h3>
+                        {item.description && (
+                          <p className="mt-1 text-sm text-gray-600">
+                            {item.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </a>
+                ))
+              )}
             </div>
 
             {/* Add Content Button */}
-            <div className="mt-6 text-center">
-              <Link href="/profile/edit">
-                <Button variant="outline" className="w-full border-dashed border-2 border-gray-300 hover:border-blue-400 hover:bg-blue-50">
-                  <Plus className="h-5 w-5 mr-2" />
-                  Add More Content
-                </Button>
-              </Link>
-            </div>
+            {isOwner && !showEmptyState ? (
+              <div className="mt-6 text-center">
+                <Link href="/profile/edit">
+                  <Button variant="outline" className="w-full border-dashed border-2 border-gray-300 hover:border-blue-400 hover:bg-blue-50">
+                    <Plus className="mr-2 h-5 w-5" />
+                    Add More Content
+                  </Button>
+                </Link>
+              </div>
+            ) : null}
 
             {/* Edit Profile Button */}
-            <div className="mt-8 text-center">
-              <Link href="/profile/edit">
-                <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-200">
-                  <Edit3 className="h-5 w-5 mr-2" />
-                  Edit Profile
-                </Button>
-              </Link>
-            </div>
+            {isOwner ? (
+              <div className="mt-8 text-center">
+                <Link href="/profile/edit">
+                  <Button className="rounded-full bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-3 text-white shadow-lg transition-all duration-200 hover:from-blue-700 hover:to-purple-700 hover:shadow-xl">
+                    <Edit3 className="mr-2 h-5 w-5" />
+                    Edit Profile
+                  </Button>
+                </Link>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
