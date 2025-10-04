@@ -198,6 +198,32 @@ export interface Database {
           user_id?: string | null;
         };
       };
+      friend_messages: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          sender_id: string;
+          recipient_id: string;
+          body: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          sender_id: string;
+          recipient_id: string;
+          body: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          sender_id?: string;
+          recipient_id?: string;
+          body?: string;
+        };
+      };
       monument_skills: {
         Row: {
           user_id: string;

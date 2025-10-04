@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToastHelpers } from "@/components/ui/toast";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { Friend } from "@/lib/mock/friends";
 
@@ -58,14 +59,53 @@ export default function MessageFriendButton({
       return;
     }
 
+    setIsSending(true);
+
     try {
-      setIsSending(true);
-      // Placeholder for Supabase messaging integration.
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        throw new Error("Supabase client unavailable");
+      }
+
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (error || !user) {
+        throw new Error("You need to be signed in to send messages.");
+      }
+
+      const response = await fetch(
+        `/api/friends/${encodeURIComponent(friend.username)}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            body: message,
+            senderId: user.id,
+            recipientId: friend.id,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? "Failed to send message.");
+      }
 
       toast.success("Message sent", `Your note to ${displayName} is on its way.`);
       setMessage("");
       setOpen(false);
+    } catch (error) {
+      console.error("Failed to send friend message", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Something went wrong.";
+      toast.error("Couldn’t send message", errorMessage);
     } finally {
       setIsSending(false);
     }
