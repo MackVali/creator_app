@@ -9,6 +9,7 @@ import { HabitFormFields, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type Hab
 import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { formatSupabaseError } from "@/lib/errors";
 
 interface WindowOption {
   id: string;
@@ -226,9 +227,7 @@ export default function NewHabitPage() {
     } catch (err) {
       console.error("Failed to create habit:", err);
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to create the habit right now."
+        formatSupabaseError(err, "Unable to create the habit right now.")
       );
     } finally {
       setLoading(false);
