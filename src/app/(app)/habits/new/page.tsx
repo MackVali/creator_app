@@ -60,7 +60,7 @@ export default function NewHabitPage() {
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
   );
-  const [duration, setDuration] = useState("");
+  const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
