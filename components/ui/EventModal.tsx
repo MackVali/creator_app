@@ -1270,6 +1270,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         project_id?: string;
         stage?: string;
         habit_type?: string;
+        type?: string;
         recurrence?: string;
         duration_min?: number;
         duration_minutes?: number;
@@ -1319,6 +1320,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.stage = formData.stage;
         insertData.skill_id = formData.skill_id;
       } else if (eventType === "HABIT") {
+        insertData.type = formData.type;
         insertData.habit_type = formData.type;
         insertData.recurrence =
           formData.recurrence === "none" ? null : formData.recurrence;
