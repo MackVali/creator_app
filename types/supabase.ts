@@ -624,7 +624,14 @@ export interface Database {
       };
     };
     Views: Record<string, unknown>;
-    Functions: Record<string, unknown>;
+    Functions: {
+      get_profile_user_id: {
+        Args: {
+          p_username: string;
+        };
+        Returns: string | null;
+      };
+    };
     Enums: {
       schedule_instance_source_type: 'PROJECT' | 'TASK';
       schedule_instance_status: 'scheduled' | 'completed' | 'missed' | 'canceled';

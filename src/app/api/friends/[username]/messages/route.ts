@@ -52,17 +52,29 @@ export async function POST(
       );
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .ilike("username", params.username)
-      .maybeSingle();
+    const {
+      data: recipientUserId,
+      error: recipientLookupError,
+    } = await supabase.rpc("get_profile_user_id", {
+      p_username: params.username,
+    });
 
-    if (!profile) {
+    if (recipientLookupError) {
+      console.error(
+        "Error looking up recipient profile",
+        recipientLookupError
+      );
+      return NextResponse.json(
+        { error: "Failed to resolve recipient" },
+        { status: 500 }
+      );
+    }
+
+    if (!recipientUserId) {
       return NextResponse.json({ error: "Recipient not found" }, { status: 404 });
     }
 
-    if (profile.user_id !== recipientId) {
+    if (recipientUserId !== recipientId) {
       return NextResponse.json(
         { error: "Recipient mismatch" },
         { status: 400 }
