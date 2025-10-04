@@ -4,9 +4,9 @@ import { ReactNode, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
-import { getCurrentUser } from "@/lib/auth";
 import type { Profile as ProfileType } from "@/lib/types";
 import { updateProfilePreferences } from "@/lib/db";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   ArrowLeft,
   Bell,
@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const { profile, userId, refreshProfile } = useProfile();
+  const { session } = useAuth();
   const [email, setEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -37,41 +38,37 @@ export default function SettingsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    async function loadEmail() {
-      const user = await getCurrentUser();
-      setEmail(user?.email || "");
+    const user = session?.user ?? null;
+    setEmail(user?.email ?? "");
 
-      if (user) {
-        const possibleRoles = new Set<string>();
-        const addRole = (value: unknown) => {
-          if (typeof value === "string") {
-            possibleRoles.add(value.toLowerCase());
-          }
-        };
-
-        const addRoles = (values: unknown) => {
-          if (Array.isArray(values)) {
-            values.forEach((role) => addRole(role));
-          }
-        };
-
-        addRole(user.user_metadata?.role);
-        addRole(user.app_metadata?.role);
-        addRoles(user.user_metadata?.roles);
-        addRoles(user.app_metadata?.roles);
-
-        if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
-          possibleRoles.add("admin");
+    if (user) {
+      const possibleRoles = new Set<string>();
+      const addRole = (value: unknown) => {
+        if (typeof value === "string") {
+          possibleRoles.add(value.toLowerCase());
         }
+      };
 
-        setIsAdmin(possibleRoles.has("admin"));
-      } else {
-        setIsAdmin(false);
+      const addRoles = (values: unknown) => {
+        if (Array.isArray(values)) {
+          values.forEach((role) => addRole(role));
+        }
+      };
+
+      addRole(user.user_metadata?.role);
+      addRole(user.app_metadata?.role);
+      addRoles(user.user_metadata?.roles);
+      addRoles(user.app_metadata?.roles);
+
+      if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
+        possibleRoles.add("admin");
       }
-    }
 
-    loadEmail();
-  }, []);
+      setIsAdmin(possibleRoles.has("admin"));
+    } else {
+      setIsAdmin(false);
+    }
+  }, [session]);
 
   useEffect(() => {
     if (profile) {
