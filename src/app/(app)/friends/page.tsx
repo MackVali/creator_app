@@ -1,11 +1,11 @@
 'use client';
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import {
-  MOCK_FRIENDS,
-  MOCK_FRIEND_REQUESTS,
-  MOCK_SENT_INVITES,
-  MOCK_SUGGESTED_FRIENDS,
-} from '@/lib/mock/friends';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import type {
+  Friend,
+  FriendRequest,
+  SentInvite,
+  SuggestedFriend,
+} from '@/types/friends';
 import FriendsList from '@/components/friends/FriendsList';
 import SearchFriends from '@/components/friends/SearchFriends';
 import RequestsInvites from '@/components/friends/RequestsInvites';
@@ -15,19 +15,76 @@ export default function FriendsPage() {
   const [tab, setTab] = useState<'friends' | 'requests' | 'search'>('friends');
   const [sort, setSort] =
     useState<'default' | 'alphabetical' | 'online'>('default');
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [requests] = useState<FriendRequest[]>([]);
+  const [invites] = useState<SentInvite[]>([]);
+  const [suggested] = useState<SuggestedFriend[]>([]);
   const friendsTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
   const searchTabRef = useRef<HTMLButtonElement>(null);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadFriends() {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await fetch('/api/friends', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? 'Unable to load friends.');
+        }
+
+        const data = (await response.json()) as { friends: Friend[] };
+        if (isMounted) {
+          setFriends(data.friends);
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        const message =
+          err instanceof Error ? err.message : 'Unable to load friends.';
+        setError(message);
+        setFriends([]);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadFriends();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const sortedFriends = useMemo(() => {
+    if (!friends.length) {
+      return [] as Friend[];
+    }
     if (sort === 'alphabetical') {
-      return [...MOCK_FRIENDS].sort((a, b) =>
-        a.displayName.localeCompare(b.displayName)
+      return [...friends].sort((a, b) =>
+        (a.displayName || a.username).localeCompare(
+          b.displayName || b.username
+        )
       );
     }
 
     if (sort === 'online') {
-      return [...MOCK_FRIENDS].sort((a, b) => {
+      return [...friends].sort((a, b) => {
         const aOnline = a.isOnline ? 1 : 0;
         const bOnline = b.isOnline ? 1 : 0;
 
@@ -35,12 +92,14 @@ export default function FriendsPage() {
           return bOnline - aOnline;
         }
 
-        return a.displayName.localeCompare(b.displayName);
+        return (a.displayName || a.username).localeCompare(
+          b.displayName || b.username
+        );
       });
     }
 
-    return [...MOCK_FRIENDS];
-  }, [sort]);
+    return [...friends];
+  }, [friends, sort]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
@@ -154,7 +213,11 @@ export default function FriendsPage() {
         aria-labelledby="friends-tab"
         hidden={tab !== 'friends'}
       >
-        <FriendsList data={sortedFriends} />
+        <FriendsList
+          data={sortedFriends}
+          isLoading={isLoading}
+          error={error}
+        />
       </section>
       <section
         id="requests-panel"
@@ -163,9 +226,9 @@ export default function FriendsPage() {
         hidden={tab !== 'requests'}
       >
         <RequestsInvites
-          requests={MOCK_FRIEND_REQUESTS}
-          invites={MOCK_SENT_INVITES}
-          suggestions={MOCK_SUGGESTED_FRIENDS}
+          requests={requests}
+          invites={invites}
+          suggestions={suggested}
         />
       </section>
       <section
@@ -174,7 +237,7 @@ export default function FriendsPage() {
         aria-labelledby="search-tab"
         hidden={tab !== 'search'}
       >
-        <SearchFriends data={sortedFriends} />
+        <SearchFriends data={sortedFriends} discoveryProfiles={[]} />
       </section>
 
       {/* Bottom padding for safe-area / bottom nav */}

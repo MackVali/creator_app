@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useState,
   type ButtonHTMLAttributes,
   type FormEvent,
@@ -20,8 +21,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToastHelpers } from "@/components/ui/toast";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import type { Friend } from "@/lib/mock/friends";
+import type { Friend } from "@/types/friends";
 
 interface MessageFriendButtonProps
   extends Omit<
@@ -47,10 +49,17 @@ export default function MessageFriendButton({
   const [isSending, setIsSending] = useState(false);
   const toast = useToastHelpers();
 
+  useEffect(() => {
+    if (!open) {
+      setMessage("");
+    }
+  }, [open]);
+
   const displayName = friend.displayName || friend.username;
   const firstName = displayName.split(" ")[0] || displayName;
   const triggerLabel = children ?? "Message";
   const computedAriaLabel = ariaLabel ?? `Message ${displayName}`;
+  const isActionable = Boolean(friend.userId);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,17 +67,82 @@ export default function MessageFriendButton({
       return;
     }
 
+    if (!friend.userId) {
+      toast.error(
+        "Messaging unavailable",
+        "This contact can't receive messages yet."
+      );
+      return;
+    }
+
+    setIsSending(true);
+
     try {
-      setIsSending(true);
-      // Placeholder for Supabase messaging integration.
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        throw new Error("Supabase client unavailable");
+      }
+
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (error || !user) {
+        throw new Error("You need to be signed in to send messages.");
+      }
+
+      const response = await fetch(
+        `/api/friends/${encodeURIComponent(friend.username)}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            body: message,
+            senderId: user.id,
+            recipientId: friend.userId,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(data?.error ?? "Failed to send message.");
+      }
 
       toast.success("Message sent", `Your note to ${displayName} is on its way.`);
-      setMessage("");
       setOpen(false);
+    } catch (error) {
+      console.error("Failed to send friend message", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Something went wrong.";
+      toast.error("Couldn’t send message", errorMessage);
     } finally {
       setIsSending(false);
     }
+  }
+
+  if (!isActionable) {
+    return (
+      <button
+        {...rest}
+        type={type ?? "button"}
+        className={cn(
+          "cursor-not-allowed opacity-50",
+          className
+        )}
+        aria-label={computedAriaLabel}
+        aria-disabled="true"
+        disabled
+        title="This contact can't receive messages yet."
+      >
+        {triggerLabel}
+      </button>
+    );
   }
 
   return (

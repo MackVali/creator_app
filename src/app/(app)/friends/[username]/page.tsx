@@ -1,18 +1,63 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import MessageFriendButton from "@/components/friends/MessageFriendButton";
-import { MOCK_FRIENDS } from "@/lib/mock/friends";
+import { mapFriendConnection } from "@/lib/friends/mappers";
+import { getSupabaseServer } from "@/lib/supabase";
+import type { Friend } from "@/types/friends";
 
-function getFriend(username: string) {
+async function fetchFriend(username: string): Promise<Friend | null> {
   const normalized = decodeURIComponent(username).toLowerCase();
-  return MOCK_FRIENDS.find((friend) => friend.username.toLowerCase() === normalized);
+  const cookieStore = cookies();
+  const supabase = getSupabaseServer({
+    get: (name: string) => cookieStore.get(name),
+    set: () => {},
+  });
+
+  if (!supabase) {
+    return null;
+  }
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("friend_connections")
+    .select(
+      "id, friend_user_id, friend_username, friend_display_name, friend_avatar_url, friend_profile_url, has_ring, is_online"
+    )
+    .eq("user_id", user.id)
+    .ilike("friend_username", normalized)
+    .maybeSingle();
+
+  if (!data || error) {
+    return null;
+  }
+
+  const friend = mapFriendConnection(data);
+
+  if (friend.username.toLowerCase() !== normalized) {
+    return null;
+  }
+
+  return friend;
 }
 
-export function generateMetadata({ params }: { params: { username: string } }): Metadata {
-  const friend = getFriend(params.username);
+export async function generateMetadata({
+  params,
+}: {
+  params: { username: string };
+}): Promise<Metadata> {
+  const friend = await fetchFriend(params.username);
 
   if (!friend) {
     return {
@@ -20,24 +65,36 @@ export function generateMetadata({ params }: { params: { username: string } }): 
     };
   }
 
+  const displayName = friend.displayName || friend.username;
+
   return {
-    title: `${friend.displayName} (@${friend.username})`,
-    description: `Explore ${friend.displayName}'s profile highlights and connect without leaving Creator Studio.`,
+    title: `${displayName} (@${friend.username})`,
+    description: `Explore ${displayName}'s profile highlights and connect without leaving Creator Studio.`,
   };
 }
 
-export default function FriendProfilePage({ params }: { params: { username: string } }) {
-  const friend = getFriend(params.username);
+export default async function FriendProfilePage({
+  params,
+}: {
+  params: { username: string };
+}) {
+  const friend = await fetchFriend(params.username);
 
   if (!friend) {
     notFound();
   }
 
-  const isExternalProfile = /^https?:\/\//i.test(friend.profileUrl);
-  const firstName = friend.displayName.split(" ")[0] || friend.displayName;
+  const displayName = friend.displayName || friend.username;
+  const isExternalProfile = friend.profileUrl
+    ? /^https?:\/\//i.test(friend.profileUrl)
+    : false;
+  const firstName = displayName.split(" ")[0] || displayName;
+  const avatarSrc =
+    friend.avatarUrl ??
+    `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`;
 
   let externalDomain: string | null = null;
-  if (isExternalProfile) {
+  if (isExternalProfile && friend.profileUrl) {
     try {
       const url = new URL(friend.profileUrl);
       externalDomain = url.hostname.replace(/^www\./, "");
@@ -74,8 +131,8 @@ export default function FriendProfilePage({ params }: { params: { username: stri
               >
                 <div className="rounded-full bg-slate-950 p-[3px]">
                   <Image
-                    src={friend.avatarUrl}
-                    alt={`${friend.displayName} avatar`}
+                    src={avatarSrc}
+                    alt={`${displayName} avatar`}
                     width={132}
                     height={132}
                     className="h-32 w-32 rounded-full object-cover"
@@ -86,7 +143,7 @@ export default function FriendProfilePage({ params }: { params: { username: stri
             </div>
 
             <div className="flex-1 text-center sm:text-left">
-              <h1 className="text-3xl font-semibold text-white">{friend.displayName}</h1>
+              <h1 className="text-3xl font-semibold text-white">{displayName}</h1>
               <p className="mt-2 text-sm font-medium text-white/60">@{friend.username}</p>
 
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
@@ -108,8 +165,8 @@ export default function FriendProfilePage({ params }: { params: { username: stri
               </div>
 
               <p className="mt-5 text-sm leading-relaxed text-white/70">
-                Get a closer look at {friend.displayName} and their creator presence before jumping out to their public profile.
-                Review their status, see what is new, and decide how you want to connect.
+                Get a closer look at {displayName} and their creator presence before jumping out to their public profile. Review
+                their status, see what is new, and decide how you want to connect.
               </p>
 
               <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-start">
@@ -119,7 +176,7 @@ export default function FriendProfilePage({ params }: { params: { username: stri
                 >
                   Message {firstName}
                 </MessageFriendButton>
-                {isExternalProfile ? (
+                {isExternalProfile && friend.profileUrl ? (
                   <a
                     href={friend.profileUrl}
                     target="_blank"
@@ -163,10 +220,8 @@ export default function FriendProfilePage({ params }: { params: { username: stri
 
           <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5 sm:col-span-2">
             <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-white/50">Connect</h2>
-            <p className="mt-3 text-base font-medium text-white">
-              Prefer to explore outside the app?
-            </p>
-            {isExternalProfile ? (
+            <p className="mt-3 text-base font-medium text-white">Prefer to explore outside the app?</p>
+            {isExternalProfile && friend.profileUrl ? (
               <p className="mt-2 text-sm text-white/60">
                 Head over to {externalDomain ?? friend.profileUrl} to see their latest public updates, or stay here to keep the
                 conversation going.
