@@ -1,11 +1,12 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import React, { ReactNode, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
-import { getCurrentUser } from "@/lib/auth";
 import type { Profile as ProfileType } from "@/lib/types";
+import { updateProfilePreferences } from "@/lib/db";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   ArrowLeft,
   Bell,
@@ -17,57 +18,241 @@ import {
   Lock,
   Moon,
   Pencil,
+  RefreshCw,
   Shield,
   ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export default function SettingsPage() {
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
-  const { profile } = useProfile();
+  const { profile, userId, loading, error, refreshProfile } = useProfile();
+  const { session } = useAuth();
   const [email, setEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const [savingPreference, setSavingPreference] = useState({
+    darkMode: false,
+    notifications: false,
+  });
   const router = useRouter();
 
   useEffect(() => {
-    async function loadEmail() {
-      const user = await getCurrentUser();
-      setEmail(user?.email || "");
+    const user = session?.user ?? null;
+    setEmail(user?.email ?? "");
 
-      if (user) {
-        const possibleRoles = new Set<string>();
-        const addRole = (value: unknown) => {
-          if (typeof value === "string") {
-            possibleRoles.add(value.toLowerCase());
-          }
-        };
-
-        const addRoles = (values: unknown) => {
-          if (Array.isArray(values)) {
-            values.forEach((role) => addRole(role));
-          }
-        };
-
-        addRole(user.user_metadata?.role);
-        addRole(user.app_metadata?.role);
-        addRoles(user.user_metadata?.roles);
-        addRoles(user.app_metadata?.roles);
-
-        if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
-          possibleRoles.add("admin");
+    if (user) {
+      const possibleRoles = new Set<string>();
+      const addRole = (value: unknown) => {
+        if (typeof value === "string") {
+          possibleRoles.add(value.toLowerCase());
         }
+      };
 
-        setIsAdmin(possibleRoles.has("admin"));
-      } else {
-        setIsAdmin(false);
+      const addRoles = (values: unknown) => {
+        if (Array.isArray(values)) {
+          values.forEach((role) => addRole(role));
+        }
+      };
+
+      addRole(user.user_metadata?.role);
+      addRole(user.app_metadata?.role);
+      addRoles(user.user_metadata?.roles);
+      addRoles(user.app_metadata?.roles);
+
+      if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
+        possibleRoles.add("admin");
       }
+
+      setIsAdmin(possibleRoles.has("admin"));
+    } else {
+      setIsAdmin(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (profile) {
+      setDarkMode(profile.prefers_dark_mode ?? false);
+      setNotifications(profile.notifications_enabled ?? true);
+      setPreferenceError(null);
+    } else {
+      setDarkMode(false);
+      setNotifications(true);
+    }
+  }, [profile]);
+
+  const handleDarkModeToggle = async () => {
+    if (!userId || savingPreference.darkMode) return;
+
+    setPreferenceError(null);
+    const previousValue = darkMode;
+    const nextValue = !darkMode;
+    setDarkMode(nextValue);
+    setSavingPreference((prev) => ({ ...prev, darkMode: true }));
+
+    const { error } = await updateProfilePreferences(userId, {
+      prefers_dark_mode: nextValue,
+    });
+
+    if (error) {
+      console.error("Failed to update dark mode preference:", error);
+      setDarkMode(previousValue);
+      setPreferenceError("We couldn't save your preferences. Please try again.");
+    } else {
+      await refreshProfile();
     }
 
-    loadEmail();
-  }, []);
+    setSavingPreference((prev) => ({ ...prev, darkMode: false }));
+  };
 
-  const initials = getInitials(profile?.name || profile?.username || null, email);
+  const handleNotificationsToggle = async () => {
+    if (!userId || savingPreference.notifications) return;
+
+    setPreferenceError(null);
+    const previousValue = notifications;
+    const nextValue = !notifications;
+    setNotifications(nextValue);
+    setSavingPreference((prev) => ({ ...prev, notifications: true }));
+
+    const { error } = await updateProfilePreferences(userId, {
+      notifications_enabled: nextValue,
+    });
+
+    if (error) {
+      console.error("Failed to update notifications preference:", error);
+      setNotifications(previousValue);
+      setPreferenceError("We couldn't save your preferences. Please try again.");
+    } else {
+      await refreshProfile();
+    }
+
+    setSavingPreference((prev) => ({ ...prev, notifications: false }));
+  };
+
+  const initials = loading
+    ? ""
+    : getInitials(profile?.name || profile?.username || null, email);
+
+  const handleRetry = () => {
+    void refreshProfile();
+  };
+
+  const mainContent: ReactNode = loading ? (
+    <SettingsLoadingState />
+  ) : error ? (
+    <SettingsErrorState message={error} onRetry={handleRetry} />
+  ) : (
+    <>
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <ProfileOverview
+          profile={profile}
+          email={email}
+          initials={initials}
+          onEdit={() => router.push("/profile/edit")}
+          onViewProfile={(handle) => router.push(`/profile/${handle}`)}
+        />
+        <SettingsCard
+          title="Security & access"
+          description="Control where your account is connected and how you sign in."
+        >
+          <SettingsActionRow
+            icon={Link2}
+            title="Linked accounts"
+            description="Manage the services connected to your Creator profile."
+            onClick={() => router.push("/profile/linked-accounts")}
+          />
+          <SettingsStaticRow
+            icon={Lock}
+            title="Password"
+            description="Passwords are handled by your authentication provider."
+            value="Managed externally"
+          />
+          <SettingsStaticRow
+            icon={Shield}
+            title="Two-factor authentication"
+            description="Add another layer of protection to your account."
+            value="Coming soon"
+          />
+        </SettingsCard>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-2">
+        <SettingsCard
+          title="Preferences"
+          description="Dial in the experience so the interface feels familiar."
+        >
+          {preferenceError && (
+            <p className="px-6 pt-4 text-sm text-red-400">{preferenceError}</p>
+          )}
+          <SettingsToggleRow
+            icon={Moon}
+            title="Dark mode"
+            description="Reduce eye strain with our midnight palette."
+            checked={darkMode}
+            onChange={handleDarkModeToggle}
+            ariaLabel="Toggle dark mode"
+            disabled={!userId || savingPreference.darkMode}
+          />
+          <SettingsToggleRow
+            icon={Bell}
+            title="Notifications"
+            description="Get nudges when teammates share something important."
+            checked={notifications}
+            onChange={handleNotificationsToggle}
+            ariaLabel="Toggle notifications"
+            disabled={!userId || savingPreference.notifications}
+          />
+          <SettingsStaticRow
+            icon={Globe2}
+            title="Language"
+            description="Choose the language used throughout the dashboard."
+            value="English (US)"
+          />
+        </SettingsCard>
+
+        <SettingsCard
+          title="About Creator"
+          description="Stay informed about policies and the version you're using."
+        >
+          <SettingsStaticRow
+            icon={FileText}
+            title="Terms of Service"
+            description="Read the agreement that keeps everything running smoothly."
+            value="Coming soon"
+          />
+          <SettingsStaticRow
+            icon={Shield}
+            title="Privacy Policy"
+            description="Learn how we handle your data and respect your privacy."
+            value="Coming soon"
+          />
+          <SettingsStaticRow
+            icon={Info}
+            title="App version"
+            description="You're running the latest build available."
+            value="v1.0.0"
+          />
+        </SettingsCard>
+      </section>
+
+      {isAdmin && (
+        <section className="grid gap-6">
+          <SettingsCard
+            title="Administration"
+            description="Manage application-wide content and messaging."
+          >
+            <SettingsActionRow
+              icon={FileText}
+              title="Content overrides"
+              description="Update any copy that appears throughout the app."
+              onClick={() => router.push("/settings/content")}
+            />
+          </SettingsCard>
+        </section>
+      )}
+    </>
+  );
 
   return (
     <div
@@ -101,110 +286,7 @@ export default function SettingsPage() {
           </span>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <ProfileOverview
-            profile={profile}
-            email={email}
-            initials={initials}
-            onEdit={() => router.push("/profile/edit")}
-            onViewProfile={(handle) => router.push(`/profile/${handle}`)}
-          />
-          <SettingsCard
-            title="Security & access"
-            description="Control where your account is connected and how you sign in."
-          >
-            <SettingsActionRow
-              icon={Link2}
-              title="Linked accounts"
-              description="Manage the services connected to your Creator profile."
-              onClick={() => router.push("/profile/linked-accounts")}
-            />
-            <SettingsStaticRow
-              icon={Lock}
-              title="Password"
-              description="Passwords are handled by your authentication provider."
-              value="Managed externally"
-            />
-            <SettingsStaticRow
-              icon={Shield}
-              title="Two-factor authentication"
-              description="Add another layer of protection to your account."
-              value="Coming soon"
-            />
-          </SettingsCard>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-2">
-          <SettingsCard
-            title="Preferences"
-            description="Dial in the experience so the interface feels familiar."
-          >
-            <SettingsToggleRow
-              icon={Moon}
-              title="Dark mode"
-              description="Reduce eye strain with our midnight palette."
-              checked={darkMode}
-              onChange={() => setDarkMode((value) => !value)}
-              ariaLabel="Toggle dark mode"
-            />
-            <SettingsToggleRow
-              icon={Bell}
-              title="Notifications"
-              description="Get nudges when teammates share something important."
-              checked={notifications}
-              onChange={() => setNotifications((value) => !value)}
-              ariaLabel="Toggle notifications"
-            />
-            <SettingsStaticRow
-              icon={Globe2}
-              title="Language"
-              description="Choose the language used throughout the dashboard."
-              value="English (US)"
-            />
-          </SettingsCard>
-
-          <SettingsCard
-            title="About Creator"
-            description="Stay informed about policies and the version you're using."
-          >
-            <SettingsStaticRow
-              icon={FileText}
-              title="Terms of Service"
-              description="Read the agreement that keeps everything running smoothly."
-              value="Coming soon"
-            />
-            <SettingsStaticRow
-              icon={Shield}
-              title="Privacy Policy"
-              description="Learn how we handle your data and respect your privacy."
-              value="Coming soon"
-            />
-            <SettingsStaticRow
-              icon={Info}
-              title="App version"
-              description="You're running the latest build available."
-              value="v1.0.0"
-            />
-          </SettingsCard>
-        </section>
-
-        {isAdmin && (
-          <section className="grid gap-6">
-            <SettingsCard
-              title="Administration"
-              description="Manage application-wide content and messaging."
-            >
-              <SettingsActionRow
-                icon={FileText}
-                title="Content overrides"
-                description="Update any copy that appears throughout the app."
-                onClick={() => router.push("/settings/content")}
-              />
-            </SettingsCard>
-          </section>
-        )}
-      </main>
+      <main className="mx-auto max-w-5xl space-y-12 px-4 pb-16 pt-10">{mainContent}</main>
     </div>
   );
 }
@@ -216,6 +298,50 @@ type ProfileOverviewProps = {
   onEdit: () => void;
   onViewProfile?: (handle: string) => void;
 };
+
+function SettingsLoadingState() {
+  return (
+    <div
+      className="flex flex-col items-center gap-4 py-24 text-[var(--muted)]"
+      role="status"
+      aria-live="polite"
+    >
+      <span
+        aria-hidden="true"
+        className="h-12 w-12 animate-spin rounded-full border-2 border-white/15 border-t-transparent"
+      />
+      <p className="text-sm">Loading your settings…</p>
+    </div>
+  );
+}
+
+type SettingsErrorStateProps = {
+  message: string;
+  onRetry: () => void;
+};
+
+function SettingsErrorState({ message, onRetry }: SettingsErrorStateProps) {
+  return (
+    <div
+      className="mx-auto max-w-2xl rounded-2xl border border-red-500/30 bg-red-500/10 px-8 py-10 text-center"
+      role="alert"
+      aria-live="assertive"
+    >
+      <p className="text-base font-semibold text-red-100">
+        We couldn&apos;t load your settings.
+      </p>
+      <p className="mt-2 text-sm text-red-200/80">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-red-50 transition hover:border-white/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-red-200/60"
+      >
+        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+        Try again
+      </button>
+    </div>
+  );
+}
 
 function ProfileOverview({ profile, email, initials, onEdit, onViewProfile }: ProfileOverviewProps) {
   const handle = profile?.username?.trim();
@@ -395,6 +521,7 @@ type SettingsToggleRowProps = {
   checked: boolean;
   onChange: () => void;
   ariaLabel: string;
+  disabled?: boolean;
 };
 
 function SettingsToggleRow({
@@ -404,6 +531,7 @@ function SettingsToggleRow({
   checked,
   onChange,
   ariaLabel,
+  disabled = false,
 }: SettingsToggleRowProps) {
   return (
     <div className="flex items-center gap-4 px-6 py-4">
@@ -414,7 +542,12 @@ function SettingsToggleRow({
           <p className="mt-1 text-sm text-[var(--muted)]">{description}</p>
         )}
       </div>
-      <ToggleSwitch checked={checked} onChange={onChange} ariaLabel={ariaLabel} />
+      <ToggleSwitch
+        checked={checked}
+        onChange={onChange}
+        ariaLabel={ariaLabel}
+        disabled={disabled}
+      />
     </div>
   );
 }
@@ -457,19 +590,21 @@ type ToggleSwitchProps = {
   checked: boolean;
   onChange: () => void;
   ariaLabel: string;
+  disabled?: boolean;
 };
 
-function ToggleSwitch({ checked, onChange, ariaLabel }: ToggleSwitchProps) {
+function ToggleSwitch({ checked, onChange, ariaLabel, disabled = false }: ToggleSwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}
+      disabled={disabled}
       onClick={onChange}
       className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
         checked ? "bg-[var(--accent)]" : "bg-white/10"
-      }`}
+      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
     >
       <span
         aria-hidden="true"

@@ -112,6 +112,8 @@ export interface Profile {
   theme_color?: string;
   font_family?: string;
   accent_color?: string;
+  prefers_dark_mode?: boolean;
+  notifications_enabled?: boolean;
   created_at: string;
   updated_at?: string;
 }
