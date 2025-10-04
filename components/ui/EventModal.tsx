@@ -108,6 +108,43 @@ type NormalizedProjectPayload = {
   tasks: NormalizedTaskPayload[];
 };
 
+type GoalInsertData = {
+  user_id: string;
+  name: string;
+  priority: string;
+  energy: string;
+  description?: string;
+};
+
+type ProjectInsertData = GoalInsertData & {
+  goal_id: string;
+  stage: string;
+  duration_min?: number;
+};
+
+type TaskInsertData = GoalInsertData & {
+  project_id: string;
+  stage: string;
+  skill_id: string;
+  duration_min?: number;
+};
+
+type HabitInsertData = {
+  user_id: string;
+  name: string;
+  habit_type: string;
+  recurrence: string | null;
+  duration_minutes: number;
+  window_id: string | null;
+  description?: string;
+};
+
+type EventInsertPayload =
+  | { table: "goals"; data: GoalInsertData }
+  | { table: "projects"; data: ProjectInsertData }
+  | { table: "tasks"; data: TaskInsertData }
+  | { table: "habits"; data: HabitInsertData };
+
 async function cleanupGoalHierarchy(
   supabase: SupabaseClient,
   goalId: string
@@ -395,6 +432,95 @@ const createInitialFormState = (
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   window_id: eventType === "HABIT" ? "none" : "",
 });
+
+type CreateEventInsertPayloadParams = {
+  eventType: NonNullable<EventModalProps["eventType"]>;
+  userId: string;
+  formData: FormState;
+  duration: number | undefined;
+};
+
+export function createEventInsertPayload({
+  eventType,
+  userId,
+  formData,
+  duration,
+}: CreateEventInsertPayloadParams): EventInsertPayload {
+  const formattedName = formatNameValue(formData.name.trim());
+  const trimmedDescription = formData.description.trim();
+
+  if (eventType === "HABIT") {
+    if (duration === undefined) {
+      throw new Error("Habit duration is required");
+    }
+
+    const recurrence =
+      formData.recurrence === "none" ? null : formData.recurrence;
+    const windowId =
+      formData.window_id === "none" ? null : formData.window_id || null;
+
+    const habitData: HabitInsertData = {
+      user_id: userId,
+      name: formattedName,
+      habit_type: formData.type,
+      recurrence,
+      duration_minutes: duration,
+      window_id: windowId,
+    };
+
+    if (trimmedDescription) {
+      habitData.description = trimmedDescription;
+    }
+
+    return { table: "habits", data: habitData };
+  }
+
+  const baseData: GoalInsertData = {
+    user_id: userId,
+    name: formattedName,
+    priority: formData.priority,
+    energy: formData.energy,
+  };
+
+  if (trimmedDescription) {
+    baseData.description = trimmedDescription;
+  }
+
+  if (eventType === "GOAL") {
+    return { table: "goals", data: baseData };
+  }
+
+  if (eventType === "PROJECT") {
+    const projectData: ProjectInsertData = {
+      ...baseData,
+      goal_id: formData.goal_id,
+      stage: formData.stage,
+    };
+
+    if (duration !== undefined) {
+      projectData.duration_min = duration;
+    }
+
+    return { table: "projects", data: projectData };
+  }
+
+  if (eventType === "TASK") {
+    const taskData: TaskInsertData = {
+      ...baseData,
+      project_id: formData.project_id,
+      stage: formData.stage,
+      skill_id: formData.skill_id,
+    };
+
+    if (duration !== undefined) {
+      taskData.duration_min = duration;
+    }
+
+    return { table: "tasks", data: taskData };
+  }
+
+  throw new Error(`Unsupported event type: ${eventType}`);
+}
 
 type EventMeta = {
   title: string;
@@ -1241,43 +1367,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
-      const insertData: {
-        user_id: string;
-        name: string;
-        priority: string;
-        energy: string;
-        description?: string;
-        goal_id?: string;
-        project_id?: string;
-        stage?: string;
-        type?: string;
-        recurrence?: string;
-        duration_min?: number;
-        monument_id?: string;
-        skill_id?: string;
-        window_id?: string | null;
-      } = {
-        user_id: user.id,
-        name: formatNameValue(formData.name.trim()),
-        priority: formData.priority,
-        energy: formData.energy,
-      };
-
-      if (formData.description.trim()) {
-        insertData.description = formData.description.trim();
+      if (eventType === "PROJECT" && !formData.goal_id) {
+        toast.error(
+          "Goal required",
+          "Select the goal this project will support."
+        );
+        return;
       }
 
-      if (eventType === "PROJECT") {
-        if (!formData.goal_id) {
-          toast.error(
-            "Goal required",
-            "Select the goal this project will support."
-          );
-          return;
-        }
-        insertData.goal_id = formData.goal_id;
-        insertData.stage = formData.stage;
-      } else if (eventType === "TASK") {
+      if (eventType === "TASK") {
         if (!formData.project_id) {
           toast.error(
             "Project required",
@@ -1292,24 +1390,18 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           );
           return;
         }
-        insertData.project_id = formData.project_id;
-        insertData.stage = formData.stage;
-        insertData.skill_id = formData.skill_id;
-      } else if (eventType === "HABIT") {
-        insertData.type = formData.type;
-        insertData.recurrence =
-          formData.recurrence === "none" ? null : formData.recurrence;
-        insertData.window_id =
-          formData.window_id === "none" ? null : formData.window_id;
       }
 
-      if (duration !== undefined) {
-        insertData.duration_min = duration;
-      }
+      const insertPayload = createEventInsertPayload({
+        eventType,
+        userId: user.id,
+        formData,
+        duration,
+      });
 
       const { data, error } = await supabase
-        .from(eventType.toLowerCase() + "s")
-        .insert(insertData)
+        .from(insertPayload.table)
+        .insert(insertPayload.data)
         .select()
         .single();
 
