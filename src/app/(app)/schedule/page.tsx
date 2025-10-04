@@ -88,6 +88,19 @@ const dayTimelineTransition = {
   scale: { duration: 0.24, ease: [0.2, 0.8, 0.2, 1] as const },
 }
 
+function parseScheduleDateParam(value: string | null) {
+  if (!value) {
+    return { date: new Date(), wasValid: false }
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return { date: new Date(), wasValid: false }
+  }
+
+  return { date: parsed, wasValid: true }
+}
+
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
   if (prefersReducedMotion) return <div>{children}</div>
@@ -1000,8 +1013,13 @@ export default function SchedulePage() {
       : 'day'
   const initialDate = searchParams.get('date')
 
+  const initialDateResult = useMemo(
+    () => parseScheduleDateParam(initialDate),
+    [initialDate]
+  )
+
   const [currentDate, setCurrentDate] = useState(
-    () => (initialDate ? new Date(initialDate) : new Date())
+    () => initialDateResult.date
   )
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
@@ -1265,7 +1283,9 @@ export default function SchedulePage() {
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('view', view)
-    params.set('date', formatLocalDateKey(currentDate))
+    if (!Number.isNaN(currentDate.getTime())) {
+      params.set('date', formatLocalDateKey(currentDate))
+    }
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [view, currentDate, router, pathname])
 
