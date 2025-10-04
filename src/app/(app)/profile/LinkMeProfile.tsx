@@ -4,12 +4,30 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { MapPin, Edit3, ExternalLink, Share2, Menu, ArrowLeft, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  MapPin,
+  Edit3,
+  ExternalLink,
+  Share2,
+  Menu,
+  ArrowLeft,
+  Plus,
+  Copy,
+} from "lucide-react";
 import { Profile, SocialLink, ContentCard } from "@/lib/types";
 import { getSocialLinks, getContentCards } from "@/lib/db/profile-management";
 import { SocialIcon, getSocialIconDefinition } from "@/components/profile/SocialIcon";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useToastHelpers } from "@/components/ui/toast";
 
 interface LinkMeProfileProps {
   profile: Profile;
@@ -20,6 +38,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [loading, setLoading] = useState(true);
   const { session } = useAuth();
+  const toast = useToastHelpers();
 
   useEffect(() => {
     async function loadProfileData() {
@@ -50,6 +69,75 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
     .sort((a, b) => a.position - b.position);
   const showEmptyState = !loading && activeCards.length === 0;
 
+  const getProfileShareUrl = () => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    if (profile.username) {
+      return new URL(`/profile/${profile.username}`, window.location.origin).toString();
+    }
+
+    return window.location.href;
+  };
+
+  const handleCopyLink = async () => {
+    const shareUrl = getProfileShareUrl();
+
+    if (!shareUrl) {
+      toast.error("Unable to copy link", "We couldn't determine the profile URL.");
+      return;
+    }
+
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+      toast.error(
+        "Copy not supported",
+        "Your browser doesn't allow copying automatically. Try sharing instead.",
+      );
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Link copied", "Your profile URL is ready to share.");
+    } catch (error) {
+      console.error("Failed to copy URL", error);
+      toast.error("Copy failed", "Please try copying the link again.");
+    }
+  };
+
+  const handleShare = async () => {
+    const shareUrl = getProfileShareUrl();
+
+    if (!shareUrl) {
+      toast.error("Unable to share", "We couldn't determine the profile URL.");
+      return;
+    }
+
+    const shareTitle = profile.name || profile.username
+      ? `${profile.name || profile.username}'s Bio Link`
+      : "Check out this profile";
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          url: shareUrl,
+        });
+        toast.success("Share successful", "Thanks for spreading the word!");
+        return;
+      } catch (error) {
+        if ((error as DOMException)?.name === "AbortError") {
+          return;
+        }
+
+        console.error("Share failed, falling back to copy", error);
+      }
+    }
+
+    await handleCopyLink();
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
       {/* Top Navigation Bar */}
@@ -68,12 +156,76 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
           </div>
           
           <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="sm" className="p-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="p-2"
+              onClick={handleShare}
+              aria-label="Share profile"
+            >
               <Share2 className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="sm" className="p-2">
-              <Menu className="h-5 w-5" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="p-2"
+                  aria-label="Open profile actions"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Profile actions</DropdownMenuLabel>
+                <DropdownMenuItem
+                  className="flex items-center gap-2"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleShare();
+                  }}
+                >
+                  <Share2 className="h-4 w-4" />
+                  Share profile
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="flex items-center gap-2"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleCopyLink();
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy link
+                </DropdownMenuItem>
+                {profile.username ? (
+                  <DropdownMenuItem asChild className="flex items-center gap-2">
+                    <Link
+                      href={`/profile/${profile.username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex w-full items-center gap-2"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      View public profile
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
+                {isOwner ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild className="flex items-center gap-2">
+                      <Link href="/profile/edit" className="flex w-full items-center gap-2">
+                        <Edit3 className="h-4 w-4" />
+                        Edit profile
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>

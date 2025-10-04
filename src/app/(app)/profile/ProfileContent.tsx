@@ -1,146 +1,190 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Calendar, MapPin, User, Edit3 } from "lucide-react";
-import LinkedAccountsBar from "@/components/profile/LinkedAccountsBar";
+import { Edit3, Link2 } from "lucide-react";
 
-interface Profile {
-  user_id: string;
-  username: string;
-  name?: string | null;
-  dob?: string | null;
-  city?: string | null;
-  bio?: string | null;
-  avatar_url?: string | null;
-  created_at: string;
-  updated_at: string;
-}
+import HeroHeader from "@/components/profile/HeroHeader";
+import LinkGrid from "@/components/profile/LinkGrid";
+import { Button } from "@/components/ui/button";
+import { getContentCards, getSocialLinks } from "@/lib/db/profile-management";
+import type { ContentCard, Profile, SocialLink } from "@/lib/types";
 
 interface ProfileContentProps {
   profile: Profile;
   userId: string;
 }
 
-export default function ProfileContent({
-  profile,
-  userId,
-}: ProfileContentProps) {
-  const getInitials = (name: string | null, username: string) => {
-    if (name) {
-      return name
-        .split(" ")
-        .map((word) => word.charAt(0))
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
+export default function ProfileContent({ profile, userId }: ProfileContentProps) {
+  const ownerId = profile?.user_id || userId;
+
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
+  const [contentCards, setContentCards] = useState<ContentCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ownerId) {
+      setSocialLinks([]);
+      setContentCards([]);
+      setLoading(false);
+      return;
     }
-    return username.slice(0, 2).toUpperCase();
-  };
 
-  const initials = getInitials(profile.name || null, profile.username);
+    let cancelled = false;
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "Not specified";
-    return new Date(dateString).toLocaleDateString();
-  };
+    async function loadPreviewData() {
+      try {
+        setLoading(true);
+        setError(null);
 
-  const hasProfileData = profile.name || profile.bio || profile.dob || profile.city;
+        const [links, cards] = await Promise.all([
+          getSocialLinks(ownerId),
+          getContentCards(ownerId),
+        ]);
+
+        if (cancelled) return;
+
+        setSocialLinks(links);
+        setContentCards(cards);
+      } catch (err) {
+        if (cancelled) return;
+
+        console.error("Error loading profile preview data:", err);
+        setError("We couldn't load everything for your preview.");
+        setSocialLinks([]);
+        setContentCards([]);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadPreviewData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerId]);
+
+  const socialsData = useMemo(() => {
+    const data: Record<string, string | undefined> = {};
+
+    socialLinks.forEach((link) => {
+      if (link.url) {
+        data[link.platform.toLowerCase()] = link.url;
+      }
+    });
+
+    return data;
+  }, [socialLinks]);
+
+  const activeSocialCount = socialLinks.filter((link) => !!link.url).length;
+  const activeLinkCount = contentCards.filter((card) => card.is_active !== false).length;
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-2xl">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Profile</h1>
-        <div className="space-x-2">
-          <Link href="/profile/linked-accounts">
-            <Button variant="outline" size="sm">Links</Button>
-          </Link>
-          <Link href="/profile/edit">
-            <Button variant="outline" size="sm">
-              <Edit3 className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
-          </Link>
-        </div>
+    <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -left-24 h-[360px] w-[360px] rounded-full bg-gradient-to-br from-neutral-700/30 via-neutral-900/25 to-transparent blur-[140px]" />
+        <div className="absolute -top-32 right-[-10%] h-[300px] w-[300px] rounded-full bg-gradient-to-bl from-neutral-800/30 via-neutral-950/25 to-transparent blur-[160px]" />
+        <div className="absolute left-1/2 top-[15%] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-neutral-500/15 blur-[170px]" />
+        <div className="absolute bottom-[-25%] right-[-15%] h-[360px] w-[360px] rounded-full bg-neutral-800/20 blur-[200px]" />
       </div>
 
-      <Card>
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <Avatar className="h-24 w-24">
-              {profile.avatar_url ? (
-                <AvatarImage src={profile.avatar_url} alt="Profile avatar" />
+      <main className="relative z-10 pb-28 pt-12 sm:pb-36">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4">
+          <header className="flex flex-col gap-4 text-center sm:flex-row sm:items-start sm:justify-between sm:text-left">
+            <div className="space-y-3">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+                Preview
+              </span>
+              <div>
+                <h1 className="text-3xl font-semibold text-white sm:text-4xl">Your public profile</h1>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/65 sm:text-base">
+                  This live preview mirrors what visitors see on your bio link page. Use the quick actions below to edit details or curate new links.
+                </p>
+              </div>
+            </div>
+
+            {profile.username ? (
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="self-center rounded-full border-white/20 bg-white/5 text-white hover:border-white/40 hover:bg-white/10"
+              >
+                <Link href={`/profile/${profile.username}`} target="_blank" rel="noopener noreferrer">
+                  View live page
+                </Link>
+              </Button>
+            ) : null}
+          </header>
+
+          <HeroHeader
+            profile={profile}
+            socials={socialsData}
+            stats={{ linkCount: activeLinkCount, socialCount: activeSocialCount }}
+          />
+
+          <section className="mx-auto mt-6 w-full max-w-5xl px-1 pb-12 sm:mt-10">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-white">Featured links</h2>
+                <p className="mt-1 text-sm text-white/55">
+                  {activeLinkCount > 0
+                    ? "These are the cards your audience can explore."
+                    : "Add links to surface the highlights you want to share."}
+                </p>
+              </div>
+
+              {activeLinkCount > 0 ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
+                  <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
+                  {activeLinkCount} {activeLinkCount === 1 ? "link" : "links"}
+                </span>
               ) : null}
-              <AvatarFallback className="text-3xl font-bold">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-          </div>
-          <CardTitle className="text-2xl">
-            {profile.name || "No name set"}
-          </CardTitle>
-          <p className="text-gray-600 text-lg">@{profile.username}</p>
-          <LinkedAccountsBar userId={profile.user_id} />
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          {profile.bio ? (
-            <div className="text-center">
-              <p className="text-gray-700">{profile.bio}</p>
             </div>
-          ) : (
-            <div className="text-center text-gray-500 italic">
-              <p>No bio added yet</p>
+
+            {error ? (
+              <div className="mt-6 rounded-3xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="mt-8">
+              <LinkGrid links={contentCards} loading={loading} isOwner />
             </div>
-          )}
+          </section>
+        </div>
+      </main>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {profile.dob ? (
-              <div className="flex items-center space-x-2">
-                <Calendar className="h-5 w-5 text-gray-500" />
-                <span className="text-gray-700">{formatDate(profile.dob)}</span>
-              </div>
-            ) : (
-              <div className="flex items-center space-x-2 text-gray-400">
-                <Calendar className="h-5 w-5" />
-                <span>Birthday not set</span>
-              </div>
-            )}
-
-            {profile.city ? (
-              <div className="flex items-center space-x-2">
-                <MapPin className="h-5 w-5 text-gray-500" />
-                <span className="text-gray-700">{profile.city}</span>
-              </div>
-            ) : (
-              <div className="flex items-center space-x-2 text-gray-400">
-                <MapPin className="h-5 w-5" />
-                <span>Location not set</span>
-              </div>
-            )}
-          </div>
-
-          <div className="text-sm text-gray-500 text-center">
-            Member since {formatDate(profile.created_at)}
-          </div>
-
-          {!hasProfileData && (
-            <div className="text-center py-6 border-t border-gray-200">
-              <p className="text-gray-500 mb-4">
-                Your profile is looking a bit empty. Add some details to make it more personal!
-              </p>
-              <Link href="/profile/edit">
-                <Button>
-                  <Edit3 className="h-4 w-4 mr-2" />
-                  Complete Your Profile
-                </Button>
-              </Link>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4">
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 rounded-full border border-white/15 bg-black/70 px-4 py-3 text-sm text-white shadow-[0_18px_36px_rgba(2,6,23,0.55)] backdrop-blur">
+          <Button
+            asChild
+            size="sm"
+            variant="secondary"
+            className="rounded-full bg-white px-5 text-black shadow-[0_10px_30px_rgba(15,23,42,0.45)] hover:bg-white/90"
+          >
+            <Link href="/profile/edit">
+              <Edit3 className="h-4 w-4" />
+              Edit profile
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="rounded-full border-white/25 bg-white/5 px-5 text-white hover:border-white/50 hover:bg-white/10"
+          >
+            <Link href="/profile/linked-accounts">
+              <Link2 className="h-4 w-4" />
+              Manage links
+            </Link>
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
