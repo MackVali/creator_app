@@ -383,7 +383,7 @@ const createInitialFormState = (
   monument_id: "",
   skill_id: "",
   skill_ids: [],
-  duration_min: "",
+  duration_min: eventType === "HABIT" ? "15" : "",
   stage:
     eventType === "PROJECT"
       ? PROJECT_STAGE_OPTIONS[0].value
