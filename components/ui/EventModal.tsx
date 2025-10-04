@@ -383,7 +383,7 @@ const createInitialFormState = (
   monument_id: "",
   skill_id: "",
   skill_ids: [],
-  duration_min: "",
+  duration_min: eventType === "HABIT" ? "15" : "",
   stage:
     eventType === "PROJECT"
       ? PROJECT_STAGE_OPTIONS[0].value
@@ -1196,6 +1196,25 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     );
   };
 
+  const getInsertErrorMessage = (error: unknown, fallback: string) => {
+    if (!error) {
+      return fallback;
+    }
+
+    if (error instanceof Error) {
+      return `${fallback}: ${error.message}`;
+    }
+
+    if (typeof error === "object" && error !== null && "message" in error) {
+      const messageValue = (error as { message?: unknown }).message;
+      if (typeof messageValue === "string" && messageValue.trim()) {
+        return `${fallback}: ${messageValue}`;
+      }
+    }
+
+    return fallback;
+  };
+
   const handleStandardSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -1244,24 +1263,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const insertData: {
         user_id: string;
         name: string;
-        priority: string;
-        energy: string;
+        priority?: string;
+        energy?: string;
         description?: string;
         goal_id?: string;
         project_id?: string;
         stage?: string;
+        habit_type?: string;
         type?: string;
         recurrence?: string;
         duration_min?: number;
+        duration_minutes?: number;
         monument_id?: string;
         skill_id?: string;
         window_id?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
-        priority: formData.priority,
-        energy: formData.energy,
       };
+
+      if (eventType !== "HABIT") {
+        insertData.priority = formData.priority;
+        insertData.energy = formData.energy;
+      }
 
       if (formData.description.trim()) {
         insertData.description = formData.description.trim();
@@ -1297,6 +1321,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.skill_id = formData.skill_id;
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
+        insertData.habit_type = formData.type;
         insertData.recurrence =
           formData.recurrence === "none" ? null : formData.recurrence;
         insertData.window_id =
@@ -1304,7 +1329,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
 
       if (duration !== undefined) {
-        insertData.duration_min = duration;
+        if (eventType === "HABIT") {
+          insertData.duration_minutes = duration;
+        } else {
+          insertData.duration_min = duration;
+        }
       }
 
       const { data, error } = await supabase
@@ -1314,8 +1343,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         .single();
 
       if (error) {
+        const fallbackMessage = "Failed to create " + eventType.toLowerCase();
         console.error("Error creating " + eventType.toLowerCase() + ":", error);
-        toast.error("Error", "Failed to create " + eventType.toLowerCase());
+        toast.error("Error", getInsertErrorMessage(error, fallbackMessage));
         return;
       }
 
@@ -1339,8 +1369,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       router.refresh();
       onClose();
     } catch (error) {
-      console.error("Error creating " + eventType.toLowerCase() + ":", error);
-      toast.error("Error", "Failed to create " + eventType.toLowerCase());
+      const fallbackMessage = "Failed to create " + (eventType?.toLowerCase() ?? "event");
+      console.error(
+        "Error creating " + (eventType?.toLowerCase() ?? "event") + ":",
+        error
+      );
+      toast.error("Error", getInsertErrorMessage(error, fallbackMessage));
     } finally {
       setIsSaving(false);
     }
