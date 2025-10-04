@@ -1263,8 +1263,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const insertData: {
         user_id: string;
         name: string;
-        priority: string;
-        energy: string;
+        priority?: string;
+        energy?: string;
         description?: string;
         goal_id?: string;
         project_id?: string;
@@ -1279,9 +1279,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
-        priority: formData.priority,
-        energy: formData.energy,
       };
+
+      if (eventType !== "HABIT") {
+        insertData.priority = formData.priority;
+        insertData.energy = formData.energy;
+      }
 
       if (formData.description.trim()) {
         insertData.description = formData.description.trim();
