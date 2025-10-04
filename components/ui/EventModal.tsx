@@ -1250,9 +1250,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         goal_id?: string;
         project_id?: string;
         stage?: string;
-        type?: string;
+        habit_type?: string;
         recurrence?: string;
         duration_min?: number;
+        duration_minutes?: number;
         monument_id?: string;
         skill_id?: string;
         window_id?: string | null;
@@ -1296,7 +1297,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.stage = formData.stage;
         insertData.skill_id = formData.skill_id;
       } else if (eventType === "HABIT") {
-        insertData.type = formData.type;
+        insertData.habit_type = formData.type;
         insertData.recurrence =
           formData.recurrence === "none" ? null : formData.recurrence;
         insertData.window_id =
@@ -1304,7 +1305,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
 
       if (duration !== undefined) {
-        insertData.duration_min = duration;
+        if (eventType === "HABIT") {
+          insertData.duration_minutes = duration;
+        } else {
+          insertData.duration_min = duration;
+        }
       }
 
       const { data, error } = await supabase
