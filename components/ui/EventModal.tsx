@@ -437,20 +437,20 @@ type CreateEventInsertPayloadParams = {
   eventType: NonNullable<EventModalProps["eventType"]>;
   userId: string;
   formData: FormState;
-  duration: number | undefined;
+  durationMinutes: number | undefined;
 };
 
 export function createEventInsertPayload({
   eventType,
   userId,
   formData,
-  duration,
+  durationMinutes,
 }: CreateEventInsertPayloadParams): EventInsertPayload {
   const formattedName = formatNameValue(formData.name.trim());
   const trimmedDescription = formData.description.trim();
 
   if (eventType === "HABIT") {
-    if (duration === undefined) {
+    if (durationMinutes === undefined) {
       throw new Error("Habit duration is required");
     }
 
@@ -464,7 +464,7 @@ export function createEventInsertPayload({
       name: formattedName,
       habit_type: formData.type,
       recurrence,
-      duration_minutes: duration,
+      duration_minutes: durationMinutes,
       window_id: windowId,
     };
 
@@ -497,8 +497,8 @@ export function createEventInsertPayload({
       stage: formData.stage,
     };
 
-    if (duration !== undefined) {
-      projectData.duration_min = duration;
+    if (durationMinutes !== undefined) {
+      projectData.duration_min = durationMinutes;
     }
 
     return { table: "projects", data: projectData };
@@ -512,8 +512,8 @@ export function createEventInsertPayload({
       skill_id: formData.skill_id,
     };
 
-    if (duration !== undefined) {
-      taskData.duration_min = duration;
+    if (durationMinutes !== undefined) {
+      taskData.duration_min = durationMinutes;
     }
 
     return { table: "tasks", data: taskData };
@@ -1337,17 +1337,19 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       return;
     }
 
-    let duration: number | undefined;
+    let durationMinutes: number | undefined;
     if (
       eventType === "PROJECT" ||
       eventType === "TASK" ||
       eventType === "HABIT"
     ) {
-      duration = parseInt(formData.duration_min, 10);
-      if (!duration || duration <= 0) {
+      const parsedDuration = Number.parseFloat(formData.duration_min);
+      if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
         toast.error("Invalid Duration", "Duration must be greater than 0");
         return;
       }
+
+      durationMinutes = Math.max(1, Math.round(parsedDuration));
     }
 
     try {
@@ -1396,7 +1398,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         eventType,
         userId: user.id,
         formData,
-        duration,
+        durationMinutes,
       });
 
       const { data, error } = await supabase

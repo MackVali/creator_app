@@ -180,11 +180,13 @@ export default function NewHabitPage() {
       return;
     }
 
-    const durationMinutes = Number(duration);
-    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    const parsedDuration = Number.parseFloat(duration);
+    if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
       setError("Please enter how many minutes the habit should take.");
       return;
     }
+
+    const normalizedDuration = Math.max(1, Math.round(parsedDuration));
 
     setLoading(true);
     setError(null);
@@ -213,7 +215,7 @@ export default function NewHabitPage() {
         description: trimmedDescription || null,
         habit_type: habitType,
         recurrence: recurrenceValue,
-        duration_minutes: durationMinutes,
+        duration_minutes: normalizedDuration,
         window_id: windowId === "none" ? null : windowId,
       });
 

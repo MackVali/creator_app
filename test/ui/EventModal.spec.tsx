@@ -96,7 +96,7 @@ describe("EventModal habit submission", () => {
       target: { value: "Deep work" },
     });
     fireEvent.change(screen.getByLabelText(/Duration \(minutes\)/i), {
-      target: { value: "25" },
+      target: { value: "25.4" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: /Create Habit/i }));

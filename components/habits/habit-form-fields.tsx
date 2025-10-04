@@ -233,9 +233,9 @@ export function HabitFormFields({
           <Input
             id="habit-duration"
             type="number"
-            inputMode="numeric"
+            inputMode="decimal"
             min={1}
-            step={1}
+            step="any"
             value={duration}
             onChange={(event) => onDurationChange(event.target.value)}
             placeholder="e.g. 25"
