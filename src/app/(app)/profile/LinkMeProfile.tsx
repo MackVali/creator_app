@@ -5,24 +5,11 @@ import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { 
-  Instagram, 
-  Facebook, 
-  Twitter, 
-  Linkedin, 
-  Youtube, 
-  Music, 
-  Mail, 
-  MapPin, 
-  Edit3,
-  ExternalLink,
-  Share2,
-  Menu,
-  ArrowLeft,
-  Plus
-} from "lucide-react";
+import { MapPin, Edit3, ExternalLink, Share2, Menu, ArrowLeft, Plus } from "lucide-react";
 import { Profile, SocialLink, ContentCard } from "@/lib/types";
-import { getSocialLinks, getContentCards, getPlatformIcon, getPlatformColor } from "@/lib/db/profile-management";
+import { getSocialLinks, getContentCards } from "@/lib/db/profile-management";
+import { SocialIcon, getSocialIconDefinition } from "@/components/profile/SocialIcon";
+import { cn } from "@/lib/utils";
 
 interface LinkMeProfileProps {
   profile: Profile;
@@ -218,39 +205,45 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             )}
 
             {/* Social Media Links */}
-            <div className="flex justify-center space-x-3 mb-8">
+            <div className="mb-8 flex flex-wrap justify-center gap-3">
               {socialLinks.length > 0 ? (
-                socialLinks.map((link) => (
-                  <a
-                    key={link.id}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`w-12 h-12 ${link.color || getPlatformColor(link.platform)} rounded-full flex items-center justify-center text-white hover:scale-110 transition-transform duration-200 shadow-lg`}
-                    title={link.platform}
-                  >
-                    <span className="text-lg">{link.icon || getPlatformIcon(link.platform)}</span>
-                  </a>
-                ))
+                socialLinks.map((link) => {
+                  const definition = getSocialIconDefinition(link.platform);
+
+                  return (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      aria-label={`Visit ${profile.name || profile.username} on ${definition.label}`}
+                    >
+                      <SocialIcon
+                        platform={link.platform}
+                        className={cn(
+                          "group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:-translate-y-1",
+                          link.color
+                        )}
+                      />
+                    </a>
+                  );
+                })
               ) : (
-                // Default social icons if none exist
-                [
-                  { platform: "instagram", icon: "📷", color: "bg-gradient-to-r from-purple-500 to-pink-500" },
-                  { platform: "facebook", icon: "📘", color: "bg-blue-600" },
-                  { platform: "twitter", icon: "🐦", color: "bg-blue-400" },
-                  { platform: "linkedin", icon: "💼", color: "bg-blue-700" },
-                  { platform: "youtube", icon: "📺", color: "bg-red-600" },
-                  { platform: "tiktok", icon: "🎵", color: "bg-black" },
-                  { platform: "email", icon: "✉️", color: "bg-gray-600" },
-                ].map((social) => (
-                  <div
-                    key={social.platform}
-                    className={`w-12 h-12 ${social.color} rounded-full flex items-center justify-center text-white opacity-50`}
-                    title={`Add ${social.platform}`}
-                  >
-                    <span className="text-lg">{social.icon}</span>
-                  </div>
-                ))
+                ["instagram", "facebook", "twitter", "linkedin", "youtube", "tiktok", "email"].map((platform) => {
+                  const definition = getSocialIconDefinition(platform);
+
+                  return (
+                    <div
+                      key={platform}
+                      className="inline-flex flex-col items-center"
+                      title={`Add ${definition.label}`}
+                    >
+                      <SocialIcon platform={platform} className="opacity-40 shadow-none" />
+                      <span className="sr-only">Add {definition.label}</span>
+                    </div>
+                  );
+                })
               )}
             </div>
 
