@@ -707,10 +707,14 @@ function DayPeekOverlays({
   const container = containerRef.current
   const containerWidth = container?.offsetWidth ?? 0
   const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
-  const offset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
+  const rawOffset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
+  const peekRevealThreshold = 48
+  const effectiveMaxPeek = Math.max(0, maxPeekWidth - peekRevealThreshold)
+  const offset = Math.max(0, rawOffset - peekRevealThreshold)
   if (!offset || peekState.direction === 0) return null
 
-  const progress = maxPeekWidth > 0 ? Math.min(1, offset / maxPeekWidth) : 0
+  const progress =
+    effectiveMaxPeek > 0 ? Math.min(1, offset / effectiveMaxPeek) : 0
   const translate = (1 - progress) * 35
   const opacity = 0.25 + progress * 0.6
   const scale = 0.94 + progress * 0.06
