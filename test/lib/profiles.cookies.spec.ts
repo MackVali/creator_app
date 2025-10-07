@@ -1,17 +1,42 @@
+import type { CookieOptions } from "@supabase/ssr";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 const originalEnv = { ...process.env };
 
 const getUser = vi.fn();
 
+type CookieSetter = (
+  name: string,
+  value: string,
+  options: CookieOptions,
+) => void;
+
+type SupabaseServerClientOptions = {
+  cookies?: {
+    set?: CookieSetter;
+  };
+};
+
+type SupabaseServerClient = {
+  auth: { getUser: typeof getUser };
+};
+
+type CreateServerClientMock = Mock<
+  [string, string, SupabaseServerClientOptions?],
+  SupabaseServerClient
+>;
+
 vi.mock("@supabase/ssr", () => ({
   createBrowserClient: vi.fn(),
-  createServerClient: vi.fn((url: string, key: string, options?: any) => {
-    options?.cookies?.set?.("sb", "token", {});
-    return {
-      auth: { getUser },
-    };
-  }),
+  createServerClient: vi.fn(
+    (url: string, key: string, options?: SupabaseServerClientOptions) => {
+      options?.cookies?.set?.("sb", "token", {});
+      return {
+        auth: { getUser },
+      };
+    },
+  ),
 }));
 
 const cookiesMock = vi.fn();
@@ -47,6 +72,7 @@ describe("profiles Supabase server client", () => {
   it("still delegates to the cookie setter when available", async () => {
     const { getCurrentUser } = await import("../../lib/db/profiles");
     const { createServerClient } = await import("@supabase/ssr");
+    const serverClientMock = createServerClient as CreateServerClientMock;
 
     const set = vi.fn();
     cookiesMock.mockResolvedValue({
@@ -56,7 +82,10 @@ describe("profiles Supabase server client", () => {
 
     await getCurrentUser();
 
-    const options = (createServerClient as any).mock.calls.at(-1)?.[2];
+    const options = serverClientMock.mock.calls.at(-1)?.[2];
+    if (!options?.cookies?.set) {
+      throw new Error("Expected cookies.set to be defined");
+    }
     options.cookies.set("sb", "token", {});
     expect(set).toHaveBeenCalledWith("sb", "token", {});
   });

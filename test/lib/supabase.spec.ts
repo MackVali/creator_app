@@ -1,14 +1,47 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import type { CookieOptions } from "@supabase/ssr";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+  beforeEach,
+  afterEach,
+} from "vitest";
+import type { Mock } from "vitest";
 
 const originalEnv = { ...process.env };
+
+type CookieSetter = (
+  name: string,
+  value: string,
+  options: CookieOptions,
+) => void;
+
+type SupabaseServerClientOptions = {
+  cookies?: {
+    set?: CookieSetter;
+  };
+};
+
+type CookieStore = {
+  get(name: string): { name: string; value: string } | undefined;
+  set?: (name: string, value: string, options: CookieOptions) => void;
+};
+
+type CreateServerClientMock = Mock<
+  [string, string, SupabaseServerClientOptions?],
+  Record<string, never>
+>;
 
 vi.mock("@supabase/ssr", () => {
   return {
     createBrowserClient: vi.fn(),
-    createServerClient: vi.fn((url: string, key: string, options?: any) => {
-      options?.cookies?.set?.("sb", "token", {});
-      return {};
-    }),
+    createServerClient: vi.fn(
+      (url: string, key: string, options?: SupabaseServerClientOptions) => {
+        options?.cookies?.set?.("sb", "token", {});
+        return {};
+      },
+    ),
   };
 });
 
@@ -27,11 +60,11 @@ describe("getSupabaseServer", () => {
 
   it("no-ops cookie set when store is read-only", async () => {
     const { getSupabaseServer } = await import("../../lib/supabase");
-    const store = {
+    const store: CookieStore = {
       get: vi.fn(() => ({ name: "sb", value: "token" })),
     };
 
-    expect(() => getSupabaseServer(store as any)).not.toThrow();
+    expect(() => getSupabaseServer(store)).not.toThrow();
     const { createServerClient } = await import("@supabase/ssr");
     expect(createServerClient).toHaveBeenCalledWith(
       "https://example.supabase.co",
@@ -48,14 +81,18 @@ describe("getSupabaseServer", () => {
   it("forwards to the underlying cookie store when set exists", async () => {
     const { getSupabaseServer } = await import("../../lib/supabase");
     const set = vi.fn();
-    const store = {
+    const store: CookieStore = {
       get: vi.fn(() => ({ name: "sb", value: "token" })),
       set,
     };
 
-    getSupabaseServer(store as any);
+    getSupabaseServer(store);
     const { createServerClient } = await import("@supabase/ssr");
-    const options = (createServerClient as any).mock.calls.at(-1)?.[2];
+    const serverClientMock = createServerClient as CreateServerClientMock;
+    const options = serverClientMock.mock.calls.at(-1)?.[2];
+    if (!options?.cookies?.set) {
+      throw new Error("Expected cookies.set to be defined");
+    }
     options.cookies.set("sb", "new-token", {});
     expect(set).toHaveBeenCalledWith("sb", "new-token", {});
   });
