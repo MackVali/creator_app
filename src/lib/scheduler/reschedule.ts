@@ -16,6 +16,11 @@ import {
 import { placeItemInWindows } from './placement'
 import { ENERGY } from './config'
 import {
+  fetchHabitsForSchedule,
+  DEFAULT_HABIT_DURATION_MIN,
+  type HabitScheduleItem,
+} from './habits'
+import {
   addDaysInTimeZone,
   differenceInCalendarDaysInTimeZone,
   normalizeTimeZone,
@@ -36,7 +41,8 @@ type ScheduleFailure = {
   detail?: unknown
 }
 
-type ScheduleDraftPlacement = {
+type ProjectDraftPlacement = {
+  type: 'PROJECT'
   instance: ScheduleInstance
   projectId: string
   decision: 'kept' | 'new' | 'rescheduled'
@@ -44,6 +50,27 @@ type ScheduleDraftPlacement = {
   availableStartLocal?: string | null
   windowStartLocal?: string | null
 }
+
+type HabitDraftPlacement = {
+  type: 'HABIT'
+  habit: {
+    id: string
+    name: string
+    windowId: string | null
+    windowLabel: string | null
+    startUTC: string
+    endUTC: string
+    durationMin: number
+    energyResolved: string | null
+    clipped?: boolean
+  }
+  decision: 'kept' | 'new' | 'rescheduled'
+  scheduledDayOffset?: number
+  availableStartLocal?: string | null
+  windowStartLocal?: string | null
+}
+
+type ScheduleDraftPlacement = ProjectDraftPlacement | HabitDraftPlacement
 
 type ScheduleBacklogResult = {
   placed: ScheduleInstance[]
@@ -99,6 +126,7 @@ export async function scheduleBacklog(
 
   const tasks = await fetchReadyTasks(supabase)
   const projectsMap = await fetchProjectsMap(supabase)
+  const habits = await fetchHabitsForSchedule(supabase)
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
@@ -247,6 +275,7 @@ export async function scheduleBacklog(
     const projectId = inst.source_id ?? ''
     if (!projectId) continue
     result.timeline.push({
+      type: 'PROJECT',
       instance: inst,
       projectId,
       decision: 'kept',
@@ -274,6 +303,44 @@ export async function scheduleBacklog(
 
   const windowAvailabilityByDay = new Map<number, Map<string, Date>>()
   const windowCache = new Map<string, WindowLite[]>()
+  const habitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
+
+  const ensureHabitPlacementsForDay = async (
+    offset: number,
+    day: Date,
+    availability: Map<string, Date>
+  ) => {
+    if (habitPlacementsByOffset.has(offset)) {
+      return habitPlacementsByOffset.get(offset) ?? []
+    }
+
+    const placements = await scheduleHabitsForDay({
+      habits,
+      day,
+      offset,
+      timeZone,
+      availability,
+      baseDate,
+      windowCache,
+      client: supabase,
+    })
+
+    if (placements.length > 0) {
+      result.timeline.push(...placements)
+    }
+
+    habitPlacementsByOffset.set(offset, placements)
+    return placements
+  }
+
+  if (habits.length > 0) {
+    let availability = windowAvailabilityByDay.get(0)
+    if (!availability) {
+      availability = new Map<string, Date>()
+      windowAvailabilityByDay.set(0, availability)
+    }
+    await ensureHabitPlacementsForDay(0, baseStart, availability)
+  }
   const lookaheadDays = Math.min(
     MAX_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
@@ -288,6 +355,7 @@ export async function scheduleBacklog(
         windowAvailabilityByDay.set(offset, windowAvailability)
       }
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
+      await ensureHabitPlacementsForDay(offset, day, windowAvailability)
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
@@ -340,6 +408,7 @@ export async function scheduleBacklog(
           ? 'rescheduled'
           : 'new'
         result.timeline.push({
+          type: 'PROJECT',
           instance: placed.data,
           projectId: placed.data.source_id ?? item.id,
           decision,
@@ -361,11 +430,11 @@ export async function scheduleBacklog(
   }
 
   result.timeline.sort((a, b) => {
-    const aTime = new Date(a.instance.start_utc).getTime()
-    const bTime = new Date(b.instance.start_utc).getTime()
-    if (Number.isNaN(aTime) || Number.isNaN(bTime)) return 0
+    const aTime = placementStartMs(a)
+    const bTime = placementStartMs(b)
+    if (!Number.isFinite(aTime) || !Number.isFinite(bTime)) return 0
     if (aTime === bTime) {
-      return (a.projectId ?? '').localeCompare(b.projectId ?? '')
+      return placementKey(a).localeCompare(placementKey(b))
     }
     return aTime - bTime
   })
@@ -498,6 +567,158 @@ async function dedupeScheduledProjects(
     canceledByProject,
     reusableByProject,
   }
+}
+
+async function scheduleHabitsForDay(params: {
+  habits: HabitScheduleItem[]
+  day: Date
+  offset: number
+  timeZone: string
+  availability: Map<string, Date>
+  baseDate: Date
+  windowCache: Map<string, WindowLite[]>
+  client: Client
+}): Promise<HabitDraftPlacement[]> {
+  const { habits, day, offset, timeZone, availability, baseDate, windowCache, client } = params
+  if (!habits.length) return []
+
+  const cacheKey = dateCacheKey(day)
+  let windows = windowCache.get(cacheKey)
+  if (!windows) {
+    windows = await fetchWindowsForDate(day, client, timeZone)
+    windowCache.set(cacheKey, windows)
+  }
+
+  if (!windows || windows.length === 0) return []
+
+  const windowsById = new Map<string, WindowLite>()
+  for (const win of windows) {
+    windowsById.set(win.id, win)
+  }
+
+  const grouped = new Map<string, HabitScheduleItem[]>()
+  for (const habit of habits) {
+    if (!habit.windowId) continue
+    const window = windowsById.get(habit.windowId)
+    if (!window) continue
+    const existing = grouped.get(window.id)
+    if (existing) {
+      existing.push(habit)
+    } else {
+      grouped.set(window.id, [habit])
+    }
+  }
+
+  if (grouped.size === 0) return []
+
+  const baseNowMs = offset === 0 ? baseDate.getTime() : null
+  const placements: HabitDraftPlacement[] = []
+
+  for (const [windowId, group] of grouped) {
+    const window = windowsById.get(windowId)
+    if (!window) continue
+
+    const startLocal = resolveWindowStart(window, day, timeZone)
+    const endLocal = resolveWindowEnd(window, day, timeZone)
+    const startMs = startLocal.getTime()
+    const endMs = endLocal.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
+    if (endMs <= startMs) continue
+
+    const key = windowKey(window.id, startLocal)
+    const existingAvailability = availability.get(key)
+    let cursorMs = existingAvailability?.getTime() ?? startMs
+    if (cursorMs < startMs) {
+      cursorMs = startMs
+    }
+
+    const sorted = [...group].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      if (aTime !== bTime) return aTime - bTime
+      return a.name.localeCompare(b.name)
+    })
+
+    for (const habit of sorted) {
+      if (cursorMs >= endMs) break
+      const rawDuration = Number(habit.durationMinutes ?? 0)
+      const durationMin =
+        Number.isFinite(rawDuration) && rawDuration > 0
+          ? rawDuration
+          : DEFAULT_HABIT_DURATION_MIN
+      const durationMs = durationMin * 60000
+      if (durationMs <= 0) continue
+
+      let startCandidate = cursorMs
+      if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endMs) {
+        startCandidate = baseNowMs
+      }
+      if (startCandidate >= endMs) {
+        cursorMs = endMs
+        continue
+      }
+
+      let endCandidate = startCandidate + durationMs
+      let clipped = false
+      if (endCandidate > endMs) {
+        endCandidate = endMs
+        clipped = true
+      }
+      if (endCandidate <= startCandidate) {
+        cursorMs = endCandidate
+        continue
+      }
+
+      const startDate = new Date(startCandidate)
+      const endDate = new Date(endCandidate)
+      availability.set(key, endDate)
+      cursorMs = endCandidate
+
+      const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
+
+      placements.push({
+        type: 'HABIT',
+        habit: {
+          id: habit.id,
+          name: habit.name,
+          windowId: window.id,
+          windowLabel: window.label ?? null,
+          startUTC: startDate.toISOString(),
+          endUTC: endDate.toISOString(),
+          durationMin: durationMinutes,
+          energyResolved: window.energy ? String(window.energy).toUpperCase() : null,
+          clipped,
+        },
+        decision: 'kept',
+        scheduledDayOffset: offset,
+        availableStartLocal: startDate.toISOString(),
+        windowStartLocal: startLocal.toISOString(),
+      })
+    }
+  }
+
+  placements.sort((a, b) => {
+    const aTime = new Date(a.habit.startUTC).getTime()
+    const bTime = new Date(b.habit.startUTC).getTime()
+    return aTime - bTime
+  })
+
+  return placements
+}
+
+function placementStartMs(entry: ScheduleDraftPlacement) {
+  if (entry.type === 'PROJECT') {
+    return new Date(entry.instance.start_utc).getTime()
+  }
+  return new Date(entry.habit.startUTC).getTime()
+}
+
+function placementKey(entry: ScheduleDraftPlacement) {
+  if (entry.type === 'PROJECT') {
+    const id = entry.projectId || entry.instance.id
+    return `PROJECT:${id}`
+  }
+  return `HABIT:${entry.habit.id}`
 }
 
 async function fetchCompatibleWindowsForItem(
