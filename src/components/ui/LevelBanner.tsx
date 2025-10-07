@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 
 import { useProfile } from "@/lib/hooks/useProfile";
 import { useUserProgress } from "@/lib/hooks/useUserProgress";
+import { calculateLevelProgress } from "@/lib/leveling";
 import { cn } from "@/lib/utils";
 
 type LevelBannerProps = {
@@ -18,26 +19,17 @@ export function LevelBanner({ className }: LevelBannerProps) {
     subscribe: true,
   });
 
-  const { level, totalDarkXp, nextLevelTotal, remaining, pct } = useMemo(() => {
-    const currentLevel = progress?.currentLevel ?? 0;
+  const { level, xpIntoLevel, xpForNextLevel, xpToNextLevel, progressPercent } = useMemo(() => {
     const total = progress?.totalDarkXp ?? 0;
-    const nextLevelBase = currentLevel + 1;
-    const nextLevelTotal = total >= nextLevelBase ? total + 1 : nextLevelBase;
-    const remaining = Math.max(0, nextLevelTotal - total);
-    const pct = nextLevelTotal > 0 ? Math.max(0, Math.min(100, Math.round((total / nextLevelTotal) * 100))) : 0;
-
-    return {
-      level: currentLevel,
-      totalDarkXp: total,
-      nextLevelTotal,
-      remaining,
-      pct,
-    };
-  }, [progress]);
+    return calculateLevelProgress(total);
+  }, [progress?.totalDarkXp]);
 
   const levelLabel = loading && !progress ? "--" : level.toString();
-  const remainingLabel = loading && !progress ? "--" : formatNumber(remaining);
-  const progressLabel = loading && !progress ? "--" : `${formatNumber(totalDarkXp)} / ${formatNumber(nextLevelTotal)}`;
+  const remainingLabel = loading && !progress ? "--" : formatNumber(xpToNextLevel);
+  const progressLabel =
+    loading && !progress
+      ? "--"
+      : `${formatNumber(xpIntoLevel)} / ${formatNumber(xpForNextLevel)} XP`;
 
   return (
     <div
@@ -63,7 +55,7 @@ export function LevelBanner({ className }: LevelBannerProps) {
         <motion.div
           className="absolute left-0 top-0 h-[12px] rounded-full bg-gradient-to-r from-zinc-200 via-zinc-300 to-zinc-400 shadow-[0_0_15px_-2px_rgba(161,161,170,0.6)]"
           initial={{ width: "0%" }}
-          animate={{ width: `${pct}%` }}
+          animate={{ width: `${progressPercent}%` }}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
           <div className="pointer-events-none absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 translate-x-1/2 rounded-full bg-zinc-200/40 blur-md" />

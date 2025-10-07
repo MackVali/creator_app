@@ -27,7 +27,7 @@ export default function TopNav() {
     subscribe: true,
     client: supabase,
   });
-  const currentLevel = progress?.currentLevel ?? 0;
+  const currentLevel = progress?.currentLevel ?? 1;
 
   useEffect(() => {
     if (!supabase || shouldHideNav) {

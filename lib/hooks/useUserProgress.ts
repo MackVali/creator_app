@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { calculateLevelProgress } from "@/lib/leveling";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
 
@@ -19,7 +20,7 @@ export type UseUserProgressOptions = {
 };
 
 const DEFAULT_PROGRESS: UserProgress = {
-  currentLevel: 0,
+  currentLevel: 1,
   totalDarkXp: 0,
   updatedAt: null,
 };
@@ -82,9 +83,12 @@ export function useUserProgress(
         return null;
       }
 
+      const totalDarkXp = data?.total_dark_xp ?? 0;
+      const derived = calculateLevelProgress(totalDarkXp);
+
       const resolved: UserProgress = {
-        currentLevel: data?.current_level ?? 0,
-        totalDarkXp: data?.total_dark_xp ?? 0,
+        currentLevel: derived.level,
+        totalDarkXp,
         updatedAt: data?.updated_at ?? null,
       };
 
