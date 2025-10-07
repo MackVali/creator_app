@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import CategoryCard from "./CategoryCard";
+import useSkillProgress from "./useSkillProgress";
 import useSkillsData, { type Category } from "./useSkillsData";
 import { deriveInitialIndex } from "./carouselUtils";
 import { updateCatOrder } from "@/lib/data/cats";
@@ -39,6 +40,7 @@ function withAlpha(hex: string | null | undefined, alpha: number) {
 
 export default function SkillsCarousel() {
   const { categories: fetchedCategories, skillsByCategory, isLoading } = useSkillsData();
+  const { progressBySkillId } = useSkillProgress();
   const router = useRouter();
   const search = useSearchParams();
 
@@ -495,6 +497,7 @@ export default function SkillsCarousel() {
                   onSkillDrag={setSkillDragging}
                   colorOverride={getCategoryColor(category)}
                   iconOverride={getCategoryIcon(category)}
+                  progressBySkillId={progressBySkillId}
                   menuOpen={openMenuFor === category.id}
                   onMenuOpenChange={(open) => {
                     setOpenMenuFor((current) => {
