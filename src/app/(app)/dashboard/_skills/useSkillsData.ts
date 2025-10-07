@@ -16,7 +16,6 @@ export interface Skill {
   name: string;
   emoji?: string | null;
   level?: number | null;
-  xpPercent?: number | null;
   category_id: string | null;
 }
 
@@ -102,7 +101,6 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     name: s.name || "Unnamed",
     emoji: s.icon,
     level: "level" in s ? s.level ?? undefined : undefined,
-    xpPercent: "progress" in s ? s.progress ?? undefined : undefined,
     category_id: "cat_id" in s ? s.cat_id : null,
   }));
 }

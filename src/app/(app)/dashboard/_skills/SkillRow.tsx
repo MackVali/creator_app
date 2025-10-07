@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Skill } from "./useSkillsData";
+import type { SkillProgressData } from "./useSkillProgress";
 
 export function computeWidth(percent: number) {
   const clamped = Math.max(0, Math.min(100, percent));
@@ -10,14 +11,21 @@ export function computeWidth(percent: number) {
 
 interface Props {
   skill: Skill;
+  progress?: SkillProgressData;
   onColor: string;
   trackColor: string;
   fillColor: string;
 }
 
-export default function SkillRow({ skill, onColor, trackColor, fillColor }: Props) {
-  const showLevel = skill.level !== null && skill.level !== undefined;
-  const showProgress = skill.xpPercent !== null && skill.xpPercent !== undefined;
+export default function SkillRow({ skill, progress, onColor, trackColor, fillColor }: Props) {
+  const level = progress?.level ?? skill.level;
+  const showLevel = level !== null && level !== undefined;
+  const showProgress =
+    progress?.xpIntoLevel !== undefined &&
+    progress?.xpIntoLevel !== null &&
+    progress?.xpRequired !== undefined &&
+    progress?.xpRequired !== null &&
+    progress.xpRequired > 0;
 
   return (
     <Link
@@ -39,7 +47,7 @@ export default function SkillRow({ skill, onColor, trackColor, fillColor }: Prop
             className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-lg border border-white/15 bg-white/8"
             style={{ color: onColor }}
           >
-            Lv {skill.level}
+            Lv {level}
           </div>
         )}
       </div>
@@ -51,11 +59,11 @@ export default function SkillRow({ skill, onColor, trackColor, fillColor }: Prop
           >
             <div
               className="h-full rounded-full transition-[width] duration-200"
-              style={{ width: computeWidth(skill.xpPercent as number), backgroundColor: fillColor }}
+              style={{ width: computeWidth(progress?.progressPercent ?? 0), backgroundColor: fillColor }}
             />
           </div>
           <span className="text-xs" style={{ color: onColor }}>
-            {skill.xpPercent}%
+            {progress?.xpIntoLevel ?? 0} / {progress?.xpRequired ?? 0} XP
           </span>
         </div>
       )}

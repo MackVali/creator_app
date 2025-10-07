@@ -4,9 +4,11 @@ import { Reorder } from "framer-motion";
 import { type MouseEvent as ReactMouseEvent } from "react";
 import SkillRow from "./SkillRow";
 import type { Skill } from "./useSkillsData";
+import type { SkillProgressData } from "./useSkillProgress";
 
 interface Props {
   skill: Skill;
+  progress?: SkillProgressData;
   dragging: React.MutableRefObject<boolean>;
   onColor: string;
   trackColor: string;
@@ -16,6 +18,7 @@ interface Props {
 
 export default function DraggableSkill({
   skill,
+  progress,
   dragging,
   onColor,
   trackColor,
@@ -53,6 +56,7 @@ export default function DraggableSkill({
     >
       <SkillRow
         skill={skill}
+        progress={progress}
         onColor={onColor}
         trackColor={trackColor}
         fillColor={fillColor}

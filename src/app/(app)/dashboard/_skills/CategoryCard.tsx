@@ -5,6 +5,7 @@ import { Reorder } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { updateCatColor, updateCatIcon } from "@/lib/data/cats";
 import DraggableSkill from "./DraggableSkill";
+import type { SkillProgressData } from "./useSkillProgress";
 import type { Category, Skill } from "./useSkillsData";
 
 function getOnColor(hex: string) {
@@ -60,6 +61,7 @@ interface Props {
   onSkillDrag: (dragging: boolean) => void;
   colorOverride?: string | null;
   iconOverride?: string | null;
+  progressBySkillId?: Record<string, SkillProgressData>;
   onColorChange?: (color: string) => void;
   onIconChange?: (icon: string | null) => void;
   menuOpen?: boolean;
@@ -79,6 +81,7 @@ export default function CategoryCard({
   onSkillDrag,
   colorOverride,
   iconOverride,
+  progressBySkillId,
   onColorChange,
   onIconChange,
   menuOpen: menuOpenProp,
@@ -439,6 +442,7 @@ export default function CategoryCard({
                 <DraggableSkill
                   key={s.id}
                   skill={s}
+                  progress={progressBySkillId?.[s.id]}
                   dragging={dragging}
                   onColor={palette.on}
                   trackColor={palette.track}
