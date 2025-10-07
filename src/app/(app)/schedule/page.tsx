@@ -302,6 +302,12 @@ type DayTimelineModel = {
 }
 
 
+type DayTimelineRenderOptions = {
+  disableInteractions?: boolean
+  containerRef?: RefObject<HTMLDivElement | null>
+}
+
+
 type ProjectTaskCard = {
   key: string
   task: TaskLite
@@ -712,8 +718,9 @@ function computeWindowReportsForDay({
     const energyLabel = normalizeEnergyLabel(win.energy)
     const windowEnergyIndex = energyIndexFromLabel(energyLabel)
     const futurePlacements = schedulerTimelinePlacements
-      .filter((entry): entry is Extract<SchedulerTimelinePlacement, { type: 'PROJECT' }>
-        => entry.type === 'PROJECT'
+      .filter(
+        (entry): entry is Extract<SchedulerTimelinePlacement, { type: 'PROJECT' }> =>
+          entry.type === 'PROJECT'
       )
       .filter(entry => entry.start.getTime() >= windowEnd.getTime())
       .filter(entry => {
@@ -1416,6 +1423,7 @@ export default function SchedulePage() {
   const touchStartX = useRef<number | null>(null)
   const touchStartWidth = useRef<number>(0)
   const swipeDeltaRef = useRef(0)
+  const swipeScrollProgressRef = useRef<number | null>(null)
   const navLock = useRef(false)
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
   const isSchedulingRef = useRef(false)
@@ -2173,9 +2181,11 @@ export default function SchedulePage() {
     setHasAutoRunToday(true)
   }, [userId, runScheduler, persistAutoRunDate])
 
+  const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null)
   const swipeContainerRef = useRef<HTMLDivElement | null>(null)
 
   function handleTouchStart(e: React.TouchEvent) {
+    swipeScrollProgressRef.current = null
     if (view !== 'day' || prefersReducedMotion) {
       touchStartX.current = null
       return
@@ -2184,6 +2194,27 @@ export default function SchedulePage() {
     touchStartWidth.current = swipeContainerRef.current?.offsetWidth ?? 0
     swipeDeltaRef.current = 0
     sliderControls.stop()
+    if (typeof window !== 'undefined') {
+      const container = dayTimelineContainerRef.current
+      const viewportHeightRaw =
+        window.visualViewport?.height ?? window.innerHeight ?? 0
+      const viewportHeight = Number.isFinite(viewportHeightRaw)
+        ? viewportHeightRaw
+        : 0
+      if (container) {
+        const height = container.offsetHeight
+        if (height > 0) {
+          const scrollY = window.scrollY ?? window.pageYOffset ?? 0
+          const rect = container.getBoundingClientRect()
+          const containerTop = rect.top + scrollY
+          const anchorOffset = viewportHeight > 0 ? viewportHeight / 2 : 0
+          const anchorPosition = scrollY + anchorOffset
+          const relative = anchorPosition - containerTop
+          const clamped = Math.min(Math.max(relative, 0), height)
+          swipeScrollProgressRef.current = clamped / height
+        }
+      }
+    }
   }
 
   function handleTouchMove(e: React.TouchEvent) {
@@ -2214,11 +2245,13 @@ export default function SchedulePage() {
       touchStartX.current = null
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
+      swipeScrollProgressRef.current = null
       return
     }
     if (touchStartX.current === null) {
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
+      swipeScrollProgressRef.current = null
       return
     }
     const width =
@@ -2238,6 +2271,7 @@ export default function SchedulePage() {
       setSkipNextDayAnimation(true)
       updateCurrentDate(nextDate, { direction, animate: false })
     } else {
+      swipeScrollProgressRef.current = null
       await sliderControls.start({
         x: 0,
         transition: { type: 'spring', stiffness: 280, damping: 32 },
@@ -2317,7 +2351,7 @@ export default function SchedulePage() {
   )
 
   const renderDayTimeline = useCallback(
-    (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => {
+    (model: DayTimelineModel, options?: DayTimelineRenderOptions) => {
       const {
         isViewingToday,
         dayViewDateKey,
@@ -2341,7 +2375,10 @@ export default function SchedulePage() {
         : ''
 
       return (
-        <div className={containerClass}>
+        <div
+          className={containerClass}
+          ref={options?.containerRef ?? undefined}
+        >
           <div className="pl-16 pr-6 pt-4 pb-3 text-white">
             <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[0_10px_30px_rgba(8,8,12,0.28)] backdrop-blur">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -2963,9 +3000,81 @@ export default function SchedulePage() {
     )
 
   const dayTimelineNode = useMemo(
-    () => renderDayTimeline(dayTimelineModel),
+    () =>
+      renderDayTimeline(dayTimelineModel, {
+        containerRef: dayTimelineContainerRef,
+      }),
     [renderDayTimeline, dayTimelineModel]
   )
+
+  useEffect(() => {
+    if (view !== 'day') {
+      swipeScrollProgressRef.current = null
+      return
+    }
+    if (typeof window === 'undefined') return
+    const snapshot = swipeScrollProgressRef.current
+    if (snapshot === null) return
+
+    let frame = 0
+    let attempts = 0
+    const maxAttempts = 12
+
+    const applyScroll = () => {
+      const container = dayTimelineContainerRef.current
+      if (!container) {
+        if (attempts < maxAttempts) {
+          attempts += 1
+          frame = requestAnimationFrame(applyScroll)
+          return
+        }
+        swipeScrollProgressRef.current = null
+        return
+      }
+      const height = container.offsetHeight
+      if (!(height > 0)) {
+        if (attempts < maxAttempts) {
+          attempts += 1
+          frame = requestAnimationFrame(applyScroll)
+          return
+        }
+        swipeScrollProgressRef.current = null
+        return
+      }
+
+      const clampedProgress = Math.min(Math.max(snapshot, 0), 1)
+      const viewportHeightRaw =
+        window.visualViewport?.height ?? window.innerHeight ?? 0
+      const viewportHeight = Number.isFinite(viewportHeightRaw)
+        ? viewportHeightRaw
+        : 0
+      const anchorOffset = viewportHeight > 0 ? viewportHeight / 2 : 0
+      const rect = container.getBoundingClientRect()
+      const scrollY = window.scrollY ?? window.pageYOffset ?? 0
+      const containerTop = rect.top + scrollY
+      const targetRelative = clampedProgress * height
+      let targetScroll = containerTop + targetRelative - anchorOffset
+      if (!Number.isFinite(targetScroll)) {
+        swipeScrollProgressRef.current = null
+        return
+      }
+      if (targetScroll < 0) targetScroll = 0
+      const doc = typeof document !== 'undefined' ? document.documentElement : null
+      if (doc) {
+        const maxScroll = doc.scrollHeight - viewportHeight
+        if (Number.isFinite(maxScroll)) {
+          targetScroll = Math.min(targetScroll, Math.max(0, maxScroll))
+        }
+      }
+      window.scrollTo({ top: targetScroll, behavior: 'auto' })
+      swipeScrollProgressRef.current = null
+    }
+
+    frame = requestAnimationFrame(applyScroll)
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [view, dayTimelineModel.dayViewDateKey])
 
   useEffect(() => {
     if (!focusInstanceId) return
