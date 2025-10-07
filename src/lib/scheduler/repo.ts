@@ -145,3 +145,37 @@ export async function fetchProjectsMap(
   return map;
 }
 
+export async function fetchProjectSkillsForProjects(
+  projectIds: string[],
+  client?: Client
+): Promise<Record<string, string[]>> {
+  if (projectIds.length === 0) return {};
+
+  const supabase = ensureClient(client);
+  const { data, error } = await supabase
+    .from('project_skills')
+    .select('project_id, skill_id')
+    .in('project_id', projectIds);
+
+  if (error) throw error;
+
+  const map: Record<string, string[]> = {};
+  for (const entry of (data ?? []) as {
+    project_id: string | null;
+    skill_id: string | null;
+  }[]) {
+    const projectId = entry.project_id;
+    const skillId = entry.skill_id;
+    if (!projectId || !skillId) continue;
+    const existing = map[projectId] ?? [];
+    if (!existing.includes(skillId)) {
+      existing.push(skillId);
+      map[projectId] = existing;
+    } else if (!map[projectId]) {
+      map[projectId] = existing;
+    }
+  }
+
+  return map;
+}
+

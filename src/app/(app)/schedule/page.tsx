@@ -39,6 +39,7 @@ import {
   fetchReadyTasks,
   fetchWindowsForDate,
   fetchProjectsMap,
+  fetchProjectSkillsForProjects,
   type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
 import {
@@ -65,6 +66,8 @@ import {
   formatDurationLabel,
   type SchedulerRunFailure,
 } from '@/lib/scheduler/windowReports'
+import { getSkillsForUser } from '@/lib/data/skills'
+import type { SkillRow } from '@/lib/types/skill'
 
 type DayTransitionDirection = -1 | 0 | 1
 
@@ -1273,6 +1276,8 @@ export default function SchedulePage() {
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
+  const [skills, setSkills] = useState<SkillRow[]>([])
+  const [projectSkillIds, setProjectSkillIds] = useState<Record<string, string[]>>({})
   const [habits, setHabits] = useState<HabitScheduleItem[]>([])
   const [habitCompletionByDate, setHabitCompletionByDate] = useState<
     Record<string, Record<string, HabitCompletionStatus>>
@@ -1600,6 +1605,8 @@ export default function SchedulePage() {
       setWindows([])
       setTasks([])
       setProjects([])
+      setSkills([])
+      setProjectSkillIds({})
       setScheduledProjectIds(new Set())
       setMetaStatus('idle')
       return
@@ -1610,17 +1617,29 @@ export default function SchedulePage() {
 
     async function load() {
       try {
-        const [ws, ts, pm, scheduledIds, hs] = await Promise.all([
+        const [ws, ts, pm, scheduledIds, hs, skillRows] = await Promise.all([
           fetchWindowsForDate(currentDate, undefined, localTimeZone),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
           fetchHabitsForSchedule(),
+          getSkillsForUser(userId),
         ])
+        let projectSkillsMap: Record<string, string[]> = {}
+        try {
+          const projectIds = Object.keys(pm)
+          if (projectIds.length > 0) {
+            projectSkillsMap = await fetchProjectSkillsForProjects(projectIds)
+          }
+        } catch (error) {
+          console.error('Failed to load project skill links for schedule', error)
+        }
         if (!active) return
         setWindows(ws)
         setTasks(ts)
         setProjects(Object.values(pm))
+        setSkills(skillRows)
+        setProjectSkillIds(projectSkillsMap)
         setHabits(hs)
         setScheduledProjectIds(prev => {
           const next = new Set(prev)
@@ -1635,6 +1654,8 @@ export default function SchedulePage() {
         setWindows([])
         setTasks([])
         setProjects([])
+        setSkills([])
+        setProjectSkillIds({})
         setHabits([])
       } finally {
         if (!active) return
@@ -1658,6 +1679,14 @@ export default function SchedulePage() {
     for (const t of tasks) map[t.id] = t
     return map
   }, [tasks])
+
+  const skillMonumentMap = useMemo(() => {
+    const map: Record<string, string | null> = {}
+    for (const skill of skills) {
+      map[skill.id] = skill.monument_id ?? null
+    }
+    return map
+  }, [skills])
 
   const tasksByProjectId = useMemo(() => {
     const map: Record<string, TaskLite[]> = {}
@@ -1884,6 +1913,45 @@ export default function SchedulePage() {
     return map
   }, [instances])
 
+  const buildXpAwardPayload = useCallback(
+    (instance: ScheduleInstance) => {
+      if (instance.source_type === 'TASK') {
+        const task = taskMap[instance.source_id]
+        if (!task) return null
+        const skillIds = task.skill_id ? [task.skill_id] : []
+        const uniqueSkillIds = Array.from(new Set(skillIds))
+        const monumentIds = uniqueSkillIds
+          .map(id => skillMonumentMap[id])
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        return {
+          kind: 'task' as const,
+          amount: 1,
+          skillIds: uniqueSkillIds,
+          monumentIds,
+        }
+      }
+
+      if (instance.source_type === 'PROJECT') {
+        const rawSkillIds = projectSkillIds[instance.source_id] ?? []
+        const uniqueSkillIds = Array.from(
+          new Set(rawSkillIds.filter((id): id is string => typeof id === 'string' && id.length > 0))
+        )
+        const monumentIds = uniqueSkillIds
+          .map(id => skillMonumentMap[id])
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        return {
+          kind: 'project' as const,
+          amount: 3,
+          skillIds: uniqueSkillIds,
+          monumentIds,
+        }
+      }
+
+      return null
+    },
+    [projectSkillIds, skillMonumentMap, taskMap]
+  )
+
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
@@ -1902,6 +1970,39 @@ export default function SchedulePage() {
         if (error) {
           console.error(error)
           return
+        }
+
+        if (nextStatus === 'completed') {
+          const instance = instances.find(inst => inst.id === instanceId)
+          if (instance) {
+            const payload = buildXpAwardPayload(instance)
+            if (payload) {
+              const body: Record<string, unknown> = {
+                scheduleInstanceId: instance.id,
+                kind: payload.kind,
+                amount: payload.amount,
+                awardKeyBase: `sched:${instance.id}:${payload.kind}`,
+              }
+              if (payload.skillIds.length > 0) {
+                body.skillIds = payload.skillIds
+              }
+              if (payload.monumentIds.length > 0) {
+                body.monumentIds = payload.monumentIds
+              }
+              try {
+                const response = await fetch('/api/xp/award', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(body),
+                })
+                if (!response.ok) {
+                  console.error('Failed to award XP for schedule completion', await response.text())
+                }
+              } catch (awardError) {
+                console.error('Failed to award XP for schedule completion', awardError)
+              }
+            }
+          }
         }
 
         setInstances(prev =>
@@ -1928,7 +2029,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances]
+    [userId, setInstances, instances, buildXpAwardPayload]
   )
 
   const getHabitCompletionStatus = useCallback(
