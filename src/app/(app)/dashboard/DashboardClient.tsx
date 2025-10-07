@@ -9,7 +9,7 @@ import SkillsCarousel from "./_skills/SkillsCarousel";
 export default function DashboardClient() {
   return (
     <main className="pb-20">
-      <LevelBanner level={80} current={3200} total={4000} />
+      <LevelBanner />
 
       <MonumentContainer />
 

@@ -13,15 +13,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useUserProgress } from "@/lib/hooks/useUserProgress";
 
 export default function TopNav() {
   const pathname = usePathname();
   const shouldHideNav = pathname?.startsWith("/schedule");
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [currentLevel, setCurrentLevel] = useState(0);
   const [shouldPulse, setShouldPulse] = useState(false);
   const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const { progress, lastEventAt } = useUserProgress(userId, {
+    enabled: !shouldHideNav,
+    subscribe: true,
+    client: supabase,
+  });
+  const currentLevel = progress?.currentLevel ?? 0;
 
   useEffect(() => {
     if (!supabase || shouldHideNav) {
@@ -39,53 +45,12 @@ export default function TopNav() {
   }, [shouldHideNav, supabase]);
 
   useEffect(() => {
-    if (!supabase || !userId || shouldHideNav) {
+    if (!lastEventAt) {
       return;
     }
 
-    let isMounted = true;
-
-    const fetchProgress = async () => {
-      const { data, error } = await supabase
-        .from("user_progress")
-        .select("current_level")
-        .eq("user_id", userId)
-        .single();
-
-      if (!isMounted) return;
-
-      if (error && error.code !== "PGRST116") {
-        console.error("Failed to load user progress", error);
-        return;
-      }
-
-      setCurrentLevel(data?.current_level ?? 0);
-    };
-
-    fetchProgress();
-
-    const channel = supabase
-      .channel(`dark_xp_events:${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "dark_xp_events",
-          filter: `user_id=eq.${userId}`,
-        },
-        async () => {
-          setShouldPulse(true);
-          await fetchProgress();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      isMounted = false;
-      channel.unsubscribe();
-    };
-  }, [shouldHideNav, supabase, userId]);
+    setShouldPulse(true);
+  }, [lastEventAt]);
 
   useEffect(() => {
     if (!shouldPulse) {

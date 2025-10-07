@@ -1,20 +1,61 @@
-import React from "react";
+"use client";
+
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 
-export function LevelBanner({
-  level = 80, current = 3200, total = 4000
-}:{level?:number; current?:number; total?:number;}){
-  const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((current/total)*100))) : 0;
-  const remaining = Math.max(0, total - current);
+import { useProfile } from "@/lib/hooks/useProfile";
+import { useUserProgress } from "@/lib/hooks/useUserProgress";
+import { cn } from "@/lib/utils";
+
+type LevelBannerProps = {
+  className?: string;
+};
+
+export function LevelBanner({ className }: LevelBannerProps) {
+  const { userId } = useProfile();
+  const { progress, loading } = useUserProgress(userId, {
+    subscribe: true,
+  });
+
+  const { level, totalDarkXp, nextLevelTotal, remaining, pct } = useMemo(() => {
+    const currentLevel = progress?.currentLevel ?? 0;
+    const total = progress?.totalDarkXp ?? 0;
+    const nextLevelBase = currentLevel + 1;
+    const nextLevelTotal = total >= nextLevelBase ? total + 1 : nextLevelBase;
+    const remaining = Math.max(0, nextLevelTotal - total);
+    const pct = nextLevelTotal > 0 ? Math.max(0, Math.min(100, Math.round((total / nextLevelTotal) * 100))) : 0;
+
+    return {
+      level: currentLevel,
+      totalDarkXp: total,
+      nextLevelTotal,
+      remaining,
+      pct,
+    };
+  }, [progress]);
+
+  const levelLabel = loading && !progress ? "--" : level.toString();
+  const remainingLabel = loading && !progress ? "--" : formatNumber(remaining);
+  const progressLabel = loading && !progress ? "--" : `${formatNumber(totalDarkXp)} / ${formatNumber(nextLevelTotal)}`;
+
   return (
-    <div className="card relative mx-4 mt-4 overflow-hidden p-4">
+    <div
+      className={cn(
+        "card relative mx-4 mt-4 overflow-hidden p-4",
+        "border border-white/10 bg-black/60",
+        className,
+      )}
+      aria-live="polite"
+    >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-zinc-500/20 via-zinc-400/10 to-zinc-500/20 blur-2xl" />
       <div className="relative z-[1] mb-3 flex items-center gap-2">
         <Sparkles className="h-5 w-5 text-zinc-200" />
         <div className="flex items-baseline gap-2">
-          <span className="font-extrabold text-[18px] tracking-wide">LEVEL {level}</span>
-          <span className="text-xs font-medium text-white/60">{remaining} XP to next level</span>
+          <span className="font-extrabold text-[18px] tracking-wide">LEVEL {levelLabel}</span>
+          <span className="text-xs font-medium text-white/60">
+            {remainingLabel === "--" ? "Loading" : `${remainingLabel} XP to next level`}
+          </span>
         </div>
       </div>
       <div className="relative z-[1]">
@@ -27,10 +68,14 @@ export function LevelBanner({
         >
           <div className="pointer-events-none absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 translate-x-1/2 rounded-full bg-zinc-200/40 blur-md" />
         </motion.div>
-        <div className="absolute right-1 -top-6 text-[11px] px-2 py-[2px] rounded-full bg-[#0c0f14] border border-white/10">
-          {current} / {total}
+        <div className="absolute right-1 -top-6 rounded-full border border-white/10 bg-[#0c0f14] px-2 py-[2px] text-[11px]">
+          {progressLabel}
         </div>
       </div>
     </div>
   );
+}
+
+function formatNumber(value: number) {
+  return value.toLocaleString("en-US");
 }
