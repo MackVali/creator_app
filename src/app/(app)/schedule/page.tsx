@@ -1972,35 +1972,38 @@ export default function SchedulePage() {
           return
         }
 
-        if (nextStatus === 'completed') {
-          const instance = instances.find(inst => inst.id === instanceId)
-          if (instance) {
-            const payload = buildXpAwardPayload(instance)
-            if (payload) {
-              const body: Record<string, unknown> = {
-                scheduleInstanceId: instance.id,
-                kind: payload.kind,
-                amount: payload.amount,
-                awardKeyBase: `sched:${instance.id}:${payload.kind}`,
+        const instance = instances.find(inst => inst.id === instanceId)
+        const previousStatus = instance?.status ?? null
+        const isUndo = nextStatus === 'scheduled' && previousStatus === 'completed'
+        const shouldAwardXp = nextStatus === 'completed' || isUndo
+
+        if (shouldAwardXp && instance) {
+          const payload = buildXpAwardPayload(instance)
+          if (payload) {
+            const baseAwardKey = `sched:${instance.id}:${payload.kind}`
+            const body: Record<string, unknown> = {
+              scheduleInstanceId: instance.id,
+              kind: payload.kind,
+              amount: isUndo ? -payload.amount : payload.amount,
+              awardKeyBase: isUndo ? `${baseAwardKey}:undo` : baseAwardKey,
+            }
+            if (payload.skillIds.length > 0) {
+              body.skillIds = payload.skillIds
+            }
+            if (payload.monumentIds.length > 0) {
+              body.monumentIds = payload.monumentIds
+            }
+            try {
+              const response = await fetch('/api/xp/award', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+              })
+              if (!response.ok) {
+                console.error('Failed to award XP for schedule completion', await response.text())
               }
-              if (payload.skillIds.length > 0) {
-                body.skillIds = payload.skillIds
-              }
-              if (payload.monumentIds.length > 0) {
-                body.monumentIds = payload.monumentIds
-              }
-              try {
-                const response = await fetch('/api/xp/award', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(body),
-                })
-                if (!response.ok) {
-                  console.error('Failed to award XP for schedule completion', await response.text())
-                }
-              } catch (awardError) {
-                console.error('Failed to award XP for schedule completion', awardError)
-              }
+            } catch (awardError) {
+              console.error('Failed to award XP for schedule completion', awardError)
             }
           }
         }
