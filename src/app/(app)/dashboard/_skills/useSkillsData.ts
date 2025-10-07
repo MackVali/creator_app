@@ -70,29 +70,39 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     icon: string | null;
     level?: number | null;
     progress?: number | null;
-    cat_id: string | null;
+    cat_id?: string | null;
   };
 
   const { data, error } = await baseQuery;
   let rows: SkillRow[] = (data as SkillRow[] | null) ?? [];
   if (error) {
-    // Remove progress/level first, keeping cat_id
-    const fallback = await supabase
-      .from("skills")
-      .select("id,name,icon,cat_id")
-      .eq("user_id", userId)
-      .order("name", { ascending: true });
-    if (fallback.error) {
-      // If cat_id also missing, drop it entirely
-      const minimal = await supabase
+    // Step down to variants without optional columns while keeping level whenever possible
+    const fallbackSelects = [
+      "id,name,icon,level,cat_id",
+      "id,name,icon,level",
+      "id,name,icon",
+    ];
+
+    let resolved = false;
+    let lastError: unknown = error;
+    for (const columns of fallbackSelects) {
+      const { data: fallbackData, error: fallbackError } = await supabase
         .from("skills")
-        .select("id,name,icon")
+        .select(columns)
         .eq("user_id", userId)
         .order("name", { ascending: true });
-      if (minimal.error) throw minimal.error;
-      rows = (minimal.data as SkillRow[] | null) ?? [];
-    } else {
-      rows = (fallback.data as SkillRow[] | null) ?? [];
+
+      if (!fallbackError) {
+        rows = (fallbackData as SkillRow[] | null) ?? [];
+        resolved = true;
+        break;
+      }
+
+      lastError = fallbackError;
+    }
+
+    if (!resolved) {
+      throw lastError ?? new Error("Failed to load skills");
     }
   }
 
@@ -100,7 +110,7 @@ export async function fetchSkills(userId: string): Promise<Skill[]> {
     id: s.id,
     name: s.name || "Unnamed",
     emoji: s.icon,
-    level: "level" in s ? s.level ?? undefined : undefined,
+    level: typeof s.level === "number" ? s.level : 1,
     category_id: "cat_id" in s ? s.cat_id : null,
   }));
 }
