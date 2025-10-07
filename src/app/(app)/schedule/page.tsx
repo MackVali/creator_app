@@ -2676,7 +2676,6 @@ export default function SchedulePage() {
                 ? 'border-emerald-400/60'
                 : 'border-white/12'
               const energyLevel = normalizeEnergyLabel(placement.window.energy)
-              const windowLabel = placement.window.label?.trim() || 'Habit window'
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
@@ -2702,7 +2701,7 @@ export default function SchedulePage() {
                             isHabitCompleted ? 'text-emerald-100/85' : 'text-white/80'
                           }`}
                         >
-                          {placement.durationMinutes}m · {windowLabel}
+                          {placement.durationMinutes}m
                         </span>
                       </div>
                     </div>
