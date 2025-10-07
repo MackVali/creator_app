@@ -56,6 +56,9 @@ export default function SkillsCarousel() {
   const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
 
+  const skeletonCategoryPlaceholders = [0, 1, 2];
+  const skeletonChipPlaceholders = [0, 1, 2, 3];
+
   useEffect(() => {
     setCategories(fetchedCategories);
   }, [fetchedCategories]);
@@ -329,7 +332,56 @@ export default function SkillsCarousel() {
   );
 
   if (isLoading) {
-    return <div className="py-8 text-center text-zinc-400">Loading...</div>;
+    return (
+      <div className="relative" role="status" aria-live="polite" aria-busy>
+        <span className="sr-only">Loading skill categories…</span>
+        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/70 px-2 py-6 shadow-lg sm:px-4">
+          <div
+            className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"
+            aria-hidden
+          />
+          <div className="relative flex gap-5 overflow-hidden px-2 sm:px-3">
+            {skeletonCategoryPlaceholders.map((placeholder) => (
+              <div
+                key={placeholder}
+                className="w-[85vw] shrink-0 sm:w-[70vw] lg:w-[52vw] xl:w-[44vw]"
+                style={{ scrollMarginInline: "12px" }}
+              >
+                <div className="flex h-full animate-pulse flex-col justify-between rounded-[26px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-lg">
+                  <div className="flex flex-col gap-4">
+                    <div className="h-8 w-8 rounded-full bg-white/[0.08]" />
+                    <div className="h-6 w-2/3 rounded-full bg-white/[0.08]" />
+                    <div className="space-y-3">
+                      {skeletonCategoryPlaceholders.map((line) => (
+                        <div key={line} className="h-5 w-full rounded-full bg-white/[0.06]" />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-6 flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-white/[0.07]" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-2/3 rounded-full bg-white/[0.06]" />
+                      <div className="h-3 w-1/3 rounded-full bg-white/[0.04]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-6 flex flex-wrap justify-center gap-2.5">
+          {skeletonChipPlaceholders.map((placeholder) => (
+            <div
+              key={placeholder}
+              className="inline-flex animate-pulse items-center gap-2 rounded-full border border-white/10 bg-black/60 px-4 py-1.5 text-sm text-slate-300/80"
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.08] text-sm" />
+              <span className="hidden h-4 w-16 rounded-full bg-white/[0.06] sm:block" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (categories.length === 0) {
