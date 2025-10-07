@@ -3,40 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { xpRequired } from "@/lib/skills/progression";
+import {
+  mapRowToProgress,
+  type SkillProgressData,
+  type SkillProgressRow,
+} from "../../../../../lib/skills/skillProgress";
 
-interface SkillProgressRow {
-  skill_id: string;
-  level: number | null;
-  prestige: number | null;
-  xp_into_level: number | null;
-}
-
-export interface SkillProgressData {
-  level: number;
-  prestige: number;
-  xpIntoLevel: number;
-  xpRequired: number;
-  progressPercent: number;
-}
-
-function mapRowToProgress(row: SkillProgressRow): SkillProgressData | null {
-  if (!row?.skill_id) return null;
-  const level = typeof row.level === "number" ? row.level : 1;
-  const prestige = typeof row.prestige === "number" ? row.prestige : 0;
-  const xpIntoLevel = typeof row.xp_into_level === "number" ? row.xp_into_level : 0;
-  const required = xpRequired(level, prestige);
-  const safeRequired = required > 0 ? required : 1;
-  const percent = Math.max(0, Math.min(100, (xpIntoLevel / safeRequired) * 100));
-
-  return {
-    level,
-    prestige,
-    xpIntoLevel,
-    xpRequired: safeRequired,
-    progressPercent: percent,
-  };
-}
+export type { SkillProgressData } from "../../../../../lib/skills/skillProgress";
 
 export default function useSkillProgress() {
   const { userId } = useProfileContext();
@@ -55,6 +28,13 @@ export default function useSkillProgress() {
     }
 
     let isActive = true;
+    const handleRealtimeRow = (row: SkillProgressRow | null) => {
+      if (!isActive) return;
+      const mapped = mapRowToProgress(row);
+      if (!mapped || !row?.skill_id) return;
+      setProgress((prev) => ({ ...prev, [row.skill_id]: mapped }));
+    };
+
     const channel = supabase
       .channel(`skill_progress_user_${userId}`)
       .on(
@@ -65,14 +45,7 @@ export default function useSkillProgress() {
           table: "skill_progress",
           filter: `user_id=eq.${userId}`,
         },
-        (payload) => {
-          if (!isActive) return;
-          const mapped = mapRowToProgress(payload.new as SkillProgressRow);
-          if (!mapped) return;
-          const skillId = (payload.new as SkillProgressRow | null)?.skill_id;
-          if (!skillId) return;
-          setProgress((prev) => ({ ...prev, [skillId]: mapped }));
-        }
+        (payload) => handleRealtimeRow(payload.new as SkillProgressRow | null)
       )
       .on(
         "postgres_changes",
@@ -82,14 +55,7 @@ export default function useSkillProgress() {
           table: "skill_progress",
           filter: `user_id=eq.${userId}`,
         },
-        (payload) => {
-          if (!isActive) return;
-          const mapped = mapRowToProgress(payload.new as SkillProgressRow);
-          if (!mapped) return;
-          const skillId = (payload.new as SkillProgressRow | null)?.skill_id;
-          if (!skillId) return;
-          setProgress((prev) => ({ ...prev, [skillId]: mapped }));
-        }
+        (payload) => handleRealtimeRow(payload.new as SkillProgressRow | null)
       );
 
     channel.subscribe((status) => {
