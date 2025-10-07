@@ -2657,17 +2657,25 @@ export default function SchedulePage() {
               )
               const isHabitCompleted = habitStatus === 'completed'
               const cardBackground =
-                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4,
-4,10,0.96) 0%, rgba(16,17,28,0.92) 44%, rgba(36,38,54,0.8) 100%)'
+                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
+              const scheduledShadow = [
+                '0 26px 52px rgba(0, 0, 0, 0.6)',
+                '0 12px 28px rgba(0, 0, 0, 0.45)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+              ].join(', ')
+              const completedShadow = [
+                '0 26px 52px rgba(2, 32, 24, 0.6)',
+                '0 12px 28px rgba(1, 55, 34, 0.45)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+              ].join(', ')
+              const cardOutline = isHabitCompleted
+                ? '1px solid rgba(16, 185, 129, 0.55)'
+                : '1px solid rgba(18, 18, 24, 0.85)'
               const cardStyle: CSSProperties = {
                 top,
                 height,
-                boxShadow: isHabitCompleted
-                  ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
-                  : '0 26px 52px rgba(0, 0, 0, 0.6), 0 12px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-                outline: isHabitCompleted
-                  ? '1px solid rgba(16, 185, 129, 0.55)'
-                  : '1px solid rgba(18, 18, 24, 0.85)',
+                boxShadow: isHabitCompleted ? completedShadow : scheduledShadow,
+                outline: cardOutline,
                 outlineOffset: '-1px',
                 background: cardBackground,
               }
