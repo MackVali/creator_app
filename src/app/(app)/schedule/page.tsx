@@ -2001,7 +2001,7 @@ export default function SchedulePage() {
           aria-label="Toggle habit completion"
           title="Toggle habit completion"
           disabled={disabled}
-          className="relative flex h-6 w-6 items-center justify-center rounded-full border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="relative flex h-6 w-6 items-center justify-center rounded-none border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
           initial={false}
           animate={{
             backgroundColor: isCompleted
@@ -2656,71 +2656,50 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
-              const baseBackground =
-                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.18), transparent 58%), linear-gradient(140deg, rgba(5,6,12,0.98) 0%, rgba(12,13,22,0.94) 44%, rgba(34,36,52,0.78) 100%)'
-              const completedBackground =
-                'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 60%), linear-gradient(140deg, rgba(6,78,59,0.95) 0%, rgba(4,120,87,0.92) 42%, rgba(16,185,129,0.88) 100%)'
+              const cardBackground =
+                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
+              const scheduledShadow = [
+                '0 26px 52px rgba(0, 0, 0, 0.6)',
+                '0 12px 28px rgba(0, 0, 0, 0.45)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+              ].join(', ')
+              const completedShadow = [
+                '0 26px 52px rgba(2, 32, 24, 0.6)',
+                '0 12px 28px rgba(1, 55, 34, 0.45)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+              ].join(', ')
+              const cardOutline = isHabitCompleted
+                ? '1px solid rgba(16, 185, 129, 0.55)'
+                : '1px solid rgba(18, 18, 24, 0.85)'
               const cardStyle: CSSProperties = {
                 top,
                 height,
-                boxShadow: isHabitCompleted
-                  ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
-                  : '0 26px 52px rgba(0, 0, 0, 0.6), 0 12px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-                outline: isHabitCompleted
-                  ? '1px solid rgba(16, 185, 129, 0.55)'
-                  : '1px solid rgba(18, 18, 24, 0.85)',
+                boxShadow: isHabitCompleted ? completedShadow : scheduledShadow,
+                outline: cardOutline,
                 outlineOffset: '-1px',
-                background: isHabitCompleted ? completedBackground : baseBackground,
+                background: cardBackground,
               }
               const habitBorderClass = isHabitCompleted
                 ? 'border-emerald-400/60'
                 : 'border-white/12'
-              const energyLevel = normalizeEnergyLabel(placement.window.energy)
-              const windowLabel = placement.window.label?.trim() || 'Habit window'
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-12 right-2 z-30 flex flex-col justify-between rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute left-12 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex flex-col">
-                      <span
-                        className={`text-[10px] font-semibold uppercase tracking-[0.24em] ${
-                          isHabitCompleted ? 'text-emerald-200/80' : 'text-white/70'
-                        }`}
-                      >
-                        Habit
-                      </span>
-                      <span className="text-sm font-medium leading-snug">
-                        {placement.habitName}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <FlameEmber level={energyLevel} size="sm" className="flex-shrink-0" />
-                      {renderHabitCompletionControl({
-                        dateKey: dayViewDateKey,
-                        habitId: placement.habitId,
-                        status: habitStatus,
-                        disabled: options?.disableInteractions,
-                      })}
-                    </div>
-                  </div>
-                  <div
-                    className={`text-xs ${
-                      isHabitCompleted ? 'text-emerald-100/85' : 'text-white/80'
-                    }`}
-                  >
-                    {placement.durationMinutes}m · {windowLabel}
-                  </div>
-                  {placement.truncated && (
-                    <div className="text-[10px] font-medium text-amber-200/85">
-                      Trimmed to fit window
-                    </div>
-                  )}
+                  <span className="truncate text-sm font-medium leading-snug">
+                    {placement.habitName}
+                  </span>
+                  {renderHabitCompletionControl({
+                    dateKey: dayViewDateKey,
+                    habitId: placement.habitId,
+                    status: habitStatus,
+                    disabled: options?.disableInteractions,
+                  })}
                 </motion.div>
               )
             })}
