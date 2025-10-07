@@ -53,7 +53,7 @@ export function HabitsEmptyState({ onAction }: { onAction?: () => void }) {
   return (
     <EmptyState
       title="No habits yet"
-      description="Build positive habits to improve your daily routine and productivity."
+      description="Build positive habits and routines to improve your daily rhythm and productivity."
       icon={<CheckCircle className="h-8 w-8 text-muted-foreground" />}
       cta={
         onAction ? (
