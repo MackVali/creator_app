@@ -51,6 +51,11 @@ import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
+import {
+  fetchHabitsForSchedule,
+  DEFAULT_HABIT_DURATION_MIN,
+  type HabitScheduleItem,
+} from '@/lib/scheduler/habits'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
@@ -207,29 +212,59 @@ const MAX_FALLBACK_TASKS = 12
 
 type LoadStatus = 'idle' | 'loading' | 'loaded'
 
-type SchedulerTimelineEntry = {
-  instanceId: string
-  projectId: string
-  windowId: string | null
-  decision: 'kept' | 'new' | 'rescheduled'
-  startUTC: string
-  endUTC: string
-  durationMin: number | null
-  energyResolved: string | null
-  scheduledDayOffset: number | null
-  availableStartLocal: string | null
-  windowStartLocal: string | null
-}
+type SchedulerTimelineEntry =
+  | {
+      type: 'PROJECT'
+      instanceId: string
+      projectId: string
+      windowId: string | null
+      decision: 'kept' | 'new' | 'rescheduled'
+      startUTC: string
+      endUTC: string
+      durationMin: number | null
+      energyResolved: string | null
+      scheduledDayOffset: number | null
+      availableStartLocal: string | null
+      windowStartLocal: string | null
+    }
+  | {
+      type: 'HABIT'
+      habitId: string
+      habitName: string | null
+      windowId: string | null
+      decision: 'kept' | 'new' | 'rescheduled'
+      startUTC: string
+      endUTC: string
+      durationMin: number | null
+      energyResolved: string | null
+      scheduledDayOffset: number | null
+      availableStartLocal: string | null
+      windowStartLocal: string | null
+      clipped: boolean
+    }
 
-type SchedulerTimelinePlacement = {
-  projectId: string
-  projectName: string
-  start: Date
-  end: Date
-  durationMinutes: number | null
-  energyLabel: (typeof ENERGY.LIST)[number]
-  decision: SchedulerTimelineEntry['decision']
-}
+type SchedulerTimelinePlacement =
+  | {
+      type: 'PROJECT'
+      projectId: string
+      projectName: string
+      start: Date
+      end: Date
+      durationMinutes: number | null
+      energyLabel: (typeof ENERGY.LIST)[number]
+      decision: SchedulerTimelineEntry['decision']
+    }
+  | {
+      type: 'HABIT'
+      habitId: string
+      habitName: string
+      start: Date
+      end: Date
+      durationMinutes: number | null
+      energyLabel: (typeof ENERGY.LIST)[number]
+      decision: SchedulerTimelineEntry['decision']
+      clipped: boolean
+    }
 
 type SchedulerDebugState = {
   runAt: string
@@ -262,6 +297,7 @@ type DayTimelineModel = {
   taskInstancesByProject: Record<string, TaskInstanceInfo[]>
   tasksByProjectId: Record<string, TaskLite[]>
   standaloneTaskInstances: TaskInstanceInfo[]
+  habitPlacements: HabitTimelinePlacement[]
   windowReports: WindowReportEntry[]
 }
 
@@ -274,6 +310,16 @@ type ProjectTaskCard = {
   kind: 'scheduled' | 'fallback'
   instanceId?: string
   displayDurationMinutes: number
+}
+
+type HabitTimelinePlacement = {
+  habitId: string
+  habitName: string
+  start: Date
+  end: Date
+  durationMinutes: number
+  window: RepoWindow
+  truncated: boolean
 }
 
 function isValidDate(value: unknown): value is Date {
@@ -486,6 +532,96 @@ function computeStandaloneTaskInstancesForDay(
   return items
 }
 
+function computeHabitPlacementsForDay({
+  habits,
+  windows,
+  date,
+}: {
+  habits: HabitScheduleItem[]
+  windows: RepoWindow[]
+  date: Date
+}): HabitTimelinePlacement[] {
+  if (habits.length === 0 || windows.length === 0) return []
+
+  const windowMap = buildWindowMap(windows)
+  const grouped = new Map<string, HabitScheduleItem[]>()
+
+  for (const habit of habits) {
+    const windowId = habit.windowId
+    if (!windowId) continue
+    const window = windowMap[windowId]
+    if (!window) continue
+    const existing = grouped.get(windowId)
+    if (existing) {
+      existing.push(habit)
+    } else {
+      grouped.set(windowId, [habit])
+    }
+  }
+
+  if (grouped.size === 0) return []
+
+  const placements: HabitTimelinePlacement[] = []
+
+  for (const [windowId, group] of grouped) {
+    const window = windowMap[windowId]
+    if (!window) continue
+    const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(window, date)
+    if (!isValidDate(windowStart) || !isValidDate(windowEnd)) continue
+
+    let cursorMs = windowStart.getTime()
+    const windowEndMs = windowEnd.getTime()
+    if (!Number.isFinite(cursorMs) || !Number.isFinite(windowEndMs)) continue
+
+    const sorted = [...group].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      if (aTime !== bTime) return aTime - bTime
+      return a.name.localeCompare(b.name)
+    })
+
+    for (const habit of sorted) {
+      if (cursorMs >= windowEndMs) break
+      const rawDuration = Number(habit.durationMinutes ?? 0)
+      const durationMin =
+        Number.isFinite(rawDuration) && rawDuration > 0
+          ? rawDuration
+          : DEFAULT_HABIT_DURATION_MIN
+      const durationMs = durationMin * 60000
+      if (durationMs <= 0) continue
+
+      const startMs = cursorMs
+      let endMs = startMs + durationMs
+      let truncated = false
+      if (endMs > windowEndMs) {
+        endMs = windowEndMs
+        truncated = true
+      }
+      if (endMs <= startMs) {
+        cursorMs = endMs
+        continue
+      }
+
+      const start = new Date(startMs)
+      const end = new Date(endMs)
+      placements.push({
+        habitId: habit.id,
+        habitName: habit.name,
+        start,
+        end,
+        durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
+        window,
+        truncated,
+      })
+
+      cursorMs = endMs
+    }
+  }
+
+  placements.sort((a, b) => a.start.getTime() - b.start.getTime())
+  return placements
+}
+
 function computeWindowReportsForDay({
   windows,
   projectInstances,
@@ -495,6 +631,7 @@ function computeWindowReportsForDay({
   schedulerFailureByProjectId,
   schedulerDebug,
   schedulerTimelinePlacements,
+  habitPlacements,
   currentDate,
 }: {
   windows: RepoWindow[]
@@ -505,25 +642,39 @@ function computeWindowReportsForDay({
   schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>
   schedulerDebug: SchedulerDebugState | null
   schedulerTimelinePlacements: SchedulerTimelinePlacement[]
+  habitPlacements: HabitTimelinePlacement[]
   currentDate: Date
 }): WindowReportEntry[] {
   if (windows.length === 0) return []
   const assignments = new Map<string, number>()
-  const projectSpans = projectInstances
-    .map(({ instance, start, end, assignedWindow }) => {
-      if (!isValidDate(start) || !isValidDate(end)) return null
-      const startMs = start.getTime()
-      const endMs = end.getTime()
-      const windowId = instance.window_id || assignedWindow?.id || null
-      if (windowId) {
-        assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
-      }
-      return { windowId, start, end }
+    const projectSpans = projectInstances
+      .map(({ instance, start, end, assignedWindow }) => {
+        if (!isValidDate(start) || !isValidDate(end)) return null
+        const windowId = instance.window_id || assignedWindow?.id || null
+        if (windowId) {
+          assignments.set(windowId, (assignments.get(windowId) ?? 0) + 1)
+        }
+        return { windowId, start, end }
     })
-    .filter((value): value is { windowId: string | null; start: Date; end: Date } => value !== null)
+    .filter(
+      (value): value is {
+        windowId: string | null
+        start: Date
+        end: Date
+      } => value !== null
+    )
+
+  for (const habit of habitPlacements) {
+    assignments.set(habit.window.id, (assignments.get(habit.window.id) ?? 0) + 1)
+  }
 
   const scheduledSpans = [
     ...projectSpans,
+    ...habitPlacements.map(placement => ({
+      windowId: placement.window.id,
+      start: placement.start,
+      end: placement.end,
+    })),
     ...schedulerTimelinePlacements
       .map(({ start, end }) => {
         if (!isValidDate(start) || !isValidDate(end)) return null
@@ -561,6 +712,9 @@ function computeWindowReportsForDay({
     const energyLabel = normalizeEnergyLabel(win.energy)
     const windowEnergyIndex = energyIndexFromLabel(energyLabel)
     const futurePlacements = schedulerTimelinePlacements
+      .filter((entry): entry is Extract<SchedulerTimelinePlacement, { type: 'PROJECT' }>
+        => entry.type === 'PROJECT'
+      )
       .filter(entry => entry.start.getTime() >= windowEnd.getTime())
       .filter(entry => {
         const entryEnergyIndex = energyIndexFromLabel(entry.energyLabel)
@@ -606,6 +760,7 @@ function computeWindowReportsForDay({
 
   return reports
 }
+
 function buildDayTimelineModel({
   date,
   windows,
@@ -613,6 +768,7 @@ function buildDayTimelineModel({
   projectMap,
   taskMap,
   tasksByProjectId,
+  habits,
   startHour,
   pxPerMin,
   unscheduledProjects,
@@ -629,6 +785,7 @@ function buildDayTimelineModel({
   projectMap: Record<string, ProjectItem>
   taskMap: Record<string, TaskLite>
   tasksByProjectId: Record<string, TaskLite[]>
+  habits: HabitScheduleItem[]
   startHour: number
   pxPerMin: number
   unscheduledProjects: ProjectItem[]
@@ -652,6 +809,11 @@ function buildDayTimelineModel({
     taskMap,
     projectInstanceIds
   )
+  const habitPlacements = computeHabitPlacementsForDay({
+    habits,
+    windows,
+    date,
+  })
   const windowReports = computeWindowReportsForDay({
     windows,
     projectInstances,
@@ -661,6 +823,7 @@ function buildDayTimelineModel({
     schedulerFailureByProjectId,
     schedulerDebug,
     schedulerTimelinePlacements,
+    habitPlacements,
     currentDate: date,
   })
   const dayViewDateKey = formatLocalDateKey(date)
@@ -678,6 +841,7 @@ function buildDayTimelineModel({
     taskInstancesByProject,
     tasksByProjectId,
     standaloneTaskInstances,
+    habitPlacements,
     windowReports,
   }
 }
@@ -821,13 +985,81 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
   for (const entry of input) {
     if (!entry || typeof entry !== 'object') continue
     const value = entry as {
+      type?: unknown
       instance?: unknown
       projectId?: unknown
       decision?: unknown
       scheduledDayOffset?: unknown
       availableStartLocal?: unknown
       windowStartLocal?: unknown
+      habit?: unknown
     }
+    const typeRaw = typeof value.type === 'string' ? value.type.toUpperCase() : null
+
+    if (typeRaw === 'HABIT') {
+      const habitValue = value.habit
+      if (!habitValue || typeof habitValue !== 'object') continue
+      const habitEntry = habitValue as {
+        id?: unknown
+        name?: unknown
+        windowId?: unknown
+        startUTC?: unknown
+        endUTC?: unknown
+        durationMin?: unknown
+        energyResolved?: unknown
+        clipped?: unknown
+      }
+      const habitId = typeof habitEntry.id === 'string' ? habitEntry.id : null
+      const startUTC = typeof habitEntry.startUTC === 'string' ? habitEntry.startUTC : null
+      const endUTC = typeof habitEntry.endUTC === 'string' ? habitEntry.endUTC : null
+      if (!habitId || !startUTC || !endUTC) continue
+      const decision = value.decision
+      if (decision !== 'kept' && decision !== 'new' && decision !== 'rescheduled') continue
+      const windowId = typeof habitEntry.windowId === 'string' ? habitEntry.windowId : null
+      const durationMin =
+        typeof habitEntry.durationMin === 'number' && Number.isFinite(habitEntry.durationMin)
+          ? habitEntry.durationMin
+          : null
+      const energyResolved =
+        typeof habitEntry.energyResolved === 'string' && habitEntry.energyResolved.trim().length > 0
+          ? habitEntry.energyResolved
+          : null
+      const scheduledDayOffset =
+        typeof value.scheduledDayOffset === 'number' && Number.isFinite(value.scheduledDayOffset)
+          ? value.scheduledDayOffset
+          : null
+      const availableStartLocal =
+        typeof value.availableStartLocal === 'string' && value.availableStartLocal.length > 0
+          ? value.availableStartLocal
+          : null
+      const windowStartLocal =
+        typeof value.windowStartLocal === 'string' && value.windowStartLocal.length > 0
+          ? value.windowStartLocal
+          : null
+      const habitName =
+        typeof habitEntry.name === 'string' && habitEntry.name.trim().length > 0
+          ? habitEntry.name
+          : null
+      const clipped = habitEntry.clipped === true
+
+      results.push({
+        type: 'HABIT',
+        habitId,
+        habitName,
+        windowId,
+        decision,
+        startUTC,
+        endUTC,
+        durationMin,
+        energyResolved,
+        scheduledDayOffset,
+        availableStartLocal,
+        windowStartLocal,
+        clipped,
+      })
+      continue
+    }
+
     const instance = value.instance
     if (!instance || typeof instance !== 'object') continue
     const instanceValue = instance as {
@@ -875,6 +1107,7 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
         : null
 
     results.push({
+      type: 'PROJECT',
       instanceId,
       projectId,
       windowId,
@@ -1024,6 +1257,7 @@ export default function SchedulePage() {
   const [view, setView] = useState<ScheduleView>(initialView)
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
+  const [habits, setHabits] = useState<HabitScheduleItem[]>([])
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
   const [scheduledProjectIds, setScheduledProjectIds] = useState<Set<string>>(new Set())
@@ -1104,21 +1338,9 @@ export default function SchedulePage() {
     }
     return 'UTC'
   }, [])
-  const dayViewLabel = useMemo(
-    () => formatDayViewLabel(currentDate, localTimeZone),
-    [currentDate, localTimeZone]
-  )
   const dayViewDateKey = useMemo(
     () => formatLocalDateKey(currentDate),
     [currentDate]
-  )
-  const isViewingToday = useMemo(
-    () => formatLocalDateKey(new Date()) === dayViewDateKey,
-    [dayViewDateKey]
-  )
-  const dayViewDetails = useMemo(
-    () => resolveDayViewDetails(currentDate, localTimeZone),
-    [currentDate, localTimeZone]
   )
   const timeZoneShortName = useMemo(() => {
     try {
@@ -1304,16 +1526,18 @@ export default function SchedulePage() {
 
     async function load() {
       try {
-        const [ws, ts, pm, scheduledIds] = await Promise.all([
+        const [ws, ts, pm, scheduledIds, hs] = await Promise.all([
           fetchWindowsForDate(currentDate, undefined, localTimeZone),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
+          fetchHabitsForSchedule(),
         ])
         if (!active) return
         setWindows(ws)
         setTasks(ts)
         setProjects(Object.values(pm))
+        setHabits(hs)
         setScheduledProjectIds(prev => {
           const next = new Set(prev)
           for (const id of scheduledIds) {
@@ -1327,6 +1551,7 @@ export default function SchedulePage() {
         setWindows([])
         setTasks([])
         setProjects([])
+        setHabits([])
       } finally {
         if (!active) return
         setMetaStatus('loaded')
@@ -1370,6 +1595,12 @@ export default function SchedulePage() {
     for (const p of projectItems) map[p.id] = p
     return map
   }, [projectItems])
+
+  const habitMap = useMemo(() => {
+    const map: Record<string, HabitScheduleItem> = {}
+    for (const habit of habits) map[habit.id] = habit
+    return map
+  }, [habits])
 
   const windowMap = useMemo(() => buildWindowMap(windows), [windows])
 
@@ -1428,44 +1659,61 @@ export default function SchedulePage() {
       const start = toLocal(entry.startUTC)
       const end = toLocal(entry.endUTC)
       if (!isValidDate(start) || !isValidDate(end)) continue
-      const project = projectMap[entry.projectId]
-      const durationMin =
-        typeof entry.durationMin === 'number' && Number.isFinite(entry.durationMin)
-          ? entry.durationMin
-          : typeof project?.duration_min === 'number' && Number.isFinite(project.duration_min)
-            ? project.duration_min
-            : null
-      const energySource =
-        typeof entry.energyResolved === 'string' && entry.energyResolved.trim().length > 0
-          ? entry.energyResolved
-          : project?.energy ?? null
-      const energyLabel = normalizeEnergyLabel(energySource)
+      if (entry.type === 'PROJECT') {
+        const project = projectMap[entry.projectId]
+        const durationMin =
+          typeof entry.durationMin === 'number' && Number.isFinite(entry.durationMin)
+            ? entry.durationMin
+            : typeof project?.duration_min === 'number' && Number.isFinite(project.duration_min)
+              ? project.duration_min
+              : null
+        const energySource =
+          typeof entry.energyResolved === 'string' && entry.energyResolved.trim().length > 0
+            ? entry.energyResolved
+            : project?.energy ?? null
+        const energyLabel = normalizeEnergyLabel(energySource)
 
-      placements.push({
-        projectId: entry.projectId,
-        projectName: project?.name || 'Untitled project',
-        start,
-        end,
-        durationMinutes: durationMin,
-        energyLabel,
-        decision: entry.decision,
-      })
+        placements.push({
+          type: 'PROJECT',
+          projectId: entry.projectId,
+          projectName: project?.name || 'Untitled project',
+          start,
+          end,
+          durationMinutes: durationMin,
+          energyLabel,
+          decision: entry.decision,
+        })
+      } else if (entry.type === 'HABIT') {
+        const habit = habitMap[entry.habitId]
+        const habitName = entry.habitName?.trim() || habit?.name || 'Habit'
+        const durationSource =
+          typeof entry.durationMin === 'number' && Number.isFinite(entry.durationMin)
+            ? entry.durationMin
+            : typeof habit?.durationMinutes === 'number' && Number.isFinite(habit.durationMinutes)
+              ? habit.durationMinutes
+              : DEFAULT_HABIT_DURATION_MIN
+        const energySource =
+          typeof entry.energyResolved === 'string' && entry.energyResolved.trim().length > 0
+            ? entry.energyResolved
+            : habit?.window?.energy ?? null
+        const energyLabel = normalizeEnergyLabel(energySource)
+
+        placements.push({
+          type: 'HABIT',
+          habitId: entry.habitId,
+          habitName,
+          start,
+          end,
+          durationMinutes: durationSource,
+          energyLabel,
+          decision: entry.decision,
+          clipped: entry.clipped ?? false,
+        })
+      }
     }
 
     return placements
-  }, [schedulerDebug, projectMap])
-
-  const taskInstancesByProject = useMemo(
-    () =>
-      computeTaskInstancesByProjectForDay(instances, taskMap, projectInstanceIds),
-    [instances, taskMap, projectInstanceIds]
-  )
-
-  const standaloneTaskInstances = useMemo(
-    () =>
-      computeStandaloneTaskInstancesForDay(instances, taskMap, projectInstanceIds),
-    [instances, taskMap, projectInstanceIds]
-  )
+  }, [schedulerDebug, projectMap, habitMap])
 
   useEffect(() => {
     if (!userId || view !== 'day') {
@@ -1499,6 +1747,7 @@ export default function SchedulePage() {
           projectMap,
           taskMap,
           tasksByProjectId,
+          habits,
           startHour,
           pxPerMin,
           unscheduledProjects,
@@ -1532,6 +1781,7 @@ export default function SchedulePage() {
     projectMap,
     taskMap,
     tasksByProjectId,
+    habits,
     startHour,
     pxPerMin,
     unscheduledProjects,
@@ -1597,15 +1847,16 @@ export default function SchedulePage() {
     [userId, setInstances]
   )
 
-  const renderInstanceActions = (
-    instanceId: string,
-    options?: { appearance?: 'light' | 'dark'; className?: string }
-  ) => {
-    const pendingStatus = pendingInstanceStatuses.get(instanceId)
-    const pending = pendingStatus !== undefined
-    const appearance = options?.appearance ?? 'dark'
-    const status = pendingStatus ?? instanceStatusById[instanceId] ?? null
-    const effectiveStatus: ScheduleInstance['status'] = status ?? 'scheduled'
+  const renderInstanceActions = useCallback(
+    (
+      instanceId: string,
+      options?: { appearance?: 'light' | 'dark'; className?: string }
+    ) => {
+      const pendingStatus = pendingInstanceStatuses.get(instanceId)
+      const pending = pendingStatus !== undefined
+      const appearance = options?.appearance ?? 'dark'
+      const status = pendingStatus ?? instanceStatusById[instanceId] ?? null
+      const effectiveStatus: ScheduleInstance['status'] = status ?? 'scheduled'
     const isCompleted = effectiveStatus === 'completed'
     const canToggle =
       effectiveStatus === 'completed' || effectiveStatus === 'scheduled'
@@ -1622,11 +1873,11 @@ export default function SchedulePage() {
     const baseButtonClass =
       'relative flex h-6 w-6 items-center justify-center border rounded-none transition-[color,background,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-60'
 
-    return (
-      <div
-        className={[containerClass, options?.className]
-          .filter(Boolean)
-          .join(' ')}
+      return (
+        <div
+          className={[containerClass, options?.className]
+            .filter(Boolean)
+            .join(' ')}
         onClick={event => {
           event.stopPropagation()
         }}
@@ -1687,9 +1938,15 @@ export default function SchedulePage() {
             />
           </motion.svg>
         </motion.button>
-      </div>
-    )
-  }
+        </div>
+      )
+    },
+    [
+      pendingInstanceStatuses,
+      instanceStatusById,
+      handleToggleInstanceCompletion,
+    ]
+  )
 
   function navigate(next: ScheduleView) {
     if (navLock.current) return
@@ -2028,6 +2285,7 @@ export default function SchedulePage() {
         projectMap,
         taskMap,
         tasksByProjectId,
+        habits,
         startHour,
         pxPerMin,
         unscheduledProjects,
@@ -2045,6 +2303,7 @@ export default function SchedulePage() {
       projectMap,
       taskMap,
       tasksByProjectId,
+      habits,
       startHour,
       pxPerMin,
       unscheduledProjects,
@@ -2073,6 +2332,7 @@ export default function SchedulePage() {
         taskInstancesByProject: modelTaskInstancesByProject,
         tasksByProjectId: modelTasksByProjectId,
         standaloneTaskInstances: modelStandaloneTaskInstances,
+        habitPlacements: modelHabitPlacements,
         windowReports: modelWindowReports,
       } = model
 
@@ -2160,6 +2420,54 @@ export default function SchedulePage() {
                 </div>
               </div>
             ))}
+            {modelHabitPlacements.map((placement, index) => {
+              if (!isValidDate(placement.start) || !isValidDate(placement.end)) return null
+              const startMin = placement.start.getHours() * 60 + placement.start.getMinutes()
+              const top = (startMin - modelStartHour * 60) * modelPxPerMin
+              const height =
+                ((placement.end.getTime() - placement.start.getTime()) / 60000) * modelPxPerMin
+              const style: CSSProperties = {
+                top,
+                height,
+                boxShadow: 'var(--elev-card)',
+                outline: '1px solid rgba(59,130,246,0.4)',
+                outlineOffset: '-1px',
+                background:
+                  'linear-gradient(135deg, rgba(37,99,235,0.85) 0%, rgba(59,130,246,0.75) 100%)',
+              }
+              const energyLevel = normalizeEnergyLabel(placement.window.energy)
+              const windowLabel = placement.window.label?.trim() || 'Habit window'
+              return (
+                <motion.div
+                  key={`habit-${placement.habitId}-${index}`}
+                  className="absolute left-12 right-2 z-30 flex flex-col justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur"
+                  style={style}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                  animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                  exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/70">
+                        Habit
+                      </span>
+                      <span className="text-sm font-medium leading-snug">
+                        {placement.habitName}
+                      </span>
+                    </div>
+                    <FlameEmber level={energyLevel} size="sm" className="flex-shrink-0" />
+                  </div>
+                  <div className="text-xs text-white/80">
+                    {placement.durationMinutes}m · {windowLabel}
+                  </div>
+                  {placement.truncated && (
+                    <div className="text-[10px] font-medium text-amber-200/85">
+                      Trimmed to fit window
+                    </div>
+                  )}
+                </motion.div>
+              )
+            })}
             {modelProjectInstances.map(({ instance, project, start, end }, index) => {
               if (!isValidDate(start) || !isValidDate(end)) return null
               const projectId = project.id
@@ -2644,14 +2952,15 @@ export default function SchedulePage() {
         </div>
       )
     },
-    [
-      prefersReducedMotion,
-      hasInteractedWithProjects,
-      setProjectExpansion,
-      expandedProjects,
-      renderInstanceActions,
-    ]
-  )
+      [
+        prefersReducedMotion,
+        hasInteractedWithProjects,
+        setProjectExpansion,
+        expandedProjects,
+        renderInstanceActions,
+        pendingInstanceStatuses,
+      ]
+    )
 
   const dayTimelineNode = useMemo(
     () => renderDayTimeline(dayTimelineModel),
