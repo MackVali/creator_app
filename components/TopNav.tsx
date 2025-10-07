@@ -13,21 +13,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useUserProgress } from "@/lib/hooks/useUserProgress";
 
 export default function TopNav() {
   const pathname = usePathname();
   const shouldHideNav = pathname?.startsWith("/schedule");
   const { profile, userId } = useProfile();
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [shouldPulse, setShouldPulse] = useState(false);
   const supabase = useMemo(() => getSupabaseBrowser(), []);
-  const { progress, lastEventAt } = useUserProgress(userId, {
-    enabled: !shouldHideNav,
-    subscribe: true,
-    client: supabase,
-  });
-  const currentLevel = progress?.currentLevel ?? 1;
 
   useEffect(() => {
     if (!supabase || shouldHideNav) {
@@ -43,28 +35,6 @@ export default function TopNav() {
 
     getUserEmail();
   }, [shouldHideNav, supabase]);
-
-  useEffect(() => {
-    if (!lastEventAt) {
-      return;
-    }
-
-    setShouldPulse(true);
-  }, [lastEventAt]);
-
-  useEffect(() => {
-    if (!shouldPulse) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setShouldPulse(false);
-    }, 1200);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [shouldPulse]);
 
   if (shouldHideNav) {
     return null;
@@ -103,26 +73,11 @@ export default function TopNav() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <LevelBadge level={currentLevel} pulsing={shouldPulse} />
       </div>
       <span className="font-semibold" data-testid="username">
         {profile?.username || userEmail || "Guest"}
       </span>
       <TopNavAvatar profile={profile} userId={userId} />
     </nav>
-  );
-}
-
-function LevelBadge({ level, pulsing }: { level: number; pulsing: boolean }) {
-  return (
-    <div className="relative flex h-11 w-11 items-center justify-center">
-      {pulsing && (
-        <span className="absolute inline-flex h-full w-full rounded-full bg-white/20 opacity-75 animate-[ping_1.2s_ease-out_1]" />
-      )}
-      <div className="relative flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-full border border-white/30 bg-white/10 text-[11px] font-semibold leading-none tracking-tight">
-        <span className="text-[10px] uppercase tracking-[0.12em] text-white/60">Level</span>
-        <span className="text-sm text-white">{level}</span>
-      </div>
-    </div>
   );
 }
