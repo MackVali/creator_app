@@ -76,6 +76,7 @@ type PeekState = {
 type HabitCompletionStatus = 'scheduled' | 'completed'
 
 const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
+const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -1986,13 +1987,20 @@ export default function SchedulePage() {
       habitId,
       status,
       disabled,
+      availableHeight,
     }: {
       dateKey: string
       habitId: string
       status: HabitCompletionStatus
       disabled?: boolean
+      availableHeight?: number
     }) => {
       const isCompleted = status === 'completed'
+      const safeAvailableHeight = Math.max(availableHeight ?? 0, 0)
+      const visualHeight = safeAvailableHeight + HABIT_CARD_VERTICAL_PADDING_PX
+      const controlSize = Math.min(24, Math.max(6, visualHeight * 0.3))
+      const iconPadding = Math.max(1, Math.min(controlSize * 0.2, 4))
+      const strokeWidth = Math.max(1, Math.min(1.6, controlSize / 10))
       return (
         <motion.button
           type="button"
@@ -2001,7 +2009,13 @@ export default function SchedulePage() {
           aria-label="Toggle habit completion"
           title="Toggle habit completion"
           disabled={disabled}
-          className="relative flex h-6 w-6 items-center justify-center rounded-none border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="relative flex aspect-square items-center justify-center rounded-none border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+          style={{
+            width: controlSize,
+            height: controlSize,
+            minWidth: controlSize,
+            minHeight: controlSize,
+          }}
           initial={false}
           animate={{
             backgroundColor: isCompleted
@@ -2019,15 +2033,16 @@ export default function SchedulePage() {
           }}
         >
           <motion.svg
-            className="pointer-events-none relative h-3.5 w-3.5"
+            className="pointer-events-none relative h-full w-full"
             viewBox="0 0 20 20"
             fill="none"
             initial={false}
+            style={{ padding: iconPadding }}
           >
             <motion.path
               d="M5 10.5 L8.5 14 L15 6"
               stroke="#ffffff"
-              strokeWidth={1.8}
+              strokeWidth={strokeWidth}
               strokeLinecap="round"
               strokeLinejoin="round"
               animate={{
@@ -2685,7 +2700,7 @@ export default function SchedulePage() {
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-12 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute left-16 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -2699,6 +2714,7 @@ export default function SchedulePage() {
                     habitId: placement.habitId,
                     status: habitStatus,
                     disabled: options?.disableInteractions,
+                    availableHeight: height,
                   })}
                 </motion.div>
               )
