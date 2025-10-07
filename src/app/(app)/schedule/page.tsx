@@ -939,7 +939,13 @@ function DayPeekOverlays({
       className="pointer-events-none absolute inset-x-0 flex"
       style={overlayStyle}
     >
-      <div className={`relative flex flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`relative flex flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}
+        style={{
+          paddingRight: isNext ? safeGap : 0,
+          paddingLeft: isNext ? 0 : safeGap,
+        }}
+      >
         <div
           className={`pointer-events-none flex flex-col gap-3 border border-white/10 bg-white/8 px-5 py-4 text-white backdrop-blur-md ${alignment} ${cornerClass}`}
           style={{
