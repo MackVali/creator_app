@@ -2677,8 +2677,6 @@ export default function SchedulePage() {
         isViewingToday,
         dayViewDateKey,
         dayViewDetails,
-        timeZoneShortName: modelTimeZoneShortName,
-        friendlyTimeZone: modelFriendlyTimeZone,
         date,
         startHour: modelStartHour,
         pxPerMin: modelPxPerMin,
@@ -2700,34 +2698,15 @@ export default function SchedulePage() {
           className={containerClass}
           ref={options?.containerRef ?? undefined}
         >
-          <div className="pl-16 pr-6 pt-4 pb-3 text-white">
-            <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[0_10px_30px_rgba(8,8,12,0.28)] backdrop-blur">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
-                    <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
-                    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.12] px-2 py-0.5 text-[10px] font-medium tracking-[0.18em] text-white/75">
-                      {dayViewDateKey}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-                    {dayViewDetails.weekday}
-                  </h2>
-                  <p className="text-xs text-white/60 sm:text-sm">
-                    {dayViewDetails.fullDate}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-1 text-left text-[11px] text-white/60 sm:items-end sm:text-right">
-                  {modelTimeZoneShortName ? (
-                    <span className="text-sm font-semibold tracking-wide text-white/80 sm:text-base">
-                      {modelTimeZoneShortName}
-                    </span>
-                  ) : null}
-                  <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
-                    {modelFriendlyTimeZone}
-                  </span>
-                </div>
-              </div>
+          <div className="pl-16 pr-6 pb-3 text-white">
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
+                {isViewingToday ? 'Today' : 'Selected Day'}
+              </span>
+              <h2 className="text-base font-semibold tracking-tight text-white sm:text-lg">
+                {dayViewDetails.weekday}
+              </h2>
+              <p className="text-xs text-white/60 sm:text-sm">{dayViewDetails.fullDate}</p>
             </div>
           </div>
           <DayTimeline date={date} startHour={modelStartHour} pxPerMin={modelPxPerMin}>
@@ -3457,16 +3436,6 @@ export default function SchedulePage() {
               disabled={isScheduling}
               isRunning={isScheduling}
             />
-            {hasAutoRunToday === false && (
-              <span className="text-[11px] font-medium text-white/75 drop-shadow">
-                Auto-rescheduling now from your current time…
-              </span>
-            )}
-            {hasAutoRunToday === true && (
-              <span className="text-[11px] font-medium text-white/70 drop-shadow">
-                Automatic reschedule already ran today. Use the button to refresh.
-              </span>
-            )}
           </div>
           <AnimatePresence mode="wait" initial={false}>
             {view === 'year' && (
@@ -3490,8 +3459,6 @@ export default function SchedulePage() {
             )}
             {view === 'day' && (
               <ScheduleViewShell key="day">
-                {/* source of truth: schedule_instances */}
-                <div className="text-[10px] opacity-60 px-2">data source: schedule_instances</div>
                 {prefersReducedMotion ? (
                   dayTimelineNode
                 ) : isSwipingDayView ? (
