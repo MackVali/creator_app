@@ -3450,16 +3450,6 @@ export default function SchedulePage() {
               disabled={isScheduling}
               isRunning={isScheduling}
             />
-            {hasAutoRunToday === false && (
-              <span className="text-[11px] font-medium text-white/75 drop-shadow">
-                Auto-rescheduling now from your current time…
-              </span>
-            )}
-            {hasAutoRunToday === true && (
-              <span className="text-[11px] font-medium text-white/70 drop-shadow">
-                Automatic reschedule already ran today. Use the button to refresh.
-              </span>
-            )}
           </div>
           <AnimatePresence mode="wait" initial={false}>
             {view === 'year' && (
@@ -3483,8 +3473,6 @@ export default function SchedulePage() {
             )}
             {view === 'day' && (
               <ScheduleViewShell key="day">
-                {/* source of truth: schedule_instances */}
-                <div className="text-[10px] opacity-60 px-2">data source: schedule_instances</div>
                 {prefersReducedMotion ? (
                   dayTimelineNode
                 ) : isSwipingDayView ? (
