@@ -80,6 +80,7 @@ type HabitCompletionStatus = 'scheduled' | 'completed'
 
 const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
 const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
+const DAY_PEEK_SAFE_GAP_PX = 24
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -886,10 +887,17 @@ function DayPeekOverlays({
   const container = containerRef.current
   const containerWidth = container?.offsetWidth ?? 0
   const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
-  const offset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
+  const safeGap = Math.min(DAY_PEEK_SAFE_GAP_PX, maxPeekWidth)
+  const maxVisiblePeekWidth = Math.max(0, maxPeekWidth - safeGap)
+  const limitedOffset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
+  const offset =
+    maxVisiblePeekWidth > 0
+      ? Math.min(Math.max(0, limitedOffset - safeGap), maxVisiblePeekWidth)
+      : 0
   if (!offset || peekState.direction === 0) return null
 
-  const progress = maxPeekWidth > 0 ? Math.min(1, offset / maxPeekWidth) : 0
+  const progress =
+    maxVisiblePeekWidth > 0 ? Math.min(1, offset / maxVisiblePeekWidth) : 0
   const translate = (1 - progress) * 35
   const opacity = 0.25 + progress * 0.6
   const scale = 0.94 + progress * 0.06
@@ -931,7 +939,13 @@ function DayPeekOverlays({
       className="pointer-events-none absolute inset-x-0 flex"
       style={overlayStyle}
     >
-      <div className={`relative flex flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`relative flex flex-1 ${isNext ? 'justify-end' : 'justify-start'}`}
+        style={{
+          paddingRight: isNext ? safeGap : 0,
+          paddingLeft: isNext ? 0 : safeGap,
+        }}
+      >
         <div
           className={`pointer-events-none flex flex-col gap-3 border border-white/10 bg-white/8 px-5 py-4 text-white backdrop-blur-md ${alignment} ${cornerClass}`}
           style={{
