@@ -27,11 +27,6 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
     progress?.xpRequired !== null &&
     progress.xpRequired > 0;
 
-  const percent = progress?.progressPercent ?? 0;
-  const formattedPercent = Number.isFinite(percent)
-    ? Math.round(percent)
-    : 0;
-
   return (
     <Link
       href={`/skills/${skill.id}`}
@@ -69,7 +64,6 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
           </div>
           <span className="text-xs" style={{ color: onColor }}>
             {progress?.xpIntoLevel ?? 0} / {progress?.xpRequired ?? 0} XP
-            <span className="ml-1 text-[11px] text-white/80">({formattedPercent}%)</span>
           </span>
         </div>
       )}
