@@ -57,16 +57,24 @@ DROP POLICY IF EXISTS "habit_routines_update_own" ON public.habit_routines;
 DROP POLICY IF EXISTS "habit_routines_delete_own" ON public.habit_routines;
 
 CREATE POLICY "habit_routines_select_own" ON public.habit_routines
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT
+    TO authenticated
+    USING (auth.uid() = user_id);
 
 CREATE POLICY "habit_routines_insert_own" ON public.habit_routines
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "habit_routines_update_own" ON public.habit_routines
-    FOR UPDATE USING (auth.uid() = user_id)
+    FOR UPDATE
+    TO authenticated
+    USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "habit_routines_delete_own" ON public.habit_routines
-    FOR DELETE USING (auth.uid() = user_id);
+    FOR DELETE
+    TO authenticated
+    USING (auth.uid() = user_id);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.habit_routines TO authenticated;
