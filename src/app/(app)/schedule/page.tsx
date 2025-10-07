@@ -76,6 +76,7 @@ type PeekState = {
 type HabitCompletionStatus = 'scheduled' | 'completed'
 
 const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
+const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -1995,15 +1996,11 @@ export default function SchedulePage() {
       availableHeight?: number
     }) => {
       const isCompleted = status === 'completed'
-      const safeAvailableHeight = Math.max(availableHeight ?? 24, 0)
-      const scaledSize = Math.min(
-        24,
-        Math.max(safeAvailableHeight * 0.8, safeAvailableHeight - 6)
-      )
-      const controlSize =
-        safeAvailableHeight < 8 ? safeAvailableHeight : Math.max(8, scaledSize)
-      const iconPadding = Math.max(1, Math.min(controlSize * 0.15, 4))
-      const strokeWidth = Math.max(1, Math.min(1.8, controlSize / 12))
+      const safeAvailableHeight = Math.max(availableHeight ?? 0, 0)
+      const visualHeight = safeAvailableHeight + HABIT_CARD_VERTICAL_PADDING_PX
+      const controlSize = Math.min(24, Math.max(6, visualHeight * 0.3))
+      const iconPadding = Math.max(1, Math.min(controlSize * 0.2, 4))
+      const strokeWidth = Math.max(1, Math.min(1.6, controlSize / 10))
       return (
         <motion.button
           type="button"
@@ -2703,7 +2700,7 @@ export default function SchedulePage() {
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-12 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute left-16 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
