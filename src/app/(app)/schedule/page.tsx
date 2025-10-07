@@ -2677,8 +2677,6 @@ export default function SchedulePage() {
         isViewingToday,
         dayViewDateKey,
         dayViewDetails,
-        timeZoneShortName: modelTimeZoneShortName,
-        friendlyTimeZone: modelFriendlyTimeZone,
         date,
         startHour: modelStartHour,
         pxPerMin: modelPxPerMin,
@@ -2701,26 +2699,14 @@ export default function SchedulePage() {
           ref={options?.containerRef ?? undefined}
         >
           <div className="pl-16 pr-6 pb-3 text-white">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
-                  {isViewingToday ? 'Today' : 'Selected Day'}
-                </span>
-                <h2 className="text-base font-semibold tracking-tight text-white sm:text-lg">
-                  {dayViewDetails.weekday}
-                </h2>
-                <p className="text-xs text-white/60 sm:text-sm">{dayViewDetails.fullDate}</p>
-              </div>
-              <div className="space-y-1 text-left text-[10px] text-white/60 sm:text-right">
-                {modelTimeZoneShortName ? (
-                  <span className="text-sm font-semibold tracking-wide text-white/80 sm:text-base">
-                    {modelTimeZoneShortName}
-                  </span>
-                ) : null}
-                <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
-                  {modelFriendlyTimeZone}
-                </span>
-              </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
+                {isViewingToday ? 'Today' : 'Selected Day'}
+              </span>
+              <h2 className="text-base font-semibold tracking-tight text-white sm:text-lg">
+                {dayViewDetails.weekday}
+              </h2>
+              <p className="text-xs text-white/60 sm:text-sm">{dayViewDetails.fullDate}</p>
             </div>
           </div>
           <DayTimeline date={date} startHour={modelStartHour} pxPerMin={modelPxPerMin}>
