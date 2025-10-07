@@ -68,6 +68,41 @@ type PeekState = {
   offset: number
 }
 
+type PeekMetrics = {
+  direction: DayTransitionDirection
+  offset: number
+  rawOffset: number
+  progress: number
+  effectiveMaxPeek: number
+  maxPeekWidth: number
+}
+
+function resolvePeekMetrics(
+  peekState: PeekState,
+  container: HTMLDivElement | null,
+): PeekMetrics {
+  const containerWidth = container?.offsetWidth ?? 0
+  const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
+  const peekRevealThreshold = 48
+  const rawOffset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
+  const offset = Math.max(0, rawOffset - peekRevealThreshold)
+  const effectiveMaxPeek = Math.max(0, maxPeekWidth - peekRevealThreshold)
+  const progress =
+    offset > 0 && effectiveMaxPeek > 0
+      ? Math.min(1, offset / effectiveMaxPeek)
+      : 0
+  const direction = offset > 0 ? peekState.direction : 0
+
+  return {
+    direction,
+    offset,
+    rawOffset,
+    progress,
+    effectiveMaxPeek,
+    maxPeekWidth,
+  }
+}
+
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
     opacity: direction === 0 ? 1 : 0.6,
@@ -684,7 +719,7 @@ function buildDayTimelineModel({
 
 
 function DayPeekOverlays({
-  peekState,
+  peekMetrics,
   previousLabel,
   nextLabel,
   previousKey,
@@ -694,7 +729,7 @@ function DayPeekOverlays({
   nextModel,
   renderPreview,
 }: {
-  peekState: PeekState
+  peekMetrics: PeekMetrics
   previousLabel: string
   nextLabel: string
   previousKey: string
@@ -705,22 +740,15 @@ function DayPeekOverlays({
   renderPreview: (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => ReactNode
 }) {
   const container = containerRef.current
-  const containerWidth = container?.offsetWidth ?? 0
-  const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
-  const rawOffset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
-  const peekRevealThreshold = 48
-  const effectiveMaxPeek = Math.max(0, maxPeekWidth - peekRevealThreshold)
-  const offset = Math.max(0, rawOffset - peekRevealThreshold)
-  if (!offset || peekState.direction === 0) return null
+  const { offset, progress, direction } = peekMetrics
+  if (!offset || direction === 0) return null
 
-  const progress =
-    effectiveMaxPeek > 0 ? Math.min(1, offset / effectiveMaxPeek) : 0
   const translate = (1 - progress) * 35
   const opacity = 0.25 + progress * 0.6
   const scale = 0.94 + progress * 0.06
   const shadowOpacity = 0.45 + progress * 0.3
 
-  const isNext = peekState.direction === 1
+  const isNext = direction === 1
   const label = isNext ? nextLabel : previousLabel
   const keyLabel = isNext ? nextKey : previousKey
   const previewModel = isNext ? nextModel : previousModel
@@ -2662,6 +2690,21 @@ export default function SchedulePage() {
     [renderDayTimeline, dayTimelineModel]
   )
 
+  const peekMetrics = resolvePeekMetrics(
+    peekState,
+    swipeContainerRef.current,
+  )
+
+  const dayTimelineClipStyle: CSSProperties | undefined =
+    isSwipingDayView && peekMetrics.offset && peekMetrics.direction !== 0
+      ? {
+          clipPath:
+            peekMetrics.direction === 1
+              ? `inset(0 ${Math.ceil(peekMetrics.offset)}px 0 0)`
+              : `inset(0 0 0 ${Math.ceil(peekMetrics.offset)}px)`,
+        }
+      : undefined
+
   useEffect(() => {
     if (!focusInstanceId) return
     const raf = requestAnimationFrame(() => {
@@ -2748,11 +2791,15 @@ export default function SchedulePage() {
                   dayTimelineNode
                 ) : isSwipingDayView ? (
                   <div className="relative overflow-hidden">
-                    <motion.div animate={sliderControls} initial={false}>
+                    <motion.div
+                      animate={sliderControls}
+                      initial={false}
+                      style={dayTimelineClipStyle}
+                    >
                       {dayTimelineNode}
                     </motion.div>
                     <DayPeekOverlays
-                      peekState={peekState}
+                      peekMetrics={peekMetrics}
                       previousLabel={previousDayLabel}
                       nextLabel={nextDayLabel}
                       previousKey={previousDayKey}
