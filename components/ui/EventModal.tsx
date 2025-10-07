@@ -34,7 +34,13 @@ import { Button } from "./button";
 import { Input } from "./input";
 import { Label } from "./label";
 import { Textarea } from "./textarea";
-import { Select, SelectContent, SelectItem } from "./select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./select";
 import { Badge } from "./badge";
 import { useToastHelpers } from "./toast";
 import { cn } from "@/lib/utils";
@@ -75,6 +81,19 @@ type ChoiceOption = {
   icon?: LucideIcon;
   iconClassName?: string;
   renderIcon?: (selected: boolean) => ReactNode;
+};
+
+type RoutineOption = {
+  id: string;
+  name: string;
+  description: string | null;
+};
+
+type RoutineSelectOption = {
+  value: string;
+  label: string;
+  description?: string | null;
+  disabled?: boolean;
 };
 
 const formatNameValue = (value: string) => value.toUpperCase();
@@ -920,6 +939,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [windows, setWindows] = useState<WindowOption[]>([]);
   const [windowsLoading, setWindowsLoading] = useState(false);
   const [windowError, setWindowError] = useState<string | null>(null);
+  const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
+  const [routinesLoading, setRoutinesLoading] = useState(false);
+  const [routineLoadError, setRoutineLoadError] = useState<string | null>(
+    null
+  );
+  const [routineId, setRoutineId] = useState<string>("none");
+  const [newRoutineName, setNewRoutineName] = useState("");
+  const [newRoutineDescription, setNewRoutineDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
@@ -943,6 +970,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   useEffect(() => {
     if (!isOpen) {
       resetGoalWizard();
+      setRoutineOptions([]);
+      setRoutineLoadError(null);
+      setRoutinesLoading(false);
+      setRoutineId("none");
+      setNewRoutineName("");
+      setNewRoutineDescription("");
     }
   }, [isOpen, resetGoalWizard]);
 
@@ -983,6 +1016,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       if (eventType === "HABIT") {
         setWindowsLoading(true);
         setWindowError(null);
+        setRoutinesLoading(true);
+        setRoutineLoadError(null);
         try {
           const goalsData = await getGoalsForUser(user.id);
           setGoals(goalsData);
@@ -1022,6 +1057,37 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         } finally {
           setWindowsLoading(false);
         }
+
+        try {
+          const { data, error: routinesError } = await supabase
+            .from("habit_routines")
+            .select("id, name, description")
+            .eq("user_id", user.id)
+            .order("name", { ascending: true });
+
+          if (routinesError) {
+            throw routinesError;
+          }
+
+          const safeRoutines: RoutineOption[] = data ?? [];
+          setRoutineOptions(safeRoutines);
+          setRoutineLoadError(null);
+          setRoutineId((current) => {
+            if (current === "none" || current === "__create__") {
+              return current;
+            }
+
+            return safeRoutines.some((option) => option.id === current)
+              ? current
+              : "none";
+          });
+        } catch (error) {
+          console.error("Error loading habit routines:", error);
+          setRoutineOptions([]);
+          setRoutineLoadError("Unable to load your routines right now.");
+        } finally {
+          setRoutinesLoading(false);
+        }
       }
     } catch (error) {
       console.error("Error loading form data:", error);
@@ -1041,6 +1107,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       setWindows([]);
       setWindowError(null);
       setWindowsLoading(false);
+      setRoutineOptions([]);
+      setRoutineLoadError(null);
+      setRoutinesLoading(false);
+      setRoutineId("none");
+      setNewRoutineName("");
+      setNewRoutineDescription("");
     }
   }, [eventType]);
 
@@ -1084,6 +1156,36 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       })),
     ];
   }, [windows, windowsLoading]);
+
+  const routineSelectOptions = useMemo<RoutineSelectOption[]>(() => {
+    if (routinesLoading) {
+      return [
+        {
+          value: "none",
+          label: "Loading routines…",
+          disabled: true,
+        },
+      ];
+    }
+
+    const baseOptions = routineOptions.map((routine) => ({
+      value: routine.id,
+      label: routine.name,
+      description: routine.description,
+    }));
+
+    return [
+      {
+        value: "none",
+        label: "No routine",
+      },
+      ...baseOptions,
+      {
+        value: "__create__",
+        label: "Create a new routine",
+      },
+    ];
+  }, [routineOptions, routinesLoading]);
 
   const handleTaskSkillSelect = (value: string) => {
     setFormData((prev) => ({ ...prev, skill_id: value }));
@@ -1277,6 +1379,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         monument_id?: string;
         skill_id?: string;
         window_id?: string | null;
+        routine_id?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1326,6 +1429,43 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           formData.recurrence === "none" ? null : formData.recurrence;
         insertData.window_id =
           formData.window_id === "none" ? null : formData.window_id;
+
+        let routineIdToUse: string | null = null;
+        if (routineId === "__create__") {
+          const routineName = newRoutineName.trim();
+          if (!routineName) {
+            toast.error(
+              "Routine name required",
+              "Please give your new routine a name."
+            );
+            return;
+          }
+
+          const routineDescription = newRoutineDescription.trim();
+          const { data: routineData, error: routineInsertError } = await supabase
+            .from("habit_routines")
+            .insert({
+              user_id: user.id,
+              name: routineName,
+              description: routineDescription ? routineDescription : null,
+            })
+            .select("id")
+            .single();
+
+          if (routineInsertError) {
+            throw routineInsertError;
+          }
+
+          if (!routineData?.id) {
+            throw new Error("Routine creation did not return an id.");
+          }
+
+          routineIdToUse = routineData.id;
+        } else if (routineId !== "none") {
+          routineIdToUse = routineId;
+        }
+
+        insertData.routine_id = routineIdToUse;
       }
 
       if (duration !== undefined) {
@@ -2189,11 +2329,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 </FormSection>
               ) : null}
             </>
-          ) : eventType === "HABIT" ? (
-            <FormSection>
-              <HabitFormFields
-                name={formData.name}
-                description={formData.description}
+        ) : eventType === "HABIT" ? (
+          <FormSection>
+            <HabitFormFields
+              name={formData.name}
+              description={formData.description}
                 habitType={formData.type}
                 recurrence={formData.recurrence}
                 duration={formData.duration_min}
@@ -2216,18 +2356,104 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 onHabitTypeChange={(value) =>
                   setFormData((prev) => ({ ...prev, type: value }))
                 }
-                onRecurrenceChange={(value) =>
-                  setFormData((prev) => ({ ...prev, recurrence: value }))
-                }
-                onWindowChange={(value) =>
-                  setFormData((prev) => ({ ...prev, window_id: value }))
-                }
-                onDurationChange={(value) =>
-                  setFormData((prev) => ({ ...prev, duration_min: value }))
-                }
-              />
-            </FormSection>
-          ) : (
+              onRecurrenceChange={(value) =>
+                setFormData((prev) => ({ ...prev, recurrence: value }))
+              }
+              onWindowChange={(value) =>
+                setFormData((prev) => ({ ...prev, window_id: value }))
+              }
+              onDurationChange={(value) =>
+                setFormData((prev) => ({ ...prev, duration_min: value }))
+              }
+              footerSlot={
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                      Routine
+                    </Label>
+                    <Select
+                      value={routineId}
+                      onValueChange={(value) => {
+                        setRoutineId(value);
+                        if (value !== "__create__") {
+                          setNewRoutineName("");
+                          setNewRoutineDescription("");
+                        }
+                      }}
+                      disabled={routinesLoading}
+                    >
+                      <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                        <SelectValue placeholder="Choose a routine" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#0b101b] text-sm text-white">
+                        {routineSelectOptions.map((option) => (
+                          <SelectItem
+                            key={`${option.value}-${option.label}`}
+                            value={option.value}
+                            disabled={option.disabled}
+                          >
+                            <div className="flex flex-col">
+                              <span>{option.label}</span>
+                              {option.description ? (
+                                <span className="text-xs text-white/60">
+                                  {option.description}
+                                </span>
+                              ) : null}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-white/50">
+                      Group habits into routines to tackle related work together.
+                    </p>
+                    {routineLoadError ? (
+                      <p className="text-xs text-red-300">{routineLoadError}</p>
+                    ) : null}
+                  </div>
+
+                  {routineId === "__create__" ? (
+                    <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+                      <div className="space-y-3">
+                        <Label
+                          htmlFor="new-routine-name"
+                          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+                        >
+                          Routine name
+                        </Label>
+                        <Input
+                          id="new-routine-name"
+                          value={newRoutineName}
+                          onChange={(event) => setNewRoutineName(event.target.value)}
+                          placeholder="e.g. Morning kickoff"
+                          className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <Label
+                          htmlFor="new-routine-description"
+                          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+                        >
+                          Description (optional)
+                        </Label>
+                        <Textarea
+                          id="new-routine-description"
+                          value={newRoutineDescription}
+                          onChange={(event) =>
+                            setNewRoutineDescription(event.target.value)
+                          }
+                          placeholder="Give your routine a purpose so future habits stay aligned."
+                          className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              }
+            />
+          </FormSection>
+        ) : (
             <>
               <FormSection title="Overview">
                 <div className="grid gap-4">
