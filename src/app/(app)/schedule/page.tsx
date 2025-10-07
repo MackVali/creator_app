@@ -2656,10 +2656,9 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
-              const baseBackground =
-                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.18), transparent 58%), linear-gradient(140deg, rgba(5,6,12,0.98) 0%, rgba(12,13,22,0.94) 44%, rgba(34,36,52,0.78) 100%)'
-              const completedBackground =
-                'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 60%), linear-gradient(140deg, rgba(6,78,59,0.95) 0%, rgba(4,120,87,0.92) 42%, rgba(16,185,129,0.88) 100%)'
+              const cardBackground =
+                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4,
+4,10,0.96) 0%, rgba(16,17,28,0.92) 44%, rgba(36,38,54,0.8) 100%)'
               const cardStyle: CSSProperties = {
                 top,
                 height,
@@ -2670,53 +2669,29 @@ export default function SchedulePage() {
                   ? '1px solid rgba(16, 185, 129, 0.55)'
                   : '1px solid rgba(18, 18, 24, 0.85)',
                 outlineOffset: '-1px',
-                background: isHabitCompleted ? completedBackground : baseBackground,
+                background: cardBackground,
               }
               const habitBorderClass = isHabitCompleted
                 ? 'border-emerald-400/60'
                 : 'border-white/12'
-              const energyLevel = normalizeEnergyLabel(placement.window.energy)
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-12 right-2 z-30 flex flex-col gap-2 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute left-12 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex flex-1 items-center gap-3">
-                      <FlameEmber
-                        level={energyLevel}
-                        size="sm"
-                        className="flex-shrink-0"
-                      />
-                      <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-sm font-medium leading-snug">
-                          {placement.habitName}
-                        </span>
-                        <span
-                          className={`mt-1 text-xs ${
-                            isHabitCompleted ? 'text-emerald-100/85' : 'text-white/80'
-                          }`}
-                        >
-                          {placement.durationMinutes}m
-                        </span>
-                      </div>
-                    </div>
-                    {renderHabitCompletionControl({
-                      dateKey: dayViewDateKey,
-                      habitId: placement.habitId,
-                      status: habitStatus,
-                      disabled: options?.disableInteractions,
-                    })}
-                  </div>
-                  {placement.truncated && (
-                    <div className="text-[10px] font-medium text-amber-200/85">
-                      Trimmed to fit window
-                    </div>
-                  )}
+                  <span className="truncate text-sm font-medium leading-snug">
+                    {placement.habitName}
+                  </span>
+                  {renderHabitCompletionControl({
+                    dateKey: dayViewDateKey,
+                    habitId: placement.habitId,
+                    status: habitStatus,
+                    disabled: options?.disableInteractions,
+                  })}
                 </motion.div>
               )
             })}
