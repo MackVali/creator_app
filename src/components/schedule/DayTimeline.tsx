@@ -1,17 +1,21 @@
 "use client";
 
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+} from "react";
 import { Clock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-interface DayTimelineProps {
+interface DayTimelineProps extends HTMLAttributes<HTMLDivElement> {
   startHour?: number;
   endHour?: number;
   pxPerMin?: number;
   date?: Date;
-  children?: ReactNode;
-  className?: string;
 }
 
 export function DayTimeline({
@@ -21,6 +25,7 @@ export function DayTimeline({
   date = new Date(),
   children,
   className,
+  ...rest
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
@@ -65,6 +70,7 @@ export function DayTimeline({
         className
       )}
       style={{ height: timelineHeight, background: backgroundGradient }}
+      {...rest}
     >
       {hours.map(h => {
         const top = (h - startHour) * 60 * pxPerMin;

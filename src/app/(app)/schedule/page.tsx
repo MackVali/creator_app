@@ -68,6 +68,111 @@ type PeekState = {
   offset: number
 }
 
+type PeekMetrics = {
+  direction: DayTransitionDirection
+  offset: number
+  rawOffset: number
+  progress: number
+  effectiveMaxPeek: number
+  maxPeekWidth: number
+}
+
+type DayViewVisibilityState = {
+  visibleStart: number
+  visibleHeight: number
+  containerHeight: number
+  headerHeight: number
+  topTimeMinutes: number
+}
+
+function resolvePeekMetrics(
+  peekState: PeekState,
+  container: HTMLDivElement | null,
+): PeekMetrics {
+  const containerWidth = container?.offsetWidth ?? 0
+  const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
+  const peekRevealThreshold = 48
+  const rawOffset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
+  const offset = Math.max(0, rawOffset - peekRevealThreshold)
+  const effectiveMaxPeek = Math.max(0, maxPeekWidth - peekRevealThreshold)
+  const progress =
+    offset > 0 && effectiveMaxPeek > 0
+      ? Math.min(1, offset / effectiveMaxPeek)
+      : 0
+  const direction = offset > 0 ? peekState.direction : 0
+
+  return {
+    direction,
+    offset,
+    rawOffset,
+    progress,
+    effectiveMaxPeek,
+    maxPeekWidth,
+  }
+}
+
+function resolveDayViewVisibility(
+  container: HTMLDivElement | null,
+  model: DayTimelineModel | null,
+): DayViewVisibilityState | null {
+  if (!container || !model) return null
+
+  const containerHeight = container.offsetHeight
+  const rect = container.getBoundingClientRect()
+  const viewportHeight =
+    typeof window !== 'undefined' ? window.innerHeight : containerHeight
+  const rawVisibleStart = Math.max(0, -rect.top)
+  const rawVisibleEnd = Math.min(containerHeight, viewportHeight - rect.top)
+  const visibleHeight = Math.max(0, rawVisibleEnd - rawVisibleStart)
+  const maxScroll = Math.max(0, containerHeight - visibleHeight)
+  const visibleStart = Math.min(Math.max(0, rawVisibleStart), maxScroll)
+
+  let headerHeight = 0
+  const headerElement = container.querySelector<HTMLElement>(
+    '[data-day-peek-section="header"][data-peek-context="active"]',
+  )
+  if (headerElement) {
+    headerHeight = headerElement.offsetHeight
+  }
+
+  const pxPerMin = model.pxPerMin > 0 ? model.pxPerMin : 1
+  const startMinutes = model.startHour * 60
+  const timelineOffset = Math.max(0, visibleStart - headerHeight)
+  const topTimeMinutes = startMinutes + timelineOffset / pxPerMin
+
+  return {
+    visibleStart,
+    visibleHeight,
+    containerHeight,
+    headerHeight,
+    topTimeMinutes,
+  }
+}
+
+function computeDayViewScrollOffset(
+  model: DayTimelineModel,
+  targetTimeMinutes: number,
+  headerHeight: number,
+  visibleHeight: number,
+): number {
+  const pxPerMin = model.pxPerMin > 0 ? model.pxPerMin : 1
+  const startMinutes = model.startHour * 60
+  const timeDelta = targetTimeMinutes - startMinutes
+  if (timeDelta <= 0) {
+    return 0
+  }
+
+  const timelineMinutes = Math.max(0, (24 - model.startHour) * 60)
+  const timelineHeight = timelineMinutes * pxPerMin
+  const offset = headerHeight + timeDelta * pxPerMin
+  if (visibleHeight <= 0) {
+    return Math.max(0, Math.min(offset, headerHeight + timelineHeight))
+  }
+
+  const maxOffset = Math.max(0, headerHeight + timelineHeight - visibleHeight)
+  return Math.max(0, Math.min(offset, maxOffset))
+}
+
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
     opacity: direction === 0 ? 1 : 0.6,
@@ -684,39 +789,43 @@ function buildDayTimelineModel({
 
 
 function DayPeekOverlays({
-  peekState,
+  peekMetrics,
   previousLabel,
   nextLabel,
   previousKey,
   nextKey,
   containerRef,
+  currentModel,
   previousModel,
   nextModel,
   renderPreview,
 }: {
-  peekState: PeekState
+  peekMetrics: PeekMetrics
   previousLabel: string
   nextLabel: string
   previousKey: string
   nextKey: string
   containerRef: RefObject<HTMLDivElement | null>
+  currentModel: DayTimelineModel
   previousModel?: DayTimelineModel | null
   nextModel?: DayTimelineModel | null
-  renderPreview: (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => ReactNode
+  renderPreview: (
+    model: DayTimelineModel,
+    options?: { disableInteractions?: boolean; peekContext?: string },
+  ) => ReactNode
 }) {
   const container = containerRef.current
-  const containerWidth = container?.offsetWidth ?? 0
-  const maxPeekWidth = containerWidth > 0 ? containerWidth * 0.45 : 0
-  const offset = maxPeekWidth > 0 ? Math.min(peekState.offset, maxPeekWidth) : 0
-  if (!offset || peekState.direction === 0) return null
+  const { offset, progress, direction } = peekMetrics
+  if (!offset || direction === 0) return null
 
-  const progress = maxPeekWidth > 0 ? Math.min(1, offset / maxPeekWidth) : 0
+  const visibility = resolveDayViewVisibility(container, currentModel)
+
   const translate = (1 - progress) * 35
   const opacity = 0.25 + progress * 0.6
   const scale = 0.94 + progress * 0.06
   const shadowOpacity = 0.45 + progress * 0.3
 
-  const isNext = peekState.direction === 1
+  const isNext = direction === 1
   const label = isNext ? nextLabel : previousLabel
   const keyLabel = isNext ? nextKey : previousKey
   const previewModel = isNext ? nextModel : previousModel
@@ -726,21 +835,40 @@ function DayPeekOverlays({
     : 'rounded-r-[var(--radius-lg)]'
   const transformOrigin = isNext ? 'right center' : 'left center'
 
+  const visibleStart = visibility?.visibleStart ?? 0
+  const visibleHeight = visibility?.visibleHeight ?? 0
+  const containerHeight = visibility?.containerHeight ?? container?.offsetHeight ?? 0
+  const headerHeight = visibility?.headerHeight ?? 0
+  const targetTimeMinutes =
+    visibility?.topTimeMinutes ?? currentModel.startHour * 60
+
   let overlayCenter: number | null = null
-  if (container) {
-    const rect = container.getBoundingClientRect()
-    const height = container.offsetHeight
-    const viewportHeight =
-      typeof window !== 'undefined' ? window.innerHeight : container.offsetHeight
-    const visibleStart = Math.max(0, -rect.top)
-    const visibleEnd = Math.min(height, viewportHeight - rect.top)
-    const visibleHeight = Math.max(0, visibleEnd - visibleStart)
-    if (visibleHeight > 0) {
-      overlayCenter = visibleStart + visibleHeight / 2
-    } else {
-      overlayCenter = height / 2
-    }
+  if (visibility) {
+    overlayCenter =
+      visibility.visibleHeight > 0
+        ? visibility.visibleStart + visibility.visibleHeight / 2
+        : visibility.containerHeight / 2
+  } else if (containerHeight > 0) {
+    overlayCenter = containerHeight / 2
   }
+
+  const previewOffset = previewModel
+    ? computeDayViewScrollOffset(
+        previewModel,
+        targetTimeMinutes,
+        headerHeight,
+        visibleHeight,
+      )
+    : visibleStart
+  const safePreviewOffset = Number.isFinite(previewOffset)
+    ? Math.max(0, previewOffset)
+    : 0
+  const previewScale = 0.94
+  const previewTransform =
+    safePreviewOffset > 0
+      ? `scale(${previewScale}) translateY(${-safePreviewOffset}px)`
+      : `scale(${previewScale})`
+  const previewContext = isNext ? 'preview-next' : 'preview-previous'
 
   const overlayStyle: CSSProperties =
     overlayCenter !== null
@@ -779,11 +907,15 @@ function DayPeekOverlays({
               <div
                 className="pointer-events-none"
                 style={{
-                  transform: 'scale(0.94)',
+                  transform: previewTransform,
                   transformOrigin,
+                  willChange: 'transform',
                 }}
               >
-                {renderPreview(previewModel, { disableInteractions: true })}
+                {renderPreview(previewModel, {
+                  disableInteractions: true,
+                  peekContext: previewContext,
+                })}
               </div>
             ) : (
               <div className="flex h-36 items-center justify-center text-[11px] text-white/70">
@@ -1198,6 +1330,10 @@ export default function SchedulePage() {
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
   const isSchedulingRef = useRef(false)
   const autoScheduledForRef = useRef<string | null>(null)
+  const pendingDayScrollRef = useRef<{
+    targetTimeMinutes: number
+    fallbackOffset: number
+  } | null>(null)
 
   const persistAutoRunDate = useCallback(
     (dateKey: string) => {
@@ -1957,11 +2093,13 @@ export default function SchedulePage() {
       touchStartX.current = null
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
+      pendingDayScrollRef.current = null
       return
     }
     if (touchStartX.current === null) {
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
+      pendingDayScrollRef.current = null
       return
     }
     const width =
@@ -1972,6 +2110,18 @@ export default function SchedulePage() {
     if (absDiff > threshold) {
       const direction: DayTransitionDirection = diff < 0 ? 1 : -1
       const target = direction === 1 ? -width : width
+      const visibility = resolveDayViewVisibility(
+        swipeContainerRef.current,
+        dayTimelineModel,
+      )
+      if (visibility) {
+        pendingDayScrollRef.current = {
+          targetTimeMinutes: visibility.topTimeMinutes,
+          fallbackOffset: visibility.visibleStart,
+        }
+      } else {
+        pendingDayScrollRef.current = null
+      }
       await sliderControls.start({
         x: target,
         transition: { type: 'spring', stiffness: 280, damping: 32 },
@@ -1981,6 +2131,7 @@ export default function SchedulePage() {
       setSkipNextDayAnimation(true)
       updateCurrentDate(nextDate, { direction, animate: false })
     } else {
+      pendingDayScrollRef.current = null
       await sliderControls.start({
         x: 0,
         transition: { type: 'spring', stiffness: 280, damping: 32 },
@@ -2057,8 +2208,51 @@ export default function SchedulePage() {
     ]
   )
 
+  useEffect(() => {
+    if (pendingDayScrollRef.current === null) return
+    if (view !== 'day') {
+      pendingDayScrollRef.current = null
+      return
+    }
+    if (typeof window === 'undefined') return
+
+    const applyScroll = () => {
+      const pending = pendingDayScrollRef.current
+      if (!pending) return
+      const container = swipeContainerRef.current
+      if (!container) {
+        pendingDayScrollRef.current = null
+        return
+      }
+      const visibility = resolveDayViewVisibility(container, dayTimelineModel)
+      const headerHeight = visibility?.headerHeight ?? 0
+      const visibleHeight = visibility?.visibleHeight ?? window.innerHeight
+      const offset = computeDayViewScrollOffset(
+        dayTimelineModel,
+        pending.targetTimeMinutes,
+        headerHeight,
+        visibleHeight,
+      )
+      const scrollOffset = Number.isFinite(offset)
+        ? offset
+        : pending.fallbackOffset
+      const rect = container.getBoundingClientRect()
+      window.scrollTo({
+        top: rect.top + window.scrollY + scrollOffset,
+        behavior: 'auto',
+      })
+      pendingDayScrollRef.current = null
+    }
+
+    const id = requestAnimationFrame(applyScroll)
+    return () => cancelAnimationFrame(id)
+  }, [dayTimelineModel, view])
+
   const renderDayTimeline = useCallback(
-    (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => {
+    (
+      model: DayTimelineModel,
+      options?: { disableInteractions?: boolean; peekContext?: string },
+    ) => {
       const {
         isViewingToday,
         dayViewDateKey,
@@ -2079,10 +2273,15 @@ export default function SchedulePage() {
       const containerClass = options?.disableInteractions
         ? 'pointer-events-none select-none'
         : ''
+      const peekContext = options?.peekContext ?? (options?.disableInteractions ? 'preview' : 'active')
 
       return (
         <div className={containerClass}>
-          <div className="pl-16 pr-6 pt-4 pb-3 text-white">
+          <div
+            className="pl-16 pr-6 pt-4 pb-3 text-white"
+            data-day-peek-section="header"
+            data-peek-context={peekContext}
+          >
             <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[0_10px_30px_rgba(8,8,12,0.28)] backdrop-blur">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="space-y-1.5">
@@ -2112,7 +2311,13 @@ export default function SchedulePage() {
               </div>
             </div>
           </div>
-          <DayTimeline date={date} startHour={modelStartHour} pxPerMin={modelPxPerMin}>
+          <DayTimeline
+            data-day-peek-section="timeline"
+            data-peek-context={peekContext}
+            date={date}
+            startHour={modelStartHour}
+            pxPerMin={modelPxPerMin}
+          >
             {modelWindows.map(w => {
               const { top, height } = windowRect(w, modelStartHour, modelPxPerMin)
               const windowHeightPx =
@@ -2658,6 +2863,21 @@ export default function SchedulePage() {
     [renderDayTimeline, dayTimelineModel]
   )
 
+  const peekMetrics = resolvePeekMetrics(
+    peekState,
+    swipeContainerRef.current,
+  )
+
+  const dayTimelineClipStyle: CSSProperties | undefined =
+    isSwipingDayView && peekMetrics.offset && peekMetrics.direction !== 0
+      ? {
+          clipPath:
+            peekMetrics.direction === 1
+              ? `inset(0 ${Math.ceil(peekMetrics.offset)}px 0 0)`
+              : `inset(0 0 0 ${Math.ceil(peekMetrics.offset)}px)`,
+        }
+      : undefined
+
   useEffect(() => {
     if (!focusInstanceId) return
     const raf = requestAnimationFrame(() => {
@@ -2744,16 +2964,21 @@ export default function SchedulePage() {
                   dayTimelineNode
                 ) : isSwipingDayView ? (
                   <div className="relative overflow-hidden">
-                    <motion.div animate={sliderControls} initial={false}>
+                    <motion.div
+                      animate={sliderControls}
+                      initial={false}
+                      style={dayTimelineClipStyle}
+                    >
                       {dayTimelineNode}
                     </motion.div>
                     <DayPeekOverlays
-                      peekState={peekState}
+                      peekMetrics={peekMetrics}
                       previousLabel={previousDayLabel}
                       nextLabel={nextDayLabel}
                       previousKey={previousDayKey}
                       nextKey={nextDayKey}
                       containerRef={swipeContainerRef}
+                      currentModel={dayTimelineModel}
                       previousModel={peekModels.previous}
                       nextModel={peekModels.next}
                       renderPreview={renderDayTimeline}
