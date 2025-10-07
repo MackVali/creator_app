@@ -2700,33 +2700,26 @@ export default function SchedulePage() {
           className={containerClass}
           ref={options?.containerRef ?? undefined}
         >
-          <div className="pl-16 pr-6 pt-1 pb-1 text-white">
-            <div className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-1 shadow-[0_8px_20px_rgba(8,8,12,0.24)] backdrop-blur">
-              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end sm:justify-between">
-                <div className="space-y-0.5">
-                  <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
-                    <span>{isViewingToday ? 'Today' : 'Selected Day'}</span>
-                    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.12] px-1.5 py-0.5 text-[10px] font-medium tracking-[0.18em] text-white/75">
-                      {dayViewDateKey}
-                    </span>
-                  </div>
-                  <h2 className="text-sm font-semibold tracking-tight text-white sm:text-base">
-                    {dayViewDetails.weekday}
-                  </h2>
-                  <p className="text-[10px] text-white/60 sm:text-xs">
-                    {dayViewDetails.fullDate}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-0.5 text-left text-[10px] text-white/60 sm:items-end sm:text-right">
-                  {modelTimeZoneShortName ? (
-                    <span className="text-xs font-semibold tracking-wide text-white/80 sm:text-sm">
-                      {modelTimeZoneShortName}
-                    </span>
-                  ) : null}
-                  <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
-                    {modelFriendlyTimeZone}
+          <div className="pl-16 pr-6 pb-3 text-white">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
+                  {isViewingToday ? 'Today' : 'Selected Day'}
+                </span>
+                <h2 className="text-base font-semibold tracking-tight text-white sm:text-lg">
+                  {dayViewDetails.weekday}
+                </h2>
+                <p className="text-xs text-white/60 sm:text-sm">{dayViewDetails.fullDate}</p>
+              </div>
+              <div className="space-y-1 text-left text-[10px] text-white/60 sm:text-right">
+                {modelTimeZoneShortName ? (
+                  <span className="text-sm font-semibold tracking-wide text-white/80 sm:text-base">
+                    {modelTimeZoneShortName}
                   </span>
-                </div>
+                ) : null}
+                <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">
+                  {modelFriendlyTimeZone}
+                </span>
               </div>
             </div>
           </div>
