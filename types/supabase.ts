@@ -663,6 +663,119 @@ export interface Database {
           completed_at?: string | null;
         };
       };
+      xp_events: {
+        Row: {
+          id: string;
+          created_at: string;
+          user_id: string;
+          kind: Database["public"]["Enums"]["xp_kind"];
+          amount: number;
+          schedule_instance_id: string | null;
+          skill_id: string | null;
+          monument_id: string | null;
+          award_key: string | null;
+          source: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          user_id: string;
+          kind: Database["public"]["Enums"]["xp_kind"];
+          amount: number;
+          schedule_instance_id?: string | null;
+          skill_id?: string | null;
+          monument_id?: string | null;
+          award_key?: string | null;
+          source?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          user_id?: string;
+          kind?: Database["public"]["Enums"]["xp_kind"];
+          amount?: number;
+          schedule_instance_id?: string | null;
+          skill_id?: string | null;
+          monument_id?: string | null;
+          award_key?: string | null;
+          source?: string | null;
+        };
+      };
+      skill_progress: {
+        Row: {
+          user_id: string;
+          skill_id: string;
+          level: number;
+          prestige: number;
+          xp_into_level: number;
+          total_xp: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          skill_id: string;
+          level?: number;
+          prestige?: number;
+          xp_into_level?: number;
+          total_xp?: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          skill_id?: string;
+          level?: number;
+          prestige?: number;
+          xp_into_level?: number;
+          total_xp?: number;
+          updated_at?: string;
+        };
+      };
+      dark_xp_events: {
+        Row: {
+          id: string;
+          created_at: string;
+          user_id: string;
+          skill_id: string;
+          new_skill_level: number;
+          amount: number;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          user_id: string;
+          skill_id: string;
+          new_skill_level: number;
+          amount?: number;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          user_id?: string;
+          skill_id?: string;
+          new_skill_level?: number;
+          amount?: number;
+        };
+      };
+      user_progress: {
+        Row: {
+          user_id: string;
+          total_dark_xp: number;
+          current_level: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          total_dark_xp?: number;
+          current_level?: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          total_dark_xp?: number;
+          current_level?: number;
+          updated_at?: string;
+        };
+      };
     };
     Views: Record<string, unknown>;
     Functions: {
@@ -676,6 +789,7 @@ export interface Database {
     Enums: {
       schedule_instance_source_type: 'PROJECT' | 'TASK';
       schedule_instance_status: 'scheduled' | 'completed' | 'missed' | 'canceled';
+      xp_kind: 'task' | 'habit' | 'project' | 'goal' | 'manual';
     };
     CompositeTypes: Record<string, unknown>;
   };
