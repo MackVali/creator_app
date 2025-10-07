@@ -6,6 +6,10 @@ import type { Database } from "@/types/supabase";
 
 type XpEventInsert = Database["public"]["Tables"]["xp_events"]["Insert"];
 
+type AwardEvent = Omit<XpEventInsert, "award_key"> & {
+  award_key: NonNullable<XpEventInsert["award_key"]>;
+};
+
 type XpKind = Database["public"]["Enums"]["xp_kind"];
 
 const xpKindValues = ["task", "habit", "project", "goal", "manual"] as const satisfies readonly XpKind[];
@@ -54,8 +58,8 @@ function buildEvents(
   userId: string,
   request: AwardRequest,
   amount: number,
-  awardKeyBase: string | undefined
-): XpEventInsert[] {
+  awardKeyBase: string
+): AwardEvent[] {
   const base = {
     user_id: userId,
     kind: request.kind,
@@ -63,17 +67,17 @@ function buildEvents(
     schedule_instance_id: request.scheduleInstanceId ?? null,
     skill_id: null,
     monument_id: null,
-    award_key: null,
+    award_key: awardKeyBase,
     source: request.source ?? null,
-  } satisfies XpEventInsert;
+  } satisfies AwardEvent;
 
-  const events: XpEventInsert[] = [];
+  const events: AwardEvent[] = [];
 
   for (const skillId of request.skillIds ?? []) {
     events.push({
       ...base,
       skill_id: skillId,
-      award_key: awardKeyBase ? `${awardKeyBase}:skill:${skillId}` : null,
+      award_key: `${awardKeyBase}:skill:${skillId}`,
     });
   }
 
@@ -81,12 +85,12 @@ function buildEvents(
     events.push({
       ...base,
       monument_id: monumentId,
-      award_key: awardKeyBase ? `${awardKeyBase}:mon:${monumentId}` : null,
+      award_key: `${awardKeyBase}:mon:${monumentId}`,
     });
   }
 
   if (events.length === 0) {
-    events.push({ ...base, award_key: awardKeyBase ?? null });
+    events.push(base);
   }
 
   return events;
@@ -134,11 +138,17 @@ export async function POST(request: NextRequest) {
     }
 
     const awardKeyBase = buildAwardKeyBase(awardRequest);
+
+    if (!awardKeyBase) {
+      return NextResponse.json(
+        { error: "awardKeyBase is required for XP awards" },
+        { status: 400 }
+      );
+    }
+
     const events = buildEvents(user.id, awardRequest, amount, awardKeyBase);
 
-    const dedupeCandidates = events
-      .map((event) => event.award_key)
-      .filter((key): key is string => !!key);
+    const dedupeCandidates = events.map((event) => event.award_key);
 
     let deduped = false;
     let eventsToInsert = events;
@@ -160,9 +170,13 @@ export async function POST(request: NextRequest) {
 
       if (existing && existing.length > 0) {
         deduped = true;
-        const existingKeys = new Set(existing.map((row) => row.award_key));
+        const existingKeys = new Set(
+          existing
+            .map((row) => row.award_key)
+            .filter((key): key is string => typeof key === "string")
+        );
         eventsToInsert = events.filter(
-          (event) => !event.award_key || !existingKeys.has(event.award_key)
+          (event) => !existingKeys.has(event.award_key)
         );
       }
     }
