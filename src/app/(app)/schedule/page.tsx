@@ -73,6 +73,10 @@ type PeekState = {
   offset: number
 }
 
+type HabitCompletionStatus = 'scheduled' | 'completed'
+
+const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
+
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
     opacity: direction === 0 ? 1 : 0.6,
@@ -1245,6 +1249,10 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const { session } = useAuth()
   const userId = session?.user.id ?? null
+  const habitCompletionStorageKey = useMemo(
+    () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
+    [userId]
+  )
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -1265,6 +1273,9 @@ export default function SchedulePage() {
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [habits, setHabits] = useState<HabitScheduleItem[]>([])
+  const [habitCompletionByDate, setHabitCompletionByDate] = useState<
+    Record<string, Record<string, HabitCompletionStatus>>
+  >({})
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
   const [scheduledProjectIds, setScheduledProjectIds] = useState<Set<string>>(new Set())
@@ -1296,6 +1307,70 @@ export default function SchedulePage() {
     offset: 0,
   })
   const [pxPerMin, setPxPerMin] = useState(2)
+  const hasLoadedHabitCompletionState = useRef(false)
+
+  useEffect(() => {
+    if (!habitCompletionStorageKey) {
+      setHabitCompletionByDate({})
+      hasLoadedHabitCompletionState.current = false
+      return
+    }
+    if (typeof window === 'undefined') return
+
+    try {
+      const raw = window.localStorage.getItem(habitCompletionStorageKey)
+      if (!raw) {
+        setHabitCompletionByDate({})
+        hasLoadedHabitCompletionState.current = true
+        return
+      }
+      const parsed = JSON.parse(raw) as unknown
+      if (!parsed || typeof parsed !== 'object') {
+        setHabitCompletionByDate({})
+        hasLoadedHabitCompletionState.current = true
+        return
+      }
+      const next: Record<string, Record<string, HabitCompletionStatus>> = {}
+      for (const [dateKey, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof dateKey !== 'string' || dateKey.length === 0) continue
+        if (!value || typeof value !== 'object') continue
+        const dayMap: Record<string, HabitCompletionStatus> = {}
+        for (const [habitId, status] of Object.entries(value as Record<string, unknown>)) {
+          if (typeof habitId !== 'string' || habitId.length === 0) continue
+          if (status === 'completed') {
+            dayMap[habitId] = 'completed'
+          }
+        }
+        if (Object.keys(dayMap).length > 0) {
+          next[dateKey] = dayMap
+        }
+      }
+      setHabitCompletionByDate(next)
+    } catch (error) {
+      console.error('Failed to load habit completion state', error)
+      setHabitCompletionByDate({})
+    } finally {
+      hasLoadedHabitCompletionState.current = true
+    }
+  }, [habitCompletionStorageKey])
+
+  useEffect(() => {
+    if (!habitCompletionStorageKey) return
+    if (!hasLoadedHabitCompletionState.current) return
+    if (typeof window === 'undefined') return
+    try {
+      if (Object.keys(habitCompletionByDate).length === 0) {
+        window.localStorage.removeItem(habitCompletionStorageKey)
+      } else {
+        window.localStorage.setItem(
+          habitCompletionStorageKey,
+          JSON.stringify(habitCompletionByDate)
+        )
+      }
+    } catch (error) {
+      console.error('Failed to persist habit completion state', error)
+    }
+  }, [habitCompletionByDate, habitCompletionStorageKey])
 
   const updateCurrentDate = useCallback(
     (
@@ -1853,6 +1928,119 @@ export default function SchedulePage() {
       }
     },
     [userId, setInstances]
+  )
+
+  const getHabitCompletionStatus = useCallback(
+    (dateKey: string, habitId: string): HabitCompletionStatus => {
+      const dayMap = habitCompletionByDate[dateKey]
+      if (!dayMap) return 'scheduled'
+      return dayMap[habitId] ?? 'scheduled'
+    },
+    [habitCompletionByDate]
+  )
+
+  const updateHabitCompletionStatus = useCallback(
+    (dateKey: string, habitId: string, status: HabitCompletionStatus | null) => {
+      setHabitCompletionByDate(prev => {
+        const prevDay = prev[dateKey]
+        if (status === null || status === 'scheduled') {
+          if (!prevDay || !(habitId in prevDay)) {
+            return prev
+          }
+          const next = { ...prev }
+          const nextDay = { ...prevDay }
+          delete nextDay[habitId]
+          if (Object.keys(nextDay).length === 0) {
+            delete next[dateKey]
+          } else {
+            next[dateKey] = nextDay
+          }
+          return next
+        }
+        if (prevDay?.[habitId] === status) {
+          return prev
+        }
+        const next = { ...prev }
+        const nextDay = { ...(prevDay ?? {}) }
+        nextDay[habitId] = status
+        next[dateKey] = nextDay
+        return next
+      })
+    },
+    []
+  )
+
+  const toggleHabitCompletionStatus = useCallback(
+    (dateKey: string, habitId: string) => {
+      const current = getHabitCompletionStatus(dateKey, habitId)
+      const nextStatus: HabitCompletionStatus | null =
+        current === 'completed' ? 'scheduled' : 'completed'
+      updateHabitCompletionStatus(dateKey, habitId, nextStatus)
+    },
+    [getHabitCompletionStatus, updateHabitCompletionStatus]
+  )
+
+  const renderHabitCompletionControl = useCallback(
+    ({
+      dateKey,
+      habitId,
+      status,
+      disabled,
+    }: {
+      dateKey: string
+      habitId: string
+      status: HabitCompletionStatus
+      disabled?: boolean
+    }) => {
+      const isCompleted = status === 'completed'
+      return (
+        <motion.button
+          type="button"
+          role="checkbox"
+          aria-checked={isCompleted}
+          aria-label="Toggle habit completion"
+          title="Toggle habit completion"
+          disabled={disabled}
+          className="relative flex h-6 w-6 items-center justify-center rounded-full border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+          initial={false}
+          animate={{
+            backgroundColor: isCompleted
+              ? 'rgba(16,185,129,0.22)'
+              : 'rgba(12,12,16,0.58)',
+            borderColor: isCompleted
+              ? 'rgba(52,211,153,0.65)'
+              : 'rgba(255,255,255,0.35)',
+          }}
+          transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
+          onClick={event => {
+            event.stopPropagation()
+            if (disabled) return
+            toggleHabitCompletionStatus(dateKey, habitId)
+          }}
+        >
+          <motion.svg
+            className="pointer-events-none relative h-3.5 w-3.5"
+            viewBox="0 0 20 20"
+            fill="none"
+            initial={false}
+          >
+            <motion.path
+              d="M5 10.5 L8.5 14 L15 6"
+              stroke="#ffffff"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              animate={{
+                pathLength: isCompleted ? 1 : 0,
+                opacity: isCompleted ? 1 : 0,
+              }}
+              transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
+            />
+          </motion.svg>
+        </motion.button>
+      )
+    },
+    [toggleHabitCompletionStatus]
   )
 
   const renderInstanceActions = useCallback(
@@ -2463,38 +2651,69 @@ export default function SchedulePage() {
               const top = (startMin - modelStartHour * 60) * modelPxPerMin
               const height =
                 ((placement.end.getTime() - placement.start.getTime()) / 60000) * modelPxPerMin
-              const style: CSSProperties = {
+              const habitStatus = getHabitCompletionStatus(
+                dayViewDateKey,
+                placement.habitId
+              )
+              const isHabitCompleted = habitStatus === 'completed'
+              const baseBackground =
+                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.18), transparent 58%), linear-gradient(140deg, rgba(5,6,12,0.98) 0%, rgba(12,13,22,0.94) 44%, rgba(34,36,52,0.78) 100%)'
+              const completedBackground =
+                'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 60%), linear-gradient(140deg, rgba(6,78,59,0.95) 0%, rgba(4,120,87,0.92) 42%, rgba(16,185,129,0.88) 100%)'
+              const cardStyle: CSSProperties = {
                 top,
                 height,
-                boxShadow: 'var(--elev-card)',
-                outline: '1px solid rgba(59,130,246,0.4)',
+                boxShadow: isHabitCompleted
+                  ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                  : '0 26px 52px rgba(0, 0, 0, 0.6), 0 12px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                outline: isHabitCompleted
+                  ? '1px solid rgba(16, 185, 129, 0.55)'
+                  : '1px solid rgba(18, 18, 24, 0.85)',
                 outlineOffset: '-1px',
-                background:
-                  'linear-gradient(135deg, rgba(37,99,235,0.85) 0%, rgba(59,130,246,0.75) 100%)',
+                background: isHabitCompleted ? completedBackground : baseBackground,
               }
+              const habitBorderClass = isHabitCompleted
+                ? 'border-emerald-400/60'
+                : 'border-white/12'
               const energyLevel = normalizeEnergyLabel(placement.window.energy)
               const windowLabel = placement.window.label?.trim() || 'Habit window'
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className="absolute left-12 right-2 z-30 flex flex-col justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur"
-                  style={style}
+                  className={`absolute left-12 right-2 z-30 flex flex-col justify-between rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/70">
+                      <span
+                        className={`text-[10px] font-semibold uppercase tracking-[0.24em] ${
+                          isHabitCompleted ? 'text-emerald-200/80' : 'text-white/70'
+                        }`}
+                      >
                         Habit
                       </span>
                       <span className="text-sm font-medium leading-snug">
                         {placement.habitName}
                       </span>
                     </div>
-                    <FlameEmber level={energyLevel} size="sm" className="flex-shrink-0" />
+                    <div className="flex items-center gap-2">
+                      <FlameEmber level={energyLevel} size="sm" className="flex-shrink-0" />
+                      {renderHabitCompletionControl({
+                        dateKey: dayViewDateKey,
+                        habitId: placement.habitId,
+                        status: habitStatus,
+                        disabled: options?.disableInteractions,
+                      })}
+                    </div>
                   </div>
-                  <div className="text-xs text-white/80">
+                  <div
+                    className={`text-xs ${
+                      isHabitCompleted ? 'text-emerald-100/85' : 'text-white/80'
+                    }`}
+                  >
                     {placement.durationMinutes}m · {windowLabel}
                   </div>
                   {placement.truncated && (
@@ -2996,6 +3215,8 @@ export default function SchedulePage() {
         expandedProjects,
         renderInstanceActions,
         pendingInstanceStatuses,
+        renderHabitCompletionControl,
+        getHabitCompletionStatus,
       ]
     )
 
