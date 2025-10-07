@@ -1986,13 +1986,24 @@ export default function SchedulePage() {
       habitId,
       status,
       disabled,
+      availableHeight,
     }: {
       dateKey: string
       habitId: string
       status: HabitCompletionStatus
       disabled?: boolean
+      availableHeight?: number
     }) => {
       const isCompleted = status === 'completed'
+      const safeAvailableHeight = Math.max(availableHeight ?? 24, 0)
+      const scaledSize = Math.min(
+        24,
+        Math.max(safeAvailableHeight * 0.8, safeAvailableHeight - 6)
+      )
+      const controlSize =
+        safeAvailableHeight < 8 ? safeAvailableHeight : Math.max(8, scaledSize)
+      const iconPadding = Math.max(1, Math.min(controlSize * 0.15, 4))
+      const strokeWidth = Math.max(1, Math.min(1.8, controlSize / 12))
       return (
         <motion.button
           type="button"
@@ -2001,7 +2012,13 @@ export default function SchedulePage() {
           aria-label="Toggle habit completion"
           title="Toggle habit completion"
           disabled={disabled}
-          className="relative flex h-6 w-6 items-center justify-center rounded-none border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="relative flex aspect-square items-center justify-center rounded-none border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+          style={{
+            width: controlSize,
+            height: controlSize,
+            minWidth: controlSize,
+            minHeight: controlSize,
+          }}
           initial={false}
           animate={{
             backgroundColor: isCompleted
@@ -2019,15 +2036,16 @@ export default function SchedulePage() {
           }}
         >
           <motion.svg
-            className="pointer-events-none relative h-3.5 w-3.5"
+            className="pointer-events-none relative h-full w-full"
             viewBox="0 0 20 20"
             fill="none"
             initial={false}
+            style={{ padding: iconPadding }}
           >
             <motion.path
               d="M5 10.5 L8.5 14 L15 6"
               stroke="#ffffff"
-              strokeWidth={1.8}
+              strokeWidth={strokeWidth}
               strokeLinecap="round"
               strokeLinejoin="round"
               animate={{
@@ -2699,6 +2717,7 @@ export default function SchedulePage() {
                     habitId: placement.habitId,
                     status: habitStatus,
                     disabled: options?.disableInteractions,
+                    availableHeight: height,
                   })}
                 </motion.div>
               )
