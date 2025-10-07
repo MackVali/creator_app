@@ -2687,23 +2687,23 @@ export default function SchedulePage() {
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex flex-col gap-1.5">
-                      <span
-                        className={`text-[10px] font-semibold uppercase tracking-[0.24em] ${
-                          isHabitCompleted ? 'text-emerald-200/80' : 'text-white/70'
-                        }`}
-                      >
-                        Habit
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium leading-snug">
+                    <div className="flex flex-1 items-center gap-3">
+                      <FlameEmber
+                        level={energyLevel}
+                        size="sm"
+                        className="flex-shrink-0"
+                      />
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-sm font-medium leading-snug">
                           {placement.habitName}
                         </span>
-                        <FlameEmber
-                          level={energyLevel}
-                          size="sm"
-                          className="flex-shrink-0"
-                        />
+                        <span
+                          className={`mt-1 text-xs ${
+                            isHabitCompleted ? 'text-emerald-100/85' : 'text-white/80'
+                          }`}
+                        >
+                          {placement.durationMinutes}m · {windowLabel}
+                        </span>
                       </div>
                     </div>
                     {renderHabitCompletionControl({
@@ -2712,13 +2712,6 @@ export default function SchedulePage() {
                       status: habitStatus,
                       disabled: options?.disableInteractions,
                     })}
-                  </div>
-                  <div
-                    className={`text-xs ${
-                      isHabitCompleted ? 'text-emerald-100/85' : 'text-white/80'
-                    }`}
-                  >
-                    {placement.durationMinutes}m · {windowLabel}
                   </div>
                   {placement.truncated && (
                     <div className="text-[10px] font-medium text-amber-200/85">
