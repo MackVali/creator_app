@@ -2001,7 +2001,7 @@ export default function SchedulePage() {
           aria-label="Toggle habit completion"
           title="Toggle habit completion"
           disabled={disabled}
-          className="relative flex h-6 w-6 items-center justify-center rounded-full border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="relative flex h-6 w-6 items-center justify-center rounded-none border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
           initial={false}
           animate={{
             backgroundColor: isCompleted
@@ -2680,14 +2680,14 @@ export default function SchedulePage() {
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-12 right-2 z-30 flex flex-col justify-between rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute left-12 right-2 z-30 flex flex-col gap-2 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex flex-col">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-1.5">
                       <span
                         className={`text-[10px] font-semibold uppercase tracking-[0.24em] ${
                           isHabitCompleted ? 'text-emerald-200/80' : 'text-white/70'
@@ -2695,19 +2695,23 @@ export default function SchedulePage() {
                       >
                         Habit
                       </span>
-                      <span className="text-sm font-medium leading-snug">
-                        {placement.habitName}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium leading-snug">
+                          {placement.habitName}
+                        </span>
+                        <FlameEmber
+                          level={energyLevel}
+                          size="sm"
+                          className="flex-shrink-0"
+                        />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <FlameEmber level={energyLevel} size="sm" className="flex-shrink-0" />
-                      {renderHabitCompletionControl({
-                        dateKey: dayViewDateKey,
-                        habitId: placement.habitId,
-                        status: habitStatus,
-                        disabled: options?.disableInteractions,
-                      })}
-                    </div>
+                    {renderHabitCompletionControl({
+                      dateKey: dayViewDateKey,
+                      habitId: placement.habitId,
+                      status: habitStatus,
+                      disabled: options?.disableInteractions,
+                    })}
                   </div>
                   <div
                     className={`text-xs ${
