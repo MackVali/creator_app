@@ -8,6 +8,16 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { HabitFormFields, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type HabitWindowSelectOption } from "@/components/habits/habit-form-fields";
 import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 interface WindowOption {
@@ -17,6 +27,20 @@ interface WindowOption {
   end_local: string;
   energy: string;
 }
+
+interface RoutineOption {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+type RoutineSelectValue = string;
+type RoutineSelectOption = {
+  value: string;
+  label: string;
+  description?: string | null;
+  disabled?: boolean;
+};
 
 function formatTimeLabel(value: string | null | undefined) {
   if (!value) return null;
@@ -67,6 +91,12 @@ export default function NewHabitPage() {
   const [windowOptions, setWindowOptions] = useState<WindowOption[]>([]);
   const [windowsLoading, setWindowsLoading] = useState(true);
   const [windowLoadError, setWindowLoadError] = useState<string | null>(null);
+  const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
+  const [routinesLoading, setRoutinesLoading] = useState(true);
+  const [routineLoadError, setRoutineLoadError] = useState<string | null>(null);
+  const [routineId, setRoutineId] = useState<RoutineSelectValue>("none");
+  const [newRoutineName, setNewRoutineName] = useState("");
+  const [newRoutineDescription, setNewRoutineDescription] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -167,6 +197,107 @@ export default function NewHabitPage() {
     ];
   }, [windowOptions, windowsLoading]);
 
+  useEffect(() => {
+    let active = true;
+
+    const fetchRoutines = async () => {
+      if (!supabase) {
+        if (active) {
+          setRoutinesLoading(false);
+          setRoutineLoadError("Supabase client not available.");
+        }
+        return;
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) throw userError;
+
+        if (!user) {
+          if (active) {
+            setRoutineOptions([]);
+            setRoutineId("none");
+            setRoutineLoadError(null);
+          }
+          return;
+        }
+
+        const { data, error: routinesError } = await supabase
+          .from("habit_routines")
+          .select("id, name, description")
+          .eq("user_id", user.id)
+          .order("name", { ascending: true });
+
+        if (routinesError) throw routinesError;
+
+        if (active) {
+          const safeRoutines = data ?? [];
+          setRoutineOptions(safeRoutines);
+          setRoutineLoadError(null);
+          setRoutineId((current) => {
+            if (current === "none" || current === "__create__") {
+              return current;
+            }
+
+            return safeRoutines.some((option) => option.id === current)
+              ? current
+              : "none";
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load routines:", err);
+        if (active) {
+          setRoutineOptions([]);
+          setRoutineLoadError("Unable to load your routines right now.");
+        }
+      } finally {
+        if (active) {
+          setRoutinesLoading(false);
+        }
+      }
+    };
+
+    fetchRoutines();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const routineSelectOptions = useMemo<RoutineSelectOption[]>(() => {
+    if (routinesLoading) {
+      return [
+        {
+          value: "none",
+          label: "Loading routines…",
+          disabled: true,
+        },
+      ];
+    }
+
+    const baseOptions = routineOptions.map((routine) => ({
+      value: routine.id,
+      label: routine.name,
+      description: routine.description,
+    }));
+
+    return [
+      {
+        value: "none",
+        label: "No routine",
+      },
+      ...baseOptions,
+      {
+        value: "__create__",
+        label: "Create a new routine",
+      },
+    ];
+  }, [routineOptions, routinesLoading]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -183,6 +314,11 @@ export default function NewHabitPage() {
     const durationMinutes = Number(duration);
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
       setError("Please enter how many minutes the habit should take.");
+      return;
+    }
+
+    if (routineId === "__create__" && !newRoutineName.trim()) {
+      setError("Please give your new routine a name.");
       return;
     }
 
@@ -206,6 +342,34 @@ export default function NewHabitPage() {
 
       const trimmedDescription = description.trim();
       const recurrenceValue = recurrence === "none" ? null : recurrence;
+      let routineIdToUse: string | null = null;
+
+      if (routineId === "__create__") {
+        const routineName = newRoutineName.trim();
+        const routineDescription = newRoutineDescription.trim();
+
+        const { data: routineData, error: routineInsertError } = await supabase
+          .from("habit_routines")
+          .insert({
+            user_id: user.id,
+            name: routineName,
+            description: routineDescription ? routineDescription : null,
+          })
+          .select("id")
+          .single();
+
+        if (routineInsertError) {
+          throw routineInsertError;
+        }
+
+        if (!routineData?.id) {
+          throw new Error("Routine creation did not return an id.");
+        }
+
+        routineIdToUse = routineData.id;
+      } else if (routineId !== "none") {
+        routineIdToUse = routineId;
+      }
 
       const { error: insertError } = await supabase.from("habits").insert({
         user_id: user.id,
@@ -215,6 +379,7 @@ export default function NewHabitPage() {
         recurrence: recurrenceValue,
         duration_minutes: durationMinutes,
         window_id: windowId === "none" ? null : windowId,
+        routine_id: routineIdToUse,
       });
 
       if (insertError) {
@@ -270,6 +435,88 @@ export default function NewHabitPage() {
                 onRecurrenceChange={setRecurrence}
                 onWindowChange={setWindowId}
                 onDurationChange={setDuration}
+                footerSlot={
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                        Routine
+                      </Label>
+                      <Select
+                        value={routineId}
+                        onValueChange={(value) => {
+                          setRoutineId(value);
+                          if (value !== "__create__") {
+                            setNewRoutineName("");
+                            setNewRoutineDescription("");
+                          }
+                        }}
+                        disabled={routinesLoading}
+                      >
+                        <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                          <SelectValue placeholder="Choose a routine" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#0b101b] text-sm text-white">
+                          {routineSelectOptions.map((option) => (
+                            <SelectItem
+                              key={`${option.value}-${option.label}`}
+                              value={option.value}
+                              disabled={option.disabled}
+                            >
+                              <div className="flex flex-col">
+                                <span>{option.label}</span>
+                                {option.description ? (
+                                  <span className="text-xs text-white/60">{option.description}</span>
+                                ) : null}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-white/50">
+                        Group habits into routines to tackle related work together.
+                      </p>
+                      {routineLoadError ? (
+                        <p className="text-xs text-red-300">{routineLoadError}</p>
+                      ) : null}
+                    </div>
+
+                    {routineId === "__create__" ? (
+                      <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+                        <div className="space-y-3">
+                          <Label
+                            htmlFor="new-routine-name"
+                            className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+                          >
+                            Routine name
+                          </Label>
+                          <Input
+                            id="new-routine-name"
+                            value={newRoutineName}
+                            onChange={(event) => setNewRoutineName(event.target.value)}
+                            placeholder="e.g. Morning kickoff"
+                            className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                          />
+                        </div>
+
+                        <div className="space-y-3">
+                          <Label
+                            htmlFor="new-routine-description"
+                            className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+                          >
+                            Description (optional)
+                          </Label>
+                          <Textarea
+                            id="new-routine-description"
+                            value={newRoutineDescription}
+                            onChange={(event) => setNewRoutineDescription(event.target.value)}
+                            placeholder="Give your routine a purpose so future habits stay aligned."
+                            className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                }
               />
 
               {error && (
