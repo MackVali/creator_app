@@ -43,6 +43,16 @@ html,body{
   touch-action:pan-y;
   overflow-x:hidden;
 }
+
+html{
+  scrollbar-width:none;
+}
+body{
+  -ms-overflow-style:none;
+}
+body::-webkit-scrollbar{
+  display:none;
+}
 .section{ padding:20px 16px 8px; }
 .h-label{ letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--muted); font-size:12px; }
 .card{ background:linear-gradient(180deg,var(--surface),var(--surface-2));
