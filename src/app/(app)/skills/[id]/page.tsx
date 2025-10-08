@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CalendarDays, Clock3, Target, ArrowLeft } from "lucide-react";
+import { CalendarDays, Clock3, Target, ArrowLeft, Medal } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import {
@@ -16,12 +16,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 
 interface Skill {
   id: string;
   name: string;
   icon: string | null;
   level: number;
+  prestige: number;
   created_at: string;
 }
 
@@ -38,6 +40,22 @@ function describeLevel(level: number): string {
   return "Laying the groundwork for growth.";
 }
 
+function describePrestige(prestige: number): string {
+  if (prestige <= 0) {
+    return "Haven't prestiged yet.";
+  }
+  if (prestige === 1) {
+    return "Freshly prestiged and starting over stronger.";
+  }
+  if (prestige < 5) {
+    return `${prestige} prestiges — veteran status rising.`;
+  }
+  if (prestige < 10) {
+    return `${prestige} prestiges — elite mastery achieved.`;
+  }
+  return "Prestige maxed out — legendary dedication.";
+}
+
 export default function SkillDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -46,6 +64,11 @@ export default function SkillDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
   const router = useRouter();
+  const [showDevControls, setShowDevControls] = useState(false);
+  const [devLevel, setDevLevel] = useState("1");
+  const [devPrestige, setDevPrestige] = useState("0");
+  const [devError, setDevError] = useState<string | null>(null);
+  const [devSaving, setDevSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +82,7 @@ export default function SkillDetailPage() {
         await supabase.auth.getSession();
         const { data, error } = await supabase
           .from("skills")
-          .select("id,name,icon,level,created_at")
+          .select("id,name,icon,level,prestige,created_at")
           .eq("id", id)
           .single();
 
@@ -68,7 +91,10 @@ export default function SkillDetailPage() {
             console.error("Error fetching skill:", error);
             setError("Failed to load skill");
           } else {
-            setSkill(data);
+            setSkill({
+              ...data,
+              prestige: data?.prestige ?? 0,
+            });
           }
           setLoading(false);
         }
@@ -86,6 +112,85 @@ export default function SkillDetailPage() {
       cancelled = true;
     };
   }, [supabase, id]);
+
+  useEffect(() => {
+    if (!skill) {
+      return;
+    }
+    setDevLevel(String(skill.level));
+    setDevPrestige(String(skill.prestige ?? 0));
+  }, [skill]);
+
+  const isDevEnvironment =
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
+
+  const levelOptions = useMemo(
+    () => Array.from({ length: 100 }, (_, index) => index + 1),
+    []
+  );
+  const prestigeOptions = useMemo(
+    () => Array.from({ length: 11 }, (_, index) => index),
+    []
+  );
+
+  const handleDevSave = async () => {
+    if (!supabase || !skill) {
+      return;
+    }
+
+    const nextLevel = Number(devLevel);
+    const nextPrestige = Number(devPrestige);
+
+    if (!Number.isInteger(nextLevel) || nextLevel < 1 || nextLevel > 100) {
+      setDevError("Level must be a whole number between 1 and 100.");
+      return;
+    }
+
+    if (!Number.isInteger(nextPrestige) || nextPrestige < 0 || nextPrestige > 10) {
+      setDevError("Prestige must be a whole number between 0 and 10.");
+      return;
+    }
+
+    setDevError(null);
+    setDevSaving(true);
+    const { error: updateError } = await supabase
+      .from("skills")
+      .update({ level: nextLevel, prestige: nextPrestige })
+      .eq("id", skill.id);
+
+    if (updateError) {
+      console.error("Error updating skill progression:", updateError);
+      setDevError(
+        updateError.message ?? "Failed to update skill progression."
+      );
+      setDevSaving(false);
+      return;
+    }
+
+    setSkill((prev) =>
+      prev
+        ? {
+            ...prev,
+            level: nextLevel,
+            prestige: nextPrestige,
+          }
+        : prev
+    );
+    setShowDevControls(false);
+    setDevSaving(false);
+  };
+
+  const handleDevReset = () => {
+    if (!skill) {
+      return;
+    }
+
+    setDevError(null);
+    setDevLevel(String(skill.level));
+    setDevPrestige(String(skill.prestige ?? 0));
+    setShowDevControls(false);
+  };
 
   if (loading) {
     return (
@@ -176,6 +281,15 @@ export default function SkillDetailPage() {
       icon: Target,
     },
     {
+      label: "Prestige rank",
+      value:
+        skill.prestige > 0
+          ? `Prestige ${skill.prestige}`
+          : "Not prestiged",
+      description: describePrestige(skill.prestige),
+      icon: Medal,
+    },
+    {
       label: "Added to timeline",
       value: formattedCreatedAt ?? "Not available",
       description: createdRelativeText,
@@ -204,17 +318,37 @@ export default function SkillDetailPage() {
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="w-fit gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-medium text-white/70 backdrop-blur transition hover:border-white/20 hover:bg-white/10 hover:text-white"
-        >
-          <Link href="/skills">
-            <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to skills
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="w-fit gap-2 rounded-full border border-white/10 bg-white/5 px-3 text-xs font-medium text-white/70 backdrop-blur transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+          >
+            <Link href="/skills">
+              <ArrowLeft className="size-4" aria-hidden="true" />
+              Back to skills
+            </Link>
+          </Button>
+          {isDevEnvironment && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (!skill) return;
+                if (!showDevControls) {
+                  setDevError(null);
+                  setDevLevel(String(skill.level));
+                  setDevPrestige(String(skill.prestige ?? 0));
+                }
+                setShowDevControls((prev) => !prev);
+              }}
+              className="w-fit rounded-full border-white/20 bg-white/5 px-3 text-xs font-medium text-white/70 backdrop-blur transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+            >
+              {showDevControls ? "Hide dev controls" : "Dev progression override"}
+            </Button>
+          )}
+        </div>
 
         <section aria-labelledby="skill-overview" className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#05060a] via-[#11121a] to-[#1a1c27] p-6 shadow-[0_35px_120px_-45px_rgba(15,23,42,0.8)] sm:p-8">
           <div className="absolute inset-0">
@@ -243,7 +377,7 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </div>
-          <dl className="relative mt-8 grid gap-3 sm:grid-cols-3">
+          <dl className="relative mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {stats.map(({ label, value, description, icon: Icon }) => (
               <div
                 key={label}
@@ -262,6 +396,98 @@ export default function SkillDetailPage() {
             ))}
           </dl>
         </section>
+
+        {isDevEnvironment && showDevControls && (
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#070709] via-[#11131a] to-[#1c1f2b] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.78)] sm:p-7">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(244,114,182,0.15),_transparent_60%)]" />
+            <div className="relative space-y-6">
+              <header className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">
+                  Development only
+                </p>
+                <h2 className="text-lg font-semibold text-white sm:text-xl">
+                  Override skill progression
+                </h2>
+                <p className="text-xs text-white/60 sm:text-sm">
+                  Select the level and prestige you want to simulate. Changes are applied directly to this skill.
+                </p>
+              </header>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.2em] text-white/60">
+                    Skill level
+                  </span>
+                  <Select
+                    value={devLevel}
+                    onValueChange={(value) => {
+                      setDevLevel(value);
+                    }}
+                    triggerClassName="h-10 rounded-2xl border-white/20 bg-white/5 px-3 text-sm text-white/80 hover:border-white/30 hover:text-white"
+                  >
+                    <SelectContent className="bg-[#0f172a]/95 backdrop-blur">
+                      {levelOptions.map((level) => (
+                        <SelectItem key={level} value={String(level)} label={`Level ${level}`}>
+                          Level {level}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.2em] text-white/60">
+                    Prestige level
+                  </span>
+                  <Select
+                    value={devPrestige}
+                    onValueChange={(value) => {
+                      setDevPrestige(value);
+                    }}
+                    triggerClassName="h-10 rounded-2xl border-white/20 bg-white/5 px-3 text-sm text-white/80 hover:border-white/30 hover:text-white"
+                  >
+                    <SelectContent className="bg-[#0f172a]/95 backdrop-blur">
+                      {prestigeOptions.map((prestige) => (
+                        <SelectItem
+                          key={prestige}
+                          value={String(prestige)}
+                          label={`Prestige ${prestige}`}
+                        >
+                          Prestige {prestige}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {devError && (
+                <p className="text-xs font-medium text-rose-300">
+                  {devError}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={handleDevSave}
+                  disabled={devSaving}
+                  className="rounded-full bg-white/90 px-4 text-sm font-semibold text-slate-900 hover:bg-white"
+                >
+                  {devSaving ? "Saving..." : "Apply override"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleDevReset}
+                  disabled={devSaving}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 text-sm text-white/70 backdrop-blur transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </section>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060608] via-[#10121a] to-[#1a1d28] p-6 shadow-[0_28px_90px_-48px_rgba(15,23,42,0.75)] sm:p-7">
