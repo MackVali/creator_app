@@ -31,7 +31,7 @@ export async function uploadAvatar(
     const fileName = `${userId}-${Date.now()}.${fileExt}`;
 
     // Upload to avatars bucket
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from("avatars")
       .upload(fileName, file, {
         cacheControl: "3600",
@@ -76,7 +76,7 @@ export async function uploadBanner(
     const fileExt = file.name.split(".").pop();
     const fileName = `${userId}-banner-${Date.now()}.${fileExt}`;
 
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from("banners")
       .upload(fileName, file, {
         cacheControl: "3600",
