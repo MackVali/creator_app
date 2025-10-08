@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -61,20 +61,84 @@ export default function SkillsCarousel() {
   const skeletonCategoryPlaceholders = [0, 1, 2];
   const skeletonChipPlaceholders = [0, 1, 2, 3];
 
+  const getCategoryColor = (category: (typeof categories)[number]) =>
+    catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
+  const getCategoryIcon = (category: (typeof categories)[number]) =>
+    catOverrides[category.id]?.icon ?? category.icon ?? null;
+
+  const activeCategory = categories[activeIndex];
+  const activeColor = useMemo(() => {
+    if (!activeCategory) {
+      return FALLBACK_COLOR;
+    }
+    const override = catOverrides[activeCategory.id];
+    return override?.color ?? activeCategory.color_hex ?? FALLBACK_COLOR;
+  }, [activeCategory, catOverrides]);
+  const canGoPrev = activeIndex > 0;
+  const canGoNext = activeIndex < categories.length - 1;
+
+  const firstReorderableIndex = useMemo(
+    () => categories.findIndex((category) => category.id !== "uncategorized"),
+    [categories]
+  );
+  const lastReorderableIndex = useMemo(() => {
+    for (let idx = categories.length - 1; idx >= 0; idx -= 1) {
+      if (categories[idx]?.id !== "uncategorized") {
+        return idx;
+      }
+    }
+    return -1;
+  }, [categories]);
+
   useEffect(() => {
-    setCategories(fetchedCategories);
+    setCategories((previous) => {
+      if (previous === fetchedCategories) {
+        return previous;
+      }
+
+      if (previous.length === fetchedCategories.length) {
+        let identical = true;
+        for (let idx = 0; idx < previous.length; idx += 1) {
+          const a = previous[idx];
+          const b = fetchedCategories[idx];
+          if (
+            a.id !== b.id ||
+            a.name !== b.name ||
+            a.color_hex !== b.color_hex ||
+            a.icon !== b.icon ||
+            a.order !== b.order
+          ) {
+            identical = false;
+            break;
+          }
+        }
+        if (identical) {
+          return previous;
+        }
+      }
+
+      return fetchedCategories;
+    });
   }, [fetchedCategories]);
 
   useEffect(() => {
     setCatOverrides((prev) => {
+      let changed = false;
       const next: Record<string, { color?: string | null; icon?: string | null }> = {};
       for (const category of categories) {
         const existing = prev[category.id];
-        next[category.id] = {
-          color: existing?.color ?? category.color_hex ?? FALLBACK_COLOR,
-          icon: existing?.icon ?? category.icon ?? null,
-        };
+        const color = existing?.color ?? category.color_hex ?? FALLBACK_COLOR;
+        const icon = existing?.icon ?? category.icon ?? null;
+        next[category.id] = { color, icon };
+        if (!existing || existing.color !== color || existing.icon !== icon) {
+          changed = true;
+        }
       }
+
+      if (!changed && Object.keys(prev).length === Object.keys(next).length) {
+        return prev;
+      }
+
       return next;
     });
   }, [categories]);
@@ -113,7 +177,9 @@ export default function SkillsCarousel() {
         if (search.get("cat") !== nextId) {
           const params = new URLSearchParams(search);
           params.set("cat", nextId);
-          router.replace(`?${params.toString()}`, { scroll: false });
+          startTransition(() => {
+            router.replace(`?${params.toString()}`, { scroll: false });
+          });
         }
       }
     },
@@ -151,7 +217,9 @@ export default function SkillsCarousel() {
       if (nextId && search.get("cat") !== nextId) {
         const params = new URLSearchParams(search);
         params.set("cat", nextId);
-        router.replace(`?${params.toString()}`, { scroll: false });
+        startTransition(() => {
+          router.replace(`?${params.toString()}`, { scroll: false });
+        });
       }
     }
   }, [categories, router, search]);
@@ -389,27 +457,6 @@ export default function SkillsCarousel() {
   if (categories.length === 0) {
     return <div className="py-8 text-center text-zinc-400">No skills yet</div>;
   }
-
-  const getCategoryColor = (category: (typeof categories)[number]) =>
-    catOverrides[category.id]?.color ?? category.color_hex ?? FALLBACK_COLOR;
-  const getCategoryIcon = (category: (typeof categories)[number]) =>
-    catOverrides[category.id]?.icon ?? category.icon ?? null;
-
-  const activeColor = categories[activeIndex]
-    ? getCategoryColor(categories[activeIndex]) || FALLBACK_COLOR
-    : FALLBACK_COLOR;
-  const canGoPrev = activeIndex > 0;
-  const canGoNext = activeIndex < categories.length - 1;
-
-  const firstReorderableIndex = categories.findIndex((category) => category.id !== "uncategorized");
-  const lastReorderableIndex = (() => {
-    for (let idx = categories.length - 1; idx >= 0; idx -= 1) {
-      if (categories[idx]?.id !== "uncategorized") {
-        return idx;
-      }
-    }
-    return -1;
-  })();
 
   return (
     <div
