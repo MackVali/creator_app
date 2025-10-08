@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { EmptyState } from "./empty-state";
 import { getProjectsForUser } from "@/lib/queries/projects";
@@ -28,11 +28,7 @@ export function ProjectList() {
   const [loading, setLoading] = useState(true);
   const supabase = getSupabaseBrowser();
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     if (!supabase) {
       console.error("Supabase client not available");
       setLoading(false);
@@ -73,7 +69,11 @@ export function ProjectList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   if (loading) {
     return (

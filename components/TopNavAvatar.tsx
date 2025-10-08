@@ -40,7 +40,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
         } else {
           router.push("/profile");
         }
-      } catch (error) {
+      } catch {
         // Fallback to profile page if error
         router.push("/profile");
       }
@@ -59,7 +59,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
         } else {
           router.push("/profile");
         }
-      } catch (error) {
+      } catch {
         router.push("/profile");
       }
     }

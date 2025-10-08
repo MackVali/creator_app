@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "./badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./card";
+import { Card, CardContent } from "./card";
 import { EmptyState } from "./empty-state";
 
 interface Goal {
@@ -19,11 +19,7 @@ export function GoalList() {
   const [loading, setLoading] = useState(true);
   const supabase = getSupabaseBrowser();
 
-  useEffect(() => {
-    loadGoals();
-  }, []);
-
-  const loadGoals = async () => {
+  const loadGoals = useCallback(async () => {
     if (!supabase) {
       console.error("Supabase client not available");
       setLoading(false);
@@ -61,7 +57,7 @@ export function GoalList() {
       // If no goals, let's check if the table exists
       if (!data || data.length === 0) {
         console.log("No goals found, checking if table exists...");
-        const { data: tableCheck, error: tableError } = await supabase
+        const { error: tableError } = await supabase
           .from("goals")
           .select("count")
           .limit(1);
@@ -82,7 +78,11 @@ export function GoalList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    void loadGoals();
+  }, [loadGoals]);
 
   if (loading) {
     return (

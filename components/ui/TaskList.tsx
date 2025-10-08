@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { Badge } from "./badge";
 import { Card, CardContent } from "./card";
@@ -28,11 +28,7 @@ export function TaskList() {
   const [loading, setLoading] = useState(true);
   const supabase = getSupabaseBrowser();
 
-  useEffect(() => {
-    loadTasks();
-  }, []);
-
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     if (!supabase) {
       console.error("Supabase client not available");
       setLoading(false);
@@ -91,7 +87,11 @@ export function TaskList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
 
   if (loading) {
     return (
