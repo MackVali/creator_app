@@ -84,7 +84,7 @@ function resolveRecurrenceDays(days?: string[] | null) {
 }
 
 function parseEveryDays(value: string) {
-  const match = /^every\s+(\d+)\s+days?/i.exec(value.trim())
+  const match = /^every\s+(\d+)\s+day/i.exec(value)
   if (!match) return null
   const raw = Number(match[1])
   return Number.isFinite(raw) && raw > 0 ? raw : null
