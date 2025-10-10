@@ -2920,13 +2920,8 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
-              const scheduledCardBackground =
+              const cardBackground =
                 'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
-              const completedCardBackground =
-                'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
-              const cardBackground = isHabitCompleted
-                ? completedCardBackground
-                : scheduledCardBackground
               const scheduledShadow = [
                 '0 26px 52px rgba(0, 0, 0, 0.6)',
                 '0 12px 28px rgba(0, 0, 0, 0.45)',
