@@ -37,6 +37,7 @@ function makeInstance(
 
 class FakeQueryBuilder {
   public statusClause: string | undefined
+  private statusFilter: ((status: string | null) => boolean) | undefined
 
   private userId: string | undefined
   private readonly records: FakeScheduleInstance[]
@@ -77,11 +78,11 @@ class FakeQueryBuilder {
 
   or(filter: string) {
     this.statusClause = filter
+    this.statusFilter = this.buildStatusFilter(filter)
     return this
   }
 
   async order(_column?: string, _options?: { ascending?: boolean }) {
-    const allowedStatuses = this.parseStatusClause()
     const filtered = this.records
       .filter(record => {
         if (this.userId && record.user_id !== this.userId) {
@@ -102,9 +103,9 @@ class FakeQueryBuilder {
           return false
         }
 
-        if (allowedStatuses) {
+        if (this.statusFilter) {
           const status = (record.status ?? null) as string | null
-          return allowedStatuses.has(status)
+          return this.statusFilter(status)
         }
 
         return true
@@ -117,25 +118,30 @@ class FakeQueryBuilder {
     }
   }
 
-  private parseStatusClause(): Set<string | null> | null {
-    if (!this.statusClause) return null
+  private buildStatusFilter(
+    clauseString: string
+  ): (status: string | null) => boolean {
+    const clauses = clauseString.split(',')
 
-    const statuses = new Set<string | null>()
-    const clauses = this.statusClause.split(',')
+    return (status: string | null) => {
+      return clauses.some(clause => {
+        if (clause === 'status.is.null') {
+          return status === null
+        }
 
-    for (const clause of clauses) {
-      if (clause === 'status.is.null') {
-        statuses.add(null)
-        continue
-      }
+        const eqMatch = clause.match(/^status\.eq\.(.+)$/)
+        if (eqMatch) {
+          return status === eqMatch[1]
+        }
 
-      const eqMatch = clause.match(/^status\.eq\.(.+)$/)
-      if (eqMatch) {
-        statuses.add(eqMatch[1])
-      }
+        const neqMatch = clause.match(/^status\.neq\.(.+)$/)
+        if (neqMatch) {
+          return status !== null && status !== neqMatch[1]
+        }
+
+        return false
+      })
     }
-
-    return statuses
   }
 }
 
