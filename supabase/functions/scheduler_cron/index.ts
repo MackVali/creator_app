@@ -12,7 +12,7 @@ import {
   startOfDayInTimeZone,
   weekdayInTimeZone,
 } from '../../../src/lib/scheduler/timezone.ts'
-import { buildInstanceVisibilityRangeOrClause } from '../../../src/lib/scheduler/instanceVisibility.ts'
+import { applyInstanceVisibilityFilters } from '../../../src/lib/scheduler/instanceVisibility.ts'
 
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -497,12 +497,15 @@ async function fetchInstancesForRange(
   startUTC: string,
   endUTC: string
 ) {
-  const response = await client
+  const base = client
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .or(buildInstanceVisibilityRangeOrClause(startUTC, endUTC))
-    .order('start_utc', { ascending: true })
+
+  const response = await applyInstanceVisibilityFilters(base, startUTC, endUTC).order(
+    'start_utc',
+    { ascending: true },
+  )
 
   return response
 }

@@ -2,24 +2,28 @@ const VISIBLE_INSTANCE_STATUSES = ['scheduled', 'completed', 'missed'] as const
 
 const VISIBLE_STATUS_IN_CLAUSE = `status.in.(${VISIBLE_INSTANCE_STATUSES.join(',')})`
 const NULL_STATUS_CLAUSE = 'status.is.null'
+const STATUS_OR_CLAUSE = `${NULL_STATUS_CLAUSE},${VISIBLE_STATUS_IN_CLAUSE}`
 
-export function buildInstanceVisibilityRangeOrClause(
+type VisibilityQueryBuilder = {
+  or(clause: string): unknown
+  lt(column: 'start_utc', value: string): unknown
+  gt(column: 'end_utc', value: string): unknown
+}
+
+export function applyInstanceVisibilityFilters<T extends VisibilityQueryBuilder>(
+  query: T,
   startUTC: string,
   endUTC: string,
-): string {
-  const startParam = startUTC
-  const endParam = endUTC
-
-  return [
-    `and(${NULL_STATUS_CLAUSE},start_utc.gte.${startParam},start_utc.lt.${endParam})`,
-    `and(${VISIBLE_STATUS_IN_CLAUSE},start_utc.gte.${startParam},start_utc.lt.${endParam})`,
-    `and(${NULL_STATUS_CLAUSE},start_utc.lt.${startParam},end_utc.gt.${startParam})`,
-    `and(${VISIBLE_STATUS_IN_CLAUSE},start_utc.lt.${startParam},end_utc.gt.${startParam})`,
-  ].join(',')
+): T {
+  query.or(STATUS_OR_CLAUSE)
+  query.lt('start_utc', endUTC)
+  query.gt('end_utc', startUTC)
+  return query
 }
 
 export const __INTERNAL_VISIBLE_INSTANCE_STATUS_HELPERS__ = {
   VISIBLE_INSTANCE_STATUSES,
   VISIBLE_STATUS_IN_CLAUSE,
   NULL_STATUS_CLAUSE,
+  STATUS_OR_CLAUSE,
 }

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
-import { buildInstanceVisibilityRangeOrClause } from './instanceVisibility'
+import { applyInstanceVisibilityFilters } from './instanceVisibility'
 
 export type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 export type ScheduleInstanceStatus = Database['public']['Enums']['schedule_instance_status']
@@ -28,9 +28,10 @@ export async function fetchInstancesForRange(
     .select('*')
     .eq('user_id', userId)
 
-  const response = await base
-    .or(buildInstanceVisibilityRangeOrClause(startUTC, endUTC))
-    .order('start_utc', { ascending: true })
+  const response = await applyInstanceVisibilityFilters(base, startUTC, endUTC).order(
+    'start_utc',
+    { ascending: true },
+  )
 
   return response
 }

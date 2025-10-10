@@ -1,27 +1,36 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   __INTERNAL_VISIBLE_INSTANCE_STATUS_HELPERS__,
-  buildInstanceVisibilityRangeOrClause,
+  applyInstanceVisibilityFilters,
 } from '../../../src/lib/scheduler/instanceVisibility'
 
-describe('buildInstanceVisibilityRangeOrClause', () => {
-  it('nests the visibility clause inside both range checks', () => {
+describe('applyInstanceVisibilityFilters', () => {
+  it('applies status and overlap filters to the query builder', () => {
     const start = '2024-01-01T00:00:00.000Z'
     const end = '2024-01-02T00:00:00.000Z'
 
-    const clause = buildInstanceVisibilityRangeOrClause(start, end)
+    const or = vi.fn()
+    const lt = vi.fn()
+    const gt = vi.fn()
 
-    const { NULL_STATUS_CLAUSE, VISIBLE_STATUS_IN_CLAUSE } =
-      __INTERNAL_VISIBLE_INSTANCE_STATUS_HELPERS__
+    const builder = {
+      or,
+      lt,
+      gt,
+    }
 
-    expect(clause).toBe(
-      [
-        `and(${NULL_STATUS_CLAUSE},start_utc.gte.${start},start_utc.lt.${end})`,
-        `and(${VISIBLE_STATUS_IN_CLAUSE},start_utc.gte.${start},start_utc.lt.${end})`,
-        `and(${NULL_STATUS_CLAUSE},start_utc.lt.${start},end_utc.gt.${start})`,
-        `and(${VISIBLE_STATUS_IN_CLAUSE},start_utc.lt.${start},end_utc.gt.${start})`,
-      ].join(','),
-    )
+    or.mockReturnValue(builder)
+    lt.mockReturnValue(builder)
+    gt.mockReturnValue(builder)
+
+    const result = applyInstanceVisibilityFilters(builder, start, end)
+
+    const { STATUS_OR_CLAUSE } = __INTERNAL_VISIBLE_INSTANCE_STATUS_HELPERS__
+
+    expect(or).toHaveBeenCalledWith(STATUS_OR_CLAUSE)
+    expect(lt).toHaveBeenCalledWith('start_utc', end)
+    expect(gt).toHaveBeenCalledWith('end_utc', start)
+    expect(result).toBe(builder)
   })
 })
