@@ -87,17 +87,19 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           placeholder="Quick note..."
           className="resize-none overflow-hidden rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/60 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.78)] backdrop-blur focus-visible:ring-white/30 focus-visible:ring-offset-0"
         />
-        <div className="flex justify-end">
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!draft.trim()}
-            aria-label="Save note"
-            className="rounded-full px-5"
-          >
-            Save note
-          </Button>
-        </div>
+        {draft.trim() ? (
+          <div className="flex justify-end">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!draft.trim()}
+              aria-label="Save note"
+              className="rounded-full px-5"
+            >
+              Save note
+            </Button>
+          </div>
+        ) : null}
       </form>
 
       {hasNotes ? (
