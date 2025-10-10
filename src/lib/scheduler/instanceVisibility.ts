@@ -1,8 +1,10 @@
 const VISIBLE_INSTANCE_STATUSES = ['scheduled', 'completed', 'missed'] as const
 
-const VISIBLE_STATUS_IN_CLAUSE = `status.in.(${VISIBLE_INSTANCE_STATUSES.join(',')})`
 const NULL_STATUS_CLAUSE = 'status.is.null'
-const STATUS_OR_CLAUSE = `${NULL_STATUS_CLAUSE},${VISIBLE_STATUS_IN_CLAUSE}`
+const VISIBLE_STATUS_EQ_CLAUSES = VISIBLE_INSTANCE_STATUSES.map(
+  status => `status.eq.${status}`,
+)
+const STATUS_OR_CLAUSE = [NULL_STATUS_CLAUSE, ...VISIBLE_STATUS_EQ_CLAUSES].join(',')
 
 type VisibilityQueryBuilder = {
   or(clause: string): unknown
@@ -23,7 +25,7 @@ export function applyInstanceVisibilityFilters<T extends VisibilityQueryBuilder>
 
 export const __INTERNAL_VISIBLE_INSTANCE_STATUS_HELPERS__ = {
   VISIBLE_INSTANCE_STATUSES,
-  VISIBLE_STATUS_IN_CLAUSE,
   NULL_STATUS_CLAUSE,
+  VISIBLE_STATUS_EQ_CLAUSES,
   STATUS_OR_CLAUSE,
 }
