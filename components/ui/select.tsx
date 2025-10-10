@@ -31,6 +31,7 @@ interface SelectProps {
   placeholder?: string;
   triggerClassName?: string;
   contentWrapperClassName?: string;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const Select = React.forwardRef<HTMLDivElement, SelectProps>(
@@ -43,6 +44,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       placeholder,
       triggerClassName,
       contentWrapperClassName,
+      onOpenChange,
     },
     ref
   ) => {
@@ -58,19 +60,21 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
           !containerRef.current.contains(event.target as Node)
         ) {
           setIsOpen(false);
+          onOpenChange?.(false);
         }
       };
 
       document.addEventListener("mousedown", handleClickOutside);
       return () =>
         document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+    }, [onOpenChange]);
 
     const handleSelect = (nextValue: string, label: string) => {
       setSelectedValue(nextValue);
       setSelectedLabel(label);
       setIsOpen(false);
       onValueChange?.(nextValue);
+      onOpenChange?.(false);
     };
 
     React.useEffect(() => {
@@ -114,7 +118,11 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
       }} className={cn("relative", className)}>
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const nextIsOpen = !isOpen;
+            setIsOpen(nextIsOpen);
+            onOpenChange?.(nextIsOpen);
+          }}
           className={cn(
             "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition",
             "focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50",
