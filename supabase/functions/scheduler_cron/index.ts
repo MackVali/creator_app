@@ -496,15 +496,21 @@ async function fetchInstancesForRange(
   startUTC: string,
   endUTC: string
 ) {
-  return await client
+  const response = await client
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .neq('status', 'canceled')
     .or(
       `and(start_utc.gte.${startUTC},start_utc.lt.${endUTC}),and(start_utc.lt.${startUTC},end_utc.gt.${startUTC})`
     )
     .order('start_utc', { ascending: true })
+
+  if (!response.data) return response
+
+  return {
+    ...response,
+    data: response.data.filter(instance => instance.status !== 'canceled'),
+  }
 }
 
 async function dedupeScheduledProjects(
@@ -795,7 +801,6 @@ async function placeItemInWindows(
       .eq('user_id', userId)
       .lt('start_utc', windowEnd.toISOString())
       .gt('end_utc', start.toISOString())
-      .neq('status', 'canceled')
 
     if (error) {
       console.error('fetchInstancesForRange error', error)
@@ -803,6 +808,7 @@ async function placeItemInWindows(
     }
 
     const filtered = (taken ?? []).filter(instance => {
+      if (instance.status === 'canceled') return false
       if (instance.id === reuseInstanceId) return false
       if (ignoreProjectIds && instance.source_type === 'PROJECT') {
         const projectId = instance.source_id ?? ''

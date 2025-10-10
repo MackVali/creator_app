@@ -26,16 +26,22 @@ export async function fetchInstancesForRange(
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .neq('status', 'canceled')
 
   const startParam = startUTC
   const endParam = endUTC
 
-  return await base
+  const response = await base
     .or(
       `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
     )
     .order('start_utc', { ascending: true })
+
+  if (!response.data) return response
+
+  return {
+    ...response,
+    data: response.data.filter(instance => instance.status !== 'canceled'),
+  }
 }
 
 export async function fetchScheduledProjectIds(
