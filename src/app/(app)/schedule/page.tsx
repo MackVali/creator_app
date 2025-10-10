@@ -2984,20 +2984,12 @@ export default function SchedulePage() {
                 '0 12px 28px rgba(1, 55, 34, 0.45)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
-              const scheduledOutline = isChoreHabit
-                ? '1px solid rgba(248, 113, 113, 0.45)'
-                : isAsyncHabit
-                  ? '1px solid rgba(234, 179, 8, 0.45)'
-                  : '1px solid rgba(18, 18, 24, 0.85)'
-              const cardOutline = isHabitCompleted
-                ? '1px solid rgba(16, 185, 129, 0.55)'
-                : scheduledOutline
               const cardStyle: CSSProperties = {
                 top,
                 height,
                 boxShadow: isHabitCompleted ? completedShadow : scheduledShadow,
-                outline: cardOutline,
-                outlineOffset: '-1px',
+                outline: isHabitCompleted ? '1px solid rgba(16, 185, 129, 0.55)' : undefined,
+                outlineOffset: isHabitCompleted ? '-1px' : undefined,
                 background: cardBackground,
               }
               const habitBorderClass = isHabitCompleted
