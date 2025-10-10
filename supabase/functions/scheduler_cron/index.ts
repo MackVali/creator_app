@@ -12,6 +12,7 @@ import {
   startOfDayInTimeZone,
   weekdayInTimeZone,
 } from '../../../src/lib/scheduler/timezone.ts'
+import { buildInstanceVisibilityRangeOrClause } from '../../../src/lib/scheduler/instanceVisibility.ts'
 
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -500,17 +501,10 @@ async function fetchInstancesForRange(
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .or(
-      `and(start_utc.gte.${startUTC},start_utc.lt.${endUTC}),and(start_utc.lt.${startUTC},end_utc.gt.${startUTC})`
-    )
+    .or(buildInstanceVisibilityRangeOrClause(startUTC, endUTC))
     .order('start_utc', { ascending: true })
 
-  if (!response.data) return response
-
-  return {
-    ...response,
-    data: response.data.filter(instance => instance.status !== 'canceled'),
-  }
+  return response
 }
 
 async function dedupeScheduledProjects(
