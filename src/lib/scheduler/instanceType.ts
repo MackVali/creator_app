@@ -3,10 +3,41 @@ import type { TaskLite } from './weight'
 
 export type InstanceSourceType = 'PROJECT' | 'TASK'
 
+const PROJECT_ID_HINTS = ['PROJ', 'PROJECT']
+const TASK_ID_HINTS = ['TASK']
+
 export function normalizeInstanceSourceType(value: unknown): InstanceSourceType | null {
   if (typeof value !== 'string') return null
   const upper = value.trim().toUpperCase()
-  return upper === 'PROJECT' || upper === 'TASK' ? (upper as InstanceSourceType) : null
+  if (upper === 'PROJECT' || upper === 'TASK') {
+    return upper as InstanceSourceType
+  }
+
+  if (upper.includes('PROJECT')) {
+    return 'PROJECT'
+  }
+
+  if (upper.includes('TASK')) {
+    return 'TASK'
+  }
+
+  return null
+}
+
+function inferTypeFromSourceId(sourceId: string | null): InstanceSourceType | null {
+  if (!sourceId) return null
+  const upper = sourceId.trim().toUpperCase()
+  if (!upper) return null
+
+  if (TASK_ID_HINTS.some(hint => upper.startsWith(hint))) {
+    return 'TASK'
+  }
+
+  if (PROJECT_ID_HINTS.some(hint => upper.startsWith(hint))) {
+    return 'PROJECT'
+  }
+
+  return null
 }
 
 type ResolveOptions = {
@@ -33,6 +64,11 @@ export function resolveInstanceSourceType(
 
   if (projectMap && projectMap[sourceId]) {
     return 'PROJECT'
+  }
+
+  const idHint = inferTypeFromSourceId(sourceId)
+  if (idHint) {
+    return idHint
   }
 
   if (preferProjectWhenUnknown) {

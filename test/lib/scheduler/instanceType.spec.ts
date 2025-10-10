@@ -10,10 +10,11 @@ const makeInstance = (overrides: Partial<{ source_type: unknown; source_id: unkn
 })
 
 describe('instance source type helpers', () => {
-  it('normalizes mixed-case values', async () => {
+  it('normalizes mixed-case and variant values', async () => {
     const { normalizeInstanceSourceType } = await loadHelpers()
     expect(normalizeInstanceSourceType('project')).toBe('PROJECT')
     expect(normalizeInstanceSourceType('Task')).toBe('TASK')
+    expect(normalizeInstanceSourceType('project_instance')).toBe('PROJECT')
     expect(normalizeInstanceSourceType('focus')).toBeNull()
   })
 
@@ -51,6 +52,22 @@ describe('instance source type helpers', () => {
         taskMap,
         preferProjectWhenUnknown: true,
       }),
+    ).toBe('TASK')
+  })
+
+  it('infers types from identifier prefixes when metadata is missing', async () => {
+    const { resolveInstanceSourceType } = await loadHelpers()
+    expect(
+      resolveInstanceSourceType(
+        makeInstance({ source_id: 'proj_123', source_type: null }),
+        {},
+      ),
+    ).toBe('PROJECT')
+    expect(
+      resolveInstanceSourceType(
+        makeInstance({ source_id: 'task_456', source_type: undefined }),
+        {},
+      ),
     ).toBe('TASK')
   })
 })
