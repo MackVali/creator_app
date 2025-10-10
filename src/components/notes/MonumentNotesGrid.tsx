@@ -26,6 +26,7 @@ interface MonumentNotesGridProps {
 
 export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridProps) {
   const [notes, setNotes] = useState<MonumentNote[]>([]);
+  const [showAllNotes, setShowAllNotes] = useState(false);
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -44,10 +45,16 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
   }, [monumentId]);
 
   useEffect(() => {
+    setShowAllNotes(false);
+  }, [monumentId]);
+
+  useEffect(() => {
     saveMonumentNotes(monumentId, notes);
   }, [monumentId, notes]);
 
   const hasNotes = notes && notes.length > 0;
+  const hasMoreNotes = notes.length > 3;
+  const visibleNotes = showAllNotes ? notes : notes.slice(0, 3);
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setDraft(e.target.value);
@@ -94,14 +101,31 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
       </form>
 
       {hasNotes ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {notes.map((note) => (
-            <MonumentNoteCard
-              key={note.id}
-              note={note}
-              monumentId={monumentId}
-            />
-          ))}
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {visibleNotes.map((note) => (
+              <MonumentNoteCard
+                key={note.id}
+                note={note}
+                monumentId={monumentId}
+              />
+            ))}
+          </div>
+
+          {!showAllNotes && hasMoreNotes ? (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="rounded-full px-4 text-xs font-medium text-white/80 hover:text-white"
+                onClick={() => setShowAllNotes(true)}
+                aria-label="See more notes"
+              >
+                See more
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <Card className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 text-white/70 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.7)]">
