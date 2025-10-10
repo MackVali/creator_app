@@ -441,9 +441,7 @@ export default function SkillDetailPage() {
                 ) : habitsError ? (
                   <p className="text-xs text-white/60">{habitsError}</p>
                 ) : relatedHabits.length === 0 ? (
-                  <p className="text-xs text-white/60">
-                    No habits linked yet. Connect your routines to {skill.name} to keep momentum strong.
-                  </p>
+                  <p className="text-xs text-white/60">no habits related to this skill yet</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {relatedHabits.map((habit) => (
