@@ -25,6 +25,11 @@ interface Skill {
   created_at: string;
 }
 
+interface HabitSummary {
+  id: string;
+  name: string;
+}
+
 function describeLevel(level: number): string {
   if (level >= 10) {
     return "Mastery in motion.";
@@ -44,38 +49,143 @@ export default function SkillDetailPage() {
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
+  const [habitsLoading, setHabitsLoading] = useState(true);
+  const [habitsError, setHabitsError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
   const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
+
+    const fetchRelatedHabits = async () => {
+      if (!supabase) {
+        if (!cancelled) {
+          setHabitsLoading(false);
+        }
+        return;
+      }
+      try {
+        const habitSkillsQuery = supabase
+          .from("habit_skills")
+          .select("habit_id")
+          .eq("skill_id", id);
+
+        const { data: habitSkillRows, error: habitSkillError } = await habitSkillsQuery;
+
+        if (habitSkillError) {
+          throw habitSkillError;
+        }
+
+        const habitIds = Array.from(
+          new Set(
+            (habitSkillRows ?? [])
+              .map((row) => row?.habit_id)
+              .filter((value): value is string => typeof value === "string" && value.length > 0)
+          )
+        );
+
+        if (habitIds.length === 0) {
+          if (!cancelled) {
+            setRelatedHabits([]);
+          }
+          return;
+        }
+
+        const { data: habitsData, error: habitsError } = await supabase
+          .from("habits")
+          .select("id, name")
+          .in("id", habitIds);
+
+        if (habitsError) {
+          throw habitsError;
+        }
+
+        const uniqueHabits = new Map<string, string>();
+
+        (habitsData ?? []).forEach((habit) => {
+          if (!habit) return;
+          const habitId = typeof habit.id === "string" ? habit.id : null;
+          if (!habitId) return;
+
+          const habitName =
+            typeof habit.name === "string" && habit.name.trim().length > 0
+              ? habit.name.trim()
+              : "Untitled habit";
+
+          uniqueHabits.set(habitId, habitName);
+        });
+
+        if (!cancelled) {
+          setRelatedHabits(
+            Array.from(uniqueHabits.entries())
+              .map(([habitId, habitName]) => ({ id: habitId, name: habitName }))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          );
+        }
+      } catch (habitErr) {
+        if (!cancelled) {
+          console.error("Error fetching related habits:", habitErr);
+          setRelatedHabits([]);
+          setHabitsError("Unable to load related habits right now.");
+        }
+      } finally {
+        if (!cancelled) {
+          setHabitsLoading(false);
+        }
+      }
+    };
+
     async function load() {
       if (!supabase || !id) return;
 
       setLoading(true);
       setError(null);
+      setHabitsError(null);
+      setRelatedHabits([]);
+      setHabitsLoading(true);
 
       try {
-        await supabase.auth.getSession();
-        const { data, error } = await supabase
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        const userId = session?.user?.id ?? null;
+
+        let skillQuery = supabase
           .from("skills")
           .select("id,name,icon,level,created_at")
-          .eq("id", id)
-          .single();
+          .eq("id", id);
+
+        if (userId) {
+          skillQuery = skillQuery.eq("user_id", userId);
+        }
+
+        const { data, error } = await skillQuery.single();
 
         if (!cancelled) {
           if (error) {
             console.error("Error fetching skill:", error);
             setError("Failed to load skill");
+            setHabitsLoading(false);
           } else {
             setSkill(data);
+            await fetchRelatedHabits();
           }
-          setLoading(false);
         }
       } catch (err) {
         if (!cancelled) {
           console.error("Error loading skill:", err);
           setError("Failed to load skill");
+          setHabitsLoading(false);
+        }
+      } finally {
+        if (!cancelled) {
           setLoading(false);
         }
       }
@@ -312,6 +422,40 @@ export default function SkillDetailPage() {
                 <NotesGrid skillId={id} />
               </div>
             </div>
+
+            <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_70%)]" />
+              <CardHeader className="relative pb-2">
+                <CardTitle className="text-base font-semibold text-white">Related habits</CardTitle>
+                <CardDescription className="text-white/70">
+                  Rituals that reinforce {skill.name}.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="relative">
+                {habitsLoading ? (
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <Skeleton key={index} className="h-8 w-24 rounded-full" />
+                    ))}
+                  </div>
+                ) : habitsError ? (
+                  <p className="text-xs text-white/60">{habitsError}</p>
+                ) : relatedHabits.length === 0 ? (
+                  <p className="text-xs text-white/60">no habits related to this skill yet</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {relatedHabits.map((habit) => (
+                      <span
+                        key={habit.id}
+                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur"
+                      >
+                        {habit.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             <Card className="relative overflow-hidden rounded-3xl border-white/10 bg-white/5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.7)] backdrop-blur">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(129,140,248,0.14),_transparent_70%)]" />
