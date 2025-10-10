@@ -355,6 +355,7 @@ type ProjectTaskCard = {
 type HabitTimelinePlacement = {
   habitId: string
   habitName: string
+  habitType: HabitScheduleItem['habitType']
   start: Date
   end: Date
   durationMinutes: number
@@ -665,6 +666,7 @@ function computeHabitPlacementsForDay({
       placements.push({
         habitId: habit.id,
         habitName: habit.name,
+        habitType: habit.habitType,
         start,
         end,
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
@@ -2920,30 +2922,59 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
+              const habitType = placement.habitType?.toUpperCase() ?? 'HABIT'
+              const isChoreHabit = habitType === 'CHORE'
+              const isAsyncHabit = habitType === 'ASYNC'
               const scheduledCardBackground =
                 'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
+              const choreCardBackground =
+                'radial-gradient(circle at 6% -20%, rgba(248, 113, 113, 0.35), transparent 58%), linear-gradient(135deg, rgba(69, 10, 10, 0.85) 0%, rgba(127, 29, 29, 0.78) 45%, rgba(220, 38, 38, 0.72) 100%)'
+              const asyncCardBackground =
+                'radial-gradient(circle at 4% -10%, rgba(253, 224, 71, 0.32), transparent 58%), linear-gradient(135deg, rgba(72, 44, 12, 0.85) 0%, rgba(161, 98, 7, 0.75) 45%, rgba(234, 179, 8, 0.68) 100%)'
               const completedCardBackground =
                 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
               const cardBackground = isHabitCompleted
                 ? completedCardBackground
-                : scheduledCardBackground
+                : isChoreHabit
+                  ? choreCardBackground
+                  : isAsyncHabit
+                    ? asyncCardBackground
+                    : scheduledCardBackground
               const scheduledShadow = [
                 '0 26px 52px rgba(0, 0, 0, 0.6)',
                 '0 12px 28px rgba(0, 0, 0, 0.45)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+              ].join(', ')
+              const choreShadow = [
+                '0 18px 36px rgba(127, 29, 29, 0.38)',
+                '0 10px 20px rgba(190, 18, 60, 0.28)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
+              ].join(', ')
+              const asyncShadow = [
+                '0 18px 36px rgba(113, 63, 18, 0.34)',
+                '0 10px 20px rgba(202, 138, 4, 0.26)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
               ].join(', ')
               const completedShadow = [
                 '0 26px 52px rgba(2, 32, 24, 0.6)',
                 '0 12px 28px rgba(1, 55, 34, 0.45)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
+              const cardShadow = isHabitCompleted
+                ? completedShadow
+                : isChoreHabit
+                  ? choreShadow
+                  : isAsyncHabit
+                    ? asyncShadow
+                    : scheduledShadow
+              const scheduledOutline = '1px solid rgba(0, 0, 0, 0.82)'
               const cardOutline = isHabitCompleted
                 ? '1px solid rgba(16, 185, 129, 0.55)'
-                : '1px solid rgba(18, 18, 24, 0.85)'
+                : scheduledOutline
               const cardStyle: CSSProperties = {
                 top,
                 height,
-                boxShadow: isHabitCompleted ? completedShadow : scheduledShadow,
+                boxShadow: cardShadow,
                 outline: cardOutline,
                 outlineOffset: '-1px',
                 background: cardBackground,
