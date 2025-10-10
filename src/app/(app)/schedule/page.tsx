@@ -2699,7 +2699,7 @@ export default function SchedulePage() {
           ref={options?.containerRef ?? undefined}
         >
           <div className="pl-16 pr-6 pb-3 text-white">
-            <div className="space-y-1">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
                 {isViewingToday ? 'Today' : 'Selected Day'}
               </span>
