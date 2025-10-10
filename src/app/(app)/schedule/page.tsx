@@ -2963,15 +2963,15 @@ export default function SchedulePage() {
               const scheduledShadow = (
                 isChoreHabit
                   ? [
-                      '0 26px 52px rgba(159, 18, 57, 0.45)',
-                      '0 12px 28px rgba(127, 29, 29, 0.5)',
-                      'inset 0 1px 0 rgba(254, 226, 226, 0.14)',
+                      '0 20px 40px rgba(159, 18, 57, 0.36)',
+                      '0 10px 22px rgba(127, 29, 29, 0.38)',
+                      'inset 0 1px 0 rgba(254, 226, 226, 0.12)',
                     ]
                   : isAsyncHabit
                     ? [
-                        '0 26px 52px rgba(180, 83, 9, 0.45)',
-                        '0 12px 28px rgba(146, 64, 14, 0.48)',
-                        'inset 0 1px 0 rgba(254, 243, 199, 0.14)',
+                        '0 20px 40px rgba(180, 83, 9, 0.36)',
+                        '0 10px 22px rgba(146, 64, 14, 0.36)',
+                        'inset 0 1px 0 rgba(254, 243, 199, 0.12)',
                       ]
                     : [
                         '0 26px 52px rgba(0, 0, 0, 0.6)',
@@ -2988,16 +2988,16 @@ export default function SchedulePage() {
                 top,
                 height,
                 boxShadow: isHabitCompleted ? completedShadow : scheduledShadow,
-                outline: isHabitCompleted ? '1px solid rgba(16, 185, 129, 0.55)' : undefined,
+                outline: isHabitCompleted ? '1px solid rgba(0, 0, 0, 0.65)' : undefined,
                 outlineOffset: isHabitCompleted ? '-1px' : undefined,
                 background: cardBackground,
               }
               const habitBorderClass = isHabitCompleted
                 ? 'border-emerald-400/60'
                 : isChoreHabit
-                  ? 'border-rose-200/60'
+                  ? 'border-black/60'
                   : isAsyncHabit
-                    ? 'border-amber-200/60'
+                    ? 'border-black/60'
                     : 'border-white/12'
               return (
                 <motion.div
