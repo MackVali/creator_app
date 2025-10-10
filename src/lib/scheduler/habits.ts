@@ -10,8 +10,11 @@ export type HabitScheduleItem = {
   durationMinutes: number | null
   createdAt: string | null
   updatedAt: string | null
+  lastCompletedAt: string | null
+  habitType: string
   windowId: string | null
   recurrence: string | null
+  skillId: string | null
   window: {
     id: string
     label: string | null
@@ -37,7 +40,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   const { data, error } = await supabase
     .from('habits')
     .select(
-      `id, name, duration_minutes, created_at, updated_at, window_id, recurrence, window:windows(id, label, energy, start_local, end_local, days)`
+      `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
     )
 
   if (error) throw error
@@ -48,8 +51,10 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     duration_minutes?: number | null
     created_at?: string | null
     updated_at?: string | null
+    habit_type?: string | null
     window_id?: string | null
     recurrence?: string | null
+    skill_id?: string | null
     window?: {
       id?: string
       label?: string | null
@@ -66,8 +71,11 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     durationMinutes: record.duration_minutes ?? null,
     createdAt: record.created_at ?? null,
     updatedAt: record.updated_at ?? null,
+    lastCompletedAt: record.updated_at ?? record.created_at ?? null,
+    habitType: (record.habit_type ?? 'HABIT').toUpperCase(),
     windowId: record.window_id ?? null,
     recurrence: record.recurrence ?? null,
+    skillId: record.skill_id ?? null,
     window: record.window
       ? {
           id: record.window.id ?? '',

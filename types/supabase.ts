@@ -56,6 +56,7 @@ export interface Database {
           recurrence: string | null;
           duration_minutes: number | null;
           window_id: string | null;
+          skill_id: string | null;
         };
         Insert: {
           id?: string;
@@ -68,6 +69,7 @@ export interface Database {
           recurrence?: string | null;
           duration_minutes?: number | null;
           window_id?: string | null;
+          skill_id?: string | null;
         };
         Update: {
           id?: string;
@@ -80,6 +82,7 @@ export interface Database {
           recurrence?: string | null;
           duration_minutes?: number | null;
           window_id?: string | null;
+          skill_id?: string | null;
         };
       };
       projects: {

@@ -28,6 +28,7 @@ import {
   HabitFormFields,
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
+  type HabitSkillSelectOption,
   type HabitWindowSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { Button } from "./button";
@@ -936,6 +937,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [monuments, setMonuments] = useState<Monument[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillError, setSkillError] = useState<string | null>(null);
   const [windows, setWindows] = useState<WindowOption[]>([]);
   const [windowsLoading, setWindowsLoading] = useState(false);
   const [windowError, setWindowError] = useState<string | null>(null);
@@ -1003,9 +1006,27 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setGoals(goalsData);
       }
 
-      if (eventType === "PROJECT" || eventType === "TASK") {
-        const skillsData = await getSkillsForUser(user.id);
-        setSkills(skillsData);
+      if (
+        eventType === "PROJECT" ||
+        eventType === "TASK" ||
+        eventType === "HABIT"
+      ) {
+        setSkillsLoading(true);
+        setSkillError(null);
+        try {
+          const skillsData = await getSkillsForUser(user.id);
+          setSkills(skillsData);
+        } catch (error) {
+          console.error("Error loading skills:", error);
+          setSkills([]);
+          setSkillError("Unable to load your skills right now.");
+        } finally {
+          setSkillsLoading(false);
+        }
+      } else {
+        setSkills([]);
+        setSkillError(null);
+        setSkillsLoading(false);
       }
 
       if (eventType === "TASK") {
@@ -1186,6 +1207,39 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       },
     ];
   }, [routineOptions, routinesLoading]);
+
+  const habitSkillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
+    if (skillsLoading) {
+      return [
+        {
+          value: "none",
+          label: "Loading skills…",
+          disabled: true,
+        },
+      ];
+    }
+
+    if (sortedSkills.length === 0) {
+      return [
+        {
+          value: "none",
+          label: "No skill focus",
+        },
+      ];
+    }
+
+    return [
+      {
+        value: "none",
+        label: "No skill focus",
+      },
+      ...sortedSkills.map((skill) => ({
+        value: skill.id,
+        label: skill.name,
+        icon: skill.icon ?? null,
+      })),
+    ];
+  }, [skillsLoading, sortedSkills]);
 
   const handleTaskSkillSelect = (value: string) => {
     setFormData((prev) => ({ ...prev, skill_id: value }));
@@ -1377,7 +1431,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         duration_min?: number;
         duration_minutes?: number;
         monument_id?: string;
-        skill_id?: string;
+        skill_id?: string | null;
         window_id?: string | null;
         routine_id?: string | null;
       } = {
@@ -1429,6 +1483,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           formData.recurrence === "none" ? null : formData.recurrence;
         insertData.window_id =
           formData.window_id === "none" ? null : formData.window_id;
+        insertData.skill_id = formData.skill_id ? formData.skill_id : null;
 
         let routineIdToUse: string | null = null;
         if (routineId === "__create__") {
@@ -2334,18 +2389,22 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             <HabitFormFields
               name={formData.name}
               description={formData.description}
-                habitType={formData.type}
-                recurrence={formData.recurrence}
-                duration={formData.duration_min}
-                windowId={formData.window_id}
-                windowsLoading={windowsLoading}
-                windowOptions={windowSelectOptions}
-                windowError={windowError}
-                onNameChange={(value) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    name: formatNameValue(value),
-                  }))
+              habitType={formData.type}
+              recurrence={formData.recurrence}
+              duration={formData.duration_min}
+              windowId={formData.window_id}
+              skillId={formData.skill_id || "none"}
+              windowsLoading={windowsLoading}
+              windowOptions={windowSelectOptions}
+              windowError={windowError}
+              skillsLoading={skillsLoading}
+              skillOptions={habitSkillSelectOptions}
+              skillError={skillError}
+              onNameChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  name: formatNameValue(value),
+                }))
                 }
                 onDescriptionChange={(value) =>
                   setFormData((prev) => ({
@@ -2364,6 +2423,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               }
               onDurationChange={(value) =>
                 setFormData((prev) => ({ ...prev, duration_min: value }))
+              }
+              onSkillChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  skill_id: value === "none" ? "" : value,
+                }))
               }
               footerSlot={
                 <div className="space-y-4">

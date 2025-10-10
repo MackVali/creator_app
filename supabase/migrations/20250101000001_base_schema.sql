@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS public.habits (
     recurrence bigint,
     Title text,
     type_id bigint DEFAULT 1,
+    skill_id uuid,
     user_id uuid
 );
 

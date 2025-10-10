@@ -106,6 +106,22 @@ alter table "public"."habits" add column "name" text not null;
 alter table "public"."habits" add column "habit_type" habit_type_enum not null default 'HABIT'::habit_type_enum;
 alter table "public"."habits" add column "recurrence" recurrence_enum;
 alter table "public"."habits" add column "updated_at" timestamp with time zone not null default now();
+alter table "public"."habits" add column if not exists "skill_id" uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from information_schema.table_constraints
+    where constraint_name = 'habits_skill_id_fkey'
+      and table_name = 'habits'
+      and table_schema = 'public'
+  ) then
+    alter table "public"."habits"
+      add constraint habits_skill_id_fkey
+      foreign key (skill_id) references public.skills (id) on delete set null;
+  end if;
+end $$;
 
 -- Modify monuments table
 alter table "public"."monuments" drop column if exists "Title";
