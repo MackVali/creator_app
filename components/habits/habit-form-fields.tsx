@@ -145,12 +145,15 @@ export function HabitFormFields({
   const windowPositionDescriptionId = useId();
   const isLastWindowPosition = windowPosition === "LAST";
   const canChooseWindowPosition = windowId !== "none";
+  const normalizedRecurrenceDays = Array.isArray(recurrenceDays)
+    ? recurrenceDays
+    : [];
   const windowPositionDescription = canChooseWindowPosition
     ? "Choose whether this habit should kick off its window or close it out."
     : "Select a preferred window to control where this habit lands within it.";
 
   const toggleDay = (dayValue: string) => {
-    const current = new Set(recurrenceDays);
+    const current = new Set(normalizedRecurrenceDays);
     if (current.has(dayValue)) {
       current.delete(dayValue);
     } else {
@@ -250,7 +253,7 @@ export function HabitFormFields({
               </span>
               <div className="flex flex-wrap gap-2">
                 {WEEKDAY_OPTIONS.map((day) => {
-                  const isSelected = recurrenceDays.includes(day.value);
+                  const isSelected = normalizedRecurrenceDays.includes(day.value);
                   return (
                     <button
                       key={day.value}
