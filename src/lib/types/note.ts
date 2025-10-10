@@ -1,6 +1,8 @@
 export type Note = {
   id: string;
   skillId: string;
-  title: string;
-  content: string;
+  title: string | null;
+  content: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };

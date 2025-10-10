@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
-  getMonumentNotes,
-  saveMonumentNotes,
+  createMonumentNote,
+  getMonumentNote,
+  updateMonumentNote,
 } from "@/lib/monumentNotesStorage";
 import type { MonumentNote } from "@/lib/types/monument-note";
 
@@ -19,49 +20,111 @@ export default function MonumentNotePage() {
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(noteId !== "new");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const notes = getMonumentNotes(monumentId);
-    const note = notes.find((n) => n.id === noteId);
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
+    let isMounted = true;
+
+    if (noteId === "new") {
+      setCurrentNoteId(null);
+      setTitle("");
+      setContent("");
+      setIsLoading(false);
+      return () => {
+        isMounted = false;
+      };
     }
+
+    setIsLoading(true);
+
+    (async () => {
+      try {
+        const note = await getMonumentNote(monumentId, noteId);
+        if (!isMounted) return;
+
+        if (note) {
+          setCurrentNoteId(note.id);
+          setTitle(note.title ?? "");
+          setContent(note.content ?? "");
+        } else {
+          setCurrentNoteId(null);
+          setTitle("");
+          setContent("");
+        }
+      } catch (error) {
+        console.error("Failed to load monument note", { error, monumentId, noteId });
+        if (!isMounted) return;
+        setCurrentNoteId(null);
+        setTitle("");
+        setContent("");
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [monumentId, noteId]);
 
-  const onSave = () => {
-    const notes = getMonumentNotes(monumentId);
-    const existingIndex = notes.findIndex((n) => n.id === noteId);
-    const newId = existingIndex >= 0 ? noteId : Date.now().toString();
-    const newNote: MonumentNote = {
-      id: newId,
-      monumentId,
-      title,
-      content,
-    };
-    if (existingIndex >= 0) {
-      notes[existingIndex] = newNote;
-    } else {
-      notes.push(newNote);
+  const canSave = title.trim().length > 0 || content.trim().length > 0;
+
+  const onSave = async () => {
+    if (!canSave || isSaving) return;
+
+    setIsSaving(true);
+
+    try {
+      let saved: MonumentNote | null = null;
+
+      if (currentNoteId) {
+        saved = await updateMonumentNote(monumentId, currentNoteId, {
+          title,
+          content,
+        });
+      } else {
+        saved = await createMonumentNote(monumentId, {
+          title,
+          content,
+        });
+      }
+
+      if (!saved) return;
+
+      setCurrentNoteId(saved.id);
+      router.push(`/monuments/${monumentId}`);
+    } catch (error) {
+      console.error("Failed to save monument note", { error, monumentId, noteId });
+    } finally {
+      setIsSaving(false);
     }
-    saveMonumentNotes(monumentId, notes);
-    router.push(`/monuments/${monumentId}`);
   };
 
   return (
     <main className="p-4 space-y-4">
+      {isLoading ? (
+        <p className="text-sm text-white/60">Loading note…</p>
+      ) : null}
       <Input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Note title"
+        disabled={isLoading}
       />
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
         placeholder="Write your note..."
         className="min-h-[300px]"
+        disabled={isLoading}
       />
-      <Button onClick={onSave}>Save</Button>
+      <Button onClick={onSave} disabled={!canSave || isSaving || isLoading} aria-busy={isSaving}>
+        {isSaving ? "Saving…" : "Save"}
+      </Button>
     </main>
   );
 }

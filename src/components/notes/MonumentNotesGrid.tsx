@@ -14,8 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import {
+  createMonumentNote,
   getMonumentNotes,
-  saveMonumentNotes,
 } from "@/lib/monumentNotesStorage";
 import { MonumentNoteCard } from "./MonumentNoteCard";
 
@@ -28,6 +28,8 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
   const [notes, setNotes] = useState<MonumentNote[]>([]);
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [draft, setDraft] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -41,18 +43,36 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
   }, [inputRef]);
 
   useEffect(() => {
-    setNotes(getMonumentNotes(monumentId));
+    let isMounted = true;
+
+    setIsLoading(true);
+
+    (async () => {
+      try {
+        const fetchedNotes = await getMonumentNotes(monumentId);
+        if (!isMounted) return;
+        setNotes(fetchedNotes);
+      } catch (error) {
+        console.error("Failed to fetch monument notes", { error, monumentId });
+        if (!isMounted) return;
+        setNotes([]);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [monumentId]);
 
   useEffect(() => {
     setShowAllNotes(false);
   }, [monumentId]);
 
-  useEffect(() => {
-    saveMonumentNotes(monumentId, notes);
-  }, [monumentId, notes]);
-
-  const hasNotes = notes && notes.length > 0;
+  const hasNotes = notes.length > 0;
   const hasMoreNotes = notes.length > 3;
   const visibleNotes = showAllNotes ? notes : notes.slice(0, 3);
 
@@ -62,18 +82,31 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
     e.target.style.height = `${e.target.scrollHeight}px`;
   };
 
-  const handleAdd = (e: FormEvent) => {
+  const handleAdd = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!draft.trim()) return;
-    const newNote: MonumentNote = {
-      id: Date.now().toString(),
-      monumentId,
-      title: draft.trim(),
-      content: draft.trim(),
-    };
-    setNotes([...notes, newNote]);
-    setDraft("");
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    const trimmedDraft = draft.trim();
+    if (!trimmedDraft || isSaving) return;
+
+    setIsSaving(true);
+
+    try {
+      const created = await createMonumentNote(monumentId, {
+        title: draft,
+        content: draft,
+      });
+
+      if (created) {
+        setNotes((prev) => [...prev, created]);
+        setDraft("");
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
+      }
+    } catch (error) {
+      console.error("Failed to save monument note", { error, monumentId });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -92,17 +125,23 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
             <Button
               type="submit"
               size="sm"
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || isSaving}
               aria-label="Save note"
+              aria-busy={isSaving}
               className="rounded-full px-5"
             >
-              Save note
+              {isSaving ? "Saving..." : "Save note"}
             </Button>
           </div>
         ) : null}
       </form>
 
-      {hasNotes ? (
+      {isLoading ? (
+        <Card className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0a0a0a] via-[#101011] to-[#161618] p-6 text-white/70 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.7)]">
+          <p className="text-sm font-medium text-white/80">Loading notes…</p>
+          <p className="mt-2 text-xs text-white/50">Fetching your saved thoughts from Supabase.</p>
+        </Card>
+      ) : hasNotes ? (
         <div className="space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {visibleNotes.map((note) => (

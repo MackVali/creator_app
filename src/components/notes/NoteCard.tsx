@@ -10,12 +10,20 @@ interface NoteCardProps {
 }
 
 export function NoteCard({ note, skillId }: NoteCardProps) {
+  const displayTitle =
+    note.title?.trim() ||
+    note.content
+      ?.split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ||
+    "Untitled";
+
   return (
     <Link href={`/skills/${skillId}/notes/${note.id}`}>
       <Card className="h-full hover:bg-gray-800 transition-colors">
         <CardContent className="p-4">
           <h3 className="text-lg font-medium text-white truncate">
-            {note.title || "Untitled"}
+            {displayTitle}
           </h3>
         </CardContent>
       </Card>
