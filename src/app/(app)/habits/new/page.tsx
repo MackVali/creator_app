@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { HabitFormFields, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type HabitWindowSelectOption } from "@/components/habits/habit-form-fields";
+import {
+  HabitFormFields,
+  HABIT_RECURRENCE_OPTIONS,
+  HABIT_TYPE_OPTIONS,
+  type HabitSkillSelectOption,
+  type HabitWindowSelectOption,
+} from "@/components/habits/habit-form-fields";
 import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import type { SkillRow } from "@/lib/types/skill";
 
 interface WindowOption {
   id: string;
@@ -104,6 +111,7 @@ export default function NewHabitPage() {
   );
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
+  const [skillId, setSkillId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windowOptions, setWindowOptions] = useState<WindowOption[]>([]);
@@ -115,6 +123,9 @@ export default function NewHabitPage() {
   const [routineId, setRoutineId] = useState<RoutineSelectValue>("none");
   const [newRoutineName, setNewRoutineName] = useState("");
   const [newRoutineDescription, setNewRoutineDescription] = useState("");
+  const [skills, setSkills] = useState<SkillRow[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -235,6 +246,114 @@ export default function NewHabitPage() {
       })),
     ];
   }, [windowOptions, windowsLoading]);
+
+  useEffect(() => {
+    let active = true;
+
+    setSkillsLoading(true);
+    setSkillLoadError(null);
+
+    const fetchSkills = async () => {
+      if (!supabase) {
+        if (active) {
+          setSkillsLoading(false);
+          setSkillLoadError("Supabase client not available.");
+        }
+        return;
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) throw userError;
+
+        if (!user) {
+          if (active) {
+            setSkills([]);
+            setSkillId("none");
+            setSkillLoadError(null);
+          }
+          return;
+        }
+
+        const { data, error: skillsError } = await supabase
+          .from("skills")
+          .select("id, name, icon")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (skillsError) throw skillsError;
+
+        if (active) {
+          const safeSkills = (data ?? []) as SkillRow[];
+          setSkills(safeSkills);
+          setSkillLoadError(null);
+          setSkillId((current) => {
+            if (current === "none") return current;
+            return safeSkills.some((skill) => skill.id === current)
+              ? current
+              : "none";
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load skills:", err);
+        if (active) {
+          setSkills([]);
+          setSkillLoadError("Unable to load your skills right now.");
+          setSkillId("none");
+        }
+      } finally {
+        if (active) {
+          setSkillsLoading(false);
+        }
+      }
+    };
+
+    fetchSkills();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const skillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
+    if (skillsLoading) {
+      return [
+        {
+          value: "none",
+          label: "Loading skills…",
+          disabled: true,
+        },
+      ];
+    }
+
+    if (skills.length === 0) {
+      return [
+        {
+          value: "none",
+          label: "No skill focus",
+        },
+      ];
+    }
+
+    return [
+      {
+        value: "none",
+        label: "No skill focus",
+      },
+      ...skills
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((skill) => ({
+          value: skill.id,
+          label: skill.name,
+          icon: skill.icon,
+        })),
+    ];
+  }, [skills, skillsLoading]);
 
   useEffect(() => {
     let active = true;
@@ -418,6 +537,7 @@ export default function NewHabitPage() {
         recurrence: recurrenceValue,
         duration_minutes: durationMinutes,
         window_id: windowId === "none" ? null : windowId,
+        skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
       });
 
@@ -465,15 +585,20 @@ export default function NewHabitPage() {
                 recurrence={recurrence}
                 duration={duration}
                 windowId={windowId}
+                skillId={skillId}
                 windowsLoading={windowsLoading}
                 windowOptions={windowSelectOptions}
                 windowError={windowLoadError}
+                skillsLoading={skillsLoading}
+                skillOptions={skillSelectOptions}
+                skillError={skillLoadError}
                 onNameChange={setName}
                 onDescriptionChange={setDescription}
                 onHabitTypeChange={setHabitType}
                 onRecurrenceChange={setRecurrence}
                 onWindowChange={setWindowId}
                 onDurationChange={setDuration}
+                onSkillChange={setSkillId}
                 footerSlot={
                   <div className="space-y-4">
                     <div className="space-y-3">

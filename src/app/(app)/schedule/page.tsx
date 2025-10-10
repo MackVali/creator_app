@@ -57,6 +57,7 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from '@/lib/scheduler/habits'
+import { evaluateHabitDueOnDate, type HabitDueEvaluation } from '@/lib/scheduler/habitRecurrence'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
@@ -575,21 +576,35 @@ function computeHabitPlacementsForDay({
   habits,
   windows,
   date,
+  timeZone,
 }: {
   habits: HabitScheduleItem[]
   windows: RepoWindow[]
   date: Date
+  timeZone: string
 }): HabitTimelinePlacement[] {
   if (habits.length === 0 || windows.length === 0) return []
 
   const windowMap = buildWindowMap(windows)
   const grouped = new Map<string, HabitScheduleItem[]>()
+  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
+  const zone = timeZone || 'UTC'
+  const dayStart = startOfDayInTimeZone(date, zone)
+  const defaultDueMs = dayStart.getTime()
 
   for (const habit of habits) {
     const windowId = habit.windowId
     if (!windowId) continue
     const window = windowMap[windowId]
     if (!window) continue
+    const dueInfo = evaluateHabitDueOnDate({
+      habit,
+      date,
+      timeZone: zone,
+      windowDays: window.days ?? habit.window?.days ?? null,
+    })
+    if (!dueInfo.isDue) continue
+    dueInfoByHabitId.set(habit.id, dueInfo)
     const existing = grouped.get(windowId)
     if (existing) {
       existing.push(habit)
@@ -613,6 +628,10 @@ function computeHabitPlacementsForDay({
     if (!Number.isFinite(cursorMs) || !Number.isFinite(windowEndMs)) continue
 
     const sorted = [...group].sort((a, b) => {
+      const dueA = dueInfoByHabitId.get(a.id)
+      const dueB = dueInfoByHabitId.get(b.id)
+      const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
+      if (dueDiff !== 0) return dueDiff
       const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
       if (aTime !== bTime) return aTime - bTime
@@ -853,6 +872,7 @@ function buildDayTimelineModel({
     habits,
     windows,
     date,
+    timeZone: localTimeZone ?? 'UTC',
   })
   const windowReports = computeWindowReportsForDay({
     windows,

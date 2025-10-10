@@ -31,6 +31,13 @@ export type HabitWindowSelectOption = {
   disabled?: boolean;
 };
 
+export type HabitSkillSelectOption = {
+  value: string;
+  label: string;
+  icon?: string | null;
+  disabled?: boolean;
+};
+
 export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
   {
     label: "Habit",
@@ -67,15 +74,20 @@ interface HabitFormFieldsProps {
   recurrence: string;
   duration: string;
   windowId: string;
+  skillId: string;
   windowsLoading: boolean;
   windowOptions: HabitWindowSelectOption[];
   windowError?: string | null;
+  skillsLoading: boolean;
+  skillOptions: HabitSkillSelectOption[];
+  skillError?: string | null;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onHabitTypeChange: (value: string) => void;
   onRecurrenceChange: (value: string) => void;
   onWindowChange: (value: string) => void;
   onDurationChange: (value: string) => void;
+  onSkillChange: (value: string) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
@@ -89,15 +101,20 @@ export function HabitFormFields({
   recurrence,
   duration,
   windowId,
+  skillId,
   windowsLoading,
   windowOptions,
   windowError,
+  skillsLoading,
+  skillOptions,
+  skillError,
   onNameChange,
   onDescriptionChange,
   onHabitTypeChange,
   onRecurrenceChange,
   onWindowChange,
   onDurationChange,
+  onSkillChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
@@ -188,6 +205,41 @@ export function HabitFormFields({
           <p className="text-xs text-white/50">
             Pick the cadence that fits best. You can adjust this later.
           </p>
+        </div>
+
+        <div className="space-y-3">
+          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+            Skill focus
+          </Label>
+          <Select
+            value={skillId}
+            onValueChange={onSkillChange}
+            disabled={skillsLoading && skillOptions.length <= 1}
+          >
+            <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+              <SelectValue placeholder="Choose the skill this habit grows" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#0b101b] text-sm text-white">
+              {skillOptions.map((option) => (
+                <SelectItem
+                  key={`${option.value}-${option.label}`}
+                  value={option.value}
+                  disabled={option.disabled}
+                >
+                  <div className="flex items-center gap-2">
+                    {option.icon ? <span>{option.icon}</span> : null}
+                    <span>{option.label}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-white/50">
+            Connect every habit to the skill it reinforces so progress shows up across your dashboard.
+          </p>
+          {skillError ? (
+            <p className="text-xs text-red-300">{skillError}</p>
+          ) : null}
         </div>
 
         <div className="space-y-3">

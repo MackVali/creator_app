@@ -20,6 +20,7 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from './habits'
+import { evaluateHabitDueOnDate, type HabitDueEvaluation } from './habitRecurrence'
 import {
   addDaysInTimeZone,
   differenceInCalendarDaysInTimeZone,
@@ -596,11 +597,20 @@ async function scheduleHabitsForDay(params: {
     windowsById.set(win.id, win)
   }
 
+  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const grouped = new Map<string, HabitScheduleItem[]>()
   for (const habit of habits) {
     if (!habit.windowId) continue
     const window = windowsById.get(habit.windowId)
     if (!window) continue
+    const dueInfo = evaluateHabitDueOnDate({
+      habit,
+      date: day,
+      timeZone,
+      windowDays: window.days ?? habit.window?.days ?? null,
+    })
+    if (!dueInfo.isDue) continue
+    dueInfoByHabitId.set(habit.id, dueInfo)
     const existing = grouped.get(window.id)
     if (existing) {
       existing.push(habit)
@@ -610,9 +620,10 @@ async function scheduleHabitsForDay(params: {
   }
 
   if (grouped.size === 0) return []
-
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
   const placements: HabitDraftPlacement[] = []
+  const dayStart = startOfDayInTimeZone(day, timeZone)
+  const defaultDueMs = dayStart.getTime()
 
   for (const [windowId, group] of grouped) {
     const window = windowsById.get(windowId)
@@ -633,6 +644,10 @@ async function scheduleHabitsForDay(params: {
     }
 
     const sorted = [...group].sort((a, b) => {
+      const dueA = dueInfoByHabitId.get(a.id)
+      const dueB = dueInfoByHabitId.get(b.id)
+      const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
+      if (dueDiff !== 0) return dueDiff
       const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
       if (aTime !== bTime) return aTime - bTime

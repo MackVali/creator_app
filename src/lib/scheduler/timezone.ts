@@ -127,6 +127,33 @@ export function addDaysInTimeZone(date: Date, amount: number, timeZone: string) 
   return startOfDayInTimeZone(noon, timeZone)
 }
 
+function daysInMonth(year: number, month: number) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate()
+}
+
+export function addMonthsInTimeZone(date: Date, amount: number, timeZone: string) {
+  if (amount === 0) {
+    return startOfDayInTimeZone(date, timeZone)
+  }
+
+  const parts = getDatePartsInTimeZone(date, timeZone)
+  const baseMonthIndex = parts.month - 1
+  const targetMonthIndex = baseMonthIndex + amount
+  const targetYear = parts.year + Math.floor(targetMonthIndex / 12)
+  let normalizedMonthIndex = targetMonthIndex % 12
+  if (normalizedMonthIndex < 0) {
+    normalizedMonthIndex += 12
+  }
+  const targetMonth = normalizedMonthIndex + 1
+  const maxDay = daysInMonth(targetYear, targetMonth)
+  const targetDay = Math.min(parts.day, maxDay)
+
+  return makeDateInTimeZone(
+    { year: targetYear, month: targetMonth, day: targetDay, hour: 0, minute: 0 },
+    timeZone,
+  )
+}
+
 export function setTimeInTimeZone(date: Date, timeZone: string, hours: number, minutes: number) {
   const parts = getDateTimeParts(date, timeZone)
   return makeZonedDate(
@@ -159,6 +186,16 @@ export function differenceInCalendarDaysInTimeZone(
   )
   const diffMs = targetMid.getTime() - baseMid.getTime()
   return Math.round(diffMs / (24 * 60 * 60 * 1000))
+}
+
+export function differenceInCalendarMonthsInTimeZone(
+  base: Date,
+  target: Date,
+  timeZone: string,
+) {
+  const baseParts = getDatePartsInTimeZone(base, timeZone)
+  const targetParts = getDatePartsInTimeZone(target, timeZone)
+  return (targetParts.year - baseParts.year) * 12 + (targetParts.month - baseParts.month)
 }
 
 export function getDatePartsInTimeZone(date: Date, timeZone: string) {
