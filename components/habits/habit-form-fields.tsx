@@ -91,6 +91,7 @@ interface HabitFormFieldsProps {
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
+  showDescriptionField?: boolean;
 }
 
 export function HabitFormFields({
@@ -117,6 +118,7 @@ export function HabitFormFields({
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
+  showDescriptionField = true,
 }: HabitFormFieldsProps) {
   return (
     <div className="space-y-8">
@@ -137,24 +139,26 @@ export function HabitFormFields({
         />
       </div>
 
-      <div className="space-y-3">
-        <Label
-          htmlFor="habit-description"
-          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-        >
-          Description
-        </Label>
-        <Textarea
-          id="habit-description"
-          value={description}
-          onChange={(event) => onDescriptionChange(event.target.value)}
-          placeholder="Add any notes that will keep you accountable."
-          className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-        />
-        <p className="text-xs text-white/50">
-          Optional, but a clear intention makes it easier to stay consistent.
-        </p>
-      </div>
+      {showDescriptionField ? (
+        <div className="space-y-3">
+          <Label
+            htmlFor="habit-description"
+            className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+          >
+            Description
+          </Label>
+          <Textarea
+            id="habit-description"
+            value={description}
+            onChange={(event) => onDescriptionChange(event.target.value)}
+            placeholder="Add any notes that will keep you accountable."
+            className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+          />
+          <p className="text-xs text-white/50">
+            Optional, but a clear intention makes it easier to stay consistent.
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="space-y-3">

@@ -328,6 +328,24 @@ function formatTimeLabel(value: string | null | undefined) {
   }).format(date);
 }
 
+function parseStartMinutes(value: string | null | undefined) {
+  if (!value) return null;
+
+  const [hour, minute] = value.split(":");
+  if (typeof hour === "undefined" || typeof minute === "undefined") {
+    return null;
+  }
+
+  const parsedHour = Number(hour);
+  const parsedMinute = Number(minute);
+
+  if (Number.isNaN(parsedHour) || Number.isNaN(parsedMinute)) {
+    return null;
+  }
+
+  return parsedHour * 60 + parsedMinute;
+}
+
 function formatWindowMeta(window: WindowOption) {
   const start = formatTimeLabel(window.start_local);
   const end = formatTimeLabel(window.end_local);
@@ -1165,12 +1183,33 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       ];
     }
 
+    const sortedWindows = [...windows].sort((a, b) => {
+      const aMinutes = parseStartMinutes(a.start_local);
+      const bMinutes = parseStartMinutes(b.start_local);
+
+      if (aMinutes === null && bMinutes === null) {
+        return a.label.localeCompare(b.label, undefined, {
+          sensitivity: "base",
+        });
+      }
+
+      if (aMinutes === null) return 1;
+      if (bMinutes === null) return -1;
+
+      const minuteComparison = aMinutes - bMinutes;
+      if (minuteComparison !== 0) {
+        return minuteComparison;
+      }
+
+      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+    });
+
     return [
       {
         value: "none",
         label: "No window preference",
       },
-      ...windows.map((window) => ({
+      ...sortedWindows.map((window) => ({
         value: window.id,
         label: window.label,
         description: formatWindowMeta(window),
@@ -2400,6 +2439,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
               skillError={skillError}
+              windowsLoading={windowsLoading}
+              windowOptions={windowSelectOptions}
+              windowError={windowError}
+              showDescriptionField={false}
               onNameChange={(value) =>
                 setFormData((prev) => ({
                   ...prev,
