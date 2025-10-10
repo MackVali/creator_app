@@ -355,11 +355,78 @@ type ProjectTaskCard = {
 type HabitTimelinePlacement = {
   habitId: string
   habitName: string
+  habitType: string
   start: Date
   end: Date
   durationMinutes: number
   window: RepoWindow
   truncated: boolean
+}
+
+type HabitCardVisuals = {
+  background: string
+  shadow: string
+  outline: string
+  borderClass: string
+}
+
+const DEFAULT_SCHEDULED_HABIT_VISUALS: HabitCardVisuals = {
+  background:
+    'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)',
+  shadow: [
+    '0 26px 52px rgba(0, 0, 0, 0.6)',
+    '0 12px 28px rgba(0, 0, 0, 0.45)',
+    'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+  ].join(', '),
+  outline: '1px solid rgba(18, 18, 24, 0.85)',
+  borderClass: 'border-white/12',
+}
+
+const CHORE_SCHEDULED_HABIT_VISUALS: HabitCardVisuals = {
+  background:
+    'radial-gradient(circle at 6% -20%, rgba(248, 113, 113, 0.22), transparent 58%), linear-gradient(138deg, rgba(45, 13, 18, 0.95) 0%, rgba(127, 29, 29, 0.88) 45%, rgba(248, 113, 113, 0.3) 100%)',
+  shadow: [
+    '0 26px 52px rgba(69, 10, 10, 0.6)',
+    '0 12px 28px rgba(127, 29, 29, 0.45)',
+    'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+  ].join(', '),
+  outline: '1px solid rgba(248, 113, 113, 0.55)',
+  borderClass: 'border-red-400/60',
+}
+
+const ASYNC_SCHEDULED_HABIT_VISUALS: HabitCardVisuals = {
+  background:
+    'radial-gradient(circle at 6% -20%, rgba(253, 224, 71, 0.2), transparent 60%), linear-gradient(140deg, rgba(46, 32, 9, 0.95) 0%, rgba(133, 77, 14, 0.85) 48%, rgba(217, 119, 6, 0.72) 100%)',
+  shadow: [
+    '0 26px 52px rgba(120, 53, 15, 0.58)',
+    '0 12px 28px rgba(217, 119, 6, 0.45)',
+    'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+  ].join(', '),
+  outline: '1px solid rgba(253, 224, 71, 0.5)',
+  borderClass: 'border-amber-300/60',
+}
+
+const COMPLETED_HABIT_VISUALS: HabitCardVisuals = {
+  background:
+    'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)',
+  shadow: [
+    '0 26px 52px rgba(2, 32, 24, 0.6)',
+    '0 12px 28px rgba(1, 55, 34, 0.45)',
+    'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+  ].join(', '),
+  outline: '1px solid rgba(16, 185, 129, 0.55)',
+  borderClass: 'border-emerald-400/60',
+}
+
+function resolveScheduledHabitVisuals(habitType: string): HabitCardVisuals {
+  switch (habitType) {
+    case 'CHORE':
+      return CHORE_SCHEDULED_HABIT_VISUALS
+    case 'ASYNC':
+      return ASYNC_SCHEDULED_HABIT_VISUALS
+    default:
+      return DEFAULT_SCHEDULED_HABIT_VISUALS
+  }
 }
 
 function isValidDate(value: unknown): value is Date {
@@ -665,6 +732,7 @@ function computeHabitPlacementsForDay({
       placements.push({
         habitId: habit.id,
         habitName: habit.name,
+        habitType: (habit.habitType ?? 'HABIT').toUpperCase(),
         start,
         end,
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
@@ -2920,37 +2988,20 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
-              const scheduledCardBackground =
-                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
-              const completedCardBackground =
-                'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
-              const cardBackground = isHabitCompleted
-                ? completedCardBackground
-                : scheduledCardBackground
-              const scheduledShadow = [
-                '0 26px 52px rgba(0, 0, 0, 0.6)',
-                '0 12px 28px rgba(0, 0, 0, 0.45)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-              ].join(', ')
-              const completedShadow = [
-                '0 26px 52px rgba(2, 32, 24, 0.6)',
-                '0 12px 28px rgba(1, 55, 34, 0.45)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
-              ].join(', ')
-              const cardOutline = isHabitCompleted
-                ? '1px solid rgba(16, 185, 129, 0.55)'
-                : '1px solid rgba(18, 18, 24, 0.85)'
+              const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
+              const scheduledVisuals = resolveScheduledHabitVisuals(habitType)
+              const visuals = isHabitCompleted
+                ? COMPLETED_HABIT_VISUALS
+                : scheduledVisuals
               const cardStyle: CSSProperties = {
                 top,
                 height,
-                boxShadow: isHabitCompleted ? completedShadow : scheduledShadow,
-                outline: cardOutline,
+                boxShadow: visuals.shadow,
+                outline: visuals.outline,
                 outlineOffset: '-1px',
-                background: cardBackground,
+                background: visuals.background,
               }
-              const habitBorderClass = isHabitCompleted
-                ? 'border-emerald-400/60'
-                : 'border-white/12'
+              const habitBorderClass = visuals.borderClass
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
