@@ -2928,9 +2928,9 @@ export default function SchedulePage() {
               const scheduledCardBackground =
                 'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
               const choreCardBackground =
-                'radial-gradient(circle at 6% -20%, rgba(248, 113, 113, 0.35), transparent 58%), linear-gradient(135deg, rgba(69, 10, 10, 0.85) 0%, rgba(127, 29, 29, 0.78) 45%, rgba(220, 38, 38, 0.72) 100%)'
+                'radial-gradient(circle at 6% -18%, rgba(248, 113, 113, 0.22), transparent 60%), linear-gradient(136deg, rgba(69, 10, 10, 0.58) 0%, rgba(127, 29, 29, 0.52) 46%, rgba(220, 38, 38, 0.45) 100%)'
               const asyncCardBackground =
-                'radial-gradient(circle at 4% -10%, rgba(253, 224, 71, 0.32), transparent 58%), linear-gradient(135deg, rgba(72, 44, 12, 0.85) 0%, rgba(161, 98, 7, 0.75) 45%, rgba(234, 179, 8, 0.68) 100%)'
+                'radial-gradient(circle at 4% -12%, rgba(253, 224, 71, 0.2), transparent 60%), linear-gradient(136deg, rgba(72, 44, 12, 0.56) 0%, rgba(161, 98, 7, 0.48) 46%, rgba(234, 179, 8, 0.42) 100%)'
               const completedCardBackground =
                 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
               const cardBackground = isHabitCompleted
@@ -2946,13 +2946,13 @@ export default function SchedulePage() {
                 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
               ].join(', ')
               const choreShadow = [
-                '0 18px 36px rgba(127, 29, 29, 0.38)',
-                '0 10px 20px rgba(190, 18, 60, 0.28)',
+                '0 14px 30px rgba(127, 29, 29, 0.26)',
+                '0 8px 18px rgba(190, 18, 60, 0.18)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
               ].join(', ')
               const asyncShadow = [
-                '0 18px 36px rgba(113, 63, 18, 0.34)',
-                '0 10px 20px rgba(202, 138, 4, 0.26)',
+                '0 14px 30px rgba(113, 63, 18, 0.24)',
+                '0 8px 18px rgba(202, 138, 4, 0.16)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
               ].join(', ')
               const completedShadow = [
