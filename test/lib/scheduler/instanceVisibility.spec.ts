@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  VISIBLE_INSTANCE_STATUS_CLAUSE,
+  __INTERNAL_VISIBLE_INSTANCE_STATUS_HELPERS__,
   buildInstanceVisibilityRangeOrClause,
 } from '../../../src/lib/scheduler/instanceVisibility'
 
@@ -12,10 +12,15 @@ describe('buildInstanceVisibilityRangeOrClause', () => {
 
     const clause = buildInstanceVisibilityRangeOrClause(start, end)
 
+    const { NULL_STATUS_CLAUSE, VISIBLE_STATUS_IN_CLAUSE } =
+      __INTERNAL_VISIBLE_INSTANCE_STATUS_HELPERS__
+
     expect(clause).toBe(
       [
-        `and(${VISIBLE_INSTANCE_STATUS_CLAUSE},start_utc.gte.${start},start_utc.lt.${end})`,
-        `and(${VISIBLE_INSTANCE_STATUS_CLAUSE},start_utc.lt.${start},end_utc.gt.${start})`,
+        `and(${NULL_STATUS_CLAUSE},start_utc.gte.${start},start_utc.lt.${end})`,
+        `and(${VISIBLE_STATUS_IN_CLAUSE},start_utc.gte.${start},start_utc.lt.${end})`,
+        `and(${NULL_STATUS_CLAUSE},start_utc.lt.${start},end_utc.gt.${start})`,
+        `and(${VISIBLE_STATUS_IN_CLAUSE},start_utc.lt.${start},end_utc.gt.${start})`,
       ].join(','),
     )
   })
