@@ -81,6 +81,8 @@ type HabitCompletionStatus = 'scheduled' | 'completed'
 const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
 const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 const DAY_PEEK_SAFE_GAP_PX = 24
+const MIN_PX_PER_MIN = 0.9
+const MAX_PX_PER_MIN = 3.2
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -100,6 +102,28 @@ const dayTimelineTransition = {
   x: { type: 'spring', stiffness: 280, damping: 28, mass: 0.9 },
   opacity: { duration: 0.22, ease: [0.33, 1, 0.68, 1] as const },
   scale: { duration: 0.24, ease: [0.2, 0.8, 0.2, 1] as const },
+}
+
+function clampPxPerMin(value: number) {
+  if (!Number.isFinite(value)) return MIN_PX_PER_MIN
+  return Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, value))
+}
+
+function getTouchDistance(a: Touch, b: Touch) {
+  const dx = a.clientX - b.clientX
+  const dy = a.clientY - b.clientY
+  return Math.hypot(dx, dy)
+}
+
+function isTouchWithinElement(touch: Touch, element: HTMLElement) {
+  const target = touch.target
+  if (target && target instanceof Node && element.contains(target)) {
+    return true
+  }
+  const rect = element.getBoundingClientRect()
+  const x = touch.clientX
+  const y = touch.clientY
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
 }
 
 function parseScheduleDateParam(value: string | null) {
@@ -1327,6 +1351,12 @@ export default function SchedulePage() {
     offset: 0,
   })
   const [pxPerMin, setPxPerMin] = useState(2)
+  const basePxPerMinRef = useRef(pxPerMin)
+  const pinchStateRef = useRef<{
+    initialDistance: number
+    initialPxPerMin: number
+  } | null>(null)
+  const pinchActiveRef = useRef(false)
   const hasLoadedHabitCompletionState = useRef(false)
 
   useEffect(() => {
@@ -1562,9 +1592,18 @@ export default function SchedulePage() {
     return 2
   }, [])
 
-  const applyDensity = useCallback((next: number) => {
-    setPxPerMin(prev => (Math.abs(prev - next) < 0.001 ? prev : next))
-  }, [])
+  const applyDensity = useCallback(
+    (next: number) => {
+      setPxPerMin(prev => {
+        const prevBase = basePxPerMinRef.current
+        const prevZoom = prevBase > 0 ? prev / prevBase : 1
+        basePxPerMinRef.current = next
+        const nextValue = clampPxPerMin(next * prevZoom)
+        return Math.abs(prev - nextValue) < 0.001 ? prev : nextValue
+      })
+    },
+    [basePxPerMinRef]
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2507,11 +2546,60 @@ export default function SchedulePage() {
 
   function handleTouchStart(e: React.TouchEvent) {
     swipeScrollProgressRef.current = null
-    if (view !== 'day' || prefersReducedMotion) {
+
+    const touches = e.touches
+    if (view === 'day' && touches.length >= 2) {
+      const container = dayTimelineContainerRef.current
+      if (container) {
+        const firstTouch = touches[0]
+        const secondTouch = touches[1]
+        if (
+          firstTouch &&
+          secondTouch &&
+          isTouchWithinElement(firstTouch, container) &&
+          isTouchWithinElement(secondTouch, container)
+        ) {
+          const distance = getTouchDistance(firstTouch, secondTouch)
+          if (distance > 0) {
+            pinchStateRef.current = {
+              initialDistance: distance,
+              initialPxPerMin: pxPerMin,
+            }
+            pinchActiveRef.current = true
+            touchStartX.current = null
+            touchStartWidth.current = 0
+            swipeDeltaRef.current = 0
+            sliderControls.stop()
+            setIsSwipingDayView(false)
+            setPeekState(prev => {
+              if (prev.direction === 0 && prev.offset === 0) {
+                return prev
+              }
+              return { direction: 0, offset: 0 }
+            })
+            return
+          }
+        }
+      }
+    }
+
+    if (touches.length > 1) {
       touchStartX.current = null
       return
     }
-    touchStartX.current = e.touches[0].clientX
+
+    if (view !== 'day' || prefersReducedMotion || pinchActiveRef.current) {
+      touchStartX.current = null
+      return
+    }
+
+    const firstTouch = touches[0]
+    if (!firstTouch) {
+      touchStartX.current = null
+      return
+    }
+
+    touchStartX.current = firstTouch.clientX
     touchStartWidth.current = swipeContainerRef.current?.offsetWidth ?? 0
     swipeDeltaRef.current = 0
     sliderControls.stop()
@@ -2539,11 +2627,37 @@ export default function SchedulePage() {
   }
 
   function handleTouchMove(e: React.TouchEvent) {
+    if (pinchActiveRef.current) {
+      const pinchState = pinchStateRef.current
+      if (!pinchState) {
+        pinchActiveRef.current = false
+        return
+      }
+      if (e.touches.length < 2) {
+        pinchStateRef.current = null
+        pinchActiveRef.current = false
+        return
+      }
+      const firstTouch = e.touches[0]
+      const secondTouch = e.touches[1]
+      if (!firstTouch || !secondTouch) return
+      const distance = getTouchDistance(firstTouch, secondTouch)
+      if (!(distance > 0) || !(pinchState.initialDistance > 0)) return
+      e.preventDefault()
+      const scale = distance / pinchState.initialDistance
+      const next = clampPxPerMin(pinchState.initialPxPerMin * scale)
+      setPxPerMin(prev => (Math.abs(prev - next) < 0.001 ? prev : next))
+      return
+    }
+
+    if (e.touches.length > 1) return
     if (view !== 'day' || prefersReducedMotion) return
     if (touchStartX.current === null) return
     const width =
       touchStartWidth.current || swipeContainerRef.current?.offsetWidth || 1
-    const diff = e.touches[0].clientX - touchStartX.current
+    const touch = e.touches[0]
+    if (!touch) return
+    const diff = touch.clientX - touchStartX.current
     const clamped = Math.max(Math.min(diff, width), -width)
     swipeDeltaRef.current = clamped
     sliderControls.set({ x: clamped })
@@ -2562,6 +2676,24 @@ export default function SchedulePage() {
   }
 
   async function handleTouchEnd() {
+    if (pinchActiveRef.current) {
+      pinchActiveRef.current = false
+      pinchStateRef.current = null
+      sliderControls.set({ x: 0 })
+      swipeDeltaRef.current = 0
+      touchStartX.current = null
+      touchStartWidth.current = 0
+      swipeScrollProgressRef.current = null
+      setIsSwipingDayView(false)
+      setPeekState(prev => {
+        if (prev.direction === 0 && prev.offset === 0) {
+          return prev
+        }
+        return { direction: 0, offset: 0 }
+      })
+      return
+    }
+
     if (view !== 'day' || prefersReducedMotion) {
       touchStartX.current = null
       setIsSwipingDayView(false)
