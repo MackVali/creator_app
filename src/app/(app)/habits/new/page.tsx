@@ -10,6 +10,7 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
   type HabitSkillSelectOption,
+  type HabitWindowPositionOption,
   type HabitWindowSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { PageHeader } from "@/components/ui";
@@ -112,6 +113,8 @@ export default function NewHabitPage() {
   const [recurrenceDays, setRecurrenceDays] = useState<string[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
+  const [windowPosition, setWindowPosition] =
+    useState<HabitWindowPositionOption>("FIRST");
   const [skillId, setSkillId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,9 +173,13 @@ export default function NewHabitPage() {
           setWindowLoadError(null);
           setWindowId((current) => {
             if (current === "none") return current;
-            return safeWindows.some((option) => option.id === current)
+            const next = safeWindows.some((option) => option.id === current)
               ? current
               : "none";
+            if (next === "none") {
+              setWindowPosition("FIRST");
+            }
+            return next;
           });
         }
       } catch (err) {
@@ -548,6 +555,7 @@ export default function NewHabitPage() {
         recurrence_days: recurrenceDaysValue,
         duration_minutes: durationMinutes,
         window_id: windowId === "none" ? null : windowId,
+        window_position: windowId === "none" ? "FIRST" : windowPosition,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
       });
@@ -614,7 +622,14 @@ export default function NewHabitPage() {
                   }
                 }}
                 onRecurrenceDaysChange={setRecurrenceDays}
-                onWindowChange={setWindowId}
+                onWindowChange={(value) => {
+                  setWindowId(value);
+                  if (value === "none") {
+                    setWindowPosition("FIRST");
+                  }
+                }}
+                windowPosition={windowPosition}
+                onWindowPositionChange={setWindowPosition}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
                 footerSlot={

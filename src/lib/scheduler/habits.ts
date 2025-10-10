@@ -15,6 +15,7 @@ export type HabitScheduleItem = {
   windowId: string | null
   recurrence: string | null
   recurrenceDays: string[] | null
+  windowPosition: 'FIRST' | 'LAST'
   skillId: string | null
   window: {
     id: string
@@ -41,7 +42,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   const { data, error } = await supabase
     .from('habits')
     .select(
-      `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
+      `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, recurrence_days, window_position, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
     )
 
   if (error) throw error
@@ -56,6 +57,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     window_id?: string | null
     recurrence?: string | null
     recurrence_days?: string[] | null
+    window_position?: string | null
     skill_id?: string | null
     window?: {
       id?: string
@@ -78,6 +80,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     windowId: record.window_id ?? null,
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
+    windowPosition: normalizeWindowPosition(record.window_position),
     skillId: record.skill_id ?? null,
     window: record.window
       ? {
@@ -90,4 +93,10 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
         }
       : null,
   }))
+}
+
+function normalizeWindowPosition(value?: string | null): 'FIRST' | 'LAST' {
+  if (!value) return 'FIRST'
+  const normalized = String(value).trim().toUpperCase()
+  return normalized === 'LAST' ? 'LAST' : 'FIRST'
 }

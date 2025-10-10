@@ -9,7 +9,13 @@ import {
   PageHeader,
   Skeleton,
 } from "@/components/ui";
-import { HabitFormFields, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type HabitWindowSelectOption } from "@/components/habits/habit-form-fields";
+import {
+  HabitFormFields,
+  HABIT_RECURRENCE_OPTIONS,
+  HABIT_TYPE_OPTIONS,
+  type HabitWindowPositionOption,
+  type HabitWindowSelectOption,
+} from "@/components/habits/habit-form-fields";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -122,6 +128,8 @@ export default function EditHabitPage() {
   const [recurrenceDays, setRecurrenceDays] = useState<string[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
+  const [windowPosition, setWindowPosition] =
+    useState<HabitWindowPositionOption>("FIRST");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windowOptions, setWindowOptions] = useState<WindowOption[]>([]);
@@ -182,9 +190,13 @@ export default function EditHabitPage() {
           setWindowLoadError(null);
           setWindowId((current) => {
             if (current === "none") return current;
-            return safeWindows.some((option) => option.id === current)
+            const next = safeWindows.some((option) => option.id === current)
               ? current
               : "none";
+            if (next === "none") {
+              setWindowPosition("FIRST");
+            }
+            return next;
           });
         }
       } catch (err) {
@@ -503,7 +515,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, window_id, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, window_id, window_position, routine_id, skill_id"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -535,6 +547,11 @@ export default function EditHabitPage() {
               : ""
           );
           setWindowId(data.window_id ?? "none");
+          const rawPosition =
+            typeof data.window_position === "string"
+              ? data.window_position.toUpperCase()
+              : "FIRST";
+          setWindowPosition(rawPosition === "LAST" ? "LAST" : "FIRST");
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
         }
@@ -658,6 +675,7 @@ export default function EditHabitPage() {
           recurrence_days: recurrenceDaysValue,
           duration_minutes: durationMinutes,
           window_id: windowId === "none" ? null : windowId,
+          window_position: windowId === "none" ? "FIRST" : windowPosition,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
         })
@@ -749,7 +767,14 @@ export default function EditHabitPage() {
                     }
                   }}
                   onRecurrenceDaysChange={setRecurrenceDays}
-                  onWindowChange={setWindowId}
+                  onWindowChange={(value) => {
+                    setWindowId(value);
+                    if (value === "none") {
+                      setWindowPosition("FIRST");
+                    }
+                  }}
+                  windowPosition={windowPosition}
+                  onWindowPositionChange={setWindowPosition}
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
                   showDescriptionField={false}

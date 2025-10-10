@@ -57,6 +57,7 @@ export interface Database {
           recurrence_days: string[] | null;
           duration_minutes: number | null;
           window_id: string | null;
+          window_position: 'FIRST' | 'LAST' | null;
           skill_id: string | null;
         };
         Insert: {
@@ -71,6 +72,7 @@ export interface Database {
           recurrence_days?: string[] | null;
           duration_minutes?: number | null;
           window_id?: string | null;
+          window_position?: 'FIRST' | 'LAST' | null;
           skill_id?: string | null;
         };
         Update: {
@@ -85,6 +87,7 @@ export interface Database {
           recurrence_days?: string[] | null;
           duration_minutes?: number | null;
           window_id?: string | null;
+          window_position?: 'FIRST' | 'LAST' | null;
           skill_id?: string | null;
         };
       };

@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useId } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,8 @@ export type HabitRecurrenceOption = {
   label: string;
   value: string;
 };
+
+export type HabitWindowPositionOption = "FIRST" | "LAST";
 
 export type HabitWindowSelectOption = {
   value: string;
@@ -86,6 +88,7 @@ interface HabitFormFieldsProps {
   recurrenceDays: string[];
   duration: string;
   windowId: string;
+  windowPosition: HabitWindowPositionOption;
   skillId: string;
   windowsLoading: boolean;
   windowOptions: HabitWindowSelectOption[];
@@ -99,6 +102,7 @@ interface HabitFormFieldsProps {
   onRecurrenceChange: (value: string) => void;
   onRecurrenceDaysChange: (value: string[]) => void;
   onWindowChange: (value: string) => void;
+  onWindowPositionChange: (value: HabitWindowPositionOption) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
   typeOptions?: HabitTypeOption[];
@@ -115,6 +119,7 @@ export function HabitFormFields({
   recurrenceDays,
   duration,
   windowId,
+  windowPosition,
   skillId,
   windowsLoading,
   windowOptions,
@@ -128,6 +133,7 @@ export function HabitFormFields({
   onRecurrenceChange,
   onRecurrenceDaysChange,
   onWindowChange,
+  onWindowPositionChange,
   onDurationChange,
   onSkillChange,
   typeOptions = HABIT_TYPE_OPTIONS,
@@ -136,6 +142,12 @@ export function HabitFormFields({
   showDescriptionField = true,
 }: HabitFormFieldsProps) {
   const isCustomDayRecurrence = recurrence === "every x days";
+  const windowPositionDescriptionId = useId();
+  const isLastWindowPosition = windowPosition === "LAST";
+  const canChooseWindowPosition = windowId !== "none";
+  const windowPositionDescription = canChooseWindowPosition
+    ? "Choose whether this habit should kick off its window or close it out."
+    : "Select a preferred window to control where this habit lands within it.";
 
   const toggleDay = (dayValue: string) => {
     const current = new Set(recurrenceDays);
@@ -326,6 +338,53 @@ export function HabitFormFields({
           {windowError ? (
             <p className="text-xs text-red-300">{windowError}</p>
           ) : null}
+
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Window position
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-white/60">First</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isLastWindowPosition}
+                aria-label="Toggle window position"
+                aria-describedby={windowPositionDescriptionId}
+                onClick={() =>
+                  onWindowPositionChange(
+                    isLastWindowPosition ? "FIRST" : "LAST"
+                  )
+                }
+                disabled={!canChooseWindowPosition}
+                className={cn(
+                  "relative flex h-8 w-16 items-center rounded-full border px-1 transition",
+                  canChooseWindowPosition
+                    ? isLastWindowPosition
+                      ? "border-white bg-white text-black"
+                      : "border-white/40 bg-white/10 text-white hover:border-white/70"
+                    : "cursor-not-allowed border-white/10 bg-white/5 text-white/50 opacity-60",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60",
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-6 w-6 rounded-full transition-transform",
+                    isLastWindowPosition
+                      ? "translate-x-6 bg-black"
+                      : "translate-x-0 bg-white",
+                  )}
+                />
+              </button>
+              <span className="text-xs font-medium text-white/60">Last</span>
+            </div>
+            <p
+              id={windowPositionDescriptionId}
+              className="text-xs text-white/60"
+            >
+              {windowPositionDescription}
+            </p>
+          </div>
         </div>
 
         <div className="space-y-3">
