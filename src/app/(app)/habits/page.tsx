@@ -456,6 +456,10 @@ export default function HabitsPage() {
                               );
                               const windowEnergy = formatTitleCase(habit.window?.energy);
                               const tags = [habitType, recurrence].filter(Boolean) as string[];
+                              const skillIcon = habit.skill?.icon?.trim();
+                              const skillName = habit.skill?.name ?? null;
+                              const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
+                              const skillDisplayLabel = skillName ?? "No skill linked yet";
 
                               return (
                                 <li
@@ -502,8 +506,16 @@ export default function HabitsPage() {
 
                                   <div className="flex flex-wrap gap-3 text-xs text-white/60">
                                     <span className="flex items-center gap-2">
-                                      <span className="text-base">🕒</span>
-                                      <span>Updated {formatRelativeTime(habit.updated_at)}</span>
+                                      <span className="text-base">{skillDisplayIcon}</span>
+                                      <span>
+                                        {skillName ? (
+                                          <>
+                                            Skill · <span className="text-white/80">{skillName}</span>
+                                          </>
+                                        ) : (
+                                          skillDisplayLabel
+                                        )}
+                                      </span>
                                     </span>
                                     {durationLabel && (
                                       <span className="flex items-center gap-2">
@@ -569,6 +581,10 @@ export default function HabitsPage() {
                         habit.window?.end_local
                       );
                       const windowEnergy = formatTitleCase(habit.window?.energy);
+                      const skillIcon = habit.skill?.icon?.trim();
+                      const skillName = habit.skill?.name ?? null;
+                      const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
+                      const skillDisplayLabel = skillName ?? "No skill linked yet";
 
                       return (
                         <article
@@ -621,8 +637,16 @@ export default function HabitsPage() {
 
                           <div className="relative mt-6 space-y-3 text-xs text-white/60">
                             <div className="flex items-center gap-2">
-                              <span className="text-base">🕒</span>
-                              <span>Updated {formatRelativeTime(habit.updated_at)}</span>
+                              <span className="text-base">{skillDisplayIcon}</span>
+                              <span>
+                                {skillName ? (
+                                  <>
+                                    Skill · <span className="text-white/80">{skillName}</span>
+                                  </>
+                                ) : (
+                                  skillDisplayLabel
+                                )}
+                              </span>
                             </div>
                             {durationLabel && (
                               <div className="flex items-center gap-2">
