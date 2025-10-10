@@ -88,6 +88,25 @@ const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
 
+type InstanceSourceType = 'PROJECT' | 'TASK'
+
+function normalizeInstanceSourceType(value: unknown): InstanceSourceType | null {
+  if (typeof value !== 'string') return null
+  const upper = value.trim().toUpperCase()
+  if (upper === 'PROJECT' || upper === 'TASK') {
+    return upper as InstanceSourceType
+  }
+  return null
+}
+
+function isProjectSource(value: unknown): boolean {
+  return normalizeInstanceSourceType(value) === 'PROJECT'
+}
+
+function isTaskSource(value: unknown): boolean {
+  return normalizeInstanceSourceType(value) === 'TASK'
+}
+
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
     opacity: direction === 0 ? 1 : 0.6,
@@ -481,6 +500,7 @@ function buildWindowMap(windows: RepoWindow[]) {
 function createFallbackProjectFromInstance(
   inst: ScheduleInstance,
 ): ProjectItem | null {
+  if (!isProjectSource(inst.source_type)) return null
   const projectId = typeof inst.source_id === 'string' ? inst.source_id : null
   if (!projectId) return null
 
@@ -512,7 +532,7 @@ function computeProjectInstances(
   windowMap: Record<string, RepoWindow>
 ) {
   return instances
-    .filter(inst => inst.source_type === 'PROJECT')
+    .filter(inst => isProjectSource(inst.source_type))
     .map(inst => {
       const project = projectMap[inst.source_id]
       if (!project) return null
@@ -554,7 +574,7 @@ function computeTaskInstancesByProjectForDay(
 ) {
   const map: Record<string, TaskInstanceInfo[]> = {}
   for (const inst of instances) {
-    if (inst.source_type !== 'TASK') continue
+    if (!isTaskSource(inst.source_type)) continue
     const task = taskMap[inst.source_id]
     const projectId = task?.project_id ?? null
     if (!task || !projectId) continue
@@ -584,7 +604,7 @@ function computeStandaloneTaskInstancesForDay(
 ) {
   const items: TaskInstanceInfo[] = []
   for (const inst of instances) {
-    if (inst.source_type !== 'TASK') continue
+    if (!isTaskSource(inst.source_type)) continue
     const task = taskMap[inst.source_id]
     if (!task) continue
     const projectId = task.project_id ?? undefined
@@ -1814,7 +1834,7 @@ export default function SchedulePage() {
     }
 
     for (const inst of instances) {
-      if (inst.source_type !== 'PROJECT') continue
+      if (!isProjectSource(inst.source_type)) continue
       const projectId = inst.source_id
       if (!projectId || map[projectId]) continue
       const fallback = createFallbackProjectFromInstance(inst)
@@ -2032,7 +2052,9 @@ export default function SchedulePage() {
 
   const buildXpAwardPayload = useCallback(
     (instance: ScheduleInstance) => {
-      if (instance.source_type === 'TASK') {
+      const sourceType = normalizeInstanceSourceType(instance.source_type)
+
+      if (sourceType === 'TASK') {
         const task = taskMap[instance.source_id]
         if (!task) return null
         const skillIds = task.skill_id ? [task.skill_id] : []
@@ -2048,7 +2070,7 @@ export default function SchedulePage() {
         }
       }
 
-      if (instance.source_type === 'PROJECT') {
+      if (sourceType === 'PROJECT') {
         const rawSkillIds = projectSkillIds[instance.source_id] ?? []
         const uniqueSkillIds = Array.from(
           new Set(rawSkillIds.filter((id): id is string => typeof id === 'string' && id.length > 0))
