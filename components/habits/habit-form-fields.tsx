@@ -12,6 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+const WEEKDAY_OPTIONS = [
+  { value: "monday", label: "Mon", longLabel: "Monday" },
+  { value: "tuesday", label: "Tue", longLabel: "Tuesday" },
+  { value: "wednesday", label: "Wed", longLabel: "Wednesday" },
+  { value: "thursday", label: "Thu", longLabel: "Thursday" },
+  { value: "friday", label: "Fri", longLabel: "Friday" },
+  { value: "saturday", label: "Sat", longLabel: "Saturday" },
+  { value: "sunday", label: "Sun", longLabel: "Sunday" },
+];
 
 export type HabitTypeOption = {
   label: string;
@@ -72,6 +83,7 @@ interface HabitFormFieldsProps {
   description: string;
   habitType: string;
   recurrence: string;
+  recurrenceDays: string[];
   duration: string;
   windowId: string;
   skillId: string;
@@ -85,6 +97,7 @@ interface HabitFormFieldsProps {
   onDescriptionChange: (value: string) => void;
   onHabitTypeChange: (value: string) => void;
   onRecurrenceChange: (value: string) => void;
+  onRecurrenceDaysChange: (value: string[]) => void;
   onWindowChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
@@ -99,6 +112,7 @@ export function HabitFormFields({
   description,
   habitType,
   recurrence,
+  recurrenceDays,
   duration,
   windowId,
   skillId,
@@ -112,6 +126,7 @@ export function HabitFormFields({
   onDescriptionChange,
   onHabitTypeChange,
   onRecurrenceChange,
+  onRecurrenceDaysChange,
   onWindowChange,
   onDurationChange,
   onSkillChange,
@@ -120,6 +135,26 @@ export function HabitFormFields({
   footerSlot,
   showDescriptionField = true,
 }: HabitFormFieldsProps) {
+  const isCustomDayRecurrence = recurrence === "every x days";
+
+  const toggleDay = (dayValue: string) => {
+    const current = new Set(recurrenceDays);
+    if (current.has(dayValue)) {
+      current.delete(dayValue);
+    } else {
+      current.add(dayValue);
+    }
+
+    const ordered = WEEKDAY_OPTIONS.reduce<string[]>((acc, option) => {
+      if (current.has(option.value)) {
+        acc.push(option.value);
+      }
+      return acc;
+    }, []);
+
+    onRecurrenceDaysChange(ordered);
+  };
+
   return (
     <div className="space-y-8">
       <div className="space-y-3">
@@ -154,9 +189,6 @@ export function HabitFormFields({
             placeholder="Add any notes that will keep you accountable."
             className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />
-          <p className="text-xs text-white/50">
-            Optional, but a clear intention makes it easier to stay consistent.
-          </p>
         </div>
       ) : null}
 
@@ -177,9 +209,6 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Use chores for recurring upkeep tasks, async for flexible collaborations, and habits to track personal rituals.
-          </p>
         </div>
 
         <div className="space-y-3">
@@ -202,9 +231,35 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Pick the cadence that fits best. You can adjust this later.
-          </p>
+          {isCustomDayRecurrence ? (
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Repeat on
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAY_OPTIONS.map((day) => {
+                  const isSelected = recurrenceDays.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      onClick={() => toggleDay(day.value)}
+                      aria-pressed={isSelected}
+                      aria-label={day.longLabel}
+                      className={cn(
+                        "flex h-9 min-w-[2.5rem] items-center justify-center rounded-full border px-3 text-xs font-medium transition",
+                        isSelected
+                          ? "border-white bg-white text-black"
+                          : "border-white/20 text-white/70 hover:border-white/40 hover:text-white"
+                      )}
+                    >
+                      {day.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-3">
@@ -234,9 +289,6 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Connect every habit to the skill it reinforces so progress shows up across your dashboard.
-          </p>
           {skillError ? (
             <p className="text-xs text-red-300">{skillError}</p>
           ) : null}
@@ -271,9 +323,6 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Anchoring to a window helps scheduling align with your energy.
-          </p>
           {windowError ? (
             <p className="text-xs text-red-300">{windowError}</p>
           ) : null}
@@ -298,9 +347,6 @@ export function HabitFormFields({
             required
             className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />
-          <p className="text-xs text-white/50">
-            Estimate how long this habit usually takes so we can track your time investment.
-          </p>
         </div>
       </div>
 

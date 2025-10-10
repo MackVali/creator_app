@@ -6,6 +6,7 @@ export interface Habit {
   description: string | null;
   habit_type: string;
   recurrence: string | null;
+  recurrence_days: string[] | null;
   duration_minutes: number | null;
   created_at: string;
   updated_at: string;
@@ -42,7 +43,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
   const { data, error } = await supabase
     .from("habits")
     .select(
-      "id, name, description, habit_type, recurrence, duration_minutes, created_at, updated_at, skill_id, skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at), window_id, window:windows(id, label, start_local, end_local, energy)"
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at), window_id, window:windows(id, label, start_local, end_local, energy)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -53,7 +54,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     const fallback = await supabase
       .from("habits")
       .select(
-        "id, name, description, habit_type, recurrence, duration_minutes, created_at, updated_at, skill_id, window_id, window:windows(id, label, start_local, end_local, energy)"
+        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, window_id, window:windows(id, label, start_local, end_local, energy)"
       )
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });

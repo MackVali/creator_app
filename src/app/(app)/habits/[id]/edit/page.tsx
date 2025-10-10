@@ -119,6 +119,7 @@ export default function EditHabitPage() {
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
   );
+  const [recurrenceDays, setRecurrenceDays] = useState<string[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
   const [loading, setLoading] = useState(false);
@@ -502,7 +503,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, duration_minutes, window_id, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, window_id, routine_id, skill_id"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -521,7 +522,13 @@ export default function EditHabitPage() {
           setName(data.name ?? "");
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
-          setRecurrence(data.recurrence ?? "none");
+          const fetchedRecurrence = data.recurrence ?? "none";
+          setRecurrence(fetchedRecurrence);
+          setRecurrenceDays(
+            fetchedRecurrence === "every x days" && Array.isArray(data.recurrence_days)
+              ? data.recurrence_days
+              : []
+          );
           setDuration(
             typeof data.duration_minutes === "number"
               ? String(data.duration_minutes)
@@ -583,6 +590,11 @@ export default function EditHabitPage() {
       return;
     }
 
+    if (recurrence === "every x days" && recurrenceDays.length === 0) {
+      setError("Please select at least one day for this habit.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -603,6 +615,10 @@ export default function EditHabitPage() {
 
       const trimmedDescription = description.trim();
       const recurrenceValue = recurrence === "none" ? null : recurrence;
+      const recurrenceDaysValue =
+        recurrence === "every x days" && recurrenceDays.length > 0
+          ? recurrenceDays
+          : null;
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -639,6 +655,7 @@ export default function EditHabitPage() {
           description: trimmedDescription || null,
           habit_type: habitType,
           recurrence: recurrenceValue,
+          recurrence_days: recurrenceDaysValue,
           duration_minutes: durationMinutes,
           window_id: windowId === "none" ? null : windowId,
           routine_id: routineIdToUse,
@@ -712,17 +729,29 @@ export default function EditHabitPage() {
                   description={description}
                   habitType={habitType}
                   recurrence={recurrence}
+                  recurrenceDays={recurrenceDays}
                   duration={duration}
                   windowId={windowId}
+                  skillId={skillId}
                   windowsLoading={windowsLoading}
                   windowOptions={windowSelectOptions}
                   windowError={windowLoadError}
+                  skillsLoading={skillsLoading}
+                  skillOptions={skillSelectOptions}
+                  skillError={skillLoadError}
                   onNameChange={setName}
                   onDescriptionChange={setDescription}
                   onHabitTypeChange={setHabitType}
-                  onRecurrenceChange={setRecurrence}
+                  onRecurrenceChange={(value) => {
+                    setRecurrence(value);
+                    if (value !== "every x days") {
+                      setRecurrenceDays([]);
+                    }
+                  }}
+                  onRecurrenceDaysChange={setRecurrenceDays}
                   onWindowChange={setWindowId}
                   onDurationChange={setDuration}
+                  onSkillChange={setSkillId}
                   showDescriptionField={false}
                   footerSlot={
                     <div className="space-y-4">
@@ -750,9 +779,6 @@ export default function EditHabitPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-white/50">
-                          Connect this habit to a single skill to track your growth focus.
-                        </p>
                         {skillLoadError ? (
                           <p className="text-xs text-red-300">{skillLoadError}</p>
                         ) : null}
@@ -793,9 +819,6 @@ export default function EditHabitPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-white/50">
-                          Group habits into routines to tackle related work together.
-                        </p>
                         {routineLoadError ? (
                           <p className="text-xs text-red-300">{routineLoadError}</p>
                         ) : null}
