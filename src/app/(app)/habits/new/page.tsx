@@ -365,8 +365,11 @@ export default function NewHabitPage() {
       return;
     }
 
-    if (recurrence === "weekly" && recurrenceDays.length === 0) {
-      setRecurrenceDaysError("Select at least one day for a weekly habit.");
+    const requiresRecurrenceDays =
+      recurrence === "weekly" || recurrence === "every x days";
+
+    if (requiresRecurrenceDays && recurrenceDays.length === 0) {
+      setRecurrenceDaysError("Select at least one day for this cadence.");
       setError("Please select at least one day of the week.");
       return;
     }
@@ -430,7 +433,7 @@ export default function NewHabitPage() {
         habit_type: habitType,
         recurrence: recurrenceValue,
         recurrence_days:
-          recurrence === "weekly" ? recurrenceDays : null,
+        requiresRecurrenceDays ? recurrenceDays : null,
         duration_minutes: durationMinutes,
         window_id: windowId === "none" ? null : windowId,
         routine_id: routineIdToUse,
@@ -489,7 +492,7 @@ export default function NewHabitPage() {
                 onHabitTypeChange={setHabitType}
                 onRecurrenceChange={(value) => {
                   setRecurrence(value);
-                  if (value !== "weekly") {
+                  if (value !== "weekly" && value !== "every x days") {
                     setRecurrenceDays([]);
                     setRecurrenceDaysError(null);
                   }

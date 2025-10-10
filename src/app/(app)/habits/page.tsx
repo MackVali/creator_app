@@ -117,8 +117,9 @@ function formatRecurrenceLabel(
   const base = formatTitleCase(recurrence);
   if (!base) return null;
 
+  const normalized = recurrence.toLowerCase();
   if (
-    recurrence.toLowerCase() === "weekly" &&
+    (normalized === "weekly" || normalized === "every x days") &&
     recurrenceDays &&
     recurrenceDays.length > 0
   ) {

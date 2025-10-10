@@ -1467,22 +1467,22 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
         insertData.habit_type = formData.type;
-        insertData.recurrence =
+        const recurrenceValue =
           formData.recurrence === "none" ? null : formData.recurrence;
-        if (
-          formData.recurrence === "weekly" &&
-          formData.recurrence_days.length === 0
-        ) {
+        insertData.recurrence = recurrenceValue;
+        const requiresRecurrenceDays =
+          recurrenceValue === "weekly" || recurrenceValue === "every x days";
+
+        if (requiresRecurrenceDays && formData.recurrence_days.length === 0) {
           toast.error(
             "Select days",
-            "Choose at least one day for a weekly habit."
+            "Choose at least one day for this habit's cadence."
           );
           return;
         }
-        insertData.recurrence_days =
-          formData.recurrence === "weekly"
-            ? formData.recurrence_days
-            : null;
+        insertData.recurrence_days = requiresRecurrenceDays
+          ? formData.recurrence_days
+          : null;
         insertData.window_id =
           formData.window_id === "none" ? null : formData.window_id;
 
@@ -2419,7 +2419,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   ...prev,
                   recurrence: value,
                   recurrence_days:
-                    value === "weekly" ? prev.recurrence_days : [],
+                    value === "weekly" || value === "every x days"
+                      ? prev.recurrence_days
+                      : [],
                 }))
               }
               onRecurrenceDaysChange={(days) =>

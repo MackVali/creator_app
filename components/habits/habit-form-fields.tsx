@@ -219,7 +219,7 @@ export function HabitFormFields({
           </p>
         </div>
 
-        {recurrence === "weekly" ? (
+        {['weekly', 'every x days'].includes(recurrence) ? (
           <div className="space-y-3 sm:col-span-2">
             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
               Days of the week
