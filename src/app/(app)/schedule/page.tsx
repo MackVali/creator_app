@@ -49,7 +49,10 @@ import {
   type ScheduleInstance,
 } from '@/lib/scheduler/instanceRepo'
 import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
-import { buildProjectItems } from '@/lib/scheduler/projects'
+import {
+  buildProjectItems,
+  DEFAULT_PROJECT_DURATION_MIN,
+} from '@/lib/scheduler/projects'
 import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import {
@@ -473,6 +476,34 @@ function buildWindowMap(windows: RepoWindow[]) {
     map[w.id] = w
   }
   return map
+}
+
+function createFallbackProjectFromInstance(
+  inst: ScheduleInstance,
+): ProjectItem | null {
+  const projectId = typeof inst.source_id === 'string' ? inst.source_id : null
+  if (!projectId) return null
+
+  const durationRaw = Number(inst.duration_min ?? 0)
+  const durationMin =
+    Number.isFinite(durationRaw) && durationRaw > 0
+      ? durationRaw
+      : DEFAULT_PROJECT_DURATION_MIN
+
+  const energyLabel = normalizeEnergyLabel(inst.energy_resolved)
+  const weightSnapshot = Number(inst.weight_snapshot ?? 0)
+
+  return {
+    id: projectId,
+    name: 'Untitled project',
+    priority: 'NO',
+    stage: 'BUILD',
+    energy: energyLabel,
+    duration_min: durationMin,
+    weight: Number.isFinite(weightSnapshot) ? weightSnapshot : 0,
+    taskCount: 0,
+    skill_icon: null,
+  }
 }
 
 function computeProjectInstances(
@@ -1777,10 +1808,23 @@ export default function SchedulePage() {
   }, [tasks])
 
   const projectMap = useMemo(() => {
-    const map: Record<string, typeof projectItems[number]> = {}
-    for (const p of projectItems) map[p.id] = p
+    const map: Record<string, ProjectItem> = {}
+    for (const project of projectItems) {
+      map[project.id] = project
+    }
+
+    for (const inst of instances) {
+      if (inst.source_type !== 'PROJECT') continue
+      const projectId = inst.source_id
+      if (!projectId || map[projectId]) continue
+      const fallback = createFallbackProjectFromInstance(inst)
+      if (fallback) {
+        map[fallback.id] = fallback
+      }
+    }
+
     return map
-  }, [projectItems])
+  }, [projectItems, instances])
 
   const habitMap = useMemo(() => {
     const map: Record<string, HabitScheduleItem> = {}
