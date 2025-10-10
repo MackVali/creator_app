@@ -37,11 +37,22 @@ interface RoutineOption {
   description: string | null;
 }
 
+interface SkillOption {
+  id: string;
+  name: string | null;
+}
+
 type RoutineSelectValue = string;
 type RoutineSelectOption = {
   value: string;
   label: string;
   description?: string | null;
+  disabled?: boolean;
+};
+
+type SkillSelectOption = {
+  value: string;
+  label: string;
   disabled?: boolean;
 };
 
@@ -121,6 +132,10 @@ export default function EditHabitPage() {
   const [routineId, setRoutineId] = useState<RoutineSelectValue>("none");
   const [newRoutineName, setNewRoutineName] = useState("");
   const [newRoutineDescription, setNewRoutineDescription] = useState("");
+  const [skillOptions, setSkillOptions] = useState<SkillOption[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
+  const [skillId, setSkillId] = useState<string>("none");
   const [habitLoading, setHabitLoading] = useState(true);
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
 
@@ -346,6 +361,109 @@ export default function EditHabitPage() {
   }, [routineOptions, routinesLoading]);
 
   useEffect(() => {
+    let active = true;
+
+    const fetchSkills = async () => {
+      if (!supabase) {
+        if (active) {
+          setSkillsLoading(false);
+          setSkillLoadError("Supabase client not available.");
+        }
+        return;
+      }
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) throw userError;
+
+        if (!user) {
+          if (active) {
+            setSkillOptions([]);
+            setSkillId("none");
+            setSkillLoadError(null);
+          }
+          return;
+        }
+
+        const { data, error: skillsError } = await supabase
+          .from("skills")
+          .select("id, name")
+          .eq("user_id", user.id)
+          .order("name", { ascending: true });
+
+        if (skillsError) throw skillsError;
+
+        if (active) {
+          const safeSkills = data ?? [];
+          setSkillOptions(safeSkills);
+          setSkillLoadError(null);
+          setSkillId((current) => {
+            if (current === "none") {
+              return current;
+            }
+
+            return safeSkills.some((skill) => skill.id === current)
+              ? current
+              : "none";
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load skills:", err);
+        if (active) {
+          setSkillOptions([]);
+          setSkillLoadError("Unable to load your skills right now.");
+        }
+      } finally {
+        if (active) {
+          setSkillsLoading(false);
+        }
+      }
+    };
+
+    fetchSkills();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const skillSelectOptions = useMemo<SkillSelectOption[]>(() => {
+    if (skillsLoading) {
+      return [
+        {
+          value: "none",
+          label: "Loading skills…",
+          disabled: true,
+        },
+      ];
+    }
+
+    if (skillOptions.length === 0) {
+      return [
+        {
+          value: "none",
+          label: "No skill linked",
+        },
+      ];
+    }
+
+    return [
+      {
+        value: "none",
+        label: "No skill linked",
+      },
+      ...skillOptions.map((skill) => ({
+        value: skill.id,
+        label: skill.name?.trim() ? skill.name : "Untitled skill",
+      })),
+    ];
+  }, [skillOptions, skillsLoading]);
+
+  useEffect(() => {
     if (!habitId) {
       setHabitLoadError("Missing habit identifier.");
       setHabitLoading(false);
@@ -384,7 +502,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, duration_minutes, window_id, routine_id"
+            "id, name, description, habit_type, recurrence, duration_minutes, window_id, routine_id, skill_id"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -411,6 +529,7 @@ export default function EditHabitPage() {
           );
           setWindowId(data.window_id ?? "none");
           setRoutineId(data.routine_id ?? "none");
+          setSkillId(data.skill_id ?? "none");
         }
       } catch (err) {
         console.error("Failed to load habit:", err);
@@ -523,6 +642,7 @@ export default function EditHabitPage() {
           duration_minutes: durationMinutes,
           window_id: windowId === "none" ? null : windowId,
           routine_id: routineIdToUse,
+          skill_id: skillId === "none" ? null : skillId,
         })
         .eq("id", habitId)
         .eq("user_id", user.id);
@@ -567,11 +687,11 @@ export default function EditHabitPage() {
               <div className="space-y-6">
                 <Skeleton className="h-5 w-48" />
                 <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-32 w-full" />
                 <div className="grid gap-4 md:grid-cols-2">
                   <Skeleton className="h-10 w-full" />
                   <Skeleton className="h-10 w-full" />
                 </div>
+                <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </div>
             </div>
@@ -603,8 +723,41 @@ export default function EditHabitPage() {
                   onRecurrenceChange={setRecurrence}
                   onWindowChange={setWindowId}
                   onDurationChange={setDuration}
+                  showDescriptionField={false}
                   footerSlot={
                     <div className="space-y-4">
+                      <div className="space-y-3">
+                        <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                          Linked skill
+                        </Label>
+                        <Select
+                          value={skillId}
+                          onValueChange={setSkillId}
+                          disabled={skillsLoading}
+                        >
+                          <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                            <SelectValue placeholder="Choose a skill" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#0b101b] text-sm text-white">
+                            {skillSelectOptions.map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                                disabled={option.disabled}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-white/50">
+                          Connect this habit to a single skill to track your growth focus.
+                        </p>
+                        {skillLoadError ? (
+                          <p className="text-xs text-red-300">{skillLoadError}</p>
+                        ) : null}
+                      </div>
+
                       <div className="space-y-3">
                         <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                           Routine
