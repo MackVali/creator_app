@@ -80,6 +80,16 @@ export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
   { label: "Every X Days", value: "every x days" },
 ];
 
+const DAYS_OF_WEEK = [
+  { value: 0, label: "Sun", fullLabel: "Sunday" },
+  { value: 1, label: "Mon", fullLabel: "Monday" },
+  { value: 2, label: "Tue", fullLabel: "Tuesday" },
+  { value: 3, label: "Wed", fullLabel: "Wednesday" },
+  { value: 4, label: "Thu", fullLabel: "Thursday" },
+  { value: 5, label: "Fri", fullLabel: "Friday" },
+  { value: 6, label: "Sat", fullLabel: "Saturday" },
+];
+
 interface HabitFormFieldsProps {
   name: string;
   description: string;

@@ -483,6 +483,11 @@ export default function NewHabitPage() {
       return;
     }
 
+    if (recurrence.toLowerCase().trim() === "every x days" && recurrenceDays.length === 0) {
+      setError("Please select at least one day for this recurrence.");
+      return;
+    }
+
     if (routineId === "__create__" && !newRoutineName.trim()) {
       setError("Please give your new routine a name.");
       return;

@@ -207,6 +207,38 @@ export interface Database {
           user_id?: string | null;
         };
       };
+      notes: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string | null;
+          user_id: string;
+          title: string | null;
+          content: string | null;
+          monument_id: string | null;
+          skill_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string | null;
+          user_id: string;
+          title?: string | null;
+          content?: string | null;
+          monument_id?: string | null;
+          skill_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string | null;
+          user_id?: string;
+          title?: string | null;
+          content?: string | null;
+          monument_id?: string | null;
+          skill_id?: string | null;
+        };
+      };
       friend_connections: {
         Row: {
           id: string;

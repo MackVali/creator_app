@@ -56,12 +56,6 @@ type RoutineSelectOption = {
   disabled?: boolean;
 };
 
-type SkillSelectOption = {
-  value: string;
-  label: string;
-  disabled?: boolean;
-};
-
 function formatTimeLabel(value: string | null | undefined) {
   if (!value) return null;
   const [hour, minute] = value.split(":");
@@ -444,7 +438,7 @@ export default function EditHabitPage() {
     };
   }, [supabase]);
 
-  const skillSelectOptions = useMemo<SkillSelectOption[]>(() => {
+  const skillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
     if (skillsLoading) {
       return [
         {
@@ -599,6 +593,11 @@ export default function EditHabitPage() {
     const durationMinutes = Number(duration);
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
       setError("Please enter how many minutes the habit should take.");
+      return;
+    }
+
+    if (recurrence.toLowerCase().trim() === "every x days" && recurrenceDays.length === 0) {
+      setError("Please select at least one day for this recurrence.");
       return;
     }
 

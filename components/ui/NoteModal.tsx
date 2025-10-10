@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem } from "./select";
 import { useToastHelpers } from "./toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
-import { getNotes, saveNotes } from "@/lib/notesStorage";
+import { createSkillNote } from "@/lib/notesStorage";
 
 interface NoteModalProps {
   isOpen: boolean;
@@ -27,6 +27,7 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
     title: "",
     content: "",
   });
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -51,24 +52,52 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
 
   if (!isOpen || !mounted) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedTitle = formData.title.trim();
+    const trimmedContent = formData.content.trim();
+    const hasContent = trimmedTitle.length > 0 || trimmedContent.length > 0;
+
     if (!formData.skillId) {
-      alert("Please select a skill");
+      toast.error("Please select a skill");
       return;
     }
-    const notes = getNotes(formData.skillId);
-    notes.push({
-      id: Date.now().toString(),
-      skillId: formData.skillId,
-      title: formData.title,
-      content: formData.content,
-    });
-    saveNotes(formData.skillId, notes);
-    toast.success("Note saved");
-    setFormData({ skillId: "", title: "", content: "" });
-    onClose();
+
+    if (!hasContent) {
+      toast.error("Add a title or some content before saving");
+      return;
+    }
+
+    if (isSaving) return;
+
+    setIsSaving(true);
+
+    try {
+      const saved = await createSkillNote(formData.skillId, {
+        title: formData.title,
+        content: formData.content,
+      });
+
+      if (!saved) {
+        toast.error("We couldn’t save your note. Try again.");
+        return;
+      }
+
+      toast.success("Note saved");
+      setFormData({ skillId: "", title: "", content: "" });
+      onClose();
+    } catch (error) {
+      console.error("Failed to save note", error);
+      toast.error("We couldn’t save your note. Try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const canSubmit =
+    formData.skillId &&
+    (formData.title.trim().length > 0 || formData.content.trim().length > 0) &&
+    !isSaving;
 
   return createPortal(
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -126,9 +155,10 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
           <Button
             type="submit"
             className="w-full"
-            disabled={!formData.skillId}
+            disabled={!canSubmit}
+            aria-busy={isSaving}
           >
-            Save Note
+            {isSaving ? "Saving…" : "Save Note"}
           </Button>
         </form>
       </div>

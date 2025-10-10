@@ -51,6 +51,29 @@ export function DayTimeline({
     hours.push(h);
   }
 
+  const startMinute = Math.floor(startHour * 60);
+  const endMinute = Math.ceil(endHour * 60);
+  const showQuarterHourMarkers = pxPerMin >= 1.6;
+  const showFiveMinuteMarkers = pxPerMin >= 3;
+
+  const quarterHours: number[] = [];
+  if (showQuarterHourMarkers) {
+    const firstQuarter = Math.ceil(startMinute / 15) * 15;
+    for (let minute = firstQuarter; minute < endMinute; minute += 15) {
+      if (minute % 60 === 0) continue;
+      quarterHours.push(minute);
+    }
+  }
+
+  const fiveMinuteMarks: number[] = [];
+  if (showFiveMinuteMarkers) {
+    const firstFive = Math.ceil(startMinute / 5) * 5;
+    for (let minute = firstFive; minute < endMinute; minute += 5) {
+      if (minute % 15 === 0) continue;
+      fiveMinuteMarks.push(minute);
+    }
+  }
+
   const backgroundGradient = [
     "radial-gradient(140% 140% at 0% 0%, rgba(24, 24, 27, 0.65), rgba(24, 24, 27, 0) 60%)",
     "radial-gradient(120% 120% at 100% 100%, rgba(39, 39, 42, 0.5), rgba(39, 39, 42, 0) 62%)",
@@ -66,6 +89,35 @@ export function DayTimeline({
       )}
       style={{ height: timelineHeight, background: backgroundGradient }}
     >
+      {fiveMinuteMarks.map(minute => {
+        const top = (minute - startMinute) * pxPerMin;
+        return (
+          <div
+            key={`five-${minute}`}
+            className="pointer-events-none absolute left-20 right-6 border-t border-white/5"
+            style={{ top }}
+          />
+        );
+      })}
+
+      {quarterHours.map(minute => {
+        const top = (minute - startMinute) * pxPerMin;
+        return (
+          <Fragment key={`quarter-${minute}`}>
+            <div
+              className="pointer-events-none absolute left-20 right-6 border-t border-white/12"
+              style={{ top }}
+            />
+            <div
+              className="pointer-events-none absolute left-0 w-20 -translate-y-1/2 pr-4 text-right text-[10px] font-medium tracking-[0.14em] text-white/40"
+              style={{ top }}
+            >
+              {formatTime(minute)}
+            </div>
+          </Fragment>
+        );
+      })}
+
       {hours.map(h => {
         const top = (h - startHour) * 60 * pxPerMin;
         return (

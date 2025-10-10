@@ -44,7 +44,7 @@ function parseIsoDate(value: string | null | undefined) {
   return parsed
 }
 
-function resolveWindowDays(days?: number[] | null) {
+function normalizeDayList(days?: number[] | null) {
   if (!days || days.length === 0) return null
   const normalized = Array.from(
     new Set(
