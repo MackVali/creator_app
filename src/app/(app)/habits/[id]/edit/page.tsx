@@ -9,7 +9,13 @@ import {
   PageHeader,
   Skeleton,
 } from "@/components/ui";
-import { HabitFormFields, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type HabitWindowSelectOption } from "@/components/habits/habit-form-fields";
+import {
+  HabitFormFields,
+  HABIT_RECURRENCE_OPTIONS,
+  HABIT_TYPE_OPTIONS,
+  type HabitWindowSelectOption,
+  type HabitSkillSelectOption,
+} from "@/components/habits/habit-form-fields";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -47,12 +53,6 @@ type RoutineSelectOption = {
   value: string;
   label: string;
   description?: string | null;
-  disabled?: boolean;
-};
-
-type SkillSelectOption = {
-  value: string;
-  label: string;
   disabled?: boolean;
 };
 
@@ -431,7 +431,7 @@ export default function EditHabitPage() {
     };
   }, [supabase]);
 
-  const skillSelectOptions = useMemo<SkillSelectOption[]>(() => {
+  const skillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
     if (skillsLoading) {
       return [
         {
@@ -714,50 +714,23 @@ export default function EditHabitPage() {
                   recurrence={recurrence}
                   duration={duration}
                   windowId={windowId}
+                  skillId={skillId}
                   windowsLoading={windowsLoading}
                   windowOptions={windowSelectOptions}
                   windowError={windowLoadError}
+                  skillsLoading={skillsLoading}
+                  skillOptions={skillSelectOptions}
+                  skillError={skillLoadError}
                   onNameChange={setName}
                   onDescriptionChange={setDescription}
                   onHabitTypeChange={setHabitType}
                   onRecurrenceChange={setRecurrence}
                   onWindowChange={setWindowId}
                   onDurationChange={setDuration}
+                  onSkillChange={setSkillId}
                   showDescriptionField={false}
                   footerSlot={
                     <div className="space-y-4">
-                      <div className="space-y-3">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                          Linked skill
-                        </Label>
-                        <Select
-                          value={skillId}
-                          onValueChange={setSkillId}
-                          disabled={skillsLoading}
-                        >
-                          <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                            <SelectValue placeholder="Choose a skill" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#0b101b] text-sm text-white">
-                            {skillSelectOptions.map((option) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                                disabled={option.disabled}
-                              >
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-white/50">
-                          Connect this habit to a single skill to track your growth focus.
-                        </p>
-                        {skillLoadError ? (
-                          <p className="text-xs text-red-300">{skillLoadError}</p>
-                        ) : null}
-                      </div>
-
                       <div className="space-y-3">
                         <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                           Routine
