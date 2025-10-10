@@ -478,6 +478,13 @@ export default function HabitsPage() {
                                         )}
                                       </div>
                                     </div>
+                                    <Link
+                                      href={`/habits/${habit.id}/edit`}
+                                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+                                    >
+                                      Edit
+                                      <span aria-hidden>→</span>
+                                    </Link>
                                   </div>
 
                                   {tags.length > 0 && (
@@ -570,28 +577,37 @@ export default function HabitsPage() {
                         >
                           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_60%)] opacity-0 transition duration-300 group-hover:opacity-100" />
                           <div className="relative flex items-start justify-between gap-4">
-                            <div
-                              className={`flex h-12 w-12 items-center justify-center rounded-xl text-2xl font-semibold ${palette.iconBg}`}
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`flex h-12 w-12 items-center justify-center rounded-xl text-2xl font-semibold ${palette.iconBg}`}
+                              >
+                                {initials}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {habitType && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                                    {habitType}
+                                  </span>
+                                )}
+                                {recurrence && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                                    {recurrence}
+                                  </span>
+                                )}
+                                {durationLabel && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                                    {durationLabel}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Link
+                              href={`/habits/${habit.id}/edit`}
+                              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
                             >
-                              {initials}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {habitType && (
-                                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
-                                  {habitType}
-                                </span>
-                              )}
-                              {recurrence && (
-                                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
-                                  {recurrence}
-                                </span>
-                              )}
-                              {durationLabel && (
-                                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
-                                  {durationLabel}
-                                </span>
-                              )}
-                            </div>
+                              Edit
+                              <span aria-hidden>→</span>
+                            </Link>
                           </div>
 
                           <div className="relative mt-6 space-y-3">
@@ -635,14 +651,23 @@ export default function HabitsPage() {
                               <span className="text-base">✨</span>
                               <span>Keep the streak going</span>
                             </div>
-                            <button
-                              type="button"
-                              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${palette.ctaClass}`}
-                              disabled
-                            >
-                              <span>Mark complete</span>
-                              <span aria-hidden>→</span>
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Link
+                                href={`/habits/${habit.id}/edit`}
+                                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+                              >
+                                Edit habit
+                                <span aria-hidden>→</span>
+                              </Link>
+                              <button
+                                type="button"
+                                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${palette.ctaClass}`}
+                                disabled
+                              >
+                                <span>Mark complete</span>
+                                <span aria-hidden>→</span>
+                              </button>
+                            </div>
                           </div>
                         </article>
                       );
