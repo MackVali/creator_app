@@ -1,5 +1,5 @@
 export const VISIBLE_INSTANCE_STATUS_FILTER =
-  'status.is.null,status.neq.canceled'
+  'status.is.null,status.in.(scheduled,completed,missed)'
 
 export function applyVisibleInstanceStatusFilter<
   T extends {

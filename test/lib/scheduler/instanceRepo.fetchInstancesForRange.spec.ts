@@ -121,7 +121,27 @@ class FakeQueryBuilder {
   private buildStatusFilter(
     clauseString: string
   ): (status: string | null) => boolean {
-    const clauses = clauseString.split(',')
+    const clauses: string[] = []
+    let depth = 0
+    let current = ''
+
+    for (const char of clauseString) {
+      if (char === '(') {
+        depth += 1
+      } else if (char === ')') {
+        depth = Math.max(0, depth - 1)
+      }
+
+      if (char === ',' && depth === 0) {
+        if (current) clauses.push(current)
+        current = ''
+        continue
+      }
+
+      current += char
+    }
+
+    if (current) clauses.push(current)
 
     return (status: string | null) => {
       return clauses.some(clause => {
@@ -137,6 +157,12 @@ class FakeQueryBuilder {
         const neqMatch = clause.match(/^status\.neq\.(.+)$/)
         if (neqMatch) {
           return status !== null && status !== neqMatch[1]
+        }
+
+        const inMatch = clause.match(/^status\.in\.\((.+)\)$/)
+        if (inMatch) {
+          const values = inMatch[1].split(',')
+          return status !== null && values.includes(status)
         }
 
         return false
