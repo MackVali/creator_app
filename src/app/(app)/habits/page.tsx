@@ -98,6 +98,39 @@ function formatTitleCase(value: string | null | undefined) {
     .join(" ");
 }
 
+const WEEKDAY_SHORT_LABELS = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+];
+
+function formatRecurrenceLabel(
+  recurrence: string | null | undefined,
+  recurrenceDays: number[] | null | undefined
+) {
+  if (!recurrence) return null;
+
+  const base = formatTitleCase(recurrence);
+  if (!base) return null;
+
+  if (
+    recurrence.toLowerCase() === "weekly" &&
+    recurrenceDays &&
+    recurrenceDays.length > 0
+  ) {
+    const labels = [...recurrenceDays]
+      .sort((a, b) => a - b)
+      .map((day) => WEEKDAY_SHORT_LABELS[day] ?? String(day));
+    return `${base} (${labels.join(", ")})`;
+  }
+
+  return base;
+}
+
 function formatTimeLabel(value: string | null | undefined) {
   if (!value) return null;
   const [hour, minute] = value.split(":");
@@ -442,7 +475,10 @@ export default function HabitsPage() {
                                 CARD_STYLES[(routineIndex + habitIndex) % CARD_STYLES.length];
                               const initials = habit.name.charAt(0).toUpperCase();
                               const habitType = formatTitleCase(habit.habit_type);
-                              const recurrence = formatTitleCase(habit.recurrence);
+                              const recurrence = formatRecurrenceLabel(
+                                habit.recurrence,
+                                habit.recurrence_days ?? null
+                              );
                               const hasDuration =
                                 typeof habit.duration_minutes === "number" &&
                                 habit.duration_minutes > 0;
@@ -455,7 +491,8 @@ export default function HabitsPage() {
                                 habit.window?.end_local
                               );
                               const windowEnergy = formatTitleCase(habit.window?.energy);
-                              const tags = [habitType, recurrence].filter(Boolean) as string[];
+                              const tags = [habitType, recurrence]
+                                .filter(Boolean) as string[];
 
                               return (
                                 <li
@@ -549,7 +586,10 @@ export default function HabitsPage() {
                       const palette = CARD_STYLES[index % CARD_STYLES.length];
                       const initials = habit.name.charAt(0).toUpperCase();
                       const habitType = formatTitleCase(habit.habit_type);
-                      const recurrence = formatTitleCase(habit.recurrence);
+                      const recurrence = formatRecurrenceLabel(
+                        habit.recurrence,
+                        habit.recurrence_days ?? null
+                      );
                       const hasDuration =
                         typeof habit.duration_minutes === "number" &&
                         habit.duration_minutes > 0;

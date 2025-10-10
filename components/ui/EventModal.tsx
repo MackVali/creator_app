@@ -382,6 +382,7 @@ interface FormState {
   type: string;
   recurrence: string;
   window_id: string;
+  recurrence_days: number[];
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -431,6 +432,7 @@ const createInitialFormState = (
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   window_id: eventType === "HABIT" ? "none" : "",
+  recurrence_days: [],
 });
 
 type EventMeta = {
@@ -1413,6 +1415,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         habit_type?: string;
         type?: string;
         recurrence?: string;
+        recurrence_days?: number[] | null;
         duration_min?: number;
         duration_minutes?: number;
         monument_id?: string;
@@ -1466,6 +1469,20 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.habit_type = formData.type;
         insertData.recurrence =
           formData.recurrence === "none" ? null : formData.recurrence;
+        if (
+          formData.recurrence === "weekly" &&
+          formData.recurrence_days.length === 0
+        ) {
+          toast.error(
+            "Select days",
+            "Choose at least one day for a weekly habit."
+          );
+          return;
+        }
+        insertData.recurrence_days =
+          formData.recurrence === "weekly"
+            ? formData.recurrence_days
+            : null;
         insertData.window_id =
           formData.window_id === "none" ? null : formData.window_id;
 
@@ -2375,6 +2392,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               description={formData.description}
               habitType={formData.type}
               recurrence={formData.recurrence}
+              recurrenceDays={formData.recurrence_days}
               duration={formData.duration_min}
               windowId={formData.window_id}
               windowsLoading={windowsLoading}
@@ -2386,18 +2404,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   ...prev,
                   name: formatNameValue(value),
                 }))
-                }
-                onDescriptionChange={(value) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    description: value,
-                  }))
-                }
-                onHabitTypeChange={(value) =>
-                  setFormData((prev) => ({ ...prev, type: value }))
-                }
+              }
+              onDescriptionChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  description: value,
+                }))
+              }
+              onHabitTypeChange={(value) =>
+                setFormData((prev) => ({ ...prev, type: value }))
+              }
               onRecurrenceChange={(value) =>
-                setFormData((prev) => ({ ...prev, recurrence: value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  recurrence: value,
+                  recurrence_days:
+                    value === "weekly" ? prev.recurrence_days : [],
+                }))
+              }
+              onRecurrenceDaysChange={(days) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  recurrence_days: days,
+                }))
               }
               onWindowChange={(value) =>
                 setFormData((prev) => ({ ...prev, window_id: value }))

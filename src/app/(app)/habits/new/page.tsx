@@ -102,10 +102,14 @@ export default function NewHabitPage() {
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
   );
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recurrenceDaysError, setRecurrenceDaysError] = useState<string | null>(
+    null
+  );
   const [windowOptions, setWindowOptions] = useState<WindowOption[]>([]);
   const [windowsLoading, setWindowsLoading] = useState(true);
   const [windowLoadError, setWindowLoadError] = useState<string | null>(null);
@@ -361,8 +365,17 @@ export default function NewHabitPage() {
       return;
     }
 
+    if (recurrence === "weekly" && recurrenceDays.length === 0) {
+      setRecurrenceDaysError("Select at least one day for a weekly habit.");
+      setError("Please select at least one day of the week.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
+    if (recurrenceDaysError) {
+      setRecurrenceDaysError(null);
+    }
 
     try {
       const {
@@ -416,6 +429,8 @@ export default function NewHabitPage() {
         description: trimmedDescription || null,
         habit_type: habitType,
         recurrence: recurrenceValue,
+        recurrence_days:
+          recurrence === "weekly" ? recurrenceDays : null,
         duration_minutes: durationMinutes,
         window_id: windowId === "none" ? null : windowId,
         routine_id: routineIdToUse,
@@ -463,6 +478,7 @@ export default function NewHabitPage() {
                 description={description}
                 habitType={habitType}
                 recurrence={recurrence}
+                recurrenceDays={recurrenceDays}
                 duration={duration}
                 windowId={windowId}
                 windowsLoading={windowsLoading}
@@ -471,9 +487,22 @@ export default function NewHabitPage() {
                 onNameChange={setName}
                 onDescriptionChange={setDescription}
                 onHabitTypeChange={setHabitType}
-                onRecurrenceChange={setRecurrence}
+                onRecurrenceChange={(value) => {
+                  setRecurrence(value);
+                  if (value !== "weekly") {
+                    setRecurrenceDays([]);
+                    setRecurrenceDaysError(null);
+                  }
+                }}
+                onRecurrenceDaysChange={(days) => {
+                  setRecurrenceDays(days);
+                  if (days.length > 0) {
+                    setRecurrenceDaysError(null);
+                  }
+                }}
                 onWindowChange={setWindowId}
                 onDurationChange={setDuration}
+                recurrenceDaysError={recurrenceDaysError}
                 footerSlot={
                   <div className="space-y-4">
                     <div className="space-y-3">

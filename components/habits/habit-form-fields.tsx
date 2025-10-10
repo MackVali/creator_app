@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 export type HabitTypeOption = {
   label: string;
@@ -65,6 +66,7 @@ interface HabitFormFieldsProps {
   description: string;
   habitType: string;
   recurrence: string;
+  recurrenceDays: number[];
   duration: string;
   windowId: string;
   windowsLoading: boolean;
@@ -74,19 +76,32 @@ interface HabitFormFieldsProps {
   onDescriptionChange: (value: string) => void;
   onHabitTypeChange: (value: string) => void;
   onRecurrenceChange: (value: string) => void;
+  onRecurrenceDaysChange: (value: number[]) => void;
   onWindowChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
   showDescriptionField?: boolean;
+  recurrenceDaysError?: string | null;
 }
+
+const WEEKDAY_OPTIONS: { label: string; value: number; title: string }[] = [
+  { label: "S", value: 0, title: "Sunday" },
+  { label: "M", value: 1, title: "Monday" },
+  { label: "T", value: 2, title: "Tuesday" },
+  { label: "W", value: 3, title: "Wednesday" },
+  { label: "T", value: 4, title: "Thursday" },
+  { label: "F", value: 5, title: "Friday" },
+  { label: "S", value: 6, title: "Saturday" },
+];
 
 export function HabitFormFields({
   name,
   description,
   habitType,
   recurrence,
+  recurrenceDays,
   duration,
   windowId,
   windowsLoading,
@@ -96,13 +111,27 @@ export function HabitFormFields({
   onDescriptionChange,
   onHabitTypeChange,
   onRecurrenceChange,
+  onRecurrenceDaysChange,
   onWindowChange,
   onDurationChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
   showDescriptionField = true,
+  recurrenceDaysError = null,
 }: HabitFormFieldsProps) {
+  const toggleRecurrenceDay = (day: number) => {
+    if (recurrenceDays.includes(day)) {
+      onRecurrenceDaysChange(
+        recurrenceDays.filter((existingDay) => existingDay !== day)
+      );
+      return;
+    }
+
+    const next = [...recurrenceDays, day].sort((a, b) => a - b);
+    onRecurrenceDaysChange(next);
+  };
+
   return (
     <div className="space-y-8">
       <div className="space-y-3">
@@ -189,6 +218,43 @@ export function HabitFormFields({
             Pick the cadence that fits best. You can adjust this later.
           </p>
         </div>
+
+        {recurrence === "weekly" ? (
+          <div className="space-y-3 sm:col-span-2">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Days of the week
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {WEEKDAY_OPTIONS.map((option) => {
+                const selected = recurrenceDays.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => toggleRecurrenceDay(option.value)}
+                    className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-full border text-sm font-medium transition",
+                      "border-white/10 bg-white/[0.04] text-white/70 hover:border-blue-400/60 hover:text-white",
+                      selected &&
+                        "border-blue-400/70 bg-blue-500/20 text-white shadow-[0_18px_38px_rgba(59,130,246,0.35)]"
+                    )}
+                    aria-pressed={selected}
+                    title={option.title}
+                  >
+                    <span aria-hidden>{option.label}</span>
+                    <span className="sr-only">{option.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-white/50">
+              Choose the specific days this habit should repeat each week.
+            </p>
+            {recurrenceDaysError ? (
+              <p className="text-xs text-red-300">{recurrenceDaysError}</p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="space-y-3">
           <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">

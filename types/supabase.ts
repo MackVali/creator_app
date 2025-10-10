@@ -54,6 +54,7 @@ export interface Database {
           description: string | null;
           habit_type: string;
           recurrence: string | null;
+          recurrence_days: number[] | null;
           duration_minutes: number | null;
           window_id: string | null;
         };
@@ -66,6 +67,7 @@ export interface Database {
           description?: string | null;
           habit_type?: string;
           recurrence?: string | null;
+          recurrence_days?: number[] | null;
           duration_minutes?: number | null;
           window_id?: string | null;
         };
@@ -78,6 +80,7 @@ export interface Database {
           description?: string | null;
           habit_type?: string;
           recurrence?: string | null;
+          recurrence_days?: number[] | null;
           duration_minutes?: number | null;
           window_id?: string | null;
         };

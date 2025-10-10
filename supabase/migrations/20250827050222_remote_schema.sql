@@ -106,6 +106,7 @@ alter table "public"."habits" drop column if exists "type_id";
 alter table "public"."habits" add column "name" text not null;
 alter table "public"."habits" add column "habit_type" habit_type_enum not null default 'HABIT'::habit_type_enum;
 alter table "public"."habits" add column "recurrence" recurrence_enum;
+alter table "public"."habits" add column "recurrence_days" integer[];
 alter table "public"."habits" add column "updated_at" timestamp with time zone not null default now();
 
 -- Modify monuments table
