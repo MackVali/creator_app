@@ -72,6 +72,10 @@ import {
 } from '@/lib/scheduler/windowReports'
 import { getSkillsForUser } from '@/lib/data/skills'
 import type { SkillRow } from '@/lib/types/skill'
+import {
+  normalizeInstanceSourceType,
+  resolveInstanceSourceType,
+} from '@/lib/scheduler/instanceType'
 
 type DayTransitionDirection = -1 | 0 | 1
 
@@ -87,25 +91,6 @@ const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
-
-type InstanceSourceType = 'PROJECT' | 'TASK'
-
-function normalizeInstanceSourceType(value: unknown): InstanceSourceType | null {
-  if (typeof value !== 'string') return null
-  const upper = value.trim().toUpperCase()
-  if (upper === 'PROJECT' || upper === 'TASK') {
-    return upper as InstanceSourceType
-  }
-  return null
-}
-
-function isProjectSource(value: unknown): boolean {
-  return normalizeInstanceSourceType(value) === 'PROJECT'
-}
-
-function isTaskSource(value: unknown): boolean {
-  return normalizeInstanceSourceType(value) === 'TASK'
-}
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -497,10 +482,7 @@ function buildWindowMap(windows: RepoWindow[]) {
   return map
 }
 
-function createFallbackProjectFromInstance(
-  inst: ScheduleInstance,
-): ProjectItem | null {
-  if (!isProjectSource(inst.source_type)) return null
+function createFallbackProjectFromInstance(inst: ScheduleInstance): ProjectItem | null {
   const projectId = typeof inst.source_id === 'string' ? inst.source_id : null
   if (!projectId) return null
 
@@ -529,11 +511,17 @@ function createFallbackProjectFromInstance(
 function computeProjectInstances(
   instances: ScheduleInstance[],
   projectMap: Record<string, ProjectItem>,
-  windowMap: Record<string, RepoWindow>
+  windowMap: Record<string, RepoWindow>,
+  taskMap: Record<string, TaskLite>,
 ) {
   return instances
-    .filter(inst => isProjectSource(inst.source_type))
     .map(inst => {
+      const sourceType = resolveInstanceSourceType(inst, {
+        projectMap,
+        taskMap,
+        preferProjectWhenUnknown: true,
+      })
+      if (sourceType !== 'PROJECT') return null
       const project = projectMap[inst.source_id]
       if (!project) return null
       const start = toLocal(inst.start_utc)
@@ -574,7 +562,8 @@ function computeTaskInstancesByProjectForDay(
 ) {
   const map: Record<string, TaskInstanceInfo[]> = {}
   for (const inst of instances) {
-    if (!isTaskSource(inst.source_type)) continue
+    const sourceType = resolveInstanceSourceType(inst, { taskMap })
+    if (sourceType !== 'TASK') continue
     const task = taskMap[inst.source_id]
     const projectId = task?.project_id ?? null
     if (!task || !projectId) continue
@@ -604,7 +593,8 @@ function computeStandaloneTaskInstancesForDay(
 ) {
   const items: TaskInstanceInfo[] = []
   for (const inst of instances) {
-    if (!isTaskSource(inst.source_type)) continue
+    const sourceType = resolveInstanceSourceType(inst, { taskMap })
+    if (sourceType !== 'TASK') continue
     const task = taskMap[inst.source_id]
     if (!task) continue
     const projectId = task.project_id ?? undefined
@@ -907,7 +897,7 @@ function buildDayTimelineModel({
   localTimeZone: string
 }): DayTimelineModel {
   const windowMap = buildWindowMap(windows)
-  const projectInstances = computeProjectInstances(instances, projectMap, windowMap)
+  const projectInstances = computeProjectInstances(instances, projectMap, windowMap, taskMap)
   const projectInstanceIds = collectProjectInstanceIds(projectInstances)
   const taskInstancesByProject = computeTaskInstancesByProjectForDay(
     instances,
@@ -1834,7 +1824,12 @@ export default function SchedulePage() {
     }
 
     for (const inst of instances) {
-      if (!isProjectSource(inst.source_type)) continue
+      const sourceType = resolveInstanceSourceType(inst, {
+        projectMap: map,
+        taskMap,
+        preferProjectWhenUnknown: true,
+      })
+      if (sourceType !== 'PROJECT') continue
       const projectId = inst.source_id
       if (!projectId || map[projectId]) continue
       const fallback = createFallbackProjectFromInstance(inst)
@@ -1844,7 +1839,7 @@ export default function SchedulePage() {
     }
 
     return map
-  }, [projectItems, instances])
+  }, [projectItems, instances, taskMap])
 
   const habitMap = useMemo(() => {
     const map: Record<string, HabitScheduleItem> = {}
@@ -1869,8 +1864,8 @@ export default function SchedulePage() {
   }, [instances])
 
   const projectInstances = useMemo(
-    () => computeProjectInstances(instances, projectMap, windowMap),
-    [instances, projectMap, windowMap]
+    () => computeProjectInstances(instances, projectMap, windowMap, taskMap),
+    [instances, projectMap, windowMap, taskMap]
   )
 
   const projectInstanceIds = useMemo(

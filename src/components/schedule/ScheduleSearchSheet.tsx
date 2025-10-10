@@ -15,6 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import type { TaskLite } from "@/lib/scheduler/weight";
 import type { ProjectItem } from "@/lib/scheduler/projects";
+import { resolveInstanceSourceType } from "@/lib/scheduler/instanceType";
 import { toLocal } from "@/lib/time/tz";
 import { cn } from "@/lib/utils";
 
@@ -70,7 +71,13 @@ export function ScheduleSearchSheet({
 
       if (!instance.source_id) continue;
 
-      if (instance.source_type === "TASK") {
+      const sourceType = resolveInstanceSourceType(instance, {
+        taskMap,
+        projectMap,
+        preferProjectWhenUnknown: true,
+      });
+
+      if (sourceType === "TASK") {
         const task = taskMap[instance.source_id];
         if (!task) continue;
         const label = task.name || "Untitled task";
@@ -88,7 +95,7 @@ export function ScheduleSearchSheet({
           start,
           searchableText,
         });
-      } else if (instance.source_type === "PROJECT") {
+      } else if (sourceType === "PROJECT") {
         const project = projectMap[instance.source_id];
         if (!project) continue;
         const label = project.name || "Untitled project";
