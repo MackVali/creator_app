@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { applyVisibleInstanceStatusFilter } from '@/lib/scheduler/instanceFilters'
 import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
 
@@ -22,20 +23,17 @@ export async function fetchInstancesForRange(
   client?: Client
 ) {
   const supabase = await ensureClient(client)
-  const base = supabase
-    .from('schedule_instances')
-    .select('*')
-    .eq('user_id', userId)
-    .neq('status', 'canceled')
-
   const startParam = startUTC
   const endParam = endUTC
 
-  return await base
-    .or(
-      `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
-    )
-    .order('start_utc', { ascending: true })
+  return await applyVisibleInstanceStatusFilter(
+    supabase
+      .from('schedule_instances')
+      .select('*')
+      .eq('user_id', userId)
+      .lt('start_utc', endParam)
+      .gt('end_utc', startParam)
+  ).order('start_utc', { ascending: true })
 }
 
 export async function fetchScheduledProjectIds(

@@ -12,6 +12,7 @@ import {
   startOfDayInTimeZone,
   weekdayInTimeZone,
 } from '../../../src/lib/scheduler/timezone.ts'
+import { applyVisibleInstanceStatusFilter } from '../../../src/lib/scheduler/instanceFilters.ts'
 
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -496,15 +497,14 @@ async function fetchInstancesForRange(
   startUTC: string,
   endUTC: string
 ) {
-  return await client
-    .from('schedule_instances')
-    .select('*')
-    .eq('user_id', userId)
-    .neq('status', 'canceled')
-    .or(
-      `and(start_utc.gte.${startUTC},start_utc.lt.${endUTC}),and(start_utc.lt.${startUTC},end_utc.gt.${startUTC})`
-    )
-    .order('start_utc', { ascending: true })
+  return await applyVisibleInstanceStatusFilter(
+    client
+      .from('schedule_instances')
+      .select('*')
+      .eq('user_id', userId)
+      .lt('start_utc', endUTC)
+      .gt('end_utc', startUTC)
+  ).order('start_utc', { ascending: true })
 }
 
 async function dedupeScheduledProjects(
@@ -789,13 +789,14 @@ async function placeItemInWindows(
       typeof notBeforeMs === 'number' ? Math.max(windowStartMs, notBeforeMs) : windowStartMs
     const start = new Date(startMs)
 
-    const { data: taken, error } = await client
-      .from('schedule_instances')
-      .select('*')
-      .eq('user_id', userId)
-      .lt('start_utc', windowEnd.toISOString())
-      .gt('end_utc', start.toISOString())
-      .neq('status', 'canceled')
+    const { data: taken, error } = await applyVisibleInstanceStatusFilter(
+      client
+        .from('schedule_instances')
+        .select('*')
+        .eq('user_id', userId)
+        .lt('start_utc', windowEnd.toISOString())
+        .gt('end_utc', start.toISOString())
+    )
 
     if (error) {
       console.error('fetchInstancesForRange error', error)
