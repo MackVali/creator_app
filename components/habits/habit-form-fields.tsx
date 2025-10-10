@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useId, useMemo, useState } from "react";
+import { ReactNode, useId } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -155,21 +155,9 @@ export function HabitFormFields({
   const windowPositionDescriptionId = useId();
   const isLastWindowPosition = windowPosition === "LAST";
   const canChooseWindowPosition = windowId !== "none";
-  const [skillSearchTerm, setSkillSearchTerm] = useState("");
   const normalizedRecurrenceDays = Array.isArray(recurrenceDays)
     ? recurrenceDays
     : [];
-  const filteredSkillOptions = useMemo(() => {
-    if (!skillSearchTerm.trim()) {
-      return skillOptions;
-    }
-
-    const normalizedQuery = skillSearchTerm.trim().toLowerCase();
-
-    return skillOptions.filter((option) =>
-      option.label.toLowerCase().includes(normalizedQuery)
-    );
-  }, [skillOptions, skillSearchTerm]);
   const windowPositionDescription = canChooseWindowPosition
     ? "Choose whether this habit should kick off its window or close it out."
     : "Select a preferred window to control where this habit lands within it.";
@@ -307,43 +295,23 @@ export function HabitFormFields({
             value={skillId}
             onValueChange={onSkillChange}
             disabled={skillsLoading && skillOptions.length <= 1}
-            onOpenChange={(open) => {
-              if (!open) {
-                setSkillSearchTerm("");
-              }
-            }}
           >
             <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
               <SelectValue placeholder="Choose the skill this habit grows" />
             </SelectTrigger>
             <SelectContent className="bg-[#0b101b] text-sm text-white">
-              <div className="p-2">
-                <Input
-                  autoFocus
-                  value={skillSearchTerm}
-                  onChange={(event) => setSkillSearchTerm(event.target.value)}
-                  placeholder="Search skills..."
-                  className="h-9 rounded-lg border border-white/10 bg-white/[0.08] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-                />
-              </div>
-              {filteredSkillOptions.length > 0 ? (
-                filteredSkillOptions.map((option) => (
-                  <SelectItem
-                    key={`${option.value}-${option.label}`}
-                    value={option.value}
-                    disabled={option.disabled}
-                  >
-                    <div className="flex items-center gap-2">
-                      {option.icon ? <span>{option.icon}</span> : null}
-                      <span>{option.label}</span>
-                    </div>
-                  </SelectItem>
-                ))
-              ) : (
-                <div className="px-3 py-2 text-sm text-white/60">
-                  No skills found
-                </div>
-              )}
+              {skillOptions.map((option) => (
+                <SelectItem
+                  key={`${option.value}-${option.label}`}
+                  value={option.value}
+                  disabled={option.disabled}
+                >
+                  <div className="flex items-center gap-2">
+                    {option.icon ? <span>{option.icon}</span> : null}
+                    <span>{option.label}</span>
+                  </div>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           {skillError ? (
