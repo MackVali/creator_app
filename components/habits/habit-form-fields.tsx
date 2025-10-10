@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 export type HabitTypeOption = {
   label: string;
@@ -67,11 +68,22 @@ export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
   { label: "Every X Days", value: "every x days" },
 ];
 
+const DAYS_OF_WEEK = [
+  { value: 0, label: "Sun", fullLabel: "Sunday" },
+  { value: 1, label: "Mon", fullLabel: "Monday" },
+  { value: 2, label: "Tue", fullLabel: "Tuesday" },
+  { value: 3, label: "Wed", fullLabel: "Wednesday" },
+  { value: 4, label: "Thu", fullLabel: "Thursday" },
+  { value: 5, label: "Fri", fullLabel: "Friday" },
+  { value: 6, label: "Sat", fullLabel: "Saturday" },
+];
+
 interface HabitFormFieldsProps {
   name: string;
   description: string;
   habitType: string;
   recurrence: string;
+  recurrenceDays: number[];
   duration: string;
   windowId: string;
   skillId: string;
@@ -85,6 +97,7 @@ interface HabitFormFieldsProps {
   onDescriptionChange: (value: string) => void;
   onHabitTypeChange: (value: string) => void;
   onRecurrenceChange: (value: string) => void;
+  onRecurrenceDaysChange: (days: number[]) => void;
   onWindowChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
@@ -99,6 +112,7 @@ export function HabitFormFields({
   description,
   habitType,
   recurrence,
+  recurrenceDays,
   duration,
   windowId,
   skillId,
@@ -112,6 +126,7 @@ export function HabitFormFields({
   onDescriptionChange,
   onHabitTypeChange,
   onRecurrenceChange,
+  onRecurrenceDaysChange,
   onWindowChange,
   onDurationChange,
   onSkillChange,
@@ -120,6 +135,17 @@ export function HabitFormFields({
   footerSlot,
   showDescriptionField = true,
 }: HabitFormFieldsProps) {
+  const normalizedRecurrence = recurrence.toLowerCase().trim();
+  const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
+
+  const handleToggleRecurrenceDay = (day: number) => {
+    const hasDay = recurrenceDays.includes(day);
+    const next = hasDay
+      ? recurrenceDays.filter((value) => value !== day)
+      : [...recurrenceDays, day].sort((a, b) => a - b);
+    onRecurrenceDaysChange(next);
+  };
+
   return (
     <div className="space-y-8">
       <div className="space-y-3">
@@ -154,9 +180,6 @@ export function HabitFormFields({
             placeholder="Add any notes that will keep you accountable."
             className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />
-          <p className="text-xs text-white/50">
-            Optional, but a clear intention makes it easier to stay consistent.
-          </p>
         </div>
       ) : null}
 
@@ -177,9 +200,6 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Use chores for recurring upkeep tasks, async for flexible collaborations, and habits to track personal rituals.
-          </p>
         </div>
 
         <div className="space-y-3">
@@ -202,9 +222,30 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Pick the cadence that fits best. You can adjust this later.
-          </p>
+          {showRecurrenceDayPicker ? (
+            <div className="flex flex-wrap gap-2">
+              {DAYS_OF_WEEK.map((day) => {
+                const isSelected = recurrenceDays.includes(day.value);
+                return (
+                  <button
+                    key={day.value}
+                    type="button"
+                    onClick={() => handleToggleRecurrenceDay(day.value)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                      isSelected
+                        ? "border-blue-400/60 bg-blue-500/20 text-white"
+                        : "border-white/10 bg-white/[0.05] text-white/70 hover:border-white/20 hover:text-white",
+                    )}
+                    aria-pressed={isSelected}
+                    aria-label={day.fullLabel}
+                  >
+                    {day.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         <div className="space-y-3">
@@ -234,9 +275,6 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Connect every habit to the skill it reinforces so progress shows up across your dashboard.
-          </p>
           {skillError ? (
             <p className="text-xs text-red-300">{skillError}</p>
           ) : null}
@@ -271,9 +309,6 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-white/50">
-            Anchoring to a window helps scheduling align with your energy.
-          </p>
           {windowError ? (
             <p className="text-xs text-red-300">{windowError}</p>
           ) : null}
@@ -298,9 +333,6 @@ export function HabitFormFields({
             required
             className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />
-          <p className="text-xs text-white/50">
-            Estimate how long this habit usually takes so we can track your time investment.
-          </p>
         </div>
       </div>
 

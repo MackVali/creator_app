@@ -44,7 +44,7 @@ function parseIsoDate(value: string | null | undefined) {
   return parsed
 }
 
-function resolveWindowDays(days?: number[] | null) {
+function normalizeDayList(days?: number[] | null) {
   if (!days || days.length === 0) return null
   const normalized = Array.from(
     new Set(
@@ -97,7 +97,12 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
   const recurrence = normalizeRecurrence(habit.recurrence)
   const dayStart = startOfDayInTimeZone(date, zone)
   const habitType = (habit.habitType ?? 'HABIT').toUpperCase()
-  const resolvedWindowDays = resolveWindowDays(windowDays ?? habit.window?.days ?? null)
+  const resolvedRecurrenceDays = normalizeDayList(habit.recurrenceDays ?? null)
+  const resolvedWindowDays = normalizeDayList(windowDays ?? habit.window?.days ?? null)
+  const activeDayList =
+    resolvedRecurrenceDays && resolvedRecurrenceDays.length > 0
+      ? resolvedRecurrenceDays
+      : resolvedWindowDays
 
   const dayInterval = DAY_INTERVALS[recurrence] ?? parseEveryDays(recurrence)
   const monthInterval = MONTH_INTERVALS[recurrence]
@@ -127,9 +132,9 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
     return { isDue, dueStart }
   }
 
-  if (resolvedWindowDays && resolvedWindowDays.length > 0) {
+  if (activeDayList && activeDayList.length > 0) {
     const weekday = weekdayInTimeZone(dayStart, zone)
-    if (!resolvedWindowDays.includes(weekday)) {
+    if (!activeDayList.includes(weekday)) {
       return { isDue: false, dueStart: null }
     }
   }

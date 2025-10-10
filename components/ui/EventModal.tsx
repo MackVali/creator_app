@@ -382,6 +382,7 @@ interface FormState {
   stage: string;
   type: string;
   recurrence: string;
+  recurrence_days: number[];
   window_id: string;
 }
 
@@ -431,6 +432,7 @@ const createInitialFormState = (
   type: eventType === "HABIT" ? HABIT_TYPE_OPTIONS[0].value : "",
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
+  recurrence_days: [],
   window_id: eventType === "HABIT" ? "none" : "",
 });
 
@@ -1467,6 +1469,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         habit_type?: string;
         type?: string;
         recurrence?: string;
+        recurrence_days?: number[] | null;
         duration_min?: number;
         duration_minutes?: number;
         monument_id?: string;
@@ -1518,8 +1521,27 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
         insertData.habit_type = formData.type;
+        const normalizedRecurrence = formData.recurrence.toLowerCase().trim();
+        if (
+          normalizedRecurrence === "every x days" &&
+          formData.recurrence_days.length === 0
+        ) {
+          toast.error(
+            "Days required",
+            "Select at least one day for this habit."
+          );
+          return;
+        }
+
+        const recurrenceDaysValue =
+          normalizedRecurrence === "every x days" &&
+          formData.recurrence_days.length > 0
+            ? formData.recurrence_days
+            : null;
+
         insertData.recurrence =
-          formData.recurrence === "none" ? null : formData.recurrence;
+          normalizedRecurrence === "none" ? null : formData.recurrence;
+        insertData.recurrence_days = recurrenceDaysValue;
         insertData.window_id =
           formData.window_id === "none" ? null : formData.window_id;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
@@ -2430,6 +2452,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               description={formData.description}
               habitType={formData.type}
               recurrence={formData.recurrence}
+              recurrenceDays={formData.recurrence_days}
               duration={formData.duration_min}
               windowId={formData.window_id}
               skillId={formData.skill_id || "none"}
@@ -2439,9 +2462,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
               skillError={skillError}
-              windowsLoading={windowsLoading}
-              windowOptions={windowSelectOptions}
-              windowError={windowError}
               showDescriptionField={false}
               onNameChange={(value) =>
                 setFormData((prev) => ({
@@ -2455,11 +2475,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     description: value,
                   }))
                 }
-                onHabitTypeChange={(value) =>
-                  setFormData((prev) => ({ ...prev, type: value }))
-                }
+              onHabitTypeChange={(value) =>
+                setFormData((prev) => ({ ...prev, type: value }))
+              }
               onRecurrenceChange={(value) =>
                 setFormData((prev) => ({ ...prev, recurrence: value }))
+              }
+              onRecurrenceDaysChange={(days) =>
+                setFormData((prev) => ({ ...prev, recurrence_days: days }))
               }
               onWindowChange={(value) =>
                 setFormData((prev) => ({ ...prev, window_id: value }))
@@ -2493,11 +2516,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
                         <SelectValue placeholder="Choose a routine" />
                       </SelectTrigger>
-                      <SelectContent className="bg-[#0b101b] text-sm text-white">
-                        {routineSelectOptions.map((option) => (
-                          <SelectItem
-                            key={`${option.value}-${option.label}`}
-                            value={option.value}
+                    <SelectContent className="bg-[#0b101b] text-sm text-white">
+                      {routineSelectOptions.map((option) => (
+                        <SelectItem
+                          key={`${option.value}-${option.label}`}
+                          value={option.value}
                             disabled={option.disabled}
                           >
                             <div className="flex flex-col">
@@ -2507,18 +2530,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   {option.description}
                                 </span>
                               ) : null}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-white/50">
-                      Group habits into routines to tackle related work together.
-                    </p>
-                    {routineLoadError ? (
-                      <p className="text-xs text-red-300">{routineLoadError}</p>
-                    ) : null}
-                  </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {routineLoadError ? (
+                    <p className="text-xs text-red-300">{routineLoadError}</p>
+                  ) : null}
+                </div>
 
                   {routineId === "__create__" ? (
                     <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">

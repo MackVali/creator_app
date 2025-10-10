@@ -109,6 +109,7 @@ export default function NewHabitPage() {
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
   );
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
   const [skillId, setSkillId] = useState("none");
@@ -475,6 +476,11 @@ export default function NewHabitPage() {
       return;
     }
 
+    if (recurrence.toLowerCase().trim() === "every x days" && recurrenceDays.length === 0) {
+      setError("Please select at least one day for this recurrence.");
+      return;
+    }
+
     if (routineId === "__create__" && !newRoutineName.trim()) {
       setError("Please give your new routine a name.");
       return;
@@ -499,7 +505,12 @@ export default function NewHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const recurrenceValue = recurrence === "none" ? null : recurrence;
+      const normalizedRecurrence = recurrence.toLowerCase().trim();
+      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
+      const recurrenceDaysValue =
+        normalizedRecurrence === "every x days" && recurrenceDays.length > 0
+          ? recurrenceDays
+          : null;
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -535,6 +546,7 @@ export default function NewHabitPage() {
         description: trimmedDescription || null,
         habit_type: habitType,
         recurrence: recurrenceValue,
+        recurrence_days: recurrenceDaysValue,
         duration_minutes: durationMinutes,
         window_id: windowId === "none" ? null : windowId,
         skill_id: skillId === "none" ? null : skillId,
@@ -583,6 +595,7 @@ export default function NewHabitPage() {
                 description={description}
                 habitType={habitType}
                 recurrence={recurrence}
+                recurrenceDays={recurrenceDays}
                 duration={duration}
                 windowId={windowId}
                 skillId={skillId}
@@ -596,6 +609,7 @@ export default function NewHabitPage() {
                 onDescriptionChange={setDescription}
                 onHabitTypeChange={setHabitType}
                 onRecurrenceChange={setRecurrence}
+                onRecurrenceDaysChange={setRecurrenceDays}
                 onWindowChange={setWindowId}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
@@ -636,9 +650,6 @@ export default function NewHabitPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-white/50">
-                        Group habits into routines to tackle related work together.
-                      </p>
                       {routineLoadError ? (
                         <p className="text-xs text-red-300">{routineLoadError}</p>
                       ) : null}

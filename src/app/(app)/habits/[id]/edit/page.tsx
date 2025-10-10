@@ -119,6 +119,7 @@ export default function EditHabitPage() {
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
   );
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
   const [loading, setLoading] = useState(false);
@@ -502,7 +503,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, duration_minutes, window_id, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, window_id, routine_id, skill_id"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -522,6 +523,12 @@ export default function EditHabitPage() {
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
           setRecurrence(data.recurrence ?? "none");
+          const safeRecurrenceDays = Array.isArray(data.recurrence_days)
+            ? data.recurrence_days
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value))
+            : [];
+          setRecurrenceDays(safeRecurrenceDays);
           setDuration(
             typeof data.duration_minutes === "number"
               ? String(data.duration_minutes)
@@ -578,6 +585,11 @@ export default function EditHabitPage() {
       return;
     }
 
+    if (recurrence.toLowerCase().trim() === "every x days" && recurrenceDays.length === 0) {
+      setError("Please select at least one day for this recurrence.");
+      return;
+    }
+
     if (routineId === "__create__" && !newRoutineName.trim()) {
       setError("Please give your new routine a name.");
       return;
@@ -602,7 +614,12 @@ export default function EditHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const recurrenceValue = recurrence === "none" ? null : recurrence;
+      const normalizedRecurrence = recurrence.toLowerCase().trim();
+      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
+      const recurrenceDaysValue =
+        normalizedRecurrence === "every x days" && recurrenceDays.length > 0
+          ? recurrenceDays
+          : null;
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -639,6 +656,7 @@ export default function EditHabitPage() {
           description: trimmedDescription || null,
           habit_type: habitType,
           recurrence: recurrenceValue,
+          recurrence_days: recurrenceDaysValue,
           duration_minutes: durationMinutes,
           window_id: windowId === "none" ? null : windowId,
           routine_id: routineIdToUse,
@@ -707,29 +725,31 @@ export default function EditHabitPage() {
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_20px_45px_-25px_rgba(15,23,42,0.85)] sm:p-8">
               <form onSubmit={handleSubmit} className="space-y-8">
-                <HabitFormFields
-                  name={name}
-                  description={description}
-                  habitType={habitType}
-                  recurrence={recurrence}
-                  duration={duration}
-                  windowId={windowId}
-                  skillId={skillId}
-                  windowsLoading={windowsLoading}
-                  windowOptions={windowSelectOptions}
+                  <HabitFormFields
+                    name={name}
+                    description={description}
+                    habitType={habitType}
+                    recurrence={recurrence}
+                    recurrenceDays={recurrenceDays}
+                    duration={duration}
+                    windowId={windowId}
+                    skillId={skillId}
+                    windowsLoading={windowsLoading}
+                    windowOptions={windowSelectOptions}
                   windowError={windowLoadError}
                   skillsLoading={skillsLoading}
                   skillOptions={skillSelectOptions}
                   skillError={skillLoadError}
                   onNameChange={setName}
-                  onDescriptionChange={setDescription}
-                  onHabitTypeChange={setHabitType}
-                  onRecurrenceChange={setRecurrence}
-                  onWindowChange={setWindowId}
-                  onDurationChange={setDuration}
-                  onSkillChange={setSkillId}
-                  showDescriptionField={false}
-                  footerSlot={
+                    onDescriptionChange={setDescription}
+                    onHabitTypeChange={setHabitType}
+                    onRecurrenceChange={setRecurrence}
+                    onRecurrenceDaysChange={setRecurrenceDays}
+                    onWindowChange={setWindowId}
+                    onDurationChange={setDuration}
+                    onSkillChange={setSkillId}
+                    showDescriptionField={false}
+                    footerSlot={
                     <div className="space-y-4">
                       <div className="space-y-3">
                         <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
@@ -766,9 +786,6 @@ export default function EditHabitPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-white/50">
-                          Group habits into routines to tackle related work together.
-                        </p>
                         {routineLoadError ? (
                           <p className="text-xs text-red-300">{routineLoadError}</p>
                         ) : null}
