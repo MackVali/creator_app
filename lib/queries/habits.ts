@@ -6,7 +6,7 @@ export interface Habit {
   description: string | null;
   habit_type: string;
   recurrence: string | null;
-  recurrence_days: number[] | null;
+  recurrence_days: string[] | null;
   duration_minutes: number | null;
   created_at: string;
   updated_at: string;

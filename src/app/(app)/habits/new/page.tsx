@@ -10,6 +10,7 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
   type HabitSkillSelectOption,
+  type HabitWindowPositionOption,
   type HabitWindowSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { PageHeader } from "@/components/ui";
@@ -109,9 +110,11 @@ export default function NewHabitPage() {
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
   );
-  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
+  const [recurrenceDays, setRecurrenceDays] = useState<string[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
+  const [windowPosition, setWindowPosition] =
+    useState<HabitWindowPositionOption>("FIRST");
   const [skillId, setSkillId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,9 +173,13 @@ export default function NewHabitPage() {
           setWindowLoadError(null);
           setWindowId((current) => {
             if (current === "none") return current;
-            return safeWindows.some((option) => option.id === current)
+            const next = safeWindows.some((option) => option.id === current)
               ? current
               : "none";
+            if (next === "none") {
+              setWindowPosition("FIRST");
+            }
+            return next;
           });
         }
       } catch (err) {
@@ -486,6 +493,11 @@ export default function NewHabitPage() {
       return;
     }
 
+    if (recurrence === "every x days" && recurrenceDays.length === 0) {
+      setError("Please select at least one day for this habit.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -505,10 +517,9 @@ export default function NewHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const normalizedRecurrence = recurrence.toLowerCase().trim();
-      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
+      const recurrenceValue = recurrence === "none" ? null : recurrence;
       const recurrenceDaysValue =
-        normalizedRecurrence === "every x days" && recurrenceDays.length > 0
+        recurrence === "every x days" && recurrenceDays.length > 0
           ? recurrenceDays
           : null;
       let routineIdToUse: string | null = null;
@@ -549,6 +560,7 @@ export default function NewHabitPage() {
         recurrence_days: recurrenceDaysValue,
         duration_minutes: durationMinutes,
         window_id: windowId === "none" ? null : windowId,
+        window_position: windowId === "none" ? "FIRST" : windowPosition,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
       });
@@ -608,9 +620,21 @@ export default function NewHabitPage() {
                 onNameChange={setName}
                 onDescriptionChange={setDescription}
                 onHabitTypeChange={setHabitType}
-                onRecurrenceChange={setRecurrence}
+                onRecurrenceChange={(value) => {
+                  setRecurrence(value);
+                  if (value !== "every x days") {
+                    setRecurrenceDays([]);
+                  }
+                }}
                 onRecurrenceDaysChange={setRecurrenceDays}
-                onWindowChange={setWindowId}
+                onWindowChange={(value) => {
+                  setWindowId(value);
+                  if (value === "none") {
+                    setWindowPosition("FIRST");
+                  }
+                }}
+                windowPosition={windowPosition}
+                onWindowPositionChange={setWindowPosition}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
                 footerSlot={

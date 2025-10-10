@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useId } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,16 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+const WEEKDAY_OPTIONS = [
+  { value: "monday", label: "Mon", longLabel: "Monday" },
+  { value: "tuesday", label: "Tue", longLabel: "Tuesday" },
+  { value: "wednesday", label: "Wed", longLabel: "Wednesday" },
+  { value: "thursday", label: "Thu", longLabel: "Thursday" },
+  { value: "friday", label: "Fri", longLabel: "Friday" },
+  { value: "saturday", label: "Sat", longLabel: "Saturday" },
+  { value: "sunday", label: "Sun", longLabel: "Sunday" },
+];
+
 export type HabitTypeOption = {
   label: string;
   value: string;
@@ -24,6 +34,8 @@ export type HabitRecurrenceOption = {
   label: string;
   value: string;
 };
+
+export type HabitWindowPositionOption = "FIRST" | "LAST";
 
 export type HabitWindowSelectOption = {
   value: string;
@@ -83,9 +95,10 @@ interface HabitFormFieldsProps {
   description: string;
   habitType: string;
   recurrence: string;
-  recurrenceDays: number[];
+  recurrenceDays: string[];
   duration: string;
   windowId: string;
+  windowPosition: HabitWindowPositionOption;
   skillId: string;
   windowsLoading: boolean;
   windowOptions: HabitWindowSelectOption[];
@@ -97,8 +110,9 @@ interface HabitFormFieldsProps {
   onDescriptionChange: (value: string) => void;
   onHabitTypeChange: (value: string) => void;
   onRecurrenceChange: (value: string) => void;
-  onRecurrenceDaysChange: (days: number[]) => void;
+  onRecurrenceDaysChange: (value: string[]) => void;
   onWindowChange: (value: string) => void;
+  onWindowPositionChange: (value: HabitWindowPositionOption) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
   typeOptions?: HabitTypeOption[];
@@ -115,6 +129,7 @@ export function HabitFormFields({
   recurrenceDays,
   duration,
   windowId,
+  windowPosition,
   skillId,
   windowsLoading,
   windowOptions,
@@ -128,6 +143,7 @@ export function HabitFormFields({
   onRecurrenceChange,
   onRecurrenceDaysChange,
   onWindowChange,
+  onWindowPositionChange,
   onDurationChange,
   onSkillChange,
   typeOptions = HABIT_TYPE_OPTIONS,
@@ -135,15 +151,33 @@ export function HabitFormFields({
   footerSlot,
   showDescriptionField = true,
 }: HabitFormFieldsProps) {
-  const normalizedRecurrence = recurrence.toLowerCase().trim();
-  const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
+  const isCustomDayRecurrence = recurrence === "every x days";
+  const windowPositionDescriptionId = useId();
+  const isLastWindowPosition = windowPosition === "LAST";
+  const canChooseWindowPosition = windowId !== "none";
+  const normalizedRecurrenceDays = Array.isArray(recurrenceDays)
+    ? recurrenceDays
+    : [];
+  const windowPositionDescription = canChooseWindowPosition
+    ? "Choose whether this habit should kick off its window or close it out."
+    : "Select a preferred window to control where this habit lands within it.";
 
-  const handleToggleRecurrenceDay = (day: number) => {
-    const hasDay = recurrenceDays.includes(day);
-    const next = hasDay
-      ? recurrenceDays.filter((value) => value !== day)
-      : [...recurrenceDays, day].sort((a, b) => a - b);
-    onRecurrenceDaysChange(next);
+  const toggleDay = (dayValue: string) => {
+    const current = new Set(normalizedRecurrenceDays);
+    if (current.has(dayValue)) {
+      current.delete(dayValue);
+    } else {
+      current.add(dayValue);
+    }
+
+    const ordered = WEEKDAY_OPTIONS.reduce<string[]>((acc, option) => {
+      if (current.has(option.value)) {
+        acc.push(option.value);
+      }
+      return acc;
+    }, []);
+
+    onRecurrenceDaysChange(ordered);
   };
 
   return (
@@ -222,28 +256,33 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          {showRecurrenceDayPicker ? (
-            <div className="flex flex-wrap gap-2">
-              {DAYS_OF_WEEK.map((day) => {
-                const isSelected = recurrenceDays.includes(day.value);
-                return (
-                  <button
-                    key={day.value}
-                    type="button"
-                    onClick={() => handleToggleRecurrenceDay(day.value)}
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
-                      isSelected
-                        ? "border-blue-400/60 bg-blue-500/20 text-white"
-                        : "border-white/10 bg-white/[0.05] text-white/70 hover:border-white/20 hover:text-white",
-                    )}
-                    aria-pressed={isSelected}
-                    aria-label={day.fullLabel}
-                  >
-                    {day.label}
-                  </button>
-                );
-              })}
+          {isCustomDayRecurrence ? (
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Repeat on
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAY_OPTIONS.map((day) => {
+                  const isSelected = normalizedRecurrenceDays.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      onClick={() => toggleDay(day.value)}
+                      aria-pressed={isSelected}
+                      aria-label={day.longLabel}
+                      className={cn(
+                        "flex h-9 min-w-[2.5rem] items-center justify-center rounded-full border px-3 text-xs font-medium transition",
+                        isSelected
+                          ? "border-white bg-white text-black"
+                          : "border-white/20 text-white/70 hover:border-white/40 hover:text-white"
+                      )}
+                    >
+                      {day.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
         </div>
@@ -312,6 +351,53 @@ export function HabitFormFields({
           {windowError ? (
             <p className="text-xs text-red-300">{windowError}</p>
           ) : null}
+
+          <div className="space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Window position
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-white/60">First</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isLastWindowPosition}
+                aria-label="Toggle window position"
+                aria-describedby={windowPositionDescriptionId}
+                onClick={() =>
+                  onWindowPositionChange(
+                    isLastWindowPosition ? "FIRST" : "LAST"
+                  )
+                }
+                disabled={!canChooseWindowPosition}
+                className={cn(
+                  "relative flex h-8 w-16 items-center rounded-full border px-1 transition",
+                  canChooseWindowPosition
+                    ? isLastWindowPosition
+                      ? "border-white bg-white text-black"
+                      : "border-white/40 bg-white/10 text-white hover:border-white/70"
+                    : "cursor-not-allowed border-white/10 bg-white/5 text-white/50 opacity-60",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60",
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-6 w-6 rounded-full transition-transform",
+                    isLastWindowPosition
+                      ? "translate-x-6 bg-black"
+                      : "translate-x-0 bg-white",
+                  )}
+                />
+              </button>
+              <span className="text-xs font-medium text-white/60">Last</span>
+            </div>
+            <p
+              id={windowPositionDescriptionId}
+              className="text-xs text-white/60"
+            >
+              {windowPositionDescription}
+            </p>
+          </div>
         </div>
 
         <div className="space-y-3">
