@@ -265,6 +265,7 @@ type SchedulerTimelineEntry =
       type: 'HABIT'
       habitId: string
       habitName: string | null
+      habitType: string | null
       windowId: string | null
       decision: 'kept' | 'new' | 'rescheduled'
       startUTC: string
@@ -292,6 +293,7 @@ type SchedulerTimelinePlacement =
       type: 'HABIT'
       habitId: string
       habitName: string
+      habitType: string | null
       start: Date
       end: Date
       durationMinutes: number | null
@@ -355,6 +357,7 @@ type ProjectTaskCard = {
 type HabitTimelinePlacement = {
   habitId: string
   habitName: string
+  habitType: string
   start: Date
   end: Date
   durationMinutes: number
@@ -665,6 +668,7 @@ function computeHabitPlacementsForDay({
       placements.push({
         habitId: habit.id,
         habitName: habit.name,
+        habitType: (habit.habitType ?? 'HABIT').toUpperCase(),
         start,
         end,
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
@@ -1075,6 +1079,8 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
       const habitEntry = habitValue as {
         id?: unknown
         name?: unknown
+        habitType?: unknown
+        habit_type?: unknown
         windowId?: unknown
         startUTC?: unknown
         endUTC?: unknown
@@ -1113,12 +1119,23 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
         typeof habitEntry.name === 'string' && habitEntry.name.trim().length > 0
           ? habitEntry.name
           : null
+      const habitTypeRaw = (() => {
+        if (typeof habitEntry.habitType === 'string' && habitEntry.habitType.trim().length > 0) {
+          return habitEntry.habitType
+        }
+        if (typeof habitEntry.habit_type === 'string' && habitEntry.habit_type.trim().length > 0) {
+          return habitEntry.habit_type
+        }
+        return null
+      })()
+      const habitType = habitTypeRaw ? habitTypeRaw.toUpperCase() : null
       const clipped = habitEntry.clipped === true
 
       results.push({
         type: 'HABIT',
         habitId,
         habitName,
+        habitType,
         windowId,
         decision,
         startUTC,
@@ -1872,6 +1889,11 @@ export default function SchedulePage() {
       } else if (entry.type === 'HABIT') {
         const habit = habitMap[entry.habitId]
         const habitName = entry.habitName?.trim() || habit?.name || 'Habit'
+        const habitTypeSource = entry.habitType ?? habit?.habitType ?? 'HABIT'
+        const habitType =
+          typeof habitTypeSource === 'string' && habitTypeSource.trim().length > 0
+            ? habitTypeSource.toUpperCase()
+            : 'HABIT'
         const durationSource =
           typeof entry.durationMin === 'number' && Number.isFinite(entry.durationMin)
             ? entry.durationMin
@@ -1888,6 +1910,7 @@ export default function SchedulePage() {
           type: 'HABIT',
           habitId: entry.habitId,
           habitName,
+          habitType,
           start,
           end,
           durationMinutes: durationSource,
@@ -2920,21 +2943,55 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
+              const normalizedHabitType = placement.habitType
+                ? placement.habitType.toUpperCase()
+                : 'HABIT'
+              const isChoreHabit = normalizedHabitType === 'CHORE'
+              const isAsyncHabit = normalizedHabitType === 'ASYNC'
               const cardBackground =
-                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
-              const scheduledShadow = [
-                '0 26px 52px rgba(0, 0, 0, 0.6)',
-                '0 12px 28px rgba(0, 0, 0, 0.45)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-              ].join(', ')
+                isChoreHabit
+                  ? [
+                      'radial-gradient(circle at 10% -18%, rgba(248, 113, 113, 0.42), transparent 60%)',
+                      'linear-gradient(135deg, rgba(76, 5, 12, 0.75) 0%, rgba(127, 29, 29, 0.62) 46%, rgba(69, 10, 10, 0.62) 100%)',
+                    ].join(', ')
+                  : isAsyncHabit
+                    ? [
+                        'radial-gradient(circle at 12% -16%, rgba(234, 179, 8, 0.4), transparent 64%)',
+                        'linear-gradient(135deg, rgba(88, 63, 3, 0.75) 0%, rgba(120, 53, 15, 0.62) 48%, rgba(113, 63, 18, 0.6) 100%)',
+                      ].join(', ')
+                    : 'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
+              const scheduledShadow = (
+                isChoreHabit
+                  ? [
+                      '0 26px 52px rgba(159, 18, 57, 0.45)',
+                      '0 12px 28px rgba(127, 29, 29, 0.5)',
+                      'inset 0 1px 0 rgba(254, 226, 226, 0.14)',
+                    ]
+                  : isAsyncHabit
+                    ? [
+                        '0 26px 52px rgba(180, 83, 9, 0.45)',
+                        '0 12px 28px rgba(146, 64, 14, 0.48)',
+                        'inset 0 1px 0 rgba(254, 243, 199, 0.14)',
+                      ]
+                    : [
+                        '0 26px 52px rgba(0, 0, 0, 0.6)',
+                        '0 12px 28px rgba(0, 0, 0, 0.45)',
+                        'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                      ]
+              ).join(', ')
               const completedShadow = [
                 '0 26px 52px rgba(2, 32, 24, 0.6)',
                 '0 12px 28px rgba(1, 55, 34, 0.45)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
+              const scheduledOutline = isChoreHabit
+                ? '1px solid rgba(248, 113, 113, 0.45)'
+                : isAsyncHabit
+                  ? '1px solid rgba(234, 179, 8, 0.45)'
+                  : '1px solid rgba(18, 18, 24, 0.85)'
               const cardOutline = isHabitCompleted
                 ? '1px solid rgba(16, 185, 129, 0.55)'
-                : '1px solid rgba(18, 18, 24, 0.85)'
+                : scheduledOutline
               const cardStyle: CSSProperties = {
                 top,
                 height,
@@ -2945,7 +3002,11 @@ export default function SchedulePage() {
               }
               const habitBorderClass = isHabitCompleted
                 ? 'border-emerald-400/60'
-                : 'border-white/12'
+                : isChoreHabit
+                  ? 'border-rose-200/60'
+                  : isAsyncHabit
+                    ? 'border-amber-200/60'
+                    : 'border-white/12'
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}

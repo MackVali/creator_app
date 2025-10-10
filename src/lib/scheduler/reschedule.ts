@@ -57,6 +57,7 @@ type HabitDraftPlacement = {
   habit: {
     id: string
     name: string
+    habitType: string
     windowId: string | null
     windowLabel: string | null
     startUTC: string
@@ -696,6 +697,7 @@ async function scheduleHabitsForDay(params: {
         habit: {
           id: habit.id,
           name: habit.name,
+          habitType: (habit.habitType ?? 'HABIT').toUpperCase(),
           windowId: window.id,
           windowLabel: window.label ?? null,
           startUTC: startDate.toISOString(),
