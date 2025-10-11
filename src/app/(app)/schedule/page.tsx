@@ -829,7 +829,6 @@ const TIMELINE_RIGHT_OFFSET = '0.5rem'
 const ASYNC_PAIR_GAP = '0.75rem'
 const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET} - ${ASYNC_PAIR_GAP}) / 2)`
 const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH} + ${ASYNC_PAIR_GAP})`
-const ASYNC_ALIGNMENT_TOLERANCE_MS = 2 * 60 * 1000
 
 function computeTimelineLayoutForAsyncHabits({
   habitPlacements,
@@ -866,42 +865,55 @@ function computeTimelineLayoutForAsyncHabits({
     candidates.push({ kind: 'project', index, startMs, endMs })
   })
 
+  const sortedCandidates = candidates.sort((a, b) => {
+    if (a.startMs !== b.startMs) return a.startMs - b.startMs
+    return a.endMs - b.endMs
+  })
+
+  const asyncHabits = habitPlacements
+    .map((placement, index) => ({ placement, index }))
+    .filter(({ placement }) => (placement.habitType ?? 'HABIT').toUpperCase() === 'ASYNC')
+    .map(({ placement, index }) => ({
+      index,
+      startMs: placement.start.getTime(),
+      endMs: placement.end.getTime(),
+    }))
+    .filter(({ startMs, endMs }) => Number.isFinite(startMs) && Number.isFinite(endMs))
+    .sort((a, b) => {
+      if (a.startMs !== b.startMs) return a.startMs - b.startMs
+      return a.endMs - b.endMs
+    })
+
   const usedCandidates = new Set<string>()
 
-  habitPlacements.forEach((placement, habitIndex) => {
-    const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
-    if (habitType !== 'ASYNC') return
-    const startMs = placement.start.getTime()
-    const endMs = placement.end.getTime()
+  asyncHabits.forEach(asyncHabit => {
+    const { index: habitIndex, startMs, endMs } = asyncHabit
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
 
-    let bestMatch: Candidate | null = null
-    let bestScore = Number.NEGATIVE_INFINITY
-
-    for (const candidate of candidates) {
+    for (const candidate of sortedCandidates) {
       const candidateKey = `${candidate.kind}:${candidate.index}`
       if (usedCandidates.has(candidateKey)) continue
-      if (startMs >= candidate.endMs || endMs <= candidate.startMs) continue
-      const startDiff = Math.abs(candidate.startMs - startMs)
-      if (startDiff > ASYNC_ALIGNMENT_TOLERANCE_MS) continue
-      const overlap = Math.min(endMs, candidate.endMs) - Math.max(startMs, candidate.startMs)
-      if (!(overlap > 0)) continue
-      const score = overlap - startDiff
-      if (score > bestScore) {
-        bestScore = score
-        bestMatch = candidate
+      if (candidate.startMs >= endMs) {
+        break
       }
-    }
+      if (candidate.endMs <= startMs) {
+        continue
+      }
 
-    if (!bestMatch) return
+      const overlapStart = Math.max(startMs, candidate.startMs)
+      const overlapEnd = Math.min(endMs, candidate.endMs)
+      if (!(overlapEnd > overlapStart)) {
+        continue
+      }
 
-    const candidateKey = `${bestMatch.kind}:${bestMatch.index}`
-    usedCandidates.add(candidateKey)
-    habitLayouts[habitIndex] = 'paired-right'
-    if (bestMatch.kind === 'habit') {
-      habitLayouts[bestMatch.index] = 'paired-left'
-    } else {
-      projectLayouts[bestMatch.index] = 'paired-left'
+      usedCandidates.add(candidateKey)
+      habitLayouts[habitIndex] = 'paired-right'
+      if (candidate.kind === 'habit') {
+        habitLayouts[candidate.index] = 'paired-left'
+      } else {
+        projectLayouts[candidate.index] = 'paired-left'
+      }
+      break
     }
   })
 
