@@ -1800,7 +1800,9 @@ export default function SchedulePage() {
     [setExpandedProjects, setHasInteractedWithProjects]
   )
   const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
   const touchStartWidth = useRef<number>(0)
+  const hasVerticalTouchMovement = useRef<boolean>(false)
   const swipeDeltaRef = useRef(0)
   const swipeScrollProgressRef = useRef<number | null>(null)
   const navLock = useRef(false)
@@ -2836,7 +2838,9 @@ export default function SchedulePage() {
               }
               pinchActiveRef.current = true
               touchStartX.current = null
+              touchStartY.current = null
               touchStartWidth.current = 0
+              hasVerticalTouchMovement.current = false
               swipeDeltaRef.current = 0
               sliderControls.stop()
               setIsSwipingDayView(false)
@@ -2855,22 +2859,30 @@ export default function SchedulePage() {
 
     if (touches.length > 1) {
       touchStartX.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
 
     if (view !== 'day' || prefersReducedMotion || pinchActiveRef.current) {
       touchStartX.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
 
     const firstTouch = touches[0]
     if (!firstTouch) {
       touchStartX.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
 
     touchStartX.current = firstTouch.clientX
+    touchStartY.current = firstTouch.clientY
     touchStartWidth.current = swipeContainerRef.current?.offsetWidth ?? 0
+    hasVerticalTouchMovement.current = false
     swipeDeltaRef.current = 0
     sliderControls.stop()
     if (typeof window !== 'undefined') {
@@ -2955,11 +2967,43 @@ export default function SchedulePage() {
 
     if (e.touches.length > 1) return
     if (view !== 'day' || prefersReducedMotion) return
+    const touch = e.touches[0]
+    if (!touch) return
+
+    if (touchStartY.current === null) {
+      touchStartY.current = touch.clientY
+    }
+
+    if (!hasVerticalTouchMovement.current && touchStartY.current !== null) {
+      const verticalDiff = Math.abs(touch.clientY - touchStartY.current)
+      if (verticalDiff > 12) {
+        hasVerticalTouchMovement.current = true
+      }
+    }
+
+    if (hasVerticalTouchMovement.current) {
+      if (touchStartX.current !== null || isSwipingDayView) {
+        touchStartX.current = null
+        touchStartWidth.current = 0
+        swipeDeltaRef.current = 0
+        swipeScrollProgressRef.current = null
+        sliderControls.set({ x: 0 })
+        if (isSwipingDayView) {
+          setIsSwipingDayView(false)
+        }
+        setPeekState(prev => {
+          if (prev.direction === 0 && prev.offset === 0) {
+            return prev
+          }
+          return { direction: 0, offset: 0 }
+        })
+      }
+      return
+    }
+
     if (touchStartX.current === null) return
     const width =
       touchStartWidth.current || swipeContainerRef.current?.offsetWidth || 1
-    const touch = e.touches[0]
-    if (!touch) return
     const diff = touch.clientX - touchStartX.current
     const clamped = Math.max(Math.min(diff, width), -width)
     swipeDeltaRef.current = clamped
@@ -2988,6 +3032,8 @@ export default function SchedulePage() {
       touchStartWidth.current = 0
       swipeScrollProgressRef.current = null
       setIsSwipingDayView(false)
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       setPeekState(prev => {
         if (prev.direction === 0 && prev.offset === 0) {
           return prev
@@ -3002,12 +3048,16 @@ export default function SchedulePage() {
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
       swipeScrollProgressRef.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
     if (touchStartX.current === null) {
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
       swipeScrollProgressRef.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
     const width =
@@ -3039,6 +3089,8 @@ export default function SchedulePage() {
     touchStartWidth.current = 0
     setPeekState({ direction: 0, offset: 0 })
     setIsSwipingDayView(false)
+    touchStartY.current = null
+    hasVerticalTouchMovement.current = false
   }
 
   const handleTouchCancel = () => {
