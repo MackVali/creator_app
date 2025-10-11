@@ -4,6 +4,11 @@ import type { Database } from '../../../types/supabase';
 import { normalizeTimeZone, weekdayInTimeZone } from './timezone';
 import type { TaskLite, ProjectLite } from './weight';
 
+export type GoalSummary = {
+  id: string;
+  name: string;
+};
+
 export type WindowLite = {
   id: string;
   label: string;
@@ -119,7 +124,7 @@ export async function fetchProjectsMap(
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min');
+    .select('id, name, priority, stage, energy, duration_min, goal_id, goal:goals(id, name, Title)');
 
   if (error) throw error;
   const map: Record<string, ProjectLite> = {};
@@ -130,9 +135,13 @@ export async function fetchProjectsMap(
     stage: string;
     energy?: string | null;
     duration_min?: number | null;
+    goal_id?: string | null;
+    goal?: { id?: string | null; name?: string | null; Title?: string | null } | null;
   };
 
   for (const p of (data ?? []) as ProjectRecord[]) {
+    const goalId = p.goal_id ?? null;
+    const goalName = p.goal?.name ?? p.goal?.Title ?? null;
     map[p.id] = {
       id: p.id,
       name: p.name ?? undefined,
@@ -140,8 +149,32 @@ export async function fetchProjectsMap(
       stage: p.stage,
       energy: p.energy ?? null,
       duration_min: p.duration_min ?? null,
+      goalId,
+      goalName: goalName ?? undefined,
     };
   }
+  return map;
+}
+
+export async function fetchGoalsMap(
+  client?: Client,
+): Promise<Record<string, GoalSummary>> {
+  const supabase = ensureClient(client);
+
+  const { data, error } = await supabase
+    .from('goals')
+    .select('id, name, Title');
+
+  if (error) throw error;
+
+  const map: Record<string, GoalSummary> = {};
+  type GoalRecord = { id: string; name?: string | null; Title?: string | null };
+
+  for (const goal of (data ?? []) as GoalRecord[]) {
+    const name = goal.name ?? goal.Title ?? '';
+    map[goal.id] = { id: goal.id, name };
+  }
+
   return map;
 }
 
