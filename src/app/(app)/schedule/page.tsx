@@ -84,6 +84,9 @@ const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
+const VERTICAL_SCROLL_THRESHOLD_PX = 20
+const VERTICAL_SCROLL_BIAS_PX = 8
+const VERTICAL_SCROLL_SLOPE = 1.35
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -2976,8 +2979,17 @@ export default function SchedulePage() {
 
     if (!hasVerticalTouchMovement.current && touchStartY.current !== null) {
       const verticalDiff = Math.abs(touch.clientY - touchStartY.current)
-      if (verticalDiff > 12) {
-        hasVerticalTouchMovement.current = true
+      if (verticalDiff > VERTICAL_SCROLL_THRESHOLD_PX) {
+        const horizontalDiff =
+          touchStartX.current !== null
+            ? Math.abs(touch.clientX - touchStartX.current)
+            : 0
+        if (
+          verticalDiff > horizontalDiff * VERTICAL_SCROLL_SLOPE +
+            VERTICAL_SCROLL_BIAS_PX
+        ) {
+          hasVerticalTouchMovement.current = true
+        }
       }
     }
 
