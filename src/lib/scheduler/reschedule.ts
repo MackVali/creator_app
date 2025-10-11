@@ -654,15 +654,7 @@ async function scheduleHabitsForDay(params: {
       return a.name.localeCompare(b.name)
     })
 
-    const forwardHabits = sorted.filter(habit => habit.windowPosition !== 'LAST')
-    const lastHabits = sorted.filter(habit => habit.windowPosition === 'LAST')
-
-    const reservedKey = `${key}::reserved-end`
-    availability.delete(reservedKey)
-
-    let availabilityUpdated = false
-
-    for (const habit of forwardHabits) {
+    for (const habit of sorted) {
       if (cursorMs >= endMs) break
       const rawDuration = Number(habit.durationMinutes ?? 0)
       const durationMin =
@@ -695,7 +687,6 @@ async function scheduleHabitsForDay(params: {
       const startDate = new Date(startCandidate)
       const endDate = new Date(endCandidate)
       availability.set(key, endDate)
-      availabilityUpdated = true
       cursorMs = endCandidate
 
       const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
@@ -718,103 +709,6 @@ async function scheduleHabitsForDay(params: {
         availableStartLocal: startDate.toISOString(),
         windowStartLocal: startLocal.toISOString(),
       })
-    }
-
-    const nextAvailableMs = Math.min(Math.max(cursorMs, startMs), endMs)
-    const existingMs = availability.get(key)?.getTime()
-    const desiredMs =
-      typeof existingMs === 'number'
-        ? Math.max(existingMs, nextAvailableMs)
-        : nextAvailableMs
-    if (!availabilityUpdated || desiredMs !== existingMs) {
-      availability.set(key, new Date(desiredMs))
-    }
-
-    if (lastHabits.length > 0) {
-      let backwardCursor = endMs
-      let earliestLastStart: number | null = null
-      const reversed = [...lastHabits].reverse()
-
-      for (const habit of reversed) {
-        if (backwardCursor <= nextAvailableMs) {
-          break
-        }
-
-        const rawDuration = Number(habit.durationMinutes ?? 0)
-        const durationMin =
-          Number.isFinite(rawDuration) && rawDuration > 0
-            ? rawDuration
-            : DEFAULT_HABIT_DURATION_MIN
-        const durationMs = durationMin * 60000
-        if (durationMs <= 0) continue
-
-        let minStart = Math.max(startMs, nextAvailableMs)
-        if (typeof baseNowMs === 'number' && baseNowMs > minStart && baseNowMs < endMs) {
-          minStart = baseNowMs
-        }
-        if (backwardCursor <= minStart) {
-          continue
-        }
-
-        let startCandidate = backwardCursor - durationMs
-        let clipped = false
-        if (startCandidate < minStart) {
-          startCandidate = minStart
-          clipped = true
-        }
-        if (startCandidate >= backwardCursor) {
-          continue
-        }
-
-        let endCandidate = backwardCursor
-        if (endCandidate > endMs) {
-          endCandidate = endMs
-        }
-        if (endCandidate <= startCandidate) {
-          continue
-        }
-
-        const actualDurationMs = endCandidate - startCandidate
-        if (actualDurationMs <= 0) {
-          continue
-        }
-        if (actualDurationMs < durationMs) {
-          clipped = true
-        }
-
-        const startDate = new Date(startCandidate)
-        const endDate = new Date(endCandidate)
-        const durationMinutes = Math.max(1, Math.round(actualDurationMs / 60000))
-
-        placements.push({
-          type: 'HABIT',
-          habit: {
-            id: habit.id,
-            name: habit.name,
-            windowId: window.id,
-            windowLabel: window.label ?? null,
-            startUTC: startDate.toISOString(),
-            endUTC: endDate.toISOString(),
-            durationMin: durationMinutes,
-            energyResolved: window.energy ? String(window.energy).toUpperCase() : null,
-            clipped,
-          },
-          decision: 'kept',
-          scheduledDayOffset: offset,
-          availableStartLocal: startDate.toISOString(),
-          windowStartLocal: startLocal.toISOString(),
-        })
-
-        backwardCursor = startCandidate
-        earliestLastStart =
-          typeof earliestLastStart === 'number'
-            ? Math.min(earliestLastStart, startCandidate)
-            : startCandidate
-      }
-
-      if (typeof earliestLastStart === 'number') {
-        availability.set(reservedKey, new Date(earliestLastStart))
-      }
     }
   }
 
@@ -891,12 +785,7 @@ async function fetchCompatibleWindowsForItem(
     const endLocal = resolveWindowEnd(win, date, timeZone)
     const key = windowKey(win.id, startLocal)
     const startMs = startLocal.getTime()
-    let endMs = endLocal.getTime()
-    const reservedEnd = availability?.get(`${key}::reserved-end`)
-    const reservedEndMs = reservedEnd?.getTime()
-    if (typeof reservedEndMs === 'number' && reservedEndMs < endMs) {
-      endMs = reservedEndMs
-    }
+    const endMs = endLocal.getTime()
 
     if (typeof nowMs === 'number' && endMs <= nowMs) continue
 

@@ -29,7 +29,6 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
   type HabitSkillSelectOption,
-  type HabitWindowPositionOption,
   type HabitWindowSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { Button } from "./button";
@@ -383,9 +382,8 @@ interface FormState {
   stage: string;
   type: string;
   recurrence: string;
-  recurrence_days: string[];
+  recurrence_days: number[];
   window_id: string;
-  window_position: HabitWindowPositionOption;
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -436,7 +434,6 @@ const createInitialFormState = (
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
   window_id: eventType === "HABIT" ? "none" : "",
-  window_position: "FIRST",
 });
 
 type EventMeta = {
@@ -1092,21 +1089,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               safeWindows.some((option) => option.id === prev.window_id)
                 ? prev.window_id
                 : "none",
-            window_position:
-              prev.window_id === "none" ||
-              safeWindows.some((option) => option.id === prev.window_id)
-                ? prev.window_position
-                : "FIRST",
           }));
         } catch (error) {
           console.error("Error loading habit helpers:", error);
           setWindows([]);
           setWindowError("Unable to load your time windows right now.");
-          setFormData((prev) => ({
-            ...prev,
-            window_id: "none",
-            window_position: "FIRST",
-          }));
+          setFormData((prev) => ({ ...prev, window_id: "none" }));
         } finally {
           setWindowsLoading(false);
         }
@@ -1452,18 +1440,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
     }
 
-    if (
-      eventType === "HABIT" &&
-      formData.recurrence === "every x days" &&
-      formData.recurrence_days.length === 0
-    ) {
-      toast.error(
-        "Select weekdays",
-        "Choose at least one day for this habit's custom cadence."
-      );
-      return;
-    }
-
     try {
       setIsSaving(true);
       const supabase = getSupabaseBrowser();
@@ -1493,13 +1469,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         habit_type?: string;
         type?: string;
         recurrence?: string;
-        recurrence_days?: string[] | null;
+        recurrence_days?: number[] | null;
         duration_min?: number;
         duration_minutes?: number;
         monument_id?: string;
         skill_id?: string | null;
         window_id?: string | null;
-        window_position?: HabitWindowPositionOption;
         routine_id?: string | null;
       } = {
         user_id: user.id,
@@ -1565,18 +1540,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             : null;
 
         insertData.recurrence =
-          formData.recurrence === "none" ? null : formData.recurrence;
-        insertData.recurrence_days =
-          formData.recurrence === "every x days" &&
-          formData.recurrence_days.length > 0
-            ? formData.recurrence_days
-            : null;
+          normalizedRecurrence === "none" ? null : formData.recurrence;
+        insertData.recurrence_days = recurrenceDaysValue;
         insertData.window_id =
           formData.window_id === "none" ? null : formData.window_id;
-        insertData.window_position =
-          formData.window_id === "none"
-            ? "FIRST"
-            : formData.window_position;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
 
         let routineIdToUse: string | null = null;
@@ -2488,7 +2455,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               recurrenceDays={formData.recurrence_days}
               duration={formData.duration_min}
               windowId={formData.window_id}
-              windowPosition={formData.window_position}
               skillId={formData.skill_id || "none"}
               windowsLoading={windowsLoading}
               windowOptions={windowSelectOptions}
@@ -2513,29 +2479,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 setFormData((prev) => ({ ...prev, type: value }))
               }
               onRecurrenceChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  recurrence: value,
-                  recurrence_days:
-                    value === "every x days" ? prev.recurrence_days : [],
-                }))
-              }
-              onRecurrenceDaysChange={(value) =>
-                setFormData((prev) => ({ ...prev, recurrence_days: value }))
+                setFormData((prev) => ({ ...prev, recurrence: value }))
               }
               onRecurrenceDaysChange={(days) =>
                 setFormData((prev) => ({ ...prev, recurrence_days: days }))
               }
               onWindowChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  window_id: value,
-                  window_position:
-                    value === "none" ? "FIRST" : prev.window_position,
-                }))
-              }
-              onWindowPositionChange={(value) =>
-                setFormData((prev) => ({ ...prev, window_position: value }))
+                setFormData((prev) => ({ ...prev, window_id: value }))
               }
               onDurationChange={(value) =>
                 setFormData((prev) => ({ ...prev, duration_min: value }))

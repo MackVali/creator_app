@@ -13,8 +13,8 @@ import {
   HabitFormFields,
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
-  type HabitWindowPositionOption,
   type HabitWindowSelectOption,
+  type HabitSkillSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -119,11 +119,9 @@ export default function EditHabitPage() {
   const [recurrence, setRecurrence] = useState(
     HABIT_RECURRENCE_OPTIONS[0].value
   );
-  const [recurrenceDays, setRecurrenceDays] = useState<string[]>([]);
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [windowId, setWindowId] = useState("none");
-  const [windowPosition, setWindowPosition] =
-    useState<HabitWindowPositionOption>("FIRST");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [windowOptions, setWindowOptions] = useState<WindowOption[]>([]);
@@ -184,13 +182,9 @@ export default function EditHabitPage() {
           setWindowLoadError(null);
           setWindowId((current) => {
             if (current === "none") return current;
-            const next = safeWindows.some((option) => option.id === current)
+            return safeWindows.some((option) => option.id === current)
               ? current
               : "none";
-            if (next === "none") {
-              setWindowPosition("FIRST");
-            }
-            return next;
           });
         }
       } catch (err) {
@@ -509,7 +503,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, window_id, window_position, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, window_id, routine_id, skill_id"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -528,24 +522,19 @@ export default function EditHabitPage() {
           setName(data.name ?? "");
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
-          const fetchedRecurrence = data.recurrence ?? "none";
-          setRecurrence(fetchedRecurrence);
-          setRecurrenceDays(
-            fetchedRecurrence === "every x days" && Array.isArray(data.recurrence_days)
-              ? data.recurrence_days
-              : []
-          );
+          setRecurrence(data.recurrence ?? "none");
+          const safeRecurrenceDays = Array.isArray(data.recurrence_days)
+            ? data.recurrence_days
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value))
+            : [];
+          setRecurrenceDays(safeRecurrenceDays);
           setDuration(
             typeof data.duration_minutes === "number"
               ? String(data.duration_minutes)
               : ""
           );
           setWindowId(data.window_id ?? "none");
-          const rawPosition =
-            typeof data.window_position === "string"
-              ? data.window_position.toUpperCase()
-              : "FIRST";
-          setWindowPosition(rawPosition === "LAST" ? "LAST" : "FIRST");
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
         }
@@ -606,11 +595,6 @@ export default function EditHabitPage() {
       return;
     }
 
-    if (recurrence === "every x days" && recurrenceDays.length === 0) {
-      setError("Please select at least one day for this habit.");
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
@@ -630,9 +614,10 @@ export default function EditHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const recurrenceValue = recurrence === "none" ? null : recurrence;
+      const normalizedRecurrence = recurrence.toLowerCase().trim();
+      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
       const recurrenceDaysValue =
-        recurrence === "every x days" && recurrenceDays.length > 0
+        normalizedRecurrence === "every x days" && recurrenceDays.length > 0
           ? recurrenceDays
           : null;
       let routineIdToUse: string | null = null;
@@ -674,7 +659,6 @@ export default function EditHabitPage() {
           recurrence_days: recurrenceDaysValue,
           duration_minutes: durationMinutes,
           window_id: windowId === "none" ? null : windowId,
-          window_position: windowId === "none" ? "FIRST" : windowPosition,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
         })
@@ -741,73 +725,32 @@ export default function EditHabitPage() {
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_20px_45px_-25px_rgba(15,23,42,0.85)] sm:p-8">
               <form onSubmit={handleSubmit} className="space-y-8">
-                <HabitFormFields
-                  name={name}
-                  description={description}
-                  habitType={habitType}
-                  recurrence={recurrence}
-                  recurrenceDays={recurrenceDays}
-                  duration={duration}
-                  windowId={windowId}
-                  skillId={skillId}
-                  windowsLoading={windowsLoading}
-                  windowOptions={windowSelectOptions}
+                  <HabitFormFields
+                    name={name}
+                    description={description}
+                    habitType={habitType}
+                    recurrence={recurrence}
+                    recurrenceDays={recurrenceDays}
+                    duration={duration}
+                    windowId={windowId}
+                    skillId={skillId}
+                    windowsLoading={windowsLoading}
+                    windowOptions={windowSelectOptions}
                   windowError={windowLoadError}
                   skillsLoading={skillsLoading}
                   skillOptions={skillSelectOptions}
                   skillError={skillLoadError}
                   onNameChange={setName}
-                  onDescriptionChange={setDescription}
-                  onHabitTypeChange={setHabitType}
-                  onRecurrenceChange={(value) => {
-                    setRecurrence(value);
-                    if (value !== "every x days") {
-                      setRecurrenceDays([]);
-                    }
-                  }}
-                  onRecurrenceDaysChange={setRecurrenceDays}
-                  onWindowChange={(value) => {
-                    setWindowId(value);
-                    if (value === "none") {
-                      setWindowPosition("FIRST");
-                    }
-                  }}
-                  windowPosition={windowPosition}
-                  onWindowPositionChange={setWindowPosition}
-                  onDurationChange={setDuration}
-                  onSkillChange={setSkillId}
-                  showDescriptionField={false}
-                  footerSlot={
+                    onDescriptionChange={setDescription}
+                    onHabitTypeChange={setHabitType}
+                    onRecurrenceChange={setRecurrence}
+                    onRecurrenceDaysChange={setRecurrenceDays}
+                    onWindowChange={setWindowId}
+                    onDurationChange={setDuration}
+                    onSkillChange={setSkillId}
+                    showDescriptionField={false}
+                    footerSlot={
                     <div className="space-y-4">
-                      <div className="space-y-3">
-                        <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                          Linked skill
-                        </Label>
-                        <Select
-                          value={skillId}
-                          onValueChange={setSkillId}
-                          disabled={skillsLoading}
-                        >
-                          <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                            <SelectValue placeholder="Choose a skill" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-[#0b101b] text-sm text-white">
-                            {skillSelectOptions.map((option) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                                disabled={option.disabled}
-                              >
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {skillLoadError ? (
-                          <p className="text-xs text-red-300">{skillLoadError}</p>
-                        ) : null}
-                      </div>
-
                       <div className="space-y-3">
                         <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                           Routine
