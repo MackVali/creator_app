@@ -1041,6 +1041,16 @@ function applyTimelineLayoutStyle(
   }
 }
 
+function getTimelineCardCornerClass(mode: TimelineCardLayoutMode) {
+  if (mode === 'paired-left') {
+    return 'rounded-l-[var(--radius-lg)] rounded-r-none'
+  }
+  if (mode === 'paired-right') {
+    return 'rounded-r-[var(--radius-lg)] rounded-l-none'
+  }
+  return 'rounded-[var(--radius-lg)]'
+}
+
 function buildDayTimelineModel({
   date,
   windows,
@@ -3197,6 +3207,7 @@ export default function SchedulePage() {
                 habitBorderClass = 'border-amber-200/45'
               }
               const layoutMode = habitLayouts[index] ?? 'full'
+              const habitCornerClass = getTimelineCardCornerClass(layoutMode)
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
                   top,
@@ -3211,7 +3222,7 @@ export default function SchedulePage() {
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -3279,6 +3290,7 @@ export default function SchedulePage() {
               if (tasksLabel) detailParts.push(tasksLabel)
               let detailText = detailParts.join(' · ')
               const layoutMode = projectLayouts[index] ?? 'full'
+              const projectCornerClass = getTimelineCardCornerClass(layoutMode)
               const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
                   top,
@@ -3371,7 +3383,7 @@ export default function SchedulePage() {
                           if (!canExpand) return
                           setProjectExpansion(projectId)
                         }}
-                        className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                        className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
                           canExpand ? ' cursor-pointer' : ''
                         }`}
                         style={projectCardStyle}
@@ -3470,7 +3482,8 @@ export default function SchedulePage() {
                         >
                           Back
                         </motion.button>
-                        <div className="absolute inset-0 overflow-hidden rounded-[var(--radius-lg)] border border-white/20 bg-white/10"
+                        <div
+                          className={`absolute inset-0 overflow-hidden ${projectCornerClass} border border-white/20 bg-white/10`}
                           style={sharedCardStyle}
                         />
                         <div className="relative h-full w-full overflow-hidden p-2">
