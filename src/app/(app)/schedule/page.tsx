@@ -890,6 +890,15 @@ function computeTimelineLayoutForAsyncHabits({
     const { index: habitIndex, startMs, endMs } = asyncHabit
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
 
+    type Match = {
+      candidate: Candidate
+      overlapStart: number
+      startGap: number
+      overlapDuration: number
+    }
+
+    const matches: Match[] = []
+
     for (const candidate of sortedCandidates) {
       const candidateKey = `${candidate.kind}:${candidate.index}`
       if (usedCandidates.has(candidateKey)) continue
@@ -906,14 +915,41 @@ function computeTimelineLayoutForAsyncHabits({
         continue
       }
 
-      usedCandidates.add(candidateKey)
-      habitLayouts[habitIndex] = 'paired-right'
-      if (candidate.kind === 'habit') {
-        habitLayouts[candidate.index] = 'paired-left'
-      } else {
-        projectLayouts[candidate.index] = 'paired-left'
+      matches.push({
+        candidate,
+        overlapStart,
+        startGap: Math.abs(candidate.startMs - startMs),
+        overlapDuration: overlapEnd - overlapStart,
+      })
+    }
+
+    if (matches.length === 0) return
+
+    matches.sort((a, b) => {
+      if (a.overlapStart !== b.overlapStart) {
+        return a.overlapStart - b.overlapStart
       }
-      break
+      if (a.startGap !== b.startGap) {
+        return a.startGap - b.startGap
+      }
+      if (a.candidate.startMs !== b.candidate.startMs) {
+        return a.candidate.startMs - b.candidate.startMs
+      }
+      if (a.overlapDuration !== b.overlapDuration) {
+        return b.overlapDuration - a.overlapDuration
+      }
+      return a.candidate.endMs - b.candidate.endMs
+    })
+
+    const best = matches[0]
+    const bestKey = `${best.candidate.kind}:${best.candidate.index}`
+
+    usedCandidates.add(bestKey)
+    habitLayouts[habitIndex] = 'paired-right'
+    if (best.candidate.kind === 'habit') {
+      habitLayouts[best.candidate.index] = 'paired-left'
+    } else {
+      projectLayouts[best.candidate.index] = 'paired-left'
     }
   })
 
