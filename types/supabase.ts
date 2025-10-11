@@ -54,10 +54,9 @@ export interface Database {
           description: string | null;
           habit_type: string;
           recurrence: string | null;
-          recurrence_days: string[] | null;
+          recurrence_days: number[] | null;
           duration_minutes: number | null;
           window_id: string | null;
-          window_position: 'FIRST' | 'LAST' | null;
           skill_id: string | null;
         };
         Insert: {
@@ -69,10 +68,9 @@ export interface Database {
           description?: string | null;
           habit_type?: string;
           recurrence?: string | null;
-          recurrence_days?: string[] | null;
+          recurrence_days?: number[] | null;
           duration_minutes?: number | null;
           window_id?: string | null;
-          window_position?: 'FIRST' | 'LAST' | null;
           skill_id?: string | null;
         };
         Update: {
@@ -84,10 +82,9 @@ export interface Database {
           description?: string | null;
           habit_type?: string;
           recurrence?: string | null;
-          recurrence_days?: string[] | null;
+          recurrence_days?: number[] | null;
           duration_minutes?: number | null;
           window_id?: string | null;
-          window_position?: 'FIRST' | 'LAST' | null;
           skill_id?: string | null;
         };
       };
