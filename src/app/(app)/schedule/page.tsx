@@ -3158,7 +3158,7 @@ export default function SchedulePage() {
               const isHabitCompleted = habitStatus === 'completed'
               const habitType = placement.habitType || 'HABIT'
               const scheduledCardBackground =
-                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
+                'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
                 'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
               const asyncCardBackground =
@@ -3166,8 +3166,8 @@ export default function SchedulePage() {
               const completedCardBackground =
                 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
               const scheduledShadow = [
-                '0 26px 52px rgba(0, 0, 0, 0.6)',
-                '0 12px 28px rgba(0, 0, 0, 0.45)',
+                '0 28px 58px rgba(3, 3, 6, 0.66)',
+                '0 10px 24px rgba(0, 0, 0, 0.45)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
               ].join(', ')
               const choreShadow = [
@@ -3187,8 +3187,8 @@ export default function SchedulePage() {
               ].join(', ')
               let cardBackground = scheduledCardBackground
               let cardShadow = scheduledShadow
-              let cardOutline = '1px solid rgba(18, 18, 24, 0.85)'
-              let habitBorderClass = 'border-white/12'
+              let cardOutline = '1px solid rgba(10, 10, 12, 0.85)'
+              let habitBorderClass = 'border-black/70'
 
               if (isHabitCompleted) {
                 cardBackground = completedCardBackground
