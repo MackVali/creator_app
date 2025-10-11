@@ -1486,7 +1486,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.energy = formData.energy;
       }
 
-      if (formData.description.trim()) {
+      if (
+        eventType !== "PROJECT" &&
+        eventType !== "TASK" &&
+        formData.description.trim()
+      ) {
         insertData.description = formData.description.trim();
       }
 
@@ -2602,19 +2606,21 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Description
-                    </Label>
-                    <Textarea
-                      value={formData.description}
-                      onChange={(event) =>
-                        setFormData({ ...formData, description: event.target.value })
-                      }
-                      placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
-                      className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                    />
-                  </div>
+                  {eventType !== "PROJECT" && eventType !== "TASK" ? (
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Description
+                      </Label>
+                      <Textarea
+                        value={formData.description}
+                        onChange={(event) =>
+                          setFormData({ ...formData, description: event.target.value })
+                        }
+                        placeholder={`Describe your ${eventMeta.badge.toLowerCase()}`}
+                        className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </FormSection>
 
