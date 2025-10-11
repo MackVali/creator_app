@@ -26,6 +26,10 @@ export function DayTimeline({
   const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
+  const showQuarterHourMarkers = pxPerMin >= 1.4;
+  const showQuarterHourLabels = pxPerMin >= 1.8;
+  const showFiveMinuteMarkers = pxPerMin >= 2.4;
+
   useEffect(() => {
     if (!isSameDay(date, new Date())) {
       setNowMinutes(null);
@@ -80,6 +84,51 @@ export function DayTimeline({
             >
               {formatHour(h)}
             </div>
+
+            {showQuarterHourMarkers && [15, 30, 45].map(minute => {
+              const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
+              if (minute >= minutesUntilHourEnd) return null;
+              const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
+              const isHalfHour = minute === 30;
+              return (
+                <Fragment key={`quarter-${h}-${minute}`}>
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute left-20 right-6 border-t border-white/10",
+                      isHalfHour ? "opacity-60" : "opacity-45"
+                    )}
+                    style={{ top: minuteTop }}
+                  />
+                  {showQuarterHourLabels && (
+                    <div
+                      className={cn(
+                        "pointer-events-none absolute right-6 -translate-y-1/2 text-[10px] font-medium tracking-[0.08em]",
+                        isHalfHour ? "text-white/60" : "text-white/45"
+                      )}
+                      style={{ top: minuteTop }}
+                    >
+                      {formatTime(h * 60 + minute)}
+                    </div>
+                  )}
+                </Fragment>
+              );
+            })}
+
+            {showFiveMinuteMarkers &&
+              Array.from({ length: 11 }, (_, index) => (index + 1) * 5)
+                .filter(minute => minute % 15 !== 0)
+                .map(minute => {
+                  const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
+                  if (minute >= minutesUntilHourEnd) return null;
+                  const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
+                  return (
+                    <div
+                      key={`fivemin-${h}-${minute}`}
+                      className="pointer-events-none absolute left-20 right-6 border-t border-white/10 opacity-25"
+                      style={{ top: minuteTop }}
+                    />
+                  );
+                })}
           </Fragment>
         );
       })}
