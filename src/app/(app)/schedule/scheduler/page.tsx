@@ -8,6 +8,7 @@ import { RescheduleButton } from "@/components/schedule/RescheduleButton";
 import { ENERGY } from "@/lib/scheduler/config";
 import { buildProjectItems, type ProjectItem } from "@/lib/scheduler/projects";
 import { type WindowLite } from "@/lib/scheduler/repo";
+import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import { toLocal } from "@/lib/time/tz";
 import { useSchedulerMeta } from "@/lib/scheduler/useSchedulerMeta";
@@ -25,10 +26,11 @@ type ScheduleDraft = {
   placed: ScheduleInstance[];
   failures: SchedulerFailure[];
   error?: unknown;
-  timeline: PreparedPlacementEntry[];
+  timeline: PreparedTimelineEntry[];
 };
 
 type DraftPlacementEntry = {
+  type: "project";
   instance: ScheduleInstance;
   projectId: string;
   decision: "kept" | "new" | "rescheduled";
@@ -45,6 +47,34 @@ type PreparedPlacementEntry = DraftPlacementEntry & {
   windowStartLocalDate: Date | null;
 };
 
+type DraftHabitEntry = {
+  type: "habit";
+  habit: {
+    id: string;
+    name: string;
+    windowId: string | null;
+    windowLabel: string | null;
+    startUTC: string;
+    endUTC: string;
+    durationMin: number;
+    energyResolved: string | null;
+    clipped?: boolean;
+  };
+  decision: "kept" | "new" | "rescheduled";
+  scheduledDayOffset?: number | null;
+  availableStartLocal?: string | null;
+  windowStartLocal?: string | null;
+};
+
+type PreparedHabitEntry = DraftHabitEntry & {
+  start: Date;
+  end: Date;
+  availableStartLocalDate: Date | null;
+  windowStartLocalDate: Date | null;
+};
+
+type PreparedTimelineEntry = PreparedPlacementEntry | PreparedHabitEntry;
+
 type PlacementView = {
   instance: ScheduleInstance;
   project?: ProjectItem;
@@ -54,6 +84,23 @@ type PlacementView = {
   durationMin: number;
   decision: DraftPlacementEntry["decision"];
   reason: string;
+  goalId: string | null;
+  goalName: string | null;
+};
+
+type HabitView = {
+  id: string;
+  name: string;
+  start: Date;
+  end: Date;
+  durationMin: number;
+  energyResolved: string | null;
+  windowLabel: string | null;
+  decision: DraftHabitEntry["decision"];
+  scheduledDayOffset?: number | null;
+  availableStartLocalDate: Date | null;
+  windowStartLocalDate: Date | null;
+  clipped?: boolean;
 };
 
 type GapEntry = {
@@ -65,9 +112,49 @@ type GapEntry = {
   message: string;
 };
 
-type TimelineEntry =
-  | { type: "placement"; placement: PlacementView }
-  | GapEntry;
+type GoalTimelineEntry = {
+  type: "goal";
+  id: string;
+  goalId: string | null;
+  goalName: string;
+  placements: PlacementView[];
+  start: Date;
+  end: Date;
+  totalDuration: number;
+};
+
+type HabitTimelineEntry = {
+  type: "habit";
+  id: string;
+  habitId: string;
+  habitName: string;
+  routine: string | null;
+  occurrences: HabitView[];
+  start: Date;
+  end: Date;
+  totalDuration: number;
+};
+
+type TimelineEntry = GoalTimelineEntry | HabitTimelineEntry | GapEntry;
+
+type ChronoItem =
+  | {
+      kind: "project";
+      key: string;
+      placement: PlacementView;
+      goalId: string | null;
+      goalName: string;
+      start: Date;
+      end: Date;
+    }
+  | {
+      kind: "habit";
+      key: string;
+      habit: HabitView;
+      routine: string | null;
+      start: Date;
+      end: Date;
+    };
 
 export default function SchedulerPage() {
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">(
@@ -77,8 +164,15 @@ export default function SchedulerPage() {
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
 
-  const { tasks, projects, windowMap, status: metaStatus, error: metaError } =
-    useSchedulerMeta();
+  const {
+    tasks,
+    projects,
+    windowMap,
+    goalMap,
+    habitMap,
+    status: metaStatus,
+    error: metaError,
+  } = useSchedulerMeta();
 
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
@@ -111,7 +205,9 @@ export default function SchedulerPage() {
 
   const placements = useMemo<PlacementView[]>(() => {
     if (!scheduleDraft) return [];
-    return scheduleDraft.timeline.map(entry => {
+    const results: PlacementView[] = [];
+    for (const entry of scheduleDraft.timeline) {
+      if (entry.type !== "project") continue;
       const { instance, decision, start, end, durationMin } = entry;
       const projectId =
         typeof instance.source_id === "string" && instance.source_id
@@ -131,7 +227,11 @@ export default function SchedulerPage() {
         availableStartLocal: entry.availableStartLocalDate,
         windowStartLocal: entry.windowStartLocalDate,
       });
-      return {
+      const goalId = project?.goalId ?? null;
+      const goalName = goalId
+        ? project?.goalName ?? goalMap[goalId]?.name ?? null
+        : null;
+      results.push({
         instance,
         project,
         window,
@@ -140,9 +240,12 @@ export default function SchedulerPage() {
         durationMin,
         decision,
         reason,
-      };
-    });
-  }, [scheduleDraft, projectMap, windowMap]);
+        goalId,
+        goalName,
+      });
+    }
+    return results;
+  }, [scheduleDraft, projectMap, windowMap, goalMap]);
 
   const failureDetails = useMemo(() => {
     if (!scheduleDraft) return [] as Array<{
@@ -172,41 +275,194 @@ export default function SchedulerPage() {
       .join(" ");
   }, [failureDetails]);
 
-  const timelineEntries = useMemo<TimelineEntry[]>(() => {
-    if (placements.length === 0) return [];
-    const entries: TimelineEntry[] = [];
-    for (let index = 0; index < placements.length; index += 1) {
-      const placement = placements[index];
-      entries.push({ type: "placement", placement });
-      const next = placements[index + 1];
-      if (!next) continue;
-      const gapMs = next.start.getTime() - placement.end.getTime();
-      const gapMinutes = Math.round(gapMs / 60000);
-      if (gapMinutes <= GAP_THRESHOLD_MINUTES) continue;
-      entries.push({
-        type: "gap",
-        id: `${placement.instance.id}-gap-${next.instance.id}`,
-        start: placement.end,
-        end: next.start,
-        durationMin: gapMinutes,
-        message: buildGapMessage({ previous: placement, next, failureSummary }),
+  const habitPlacements = useMemo<HabitView[]>(() => {
+    if (!scheduleDraft) return [];
+    const results: HabitView[] = [];
+    for (const entry of scheduleDraft.timeline) {
+      if (entry.type !== "habit") continue;
+      const start = entry.start;
+      const end = entry.end;
+      if (!start || !end) continue;
+      const durationMin = Math.max(
+        0,
+        Math.round((end.getTime() - start.getTime()) / 60000),
+      );
+      results.push({
+        id: entry.habit.id,
+        name: entry.habit.name,
+        start,
+        end,
+        durationMin: durationMin || entry.habit.durationMin,
+        energyResolved: entry.habit.energyResolved,
+        windowLabel: entry.habit.windowLabel,
+        decision: entry.decision,
+        scheduledDayOffset: entry.scheduledDayOffset ?? null,
+        availableStartLocalDate: entry.availableStartLocalDate,
+        windowStartLocalDate: entry.windowStartLocalDate,
+        clipped: entry.habit.clipped,
       });
     }
+    return results;
+  }, [scheduleDraft]);
+
+  const placementById = useMemo(() => {
+    const map = new Map<string, PlacementView>();
+    for (const placement of placements) {
+      map.set(placement.instance.id, placement);
+    }
+    return map;
+  }, [placements]);
+
+  const habitByKey = useMemo(() => {
+    const map = new Map<string, HabitView>();
+    for (const habit of habitPlacements) {
+      map.set(habitTimelineKey(habit.id, habit.start), habit);
+    }
+    return map;
+  }, [habitPlacements]);
+
+  const timelineItems = useMemo<ChronoItem[]>(() => {
+    if (!scheduleDraft) return [];
+    const items: ChronoItem[] = [];
+    for (const entry of scheduleDraft.timeline) {
+      if (entry.type === "project") {
+        const placement = placementById.get(entry.instance.id);
+        if (!placement) continue;
+        const goalName =
+          placement.goalName ??
+          placement.project?.goalName ??
+          placement.project?.name ??
+          placement.instance.source_id ??
+          "Untitled project";
+        items.push({
+          kind: "project",
+          key: `project-${placement.instance.id}`,
+          placement,
+          goalId: placement.goalId,
+          goalName,
+          start: placement.start,
+          end: placement.end,
+        });
+        continue;
+      }
+
+      const key = habitTimelineKey(entry.habit.id, entry.start);
+      const habit = habitByKey.get(key);
+      if (!habit) continue;
+      const routine = formatHabitRoutine(habitMap[habit.id]);
+      items.push({
+        kind: "habit",
+        key,
+        habit,
+        routine,
+        start: habit.start,
+        end: habit.end,
+      });
+    }
+    return items;
+  }, [scheduleDraft, placementById, habitByKey, habitMap]);
+
+  const timelineEntries = useMemo<TimelineEntry[]>(() => {
+    if (timelineItems.length === 0) return [];
+    const entries: TimelineEntry[] = [];
+    let currentGoal: GoalTimelineEntry | null = null;
+    let previousItem: ChronoItem | null = null;
+
+    const pushCurrentGoal = () => {
+      if (!currentGoal) return;
+      entries.push(currentGoal);
+      currentGoal = null;
+    };
+
+    for (const item of timelineItems) {
+      if (previousItem) {
+        const gapMs = item.start.getTime() - previousItem.end.getTime();
+        const gapMinutes = Math.round(gapMs / 60000);
+        if (gapMinutes > GAP_THRESHOLD_MINUTES) {
+          pushCurrentGoal();
+          entries.push({
+            type: "gap",
+            id: `gap-${previousItem.key}-${item.key}`,
+            start: previousItem.end,
+            end: item.start,
+            durationMin: gapMinutes,
+            message: buildTimelineGapMessage({
+              previous: previousItem,
+              next: item,
+              failureSummary,
+            }),
+          });
+        }
+      }
+
+      if (item.kind === "project") {
+        if (
+          currentGoal &&
+          currentGoal.goalId === item.goalId &&
+          currentGoal.goalName === item.goalName
+        ) {
+          currentGoal.placements.push(item.placement);
+          currentGoal.end = item.end;
+          currentGoal.totalDuration += item.placement.durationMin;
+        } else {
+          pushCurrentGoal();
+          currentGoal = {
+            type: "goal",
+            id: `goal-${item.goalId ?? item.placement.instance.id}-${item.start.getTime()}`,
+            goalId: item.goalId ?? null,
+            goalName: item.goalName,
+            placements: [item.placement],
+            start: item.start,
+            end: item.end,
+            totalDuration: item.placement.durationMin,
+          };
+        }
+      } else {
+        pushCurrentGoal();
+        const lastEntry = entries[entries.length - 1];
+        if (
+          lastEntry &&
+          lastEntry.type === "habit" &&
+          lastEntry.habitId === item.habit.id
+        ) {
+          lastEntry.occurrences.push(item.habit);
+          lastEntry.end = item.end;
+          lastEntry.totalDuration += item.habit.durationMin;
+        } else {
+          entries.push({
+            type: "habit",
+            id: `habit-${item.habit.id}-${item.start.getTime()}`,
+            habitId: item.habit.id,
+            habitName: item.habit.name,
+            routine: item.routine,
+            occurrences: [item.habit],
+            start: item.start,
+            end: item.end,
+            totalDuration: item.habit.durationMin,
+          });
+        }
+      }
+
+      previousItem = item;
+    }
+
+    pushCurrentGoal();
     return entries;
-  }, [placements, failureSummary]);
+  }, [timelineItems, failureSummary]);
 
   const timelineParentRef = useRef<HTMLDivElement | null>(null);
 
   const timelineVirtualizer = useVirtualizer({
     count: timelineEntries.length,
     getScrollElement: () => timelineParentRef.current,
-    estimateSize: () => 176,
+    estimateSize: () => 220,
     overscan: 6,
     getItemKey: index => {
       const entry = timelineEntries[index];
-      return entry.type === "placement"
-        ? `placement-${entry.placement.instance.id}`
-        : `gap-${entry.id}`;
+      if (entry.type === "gap") {
+        return `gap-${entry.id}`;
+      }
+      return `${entry.type}-${entry.id}`;
     },
     measureElement:
       typeof window !== "undefined"
@@ -350,12 +606,7 @@ export default function SchedulerPage() {
                       const entry = timelineEntries[virtualRow.index];
                       const isLast = virtualRow.index === timelineEntries.length - 1;
 
-                      if (entry.type === "placement") {
-                        const { placement } = entry;
-                        const projectName = placement.project?.name?.trim()
-                          ? placement.project.name
-                          : placement.instance.source_id || "Untitled project";
-
+                      if (entry.type === "gap") {
                         return (
                           <div
                             key={virtualRow.key}
@@ -370,56 +621,124 @@ export default function SchedulerPage() {
                                 paddingBottom: isLast ? 0 : "0.75rem",
                               }}
                             >
-                              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div>
-                                    <div className="text-sm font-medium text-zinc-100">
-                                      {projectName}
+                              <div className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/10 p-4 text-amber-100">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">
+                                  Gap
+                                </div>
+                                <div className="mt-1 text-xs text-amber-100/80">
+                                  {formatDateTime(entry.start)} → {formatDateTime(entry.end)}
+                                </div>
+                                <div className="mt-1 text-xs">
+                                  {formatDurationMinutes(entry.durationMin)} with no scheduled focus.
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-amber-50">
+                                  {entry.message}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (entry.type === "goal") {
+                        const isGoal = Boolean(entry.goalId);
+                        return (
+                          <div
+                            key={virtualRow.key}
+                            ref={timelineVirtualizer.measureElement}
+                            className="absolute left-0 right-0"
+                            style={{
+                              transform: `translateY(${virtualRow.start}px)`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                paddingBottom: isLast ? 0 : "0.75rem",
+                              }}
+                            >
+                              <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-4">
+                                  <div className="space-y-1">
+                                    <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-400">
+                                      {isGoal ? "Goal focus" : "Project focus"}
+                                    </span>
+                                    <div className="text-lg font-semibold text-zinc-50">
+                                      {entry.goalName}
                                     </div>
                                     <div className="text-xs text-zinc-400">
-                                      {(placement.project?.stage || "") && (
-                                        <span>{placement.project?.stage}</span>
-                                      )}
-                                      {placement.project?.priority && (
-                                        <span>
-                                          {placement.project?.stage ? " · " : ""}
-                                          {placement.project.priority}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
-                                      <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
-                                        {formatDecisionLabel(placement.decision)}
-                                      </span>
+                                      {entry.placements.length} {entry.placements.length === 1 ? "project" : "projects"}
+                                      {" · "}
+                                      Total {formatDurationMinutes(entry.totalDuration)}
                                     </div>
                                   </div>
                                   <div className="text-right text-xs text-zinc-400">
-                                    <div>{formatDateTime(placement.start)}</div>
-                                    <div className="text-zinc-500">
-                                      → {formatDateTime(placement.end)}
-                                    </div>
+                                    <div>{formatDateTime(entry.start)}</div>
+                                    <div className="text-zinc-500">→ {formatDateTime(entry.end)}</div>
                                   </div>
                                 </div>
-                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
-                                  <span>
-                                    Window:{" "}
-                                    {placement.window?.label ||
-                                      placement.instance.window_id ||
-                                      "Unassigned"}
-                                  </span>
-                                  <span>
-                                    Duration: {formatDurationMinutes(placement.durationMin)}
-                                  </span>
-                                  <span>
-                                    Energy:{" "}
-                                    {placement.project?.energy ||
-                                      placement.instance.energy_resolved ||
-                                      "NO"}
-                                  </span>
+                                <div className="mt-3 space-y-2">
+                                  {entry.placements.map(placement => {
+                                    const projectName = placement.project?.name?.trim()
+                                      ? placement.project.name
+                                      : placement.instance.source_id || "Untitled project";
+                                    return (
+                                      <div
+                                        key={placement.instance.id}
+                                        className="rounded-md border border-zinc-800/70 bg-zinc-900/40 p-3"
+                                      >
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                          <div className="space-y-1">
+                                            <div className="text-sm font-medium text-zinc-100">
+                                              {projectName}
+                                            </div>
+                                            <div className="text-xs text-zinc-400">
+                                              {(placement.project?.stage || "") && (
+                                                <span>{placement.project?.stage}</span>
+                                              )}
+                                              {placement.project?.priority && (
+                                                <span>
+                                                  {placement.project?.stage ? " · " : ""}
+                                                  {placement.project.priority}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
+                                              <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
+                                                {formatDecisionLabel(placement.decision)}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <div className="text-right text-xs text-zinc-400">
+                                            <div>{formatDateTime(placement.start)}</div>
+                                            <div className="text-zinc-500">
+                                              → {formatDateTime(placement.end)}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
+                                          <span>
+                                            Window:{" "}
+                                            {placement.window?.label ||
+                                              placement.instance.window_id ||
+                                              "Unassigned"}
+                                          </span>
+                                          <span>
+                                            Duration: {formatDurationMinutes(placement.durationMin)}
+                                          </span>
+                                          <span>
+                                            Energy:{" "}
+                                            {placement.project?.energy ||
+                                              placement.instance.energy_resolved ||
+                                              "NO"}
+                                          </span>
+                                        </div>
+                                        <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                                          {placement.reason}
+                                        </p>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
-                                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
-                                  {placement.reason}
-                                </p>
                               </div>
                             </div>
                           </div>
@@ -440,20 +759,67 @@ export default function SchedulerPage() {
                               paddingBottom: isLast ? 0 : "0.75rem",
                             }}
                           >
-                            <div className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">
-                                Gap
+                            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-4 text-sky-100">
+                              <div className="flex flex-wrap items-start justify-between gap-4">
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-sky-200/80">
+                                    Habit routine
+                                  </span>
+                                  <div className="text-lg font-semibold text-sky-50">
+                                    {entry.habitName}
+                                  </div>
+                                  {entry.routine && (
+                                    <div className="text-xs text-sky-100/80">{entry.routine}</div>
+                                  )}
+                                  <div className="text-xs text-sky-100/80">
+                                    {entry.occurrences.length} {entry.occurrences.length === 1 ? "session" : "sessions"} · Total {formatDurationMinutes(entry.totalDuration)}
+                                  </div>
+                                </div>
+                                <div className="text-right text-xs text-sky-100/80">
+                                  <div>{formatDateTime(entry.start)}</div>
+                                  <div className="text-sky-200/70">→ {formatDateTime(entry.end)}</div>
+                                </div>
                               </div>
-                              <div className="mt-1 text-xs text-amber-100/80">
-                                {formatDateTime(entry.start)} → {formatDateTime(entry.end)}
+                              <div className="mt-3 space-y-2">
+                                {entry.occurrences.map(occurrence => (
+                                  <div
+                                    key={habitTimelineKey(occurrence.id, occurrence.start)}
+                                    className="rounded-md border border-sky-500/30 bg-sky-500/5 p-3"
+                                  >
+                                    <div className="flex flex-wrap items-start justify-between gap-3 text-xs">
+                                      <div className="space-y-1">
+                                        <div className="font-medium text-sky-50">
+                                          {formatDateTime(occurrence.start)}
+                                        </div>
+                                        <div className="text-sky-100/80">
+                                          → {formatDateTime(occurrence.end)}
+                                        </div>
+                                        <div className="text-sky-100/70">
+                                          Window: {occurrence.windowLabel ?? "Unassigned"}
+                                        </div>
+                                        <div className="text-sky-100/70">
+                                          Duration: {formatDurationMinutes(occurrence.durationMin)}
+                                        </div>
+                                        {occurrence.energyResolved && (
+                                          <div className="text-sky-100/70">
+                                            Energy: {occurrence.energyResolved}
+                                          </div>
+                                        )}
+                                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                                          <span className="inline-flex items-center rounded-full bg-sky-500/20 px-2 py-0.5">
+                                            {formatDecisionLabel(occurrence.decision)}
+                                          </span>
+                                        </div>
+                                        {occurrence.clipped && (
+                                          <div className="text-[11px] text-sky-100/70">
+                                            Session clipped to fit the window.
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                              <div className="mt-1 text-xs">
-                                {formatDurationMinutes(entry.durationMin)} gap between
-                                placements.
-                              </div>
-                              <p className="mt-2 text-xs leading-relaxed text-amber-50">
-                                {entry.message}
-                              </p>
                             </div>
                           </div>
                         </div>
@@ -463,8 +829,8 @@ export default function SchedulerPage() {
                 </div>
               ) : (
                 <p className="text-sm text-zinc-400">
-                  The scheduler did not return any placements. Run the scheduler
-                  to generate a draft timeline.
+                  The scheduler did not return any timeline entries. Run the
+                  scheduler to generate a draft timeline.
                 </p>
               )}
 
@@ -616,14 +982,14 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
 
   const error = payload.error;
 
-  const timeline: PreparedPlacementEntry[] = Array.isArray(payload.timeline)
+  const timeline: PreparedTimelineEntry[] = Array.isArray(payload.timeline)
     ? payload.timeline
-        .map(toDraftPlacementEntry)
-        .filter((item): item is DraftPlacementEntry => item !== null)
-        .map(prepareDraftPlacementEntry)
+        .map(toDraftTimelineEntry)
         .filter(
-          (item): item is PreparedPlacementEntry => item !== null,
+          (item): item is DraftPlacementEntry | DraftHabitEntry => item !== null,
         )
+        .map(prepareDraftTimelineEntry)
+        .filter((item): item is PreparedTimelineEntry => item !== null)
         .sort((a, b) => a.start.getTime() - b.start.getTime())
     : [];
 
@@ -655,16 +1021,93 @@ function toSchedulerFailure(input: unknown): SchedulerFailure | null {
   };
 }
 
-function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
+function toDraftTimelineEntry(
+  input: unknown,
+): DraftPlacementEntry | DraftHabitEntry | null {
   if (!input || typeof input !== "object") return null;
   const record = input as {
+    type?: unknown;
     instance?: unknown;
     decision?: unknown;
     projectId?: unknown;
     availableStartLocal?: unknown;
     windowStartLocal?: unknown;
     scheduledDayOffset?: unknown;
+    habit?: unknown;
   };
+
+  const typeRaw =
+    typeof record.type === "string" ? record.type.toUpperCase() : "PROJECT";
+
+  if (typeRaw === "HABIT") {
+    const habitValue = record.habit;
+    if (!habitValue || typeof habitValue !== "object") return null;
+    const habitRecord = habitValue as {
+      id?: unknown;
+      name?: unknown;
+      windowId?: unknown;
+      windowLabel?: unknown;
+      startUTC?: unknown;
+      endUTC?: unknown;
+      durationMin?: unknown;
+      energyResolved?: unknown;
+      clipped?: unknown;
+    };
+    const id = typeof habitRecord.id === "string" ? habitRecord.id : null;
+    const name = typeof habitRecord.name === "string" ? habitRecord.name : null;
+    const startUTC =
+      typeof habitRecord.startUTC === "string" ? habitRecord.startUTC : null;
+    const endUTC =
+      typeof habitRecord.endUTC === "string" ? habitRecord.endUTC : null;
+    const durationMin =
+      typeof habitRecord.durationMin === "number"
+        ? habitRecord.durationMin
+        : null;
+    if (!id || !name || !startUTC || !endUTC || durationMin === null) {
+      return null;
+    }
+    const decision = record.decision;
+    if (decision !== "kept" && decision !== "new" && decision !== "rescheduled") {
+      return null;
+    }
+    return {
+      type: "habit",
+      habit: {
+        id,
+        name,
+        windowId:
+          typeof habitRecord.windowId === "string"
+            ? habitRecord.windowId
+            : null,
+        windowLabel:
+          typeof habitRecord.windowLabel === "string"
+            ? habitRecord.windowLabel
+            : null,
+        startUTC,
+        endUTC,
+        durationMin,
+        energyResolved:
+          typeof habitRecord.energyResolved === "string"
+            ? habitRecord.energyResolved
+            : null,
+        clipped: habitRecord.clipped === true,
+      },
+      decision,
+      scheduledDayOffset:
+        typeof record.scheduledDayOffset === "number"
+          ? record.scheduledDayOffset
+          : null,
+      availableStartLocal:
+        typeof record.availableStartLocal === "string"
+          ? record.availableStartLocal
+          : null,
+      windowStartLocal:
+        typeof record.windowStartLocal === "string"
+          ? record.windowStartLocal
+          : null,
+    };
+  }
+
   const instance = toScheduleInstance(record.instance);
   if (!instance) return null;
   const decision = record.decision;
@@ -678,6 +1121,7 @@ function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
         ? instance.source_id
         : "";
   return {
+    type: "project",
     instance,
     projectId,
     decision,
@@ -696,9 +1140,39 @@ function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
   };
 }
 
-function prepareDraftPlacementEntry(
-  entry: DraftPlacementEntry,
-): PreparedPlacementEntry | null {
+function prepareDraftTimelineEntry(
+  entry: DraftPlacementEntry | DraftHabitEntry,
+): PreparedTimelineEntry | null {
+  if (entry.type === "habit") {
+    const start = toLocal(entry.habit.startUTC);
+    const end = toLocal(entry.habit.endUTC);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return null;
+    }
+    const availableStartLocalDate = entry.availableStartLocal
+      ? new Date(entry.availableStartLocal)
+      : null;
+    const windowStartLocalDate = entry.windowStartLocal
+      ? new Date(entry.windowStartLocal)
+      : null;
+    const validAvailable =
+      availableStartLocalDate &&
+      !Number.isNaN(availableStartLocalDate.getTime())
+        ? availableStartLocalDate
+        : null;
+    const validWindowStart =
+      windowStartLocalDate && !Number.isNaN(windowStartLocalDate.getTime())
+        ? windowStartLocalDate
+        : null;
+    return {
+      ...entry,
+      start,
+      end,
+      availableStartLocalDate: validAvailable,
+      windowStartLocalDate: validWindowStart,
+    };
+  }
+
   const { instance } = entry;
   if (typeof instance.start_utc !== "string") return null;
   if (typeof instance.end_utc !== "string") return null;
@@ -741,7 +1215,7 @@ function prepareDraftPlacementEntry(
   };
 }
 
-function formatDecisionLabel(decision: DraftPlacementEntry["decision"]): string {
+function formatDecisionLabel(decision: "kept" | "new" | "rescheduled"): string {
   switch (decision) {
     case "kept":
       return "Kept from previous run";
@@ -874,23 +1348,36 @@ function describeFailure(
   }
 }
 
-function buildGapMessage({
+function buildTimelineGapMessage({
   previous,
   next,
   failureSummary,
 }: {
-  previous: PlacementView;
-  next: PlacementView;
+  previous: ChronoItem;
+  next: ChronoItem;
   failureSummary: string | null;
 }): string {
-  const base = `No project scheduled from ${formatDateTime(previous.end)} to ${formatDateTime(next.start)}.`;
-  const windowNote = next.window
-    ? ` Next available window "${next.window.label}" begins at ${formatDateTime(next.start)}.`
-    : ` Next scheduled project "${next.project?.name ?? next.instance.source_id ?? "project"}" begins at ${formatDateTime(next.start)}.`;
+  const base = `No scheduled activity from ${formatDateTime(previous.end)} to ${formatDateTime(next.start)}.`;
+  let nextNote = "";
+
+  if (next.kind === "project") {
+    const projectLabel =
+      next.placement.project?.name ??
+      next.goalName ??
+      next.placement.instance.source_id ??
+      "project";
+    nextNote = next.placement.window
+      ? ` Next available window "${next.placement.window.label}" begins at ${formatDateTime(next.placement.start)}.`
+      : ` Next project "${projectLabel}" begins at ${formatDateTime(next.placement.start)}.`;
+  } else {
+    const routine = next.routine ? ` (${next.routine})` : "";
+    nextNote = ` Next habit "${next.habit.name}"${routine} begins at ${formatDateTime(next.habit.start)}.`;
+  }
+
   const failureNote = failureSummary
     ? ` Scheduler also reported: ${failureSummary}`
     : "";
-  return `${base}${windowNote}${failureNote}`;
+  return `${base}${nextNote}${failureNote}`;
 }
 
 function formatDurationMinutes(minutes: number): string {
@@ -926,4 +1413,61 @@ function formatFailureDetail(detail: unknown): string | null {
     }
   }
   return String(detail);
+}
+
+function habitTimelineKey(id: string, start: Date): string {
+  return `${id}-${start.toISOString()}`;
+}
+
+function formatHabitRoutine(habit?: HabitScheduleItem | null): string | null {
+  if (!habit) return null;
+  const parts: string[] = [];
+  const recurrence = formatHabitRecurrence(habit.recurrence, habit.recurrenceDays);
+  if (recurrence) parts.push(recurrence);
+  if (habit.window?.label) parts.push(habit.window.label);
+  if (parts.length === 0 && habit.habitType) {
+    parts.push(toTitleCase(habit.habitType));
+  }
+  return parts.length > 0 ? parts.join(" • ") : null;
+}
+
+function formatHabitRecurrence(
+  recurrence?: string | null,
+  days?: number[] | null,
+): string | null {
+  if (!recurrence) return null;
+  const normalized = recurrence.toUpperCase();
+  switch (normalized) {
+    case "DAILY":
+      return "Daily";
+    case "WEEKLY":
+    case "CUSTOM":
+      if (days && days.length > 0) {
+        return formatHabitDays(days);
+      }
+      return "Weekly";
+    case "WEEKDAYS":
+      return "Weekdays";
+    case "WEEKENDS":
+      return "Weekends";
+    default:
+      return toTitleCase(normalized);
+  }
+}
+
+function formatHabitDays(days: number[]): string {
+  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const unique = Array.from(new Set(days)).filter(day => Number.isFinite(day));
+  unique.sort((a, b) => a - b);
+  if (unique.length >= 7) return "Daily";
+  return unique
+    .map(day => DAY_LABELS[day] ?? `Day ${day}`)
+    .join(", ");
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, char => char.toUpperCase());
 }
