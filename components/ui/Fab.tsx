@@ -97,13 +97,8 @@ export function Fab({
     timeline: {
       primary: [
         {
-          label: "TASK",
-          eventType: "TASK" as const,
-          color: "hover:bg-gray-600",
-        },
-        {
-          label: "HABIT",
-          eventType: "HABIT" as const,
+          label: "GOAL",
+          eventType: "GOAL" as const,
           color: "hover:bg-gray-600",
         },
         {
@@ -112,8 +107,13 @@ export function Fab({
           color: "hover:bg-gray-600",
         },
         {
-          label: "GOAL",
-          eventType: "GOAL" as const,
+          label: "TASK",
+          eventType: "TASK" as const,
+          color: "hover:bg-gray-600",
+        },
+        {
+          label: "HABIT",
+          eventType: "HABIT" as const,
           color: "hover:bg-gray-600",
         },
       ],
