@@ -30,28 +30,10 @@ const SUMMARY_STYLES = [
 
 const CARD_STYLES = [
   {
-    iconBg: "bg-amber-500/15 text-amber-200",
-    ctaClass: "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30",
-  },
-  {
-    iconBg: "bg-emerald-500/15 text-emerald-200",
-    ctaClass: "bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30",
-  },
-  {
-    iconBg: "bg-sky-500/15 text-sky-200",
-    ctaClass: "bg-sky-500/20 text-sky-100 hover:bg-sky-500/30",
-  },
-  {
-    iconBg: "bg-indigo-500/15 text-indigo-200",
-    ctaClass: "bg-indigo-500/20 text-indigo-100 hover:bg-indigo-500/30",
-  },
-  {
-    iconBg: "bg-purple-500/15 text-purple-200",
-    ctaClass: "bg-purple-500/20 text-purple-100 hover:bg-purple-500/30",
-  },
-  {
-    iconBg: "bg-rose-500/15 text-rose-200",
-    ctaClass: "bg-rose-500/20 text-rose-100 hover:bg-rose-500/30",
+    iconBg:
+      "bg-[#1f2937] text-white/80 border border-white/10 shadow-[0_10px_25px_-18px_rgba(15,23,42,0.9)]",
+    ctaClass:
+      "border border-white/10 bg-[#1f2937] text-white/80 transition-colors hover:bg-[#27364a] hover:text-white",
   },
 ];
 
@@ -464,7 +446,7 @@ export default function HabitsPage() {
                               return (
                                 <li
                                   key={habit.id}
-                                  className="relative flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition duration-300 hover:border-white/20 hover:bg-white/[0.05]"
+                                  className="relative flex flex-col gap-4 rounded-2xl border border-white/10 bg-[#111111] p-4 transition duration-300 hover:border-white/20 hover:bg-[#1a1a1a]"
                                 >
                                   <div className="flex items-start justify-between gap-4">
                                     <div className="flex items-center gap-3">
@@ -589,7 +571,7 @@ export default function HabitsPage() {
                       return (
                         <article
                           key={habit.id}
-                          className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_18px_45px_-25px_rgba(15,23,42,0.6)] transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_28px_55px_-20px_rgba(15,23,42,0.7)]"
+                          className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111111] p-6 shadow-[0_18px_45px_-25px_rgba(15,23,42,0.6)] transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-[#1a1a1a] hover:shadow-[0_28px_55px_-20px_rgba(15,23,42,0.7)]"
                         >
                           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_60%)] opacity-0 transition duration-300 group-hover:opacity-100" />
                           <div className="relative flex items-start justify-between gap-4">
@@ -685,7 +667,7 @@ export default function HabitsPage() {
                               </Link>
                               <button
                                 type="button"
-                                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${palette.ctaClass}`}
+                                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${palette.ctaClass}`}
                                 disabled
                               >
                                 <span>Mark complete</span>
