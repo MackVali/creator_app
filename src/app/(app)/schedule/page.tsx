@@ -363,6 +363,8 @@ type HabitTimelinePlacement = {
   truncated: boolean
 }
 
+type TimelineCardLayoutMode = 'full' | 'paired-left' | 'paired-right'
+
 function isValidDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime())
 }
@@ -624,7 +626,8 @@ function computeHabitPlacementsForDay({
     const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(window, date)
     if (!isValidDate(windowStart) || !isValidDate(windowEnd)) continue
 
-    let cursorMs = windowStart.getTime()
+    const windowStartMs = windowStart.getTime()
+    let cursorMs = windowStartMs
     const windowEndMs = windowEnd.getTime()
     if (!Number.isFinite(cursorMs) || !Number.isFinite(windowEndMs)) continue
 
@@ -639,7 +642,12 @@ function computeHabitPlacementsForDay({
       return a.name.localeCompare(b.name)
     })
 
-    for (const habit of sorted) {
+    const asyncHabitsInWindow = sorted.filter(habit => (habit.habitType ?? 'HABIT').toUpperCase() === 'ASYNC')
+    const sequentialHabitsInWindow = sorted.filter(
+      habit => (habit.habitType ?? 'HABIT').toUpperCase() !== 'ASYNC'
+    )
+
+    for (const habit of sequentialHabitsInWindow) {
       if (cursorMs >= windowEndMs) break
       const rawDuration = Number(habit.durationMinutes ?? 0)
       const durationMin =
@@ -675,6 +683,56 @@ function computeHabitPlacementsForDay({
       })
 
       cursorMs = endMs
+    }
+
+    let asyncCursorMs = windowStartMs
+    for (const habit of asyncHabitsInWindow) {
+      if (asyncCursorMs >= windowEndMs) break
+      const rawDuration = Number(habit.durationMinutes ?? 0)
+      const durationMin =
+        Number.isFinite(rawDuration) && rawDuration > 0
+          ? rawDuration
+          : DEFAULT_HABIT_DURATION_MIN
+      const durationMs = durationMin * 60000
+      if (durationMs <= 0) continue
+
+      const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
+      const dueStartMs = dueStart?.getTime()
+      const baseStartMs =
+        typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)
+          ? Math.max(windowStartMs, dueStartMs)
+          : windowStartMs
+      const startMs = Math.max(asyncCursorMs, baseStartMs)
+      if (startMs >= windowEndMs) {
+        asyncCursorMs = startMs
+        continue
+      }
+
+      let endMs = startMs + durationMs
+      let truncated = false
+      if (endMs > windowEndMs) {
+        endMs = windowEndMs
+        truncated = true
+      }
+      if (endMs <= startMs) {
+        asyncCursorMs = endMs
+        continue
+      }
+
+      const start = new Date(startMs)
+      const end = new Date(endMs)
+      placements.push({
+        habitId: habit.id,
+        habitName: habit.name,
+        habitType: habit.habitType,
+        start,
+        end,
+        durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
+        window,
+        truncated,
+      })
+
+      asyncCursorMs = endMs
     }
   }
 
@@ -820,6 +878,167 @@ function computeWindowReportsForDay({
   }
 
   return reports
+}
+
+const TIMELINE_LEFT_OFFSET = '4rem'
+const TIMELINE_RIGHT_OFFSET = '0.5rem'
+const ASYNC_PAIR_GAP = '0.75rem'
+const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET} - ${ASYNC_PAIR_GAP}) / 2)`
+const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH} + ${ASYNC_PAIR_GAP})`
+
+function computeTimelineLayoutForAsyncHabits({
+  habitPlacements,
+  projectInstances,
+}: {
+  habitPlacements: HabitTimelinePlacement[]
+  projectInstances: ReturnType<typeof computeProjectInstances>
+}) {
+  const habitLayouts = habitPlacements.map<TimelineCardLayoutMode>(() => 'full')
+  const projectLayouts = projectInstances.map<TimelineCardLayoutMode>(() => 'full')
+
+  type Candidate = {
+    kind: 'habit' | 'project'
+    index: number
+    startMs: number
+    endMs: number
+  }
+
+  const candidates: Candidate[] = []
+
+  habitPlacements.forEach((placement, index) => {
+    const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
+    if (habitType === 'ASYNC') return
+    const startMs = placement.start.getTime()
+    const endMs = placement.end.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    candidates.push({ kind: 'habit', index, startMs, endMs })
+  })
+
+  projectInstances.forEach((instance, index) => {
+    const startMs = instance.start.getTime()
+    const endMs = instance.end.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    candidates.push({ kind: 'project', index, startMs, endMs })
+  })
+
+  const sortedCandidates = candidates.sort((a, b) => {
+    if (a.startMs !== b.startMs) return a.startMs - b.startMs
+    return a.endMs - b.endMs
+  })
+
+  const asyncHabits = habitPlacements
+    .map((placement, index) => ({ placement, index }))
+    .filter(({ placement }) => (placement.habitType ?? 'HABIT').toUpperCase() === 'ASYNC')
+    .map(({ placement, index }) => ({
+      index,
+      startMs: placement.start.getTime(),
+      endMs: placement.end.getTime(),
+    }))
+    .filter(({ startMs, endMs }) => Number.isFinite(startMs) && Number.isFinite(endMs))
+    .sort((a, b) => {
+      if (a.startMs !== b.startMs) return a.startMs - b.startMs
+      return a.endMs - b.endMs
+    })
+
+  const usedCandidates = new Set<string>()
+
+  asyncHabits.forEach(asyncHabit => {
+    const { index: habitIndex, startMs, endMs } = asyncHabit
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+
+    type Match = {
+      candidate: Candidate
+      overlapStart: number
+      startGap: number
+      overlapDuration: number
+    }
+
+    const matches: Match[] = []
+
+    for (const candidate of sortedCandidates) {
+      const candidateKey = `${candidate.kind}:${candidate.index}`
+      if (usedCandidates.has(candidateKey)) continue
+      if (candidate.startMs >= endMs) {
+        break
+      }
+      if (candidate.endMs <= startMs) {
+        continue
+      }
+
+      const overlapStart = Math.max(startMs, candidate.startMs)
+      const overlapEnd = Math.min(endMs, candidate.endMs)
+      if (!(overlapEnd > overlapStart)) {
+        continue
+      }
+
+      matches.push({
+        candidate,
+        overlapStart,
+        startGap: Math.abs(candidate.startMs - startMs),
+        overlapDuration: overlapEnd - overlapStart,
+      })
+    }
+
+    if (matches.length === 0) return
+
+    matches.sort((a, b) => {
+      if (a.overlapStart !== b.overlapStart) {
+        return a.overlapStart - b.overlapStart
+      }
+      if (a.startGap !== b.startGap) {
+        return a.startGap - b.startGap
+      }
+      if (a.candidate.startMs !== b.candidate.startMs) {
+        return a.candidate.startMs - b.candidate.startMs
+      }
+      if (a.overlapDuration !== b.overlapDuration) {
+        return b.overlapDuration - a.overlapDuration
+      }
+      return a.candidate.endMs - b.candidate.endMs
+    })
+
+    const best = matches[0]
+    const bestKey = `${best.candidate.kind}:${best.candidate.index}`
+
+    usedCandidates.add(bestKey)
+    habitLayouts[habitIndex] = 'paired-right'
+    if (best.candidate.kind === 'habit') {
+      habitLayouts[best.candidate.index] = 'paired-left'
+    } else {
+      projectLayouts[best.candidate.index] = 'paired-left'
+    }
+  })
+
+  return { habitLayouts, projectLayouts }
+}
+
+function applyTimelineLayoutStyle(
+  style: CSSProperties,
+  mode: TimelineCardLayoutMode
+): CSSProperties {
+  if (mode === 'paired-left') {
+    const next: CSSProperties = {
+      ...style,
+      left: TIMELINE_LEFT_OFFSET,
+      width: TIMELINE_PAIR_WIDTH,
+    }
+    next.right = undefined
+    return next
+  }
+  if (mode === 'paired-right') {
+    const next: CSSProperties = {
+      ...style,
+      left: TIMELINE_PAIR_RIGHT_LEFT,
+      width: TIMELINE_PAIR_WIDTH,
+    }
+    next.right = undefined
+    return next
+  }
+  return {
+    ...style,
+    left: TIMELINE_LEFT_OFFSET,
+    right: TIMELINE_RIGHT_OFFSET,
+  }
 }
 
 function buildDayTimelineModel({
@@ -2847,6 +3066,11 @@ export default function SchedulePage() {
         ? 'pointer-events-none select-none'
         : ''
 
+      const { habitLayouts, projectLayouts } = computeTimelineLayoutForAsyncHabits({
+        habitPlacements: modelHabitPlacements,
+        projectInstances: modelProjectInstances,
+      })
+
       return (
         <div
           className={containerClass}
@@ -2972,18 +3196,22 @@ export default function SchedulePage() {
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-amber-200/45'
               }
-              const cardStyle: CSSProperties = {
-                top,
-                height,
-                boxShadow: cardShadow,
-                outline: cardOutline,
-                outlineOffset: '-1px',
-                background: cardBackground,
-              }
+              const layoutMode = habitLayouts[index] ?? 'full'
+              const cardStyle: CSSProperties = applyTimelineLayoutStyle(
+                {
+                  top,
+                  height,
+                  boxShadow: cardShadow,
+                  outline: cardOutline,
+                  outlineOffset: '-1px',
+                  background: cardBackground,
+                },
+                layoutMode
+              )
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-16 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -3050,10 +3278,14 @@ export default function SchedulePage() {
               const detailParts = [`${durationMinutes}m`]
               if (tasksLabel) detailParts.push(tasksLabel)
               let detailText = detailParts.join(' · ')
-              const positionStyle: CSSProperties = {
-                top,
-                height,
-              }
+              const layoutMode = projectLayouts[index] ?? 'full'
+              const positionStyle: CSSProperties = applyTimelineLayoutStyle(
+                {
+                  top,
+                  height,
+                },
+                layoutMode
+              )
               const sharedCardStyle: CSSProperties = {
                 boxShadow:
                   '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
@@ -3121,7 +3353,7 @@ export default function SchedulePage() {
                 <motion.div
                   key={instance.id}
                   data-schedule-instance-id={instance.id}
-                  className="absolute left-16 right-2"
+                  className="absolute"
                   style={positionStyle}
                   layout={!prefersReducedMotion}
                   transition={
