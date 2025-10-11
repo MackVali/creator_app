@@ -12,6 +12,7 @@ import {
   startOfDayInTimeZone,
   weekdayInTimeZone,
 } from '../../../src/lib/scheduler/timezone.ts'
+import { applyInstanceVisibilityFilters } from '../../../src/lib/scheduler/instanceVisibility.ts'
 
 type Client = SupabaseClient<Database>
 type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
@@ -496,15 +497,17 @@ async function fetchInstancesForRange(
   startUTC: string,
   endUTC: string
 ) {
-  return await client
+  const base = client
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .neq('status', 'canceled')
-    .or(
-      `and(start_utc.gte.${startUTC},start_utc.lt.${endUTC}),and(start_utc.lt.${startUTC},end_utc.gt.${startUTC})`
-    )
-    .order('start_utc', { ascending: true })
+
+  const response = await applyInstanceVisibilityFilters(base, startUTC, endUTC).order(
+    'start_utc',
+    { ascending: true },
+  )
+
+  return response
 }
 
 async function dedupeScheduledProjects(
@@ -795,7 +798,6 @@ async function placeItemInWindows(
       .eq('user_id', userId)
       .lt('start_utc', windowEnd.toISOString())
       .gt('end_utc', start.toISOString())
-      .neq('status', 'canceled')
 
     if (error) {
       console.error('fetchInstancesForRange error', error)
@@ -803,6 +805,7 @@ async function placeItemInWindows(
     }
 
     const filtered = (taken ?? []).filter(instance => {
+      if (instance.status === 'canceled') return false
       if (instance.id === reuseInstanceId) return false
       if (ignoreProjectIds && instance.source_type === 'PROJECT') {
         const projectId = instance.source_id ?? ''
