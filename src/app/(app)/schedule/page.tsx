@@ -363,6 +363,8 @@ type HabitTimelinePlacement = {
   truncated: boolean
 }
 
+type TimelineCardLayoutMode = 'full' | 'paired-left' | 'paired-right'
+
 function isValidDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime())
 }
@@ -820,6 +822,119 @@ function computeWindowReportsForDay({
   }
 
   return reports
+}
+
+const TIMELINE_LEFT_OFFSET = '4rem'
+const TIMELINE_RIGHT_OFFSET = '0.5rem'
+const ASYNC_PAIR_GAP = '0.75rem'
+const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET} - ${ASYNC_PAIR_GAP}) / 2)`
+const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH} + ${ASYNC_PAIR_GAP})`
+const ASYNC_ALIGNMENT_TOLERANCE_MS = 2 * 60 * 1000
+
+function computeTimelineLayoutForAsyncHabits({
+  habitPlacements,
+  projectInstances,
+}: {
+  habitPlacements: HabitTimelinePlacement[]
+  projectInstances: ReturnType<typeof computeProjectInstances>
+}) {
+  const habitLayouts = habitPlacements.map<TimelineCardLayoutMode>(() => 'full')
+  const projectLayouts = projectInstances.map<TimelineCardLayoutMode>(() => 'full')
+
+  type Candidate = {
+    kind: 'habit' | 'project'
+    index: number
+    startMs: number
+    endMs: number
+  }
+
+  const candidates: Candidate[] = []
+
+  habitPlacements.forEach((placement, index) => {
+    const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
+    if (habitType === 'ASYNC') return
+    const startMs = placement.start.getTime()
+    const endMs = placement.end.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    candidates.push({ kind: 'habit', index, startMs, endMs })
+  })
+
+  projectInstances.forEach((instance, index) => {
+    const startMs = instance.start.getTime()
+    const endMs = instance.end.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    candidates.push({ kind: 'project', index, startMs, endMs })
+  })
+
+  const usedCandidates = new Set<string>()
+
+  habitPlacements.forEach((placement, habitIndex) => {
+    const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
+    if (habitType !== 'ASYNC') return
+    const startMs = placement.start.getTime()
+    const endMs = placement.end.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+
+    let bestMatch: Candidate | null = null
+    let bestScore = Number.NEGATIVE_INFINITY
+
+    for (const candidate of candidates) {
+      const candidateKey = `${candidate.kind}:${candidate.index}`
+      if (usedCandidates.has(candidateKey)) continue
+      if (startMs >= candidate.endMs || endMs <= candidate.startMs) continue
+      const startDiff = Math.abs(candidate.startMs - startMs)
+      if (startDiff > ASYNC_ALIGNMENT_TOLERANCE_MS) continue
+      const overlap = Math.min(endMs, candidate.endMs) - Math.max(startMs, candidate.startMs)
+      if (!(overlap > 0)) continue
+      const score = overlap - startDiff
+      if (score > bestScore) {
+        bestScore = score
+        bestMatch = candidate
+      }
+    }
+
+    if (!bestMatch) return
+
+    const candidateKey = `${bestMatch.kind}:${bestMatch.index}`
+    usedCandidates.add(candidateKey)
+    habitLayouts[habitIndex] = 'paired-right'
+    if (bestMatch.kind === 'habit') {
+      habitLayouts[bestMatch.index] = 'paired-left'
+    } else {
+      projectLayouts[bestMatch.index] = 'paired-left'
+    }
+  })
+
+  return { habitLayouts, projectLayouts }
+}
+
+function applyTimelineLayoutStyle(
+  style: CSSProperties,
+  mode: TimelineCardLayoutMode
+): CSSProperties {
+  if (mode === 'paired-left') {
+    const next: CSSProperties = {
+      ...style,
+      left: TIMELINE_LEFT_OFFSET,
+      width: TIMELINE_PAIR_WIDTH,
+    }
+    next.right = undefined
+    return next
+  }
+  if (mode === 'paired-right') {
+    const next: CSSProperties = {
+      ...style,
+      left: TIMELINE_PAIR_RIGHT_LEFT,
+      width: TIMELINE_PAIR_WIDTH,
+    }
+    next.right = undefined
+    return next
+  }
+  return {
+    ...style,
+    left: TIMELINE_LEFT_OFFSET,
+    right: TIMELINE_RIGHT_OFFSET,
+  }
 }
 
 function buildDayTimelineModel({
@@ -2847,6 +2962,11 @@ export default function SchedulePage() {
         ? 'pointer-events-none select-none'
         : ''
 
+      const { habitLayouts, projectLayouts } = computeTimelineLayoutForAsyncHabits({
+        habitPlacements: modelHabitPlacements,
+        projectInstances: modelProjectInstances,
+      })
+
       return (
         <div
           className={containerClass}
@@ -2972,18 +3092,22 @@ export default function SchedulePage() {
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-amber-200/45'
               }
-              const cardStyle: CSSProperties = {
-                top,
-                height,
-                boxShadow: cardShadow,
-                outline: cardOutline,
-                outlineOffset: '-1px',
-                background: cardBackground,
-              }
+              const layoutMode = habitLayouts[index] ?? 'full'
+              const cardStyle: CSSProperties = applyTimelineLayoutStyle(
+                {
+                  top,
+                  height,
+                  boxShadow: cardShadow,
+                  outline: cardOutline,
+                  outlineOffset: '-1px',
+                  background: cardBackground,
+                },
+                layoutMode
+              )
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-16 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
                   style={cardStyle}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -3050,10 +3174,14 @@ export default function SchedulePage() {
               const detailParts = [`${durationMinutes}m`]
               if (tasksLabel) detailParts.push(tasksLabel)
               let detailText = detailParts.join(' · ')
-              const positionStyle: CSSProperties = {
-                top,
-                height,
-              }
+              const layoutMode = projectLayouts[index] ?? 'full'
+              const positionStyle: CSSProperties = applyTimelineLayoutStyle(
+                {
+                  top,
+                  height,
+                },
+                layoutMode
+              )
               const sharedCardStyle: CSSProperties = {
                 boxShadow:
                   '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
@@ -3121,7 +3249,7 @@ export default function SchedulePage() {
                 <motion.div
                   key={instance.id}
                   data-schedule-instance-id={instance.id}
-                  className="absolute left-16 right-2"
+                  className="absolute"
                   style={positionStyle}
                   layout={!prefersReducedMotion}
                   transition={
