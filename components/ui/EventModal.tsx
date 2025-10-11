@@ -1486,12 +1486,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.energy = formData.energy;
       }
 
-      if (
-        eventType !== "PROJECT" &&
-        eventType !== "TASK" &&
-        formData.description.trim()
-      ) {
-        insertData.description = formData.description.trim();
+      const trimmedDescription = formData.description.trim();
+      if (trimmedDescription) {
+        insertData.description = trimmedDescription;
       }
 
       if (eventType === "PROJECT") {
