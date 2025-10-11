@@ -14,7 +14,7 @@ Async habits occupy their own column on the day timeline while sharing the origi
 * Once a match is selected, the async habit is marked as the right-hand card and its partner is marked as the left-hand card. A partner cannot be reused by another async habit.
 
 ## 3. Render paired cards
-* Paired cards render at half width: the partner keeps the original left offset while the async habit is positioned immediately to its right. The cards are separated by a narrow quarter-rem gutter so the pair reads as a single combined slot without feeling cramped, and their touching corners lose their rounding so the edges meet cleanly while the outer corners stay soft. Unpaired cards—including async habits that did not find anything else in their window—continue to span the full timeline width.
+* Paired cards render at half width: the partner keeps the original left offset while the async habit is positioned immediately to its right. The cards are separated by a hairline gutter so the pair reads as a single combined slot without feeling cramped, and their touching corners lose their rounding so the edges meet cleanly while the outer corners stay soft. Unpaired cards—including async habits that did not find anything else in their window—continue to span the full timeline width.
 * Async habit cards swap to their amber-tinted background, custom shadow, and warm border accents so they remain visually distinct beside the shared timeslot.
 
 Together these rules let async habits claim a dedicated column without disturbing the chronological flow of the schedule—they simply slide into the earliest overlapping project or habit while both cards share the same vertical timeline span.
