@@ -56,55 +56,74 @@ export function ScheduleTopBar({
     { label: "Today", icon: Calendar, onClick: onToday },
   ];
 
+  const iconButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 " +
+    "text-[var(--text-primary)] transition hover:bg-white/10 focus-visible:outline-none " +
+    "focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 " +
+    "focus-visible:ring-offset-[var(--surface-elevated)] disabled:cursor-not-allowed disabled:opacity-30";
+
   return (
-    <header className="flex items-center justify-between px-4 h-12 bg-[var(--surface-elevated)] border-b border-[var(--hairline)]">
-      <button onClick={onBack} disabled={!canGoBack} className="p-2 disabled:opacity-30">
-        <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
-      </button>
-      <button className="text-[16px] font-semibold text-[var(--text-primary)]">
-        {year}
-      </button>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onOpenJumpToDate?.()}
-          aria-label="Open jump to date"
-          className="p-2"
-        >
-          <Calendar className="h-5 w-5 text-[var(--accent-red)]" />
+    <header
+      className="sticky top-0 z-40 border-b border-white/10 bg-[var(--surface-elevated)]/95 shadow-lg shadow-black/20 backdrop-blur"
+      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+    >
+      <div className="flex h-[72px] items-center justify-between gap-3 px-4">
+        <button onClick={onBack} disabled={!canGoBack} className={iconButtonClass} aria-label="Go back">
+          <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
         </button>
         <button
-          type="button"
-          onClick={() => onOpenSearch?.()}
-          aria-label="Search schedule"
-          className="p-2"
+          className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-[17px] font-semibold text-[var(--text-primary)] shadow-inner shadow-white/5 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]"
         >
-          <Search className="h-5 w-5 text-[var(--accent-red)]" />
+          {year}
         </button>
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>
-            <button className="p-2">
-              <Plus className="h-5 w-5 text-[var(--accent-red)]" />
-            </button>
-          </SheetTrigger>
-          <SheetContent side="bottom" className="bg-[var(--surface-elevated)] rounded-t-xl p-4">
-            <div className="grid gap-2">
-              {actions.map(({ label, icon: Icon, onClick }) => (
-                <button
-                  key={label}
-                  onClick={() => {
-                    onClick();
-                    setOpen(false);
-                  }}
-                  className="flex items-center gap-3 p-3 rounded-md bg-white/5 hover:bg-white/10 text-[var(--text-primary)]"
-                >
-                  <Icon className="h-5 w-5 text-[var(--accent-red)]" />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </SheetContent>
-        </Sheet>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenJumpToDate?.()}
+            aria-label="Open jump to date"
+            className={iconButtonClass}
+          >
+            <Calendar className="h-5 w-5 text-[var(--accent-red)]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenSearch?.()}
+            aria-label="Search schedule"
+            className={iconButtonClass}
+          >
+            <Search className="h-5 w-5 text-[var(--accent-red)]" />
+          </button>
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <button className={iconButtonClass} aria-label="Open quick actions">
+                <Plus className="h-5 w-5 text-[var(--accent-red)]" />
+              </button>
+            </SheetTrigger>
+            <SheetContent
+              side="bottom"
+              className="border-t border-white/10 bg-[var(--surface-elevated)]/95 text-[var(--text-primary)] shadow-[0_-12px_40px_rgba(0,0,0,0.45)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/85"
+            >
+              <div className="mx-auto max-w-md space-y-2 py-4">
+                <div className="h-1 w-12 mx-auto rounded-full bg-white/15" aria-hidden="true" />
+                <div className="grid gap-2">
+                  {actions.map(({ label, icon: Icon, onClick }) => (
+                    <button
+                      key={label}
+                      onClick={() => {
+                        onClick();
+                        setOpen(false);
+                      }}
+                      className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left text-[var(--text-primary)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]"
+                    >
+                      <Icon className="h-5 w-5 text-[var(--accent-red)]" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     </header>
   );
