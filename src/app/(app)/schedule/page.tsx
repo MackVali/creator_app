@@ -626,7 +626,8 @@ function computeHabitPlacementsForDay({
     const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(window, date)
     if (!isValidDate(windowStart) || !isValidDate(windowEnd)) continue
 
-    let cursorMs = windowStart.getTime()
+    const windowStartMs = windowStart.getTime()
+    let cursorMs = windowStartMs
     const windowEndMs = windowEnd.getTime()
     if (!Number.isFinite(cursorMs) || !Number.isFinite(windowEndMs)) continue
 
@@ -641,7 +642,12 @@ function computeHabitPlacementsForDay({
       return a.name.localeCompare(b.name)
     })
 
-    for (const habit of sorted) {
+    const asyncHabitsInWindow = sorted.filter(habit => (habit.habitType ?? 'HABIT').toUpperCase() === 'ASYNC')
+    const sequentialHabitsInWindow = sorted.filter(
+      habit => (habit.habitType ?? 'HABIT').toUpperCase() !== 'ASYNC'
+    )
+
+    for (const habit of sequentialHabitsInWindow) {
       if (cursorMs >= windowEndMs) break
       const rawDuration = Number(habit.durationMinutes ?? 0)
       const durationMin =
@@ -677,6 +683,56 @@ function computeHabitPlacementsForDay({
       })
 
       cursorMs = endMs
+    }
+
+    let asyncCursorMs = windowStartMs
+    for (const habit of asyncHabitsInWindow) {
+      if (asyncCursorMs >= windowEndMs) break
+      const rawDuration = Number(habit.durationMinutes ?? 0)
+      const durationMin =
+        Number.isFinite(rawDuration) && rawDuration > 0
+          ? rawDuration
+          : DEFAULT_HABIT_DURATION_MIN
+      const durationMs = durationMin * 60000
+      if (durationMs <= 0) continue
+
+      const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
+      const dueStartMs = dueStart?.getTime()
+      const baseStartMs =
+        typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)
+          ? Math.max(windowStartMs, dueStartMs)
+          : windowStartMs
+      const startMs = Math.max(asyncCursorMs, baseStartMs)
+      if (startMs >= windowEndMs) {
+        asyncCursorMs = startMs
+        continue
+      }
+
+      let endMs = startMs + durationMs
+      let truncated = false
+      if (endMs > windowEndMs) {
+        endMs = windowEndMs
+        truncated = true
+      }
+      if (endMs <= startMs) {
+        asyncCursorMs = endMs
+        continue
+      }
+
+      const start = new Date(startMs)
+      const end = new Date(endMs)
+      placements.push({
+        habitId: habit.id,
+        habitName: habit.name,
+        habitType: habit.habitType,
+        start,
+        end,
+        durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
+        window,
+        truncated,
+      })
+
+      asyncCursorMs = endMs
     }
   }
 

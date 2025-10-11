@@ -2,8 +2,9 @@
 
 Async habits occupy their own column on the day timeline while sharing the original timeslot of the habit or project they overlap with. The layout engine works in three stages:
 
-## 1. Collect pairing candidates
-* All non-async habit placements and project instances for the day are collected as potential partners and sorted by their start time (breaking ties with the end time). This ensures the timeline examines potential slots in chronological order.
+## 1. Build daily placements
+* Regular habits reserve time sequentially inside each window just like before, but async habits are placed on a parallel track that always begins at the start of the window (or the beginning of their due range) so they never block other items from using that window.
+* After scheduling, all non-async habit placements and project instances for the day are collected as potential partners and sorted by their start time (breaking ties with the end time). This ensures the timeline examines potential slots in chronological order.
 * Async habits are filtered from the day's placements, transformed into timestamp pairs, and sorted by their own start (and end) times so the earliest async items claim their partners first.
 
 ## 2. Match async habits to partners
@@ -13,7 +14,7 @@ Async habits occupy their own column on the day timeline while sharing the origi
 * Once a match is selected, the async habit is marked as the right-hand card and its partner is marked as the left-hand card. A partner cannot be reused by another async habit.
 
 ## 3. Render paired cards
-* Paired cards render at half width: the partner keeps the original left offset while the async habit is positioned immediately to its right. Unpaired cards continue to span the full timeline width.
+* Paired cards render at half width: the partner keeps the original left offset while the async habit is positioned immediately to its right. Unpaired cards—including async habits that did not find anything else in their window—continue to span the full timeline width.
 * Async habit cards swap to their amber-tinted background, custom shadow, and warm border accents so they remain visually distinct beside the shared timeslot.
 
 Together these rules let async habits claim a dedicated column without disturbing the chronological flow of the schedule—they simply slide into the earliest overlapping project or habit while both cards share the same vertical timeline span.
