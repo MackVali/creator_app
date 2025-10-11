@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -138,6 +138,26 @@ export function HabitFormFields({
   const normalizedRecurrence = recurrence.toLowerCase().trim();
   const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
 
+  const [skillSearchQuery, setSkillSearchQuery] = useState("");
+
+  useEffect(() => {
+    setSkillSearchQuery("");
+  }, [skillId, skillsLoading, skillOptions]);
+
+  const filteredSkillOptions = useMemo(() => {
+    const query = skillSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return skillOptions;
+    }
+
+    return skillOptions.filter((option) => {
+      const labelMatch = option.label.toLowerCase().includes(query);
+      const valueMatch = option.value.toLowerCase().includes(query);
+
+      return labelMatch || valueMatch;
+    });
+  }, [skillOptions, skillSearchQuery]);
+
   const handleToggleRecurrenceDay = (day: number) => {
     const hasDay = recurrenceDays.includes(day);
     const next = hasDay
@@ -261,18 +281,32 @@ export function HabitFormFields({
               <SelectValue placeholder="Choose the skill this habit grows" />
             </SelectTrigger>
             <SelectContent className="bg-[#0b101b] text-sm text-white">
-              {skillOptions.map((option) => (
-                <SelectItem
-                  key={`${option.value}-${option.label}`}
-                  value={option.value}
-                  disabled={option.disabled}
-                >
-                  <div className="flex items-center gap-2">
-                    {option.icon ? <span>{option.icon}</span> : null}
-                    <span>{option.label}</span>
-                  </div>
-                </SelectItem>
-              ))}
+              <div className="p-2">
+                <Input
+                  value={skillSearchQuery}
+                  onChange={(event) => setSkillSearchQuery(event.target.value)}
+                  placeholder="Search skills..."
+                  className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                />
+              </div>
+              {filteredSkillOptions.length > 0 ? (
+                filteredSkillOptions.map((option) => (
+                  <SelectItem
+                    key={`${option.value}-${option.label}`}
+                    value={option.value}
+                    disabled={option.disabled}
+                  >
+                    <div className="flex items-center gap-2">
+                      {option.icon ? <span>{option.icon}</span> : null}
+                      <span>{option.label}</span>
+                    </div>
+                  </SelectItem>
+                ))
+              ) : (
+                <div className="px-3 pb-3 text-xs text-white/60">
+                  No skills found.
+                </div>
+              )}
             </SelectContent>
           </Select>
           {skillError ? (
