@@ -355,6 +355,7 @@ type ProjectTaskCard = {
 type HabitTimelinePlacement = {
   habitId: string
   habitName: string
+  habitType: HabitScheduleItem['habitType']
   start: Date
   end: Date
   durationMinutes: number
@@ -665,6 +666,7 @@ function computeHabitPlacementsForDay({
       placements.push({
         habitId: habit.id,
         habitName: habit.name,
+        habitType: habit.habitType,
         start,
         end,
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
@@ -2920,37 +2922,64 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
+              const habitType = placement.habitType || 'HABIT'
               const scheduledCardBackground =
                 'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
+              const choreCardBackground =
+                'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
+              const asyncCardBackground =
+                'radial-gradient(circle at 12% -20%, rgba(250, 204, 21, 0.32), transparent 58%), linear-gradient(135deg, rgba(74, 60, 9, 0.9) 0%, rgba(202, 138, 4, 0.82) 45%, rgba(250, 204, 21, 0.7) 100%)'
               const completedCardBackground =
                 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
-              const cardBackground = isHabitCompleted
-                ? completedCardBackground
-                : scheduledCardBackground
               const scheduledShadow = [
                 '0 26px 52px rgba(0, 0, 0, 0.6)',
                 '0 12px 28px rgba(0, 0, 0, 0.45)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+              ].join(', ')
+              const choreShadow = [
+                '0 18px 36px rgba(56, 16, 24, 0.38)',
+                '0 8px 18px rgba(76, 20, 32, 0.26)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+              ].join(', ')
+              const asyncShadow = [
+                '0 18px 36px rgba(58, 44, 14, 0.32)',
+                '0 8px 18px rgba(82, 62, 18, 0.24)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
               const completedShadow = [
                 '0 26px 52px rgba(2, 32, 24, 0.6)',
                 '0 12px 28px rgba(1, 55, 34, 0.45)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
-              const cardOutline = isHabitCompleted
-                ? '1px solid rgba(16, 185, 129, 0.55)'
-                : '1px solid rgba(18, 18, 24, 0.85)'
+              let cardBackground = scheduledCardBackground
+              let cardShadow = scheduledShadow
+              let cardOutline = '1px solid rgba(18, 18, 24, 0.85)'
+              let habitBorderClass = 'border-white/12'
+
+              if (isHabitCompleted) {
+                cardBackground = completedCardBackground
+                cardShadow = completedShadow
+                cardOutline = '1px solid rgba(16, 185, 129, 0.55)'
+                habitBorderClass = 'border-emerald-400/60'
+              } else if (habitType === 'CHORE') {
+                cardBackground = choreCardBackground
+                cardShadow = choreShadow
+                cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
+                habitBorderClass = 'border-rose-200/45'
+              } else if (habitType === 'ASYNC') {
+                cardBackground = asyncCardBackground
+                cardShadow = asyncShadow
+                cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
+                habitBorderClass = 'border-amber-200/45'
+              }
               const cardStyle: CSSProperties = {
                 top,
                 height,
-                boxShadow: isHabitCompleted ? completedShadow : scheduledShadow,
+                boxShadow: cardShadow,
                 outline: cardOutline,
                 outlineOffset: '-1px',
                 background: cardBackground,
               }
-              const habitBorderClass = isHabitCompleted
-                ? 'border-emerald-400/60'
-                : 'border-white/12'
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
