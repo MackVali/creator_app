@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
 
@@ -26,46 +26,64 @@ export type HabitScheduleItem = {
   } | null
 }
 
+type HabitRecord = {
+  id: string
+  name?: string | null
+  duration_minutes?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  habit_type?: string | null
+  window_id?: string | null
+  recurrence?: string | null
+  recurrence_days?: number[] | null
+  skill_id?: string | null
+  window?: {
+    id?: string
+    label?: string | null
+    energy?: string | null
+    start_local?: string | null
+    end_local?: string | null
+    days?: number[] | null
+  } | null
+}
+
 type Client = SupabaseClient<Database>
 
-function ensureClient(client?: Client): Client {
-  if (client) return client
+function ensureClient(client?: Client): Client | null {
+  if (client && typeof (client as { from?: unknown }).from === 'function') {
+    return client
+  }
+
   const supabase = getSupabaseBrowser()
-  if (!supabase) throw new Error('Supabase client not available')
-  return supabase as Client
+  if (supabase && typeof (supabase as { from?: unknown }).from === 'function') {
+    return supabase as Client
+  }
+
+  return null
 }
 
 export async function fetchHabitsForSchedule(client?: Client): Promise<HabitScheduleItem[]> {
   const supabase = ensureClient(client)
+  if (!supabase) return []
 
-  const { data, error } = await supabase
-    .from('habits')
-    .select(
-      `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
-    )
+  const from = (supabase as { from?: (table: string) => unknown }).from
+  if (typeof from !== 'function') return []
+
+  const query = from.call(supabase, 'habits') as {
+    select?: (
+      columns: string
+    ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
+  }
+
+  if (!query || typeof query.select !== 'function') {
+    return []
+  }
+
+  const { data, error } = await query.select(
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
+  )
 
   if (error) throw error
-
-  type HabitRecord = {
-    id: string
-    name?: string | null
-    duration_minutes?: number | null
-    created_at?: string | null
-    updated_at?: string | null
-    habit_type?: string | null
-    window_id?: string | null
-    recurrence?: string | null
-    recurrence_days?: number[] | null
-    skill_id?: string | null
-    window?: {
-      id?: string
-      label?: string | null
-      energy?: string | null
-      start_local?: string | null
-      end_local?: string | null
-      days?: number[] | null
-    } | null
-  }
 
   return (data ?? []).map((record: HabitRecord) => ({
     id: record.id,
