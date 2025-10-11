@@ -135,7 +135,16 @@ type HabitTimelineEntry = {
   totalDuration: number;
 };
 
-type TimelineEntry = GoalTimelineEntry | HabitTimelineEntry | GapEntry;
+type PlacementTimelineEntry = {
+  type: "placement";
+  placement: PlacementView;
+};
+
+type TimelineEntry =
+  | GoalTimelineEntry
+  | HabitTimelineEntry
+  | GapEntry
+  | PlacementTimelineEntry;
 
 type ChronoItem =
   | {
@@ -362,7 +371,7 @@ export default function SchedulerPage() {
     return items;
   }, [scheduleDraft, placementById, habitByKey, habitMap]);
 
-  const timelineEntries = useMemo<TimelineEntry[]>(() => {
+  const groupedTimelineEntries = useMemo<TimelineEntry[]>(() => {
     if (timelineItems.length === 0) return [];
     const entries: TimelineEntry[] = [];
     let currentGoal: GoalTimelineEntry | null = null;
@@ -450,6 +459,43 @@ export default function SchedulerPage() {
     return entries;
   }, [timelineItems, failureSummary]);
 
+  const legacyTimelineEntries = useMemo<TimelineEntry[]>(() => {
+    if (placements.length === 0) return [];
+    const entries: TimelineEntry[] = [];
+
+    for (let index = 0; index < placements.length; index += 1) {
+      const placement = placements[index];
+      entries.push({ type: "placement", placement });
+
+      const next = placements[index + 1];
+      if (!next) continue;
+
+      const gapMs = next.start.getTime() - placement.end.getTime();
+      const gapMinutes = Math.round(gapMs / 60000);
+      if (gapMinutes <= GAP_THRESHOLD_MINUTES) continue;
+
+      entries.push({
+        type: "gap",
+        id: `${placement.instance.id}-gap-${next.instance.id}`,
+        start: placement.end,
+        end: next.start,
+        durationMin: gapMinutes,
+        message: buildLegacyGapMessage({
+          previous: placement,
+          next,
+          failureSummary,
+        }),
+      });
+    }
+
+    return entries;
+  }, [placements, failureSummary]);
+
+  const timelineEntries =
+    groupedTimelineEntries.length > 0
+      ? groupedTimelineEntries
+      : legacyTimelineEntries;
+
   const timelineParentRef = useRef<HTMLDivElement | null>(null);
 
   const timelineVirtualizer = useVirtualizer({
@@ -461,6 +507,9 @@ export default function SchedulerPage() {
       const entry = timelineEntries[index];
       if (entry.type === "gap") {
         return `gap-${entry.id}`;
+      }
+      if (entry.type === "placement") {
+        return `placement-${entry.placement.instance.id}`;
       }
       return `${entry.type}-${entry.id}`;
     },
@@ -739,6 +788,81 @@ export default function SchedulerPage() {
                                     );
                                   })}
                                 </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (entry.type === "placement") {
+                        const { placement } = entry;
+                        const projectName = placement.project?.name?.trim()
+                          ? placement.project.name
+                          : placement.instance.source_id || "Untitled project";
+                        return (
+                          <div
+                            key={virtualRow.key}
+                            ref={timelineVirtualizer.measureElement}
+                            className="absolute left-0 right-0"
+                            style={{
+                              transform: `translateY(${virtualRow.start}px)`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                paddingBottom: isLast ? 0 : "0.75rem",
+                              }}
+                            >
+                              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-sm font-medium text-zinc-100">
+                                      {projectName}
+                                    </div>
+                                    <div className="text-xs text-zinc-400">
+                                      {(placement.project?.stage || "") && (
+                                        <span>{placement.project?.stage}</span>
+                                      )}
+                                      {placement.project?.priority && (
+                                        <span>
+                                          {placement.project?.stage ? " · " : ""}
+                                          {placement.project.priority}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
+                                      <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
+                                        {formatDecisionLabel(placement.decision)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right text-xs text-zinc-400">
+                                    <div>{formatDateTime(placement.start)}</div>
+                                    <div className="text-zinc-500">
+                                      → {formatDateTime(placement.end)}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
+                                  <span>
+                                    Window:{" "}
+                                    {placement.window?.label ||
+                                      placement.instance.window_id ||
+                                      "Unassigned"}
+                                  </span>
+                                  <span>
+                                    Duration: {formatDurationMinutes(placement.durationMin)}
+                                  </span>
+                                  <span>
+                                    Energy:{" "}
+                                    {placement.project?.energy ||
+                                      placement.instance.energy_resolved ||
+                                      "NO"}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                                  {placement.reason}
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -1346,6 +1470,25 @@ function describeFailure(
         detail,
       };
   }
+}
+
+function buildLegacyGapMessage({
+  previous,
+  next,
+  failureSummary,
+}: {
+  previous: PlacementView;
+  next: PlacementView;
+  failureSummary: string | null;
+}): string {
+  const base = `No project scheduled from ${formatDateTime(previous.end)} to ${formatDateTime(next.start)}.`;
+  const windowNote = next.window
+    ? ` Next available window "${next.window.label}" begins at ${formatDateTime(next.start)}.`
+    : ` Next scheduled project "${next.project?.name ?? next.instance.source_id ?? "project"}" begins at ${formatDateTime(next.start)}.`;
+  const failureNote = failureSummary
+    ? ` Scheduler also reported: ${failureSummary}`
+    : "";
+  return `${base}${windowNote}${failureNote}`;
 }
 
 function buildTimelineGapMessage({
