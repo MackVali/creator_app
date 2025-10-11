@@ -1606,6 +1606,9 @@ export default function SchedulePage() {
   const pinchStateRef = useRef<{
     initialDistance: number
     initialPxPerMin: number
+    initialHeight: number
+    anchorProgress: number
+    initialScrollY: number
   } | null>(null)
   const pinchActiveRef = useRef(false)
   const hasLoadedHabitCompletionState = useRef(false)
@@ -2812,22 +2815,38 @@ export default function SchedulePage() {
         ) {
           const distance = getTouchDistance(firstTouch, secondTouch)
           if (distance > 0) {
-            pinchStateRef.current = {
-              initialDistance: distance,
-              initialPxPerMin: pxPerMin,
-            }
-            pinchActiveRef.current = true
-            touchStartX.current = null
-            touchStartWidth.current = 0
-            swipeDeltaRef.current = 0
-            sliderControls.stop()
-            setIsSwipingDayView(false)
-            setPeekState(prev => {
-              if (prev.direction === 0 && prev.offset === 0) {
-                return prev
+            const height = container.offsetHeight
+            if (height > 0 && typeof window !== 'undefined') {
+              const scrollY = window.scrollY ?? window.pageYOffset ?? 0
+              const rect = container.getBoundingClientRect()
+              const containerTop = rect.top + scrollY
+              const centerClientY = (firstTouch.clientY + secondTouch.clientY) / 2
+              const anchorPageY = centerClientY + scrollY
+              const anchorOffset = anchorPageY - containerTop
+              const progressRaw = anchorOffset / height
+              const anchorProgress = Number.isFinite(progressRaw)
+                ? Math.min(Math.max(progressRaw, 0), 1)
+                : 0.5
+              pinchStateRef.current = {
+                initialDistance: distance,
+                initialPxPerMin: pxPerMin,
+                initialHeight: height,
+                anchorProgress,
+                initialScrollY: scrollY,
               }
-              return { direction: 0, offset: 0 }
-            })
+              pinchActiveRef.current = true
+              touchStartX.current = null
+              touchStartWidth.current = 0
+              swipeDeltaRef.current = 0
+              sliderControls.stop()
+              setIsSwipingDayView(false)
+              setPeekState(prev => {
+                if (prev.direction === 0 && prev.offset === 0) {
+                  return prev
+                }
+                return { direction: 0, offset: 0 }
+              })
+            }
             return
           }
         }
@@ -2898,6 +2917,39 @@ export default function SchedulePage() {
       const scale = distance / pinchState.initialDistance
       const next = clampPxPerMin(pinchState.initialPxPerMin * scale)
       setPxPerMin(prev => (Math.abs(prev - next) < 0.001 ? prev : next))
+      if (typeof window !== 'undefined') {
+        const base = pinchState.initialPxPerMin
+        const baseHeight = pinchState.initialHeight
+        if (base > 0 && baseHeight > 0) {
+          const heightScale = next / base
+          if (Number.isFinite(heightScale)) {
+            const newHeight = baseHeight * heightScale
+            const deltaHeight = newHeight - baseHeight
+            let targetScroll =
+              pinchState.initialScrollY + deltaHeight * pinchState.anchorProgress
+            const viewportHeightRaw =
+              window.visualViewport?.height ?? window.innerHeight ?? 0
+            const viewportHeight = Number.isFinite(viewportHeightRaw)
+              ? viewportHeightRaw
+              : 0
+            const doc = typeof document !== 'undefined' ? document.documentElement : null
+            if (doc && Number.isFinite(viewportHeight)) {
+              const maxScroll = doc.scrollHeight - viewportHeight
+              if (Number.isFinite(maxScroll)) {
+                targetScroll = Math.min(
+                  Math.max(targetScroll, 0),
+                  Math.max(0, maxScroll)
+                )
+              } else {
+                targetScroll = Math.max(targetScroll, 0)
+              }
+            } else {
+              targetScroll = Math.max(targetScroll, 0)
+            }
+            window.scrollTo({ top: targetScroll, behavior: 'auto' })
+          }
+        }
+      }
       return
     }
 
