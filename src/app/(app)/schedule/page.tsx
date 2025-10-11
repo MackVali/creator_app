@@ -1185,6 +1185,9 @@ function DayPeekOverlays({
   const label = isNext ? nextLabel : previousLabel
   const keyLabel = isNext ? nextKey : previousKey
   const previewModel = isNext ? nextModel : previousModel
+  const expectedKey = isNext ? nextKey : previousKey
+  const isModelForDirection = previewModel?.dayViewDateKey === expectedKey
+  const resolvedPreviewModel = isModelForDirection ? previewModel : null
   const alignment = isNext ? 'items-end text-right' : 'items-start text-left'
   const cornerClass = isNext
     ? 'rounded-l-[var(--radius-lg)]'
@@ -1246,7 +1249,7 @@ function DayPeekOverlays({
             </span>
           </div>
           <div className="overflow-hidden rounded-[var(--radius-lg)] border border-white/10 bg-black/40">
-            {previewModel ? (
+            {resolvedPreviewModel ? (
               <div
                 className="pointer-events-none"
                 style={{
@@ -1254,7 +1257,7 @@ function DayPeekOverlays({
                   transformOrigin,
                 }}
               >
-                {renderPreview(previewModel, { disableInteractions: true })}
+                {renderPreview(resolvedPreviewModel, { disableInteractions: true })}
               </div>
             ) : (
               <div className="flex h-36 items-center justify-center text-[11px] text-white/70">
@@ -2150,7 +2153,14 @@ export default function SchedulePage() {
     const timeZone = localTimeZone ?? 'UTC'
 
     async function load(direction: 'previous' | 'next', date: Date) {
-      setPeekModels(prev => ({ ...prev, [direction]: prev[direction] ?? null }))
+      const targetKey = formatLocalDateKey(date)
+      setPeekModels(prev => {
+        const prevModel = prev[direction]
+        if (prevModel && prevModel.dayViewDateKey === targetKey) {
+          return prev
+        }
+        return { ...prev, [direction]: null }
+      })
       try {
         const dayStart = startOfDayInTimeZone(date, timeZone)
         const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
@@ -2183,6 +2193,8 @@ export default function SchedulePage() {
           friendlyTimeZone,
           localTimeZone,
         })
+        if (cancelled) return
+        if (model.dayViewDateKey !== targetKey) return
         setPeekModels(prev => ({ ...prev, [direction]: model }))
       } catch (error) {
         console.error('Failed to load adjacent day preview', error)
