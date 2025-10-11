@@ -16,6 +16,8 @@ export type HabitScheduleItem = {
   recurrence: string | null
   recurrenceDays: number[] | null
   skillId: string | null
+  routineId: string | null
+  routineName: string | null
   window: {
     id: string
     label: string | null
@@ -41,7 +43,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   const { data, error } = await supabase
     .from('habits')
     .select(
-      `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
+      `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, recurrence_days, skill_id, routine_id, routine:habit_routines(id, name), window:windows(id, label, energy, start_local, end_local, days)`
     )
 
   if (error) throw error
@@ -54,6 +56,11 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     updated_at?: string | null
     habit_type?: string | null
     window_id?: string | null
+    routine_id?: string | null
+    routine?: {
+      id?: string | null
+      name?: string | null
+    } | null
     recurrence?: string | null
     recurrence_days?: number[] | null
     skill_id?: string | null
@@ -79,6 +86,8 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
     skillId: record.skill_id ?? null,
+    routineId: record.routine_id ?? null,
+    routineName: record.routine?.name ?? null,
     window: record.window
       ? {
           id: record.window.id ?? '',

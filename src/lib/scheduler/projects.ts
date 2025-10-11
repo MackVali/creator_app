@@ -12,6 +12,8 @@ export type ProjectItem = ProjectLite & {
   weight: number
   taskCount: number
   skill_icon?: string | null
+  goalId: string | null
+  goalName: string | null
 }
 
 const normEnergy = (e?: string | null): Energy | null => {
@@ -99,6 +101,8 @@ export function buildProjectItems(
       weight,
       taskCount: related?.count ?? 0,
       skill_icon,
+      goalId: p.goal_id ?? null,
+      goalName: p.goal_name ?? null,
     })
   }
   return items

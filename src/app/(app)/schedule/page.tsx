@@ -361,6 +361,188 @@ type HabitTimelinePlacement = {
   durationMinutes: number
   window: RepoWindow
   truncated: boolean
+  routineId: string | null
+  routineName: string | null
+}
+
+const TIMELINE_GROUP_GAP_MS = 5 * 60 * 1000
+
+type GoalTimelineSegment = {
+  key: string
+  goalId: string | null
+  goalName: string
+  start: Date
+  end: Date
+  projects: ReturnType<typeof computeProjectInstances>
+}
+
+type RoutineTimelineSegment = {
+  key: string
+  routineId: string | null
+  routineName: string
+  start: Date
+  end: Date
+  habits: HabitTimelinePlacement[]
+}
+
+function groupProjectInstancesByGoal(
+  instances: ReturnType<typeof computeProjectInstances>
+): GoalTimelineSegment[] {
+  if (!instances.length) return []
+
+  const grouped = new Map<
+    string,
+    { goalId: string | null; goalName: string; items: ReturnType<typeof computeProjectInstances> }
+  >()
+
+  for (const placement of instances) {
+    const goalId = placement.project.goalId ?? null
+    const key = goalId ?? `__project:${placement.project.id}`
+    const goalName = placement.project.goalName ?? placement.project.name ?? 'Untitled goal'
+    const existing = grouped.get(key)
+    if (existing) {
+      existing.items.push(placement)
+    } else {
+      grouped.set(key, {
+        goalId,
+        goalName,
+        items: [placement],
+      })
+    }
+  }
+
+  const segments: GoalTimelineSegment[] = []
+
+  for (const [key, value] of grouped.entries()) {
+    const sorted = value.items
+      .slice()
+      .filter(item => isValidDate(item.start) && isValidDate(item.end))
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+
+    if (!sorted.length) continue
+
+    let segmentIndex = 0
+    let current: GoalTimelineSegment | null = null
+
+    for (const placement of sorted) {
+      if (!current) {
+        current = {
+          key: `${key}-${segmentIndex}`,
+          goalId: value.goalId,
+          goalName: value.goalName,
+          start: placement.start,
+          end: placement.end,
+          projects: [placement],
+        }
+        continue
+      }
+
+      const gap = placement.start.getTime() - current.end.getTime()
+      if (gap <= TIMELINE_GROUP_GAP_MS) {
+        if (placement.end.getTime() > current.end.getTime()) {
+          current.end = placement.end
+        }
+        current.projects.push(placement)
+      } else {
+        segments.push(current)
+        segmentIndex += 1
+        current = {
+          key: `${key}-${segmentIndex}`,
+          goalId: value.goalId,
+          goalName: value.goalName,
+          start: placement.start,
+          end: placement.end,
+          projects: [placement],
+        }
+      }
+    }
+
+    if (current) {
+      segments.push(current)
+    }
+  }
+
+  return segments.sort((a, b) => a.start.getTime() - b.start.getTime())
+}
+
+function groupHabitPlacementsByRoutine(
+  placements: HabitTimelinePlacement[]
+): RoutineTimelineSegment[] {
+  if (!placements.length) return []
+
+  const grouped = new Map<
+    string,
+    { routineId: string | null; routineName: string; items: HabitTimelinePlacement[] }
+  >()
+
+  for (const placement of placements) {
+    const routineId = placement.routineId ?? null
+    const key = routineId ?? `__habit:${placement.habitId}`
+    const routineName = placement.routineName ?? placement.habitName
+    const existing = grouped.get(key)
+    if (existing) {
+      existing.items.push(placement)
+    } else {
+      grouped.set(key, {
+        routineId,
+        routineName,
+        items: [placement],
+      })
+    }
+  }
+
+  const segments: RoutineTimelineSegment[] = []
+
+  for (const [key, value] of grouped.entries()) {
+    const sorted = value.items
+      .slice()
+      .filter(item => isValidDate(item.start) && isValidDate(item.end))
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+
+    if (!sorted.length) continue
+
+    let segmentIndex = 0
+    let current: RoutineTimelineSegment | null = null
+
+    for (const placement of sorted) {
+      if (!current) {
+        current = {
+          key: `${key}-${segmentIndex}`,
+          routineId: value.routineId,
+          routineName: value.routineName,
+          start: placement.start,
+          end: placement.end,
+          habits: [placement],
+        }
+        continue
+      }
+
+      const gap = placement.start.getTime() - current.end.getTime()
+      if (gap <= TIMELINE_GROUP_GAP_MS) {
+        if (placement.end.getTime() > current.end.getTime()) {
+          current.end = placement.end
+        }
+        current.habits.push(placement)
+      } else {
+        segments.push(current)
+        segmentIndex += 1
+        current = {
+          key: `${key}-${segmentIndex}`,
+          routineId: value.routineId,
+          routineName: value.routineName,
+          start: placement.start,
+          end: placement.end,
+          habits: [placement],
+        }
+      }
+    }
+
+    if (current) {
+      segments.push(current)
+    }
+  }
+
+  return segments.sort((a, b) => a.start.getTime() - b.start.getTime())
 }
 
 function isValidDate(value: unknown): value is Date {
@@ -672,6 +854,8 @@ function computeHabitPlacementsForDay({
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
         window,
         truncated,
+        routineId: habit.routineId ?? null,
+        routineName: habit.routineName ?? null,
       })
 
       cursorMs = endMs
@@ -2847,6 +3031,9 @@ export default function SchedulePage() {
         ? 'pointer-events-none select-none'
         : ''
 
+      const groupedHabitSegments = groupHabitPlacementsByRoutine(modelHabitPlacements)
+      const groupedGoalSegments = groupProjectInstancesByGoal(modelProjectInstances)
+
       return (
         <div
           className={containerClass}
@@ -2911,511 +3098,616 @@ export default function SchedulePage() {
                 </div>
               </div>
             ))}
-            {modelHabitPlacements.map((placement, index) => {
-              if (!isValidDate(placement.start) || !isValidDate(placement.end)) return null
-              const startMin = placement.start.getHours() * 60 + placement.start.getMinutes()
+            {groupedHabitSegments.map(segment => {
+              if (!isValidDate(segment.start) || !isValidDate(segment.end)) return null
+              const startMin = segment.start.getHours() * 60 + segment.start.getMinutes()
               const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((placement.end.getTime() - placement.start.getTime()) / 60000) * modelPxPerMin
-              const habitStatus = getHabitCompletionStatus(
-                dayViewDateKey,
-                placement.habitId
-              )
-              const isHabitCompleted = habitStatus === 'completed'
-              const habitType = placement.habitType || 'HABIT'
-              const scheduledCardBackground =
-                'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
-              const choreCardBackground =
-                'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
-              const asyncCardBackground =
-                'radial-gradient(circle at 12% -20%, rgba(250, 204, 21, 0.32), transparent 58%), linear-gradient(135deg, rgba(74, 60, 9, 0.9) 0%, rgba(202, 138, 4, 0.82) 45%, rgba(250, 204, 21, 0.7) 100%)'
-              const completedCardBackground =
-                'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
-              const scheduledShadow = [
-                '0 26px 52px rgba(0, 0, 0, 0.6)',
-                '0 12px 28px rgba(0, 0, 0, 0.45)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-              ].join(', ')
-              const choreShadow = [
-                '0 18px 36px rgba(56, 16, 24, 0.38)',
-                '0 8px 18px rgba(76, 20, 32, 0.26)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
-              ].join(', ')
-              const asyncShadow = [
-                '0 18px 36px rgba(58, 44, 14, 0.32)',
-                '0 8px 18px rgba(82, 62, 18, 0.24)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
-              ].join(', ')
-              const completedShadow = [
-                '0 26px 52px rgba(2, 32, 24, 0.6)',
-                '0 12px 28px rgba(1, 55, 34, 0.45)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
-              ].join(', ')
-              let cardBackground = scheduledCardBackground
-              let cardShadow = scheduledShadow
-              let cardOutline = '1px solid rgba(18, 18, 24, 0.85)'
-              let habitBorderClass = 'border-white/12'
-
-              if (isHabitCompleted) {
-                cardBackground = completedCardBackground
-                cardShadow = completedShadow
-                cardOutline = '1px solid rgba(16, 185, 129, 0.55)'
-                habitBorderClass = 'border-emerald-400/60'
-              } else if (habitType === 'CHORE') {
-                cardBackground = choreCardBackground
-                cardShadow = choreShadow
-                cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
-                habitBorderClass = 'border-rose-200/45'
-              } else if (habitType === 'ASYNC') {
-                cardBackground = asyncCardBackground
-                cardShadow = asyncShadow
-                cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
-                habitBorderClass = 'border-amber-200/45'
-              }
-              const cardStyle: CSSProperties = {
+              const segmentDurationMs = Math.max(segment.end.getTime() - segment.start.getTime(), 1)
+              const height = (segmentDurationMs / 60000) * modelPxPerMin
+              const containerStyle: CSSProperties = {
                 top,
                 height,
-                boxShadow: cardShadow,
-                outline: cardOutline,
-                outlineOffset: '-1px',
-                background: cardBackground,
               }
+              const containerHeightPx = typeof height === 'number' ? Math.max(1, Number(height)) : 0
+              const totalDuration = segment.habits.reduce(
+                (sum, placement) => sum + (placement.durationMinutes || 0),
+                0
+              )
+              const summaryParts = [] as string[]
+              if (totalDuration > 0) summaryParts.push(`${totalDuration}m`)
+              summaryParts.push(
+                `${segment.habits.length} ${segment.habits.length === 1 ? 'habit' : 'habits'}`
+              )
+              const routineLabel = segment.routineName
+              const minHeightRatio = containerHeightPx > 0 ? Math.min(1, 44 / containerHeightPx) : 1
+
               return (
                 <motion.div
-                  key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute left-16 right-2 z-30 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
-                  style={cardStyle}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                  key={`habit-group-${segment.key}`}
+                  className="absolute left-16 right-2 z-30"
+                  style={containerStyle}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-                  exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
+                  exit={prefersReducedMotion ? undefined : { opacity: 0, y: 6 }}
                 >
-                  <span className="truncate text-sm font-medium leading-snug">
-                    {placement.habitName}
-                  </span>
-                  {renderHabitCompletionControl({
-                    dateKey: dayViewDateKey,
-                    habitId: placement.habitId,
-                    status: habitStatus,
-                    disabled: options?.disableInteractions,
-                    availableHeight: height,
-                  })}
+                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-white/12 bg-[radial-gradient(circle_at_8%_-20%,rgba(148,163,184,0.18),transparent_58%),linear-gradient(135deg,rgba(6,9,18,0.9)_0%,rgba(16,17,30,0.88)_44%,rgba(28,32,48,0.86)_100%)] px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.5)] backdrop-blur">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-white/70">
+                      <span className="font-semibold">
+                        {segment.routineId ? `Routine · ${routineLabel}` : routineLabel}
+                      </span>
+                      <span className="font-medium text-white/60">{summaryParts.join(' · ')}</span>
+                    </div>
+                    <div className="relative mt-2 flex-1 overflow-hidden">
+                      {segment.habits.map(habitPlacement => {
+                        const habitStatus = getHabitCompletionStatus(
+                          dayViewDateKey,
+                          habitPlacement.habitId
+                        )
+                        const isHabitCompleted = habitStatus === 'completed'
+                        const habitType = habitPlacement.habitType || 'HABIT'
+                        const startOffset =
+                          habitPlacement.start.getTime() - segment.start.getTime()
+                        const endOffset = habitPlacement.end.getTime() - segment.start.getTime()
+                        const rawStartRatio = startOffset / segmentDurationMs
+                        const rawEndRatio = endOffset / segmentDurationMs
+                        let startRatio = Number.isFinite(rawStartRatio) ? rawStartRatio : 0
+                        let endRatio = Number.isFinite(rawEndRatio) ? rawEndRatio : startRatio
+                        if (endRatio <= startRatio) {
+                          endRatio = Math.min(1, startRatio + minHeightRatio)
+                        }
+                        let heightRatio = Math.max(endRatio - startRatio, minHeightRatio)
+                        if (startRatio + heightRatio > 1) {
+                          const overflow = startRatio + heightRatio - 1
+                          startRatio = Math.max(0, startRatio - overflow)
+                          heightRatio = Math.min(heightRatio, 1 - startRatio)
+                        }
+                        const topPercent = `${Math.max(0, startRatio * 100)}%`
+                        const heightPercent = `${Math.max(heightRatio * 100, minHeightRatio * 100)}%`
+                        const availableHeight = (heightRatio * containerHeightPx) - HABIT_CARD_VERTICAL_PADDING_PX
+
+                        const baseBackground =
+                          'radial-gradient(circle at 8% -20%, rgba(148, 163, 184, 0.15), transparent 58%), linear-gradient(135deg, rgba(4, 4, 10, 0.96) 0%, rgba(16, 17, 28, 0.92) 44%, rgba(36, 38, 54, 0.8) 100%)'
+                        const choreBackground =
+                          'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
+                        const asyncBackground =
+                          'radial-gradient(circle at 12% -20%, rgba(250, 204, 21, 0.32), transparent 58%), linear-gradient(135deg, rgba(74, 60, 9, 0.9) 0%, rgba(202, 138, 4, 0.82) 45%, rgba(250, 204, 21, 0.7) 100%)'
+                        const completedBackground =
+                          'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
+
+                        const scheduledShadow = [
+                          '0 26px 52px rgba(0, 0, 0, 0.6)',
+                          '0 12px 28px rgba(0, 0, 0, 0.45)',
+                          'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                        ].join(', ')
+                        const choreShadow = [
+                          '0 18px 36px rgba(56, 16, 24, 0.38)',
+                          '0 8px 18px rgba(76, 20, 32, 0.26)',
+                          'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+                        ].join(', ')
+                        const asyncShadow = [
+                          '0 18px 36px rgba(58, 44, 14, 0.32)',
+                          '0 8px 18px rgba(82, 62, 18, 0.24)',
+                          'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+                        ].join(', ')
+                        const completedShadow = [
+                          '0 26px 52px rgba(2, 32, 24, 0.6)',
+                          '0 12px 28px rgba(1, 55, 34, 0.45)',
+                          'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+                        ].join(', ')
+
+                        let cardBackground = baseBackground
+                        let cardShadow = scheduledShadow
+                        let cardOutline = '1px solid rgba(18, 18, 24, 0.85)'
+                        let habitBorderClass = 'border-white/12'
+
+                        if (isHabitCompleted) {
+                          cardBackground = completedBackground
+                          cardShadow = completedShadow
+                          cardOutline = '1px solid rgba(16, 185, 129, 0.55)'
+                          habitBorderClass = 'border-emerald-400/60'
+                        } else if (habitType === 'CHORE') {
+                          cardBackground = choreBackground
+                          cardShadow = choreShadow
+                          cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
+                          habitBorderClass = 'border-rose-200/45'
+                        } else if (habitType === 'ASYNC') {
+                          cardBackground = asyncBackground
+                          cardShadow = asyncShadow
+                          cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
+                          habitBorderClass = 'border-amber-200/45'
+                        }
+
+                        return (
+                          <motion.div
+                            key={`habit-${segment.key}-${habitPlacement.habitId}`}
+                            className={`absolute inset-x-0 flex h-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                            style={{
+                              top: topPercent,
+                              height: heightPercent,
+                              background: cardBackground,
+                              boxShadow: cardShadow,
+                              outline: cardOutline,
+                              outlineOffset: '-1px',
+                            }}
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                            animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                            exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
+                          >
+                            <span className="truncate text-sm font-medium leading-snug">
+                              {habitPlacement.habitName}
+                            </span>
+                            {renderHabitCompletionControl({
+                              dateKey: dayViewDateKey,
+                              habitId: habitPlacement.habitId,
+                              status: habitStatus,
+                              disabled: options?.disableInteractions,
+                              availableHeight: Math.max(availableHeight, 0),
+                            })}
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </motion.div>
               )
             })}
-            {modelProjectInstances.map(({ instance, project, start, end }, index) => {
-              if (!isValidDate(start) || !isValidDate(end)) return null
-              const projectId = project.id
-              const startMin = start.getHours() * 60 + start.getMinutes()
+            {groupedGoalSegments.map(segment => {
+              if (!isValidDate(segment.start) || !isValidDate(segment.end)) return null
+              const startMin = segment.start.getHours() * 60 + segment.start.getMinutes()
               const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((end.getTime() - start.getTime()) / 60000) * modelPxPerMin
-              const isExpanded = expandedProjects.has(projectId)
-              const projectTaskCandidates =
-                modelTaskInstancesByProject[projectId] ?? []
-              const scheduledCards: ProjectTaskCard[] =
-                projectTaskCandidates
-                  .filter(taskInfo =>
-                    taskMatchesProjectInstance(
-                      taskInfo,
-                      instance,
-                      start,
-                      end
-                    )
-                  )
-                  .map(taskInfo => ({
-                    key: `scheduled:${taskInfo.instance.id}`,
-                    kind: 'scheduled' as const,
-                    task: taskInfo.task,
-                    start: taskInfo.start,
-                    end: taskInfo.end,
-                    instanceId: taskInfo.instance.id,
-                    displayDurationMinutes: Math.max(
-                      1,
-                      Math.round(
-                        (taskInfo.end.getTime() - taskInfo.start.getTime()) /
-                          60000
-                      )
-                    ),
-                  }))
-              const hasScheduledBreakdown = scheduledCards.length > 0
-              const durationMinutes = Math.round(
-                (end.getTime() - start.getTime()) / 60000
-              )
-              const tasksLabel =
-                project.taskCount > 0
-                  ? `${project.taskCount} ${
-                      project.taskCount === 1 ? 'task' : 'tasks'
-                    }`
-                  : null
-              const detailParts = [`${durationMinutes}m`]
-              if (tasksLabel) detailParts.push(tasksLabel)
-              let detailText = detailParts.join(' · ')
-              const positionStyle: CSSProperties = {
+              const segmentDurationMs = Math.max(segment.end.getTime() - segment.start.getTime(), 1)
+              const height = (segmentDurationMs / 60000) * modelPxPerMin
+              const containerHeightPx = typeof height === 'number' ? Math.max(1, Number(height)) : 0
+              const containerStyle: CSSProperties = {
                 top,
                 height,
               }
-              const sharedCardStyle: CSSProperties = {
-                boxShadow:
-                  '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-                outline: '1px solid rgba(10, 10, 12, 0.85)',
-                outlineOffset: '-1px',
-              }
-              const projectDurationMs = Math.max(
-                end.getTime() - start.getTime(),
-                1
-              )
-              const projectHeightPx = Math.max(
-                typeof height === 'number' ? height : 0,
-                1
-              )
-              const minHeightRatio = Math.min(1, 4 / projectHeightPx)
-              const backlogTasks = modelTasksByProjectId[projectId] ?? []
-              const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
-              const fallbackLimit = Math.min(
-                MAX_FALLBACK_TASKS,
-                Math.max(1, Math.floor(1 / safeMinHeightRatio)),
-                backlogTasks.length
-              )
-              const fallbackCards =
-                !hasScheduledBreakdown && fallbackLimit > 0
-                  ? buildFallbackTaskCards({
-                      tasks: backlogTasks,
-                      projectStart: start,
-                      projectEnd: end,
-                      instanceId: instance.id,
-                      maxCount: fallbackLimit,
-                    })
-                  : []
-              const displayCards =
-                hasScheduledBreakdown ? scheduledCards : fallbackCards
-              const usingFallback =
-                !hasScheduledBreakdown && displayCards.length > 0
-              if (usingFallback) {
-                detailText = `${detailText} · Backlog preview`
-              }
-              const hiddenFallbackCount = usingFallback
-                ? Math.max(0, backlogTasks.length - displayCards.length)
-                : 0
-              const canExpand = displayCards.length > 0
-              const pendingStatus = pendingInstanceStatuses.get(instance.id)
-              const effectiveStatus =
-                pendingStatus ?? instance.status ?? 'scheduled'
-              const isCompleted = effectiveStatus === 'completed'
-              const projectBackground = isCompleted
-                ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
-                : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
-              const projectCardStyle: CSSProperties = {
-                ...sharedCardStyle,
-                boxShadow: isCompleted
-                  ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
-                  : sharedCardStyle.boxShadow,
-                outline: isCompleted
-                  ? '1px solid rgba(16, 185, 129, 0.55)'
-                  : sharedCardStyle.outline,
-                background: projectBackground,
-              }
-              const projectBorderClass = isCompleted
-                ? 'border-emerald-400/60'
-                : 'border-black/70'
+              const totalProjectDuration = segment.projects.reduce((sum, placement) => {
+                const span = placement.end.getTime() - placement.start.getTime()
+                return sum + Math.max(1, Math.round(span / 60000))
+              }, 0)
+              const goalSummary = [
+                `${totalProjectDuration}m`,
+                `${segment.projects.length} ${segment.projects.length === 1 ? 'project' : 'projects'}`,
+              ]
+              const minProjectHeightRatio = containerHeightPx > 0 ? Math.min(1, 56 / containerHeightPx) : 1
+
               return (
                 <motion.div
-                  key={instance.id}
-                  data-schedule-instance-id={instance.id}
-                  className="absolute left-16 right-2"
-                  style={positionStyle}
-                  layout={!prefersReducedMotion}
-                  transition={
-                    prefersReducedMotion
-                      ? undefined
-                      : { type: 'spring', stiffness: 320, damping: 32 }
-                  }
+                  key={`goal-group-${segment.key}`}
+                  className="absolute left-16 right-2 z-20"
+                  style={containerStyle}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                  animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                  exit={prefersReducedMotion ? undefined : { opacity: 0, y: 8 }}
                 >
-                  <AnimatePresence mode="wait" initial={false}>
-                    {!isExpanded || !canExpand ? (
-                      <motion.div
-                        key="project"
-                        aria-label={`Project ${project.name}`}
-                        onClick={() => {
-                          if (!canExpand) return
-                          setProjectExpansion(projectId)
-                        }}
-                        className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
-                          canExpand ? ' cursor-pointer' : ''
-                        }`}
-                        style={projectCardStyle}
-                        initial={
-                          prefersReducedMotion ? false : { opacity: 0, y: 4 }
+                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-white/15 bg-[radial-gradient(circle_at_0%_-20%,rgba(148,163,184,0.18),transparent_58%),linear-gradient(135deg,rgba(10,12,24,0.94)_0%,rgba(20,22,36,0.9)_44%,rgba(38,40,60,0.86)_100%)] px-3 py-2 text-white shadow-[0_26px_52px_rgba(6,10,28,0.52)] backdrop-blur">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-white/70">
+                      <span className="font-semibold">
+                        {segment.goalId ? `Goal · ${segment.goalName}` : segment.goalName}
+                      </span>
+                      <span className="font-medium text-white/60">{goalSummary.join(' · ')}</span>
+                    </div>
+                    <div className="relative mt-2 flex-1 overflow-hidden">
+                      {segment.projects.map((placement, placementIndex) => {
+                        const { instance, project, start, end } = placement
+                        if (!isValidDate(start) || !isValidDate(end)) return null
+                        const projectId = project.id
+                        const startOffset = start.getTime() - segment.start.getTime()
+                        const endOffset = end.getTime() - segment.start.getTime()
+                        let startRatio = Number.isFinite(startOffset / segmentDurationMs)
+                          ? startOffset / segmentDurationMs
+                          : 0
+                        let endRatio = Number.isFinite(endOffset / segmentDurationMs)
+                          ? endOffset / segmentDurationMs
+                          : startRatio
+                        if (endRatio <= startRatio) {
+                          endRatio = Math.min(1, startRatio + minProjectHeightRatio)
                         }
-                        animate={
-                          prefersReducedMotion
-                            ? undefined
-                            : {
-                                opacity: 1,
-                                y: 0,
-                                transition: {
-                                  delay: hasInteractedWithProjects
-                                    ? 0
-                                    : index * 0.02,
-                                  duration: 0.18,
-                                  ease: [0.4, 0, 0.2, 1],
-                                },
-                              }
+                        let heightRatio = Math.max(endRatio - startRatio, minProjectHeightRatio)
+                        if (startRatio + heightRatio > 1) {
+                          const overflow = startRatio + heightRatio - 1
+                          startRatio = Math.max(0, startRatio - overflow)
+                          heightRatio = Math.min(heightRatio, 1 - startRatio)
                         }
-                        exit={
-                          prefersReducedMotion
-                            ? undefined
-                            : {
-                                opacity: 0,
-                                y: 4,
-                                transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                              }
-                        }
-                      >
-                        <div className="flex min-w-0 flex-1 items-start gap-3">
-                          <div className="min-w-0">
-                            <span className="block truncate text-sm font-medium">
-                              {project.name}
-                            </span>
-                            <div className="text-xs text-zinc-200/70">
-                              {detailText}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex flex-shrink-0 items-center gap-2">
-                          {project.skill_icon && (
-                            <span className="text-lg leading-none" aria-hidden>
-                              {project.skill_icon}
-                            </span>
-                          )}
-                          {renderInstanceActions(instance.id, {
-                            className: 'flex-shrink-0',
-                          })}
-                          <FlameEmber
-                            level={
-                              (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                              'NO'
-                            }
-                            size="sm"
-                            className="flex-shrink-0"
-                          />
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="tasks"
-                        className="relative h-full w-full"
-                        initial={
-                          prefersReducedMotion
-                            ? false
-                            : { opacity: 0, y: 4 }
-                        }
-                        animate={
-                          prefersReducedMotion
-                            ? undefined
-                            : {
-                                opacity: 1,
-                                y: 0,
-                                transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
-                              }
-                        }
-                        exit={
-                          prefersReducedMotion
-                            ? undefined
-                            : {
-                                opacity: 0,
-                                y: 4,
-                                transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                              }
-                        }
-                      >
-                        <motion.button
-                          type="button"
-                          className="absolute right-2 top-2 z-10 rounded-full border border-white/30 bg-white/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white shadow-[0_10px_18px_rgba(0,0,0,0.45)] backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                          onClick={event => {
-                            event.stopPropagation()
-                            setProjectExpansion(projectId, false)
-                          }}
-                        >
-                          Back
-                        </motion.button>
-                        <div className="absolute inset-0 overflow-hidden rounded-[var(--radius-lg)] border border-white/20 bg-white/10"
-                          style={sharedCardStyle}
-                        />
-                        <div className="relative h-full w-full overflow-hidden p-2">
-                          {displayCards.map(taskCard => {
-                            const {
-                              key,
-                              task,
-                              start: taskStart,
-                              end: taskEnd,
-                              kind,
-                              instanceId,
-                              displayDurationMinutes,
-                            } = taskCard
-                            if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
-                              return null
-                            }
-                            const startOffsetMs =
-                              taskStart.getTime() - start.getTime()
-                            const endOffsetMs = taskEnd.getTime() - start.getTime()
-                            const rawStartRatio = startOffsetMs / projectDurationMs
-                            const rawEndRatio = endOffsetMs / projectDurationMs
-                            const clampRatio = (value: number) =>
-                              Number.isFinite(value)
-                                ? Math.min(Math.max(value, 0), 1)
-                                : 0
-                            let startRatio = clampRatio(rawStartRatio)
-                            let endRatio = clampRatio(rawEndRatio)
-                            if (endRatio <= startRatio) {
-                              endRatio = Math.min(1, startRatio + minHeightRatio)
-                            }
-                            let heightRatio = Math.max(endRatio - startRatio, 0)
-                            if (heightRatio < minHeightRatio) {
-                              heightRatio = minHeightRatio
-                            }
-                            if (startRatio + heightRatio > 1) {
-                              const overflow = startRatio + heightRatio - 1
-                              startRatio = Math.max(0, startRatio - overflow)
-                              heightRatio = Math.min(heightRatio, 1 - startRatio)
-                            }
-                            const topPercent = startRatio * 100
-                            const heightPercent = Math.max(
-                              heightRatio * 100,
-                              minHeightRatio * 100
+                        const topPercent = `${Math.max(0, startRatio * 100)}%`
+                        const heightPercent = `${Math.max(heightRatio * 100, minProjectHeightRatio * 100)}%`
+                        const projectHeightPx = Math.max(containerHeightPx * heightRatio, 1)
+
+                        const projectTaskCandidates =
+                          modelTaskInstancesByProject[projectId] ?? []
+                        const scheduledCards: ProjectTaskCard[] =
+                          projectTaskCandidates
+                            .filter(taskInfo =>
+                              taskMatchesProjectInstance(taskInfo, instance, start, end)
                             )
-                            const tStyle: CSSProperties = {
-                              top: `${topPercent}%`,
-                              height: `${heightPercent}%`,
-                              ...sharedCardStyle,
+                            .map(taskInfo => ({
+                              key: `scheduled:${taskInfo.instance.id}`,
+                              kind: 'scheduled' as const,
+                              task: taskInfo.task,
+                              start: taskInfo.start,
+                              end: taskInfo.end,
+                              instanceId: taskInfo.instance.id,
+                              displayDurationMinutes: Math.max(
+                                1,
+                                Math.round(
+                                  (taskInfo.end.getTime() - taskInfo.start.getTime()) / 60000
+                                )
+                              ),
+                            }))
+                        const hasScheduledBreakdown = scheduledCards.length > 0
+                        const durationMinutes = Math.round(
+                          (end.getTime() - start.getTime()) / 60000
+                        )
+                        const tasksLabel =
+                          project.taskCount > 0
+                            ? `${project.taskCount} ${
+                                project.taskCount === 1 ? 'task' : 'tasks'
+                              }`
+                            : null
+                        const detailParts = [`${durationMinutes}m`]
+                        if (tasksLabel) detailParts.push(tasksLabel)
+                        let detailText = detailParts.join(' · ')
+                        const sharedCardStyle: CSSProperties = {
+                          boxShadow:
+                            '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                          outline: '1px solid rgba(10, 10, 12, 0.85)',
+                          outlineOffset: '-1px',
+                        }
+                        const projectDurationMs = Math.max(end.getTime() - start.getTime(), 1)
+                        const minHeightRatio = Math.min(1, 4 / projectHeightPx)
+                        const backlogTasks = modelTasksByProjectId[projectId] ?? []
+                        const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
+                        const fallbackLimit = Math.min(
+                          MAX_FALLBACK_TASKS,
+                          Math.max(1, Math.floor(1 / safeMinHeightRatio)),
+                          backlogTasks.length
+                        )
+                        const fallbackCards =
+                          !hasScheduledBreakdown && fallbackLimit > 0
+                            ? buildFallbackTaskCards({
+                                tasks: backlogTasks,
+                                projectStart: start,
+                                projectEnd: end,
+                                instanceId: instance.id,
+                                maxCount: fallbackLimit,
+                              })
+                            : []
+                        const displayCards = hasScheduledBreakdown ? scheduledCards : fallbackCards
+                        const usingFallback = !hasScheduledBreakdown && displayCards.length > 0
+                        if (usingFallback) {
+                          detailText = `${detailText} · Backlog preview`
+                        }
+                        const hiddenFallbackCount = usingFallback
+                          ? Math.max(0, backlogTasks.length - displayCards.length)
+                          : 0
+                        const canExpand = displayCards.length > 0
+                        const pendingStatus = pendingInstanceStatuses.get(instance.id)
+                        const effectiveStatus = pendingStatus ?? instance.status ?? 'scheduled'
+                        const isCompleted = effectiveStatus === 'completed'
+                        const projectBackground = isCompleted
+                          ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
+                          : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
+                        const projectCardStyle: CSSProperties = {
+                          ...sharedCardStyle,
+                          boxShadow: isCompleted
+                            ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                            : sharedCardStyle.boxShadow,
+                          outline: isCompleted
+                            ? '1px solid rgba(16, 185, 129, 0.55)'
+                            : sharedCardStyle.outline,
+                          background: projectBackground,
+                        }
+                        const projectBorderClass = isCompleted
+                          ? 'border-emerald-400/60'
+                          : 'border-black/70'
+                        const isExpanded = expandedProjects.has(projectId)
+
+                        return (
+                          <motion.div
+                            key={instance.id}
+                            data-schedule-instance-id={instance.id}
+                            className="absolute inset-x-0"
+                            style={{
+                              top: topPercent,
+                              height: heightPercent,
+                            }}
+                            layout={!prefersReducedMotion}
+                            transition={
+                              prefersReducedMotion
+                                ? undefined
+                                : { type: 'spring', stiffness: 320, damping: 32 }
                             }
-                            const baseTaskClasses =
-                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
-                            const shinyTaskClasses =
-                              'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
-                            const fallbackTaskClasses =
-                              'bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]'
-                            const cardClasses =
-                              kind === 'scheduled'
-                                ? `${baseTaskClasses} ${shinyTaskClasses}`
-                                : `${baseTaskClasses} ${fallbackTaskClasses}`
-                            const progressValue =
-                              kind === 'scheduled'
-                                ? Math.max(
-                                    0,
-                                    Math.min(
-                                      100,
-                                      (task as { progress?: number }).progress ?? 0
-                                    )
-                                  )
-                                : 0
-                            const durationLabel =
-                              kind === 'fallback'
-                                ? `~${displayDurationMinutes}m`
-                                : `${displayDurationMinutes}m`
-                            const metaTextClass = 'text-xs text-zinc-200/75'
-                            const progressBarClass =
-                              kind === 'scheduled'
-                                ? 'absolute left-0 bottom-0 h-[3px] bg-white/40'
-                                : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
-                            const resolvedEnergyRaw = (
-                              task.energy ?? project.energy ?? 'NO'
-                            ).toString()
-                            const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
-                            const energyLevel = ENERGY.LIST.includes(
-                              resolvedEnergyUpper as FlameLevel
-                            )
-                              ? (resolvedEnergyUpper as FlameLevel)
-                              : 'NO'
-                            return (
-                              <motion.div
-                                key={key}
-                                data-schedule-instance-id={
-                                  kind === 'scheduled' && instanceId ? instanceId : undefined
-                                }
-                                aria-label={`Task ${task.name}`}
-                                className={cardClasses}
-                                style={tStyle}
-                                onClick={() =>
-                                  setProjectExpansion(projectId, false)
-                                }
-                                initial={
-                                  prefersReducedMotion
-                                    ? false
-                                    : { opacity: 0, y: 6 }
-                                }
-                                animate={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : {
-                                        opacity: 1,
-                                        y: 0,
-                                        transition: {
-                                          duration: 0.18,
-                                          ease: [0.4, 0, 0.2, 1],
-                                        },
-                                      }
-                                }
-                                exit={
-                                  prefersReducedMotion
-                                    ? undefined
-                                    : {
-                                        opacity: 0,
-                                        y: 6,
-                                        transition: {
-                                          duration: 0.14,
-                                          ease: [0.4, 0, 0.2, 1],
-                                        },
-                                      }
-                                }
-                              >
-                                {kind === 'scheduled' && instanceId
-                                  ? renderInstanceActions(instanceId, {
-                                      appearance: 'light',
-                                      className:
-                                        'absolute right-3 top-2',
-                                    })
-                                  : null}
-                                <div className="flex flex-col">
-                                  <span className="truncate text-sm font-medium">
-                                    {task.name}
-                                  </span>
-                                  <div className={metaTextClass}>
-                                    {durationLabel}
+                          >
+                            <AnimatePresence mode="wait" initial={false}>
+                              {!isExpanded || !canExpand ? (
+                                <motion.div
+                                  key="project"
+                                  aria-label={`Project ${project.name}`}
+                                  onClick={() => {
+                                    if (!canExpand) return
+                                    setProjectExpansion(projectId)
+                                  }}
+                                  className={`relative flex h-full w-full items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                                    canExpand ? ' cursor-pointer' : ''
+                                  }`}
+                                  style={projectCardStyle}
+                                  initial={
+                                    prefersReducedMotion
+                                      ? false
+                                      : { opacity: 0, y: 4 }
+                                  }
+                                  animate={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : {
+                                          opacity: 1,
+                                          y: 0,
+                                          transition: {
+                                            delay: hasInteractedWithProjects
+                                              ? 0
+                                              : placementIndex * 0.02,
+                                            duration: 0.18,
+                                            ease: [0.4, 0, 0.2, 1],
+                                          },
+                                        }
+                                  }
+                                  exit={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : {
+                                          opacity: 0,
+                                          y: 4,
+                                          transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                                        }
+                                  }
+                                >
+                                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                                    <div className="min-w-0">
+                                      <span className="block truncate text-sm font-medium">
+                                        {project.name}
+                                      </span>
+                                      <div className="text-xs text-zinc-200/70">
+                                        {detailText}
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                                {task.skill_icon && (
-                                  <span
-                                    className="ml-2 text-lg leading-none flex-shrink-0"
-                                    aria-hidden
+                                  <div className="flex flex-shrink-0 items-center gap-2">
+                                    {project.skill_icon && (
+                                      <span className="text-lg leading-none" aria-hidden>
+                                        {project.skill_icon}
+                                      </span>
+                                    )}
+                                    {renderInstanceActions(instance.id, {
+                                      className: 'flex-shrink-0',
+                                    })}
+                                    <FlameEmber
+                                      level={
+                                        (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                                        'NO'
+                                      }
+                                      size="sm"
+                                      className="flex-shrink-0"
+                                    />
+                                  </div>
+                                </motion.div>
+                              ) : (
+                                <motion.div
+                                  key="tasks"
+                                  className="relative h-full w-full"
+                                  initial={
+                                    prefersReducedMotion
+                                      ? false
+                                      : { opacity: 0, y: 4 }
+                                  }
+                                  animate={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : {
+                                          opacity: 1,
+                                          y: 0,
+                                          transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
+                                        }
+                                  }
+                                  exit={
+                                    prefersReducedMotion
+                                      ? undefined
+                                      : {
+                                          opacity: 0,
+                                          y: 4,
+                                          transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
+                                        }
+                                  }
+                                >
+                                  <motion.button
+                                    type="button"
+                                    className="absolute right-2 top-2 z-10 rounded-full border border-white/30 bg-white/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-white shadow-[0_10px_18px_rgba(0,0,0,0.45)] backdrop-blur transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                                    onClick={event => {
+                                      event.stopPropagation()
+                                      setProjectExpansion(projectId, false)
+                                    }}
                                   >
-                                    {task.skill_icon}
-                                  </span>
-                                )}
-                                <FlameEmber
-                                  level={energyLevel}
-                                  size="sm"
-                                  className="absolute -top-1 -right-1"
-                                />
-                                {progressValue > 0 && (
-                                  <div
-                                    className={progressBarClass}
-                                    style={{ width: `${progressValue}%` }}
+                                    Back
+                                  </motion.button>
+                                  <div className="absolute inset-0 overflow-hidden rounded-[var(--radius-lg)] border border-white/20 bg-white/10"
+                                    style={sharedCardStyle}
                                   />
-                                )}
-                              </motion.div>
-                            )
-                          })}
-                          {usingFallback && hiddenFallbackCount > 0 && (
-                            <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
-                              <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
-                                +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                                  <div className="relative h-full w-full overflow-hidden p-2">
+                                    {displayCards.map(taskCard => {
+                                      const {
+                                        key,
+                                        task,
+                                        start: taskStart,
+                                        end: taskEnd,
+                                        kind,
+                                        instanceId,
+                                        displayDurationMinutes,
+                                      } = taskCard
+                                      if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
+                                        return null
+                                      }
+                                      const startOffsetMs = taskStart.getTime() - start.getTime()
+                                      const endOffsetMs = taskEnd.getTime() - start.getTime()
+                                      const rawStartRatio = startOffsetMs / projectDurationMs
+                                      const rawEndRatio = endOffsetMs / projectDurationMs
+                                      const clampRatio = (value: number) =>
+                                        Number.isFinite(value)
+                                          ? Math.min(Math.max(value, 0), 1)
+                                          : 0
+                                      let taskStartRatio = clampRatio(rawStartRatio)
+                                      let taskEndRatio = clampRatio(rawEndRatio)
+                                      if (taskEndRatio <= taskStartRatio) {
+                                        taskEndRatio = Math.min(1, taskStartRatio + minHeightRatio)
+                                      }
+                                      let taskHeightRatio = Math.max(taskEndRatio - taskStartRatio, 0)
+                                      if (taskHeightRatio < minHeightRatio) {
+                                        taskHeightRatio = minHeightRatio
+                                      }
+                                      if (taskStartRatio + taskHeightRatio > 1) {
+                                        const overflow = taskStartRatio + taskHeightRatio - 1
+                                        taskStartRatio = Math.max(0, taskStartRatio - overflow)
+                                        taskHeightRatio = Math.min(taskHeightRatio, 1 - taskStartRatio)
+                                      }
+                                      const topPercent = taskStartRatio * 100
+                                      const heightPercent = Math.max(
+                                        taskHeightRatio * 100,
+                                        minHeightRatio * 100
+                                      )
+                                      const tStyle: CSSProperties = {
+                                        top: `${topPercent}%`,
+                                        height: `${heightPercent}%`,
+                                        ...sharedCardStyle,
+                                      }
+                                      const baseTaskClasses =
+                                        'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                                      const shinyTaskClasses =
+                                        'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
+                                      const fallbackTaskClasses =
+                                        'bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]'
+                                      const cardClasses =
+                                        kind === 'scheduled'
+                                          ? `${baseTaskClasses} ${shinyTaskClasses}`
+                                          : `${baseTaskClasses} ${fallbackTaskClasses}`
+                                      const progressValue =
+                                        kind === 'scheduled'
+                                          ? Math.max(
+                                              0,
+                                              Math.min(
+                                                100,
+                                                (task as { progress?: number }).progress ?? 0
+                                              )
+                                            )
+                                          : 0
+                                      const durationLabel =
+                                        kind === 'fallback'
+                                          ? `~${displayDurationMinutes}m`
+                                          : `${displayDurationMinutes}m`
+                                      const metaTextClass = 'text-xs text-zinc-200/75'
+                                      const progressBarClass =
+                                        kind === 'scheduled'
+                                          ? 'absolute left-0 bottom-0 h-[3px] bg-white/40'
+                                          : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
+                                      const resolvedEnergyRaw = (
+                                        task.energy ?? project.energy ?? 'NO'
+                                      ).toString()
+                                      const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
+                                      const energyLevel = ENERGY.LIST.includes(
+                                        resolvedEnergyUpper as FlameLevel
+                                      )
+                                        ? (resolvedEnergyUpper as FlameLevel)
+                                        : 'NO'
+                                      return (
+                                        <motion.div
+                                          key={key}
+                                          data-schedule-instance-id={
+                                            kind === 'scheduled' && instanceId
+                                              ? instanceId
+                                              : undefined
+                                          }
+                                          aria-label={`Task ${task.name}`}
+                                          className={cardClasses}
+                                          style={tStyle}
+                                          onClick={() => setProjectExpansion(projectId, false)}
+                                          initial={
+                                            prefersReducedMotion
+                                              ? false
+                                              : { opacity: 0, y: 6 }
+                                          }
+                                          animate={
+                                            prefersReducedMotion
+                                              ? undefined
+                                              : {
+                                                  opacity: 1,
+                                                  y: 0,
+                                                  transition: {
+                                                    duration: 0.18,
+                                                    ease: [0.4, 0, 0.2, 1],
+                                                  },
+                                                }
+                                          }
+                                          exit={
+                                            prefersReducedMotion
+                                              ? undefined
+                                              : {
+                                                  opacity: 0,
+                                                  y: 6,
+                                                  transition: {
+                                                    duration: 0.14,
+                                                    ease: [0.4, 0, 0.2, 1],
+                                                  },
+                                                }
+                                          }
+                                        >
+                                          {kind === 'scheduled' && instanceId
+                                            ? renderInstanceActions(instanceId, {
+                                                appearance: 'light',
+                                                className: 'absolute right-3 top-2',
+                                              })
+                                            : null}
+                                          <div className="flex flex-col">
+                                            <span className="truncate text-sm font-medium">
+                                              {task.name}
+                                            </span>
+                                            <div className={metaTextClass}>{durationLabel}</div>
+                                          </div>
+                                          {task.skill_icon && (
+                                            <span
+                                              className="ml-2 text-lg leading-none flex-shrink-0"
+                                              aria-hidden
+                                            >
+                                              {task.skill_icon}
+                                            </span>
+                                          )}
+                                          <FlameEmber
+                                            level={energyLevel}
+                                            size="sm"
+                                            className="absolute -top-1 -right-1"
+                                          />
+                                          {progressValue > 0 && (
+                                            <div
+                                              className={progressBarClass}
+                                              style={{ width: `${progressValue}%` }}
+                                            />
+                                          )}
+                                        </motion.div>
+                                      )
+                                    })}
+                                    {usingFallback && hiddenFallbackCount > 0 && (
+                                      <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
+                                        <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
+                                          +{hiddenFallbackCount} more task{hiddenFallbackCount === 1 ? '' : 's'} in backlog
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </motion.div>
               )
             })}
