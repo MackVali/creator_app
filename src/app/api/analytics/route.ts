@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { PostgrestError, PostgrestResponse } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type {
@@ -20,6 +21,71 @@ const RANGE_TO_DAYS: Record<AnalyticsRange, number> = {
   "7d": 7,
   "30d": 30,
   "90d": 90,
+};
+
+type RawTaskRow = {
+  id: string;
+  created_at: string | null;
+  project_id: string | null;
+  stage?: string | null;
+  name?: string | null;
+  stage_id?: number | null;
+  title?: string | null;
+};
+
+type RawProjectRow = {
+  id: string;
+  created_at: string | null;
+  updated_at?: string | null;
+  name?: string | null;
+  title?: string | null;
+};
+
+type RawMonumentRow = {
+  id: string;
+  created_at: string | null;
+  updated_at?: string | null;
+  title?: string | null;
+  name?: string | null;
+};
+
+type RawSkillRow = {
+  id: string;
+  name?: string | null;
+  title?: string | null;
+  monument_id?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
+type NormalizedTaskRow = {
+  id: string;
+  created_at: string | null;
+  project_id: string | null;
+  stage: string | null;
+  name: string | null;
+};
+
+type NormalizedProjectRow = {
+  id: string;
+  name: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type NormalizedMonumentRow = {
+  id: string;
+  name: string;
+  title: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type NormalizedSkillRow = {
+  id: string;
+  name: string;
+  monument_id: string | null;
+  updated_at: string | null;
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -80,38 +146,75 @@ export async function GET(request: NextRequest) {
       .eq("user_id", user.id)
       .gte("created_at", combinedStartIso)
       .order("created_at", { ascending: false }),
-    supabase
-      .from("tasks")
-      .select("id, created_at, project_id, stage, name")
-      .eq("user_id", user.id)
-      .gte("created_at", combinedStartIso)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("projects")
-      .select("id, created_at, updated_at, name")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false }),
+    queryWithFallback(
+      () =>
+        supabase
+          .from("tasks")
+          .select("id, created_at, project_id, stage, name")
+          .eq("user_id", user.id)
+          .gte("created_at", combinedStartIso)
+          .order("created_at", { ascending: false }),
+      () =>
+        supabase
+          .from("tasks")
+          .select("id, created_at, project_id, stage_id, title")
+          .eq("user_id", user.id)
+          .gte("created_at", combinedStartIso)
+          .order("created_at", { ascending: false })
+    ),
+    queryWithFallback(
+      () =>
+        supabase
+          .from("projects")
+          .select("id, created_at, updated_at, name")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false }),
+      () =>
+        supabase
+          .from("projects")
+          .select("id, created_at, title")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+    ),
     supabase
       .from("habits")
       .select("id, created_at, name")
       .eq("user_id", user.id)
       .gte("created_at", combinedStartIso)
       .order("created_at", { ascending: false }),
-    supabase
-      .from("monuments")
-      .select("id, created_at, updated_at, title, name")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false }),
+    queryWithFallback(
+      () =>
+        supabase
+          .from("monuments")
+          .select("id, created_at, updated_at, title, name")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false }),
+      () =>
+        supabase
+          .from("monuments")
+          .select("id, created_at, title")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+    ),
     supabase
       .from("windows")
       .select("id, created_at, days, start_local, end_local, energy, label")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false }),
-    supabase
-      .from("skills")
-      .select("id, name, monument_id, updated_at")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false }),
+    queryWithFallback(
+      () =>
+        supabase
+          .from("skills")
+          .select("id, name, monument_id, updated_at")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false }),
+      () =>
+        supabase
+          .from("skills")
+          .select("id, title, monument_id, created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+    ),
     supabase
       .from("skill_progress")
       .select("skill_id, level, prestige, xp_into_level, total_xp, updated_at")
@@ -150,12 +253,12 @@ export async function GET(request: NextRequest) {
   }
 
   const xpEvents = xpEventsRes.data ?? [];
-  const tasks = tasksRes.data ?? [];
-  const projects = projectsRes.data ?? [];
+  const tasks = normalizeTaskRows(tasksRes.data ?? []);
+  const projects = normalizeProjectRows(projectsRes.data ?? []);
   const habits = habitsRes.data ?? [];
-  const monuments = monumentsRes.data ?? [];
+  const monuments = normalizeMonumentRows(monumentsRes.data ?? []);
   const windows = windowsRes.data ?? [];
-  const skills = skillsRes.data ?? [];
+  const skills = normalizeSkillRows(skillsRes.data ?? []);
   const skillProgress = skillProgressRes.data ?? [];
   const goals = goalsRes.data ?? [];
   const habitHistory = habitHistoryRes.data ?? [];
@@ -299,13 +402,22 @@ export async function GET(request: NextRequest) {
     .slice(0, 6);
 
   const projectIds = projects.map((project) => project.id);
-  const projectTasksRes = projectIds.length
-    ? await supabase
-        .from("tasks")
-        .select("id, project_id, stage")
-        .eq("user_id", user.id)
-        .in("project_id", projectIds)
-    : { data: [], error: null };
+  const projectTasksRes: PostgrestResponse<RawTaskRow> = projectIds.length
+    ? await queryWithFallback(
+        () =>
+          supabase
+            .from("tasks")
+            .select("id, project_id, stage")
+            .eq("user_id", user.id)
+            .in("project_id", projectIds),
+        () =>
+          supabase
+            .from("tasks")
+            .select("id, project_id, stage_id")
+            .eq("user_id", user.id)
+            .in("project_id", projectIds)
+      )
+    : ({ data: [], error: null, status: 200, statusText: "OK" } as PostgrestResponse<RawTaskRow>);
 
   if (projectTasksRes.error) {
     return NextResponse.json(
@@ -315,7 +427,8 @@ export async function GET(request: NextRequest) {
   }
 
   const tasksByProject = new Map<string, { total: number; done: number }>();
-  for (const task of projectTasksRes.data ?? []) {
+  const projectTaskRows = normalizeTaskRows(projectTasksRes.data ?? []);
+  for (const task of projectTaskRows) {
     if (!task.project_id) continue;
     const bucket = tasksByProject.get(task.project_id) ?? { total: 0, done: 0 };
     bucket.total += 1;
@@ -451,6 +564,101 @@ function parseDate(value: string | null | undefined) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+}
+
+function normalizeIsoString(
+  ...values: Array<string | null | undefined>
+): string | null {
+  for (const value of values) {
+    if (!value) continue;
+    if (parseDate(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function normalizeText(
+  ...values: Array<string | null | undefined>
+): string | null {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function legacyTaskStageToEnum(stageId?: number | null) {
+  if (stageId === null || stageId === undefined) return null;
+  switch (stageId) {
+    case 3:
+    case 4:
+      return "PERFECT";
+    case 2:
+      return "PRODUCE";
+    case 1:
+      return "PREPARE";
+    default:
+      return null;
+  }
+}
+
+function normalizeTaskRows(rows: unknown[]): NormalizedTaskRow[] {
+  return rows.map((row) => {
+    const record = row as RawTaskRow;
+    return {
+      id: record.id,
+      created_at: record.created_at ?? null,
+      project_id: record.project_id ?? null,
+      stage:
+        typeof record.stage === "string"
+          ? record.stage
+          : legacyTaskStageToEnum(record.stage_id),
+      name: normalizeText(record.name, record.title),
+    } satisfies NormalizedTaskRow;
+  });
+}
+
+function normalizeProjectRows(rows: unknown[]): NormalizedProjectRow[] {
+  return rows.map((row) => {
+    const record = row as RawProjectRow;
+    return {
+      id: record.id,
+      name: normalizeText(record.name, record.title) ?? "Untitled project",
+      created_at: record.created_at ?? null,
+      updated_at: normalizeIsoString(record.updated_at, record.created_at),
+    } satisfies NormalizedProjectRow;
+  });
+}
+
+function normalizeMonumentRows(rows: unknown[]): NormalizedMonumentRow[] {
+  return rows.map((row) => {
+    const record = row as RawMonumentRow;
+    const primary = normalizeText(record.name, record.title) ?? "Untitled";
+    const secondary = normalizeText(record.title, record.name) ?? primary;
+    return {
+      id: record.id,
+      name: primary,
+      title: secondary,
+      created_at: record.created_at ?? null,
+      updated_at: normalizeIsoString(record.updated_at, record.created_at),
+    } satisfies NormalizedMonumentRow;
+  });
+}
+
+function normalizeSkillRows(rows: unknown[]): NormalizedSkillRow[] {
+  return rows.map((row) => {
+    const record = row as RawSkillRow;
+    return {
+      id: record.id,
+      name: normalizeText(record.name, record.title) ?? "Untitled skill",
+      monument_id: record.monument_id ?? null,
+      updated_at: normalizeIsoString(record.updated_at, record.created_at),
+    } satisfies NormalizedSkillRow;
+  });
 }
 
 function splitByPeriod<T>(
@@ -773,4 +981,29 @@ function buildProjectVelocity(
   }
 
   return series;
+}
+
+function shouldFallbackToLegacySchema(error: PostgrestError) {
+  return error.code === "42703" || error.code === "42P01";
+}
+
+async function queryWithFallback<T>(
+  primary: () => Promise<PostgrestResponse<T>>,
+  fallback?: () => Promise<PostgrestResponse<T>>
+): Promise<PostgrestResponse<T>> {
+  const result = await primary();
+  if (result.error && fallback && shouldFallbackToLegacySchema(result.error)) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Analytics query falling back to legacy schema", {
+        code: result.error.code,
+        message: result.error.message,
+      });
+    }
+    const fallbackResult = await fallback();
+    if (!fallbackResult.error) {
+      return fallbackResult;
+    }
+    return fallbackResult;
+  }
+  return result;
 }
