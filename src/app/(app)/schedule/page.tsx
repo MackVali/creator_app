@@ -88,6 +88,19 @@ const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
 
+function computeDayTimelineHeightPx(
+  startHour: number,
+  pxPerMin: number,
+  endHour = 24
+) {
+  const safeStart = Number.isFinite(startHour) ? startHour : 0
+  const safeEnd = Number.isFinite(endHour) ? endHour : 24
+  const normalizedEnd = Math.max(safeStart, safeEnd)
+  const durationMinutes = Math.max(0, (normalizedEnd - safeStart) * 60)
+  const safePxPerMin = Number.isFinite(pxPerMin) ? pxPerMin : MIN_PX_PER_MIN
+  return durationMinutes * safePxPerMin
+}
+
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
     opacity: direction === 0 ? 1 : 0.6,
@@ -1151,6 +1164,9 @@ function DayPeekOverlays({
   previousModel,
   nextModel,
   renderPreview,
+  scrollProgress,
+  baseTimelineHeight,
+  timelineChromeHeight,
 }: {
   peekState: PeekState
   previousLabel: string
@@ -1161,6 +1177,9 @@ function DayPeekOverlays({
   previousModel?: DayTimelineModel | null
   nextModel?: DayTimelineModel | null
   renderPreview: (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => ReactNode
+  scrollProgress: number | null
+  baseTimelineHeight: number
+  timelineChromeHeight: number
 }) {
   const container = containerRef.current
   const containerWidth = container?.offsetWidth ?? 0
@@ -1178,7 +1197,6 @@ function DayPeekOverlays({
     maxVisiblePeekWidth > 0 ? Math.min(1, offset / maxVisiblePeekWidth) : 0
   const translate = (1 - progress) * 35
   const opacity = 0.25 + progress * 0.6
-  const scale = 0.94 + progress * 0.06
   const shadowOpacity = 0.45 + progress * 0.3
 
   const isNext = peekState.direction === 1
@@ -1188,6 +1206,10 @@ function DayPeekOverlays({
   const expectedKey = isNext ? nextKey : previousKey
   const isModelForDirection = previewModel?.dayViewDateKey === expectedKey
   const resolvedPreviewModel = isModelForDirection ? previewModel : null
+  const previewTimelineHeight = resolvedPreviewModel
+    ? computeDayTimelineHeightPx(resolvedPreviewModel.startHour, resolvedPreviewModel.pxPerMin)
+    : baseTimelineHeight
+  const previewContainerHeight = previewTimelineHeight + timelineChromeHeight
   const alignment = isNext ? 'items-end text-right' : 'items-start text-left'
   const cornerClass = isNext
     ? 'rounded-l-[var(--radius-lg)]'
@@ -1195,14 +1217,20 @@ function DayPeekOverlays({
   const transformOrigin = isNext ? 'right center' : 'left center'
 
   let overlayCenter: number | null = null
+  let visibleHeight: number | null = null
   if (container) {
     const rect = container.getBoundingClientRect()
     const height = container.offsetHeight
-    const viewportHeight =
-      typeof window !== 'undefined' ? window.innerHeight : container.offsetHeight
+    const viewportHeightRaw =
+      typeof window !== 'undefined'
+        ? window.visualViewport?.height ?? window.innerHeight
+        : container.offsetHeight
+    const viewportHeight = Number.isFinite(viewportHeightRaw)
+      ? viewportHeightRaw
+      : container.offsetHeight
     const visibleStart = Math.max(0, -rect.top)
     const visibleEnd = Math.min(height, viewportHeight - rect.top)
-    const visibleHeight = Math.max(0, visibleEnd - visibleStart)
+    visibleHeight = Math.max(0, visibleEnd - visibleStart)
     if (visibleHeight > 0) {
       overlayCenter = visibleStart + visibleHeight / 2
     } else {
@@ -1210,10 +1238,36 @@ function DayPeekOverlays({
     }
   }
 
+  const fallbackContainerHeight =
+    container?.offsetHeight ?? (previewContainerHeight > 0 ? previewContainerHeight : null)
+  const anchorProgressRaw =
+    scrollProgress !== null
+      ? scrollProgress
+      : overlayCenter !== null && fallbackContainerHeight
+        ? overlayCenter / fallbackContainerHeight
+        : 0.5
+  const anchorProgress = Math.min(Math.max(anchorProgressRaw, 0), 1)
+  const overlayAnchor =
+    fallbackContainerHeight !== null
+      ? fallbackContainerHeight * anchorProgress
+      : overlayCenter ?? 0
   const overlayStyle: CSSProperties =
-    overlayCenter !== null
-      ? { top: overlayCenter, transform: 'translateY(-50%)' }
+    fallbackContainerHeight !== null
+      ? { top: overlayAnchor, transform: 'translateY(-50%)' }
       : { top: '50%', transform: 'translateY(-50%)' }
+
+  const viewportHeight =
+    visibleHeight && visibleHeight > 0
+      ? visibleHeight
+      : fallbackContainerHeight ?? previewContainerHeight
+  const safeViewportHeight = viewportHeight && viewportHeight > 0 ? viewportHeight : previewContainerHeight
+  const previewAnchorOffset = previewContainerHeight * anchorProgress
+  const halfViewport = safeViewportHeight / 2
+  const translateYRaw = halfViewport - previewAnchorOffset
+  const minTranslate = Math.min(0, safeViewportHeight - previewContainerHeight)
+  const maxTranslate = 0
+  const previewTranslateY = Math.min(Math.max(translateYRaw, minTranslate), maxTranslate)
+  const clampedPreviewHeight = safeViewportHeight > 0 ? safeViewportHeight : undefined
 
   return (
     <div
@@ -1232,7 +1286,7 @@ function DayPeekOverlays({
           style={{
             width: offset,
             opacity,
-            transform: `translateX(${isNext ? translate : -translate}%) scale(${scale})`,
+            transform: `translateX(${isNext ? translate : -translate}%)`,
             transformOrigin,
             boxShadow: `0 28px 58px rgba(3, 3, 6, ${shadowOpacity})`,
           }}
@@ -1248,13 +1302,16 @@ function DayPeekOverlays({
               {keyLabel}
             </span>
           </div>
-          <div className="overflow-hidden rounded-[var(--radius-lg)] border border-white/10 bg-black/40">
+          <div
+            className="overflow-hidden rounded-[var(--radius-lg)] border border-white/10 bg-black/40"
+            style={{ height: clampedPreviewHeight }}
+          >
             {resolvedPreviewModel ? (
               <div
                 className="pointer-events-none"
                 style={{
-                  transform: 'scale(0.94)',
-                  transformOrigin,
+                  height: previewContainerHeight,
+                  transform: `translateY(${previewTranslateY}px)`,
                 }}
               >
                 {renderPreview(resolvedPreviewModel, { disableInteractions: true })}
@@ -1632,6 +1689,7 @@ export default function SchedulePage() {
   } | null>(null)
   const pinchActiveRef = useRef(false)
   const hasLoadedHabitCompletionState = useRef(false)
+  const lastTimelineChromeHeightRef = useRef(0)
 
   useEffect(() => {
     if (!habitCompletionStorageKey) {
@@ -3274,6 +3332,35 @@ export default function SchedulePage() {
     ]
   )
 
+  const baseTimelineHeight = useMemo(
+    () =>
+      computeDayTimelineHeightPx(
+        dayTimelineModel.startHour,
+        dayTimelineModel.pxPerMin
+      ),
+    [dayTimelineModel.startHour, dayTimelineModel.pxPerMin]
+  )
+
+  const measuredTimelineContainerHeight =
+    dayTimelineContainerRef.current?.offsetHeight ?? null
+
+  const timelineChromeHeight = useMemo(() => {
+    if (
+      measuredTimelineContainerHeight !== null &&
+      Number.isFinite(measuredTimelineContainerHeight)
+    ) {
+      const chrome = Math.max(
+        0,
+        measuredTimelineContainerHeight - baseTimelineHeight
+      )
+      if (!Number.isNaN(chrome)) {
+        lastTimelineChromeHeightRef.current = chrome
+        return chrome
+      }
+    }
+    return lastTimelineChromeHeightRef.current
+  }, [measuredTimelineContainerHeight, baseTimelineHeight])
+
   const renderDayTimeline = useCallback(
     (model: DayTimelineModel, options?: DayTimelineRenderOptions) => {
       const {
@@ -4123,10 +4210,13 @@ export default function SchedulePage() {
                       nextLabel={nextDayLabel}
                       previousKey={previousDayKey}
                       nextKey={nextDayKey}
-                      containerRef={swipeContainerRef}
+                      containerRef={dayTimelineContainerRef}
                       previousModel={peekModels.previous}
                       nextModel={peekModels.next}
                       renderPreview={renderDayTimeline}
+                      scrollProgress={swipeScrollProgressRef.current}
+                      baseTimelineHeight={baseTimelineHeight}
+                      timelineChromeHeight={timelineChromeHeight}
                     />
                   </div>
                 ) : skipNextDayAnimation ? (
