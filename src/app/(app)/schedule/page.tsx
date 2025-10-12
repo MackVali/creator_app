@@ -80,7 +80,6 @@ type PeekState = {
 type HabitCompletionStatus = 'scheduled' | 'completed'
 
 const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
-const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
@@ -2558,185 +2557,6 @@ export default function SchedulePage() {
     },
     [getHabitCompletionStatus, updateHabitCompletionStatus]
   )
-
-  const renderHabitCompletionControl = useCallback(
-    ({
-      dateKey,
-      habitId,
-      status,
-      disabled,
-      availableHeight,
-    }: {
-      dateKey: string
-      habitId: string
-      status: HabitCompletionStatus
-      disabled?: boolean
-      availableHeight?: number
-    }) => {
-      const isCompleted = status === 'completed'
-      const safeAvailableHeight = Math.max(availableHeight ?? 0, 0)
-      const visualHeight = safeAvailableHeight + HABIT_CARD_VERTICAL_PADDING_PX
-      const controlSize = Math.min(24, Math.max(6, visualHeight * 0.3))
-      const iconPadding = Math.max(1, Math.min(controlSize * 0.2, 4))
-      const strokeWidth = Math.max(1, Math.min(1.6, controlSize / 10))
-      return (
-        <motion.button
-          type="button"
-          role="checkbox"
-          aria-checked={isCompleted}
-          aria-label="Toggle habit completion"
-          title="Toggle habit completion"
-          disabled={disabled}
-          className="relative flex aspect-square items-center justify-center rounded-none border transition-[background,border-color,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
-          style={{
-            width: controlSize,
-            height: controlSize,
-            minWidth: controlSize,
-            minHeight: controlSize,
-          }}
-          initial={false}
-          animate={{
-            backgroundColor: isCompleted
-              ? 'rgba(16,185,129,0.22)'
-              : 'rgba(12,12,16,0.58)',
-            borderColor: isCompleted
-              ? 'rgba(52,211,153,0.65)'
-              : 'rgba(255,255,255,0.35)',
-          }}
-          transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
-          onClick={event => {
-            event.stopPropagation()
-            if (disabled) return
-            toggleHabitCompletionStatus(dateKey, habitId)
-          }}
-        >
-          <motion.svg
-            className="pointer-events-none relative h-full w-full"
-            viewBox="0 0 20 20"
-            fill="none"
-            initial={false}
-            style={{ padding: iconPadding }}
-          >
-            <motion.path
-              d="M5 10.5 L8.5 14 L15 6"
-              stroke="#ffffff"
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              animate={{
-                pathLength: isCompleted ? 1 : 0,
-                opacity: isCompleted ? 1 : 0,
-              }}
-              transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
-            />
-          </motion.svg>
-        </motion.button>
-      )
-    },
-    [toggleHabitCompletionStatus]
-  )
-
-  const renderInstanceActions = useCallback(
-    (
-      instanceId: string,
-      options?: { appearance?: 'light' | 'dark'; className?: string }
-    ) => {
-      const pendingStatus = pendingInstanceStatuses.get(instanceId)
-      const pending = pendingStatus !== undefined
-      const appearance = options?.appearance ?? 'dark'
-      const status = pendingStatus ?? instanceStatusById[instanceId] ?? null
-      const effectiveStatus: ScheduleInstance['status'] = status ?? 'scheduled'
-    const isCompleted = effectiveStatus === 'completed'
-    const canToggle =
-      effectiveStatus === 'completed' || effectiveStatus === 'scheduled'
-    const containerClass =
-      appearance === 'light'
-        ? 'flex items-center gap-2 text-zinc-800/80'
-        : 'flex items-center gap-2 text-white/70'
-    const baseFocusClass =
-      appearance === 'light'
-        ? 'focus-visible:outline-black/40'
-        : 'focus-visible:outline-white/60'
-    const borderClass = 'border-black'
-    const xColor = '#ffffff'
-    const baseButtonClass =
-      'relative flex h-6 w-6 items-center justify-center border rounded-none transition-[color,background,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-60'
-
-      return (
-        <div
-          className={[containerClass, options?.className]
-            .filter(Boolean)
-            .join(' ')}
-        onClick={event => {
-          event.stopPropagation()
-        }}
-        title="Toggle project completion"
-      >
-        <motion.button
-          type="button"
-          role="checkbox"
-          aria-checked={isCompleted}
-          aria-label="Toggle project completion"
-          disabled={pending || !canToggle}
-          className={`${baseButtonClass} ${borderClass} ${baseFocusClass}`}
-          initial={false}
-          onClick={event => {
-            event.stopPropagation()
-            if (pending || !canToggle) return
-            const nextStatus = isCompleted ? 'scheduled' : 'completed'
-            void handleToggleInstanceCompletion(instanceId, nextStatus)
-          }}
-        >
-          <motion.span
-            className="pointer-events-none absolute inset-0"
-            initial={false}
-            animate={{
-              backgroundColor: isCompleted ? '#000000' : 'transparent',
-            }}
-            transition={{ duration: 0.12, ease: [0.4, 0, 0.2, 1] }}
-          />
-          <motion.svg
-            className="pointer-events-none relative h-3.5 w-3.5"
-            viewBox="0 0 16 16"
-            fill="none"
-            initial={false}
-          >
-            <motion.path
-              d="M3.5 3.5 L12.5 12.5"
-              stroke={xColor}
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              animate={{
-                pathLength: isCompleted ? 1 : 0,
-                opacity: isCompleted ? 1 : 0,
-              }}
-              transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
-            />
-            <motion.path
-              d="M12.5 3.5 L3.5 12.5"
-              stroke={xColor}
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              animate={{
-                pathLength: isCompleted ? 1 : 0,
-                opacity: isCompleted ? 1 : 0,
-              }}
-              transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
-            />
-          </motion.svg>
-        </motion.button>
-        </div>
-      )
-    },
-    [
-      pendingInstanceStatuses,
-      instanceStatusById,
-      handleToggleInstanceCompletion,
-    ]
-  )
-
   function navigate(next: ScheduleView) {
     if (navLock.current) return
     navLock.current = true
@@ -3529,8 +3349,26 @@ export default function SchedulePage() {
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}`}
+                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}${
+                    options?.disableInteractions ? '' : ' cursor-pointer'
+                  }`}
+                  role="button"
+                  tabIndex={options?.disableInteractions ? -1 : 0}
+                  aria-pressed={isHabitCompleted}
+                  aria-disabled={options?.disableInteractions ?? false}
                   style={cardStyle}
+                  onClick={() => {
+                    if (options?.disableInteractions) return
+                    toggleHabitCompletionStatus(dayViewDateKey, placement.habitId)
+                  }}
+                  onKeyDown={event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') {
+                      return
+                    }
+                    event.preventDefault()
+                    if (options?.disableInteractions) return
+                    toggleHabitCompletionStatus(dayViewDateKey, placement.habitId)
+                  }}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
@@ -3538,13 +3376,6 @@ export default function SchedulePage() {
                   <span className="truncate text-sm font-medium leading-snug">
                     {placement.habitName}
                   </span>
-                  {renderHabitCompletionControl({
-                    dateKey: dayViewDateKey,
-                    habitId: placement.habitId,
-                    status: habitStatus,
-                    disabled: options?.disableInteractions,
-                    availableHeight: height,
-                  })}
                 </motion.div>
               )
             })}
@@ -3649,8 +3480,12 @@ export default function SchedulePage() {
                 : 0
               const canExpand = displayCards.length > 0
               const pendingStatus = pendingInstanceStatuses.get(instance.id)
+              const isPending = pendingStatus !== undefined
               const effectiveStatus =
                 pendingStatus ?? instance.status ?? 'scheduled'
+              const canToggle =
+                effectiveStatus === 'completed' ||
+                effectiveStatus === 'scheduled'
               const isCompleted = effectiveStatus === 'completed'
               const projectBackground = isCompleted
                 ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
@@ -3686,13 +3521,46 @@ export default function SchedulePage() {
                       <motion.div
                         key="project"
                         aria-label={`Project ${project.name}`}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={canExpand ? isExpanded : undefined}
+                        aria-pressed={!canExpand ? isCompleted : undefined}
+                        aria-disabled={!canExpand && (!canToggle || isPending)}
                         onClick={() => {
-                          if (!canExpand) return
-                          setProjectExpansion(projectId)
+                          if (canExpand) {
+                            setProjectExpansion(projectId)
+                            return
+                          }
+                          if (!canToggle || isPending) return
+                          const nextStatus = isCompleted
+                            ? 'scheduled'
+                            : 'completed'
+                          void handleToggleInstanceCompletion(
+                            instance.id,
+                            nextStatus
+                          )
+                        }}
+                        onKeyDown={event => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return
+                          event.preventDefault()
+                          if (canExpand) {
+                            setProjectExpansion(projectId)
+                            return
+                          }
+                          if (!canToggle || isPending) return
+                          const nextStatus = isCompleted
+                            ? 'scheduled'
+                            : 'completed'
+                          void handleToggleInstanceCompletion(
+                            instance.id,
+                            nextStatus
+                          )
                         }}
                         className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
-                          canExpand ? ' cursor-pointer' : ''
-                        }`}
+                          canExpand || (canToggle && !isPending)
+                            ? ' cursor-pointer'
+                            : ''
+                        }${isPending ? ' opacity-60' : ''}`}
                         style={projectCardStyle}
                         initial={
                           prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -3738,9 +3606,6 @@ export default function SchedulePage() {
                               {project.skill_icon}
                             </span>
                           )}
-                          {renderInstanceActions(instance.id, {
-                            className: 'flex-shrink-0',
-                          })}
                           <FlameEmber
                             level={
                               (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
@@ -3878,6 +3743,23 @@ export default function SchedulePage() {
                             )
                               ? (resolvedEnergyUpper as FlameLevel)
                               : 'NO'
+                            const pendingStatus =
+                              kind === 'scheduled' && instanceId
+                                ? pendingInstanceStatuses.get(instanceId)
+                                : undefined
+                            const isPending = pendingStatus !== undefined
+                            const status =
+                              kind === 'scheduled' && instanceId
+                                ? pendingStatus ??
+                                  instanceStatusById[instanceId] ??
+                                  null
+                                : null
+                            const canToggle =
+                              kind === 'scheduled' &&
+                              !!instanceId &&
+                              (status === 'completed' ||
+                                status === 'scheduled')
+                            const isCompleted = status === 'completed'
                             return (
                               <motion.div
                                 key={key}
@@ -3885,11 +3767,56 @@ export default function SchedulePage() {
                                   kind === 'scheduled' && instanceId ? instanceId : undefined
                                 }
                                 aria-label={`Task ${task.name}`}
-                                className={cardClasses}
-                                style={tStyle}
-                                onClick={() =>
-                                  setProjectExpansion(projectId, false)
+                                role={
+                                  kind === 'scheduled' && instanceId
+                                    ? 'button'
+                                    : undefined
                                 }
+                                tabIndex={
+                                  kind === 'scheduled' && instanceId && canToggle ? 0 : -1
+                                }
+                                aria-pressed={
+                                  kind === 'scheduled' && instanceId
+                                    ? isCompleted
+                                    : undefined
+                                }
+                                aria-disabled={
+                                  kind === 'scheduled' && instanceId
+                                    ? !canToggle || isPending
+                                    : undefined
+                                }
+                                className={`${cardClasses}${
+                                  kind === 'scheduled' && instanceId && canToggle && !isPending
+                                    ? ' cursor-pointer'
+                                    : ''
+                                }${isPending ? ' opacity-60' : ''}`}
+                                style={tStyle}
+                                onClick={() => {
+                                  if (kind !== 'scheduled' || !instanceId) return
+                                  if (!canToggle || isPending) return
+                                  const nextStatus = isCompleted
+                                    ? 'scheduled'
+                                    : 'completed'
+                                  void handleToggleInstanceCompletion(
+                                    instanceId,
+                                    nextStatus
+                                  )
+                                }}
+                                onKeyDown={event => {
+                                  if (event.key !== 'Enter' && event.key !== ' ') {
+                                    return
+                                  }
+                                  if (kind !== 'scheduled' || !instanceId) return
+                                  event.preventDefault()
+                                  if (!canToggle || isPending) return
+                                  const nextStatus = isCompleted
+                                    ? 'scheduled'
+                                    : 'completed'
+                                  void handleToggleInstanceCompletion(
+                                    instanceId,
+                                    nextStatus
+                                  )
+                                }}
                                 initial={
                                   prefersReducedMotion
                                     ? false
@@ -3920,13 +3847,6 @@ export default function SchedulePage() {
                                       }
                                 }
                               >
-                                {kind === 'scheduled' && instanceId
-                                  ? renderInstanceActions(instanceId, {
-                                      appearance: 'light',
-                                      className:
-                                        'absolute right-3 top-2',
-                                    })
-                                  : null}
                                 <div className="flex flex-col">
                                   <span className="truncate text-sm font-medium">
                                     {task.name}
@@ -3985,13 +3905,44 @@ export default function SchedulePage() {
                 outlineOffset: '-1px',
               }
               const progress = (task as { progress?: number }).progress ?? 0
+              const pendingStatus = pendingInstanceStatuses.get(instance.id)
+              const isPending = pendingStatus !== undefined
+              const status = pendingStatus ?? instance.status ?? 'scheduled'
+              const canToggle =
+                status === 'completed' || status === 'scheduled'
+              const isCompleted = status === 'completed'
+              const standaloneClassName = [
+                'absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]',
+                canToggle && !isPending ? 'cursor-pointer' : '',
+                isPending ? 'opacity-60' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')
               return (
                 <motion.div
                   key={instance.id}
                   data-schedule-instance-id={instance.id}
                   aria-label={`Task ${task.name}`}
-                  className="absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]"
+                  role="button"
+                  tabIndex={canToggle ? 0 : -1}
+                  aria-pressed={isCompleted}
+                  aria-disabled={!canToggle || isPending}
+                  className={standaloneClassName}
                   style={style}
+                  onClick={() => {
+                    if (!canToggle || isPending) return
+                    const nextStatus = isCompleted ? 'scheduled' : 'completed'
+                    void handleToggleInstanceCompletion(instance.id, nextStatus)
+                  }}
+                  onKeyDown={event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') {
+                      return
+                    }
+                    event.preventDefault()
+                    if (!canToggle || isPending) return
+                    const nextStatus = isCompleted ? 'scheduled' : 'completed'
+                    void handleToggleInstanceCompletion(instance.id, nextStatus)
+                  }}
                   initial={
                     prefersReducedMotion ? false : { opacity: 0, y: 4 }
                   }
@@ -4002,10 +3953,6 @@ export default function SchedulePage() {
                     prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
                   }
                 >
-                  {renderInstanceActions(instance.id, {
-                    appearance: 'light',
-                    className: 'absolute right-3 top-2',
-                  })}
                   <div className="flex flex-col">
                     <span className="truncate text-sm font-medium">
                       {task.name}
@@ -4043,10 +3990,11 @@ export default function SchedulePage() {
         hasInteractedWithProjects,
         setProjectExpansion,
         expandedProjects,
-        renderInstanceActions,
         pendingInstanceStatuses,
-        renderHabitCompletionControl,
         getHabitCompletionStatus,
+        handleToggleInstanceCompletion,
+        instanceStatusById,
+        toggleHabitCompletionStatus,
       ]
     )
 
