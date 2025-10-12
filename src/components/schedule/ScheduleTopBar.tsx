@@ -59,18 +59,17 @@ export function ScheduleTopBar({
     { label: "Today", icon: Calendar, onClick: onToday },
   ];
 
-  const stickySafeAreaStyles: CSSProperties = {
-    top: "env(safe-area-inset-top, 0px)",
-    paddingBlockStart: "calc(0.75rem + env(safe-area-inset-top, 0px))",
-    paddingBlockEnd: "0.75rem",
-    paddingInlineStart: "calc(1rem + env(safe-area-inset-left, 0px))",
-    paddingInlineEnd: "calc(1rem + env(safe-area-inset-right, 0px))",
+  const safeAreaPadding: CSSProperties = {
+    paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))",
+    paddingBottom: "0.75rem",
+    paddingLeft: "calc(1rem + env(safe-area-inset-left, 0px))",
+    paddingRight: "calc(1rem + env(safe-area-inset-right, 0px))",
   };
 
   return (
     <header
-      className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur"
-      style={stickySafeAreaStyles}
+      className="fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur"
+      style={safeAreaPadding}
     >
       <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
         <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />

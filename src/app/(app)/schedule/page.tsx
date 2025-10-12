@@ -3895,14 +3895,14 @@ export default function SchedulePage() {
   return (
     <>
       <ProtectedRoute>
-        <div className="space-y-4 text-zinc-100">
-          <ScheduleTopBar
-            year={year}
-            onBack={handleBack}
-            onToday={handleToday}
-            onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
-            onOpenSearch={() => setIsSearchOpen(true)}
-          />
+        <ScheduleTopBar
+          year={year}
+          onBack={handleBack}
+          onToday={handleToday}
+          onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
+          onOpenSearch={() => setIsSearchOpen(true)}
+        />
+        <div className="text-zinc-100 space-y-4 pt-[calc(4rem + env(safe-area-inset-top, 0px))]">
           <div
             className="relative bg-[var(--surface)]"
             ref={swipeContainerRef}
