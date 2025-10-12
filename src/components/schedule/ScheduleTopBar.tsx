@@ -41,6 +41,9 @@ export function ScheduleTopBar({
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
+  const iconButtonClass =
+    "inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-[var(--text-primary)] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/5";
+
   const actions = [
     { label: "Add Task", icon: CheckSquare, onClick: () => router.push("/tasks/new") },
     { label: "Quick Project", icon: FolderPlus, onClick: () => router.push("/projects/new") },
@@ -57,11 +60,14 @@ export function ScheduleTopBar({
   ];
 
   return (
-    <header className="flex items-center justify-between px-4 h-12 bg-[var(--surface-elevated)] border-b border-[var(--hairline)]">
-      <button onClick={onBack} disabled={!canGoBack} className="p-2 disabled:opacity-30">
+    <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur">
+      <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
         <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
       </button>
-      <button className="text-[16px] font-semibold text-[var(--text-primary)]">
+      <button
+        type="button"
+        className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--text-primary)] bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)]"
+      >
         {year}
       </button>
       <div className="flex items-center gap-2">
@@ -69,7 +75,7 @@ export function ScheduleTopBar({
           type="button"
           onClick={() => onOpenJumpToDate?.()}
           aria-label="Open jump to date"
-          className="p-2"
+          className={iconButtonClass}
         >
           <Calendar className="h-5 w-5 text-[var(--accent-red)]" />
         </button>
@@ -77,13 +83,13 @@ export function ScheduleTopBar({
           type="button"
           onClick={() => onOpenSearch?.()}
           aria-label="Search schedule"
-          className="p-2"
+          className={iconButtonClass}
         >
           <Search className="h-5 w-5 text-[var(--accent-red)]" />
         </button>
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
-            <button className="p-2">
+            <button type="button" aria-label="Open schedule quick actions" className={iconButtonClass}>
               <Plus className="h-5 w-5 text-[var(--accent-red)]" />
             </button>
           </SheetTrigger>
