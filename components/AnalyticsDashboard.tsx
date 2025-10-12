@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -327,133 +327,296 @@ export default function AnalyticsDashboard() {
   const activity = activityData[range];
   const windows = windowsData[range];
 
+  const longestStreak = 10;
+  const currentStreak = 3;
+  const bestSkill =
+    skills.length > 0
+      ? skills.reduce((prev, curr) =>
+          curr.progress > prev.progress ? curr : prev
+        )
+      : null;
+  const leadProject =
+    projects.length > 0
+      ? projects.reduce((prev, curr) =>
+          curr.progress > prev.progress ? curr : prev
+        )
+      : null;
+  const strongestKpi =
+    kpis.length > 0
+      ? kpis.reduce((prev, curr) =>
+          Math.abs(curr.delta) > Math.abs(prev.delta) ? curr : prev
+        )
+      : null;
+  const dominantEnergy =
+    windows.energy.length > 0
+      ? windows.energy.reduce((prev, curr) =>
+          curr.value > prev.value ? curr : prev
+        )
+      : null;
+
+  const focusInsights = [
+    {
+      id: "skill",
+      title: "Momentum skill",
+      metric: bestSkill?.name ?? "—",
+      helper:
+        bestSkill != null
+          ? `${bestSkill.progress}% toward next level`
+          : "Track progress as you add skills",
+    },
+    {
+      id: "project",
+      title: "Lead project",
+      metric: leadProject?.title ?? "—",
+      helper:
+        leadProject != null
+          ? `${leadProject.tasksDone}/${leadProject.tasksTotal} tasks complete`
+          : "Kick off a project to see insights",
+    },
+    {
+      id: "energy",
+      title: "Dominant energy",
+      metric: dominantEnergy?.label ?? "—",
+      helper:
+        dominantEnergy != null
+          ? `${dominantEnergy.value}% of focus windows`
+          : "Log windows to unlock energy data",
+    },
+    {
+      id: "growth",
+      title: "Biggest delta",
+      metric: strongestKpi?.label ?? "—",
+      helper:
+        strongestKpi != null
+          ? `${formatDelta(strongestKpi.delta)} vs last period`
+          : "No KPIs yet",
+    },
+  ];
+
   return (
-    <div className="bg-[#111315] text-[#E6E6E6] min-h-screen p-4 space-y-8">
-      <Header dateRange={dateRange} onRangeChange={setDateRange} />
+    <div className="relative min-h-screen overflow-hidden bg-[#07080A] text-[#E6E6EB]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(126,107,255,0.35),transparent_65%)] blur-3xl"
+      />
+      <div className="relative mx-auto max-w-7xl space-y-10 px-4 pb-16 pt-10 sm:px-6 lg:px-8">
+        <Header dateRange={dateRange} onRangeChange={setDateRange} />
 
-      <section aria-label="Key performance indicators">
-        {loading ? (
-          <Skeleton className="h-24" />
-        ) : (
-          <div className="flex space-x-4 overflow-x-auto">
-            {kpis.map((k) => (
-              <KpiCard key={k.id} kpi={k} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section aria-label="Skills analytics" className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Skills</h2>
-          <Link
-            href="#"
-            className="text-sm text-[#9966CC] focus:outline-none focus:ring-2 focus:ring-[#9966CC] h-11 inline-flex items-center"
+        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+          <SectionCard
+            title="Performance snapshot"
+            description="Key metrics from your current focus window."
           >
-            View All Skills
-          </Link>
-        </div>
-        <div className="flex justify-end">
-          <button
-            className="h-11 px-4 bg-[#1C1F22] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-            onClick={() =>
-              setSkillsView(skillsView === "grid" ? "list" : "grid")
-            }
-            aria-label="Toggle skill view"
-          >
-            {skillsView === "grid" ? "List" : "Grid"}
-          </button>
-        </div>
-        {loading ? (
-          <Skeleton className="h-40" />
-        ) : (
-          <div
-            className={classNames(
-              "gap-4 overflow-x-auto",
-              skillsView === "grid"
-                ? "grid grid-cols-2"
-                : "flex space-x-4"
+            {loading ? (
+              <Skeleton className="h-32" />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {kpis.map((k) => (
+                  <KpiCard key={k.id} kpi={k} />
+                ))}
+              </div>
             )}
+          </SectionCard>
+
+          <SectionCard
+            title="Focus insights"
+            description="Quick cues for where to lean in next."
           >
-            {skills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} view={skillsView} />
-            ))}
-          </div>
-        )}
-      </section>
+            {loading ? (
+              <Skeleton className="h-48" />
+            ) : (
+              <ul className="space-y-4">
+                {focusInsights.map((insight) => (
+                  <li
+                    key={insight.id}
+                    className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
+                  >
+                    <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                      {insight.title}
+                    </span>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {insight.metric}
+                    </div>
+                    <p className="mt-1 text-sm text-[#99A4BD]">{insight.helper}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionCard>
+        </div>
 
-      <section aria-label="Tasks and projects" className="space-y-4">
-        {loading ? (
-          <Skeleton className="h-40" />
-        ) : (
-          <>
-            <BarChart data={[5, 3, 4, 6, 2, 4, 5]} />
-            <div className="grid gap-4">
-              {projects.map((p) => (
-                <ProjectCard key={p.id} project={p} />
-              ))}
-            </div>
-            <Link
-              href="/projects"
-              className="text-sm text-[#9966CC] focus:outline-none focus:ring-2 focus:ring-[#9966CC] h-11 inline-flex items-center"
-            >
-              Go to Projects
-            </Link>
-          </>
-        )}
-      </section>
+        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+          <SectionCard
+            title="Skill mastery"
+            description="Track progress toward your next level-up across key disciplines."
+            action={
+              <div className="flex items-center gap-3">
+                <button
+                  className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#7E8AA6]"
+                  type="button"
+                  onClick={() => setSkillsView(skillsView === "grid" ? "list" : "grid")}
+                >
+                  {skillsView === "grid" ? "List view" : "Grid view"}
+                </button>
+              </div>
+            }
+          >
+            {loading ? (
+              <Skeleton className="h-56" />
+            ) : (
+              <div className="space-y-6">
+                <div
+                  className={classNames(
+                    "gap-4",
+                    skillsView === "grid"
+                      ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+                      : "grid gap-4"
+                  )}
+                >
+                  {skills.map((skill) => (
+                    <SkillCard key={skill.id} skill={skill} view={skillsView} />
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <Link
+                    href="#"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+                  >
+                    View all skills<span aria-hidden="true">→</span>
+                  </Link>
+                </div>
+              </div>
+            )}
+          </SectionCard>
 
-      <section aria-label="Monuments" className="space-y-4">
-        {monuments.length === 0 ? (
-          <EmptyState title="No monuments yet" cta="Add Monument" />
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {monuments.map((m) => (
-              <MonumentCard key={m.id} monument={m} />
-            ))}
-          </div>
-        )}
-      </section>
+          <SectionCard
+            title="Habits & streaks"
+            description="Consistency builds momentum across your routines."
+          >
+            {loading ? (
+              <Skeleton className="h-56" />
+            ) : (
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4">
+                  <StreakCalendar
+                    days={28}
+                    completed={[1, 2, 5, 6, 7, 9, 10]}
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB]">
+                    <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                      Longest streak
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold text-white">
+                      {longestStreak} days
+                    </div>
+                    <p className="mt-1">Sustain this pace to unlock a new badge.</p>
+                  </div>
+                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB]">
+                    <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                      Current streak
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold text-white">
+                      {currentStreak} days
+                    </div>
+                    <p className="mt-1">Log today’s habit to keep the momentum going.</p>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Link
+                    href="#"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+                  >
+                    Review rituals<span aria-hidden="true">→</span>
+                  </Link>
+                </div>
+              </div>
+            )}
+          </SectionCard>
+        </div>
 
-      <section aria-label="Windows and energy" className="space-y-4">
-        {loading ? (
-          <Skeleton className="h-40" />
-        ) : windows.heatmap.length === 0 ? (
-          <EmptyState title="No windows yet" cta="Set up windows" />
-        ) : (
-          <>
-            <Heatmap data={windows.heatmap} />
-            <DonutChart data={windows.energy} />
-          </>
-        )}
-      </section>
+        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+          <SectionCard
+            title="Project delivery"
+            description="Ship work by keeping throughput steady across weeks."
+          >
+            {loading ? (
+              <Skeleton className="h-56" />
+            ) : (
+              <div className="space-y-6">
+                <BarChart data={[5, 3, 4, 6, 2, 4, 5]} />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {projects.map((p) => (
+                    <ProjectCard key={p.id} project={p} />
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <Link
+                    href="/projects"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+                  >
+                    Open projects<span aria-hidden="true">→</span>
+                  </Link>
+                </div>
+              </div>
+            )}
+          </SectionCard>
 
-      <section aria-label="Habits and streaks" className="space-y-4">
-        {loading ? (
-          <Skeleton className="h-40" />
-        ) : (
-          <>
-            <StreakCalendar days={28} completed={[1, 2, 5, 6, 7, 9, 10]} />
-            <div className="flex space-x-4">
-              <div>Longest streak: 10</div>
-              <div>Current streak: 3</div>
-            </div>
-          </>
-        )}
-      </section>
+          <SectionCard
+            title="Monument progress"
+            description="Big-picture milestones that anchor your goals."
+          >
+            {loading ? (
+              <Skeleton className="h-56" />
+            ) : monuments.length === 0 ? (
+              <EmptyState title="No monuments yet" cta="Add Monument" />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {monuments.map((m) => (
+                  <MonumentCard key={m.id} monument={m} />
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
 
-      <section aria-label="Activity feed" className="space-y-4">
-        {loading ? (
-          <Skeleton className="h-40" />
-        ) : (
-          <>
-            <ActivityTimeline events={activity} />
-            <button className="h-11 px-4 bg-[#1C1F22] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]">
-              Show more
-            </button>
-          </>
-        )}
-      </section>
+        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+          <SectionCard
+            title="Windows & energy"
+            description="Understand how your focus windows convert into energy states."
+          >
+            {loading ? (
+              <Skeleton className="h-56" />
+            ) : windows.heatmap.length === 0 ? (
+              <EmptyState title="No windows yet" cta="Set up windows" />
+            ) : (
+              <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+                <Heatmap data={windows.heatmap} />
+                <DonutChart data={windows.energy} />
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Activity feed"
+            description="Highlights from tasks, projects, and rituals."
+          >
+            {loading ? (
+              <Skeleton className="h-56" />
+            ) : (
+              <>
+                <ActivityTimeline events={activity} />
+                <div className="mt-6 flex justify-end">
+                  <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-4 py-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]">
+                    Show more
+                  </button>
+                </div>
+              </>
+            )}
+          </SectionCard>
+        </div>
+      </div>
     </div>
   );
 }
@@ -467,23 +630,66 @@ function Header({
 }) {
   const router = useRouter();
   return (
-    <header className="flex items-center justify-between">
-      <div className="flex items-center space-x-2">
-        <button
-          onClick={() => router.push("/dashboard")}
-          aria-label="Back to dashboard"
-          className="h-11 w-11 flex items-center justify-center rounded text-[#9966CC] focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-        >
-          <ArrowLeft />
-        </button>
-        <div>
-          <h1 className="text-2xl font-bold">Analytics</h1>
-          <p className="text-sm text-[#A6A6A6]">Track your progress across the app</p>
+    <header className="overflow-hidden rounded-3xl border border-[#1C2330] bg-gradient-to-br from-[#161C2C] via-[#0F131D] to-[#090C12] px-6 py-8 shadow-[0_30px_80px_rgba(7,10,16,0.55)]">
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-6">
+          <div className="flex items-start gap-4 sm:items-center">
+            <button
+              onClick={() => router.push("/dashboard")}
+              aria-label="Back to dashboard"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#262F45] bg-[#0B1018] text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div>
+              <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
+                Insights hub
+              </span>
+              <h1 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">
+                Analytics
+              </h1>
+              <p className="mt-2 max-w-xl text-sm text-[#9DA6BB]">
+                An integrated view of how your skills, projects, and rituals are
+                compounding.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs text-[#8A94AB]">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-3 py-1">
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-full bg-[#6DD3A8]"
+              />
+              Systems nominal
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-3 py-1">
+              Updated {new Intl.DateTimeFormat("en-US", {
+                month: "long",
+                day: "numeric",
+              }).format(new Date())}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-3 py-1">
+              Range: {rangeLabel(dateRange)}
+            </span>
+          </div>
         </div>
+        <DateRangeSelector value={dateRange} onChange={onRangeChange} />
       </div>
-      <DateRangeSelector value={dateRange} onChange={onRangeChange} />
     </header>
   );
+}
+
+function rangeLabel(range: "7d" | "30d" | "90d" | "custom") {
+  switch (range) {
+    case "7d":
+      return "7 days";
+    case "30d":
+      return "30 days";
+    case "90d":
+      return "90 days";
+    default:
+      return "Custom";
+  }
 }
 
 function DateRangeSelector({
@@ -493,41 +699,74 @@ function DateRangeSelector({
   value: "7d" | "30d" | "90d" | "custom";
   onChange: (range: "7d" | "30d" | "90d" | "custom") => void;
 }) {
+  const ranges: { value: "7d" | "30d" | "90d" | "custom"; label: string }[] = [
+    { value: "7d", label: "7 days" },
+    { value: "30d", label: "30 days" },
+    { value: "90d", label: "90 days" },
+    { value: "custom", label: "Custom" },
+  ];
   return (
-    <select
-      aria-label="Select date range"
-      className="bg-[#1C1F22] border border-[#2F343A] rounded px-2 text-sm h-11 focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-      value={value}
-      onChange={(e) =>
-        onChange(e.target.value as "7d" | "30d" | "90d" | "custom")
-      }
-    >
-      <option value="7d">Last 7 Days</option>
-      <option value="30d">Last 30 Days</option>
-      <option value="90d">Last 90 Days</option>
-      <option value="custom">Custom</option>
-    </select>
+    <div className="flex flex-col items-end gap-3 text-right">
+      <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
+        Timeframe
+      </span>
+      <div className="inline-flex items-center gap-1 rounded-full border border-[#273041] bg-[#0C111A] p-1 shadow-[0_12px_30px_rgba(7,9,14,0.45)]">
+        {ranges.map((range) => {
+          const active = value === range.value;
+          return (
+            <button
+              key={range.value}
+              type="button"
+              onClick={() => onChange(range.value)}
+              className={classNames(
+                "min-w-[72px] rounded-full px-3 py-1.5 text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80",
+                active
+                  ? "bg-[#7E6BFF] text-white shadow-[0_12px_30px_rgba(126,107,255,0.45)]"
+                  : "text-[#A1ADC7] hover:text-white"
+              )}
+            >
+              {range.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
 function KpiCard({ kpi }: { kpi: Kpi }) {
   const Icon = kpi.icon;
-  const deltaColor = kpi.delta >= 0 ? "text-[#6DD3A8]" : "text-[#E8C268]";
+  const isPositive = kpi.delta >= 0;
+  const deltaColor = isPositive ? "text-[#6DD3A8]" : "text-[#E87070]";
   return (
-    <button
-      className="h-24 min-w-[160px] p-4 bg-[#1C1F22] rounded shadow text-left focus:outline-none focus:ring-2 focus:ring-[#9966CC]"
-      aria-label={kpi.label}
-      onClick={() => {}}
-    >
-      <div className="flex items-center space-x-2">
-        <Icon className="text-[#9966CC]" />
-        <span className="text-sm text-[#A6A6A6]">{kpi.label}</span>
+    <div className="group relative overflow-hidden rounded-2xl border border-[#1E2432] bg-gradient-to-br from-[#141A26] via-[#101521] to-[#0A0E15] p-5 transition-all hover:-translate-y-1 hover:border-[#7E6BFF]/70 hover:shadow-[0_20px_45px_rgba(8,10,16,0.45)]">
+      <div className="flex items-start justify-between">
+        <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
+          {kpi.label}
+        </span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#7E6BFF]/20 to-transparent text-[#B19CFF]">
+          <Icon className="h-5 w-5" />
+        </span>
       </div>
-      <div className="mt-2 text-2xl font-bold" aria-label={formatNumber(kpi.value)}>
+      <div
+        className="mt-5 text-3xl font-semibold text-white"
+        aria-label={formatNumber(kpi.value)}
+      >
         {formatNumber(kpi.value)}
       </div>
-      <div className={classNames("text-xs mt-1", deltaColor)}>{formatDelta(kpi.delta)}</div>
-    </button>
+      <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#273041] bg-[#0C111A] px-3 py-1 text-xs font-medium text-[#A1ADC7]">
+        <span
+          aria-hidden="true"
+          className={classNames("text-base", deltaColor)}
+        >
+          {isPositive ? "▲" : "▼"}
+        </span>
+        <span className={classNames("font-semibold", deltaColor)}>
+          {formatDelta(kpi.delta)}
+        </span>
+        <span className="text-[#6E7A96]">vs last period</span>
+      </div>
+    </div>
   );
 }
 
@@ -538,40 +777,92 @@ function SkillCard({
   skill: Skill;
   view: "grid" | "list";
 }) {
-  const radius = 18;
+  const size = view === "grid" ? 88 : 68;
+  const strokeWidth = 6;
+  const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (skill.progress / 100) * circumference;
   return (
     <div
       className={classNames(
-        "bg-[#1C1F22] p-4 rounded",
-        view === "grid" ? "flex flex-col items-center" : "flex items-center space-x-4"
+        "group rounded-2xl border border-[#1E2432] bg-[#0F141D]/90 p-5 transition hover:border-[#7E6BFF]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
+        view === "grid"
+          ? "flex flex-col items-center gap-4 text-center"
+          : "flex items-center justify-between gap-4"
       )}
+      aria-label={`${skill.name} progress`}
     >
-      <svg width="40" height="40" aria-label={`${skill.name} progress`}>
-        <circle
-          cx="20"
-          cy="20"
-          r={radius}
-          stroke="#2F343A"
-          strokeWidth="4"
-          fill="none"
-        />
-        <circle
-          cx="20"
-          cy="20"
-          r={radius}
-          stroke="#9966CC"
-          strokeWidth="4"
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className={classNames(view === "grid" ? "mt-2 text-center" : "")}> 
-        <div className="font-semibold">{skill.name}</div>
-        <div className="text-sm text-[#A6A6A6]">Lvl {skill.level}</div>
+      <div
+        className={classNames(
+          "relative flex items-center justify-center rounded-full bg-[#0B1018]",
+          view === "grid" ? "h-20 w-20" : "h-16 w-16"
+        )}
+      >
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          aria-hidden="true"
+          className="h-full w-full"
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="#1F2736"
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="#7E6BFF"
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 0.6s ease" }}
+          />
+        </svg>
+        <span className="absolute text-xs font-semibold text-white">
+          {skill.progress}%
+        </span>
+      </div>
+      <div
+        className={classNames(
+          "flex-1",
+          view === "grid" ? "w-full max-w-[180px]" : "w-full"
+        )}
+      >
+        <div
+          className={classNames(
+            "text-sm font-semibold text-white",
+            view === "grid" ? "text-center" : "text-left"
+          )}
+        >
+          {skill.name}
+        </div>
+        <div
+          className={classNames(
+            "mt-1 text-xs uppercase tracking-[0.2em] text-[#6E7A96]",
+            view === "grid" ? "text-center" : "text-left"
+          )}
+        >
+          Level {skill.level}
+        </div>
+        <div
+          className={classNames(
+            "mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#1F2736]",
+            view === "grid" ? "mx-auto" : ""
+          )}
+        >
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-[#7E6BFF] via-[#B19CFF] to-[#6DD3A8]"
+            style={{ width: `${skill.progress}%` }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -579,18 +870,34 @@ function SkillCard({
 
 function BarChart({ data }: { data: number[] }) {
   const max = Math.max(...data);
+  const total = data.reduce((sum, value) => sum + value, 0);
+  const average = data.length === 0 ? 0 : Math.round(total / data.length);
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   return (
     <div
-      className="flex items-end h-40 space-x-2 bg-[#1C1F22] p-4 rounded"
+      className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]"
       aria-label="Tasks completed per period"
     >
-      {data.map((v, i) => (
-        <div
-          key={i}
-          className="w-6 bg-[#9966CC]"
-          style={{ height: `${(v / max) * 100}%` }}
-        />
-      ))}
+      <div className="grid h-44 grid-cols-7 items-end gap-3">
+        {data.map((value, index) => {
+          const height = max === 0 ? 0 : (value / max) * 100;
+          return (
+            <div key={index} className="flex h-full flex-col justify-end">
+              <div
+                className="rounded-t-lg bg-gradient-to-t from-[#7E6BFF]/30 via-[#7E6BFF]/70 to-[#B19CFF] shadow-[0_12px_24px_rgba(126,107,255,0.35)]"
+                style={{ height: `${height}%` }}
+              />
+            <span className="mt-3 text-xs font-medium uppercase tracking-[0.2em] text-[#6E7A96]">
+              {labels[index] ?? `D${index + 1}`}
+            </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex items-center justify-between text-xs text-[#8A94AB]">
+        <span>Weekly throughput</span>
+        <span>Avg {average}/day</span>
+      </div>
     </div>
   );
 }
@@ -598,16 +905,23 @@ function BarChart({ data }: { data: number[] }) {
 function ProjectCard({ project }: { project: Project }) {
   return (
     <div
-      className="bg-[#1C1F22] p-4 rounded space-y-2"
+      className="rounded-2xl border border-[#1E2432] bg-[#0B0F17]/80 p-4 shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
       aria-label={`${project.title} progress`}
     >
-      <div className="font-semibold">{project.title}</div>
-      <div className="text-sm text-[#A6A6A6]">
-        {project.tasksDone}/{project.tasksTotal} tasks
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-sm font-semibold text-white">{project.title}</div>
+          <div className="mt-1 text-xs text-[#6E7A96]">
+            {project.tasksDone}/{project.tasksTotal} tasks complete
+          </div>
+        </div>
+        <span className="text-sm font-semibold text-[#B19CFF]">
+          {project.progress}%
+        </span>
       </div>
-      <div className="w-full bg-[#2F343A] h-2 rounded">
+      <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#1F2736]">
         <div
-          className="bg-[#9966CC] h-2 rounded"
+          className="h-full rounded-full bg-gradient-to-r from-[#7E6BFF] to-[#6DD3A8]"
           style={{ width: `${project.progress}%` }}
         />
       </div>
@@ -616,55 +930,111 @@ function ProjectCard({ project }: { project: Project }) {
 }
 
 function MonumentCard({ monument }: { monument: Monument }) {
-  const radius = 18;
+  const size = 76;
+  const strokeWidth = 6;
+  const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (monument.progress / 100) * circumference;
   return (
     <div
-      className="bg-[#1C1F22] p-4 rounded flex flex-col items-center"
+      className="flex flex-col items-center gap-4 rounded-2xl border border-[#1E2432] bg-[#0B0F17]/80 p-4 text-center shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
       aria-label={`${monument.title} progress`}
     >
-      <svg width="40" height="40">
-        <circle
-          cx="20"
-          cy="20"
-          r={radius}
-          stroke="#2F343A"
-          strokeWidth="4"
-          fill="none"
-        />
-        <circle
-          cx="20"
-          cy="20"
-          r={radius}
-          stroke="#9966CC"
-          strokeWidth="4"
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className="mt-2 font-semibold">{monument.title}</div>
+      <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-[#0B1018]">
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          aria-hidden="true"
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="#1F2736"
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="#6DD3A8"
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className="absolute text-sm font-semibold text-white">
+          {monument.progress}%
+        </span>
+      </div>
+      <div>
+        <div className="text-sm font-semibold text-white">{monument.title}</div>
+        <div className="mt-1 text-xs text-[#6E7A96]">Milestone momentum</div>
+      </div>
     </div>
   );
 }
 
 function Heatmap({ data }: { data: number[][] }) {
-  const max = Math.max(...data.flat());
+  const flattened = data.flat();
+  const max = flattened.length > 0 ? Math.max(...flattened) : 0;
+  const columns = data[0]?.length ?? 0;
+  const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const labels = columns > 0 ? dayLabels.slice(0, columns) : [];
   return (
-    <div className="grid grid-cols-7 gap-1" aria-label="Window adherence heatmap">
-      {data.map((row, i) =>
-        row.map((val, j) => (
-          <div
-            key={`${i}-${j}`}
-            className="w-8 h-8"
-            style={{
-              backgroundColor: `rgba(153,102,204,${val / max})`,
-            }}
+    <div className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-sm font-semibold text-white">Focus heatmap</div>
+          <p className="mt-1 text-xs text-[#6E7A96]">
+            Intensity across your scheduled windows
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-2 rounded-full border border-[#273041] bg-[#0C111A] px-3 py-1 text-xs text-[#A1ADC7]">
+          Peak
+          <span
+            aria-hidden="true"
+            className="h-2 w-8 rounded-full bg-gradient-to-r from-transparent via-[#7E6BFF] to-[#7E6BFF]"
           />
-        ))
-      )}
+        </span>
+      </div>
+      <div
+        className="mt-4 grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+        aria-label="Window adherence heatmap"
+      >
+        {data.map((row, i) =>
+          row.map((val, j) => {
+            const intensity = max === 0 ? 0 : val / max;
+            return (
+              <div
+                key={`${i}-${j}`}
+                className="aspect-square w-full rounded-md"
+                style={{
+                  background:
+                    intensity === 0
+                      ? "rgba(32,38,49,0.85)"
+                      : `rgba(126,107,255,${0.25 + intensity * 0.65})`,
+                }}
+              />
+            );
+          })
+        )}
+      </div>
+      <div
+        className="mt-3 grid gap-2 text-xs uppercase tracking-[0.2em] text-[#6E7A96]"
+        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      >
+        {labels.map((label) => (
+          <span key={label} className="text-center">
+            {label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -679,28 +1049,84 @@ function DonutChart({
   let current = 0;
   const segments = data.map((d, i) => {
     const start = current;
-    const end = current + d.value / total;
+    const portion = total === 0 ? 0 : d.value / total;
+    const end = current + portion;
     current = end;
     return `${colors[i % colors.length]} ${start * 360}deg ${end * 360}deg`;
   });
   return (
-    <div
-      className="w-32 h-32 rounded-full"
-      style={{ background: `conic-gradient(${segments.join(",")})` }}
-      aria-label="Energy distribution"
-    />
+    <div className="flex flex-col items-center gap-6 rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 text-center shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
+      <div
+        className="relative h-36 w-36 rounded-full border border-[#273041] bg-[#0C111A]"
+        style={{
+          background:
+            total === 0
+              ? "#141A26"
+              : `conic-gradient(${segments.join(",")})`,
+        }}
+        aria-label="Energy distribution"
+      >
+        <div className="absolute inset-6 rounded-full bg-[#070A12]" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+          <span className="text-[10px] uppercase tracking-[0.3em] text-[#6E7A96]">
+            Focus
+          </span>
+          <span className="text-lg font-semibold text-white">{total}%</span>
+        </div>
+      </div>
+      <div className="w-full space-y-3 text-left">
+        {data.map((d, i) => {
+          const percent = total === 0 ? 0 : Math.round((d.value / total) * 100);
+          return (
+            <div
+              key={d.label}
+              className="flex items-center justify-between text-xs text-[#9DA6BB]"
+            >
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: colors[i % colors.length] }}
+                />
+                {d.label}
+              </span>
+              <span className="text-white">{percent}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
 function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
   return (
-    <ul className="space-y-2" aria-label="Activity feed">
-      {events.map((e) => (
-        <li key={e.id} className="flex space-x-2">
-          <span className="text-[#A6A6A6] text-sm w-24">{e.date}</span>
-          <span className="flex-1">{e.label}</span>
-        </li>
-      ))}
+    <ul className="relative space-y-6" aria-label="Activity feed">
+      {events.map((event, index) => {
+        const formattedDate = new Date(`${event.date}T00:00:00`);
+        const dateLabel = new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+        }).format(formattedDate);
+        return (
+          <li key={event.id} className="relative flex gap-4">
+            <div className="flex flex-col items-center">
+              <span className="relative z-10 flex h-4 w-4 items-center justify-center">
+                <span className="h-3 w-3 rounded-full border border-[#7E6BFF] bg-[#0B1018]" />
+              </span>
+              {index !== events.length - 1 && (
+                <span className="mt-1 h-full w-px bg-gradient-to-b from-[#7E6BFF]/60 to-transparent" />
+              )}
+            </div>
+            <div className="flex-1 rounded-2xl border border-[#1E2432] bg-[#0B1018] px-4 py-3 shadow-[0_12px_24px_rgba(8,10,16,0.35)]">
+              <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                {dateLabel}
+              </div>
+              <div className="mt-2 text-sm text-white">{event.label}</div>
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -714,17 +1140,58 @@ function StreakCalendar({
 }) {
   const cells = Array.from({ length: days }, (_, i) => i + 1);
   return (
-    <div className="grid grid-cols-7 gap-1" aria-label="Streak calendar">
-      {cells.map((d) => (
-        <div
-          key={d}
-          className={classNames(
-            "w-8 h-8 border border-[#2F343A] rounded",
-            completed.includes(d) ? "bg-[#9966CC]" : "bg-[#1C1F22]"
-          )}
-        />
-      ))}
+    <div className="grid grid-cols-7 gap-2" aria-label="Streak calendar">
+      {cells.map((day) => {
+        const isComplete = completed.includes(day);
+        return (
+          <div
+            key={day}
+            className={classNames(
+              "aspect-square w-full rounded-lg border text-[10px] font-medium transition",
+              isComplete
+                ? "border-transparent bg-gradient-to-br from-[#7E6BFF] to-[#B19CFF] text-white shadow-[0_8px_18px_rgba(126,107,255,0.35)]"
+                : "border-[#1E2432] bg-[#0B1018] text-[#6E7A96]"
+            )}
+          >
+            <span className="flex h-full items-center justify-center">{day}</span>
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+function SectionCard({
+  title,
+  description,
+  action,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={classNames(
+        "rounded-3xl border border-[#1C2330] bg-[#11161F]/90 p-6 shadow-[0_30px_80px_rgba(7,10,16,0.55)] backdrop-blur",
+        className
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          {description ? (
+            <p className="mt-1 text-sm text-[#95A1B6]">{description}</p>
+          ) : null}
+        </div>
+        {action}
+      </div>
+      <div className="mt-6">{children}</div>
+    </section>
   );
 }
 
@@ -736,9 +1203,12 @@ function EmptyState({
   cta: string;
 }) {
   return (
-    <div className="flex flex-col items-center space-y-2" aria-label="Empty state">
-      <div className="text-[#A6A6A6]">{title}</div>
-      <button className="h-11 px-4 bg-[#1C1F22] border border-[#2F343A] rounded focus:outline-none focus:ring-2 focus:ring-[#9966CC]">
+    <div
+      className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#273041] bg-[#0B1018] px-6 py-8 text-center text-sm text-[#9DA6BB]"
+      aria-label="Empty state"
+    >
+      <div>{title}</div>
+      <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0C111A] px-4 py-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]">
         {cta}
       </button>
     </div>
@@ -749,7 +1219,7 @@ function Skeleton({ className }: { className?: string }) {
   return (
     <div
       className={classNames(
-        "animate-pulse rounded bg-[#22262A]",
+        "animate-pulse rounded-2xl bg-[#141A26]/80",
         className
       )}
     />
