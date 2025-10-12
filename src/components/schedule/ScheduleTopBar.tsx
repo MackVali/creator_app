@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -59,8 +59,19 @@ export function ScheduleTopBar({
     { label: "Today", icon: Calendar, onClick: onToday },
   ];
 
+  const stickySafeAreaStyles: CSSProperties = {
+    top: "env(safe-area-inset-top, 0px)",
+    paddingBlockStart: "calc(0.75rem + env(safe-area-inset-top, 0px))",
+    paddingBlockEnd: "0.75rem",
+    paddingInlineStart: "calc(1rem + env(safe-area-inset-left, 0px))",
+    paddingInlineEnd: "calc(1rem + env(safe-area-inset-right, 0px))",
+  };
+
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur">
+    <header
+      className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur"
+      style={stickySafeAreaStyles}
+    >
       <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
         <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
       </button>
