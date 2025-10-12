@@ -84,6 +84,22 @@ const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
+const VERTICAL_SCROLL_THRESHOLD_PX = 20
+const VERTICAL_SCROLL_BIAS_PX = 8
+const VERTICAL_SCROLL_SLOPE = 1.35
+
+function computeDayTimelineHeightPx(
+  startHour: number,
+  pxPerMin: number,
+  endHour = 24
+) {
+  const safeStart = Number.isFinite(startHour) ? startHour : 0
+  const safeEnd = Number.isFinite(endHour) ? endHour : 24
+  const normalizedEnd = Math.max(safeStart, safeEnd)
+  const durationMinutes = Math.max(0, (normalizedEnd - safeStart) * 60)
+  const safePxPerMin = Number.isFinite(pxPerMin) ? pxPerMin : MIN_PX_PER_MIN
+  return durationMinutes * safePxPerMin
+}
 
 const dayTimelineVariants = {
   enter: (direction: DayTransitionDirection) => ({
@@ -1148,6 +1164,9 @@ function DayPeekOverlays({
   previousModel,
   nextModel,
   renderPreview,
+  scrollProgress,
+  baseTimelineHeight,
+  timelineChromeHeight,
 }: {
   peekState: PeekState
   previousLabel: string
@@ -1158,6 +1177,9 @@ function DayPeekOverlays({
   previousModel?: DayTimelineModel | null
   nextModel?: DayTimelineModel | null
   renderPreview: (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => ReactNode
+  scrollProgress: number | null
+  baseTimelineHeight: number
+  timelineChromeHeight: number
 }) {
   const container = containerRef.current
   const containerWidth = container?.offsetWidth ?? 0
@@ -1175,13 +1197,19 @@ function DayPeekOverlays({
     maxVisiblePeekWidth > 0 ? Math.min(1, offset / maxVisiblePeekWidth) : 0
   const translate = (1 - progress) * 35
   const opacity = 0.25 + progress * 0.6
-  const scale = 0.94 + progress * 0.06
   const shadowOpacity = 0.45 + progress * 0.3
 
   const isNext = peekState.direction === 1
   const label = isNext ? nextLabel : previousLabel
   const keyLabel = isNext ? nextKey : previousKey
   const previewModel = isNext ? nextModel : previousModel
+  const expectedKey = isNext ? nextKey : previousKey
+  const isModelForDirection = previewModel?.dayViewDateKey === expectedKey
+  const resolvedPreviewModel = isModelForDirection ? previewModel : null
+  const previewTimelineHeight = resolvedPreviewModel
+    ? computeDayTimelineHeightPx(resolvedPreviewModel.startHour, resolvedPreviewModel.pxPerMin)
+    : baseTimelineHeight
+  const previewContainerHeight = previewTimelineHeight + timelineChromeHeight
   const alignment = isNext ? 'items-end text-right' : 'items-start text-left'
   const cornerClass = isNext
     ? 'rounded-l-[var(--radius-lg)]'
@@ -1189,14 +1217,20 @@ function DayPeekOverlays({
   const transformOrigin = isNext ? 'right center' : 'left center'
 
   let overlayCenter: number | null = null
+  let visibleHeight: number | null = null
   if (container) {
     const rect = container.getBoundingClientRect()
     const height = container.offsetHeight
-    const viewportHeight =
-      typeof window !== 'undefined' ? window.innerHeight : container.offsetHeight
+    const viewportHeightRaw =
+      typeof window !== 'undefined'
+        ? window.visualViewport?.height ?? window.innerHeight
+        : container.offsetHeight
+    const viewportHeight = Number.isFinite(viewportHeightRaw)
+      ? viewportHeightRaw
+      : container.offsetHeight
     const visibleStart = Math.max(0, -rect.top)
     const visibleEnd = Math.min(height, viewportHeight - rect.top)
-    const visibleHeight = Math.max(0, visibleEnd - visibleStart)
+    visibleHeight = Math.max(0, visibleEnd - visibleStart)
     if (visibleHeight > 0) {
       overlayCenter = visibleStart + visibleHeight / 2
     } else {
@@ -1204,10 +1238,36 @@ function DayPeekOverlays({
     }
   }
 
+  const fallbackContainerHeight =
+    container?.offsetHeight ?? (previewContainerHeight > 0 ? previewContainerHeight : null)
+  const anchorProgressRaw =
+    scrollProgress !== null
+      ? scrollProgress
+      : overlayCenter !== null && fallbackContainerHeight
+        ? overlayCenter / fallbackContainerHeight
+        : 0.5
+  const anchorProgress = Math.min(Math.max(anchorProgressRaw, 0), 1)
+  const overlayAnchor =
+    fallbackContainerHeight !== null
+      ? fallbackContainerHeight * anchorProgress
+      : overlayCenter ?? 0
   const overlayStyle: CSSProperties =
-    overlayCenter !== null
-      ? { top: overlayCenter, transform: 'translateY(-50%)' }
+    fallbackContainerHeight !== null
+      ? { top: overlayAnchor, transform: 'translateY(-50%)' }
       : { top: '50%', transform: 'translateY(-50%)' }
+
+  const viewportHeight =
+    visibleHeight && visibleHeight > 0
+      ? visibleHeight
+      : fallbackContainerHeight ?? previewContainerHeight
+  const safeViewportHeight = viewportHeight && viewportHeight > 0 ? viewportHeight : previewContainerHeight
+  const previewAnchorOffset = previewContainerHeight * anchorProgress
+  const halfViewport = safeViewportHeight / 2
+  const translateYRaw = halfViewport - previewAnchorOffset
+  const minTranslate = Math.min(0, safeViewportHeight - previewContainerHeight)
+  const maxTranslate = 0
+  const previewTranslateY = Math.min(Math.max(translateYRaw, minTranslate), maxTranslate)
+  const clampedPreviewHeight = safeViewportHeight > 0 ? safeViewportHeight : undefined
 
   return (
     <div
@@ -1226,7 +1286,7 @@ function DayPeekOverlays({
           style={{
             width: offset,
             opacity,
-            transform: `translateX(${isNext ? translate : -translate}%) scale(${scale})`,
+            transform: `translateX(${isNext ? translate : -translate}%)`,
             transformOrigin,
             boxShadow: `0 28px 58px rgba(3, 3, 6, ${shadowOpacity})`,
           }}
@@ -1242,16 +1302,19 @@ function DayPeekOverlays({
               {keyLabel}
             </span>
           </div>
-          <div className="overflow-hidden rounded-[var(--radius-lg)] border border-white/10 bg-black/40">
-            {previewModel ? (
+          <div
+            className="overflow-hidden rounded-[var(--radius-lg)] border border-white/10 bg-black/40"
+            style={{ height: clampedPreviewHeight }}
+          >
+            {resolvedPreviewModel ? (
               <div
                 className="pointer-events-none"
                 style={{
-                  transform: 'scale(0.94)',
-                  transformOrigin,
+                  height: previewContainerHeight,
+                  transform: `translateY(${previewTranslateY}px)`,
                 }}
               >
-                {renderPreview(previewModel, { disableInteractions: true })}
+                {renderPreview(resolvedPreviewModel, { disableInteractions: true })}
               </div>
             ) : (
               <div className="flex h-36 items-center justify-center text-[11px] text-white/70">
@@ -1597,6 +1660,20 @@ export default function SchedulePage() {
     next?: DayTimelineModel | null
   }>({})
 
+  const peekDataDepsRef = useRef<{
+    projectMap: typeof projectMap
+    taskMap: typeof taskMap
+    tasksByProjectId: typeof tasksByProjectId
+    habits: typeof habits
+    unscheduledProjects: typeof unscheduledProjects
+    schedulerFailureByProjectId: typeof schedulerFailureByProjectId
+    schedulerDebug: typeof schedulerDebug
+    schedulerTimelinePlacements: typeof schedulerTimelinePlacements
+    timeZoneShortName: string
+    friendlyTimeZone: string
+    localTimeZone: string | null
+  } | null>(null)
+
   const [peekState, setPeekState] = useState<PeekState>({
     direction: 0,
     offset: 0,
@@ -1612,6 +1689,7 @@ export default function SchedulePage() {
   } | null>(null)
   const pinchActiveRef = useRef(false)
   const hasLoadedHabitCompletionState = useRef(false)
+  const lastTimelineChromeHeightRef = useRef(0)
 
   useEffect(() => {
     if (!habitCompletionStorageKey) {
@@ -1800,7 +1878,9 @@ export default function SchedulePage() {
     [setExpandedProjects, setHasInteractedWithProjects]
   )
   const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
   const touchStartWidth = useRef<number>(0)
+  const hasVerticalTouchMovement = useRef<boolean>(false)
   const swipeDeltaRef = useRef(0)
   const swipeScrollProgressRef = useRef<number | null>(null)
   const navLock = useRef(false)
@@ -2138,14 +2218,59 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId || view !== 'day') {
       setPeekModels({})
+      peekDataDepsRef.current = null
       return
+    }
+
+    const previousDeps = peekDataDepsRef.current
+    const shouldForceReload = Boolean(
+      previousDeps &&
+        (
+          previousDeps.projectMap !== projectMap ||
+          previousDeps.taskMap !== taskMap ||
+          previousDeps.tasksByProjectId !== tasksByProjectId ||
+          previousDeps.habits !== habits ||
+          previousDeps.unscheduledProjects !== unscheduledProjects ||
+          previousDeps.schedulerFailureByProjectId !== schedulerFailureByProjectId ||
+          previousDeps.schedulerDebug !== schedulerDebug ||
+          previousDeps.schedulerTimelinePlacements !== schedulerTimelinePlacements ||
+          previousDeps.timeZoneShortName !== timeZoneShortName ||
+          previousDeps.friendlyTimeZone !== friendlyTimeZone ||
+          previousDeps.localTimeZone !== localTimeZone
+        )
+    )
+
+    peekDataDepsRef.current = {
+      projectMap,
+      taskMap,
+      tasksByProjectId,
+      habits,
+      unscheduledProjects,
+      schedulerFailureByProjectId,
+      schedulerDebug,
+      schedulerTimelinePlacements,
+      timeZoneShortName,
+      friendlyTimeZone,
+      localTimeZone,
     }
 
     let cancelled = false
     const timeZone = localTimeZone ?? 'UTC'
 
-    async function load(direction: 'previous' | 'next', date: Date) {
-      setPeekModels(prev => ({ ...prev, [direction]: prev[direction] ?? null }))
+    async function load(direction: 'previous' | 'next', date: Date, forceReload: boolean) {
+      const targetKey = formatLocalDateKey(date)
+      let shouldFetch = true
+      setPeekModels(prev => {
+        const prevModel = prev[direction]
+        if (!forceReload && prevModel && prevModel.dayViewDateKey === targetKey) {
+          shouldFetch = false
+          return prev
+        }
+        shouldFetch = true
+        return { ...prev, [direction]: null }
+      })
+      if (!shouldFetch) return
+
       try {
         const dayStart = startOfDayInTimeZone(date, timeZone)
         const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
@@ -2178,6 +2303,8 @@ export default function SchedulePage() {
           friendlyTimeZone,
           localTimeZone,
         })
+        if (cancelled) return
+        if (model.dayViewDateKey !== targetKey) return
         setPeekModels(prev => ({ ...prev, [direction]: model }))
       } catch (error) {
         console.error('Failed to load adjacent day preview', error)
@@ -2186,8 +2313,8 @@ export default function SchedulePage() {
       }
     }
 
-    void load('previous', previousDayDate)
-    void load('next', nextDayDate)
+    void load('previous', previousDayDate, shouldForceReload)
+    void load('next', nextDayDate, shouldForceReload)
 
     return () => {
       cancelled = true
@@ -2202,14 +2329,54 @@ export default function SchedulePage() {
     taskMap,
     tasksByProjectId,
     habits,
-    startHour,
-    pxPerMin,
     unscheduledProjects,
     schedulerFailureByProjectId,
     schedulerDebug,
     schedulerTimelinePlacements,
     timeZoneShortName,
     friendlyTimeZone,
+  ])
+
+  useEffect(() => {
+    if (!userId || view !== 'day') return
+
+    setPeekModels(prev => {
+      let changed = false
+      const nextState: typeof prev = { ...prev }
+      for (const direction of ['previous', 'next'] as const) {
+        const entry = prev[direction]
+        if (!entry) continue
+        const windowReports = computeWindowReportsForDay({
+          windows: entry.windows,
+          projectInstances: entry.projectInstances,
+          startHour,
+          pxPerMin,
+          unscheduledProjects,
+          schedulerFailureByProjectId,
+          schedulerDebug,
+          schedulerTimelinePlacements,
+          habitPlacements: entry.habitPlacements,
+          currentDate: entry.date,
+        })
+        nextState[direction] = {
+          ...entry,
+          pxPerMin,
+          startHour,
+          windowReports,
+        }
+        changed = true
+      }
+      return changed ? nextState : prev
+    })
+  }, [
+    pxPerMin,
+    startHour,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    userId,
+    view,
   ])
 
   const instanceStatusById = useMemo(() => {
@@ -2836,7 +3003,9 @@ export default function SchedulePage() {
               }
               pinchActiveRef.current = true
               touchStartX.current = null
+              touchStartY.current = null
               touchStartWidth.current = 0
+              hasVerticalTouchMovement.current = false
               swipeDeltaRef.current = 0
               sliderControls.stop()
               setIsSwipingDayView(false)
@@ -2855,22 +3024,30 @@ export default function SchedulePage() {
 
     if (touches.length > 1) {
       touchStartX.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
 
     if (view !== 'day' || prefersReducedMotion || pinchActiveRef.current) {
       touchStartX.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
 
     const firstTouch = touches[0]
     if (!firstTouch) {
       touchStartX.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
 
     touchStartX.current = firstTouch.clientX
+    touchStartY.current = firstTouch.clientY
     touchStartWidth.current = swipeContainerRef.current?.offsetWidth ?? 0
+    hasVerticalTouchMovement.current = false
     swipeDeltaRef.current = 0
     sliderControls.stop()
     if (typeof window !== 'undefined') {
@@ -2955,11 +3132,52 @@ export default function SchedulePage() {
 
     if (e.touches.length > 1) return
     if (view !== 'day' || prefersReducedMotion) return
+    const touch = e.touches[0]
+    if (!touch) return
+
+    if (touchStartY.current === null) {
+      touchStartY.current = touch.clientY
+    }
+
+    if (!hasVerticalTouchMovement.current && touchStartY.current !== null) {
+      const verticalDiff = Math.abs(touch.clientY - touchStartY.current)
+      if (verticalDiff > VERTICAL_SCROLL_THRESHOLD_PX) {
+        const horizontalDiff =
+          touchStartX.current !== null
+            ? Math.abs(touch.clientX - touchStartX.current)
+            : 0
+        if (
+          verticalDiff > horizontalDiff * VERTICAL_SCROLL_SLOPE +
+            VERTICAL_SCROLL_BIAS_PX
+        ) {
+          hasVerticalTouchMovement.current = true
+        }
+      }
+    }
+
+    if (hasVerticalTouchMovement.current) {
+      if (touchStartX.current !== null || isSwipingDayView) {
+        touchStartX.current = null
+        touchStartWidth.current = 0
+        swipeDeltaRef.current = 0
+        swipeScrollProgressRef.current = null
+        sliderControls.set({ x: 0 })
+        if (isSwipingDayView) {
+          setIsSwipingDayView(false)
+        }
+        setPeekState(prev => {
+          if (prev.direction === 0 && prev.offset === 0) {
+            return prev
+          }
+          return { direction: 0, offset: 0 }
+        })
+      }
+      return
+    }
+
     if (touchStartX.current === null) return
     const width =
       touchStartWidth.current || swipeContainerRef.current?.offsetWidth || 1
-    const touch = e.touches[0]
-    if (!touch) return
     const diff = touch.clientX - touchStartX.current
     const clamped = Math.max(Math.min(diff, width), -width)
     swipeDeltaRef.current = clamped
@@ -2988,6 +3206,8 @@ export default function SchedulePage() {
       touchStartWidth.current = 0
       swipeScrollProgressRef.current = null
       setIsSwipingDayView(false)
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       setPeekState(prev => {
         if (prev.direction === 0 && prev.offset === 0) {
           return prev
@@ -3002,12 +3222,16 @@ export default function SchedulePage() {
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
       swipeScrollProgressRef.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
     if (touchStartX.current === null) {
       setIsSwipingDayView(false)
       setPeekState({ direction: 0, offset: 0 })
       swipeScrollProgressRef.current = null
+      touchStartY.current = null
+      hasVerticalTouchMovement.current = false
       return
     }
     const width =
@@ -3039,6 +3263,8 @@ export default function SchedulePage() {
     touchStartWidth.current = 0
     setPeekState({ direction: 0, offset: 0 })
     setIsSwipingDayView(false)
+    touchStartY.current = null
+    hasVerticalTouchMovement.current = false
   }
 
   const handleTouchCancel = () => {
@@ -3105,6 +3331,35 @@ export default function SchedulePage() {
       localTimeZone,
     ]
   )
+
+  const baseTimelineHeight = useMemo(
+    () =>
+      computeDayTimelineHeightPx(
+        dayTimelineModel.startHour,
+        dayTimelineModel.pxPerMin
+      ),
+    [dayTimelineModel.startHour, dayTimelineModel.pxPerMin]
+  )
+
+  const measuredTimelineContainerHeight =
+    dayTimelineContainerRef.current?.offsetHeight ?? null
+
+  const timelineChromeHeight = useMemo(() => {
+    if (
+      measuredTimelineContainerHeight !== null &&
+      Number.isFinite(measuredTimelineContainerHeight)
+    ) {
+      const chrome = Math.max(
+        0,
+        measuredTimelineContainerHeight - baseTimelineHeight
+      )
+      if (!Number.isNaN(chrome)) {
+        lastTimelineChromeHeightRef.current = chrome
+        return chrome
+      }
+    }
+    return lastTimelineChromeHeightRef.current
+  }, [measuredTimelineContainerHeight, baseTimelineHeight])
 
   const renderDayTimeline = useCallback(
     (model: DayTimelineModel, options?: DayTimelineRenderOptions) => {
@@ -3955,10 +4210,13 @@ export default function SchedulePage() {
                       nextLabel={nextDayLabel}
                       previousKey={previousDayKey}
                       nextKey={nextDayKey}
-                      containerRef={swipeContainerRef}
+                      containerRef={dayTimelineContainerRef}
                       previousModel={peekModels.previous}
                       nextModel={peekModels.next}
                       renderPreview={renderDayTimeline}
+                      scrollProgress={swipeScrollProgressRef.current}
+                      baseTimelineHeight={baseTimelineHeight}
+                      timelineChromeHeight={timelineChromeHeight}
                     />
                   </div>
                 ) : skipNextDayAnimation ? (
