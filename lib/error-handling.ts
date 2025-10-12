@@ -100,6 +100,12 @@ export function parseSupabaseError(error: SupabaseError): AppError {
   };
 }
 
+export function isRedirectUrlError(error: { message?: string } | null) {
+  if (!error?.message) return false;
+  const message = error.message.toLowerCase();
+  return message.includes("redirect") && message.includes("url");
+}
+
 // Parse network errors
 export function parseNetworkError(error: NetworkError): AppError {
   if (error.name === "TypeError" && error.message.includes("fetch")) {

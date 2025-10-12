@@ -1,5 +1,7 @@
-import { getSupabaseBrowser } from "./supabase";
 import { User } from "@supabase/supabase-js";
+import { isRedirectUrlError } from "./error-handling";
+import { getSupabaseBrowser } from "./supabase";
+import { getSiteUrl } from "./utils";
 
 export interface AuthUser {
   id: string;
@@ -12,13 +14,22 @@ export async function signInWithMagicLink(email: string) {
   if (!supabase) {
     return { error: { message: "Supabase client not initialized" } };
   }
-  const { error } = await supabase.auth.signInWithOtp({
+  const emailRedirectTo = `${getSiteUrl()}/auth/callback`;
+
+  let result = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      emailRedirectTo,
     },
   });
-  return { error };
+
+  if (result.error && isRedirectUrlError(result.error)) {
+    result = await supabase.auth.signInWithOtp({
+      email,
+    });
+  }
+
+  return { error: result.error };
 }
 
 export async function signOut() {
