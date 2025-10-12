@@ -1603,6 +1603,20 @@ export default function SchedulePage() {
     next?: DayTimelineModel | null
   }>({})
 
+  const peekDataDepsRef = useRef<{
+    projectMap: typeof projectMap
+    taskMap: typeof taskMap
+    tasksByProjectId: typeof tasksByProjectId
+    habits: typeof habits
+    unscheduledProjects: typeof unscheduledProjects
+    schedulerFailureByProjectId: typeof schedulerFailureByProjectId
+    schedulerDebug: typeof schedulerDebug
+    schedulerTimelinePlacements: typeof schedulerTimelinePlacements
+    timeZoneShortName: string
+    friendlyTimeZone: string
+    localTimeZone: string | null
+  } | null>(null)
+
   const [peekState, setPeekState] = useState<PeekState>({
     direction: 0,
     offset: 0,
@@ -2146,21 +2160,59 @@ export default function SchedulePage() {
   useEffect(() => {
     if (!userId || view !== 'day') {
       setPeekModels({})
+      peekDataDepsRef.current = null
       return
+    }
+
+    const previousDeps = peekDataDepsRef.current
+    const shouldForceReload = Boolean(
+      previousDeps &&
+        (
+          previousDeps.projectMap !== projectMap ||
+          previousDeps.taskMap !== taskMap ||
+          previousDeps.tasksByProjectId !== tasksByProjectId ||
+          previousDeps.habits !== habits ||
+          previousDeps.unscheduledProjects !== unscheduledProjects ||
+          previousDeps.schedulerFailureByProjectId !== schedulerFailureByProjectId ||
+          previousDeps.schedulerDebug !== schedulerDebug ||
+          previousDeps.schedulerTimelinePlacements !== schedulerTimelinePlacements ||
+          previousDeps.timeZoneShortName !== timeZoneShortName ||
+          previousDeps.friendlyTimeZone !== friendlyTimeZone ||
+          previousDeps.localTimeZone !== localTimeZone
+        )
+    )
+
+    peekDataDepsRef.current = {
+      projectMap,
+      taskMap,
+      tasksByProjectId,
+      habits,
+      unscheduledProjects,
+      schedulerFailureByProjectId,
+      schedulerDebug,
+      schedulerTimelinePlacements,
+      timeZoneShortName,
+      friendlyTimeZone,
+      localTimeZone,
     }
 
     let cancelled = false
     const timeZone = localTimeZone ?? 'UTC'
 
-    async function load(direction: 'previous' | 'next', date: Date) {
+    async function load(direction: 'previous' | 'next', date: Date, forceReload: boolean) {
       const targetKey = formatLocalDateKey(date)
+      let shouldFetch = true
       setPeekModels(prev => {
         const prevModel = prev[direction]
-        if (prevModel && prevModel.dayViewDateKey === targetKey) {
+        if (!forceReload && prevModel && prevModel.dayViewDateKey === targetKey) {
+          shouldFetch = false
           return prev
         }
+        shouldFetch = true
         return { ...prev, [direction]: null }
       })
+      if (!shouldFetch) return
+
       try {
         const dayStart = startOfDayInTimeZone(date, timeZone)
         const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
@@ -2203,8 +2255,8 @@ export default function SchedulePage() {
       }
     }
 
-    void load('previous', previousDayDate)
-    void load('next', nextDayDate)
+    void load('previous', previousDayDate, shouldForceReload)
+    void load('next', nextDayDate, shouldForceReload)
 
     return () => {
       cancelled = true
@@ -2219,14 +2271,54 @@ export default function SchedulePage() {
     taskMap,
     tasksByProjectId,
     habits,
-    startHour,
-    pxPerMin,
     unscheduledProjects,
     schedulerFailureByProjectId,
     schedulerDebug,
     schedulerTimelinePlacements,
     timeZoneShortName,
     friendlyTimeZone,
+  ])
+
+  useEffect(() => {
+    if (!userId || view !== 'day') return
+
+    setPeekModels(prev => {
+      let changed = false
+      const nextState: typeof prev = { ...prev }
+      for (const direction of ['previous', 'next'] as const) {
+        const entry = prev[direction]
+        if (!entry) continue
+        const windowReports = computeWindowReportsForDay({
+          windows: entry.windows,
+          projectInstances: entry.projectInstances,
+          startHour,
+          pxPerMin,
+          unscheduledProjects,
+          schedulerFailureByProjectId,
+          schedulerDebug,
+          schedulerTimelinePlacements,
+          habitPlacements: entry.habitPlacements,
+          currentDate: entry.date,
+        })
+        nextState[direction] = {
+          ...entry,
+          pxPerMin,
+          startHour,
+          windowReports,
+        }
+        changed = true
+      }
+      return changed ? nextState : prev
+    })
+  }, [
+    pxPerMin,
+    startHour,
+    unscheduledProjects,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    userId,
+    view,
   ])
 
   const instanceStatusById = useMemo(() => {
