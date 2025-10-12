@@ -80,7 +80,6 @@ type PeekState = {
 type HabitCompletionStatus = 'scheduled' | 'completed'
 
 const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
-const HABIT_CARD_VERTICAL_PADDING_PX = 16 // py-2 => 8px top + bottom
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
@@ -2398,7 +2397,7 @@ export default function SchedulePage() {
       habitId,
       status,
       disabled,
-      availableHeight,
+      availableHeight: _availableHeight,
     }: {
       dateKey: string
       habitId: string
@@ -2407,11 +2406,10 @@ export default function SchedulePage() {
       availableHeight?: number
     }) => {
       const isCompleted = status === 'completed'
-      const safeAvailableHeight = Math.max(availableHeight ?? 0, 0)
-      const visualHeight = safeAvailableHeight + HABIT_CARD_VERTICAL_PADDING_PX
-      const controlSize = Math.min(24, Math.max(6, visualHeight * 0.3))
-      const iconPadding = Math.max(1, Math.min(controlSize * 0.2, 4))
-      const strokeWidth = Math.max(1, Math.min(1.6, controlSize / 10))
+      void _availableHeight
+      const controlSize = 18
+      const iconPadding = 3
+      const strokeWidth = 1.4
       return (
         <motion.button
           type="button"
