@@ -69,17 +69,18 @@ export function ScheduleTopBar({
   return (
     <header
       className={cn(
-        "sticky inset-x-0 top-0 z-50",
+        "sticky inset-x-0 top-0 z-50 w-full",
         "border-b border-white/10 bg-[var(--surface-elevated)]/95",
         "supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 supports-[backdrop-filter]:backdrop-blur",
         "shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
       )}
       style={{
-        top: "env(safe-area-inset-top, 0px)",
         paddingTop: "env(safe-area-inset-top, 0px)",
       }}
     >
-      <div className="mx-auto flex h-[68px] w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+      <div
+        className="mx-auto flex min-h-[68px] w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6 lg:px-8"
+      >
         <button
           type="button"
           onClick={onBack}
@@ -97,7 +98,7 @@ export function ScheduleTopBar({
             <span className="text-[17px] leading-none">{year}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={() => onOpenJumpToDate?.()}
@@ -127,6 +128,9 @@ export function ScheduleTopBar({
                 "supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80",
                 "shadow-[0_-12px_48px_rgba(0,0,0,0.4)]"
               )}
+              style={{
+                paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)",
+              }}
             >
               <div className="mx-auto max-w-md space-y-3 py-4">
                 <div className="mx-auto h-1 w-12 rounded-full bg-white/15" aria-hidden="true" />
