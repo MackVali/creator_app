@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,6 +12,22 @@ import {
   Flame,
   ArrowLeft,
 } from "lucide-react";
+import type {
+  AnalyticsResponse,
+  AnalyticsKpiId,
+} from "@/types/analytics";
+
+const KPI_ICON_MAP: Record<
+  AnalyticsKpiId,
+  ComponentType<{ className?: string }>
+> = {
+  skill_xp: TrendingUp,
+  tasks: CheckSquare,
+  projects: FolderKanban,
+  monuments: BatteryCharging,
+  windows: Clock,
+  habits: Flame,
+};
 
 function classNames(
   ...classes: (string | boolean | null | undefined)[]
@@ -55,6 +71,7 @@ interface Monument {
   id: string;
   title: string;
   progress: number;
+  goalCount: number;
 }
 
 interface ActivityEvent {
@@ -68,267 +85,79 @@ export default function AnalyticsDashboard() {
     "7d" | "30d" | "90d" | "custom"
   >("30d");
   const [skillsView, setSkillsView] = useState<"grid" | "list">("grid");
-  const loading = false;
+  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  const kpiData: Record<string, Kpi[]> = {
-    "7d": [
-      {
-        id: "skills",
-        label: "Skill XP",
-        value: 420,
-        delta: 56,
-        icon: TrendingUp,
-      },
-      {
-        id: "tasks",
-        label: "Tasks",
-        value: 32,
-        delta: 4,
-        icon: CheckSquare,
-      },
-      {
-        id: "projects",
-        label: "Projects",
-        value: 3,
-        delta: 1,
-        icon: FolderKanban,
-      },
-      {
-        id: "monuments",
-        label: "Monuments",
-        value: 72,
-        delta: 5,
-        icon: BatteryCharging,
-      },
-      {
-        id: "windows",
-        label: "Windows",
-        value: 80,
-        delta: -5,
-        icon: Clock,
-      },
-      {
-        id: "habits",
-        label: "Habits",
-        value: 6,
-        delta: 0,
-        icon: Flame,
-      },
-    ],
-    "30d": [
-      {
-        id: "skills",
-        label: "Skill XP",
-        value: 1820,
-        delta: 200,
-        icon: TrendingUp,
-      },
-      {
-        id: "tasks",
-        label: "Tasks",
-        value: 120,
-        delta: 20,
-        icon: CheckSquare,
-      },
-      {
-        id: "projects",
-        label: "Projects",
-        value: 5,
-        delta: 2,
-        icon: FolderKanban,
-      },
-      {
-        id: "monuments",
-        label: "Monuments",
-        value: 68,
-        delta: 3,
-        icon: BatteryCharging,
-      },
-      {
-        id: "windows",
-        label: "Windows",
-        value: 84,
-        delta: 2,
-        icon: Clock,
-      },
-      {
-        id: "habits",
-        label: "Habits",
-        value: 10,
-        delta: 1,
-        icon: Flame,
-      },
-    ],
-    "90d": [
-      {
-        id: "skills",
-        label: "Skill XP",
-        value: 5020,
-        delta: 600,
-        icon: TrendingUp,
-      },
-      {
-        id: "tasks",
-        label: "Tasks",
-        value: 340,
-        delta: 30,
-        icon: CheckSquare,
-      },
-      {
-        id: "projects",
-        label: "Projects",
-        value: 8,
-        delta: 3,
-        icon: FolderKanban,
-      },
-      {
-        id: "monuments",
-        label: "Monuments",
-        value: 70,
-        delta: 4,
-        icon: BatteryCharging,
-      },
-      {
-        id: "windows",
-        label: "Windows",
-        value: 82,
-        delta: -3,
-        icon: Clock,
-      },
-      {
-        id: "habits",
-        label: "Habits",
-        value: 12,
-        delta: 2,
-        icon: Flame,
-      },
-    ],
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const load = async () => {
+      const rangeParam = dateRange === "custom" ? "30d" : dateRange;
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/analytics?range=${rangeParam}`, {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const message =
+            response.status === 401
+              ? "Sign in to view analytics."
+              : "Unable to load analytics data.";
+          if (!cancelled) {
+            setAnalytics(null);
+            setError(message);
+          }
+          return;
+        }
+        const payload = (await response.json()) as AnalyticsResponse;
+        if (!cancelled) {
+          setAnalytics(payload);
+          setLastUpdated(payload.generatedAt);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        console.error("Failed to load analytics data", err);
+        setAnalytics(null);
+        setError("Unable to load analytics data.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [dateRange]);
+
+  const kpis = (analytics?.kpis ?? []).map((kpi) => ({
+    ...kpi,
+    icon: KPI_ICON_MAP[kpi.id],
+  }));
+  const skills = analytics?.skills ?? [];
+  const projects = analytics?.projects ?? [];
+  const monuments = analytics?.monuments ?? [];
+  const windows = analytics?.windows ?? { heatmap: [], energy: [] };
+  const activity = analytics?.activity ?? [];
+  const projectVelocity = analytics?.projectVelocity ?? [];
+  const habitSummary = analytics?.habit ?? {
+    currentStreak: 0,
+    longestStreak: 0,
+    calendarDays: 28,
+    calendarCompleted: [] as number[],
   };
 
-  const skillData: Record<string, Skill[]> = {
-    "7d": [
-      { id: "1", name: "Coding", level: 5, progress: 70 },
-      { id: "2", name: "Design", level: 4, progress: 50 },
-      { id: "3", name: "Writing", level: 6, progress: 40 },
-      { id: "4", name: "Music", level: 3, progress: 80 },
-      { id: "5", name: "Art", level: 2, progress: 60 },
-    ],
-    "30d": [
-      { id: "1", name: "Coding", level: 6, progress: 20 },
-      { id: "2", name: "Design", level: 5, progress: 40 },
-      { id: "3", name: "Writing", level: 6, progress: 60 },
-      { id: "4", name: "Music", level: 4, progress: 30 },
-      { id: "5", name: "Art", level: 3, progress: 10 },
-    ],
-    "90d": [
-      { id: "1", name: "Coding", level: 7, progress: 10 },
-      { id: "2", name: "Design", level: 6, progress: 20 },
-      { id: "3", name: "Writing", level: 7, progress: 70 },
-      { id: "4", name: "Music", level: 5, progress: 50 },
-      { id: "5", name: "Art", level: 4, progress: 40 },
-    ],
-  };
-
-  const projectData: Record<string, Project[]> = {
-    "7d": [
-      { id: "1", title: "Launch", progress: 60, tasksDone: 6, tasksTotal: 10 },
-      { id: "2", title: "Website", progress: 30, tasksDone: 3, tasksTotal: 10 },
-      { id: "3", title: "App", progress: 80, tasksDone: 8, tasksTotal: 10 },
-    ],
-    "30d": [
-      { id: "1", title: "Launch", progress: 70, tasksDone: 7, tasksTotal: 10 },
-      { id: "2", title: "Website", progress: 50, tasksDone: 5, tasksTotal: 10 },
-      { id: "3", title: "App", progress: 90, tasksDone: 9, tasksTotal: 10 },
-    ],
-    "90d": [
-      { id: "1", title: "Launch", progress: 80, tasksDone: 8, tasksTotal: 10 },
-      { id: "2", title: "Website", progress: 60, tasksDone: 6, tasksTotal: 10 },
-      { id: "3", title: "App", progress: 95, tasksDone: 9, tasksTotal: 10 },
-    ],
-  };
-
-  const monumentData: Record<string, Monument[]> = {
-    "7d": [
-      { id: "1", title: "Pyramid", progress: 40 },
-      { id: "2", title: "Colossus", progress: 20 },
-    ],
-    "30d": [
-      { id: "1", title: "Pyramid", progress: 60 },
-      { id: "2", title: "Colossus", progress: 30 },
-    ],
-    "90d": [
-      { id: "1", title: "Pyramid", progress: 80 },
-      { id: "2", title: "Colossus", progress: 50 },
-    ],
-  };
-
-  const activityData: Record<string, ActivityEvent[]> = {
-    "7d": [
-      { id: "1", label: "Completed Task A", date: "2024-06-01" },
-      { id: "2", label: "Started Project X", date: "2024-06-02" },
-      { id: "3", label: "Linked Goal to Monument", date: "2024-06-03" },
-    ],
-    "30d": [
-      { id: "1", label: "Completed Task A", date: "2024-05-15" },
-      { id: "2", label: "Completed Task B", date: "2024-05-22" },
-      { id: "3", label: "Started Project X", date: "2024-05-25" },
-    ],
-    "90d": [
-      { id: "1", label: "Completed Task A", date: "2024-03-10" },
-      { id: "2", label: "Completed Task B", date: "2024-04-12" },
-      { id: "3", label: "Started Project X", date: "2024-05-05" },
-    ],
-  };
-
-  const windowsData: Record<
-    string,
-    { heatmap: number[][]; energy: { label: string; value: number }[] }
-  > = {
-    "7d": {
-      heatmap: [
-        [80, 60, 0],
-        [50, 90, 30],
-        [40, 70, 20],
-      ],
-      energy: [
-        { label: "High", value: 40 },
-        { label: "Low", value: 60 },
-      ],
-    },
-    "30d": {
-      heatmap: [
-        [80, 60, 0],
-        [50, 90, 30],
-        [40, 70, 20],
-      ],
-      energy: [
-        { label: "High", value: 40 },
-        { label: "Low", value: 60 },
-      ],
-    },
-    "90d": {
-      heatmap: [
-        [80, 60, 0],
-        [50, 90, 30],
-        [40, 70, 20],
-      ],
-      energy: [
-        { label: "High", value: 40 },
-        { label: "Low", value: 60 },
-      ],
-    },
-  };
-
-  const range = dateRange === "custom" ? "30d" : dateRange;
-  const kpis = kpiData[range];
-  const skills = skillData[range];
-  const projects = projectData[range];
-  const monuments = monumentData[range];
-  const activity = activityData[range];
-  const windows = windowsData[range];
-
-  const longestStreak = 10;
-  const currentStreak = 3;
   const bestSkill =
     skills.length > 0
       ? skills.reduce((prev, curr) =>
@@ -347,12 +176,23 @@ export default function AnalyticsDashboard() {
           Math.abs(curr.delta) > Math.abs(prev.delta) ? curr : prev
         )
       : null;
+  const totalEnergy = windows.energy.reduce(
+    (sum, entry) => sum + (entry.value ?? 0),
+    0
+  );
   const dominantEnergy =
     windows.energy.length > 0
       ? windows.energy.reduce((prev, curr) =>
           curr.value > prev.value ? curr : prev
         )
       : null;
+  const dominantEnergyShare =
+    dominantEnergy && totalEnergy > 0
+      ? Math.round((dominantEnergy.value / totalEnergy) * 100)
+      : 0;
+
+  const longestStreak = habitSummary.longestStreak;
+  const currentStreak = habitSummary.currentStreak;
 
   const focusInsights = [
     {
@@ -379,7 +219,7 @@ export default function AnalyticsDashboard() {
       metric: dominantEnergy?.label ?? "—",
       helper:
         dominantEnergy != null
-          ? `${dominantEnergy.value}% of focus windows`
+          ? `${dominantEnergyShare}% of focus windows`
           : "Log windows to unlock energy data",
     },
     {
@@ -400,7 +240,11 @@ export default function AnalyticsDashboard() {
         className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(126,107,255,0.35),transparent_65%)] blur-3xl"
       />
       <div className="relative mx-auto max-w-7xl space-y-10 px-4 pb-16 pt-10 sm:px-6 lg:px-8">
-        <Header dateRange={dateRange} onRangeChange={setDateRange} />
+        <Header
+          dateRange={dateRange}
+          onRangeChange={setDateRange}
+          lastUpdated={lastUpdated ?? undefined}
+        />
 
         <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
           <SectionCard
@@ -409,6 +253,8 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-32" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {kpis.map((k) => (
@@ -424,6 +270,8 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-48" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : (
               <ul className="space-y-4">
                 {focusInsights.map((insight) => (
@@ -463,6 +311,8 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-56" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : (
               <div className="space-y-6">
                 <div
@@ -495,12 +345,14 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-56" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : (
               <div className="space-y-6">
                 <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4">
                   <StreakCalendar
-                    days={28}
-                    completed={[1, 2, 5, 6, 7, 9, 10]}
+                    days={habitSummary.calendarDays}
+                    completed={habitSummary.calendarCompleted}
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -543,9 +395,11 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-56" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : (
               <div className="space-y-6">
-                <BarChart data={[5, 3, 4, 6, 2, 4, 5]} />
+                <BarChart data={projectVelocity} />
                 <div className="grid gap-4 sm:grid-cols-2">
                   {projects.map((p) => (
                     <ProjectCard key={p.id} project={p} />
@@ -569,6 +423,8 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-56" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : monuments.length === 0 ? (
               <EmptyState title="No monuments yet" cta="Add Monument" />
             ) : (
@@ -588,6 +444,8 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-56" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : windows.heatmap.length === 0 ? (
               <EmptyState title="No windows yet" cta="Set up windows" />
             ) : (
@@ -604,6 +462,8 @@ export default function AnalyticsDashboard() {
           >
             {loading ? (
               <Skeleton className="h-56" />
+            ) : error ? (
+              <ErrorState message={error} />
             ) : (
               <>
                 <ActivityTimeline events={activity} />
@@ -624,11 +484,14 @@ export default function AnalyticsDashboard() {
 function Header({
   dateRange,
   onRangeChange,
+  lastUpdated,
 }: {
   dateRange: "7d" | "30d" | "90d" | "custom";
   onRangeChange: (range: "7d" | "30d" | "90d" | "custom") => void;
+  lastUpdated?: string;
 }) {
   const router = useRouter();
+  const updatedAt = lastUpdated ? new Date(lastUpdated) : new Date();
   return (
     <header className="overflow-hidden rounded-3xl border border-[#1C2330] bg-gradient-to-br from-[#161C2C] via-[#0F131D] to-[#090C12] px-6 py-8 shadow-[0_30px_80px_rgba(7,10,16,0.55)]">
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
@@ -666,7 +529,7 @@ function Header({
               Updated {new Intl.DateTimeFormat("en-US", {
                 month: "long",
                 day: "numeric",
-              }).format(new Date())}
+              }).format(updatedAt)}
             </span>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-3 py-1">
               Range: {rangeLabel(dateRange)}
@@ -869,16 +732,31 @@ function SkillCard({
 }
 
 function BarChart({ data }: { data: number[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
+        No recent throughput recorded.
+      </div>
+    );
+  }
+
   const max = Math.max(...data);
   const total = data.reduce((sum, value) => sum + value, 0);
-  const average = data.length === 0 ? 0 : Math.round(total / data.length);
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const average = Math.round(total / data.length);
+  const defaultLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const labels =
+    data.length === defaultLabels.length
+      ? defaultLabels
+      : data.map((_, index) => `D${index + 1}`);
   return (
     <div
       className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]"
       aria-label="Tasks completed per period"
     >
-      <div className="grid h-44 grid-cols-7 items-end gap-3">
+      <div
+        className="grid h-44 items-end gap-3"
+        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+      >
         {data.map((value, index) => {
           const height = max === 0 ? 0 : (value / max) * 100;
           return (
@@ -973,7 +851,9 @@ function MonumentCard({ monument }: { monument: Monument }) {
       </div>
       <div>
         <div className="text-sm font-semibold text-white">{monument.title}</div>
-        <div className="mt-1 text-xs text-[#6E7A96]">Milestone momentum</div>
+        <div className="mt-1 text-xs text-[#6E7A96]">
+          {monument.goalCount} goal{monument.goalCount === 1 ? "" : "s"} linked
+        </div>
       </div>
     </div>
   );
@@ -983,8 +863,8 @@ function Heatmap({ data }: { data: number[][] }) {
   const flattened = data.flat();
   const max = flattened.length > 0 ? Math.max(...flattened) : 0;
   const columns = data[0]?.length ?? 0;
-  const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const labels = columns > 0 ? dayLabels.slice(0, columns) : [];
+  const timeLabels = ["Early", "Morning", "Afternoon", "Evening"];
+  const labels = columns > 0 ? timeLabels.slice(0, columns) : [];
   return (
     <div className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
       <div className="flex items-center justify-between gap-4">
@@ -1102,8 +982,8 @@ function DonutChart({
 function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
   return (
     <ul className="relative space-y-6" aria-label="Activity feed">
-      {events.map((event, index) => {
-        const formattedDate = new Date(`${event.date}T00:00:00`);
+        {events.map((event, index) => {
+          const formattedDate = new Date(event.date);
         const dateLabel = new Intl.DateTimeFormat("en-US", {
           month: "short",
           day: "numeric",
@@ -1211,6 +1091,14 @@ function EmptyState({
       <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0C111A] px-4 py-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]">
         {cta}
       </button>
+    </div>
+  );
+}
+
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-[#3C1E2A] bg-[#160E12] px-4 py-6 text-sm text-[#F5B8C9]">
+      {message}
     </div>
   );
 }
