@@ -15,6 +15,21 @@ const validatePassword = (password: string): string | null => {
   return null;
 };
 
+function getEmailRedirectTo() {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  if (siteUrl) {
+    const normalized = siteUrl.endsWith("/") ? siteUrl.slice(0, -1) : siteUrl;
+    return `${normalized}/auth/callback`;
+  }
+
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/auth/callback`;
+  }
+
+  return undefined;
+}
+
 export default function AuthForm() {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
@@ -154,12 +169,14 @@ export default function AuthForm() {
     setSuccess(null);
 
     try {
+      const emailRedirectTo = getEmailRedirectTo();
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { full_name: fullName, role },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          ...(emailRedirectTo ? { emailRedirectTo } : {}),
         },
       });
 

@@ -10,6 +10,10 @@ cp .env.example .env.local
 
 Fill `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
+When deploying, also set `NEXT_PUBLIC_SITE_URL` to your public domain (for example
+`https://my-app.vercel.app`). This is used to generate the redirect URL for
+Supabase email confirmations during sign up.
+
 > **Note:** Without valid Supabase credentials the `/auth` page renders a
 > configuration error banner and sign-in/sign-up actions are disabled. Set
 > both variables before attempting to log in during local testing.
