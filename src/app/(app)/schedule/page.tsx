@@ -357,6 +357,10 @@ type DayTimelineRenderOptions = {
 }
 
 
+// Project task cards are rendered when a scheduled project tile is expanded.
+// "scheduled" cards correspond to concrete instances returned by the scheduler
+// while "fallback" cards are synthesized previews drawn from the project's
+// backlog when no scheduled breakdown exists for the block.
 type ProjectTaskCard = {
   key: string
   task: TaskLite
