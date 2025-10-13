@@ -3548,18 +3548,12 @@ export default function SchedulePage() {
                     ),
                   }))
               const hasScheduledBreakdown = scheduledCards.length > 0
-              const durationMinutes = Math.round(
-                (end.getTime() - start.getTime()) / 60000
-              )
               const tasksLabel =
                 project.taskCount > 0
                   ? `${project.taskCount} ${
                       project.taskCount === 1 ? 'task' : 'tasks'
                     }`
                   : null
-              const detailParts = [`${durationMinutes}m`]
-              if (tasksLabel) detailParts.push(tasksLabel)
-              let detailText = detailParts.join(' · ')
               const layoutMode = projectLayouts[index] ?? 'full'
               const projectCornerClass = getTimelineCardCornerClass(layoutMode)
               const positionStyle: CSSProperties = applyTimelineLayoutStyle(
@@ -3605,9 +3599,12 @@ export default function SchedulePage() {
                 hasScheduledBreakdown ? scheduledCards : fallbackCards
               const usingFallback =
                 !hasScheduledBreakdown && displayCards.length > 0
-              if (usingFallback) {
-                detailText = `${detailText} · Backlog preview`
-              }
+              const detailParts: string[] = []
+              if (tasksLabel) detailParts.push(tasksLabel)
+              // Previously we surfaced a "Backlog preview" tag when using
+              // fallback cards. The product request now wants that label
+              // removed, so we simply omit adding it to the details row.
+              const detailText = detailParts.join(' · ')
               const hiddenFallbackCount = usingFallback
                 ? Math.max(0, backlogTasks.length - displayCards.length)
                 : 0
@@ -3728,9 +3725,11 @@ export default function SchedulePage() {
                             <span className="block truncate text-sm font-medium">
                               {project.name}
                             </span>
-                            <div className="text-xs text-zinc-200/70">
-                              {detailText}
-                            </div>
+                            {detailText ? (
+                              <div className="text-xs text-zinc-200/70">
+                                {detailText}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                         <div className="flex flex-shrink-0 items-center gap-2">
@@ -3788,10 +3787,8 @@ export default function SchedulePage() {
                           Back
                         </motion.button>
                         <div
-                          className={`absolute inset-0 overflow-hidden ${projectCornerClass} border border-white/20 bg-white/10`}
-                          style={sharedCardStyle}
-                        />
-                        <div className="relative h-full w-full overflow-hidden p-2">
+                          className={`relative h-full w-full overflow-hidden p-2 ${projectCornerClass}`}
+                        >
                           {displayCards.map(taskCard => {
                             const {
                               key,
@@ -3855,11 +3852,6 @@ export default function SchedulePage() {
                             const fallbackPending = isFallbackCard
                               ? pendingBacklogTaskIds.has(task.id)
                               : false
-                            const durationLabel =
-                              kind === 'fallback'
-                                ? `~${displayDurationMinutes}m`
-                                : `${displayDurationMinutes}m`
-                            const metaTextClass = 'text-xs text-zinc-200/75'
                             const resolvedEnergyRaw = (
                               task.energy ?? project.energy ?? 'NO'
                             ).toString()
@@ -4011,9 +4003,6 @@ export default function SchedulePage() {
                                   <span className="truncate text-sm font-medium">
                                     {task.name}
                                   </span>
-                                  <div className={metaTextClass}>
-                                    {durationLabel}
-                                  </div>
                                 </div>
                                 {task.skill_icon && (
                                   <span
