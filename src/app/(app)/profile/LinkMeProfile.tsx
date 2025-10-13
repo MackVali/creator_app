@@ -139,43 +139,48 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-950/95 to-slate-900 text-white">
       {/* Top Navigation Bar */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center space-x-3">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm" className="p-2">
-                <ArrowLeft className="h-5 w-5" />
+      <div className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard" className="flex">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span className="sr-only">Back to dashboard</span>
               </Button>
             </Link>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">Bio Link</span>
-              <ExternalLink className="h-4 w-4 text-gray-400" />
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-[0.3em] text-white/70">
+              <ExternalLink className="h-3.5 w-3.5 text-white/50" />
+              <span>Bio link</span>
             </div>
           </div>
-          
-          <div className="flex items-center space-x-2">
+
+          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="ghost"
-              size="sm"
-              className="p-2"
+              size="icon"
+              className="h-9 w-9 rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10"
               onClick={handleShare}
               aria-label="Share profile"
             >
-              <Share2 className="h-5 w-5" />
+              <Share2 className="h-4 w-4" />
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
-                  className="p-2"
+                  size="icon"
+                  className="h-9 w-9 rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10"
                   aria-label="Open profile actions"
                 >
-                  <Menu className="h-5 w-5" />
+                  <Menu className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -231,13 +236,13 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
       </div>
 
       {/* Main Profile Section */}
-      <div className="max-w-md mx-auto px-4 py-6">
-        <Card className="overflow-hidden shadow-xl border-0">
+      <div className="mx-auto w-full max-w-md px-3 py-6 sm:px-4">
+        <Card className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_45px_80px_-40px_rgba(15,23,42,0.6)] backdrop-blur">
           {/* Background Image Section */}
-          <div 
-            className="relative h-48 bg-gradient-to-br from-blue-600 to-purple-700"
+          <div
+            className="relative h-56 bg-gradient-to-br from-sky-500 via-violet-500 to-purple-600 sm:h-60"
             style={{
-              background: profile.banner_url 
+              background: profile.banner_url
                 ? `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url(${profile.banner_url})`
                 : `linear-gradient(135deg, ${profile.theme_color || '#3B82F6'} 0%, ${profile.accent_color || '#8B5CF6'} 100%)`,
               backgroundSize: 'cover',
@@ -250,23 +255,25 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             
             {/* Profile Info Overlay */}
             <div className="absolute bottom-4 left-4 right-4 text-white">
-              <div className="flex items-center space-x-2 mb-2">
-                <h1 className="text-2xl font-bold">{profile.name || "Your Name"}</h1>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{profile.name || "Your Name"}</h1>
                 {profile.verified && (
-                  <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-white">✓</span>
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-500">
+                    <span className="text-[0.65rem] font-semibold text-white">✓</span>
                   </div>
                 )}
               </div>
-              <p className="text-lg opacity-90">@{profile.username}</p>
+              <p className="text-sm font-medium uppercase tracking-[0.3em] text-white/80 sm:text-base">
+                @{profile.username}
+              </p>
             </div>
 
             {/* Floating "me" Button */}
             <div className="absolute top-4 left-4">
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                className="bg-white/20 text-white border-white/30 hover:bg-white/30 backdrop-blur-sm"
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-full border border-white/30 bg-white/20 px-4 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-white/30"
               >
                 me
               </Button>
@@ -274,24 +281,24 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
           </div>
 
           {/* Profile Content */}
-          <CardContent className="p-6">
+          <CardContent className="space-y-8 bg-gradient-to-b from-white/5 to-transparent p-6 text-slate-100 sm:p-8">
             {/* Bio */}
-            <div className="text-center mb-6">
-              <p className="text-gray-700 text-lg leading-relaxed">
+            <div className="text-center">
+              <p className="text-base leading-relaxed text-white/80 sm:text-lg">
                 {profile.bio || "Dad • Creator • Entrepreneur • Philanthropist"}
               </p>
             </div>
 
             {/* Location */}
             {profile.city && (
-              <div className="flex items-center justify-center space-x-2 mb-6 text-gray-600">
-                <MapPin className="h-4 w-4 text-red-500" />
+              <div className="flex items-center justify-center gap-2 text-sm font-medium text-white/70">
+                <MapPin className="h-4 w-4 text-rose-400" />
                 <span>{profile.city}</span>
               </div>
             )}
 
             {/* Social Media Links */}
-            <div className="mb-8 flex flex-wrap justify-center gap-3">
+            <div className="flex flex-wrap justify-center gap-3">
               {socialLinks.length > 0 ? (
                 socialLinks.map((link) => {
                   const definition = getSocialIconDefinition(link.platform);
@@ -302,7 +309,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
                       href={link.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      className="group inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                       aria-label={`Visit ${profile.name || profile.username} on ${definition.label}`}
                     >
                       <SocialIcon
@@ -325,7 +332,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
                       className="inline-flex flex-col items-center"
                       title={`Add ${definition.label}`}
                     >
-                      <SocialIcon platform={platform} className="opacity-40 shadow-none" />
+                      <SocialIcon platform={platform} className="opacity-30 shadow-none" />
                       <span className="sr-only">Add {definition.label}</span>
                     </div>
                   );
@@ -339,18 +346,18 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
                 Array.from({ length: 3 }).map((_, index) => (
                   <div
                     key={`content-skeleton-${index}`}
-                    className="h-36 animate-pulse rounded-lg border border-gray-200 bg-gray-100"
+                    className="h-24 animate-pulse rounded-[26px] border border-white/10 bg-white/5"
                   />
                 ))
               ) : showEmptyState ? (
-                <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-gray-500 shadow-sm">
+                <div className="rounded-[28px] border border-dashed border-white/20 bg-white/5 p-6 text-center text-white/80">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white">
                     <Plus className="h-5 w-5" />
                   </div>
-                  <h3 className="mt-4 text-lg font-semibold text-gray-900">
+                  <h3 className="mt-4 text-base font-semibold sm:text-lg">
                     {isOwner ? "Your link collection is empty" : "No links yet"}
                   </h3>
-                  <p className="mt-2 text-sm text-gray-600">
+                  <p className="mt-2 text-sm text-white/70">
                     {isOwner
                       ? "Add your first link to start sharing the highlights that matter most."
                       : "This creator hasn’t shared any links yet. Check back soon!"}
@@ -358,9 +365,8 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
                   {isOwner ? (
                     <div className="mt-4">
                       <Link href="/profile/edit">
-                        <Button className="inline-flex items-center">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add your first link
+                        <Button className="rounded-full bg-white px-6 text-sm font-semibold text-slate-900 hover:bg-white/90">
+                          Add link
                         </Button>
                       </Link>
                     </div>
@@ -373,30 +379,30 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
                     href={item.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block group"
+                    className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                   >
-                    <div className="relative overflow-hidden rounded-lg border border-gray-200 transition-all duration-200 hover:border-blue-300 hover:shadow-lg">
+                    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-white/5 transition-all duration-200 hover:-translate-y-1 hover:border-white/25 hover:bg-white/10 hover:shadow-[0_28px_65px_-35px_rgba(15,23,42,0.7)]">
                       {item.thumbnail_url ? (
                         <div
                           className="aspect-video bg-cover bg-center"
                           style={{ backgroundImage: `url(${item.thumbnail_url})` }}
                         />
                       ) : (
-                        <div className="aspect-video flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                          <div className="text-center">
-                            <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
-                              <ExternalLink className="h-8 w-8 text-blue-600" />
+                        <div className="aspect-video flex items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-black">
+                          <div className="text-center text-white/80">
+                            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/10">
+                              <ExternalLink className="h-6 w-6" />
                             </div>
-                            <p className="text-sm text-gray-500">{item.category || "Link"}</p>
+                            <p className="text-xs uppercase tracking-[0.35em]">{item.category || "Link"}</p>
                           </div>
                         </div>
                       )}
-                      <div className="p-4">
-                        <h3 className="font-semibold text-gray-900 transition-colors group-hover:text-blue-600">
+                      <div className="space-y-2 p-5">
+                        <h3 className="text-lg font-semibold text-white transition-colors group-hover:text-white/90">
                           {item.title}
                         </h3>
                         {item.description && (
-                          <p className="mt-1 text-sm text-gray-600">
+                          <p className="text-sm leading-relaxed text-white/70">
                             {item.description}
                           </p>
                         )}
@@ -411,9 +417,8 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             {isOwner && !showEmptyState ? (
               <div className="mt-6 text-center">
                 <Link href="/profile/edit">
-                  <Button variant="outline" className="w-full border-dashed border-2 border-gray-300 hover:border-blue-400 hover:bg-blue-50">
-                    <Plus className="mr-2 h-5 w-5" />
-                    Add More Content
+                  <Button className="rounded-full border border-white/20 bg-white/10 px-6 text-sm font-semibold text-white hover:bg-white/20">
+                    Manage links
                   </Button>
                 </Link>
               </div>
@@ -423,9 +428,9 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             {isOwner ? (
               <div className="mt-8 text-center">
                 <Link href="/profile/edit">
-                  <Button className="rounded-full bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-3 text-white shadow-lg transition-all duration-200 hover:from-blue-700 hover:to-purple-700 hover:shadow-xl">
+                  <Button className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-slate-900 shadow-[0_22px_45px_-25px_rgba(15,23,42,0.7)] transition hover:bg-white/90">
                     <Edit3 className="mr-2 h-5 w-5" />
-                    Edit Profile
+                    Edit profile
                   </Button>
                 </Link>
               </div>
@@ -434,7 +439,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
         </Card>
 
         {/* Footer */}
-        <div className="text-center mt-8 text-sm text-gray-500">
+        <div className="mt-8 text-center text-sm text-white/40">
           <p>Powered by Premium App</p>
         </div>
       </div>
