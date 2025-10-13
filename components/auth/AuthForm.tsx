@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { ERROR_CODES, parseSupabaseError } from "@/lib/error-handling";
+import { getAuthRedirectUrl } from "@/lib/auth-redirect";
 import RoleOption from "@/components/auth/RoleOption";
 
 // Email validation helper
@@ -192,7 +193,7 @@ export default function AuthForm() {
         password,
         options: {
           data: { full_name: sanitizedFullName, role },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: getAuthRedirectUrl(),
         },
       });
 

@@ -31,4 +31,13 @@ describe("parseSupabaseError", () => {
     expect(error.code).toBe(ERROR_CODES.VALIDATION_ERROR);
     expect(error.userMessage).toMatch(/please check your input/i);
   });
+
+  it("flags invalid redirect errors so previews can be diagnosed", () => {
+    const error = parseSupabaseError({
+      message: "Unable to validate request: redirect_to is not allowed", // Supabase error copy
+    });
+
+    expect(error.code).toBe(ERROR_CODES.AUTH_INVALID_REDIRECT);
+    expect(error.userMessage).toMatch(/domain is not allowed/i);
+  });
 });

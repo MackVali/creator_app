@@ -1,4 +1,5 @@
 import { getSupabaseBrowser } from "./supabase";
+import { getAuthRedirectUrl } from "./auth-redirect";
 import { User } from "@supabase/supabase-js";
 
 export interface AuthUser {
@@ -15,7 +16,7 @@ export async function signInWithMagicLink(email: string) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      emailRedirectTo: getAuthRedirectUrl(),
     },
   });
   return { error };

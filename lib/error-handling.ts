@@ -28,6 +28,7 @@ export const ERROR_CODES = {
   AUTH_EMAIL_ALREADY_REGISTERED: "auth/email-already-registered",
   AUTH_SIGNUPS_DISABLED: "auth/signups-disabled",
   AUTH_WEAK_PASSWORD: "auth/weak-password",
+  AUTH_INVALID_REDIRECT: "auth/invalid-redirect",
   NETWORK_ERROR: "network/error",
   VALIDATION_ERROR: "validation/error",
   UNKNOWN_ERROR: "unknown/error",
@@ -47,6 +48,8 @@ const USER_FRIENDLY_MESSAGES = {
     "New sign-ups are currently disabled. Contact support or your administrator",
   [ERROR_CODES.AUTH_WEAK_PASSWORD]:
     "Password does not meet security requirements",
+  [ERROR_CODES.AUTH_INVALID_REDIRECT]:
+    "Unable to send the confirmation email because this domain is not allowed. Please use the main site or contact support.",
   [ERROR_CODES.NETWORK_ERROR]:
     "Connection error. Please check your internet and try again",
   [ERROR_CODES.VALIDATION_ERROR]: "Please check your input and try again",
@@ -56,6 +59,7 @@ const USER_FRIENDLY_MESSAGES = {
 // Parse Supabase auth errors
 export function parseSupabaseError(error: SupabaseError): AppError {
   const errorMessage = error?.message || "Unknown error occurred";
+  const lowerCasedMessage = errorMessage.toLowerCase();
 
   // Log the full error for debugging
   console.error("Supabase error:", error);
@@ -79,7 +83,7 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
-  if (errorMessage.toLowerCase().includes("already registered")) {
+  if (lowerCasedMessage.includes("already registered")) {
     return {
       code: ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED,
       message: errorMessage,
@@ -89,7 +93,7 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
-  if (errorMessage.toLowerCase().includes("signups not allowed")) {
+  if (lowerCasedMessage.includes("signups not allowed")) {
     return {
       code: ERROR_CODES.AUTH_SIGNUPS_DISABLED,
       message: errorMessage,
@@ -117,12 +121,27 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
-  if (errorMessage.toLowerCase().includes("invalid email")) {
+  if (lowerCasedMessage.includes("invalid email")) {
     return {
       code: ERROR_CODES.VALIDATION_ERROR,
       message: errorMessage,
       userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.VALIDATION_ERROR],
       shouldLog: false,
+    };
+  }
+
+  if (
+    lowerCasedMessage.includes("redirect_to") ||
+    (lowerCasedMessage.includes("redirect") &&
+      (lowerCasedMessage.includes("url") ||
+        lowerCasedMessage.includes("domain") ||
+        lowerCasedMessage.includes("host")))
+  ) {
+    return {
+      code: ERROR_CODES.AUTH_INVALID_REDIRECT,
+      message: errorMessage,
+      userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_INVALID_REDIRECT],
+      shouldLog: true,
     };
   }
 
