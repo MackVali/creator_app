@@ -3788,10 +3788,8 @@ export default function SchedulePage() {
                           Back
                         </motion.button>
                         <div
-                          className={`absolute inset-0 overflow-hidden ${projectCornerClass} border border-white/20 bg-white/10`}
-                          style={sharedCardStyle}
-                        />
-                        <div className="relative h-full w-full overflow-hidden p-2">
+                          className={`relative h-full w-full overflow-hidden p-2 ${projectCornerClass}`}
+                        >
                           {displayCards.map(taskCard => {
                             const {
                               key,
