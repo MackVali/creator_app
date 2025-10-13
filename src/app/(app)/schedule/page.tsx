@@ -3152,6 +3152,27 @@ export default function SchedulePage() {
     ]
   )
 
+  const scheduledTaskInstanceIdsForAutoCompletion = useMemo(() => {
+    const ids = new Set<string>()
+    for (const projectInstance of dayTimelineModel.projectInstances) {
+      const tasksForProject =
+        dayTimelineModel.taskInstancesByProject[projectInstance.project.id] ?? []
+      for (const taskInfo of tasksForProject) {
+        if (
+          taskMatchesProjectInstance(
+            taskInfo,
+            projectInstance.instance,
+            projectInstance.start,
+            projectInstance.end
+          )
+        ) {
+          ids.add(taskInfo.instance.id)
+        }
+      }
+    }
+    return Array.from(ids)
+  }, [dayTimelineModel])
+
   const baseTimelineHeight = useMemo(
     () =>
       computeDayTimelineHeightPx(
@@ -3180,6 +3201,29 @@ export default function SchedulePage() {
     }
     return lastTimelineChromeHeightRef.current
   }, [measuredTimelineContainerHeight, baseTimelineHeight])
+
+  useEffect(() => {
+    if (!userId) return
+    if (scheduledTaskInstanceIdsForAutoCompletion.length === 0) return
+
+    for (const instanceId of scheduledTaskInstanceIdsForAutoCompletion) {
+      const pendingStatus = pendingInstanceStatuses.get(instanceId)
+      if (pendingStatus === 'completed') continue
+
+      const currentStatus =
+        pendingStatus ?? instanceStatusById[instanceId] ?? null
+
+      if (currentStatus === 'completed') continue
+
+      void handleToggleInstanceCompletion(instanceId, 'completed')
+    }
+  }, [
+    userId,
+    scheduledTaskInstanceIdsForAutoCompletion,
+    pendingInstanceStatuses,
+    instanceStatusById,
+    handleToggleInstanceCompletion,
+  ])
 
   const renderDayTimeline = useCallback(
     (model: DayTimelineModel, options?: DayTimelineRenderOptions) => {
@@ -3754,12 +3798,12 @@ export default function SchedulePage() {
                                   instanceStatusById[instanceId] ??
                                   null
                                 : null
-                            const canToggle =
+                            const isCompleted = status === 'completed'
+                            const isInteractive =
                               kind === 'scheduled' &&
                               !!instanceId &&
-                              (status === 'completed' ||
-                                status === 'scheduled')
-                            const isCompleted = status === 'completed'
+                              !isCompleted &&
+                              !isPending
                             return (
                               <motion.div
                                 key={key}
@@ -3773,7 +3817,7 @@ export default function SchedulePage() {
                                     : undefined
                                 }
                                 tabIndex={
-                                  kind === 'scheduled' && instanceId && canToggle ? 0 : -1
+                                  kind === 'scheduled' && instanceId && isInteractive ? 0 : -1
                                 }
                                 aria-pressed={
                                   kind === 'scheduled' && instanceId
@@ -3782,24 +3826,21 @@ export default function SchedulePage() {
                                 }
                                 aria-disabled={
                                   kind === 'scheduled' && instanceId
-                                    ? !canToggle || isPending
+                                    ? !isInteractive
                                     : undefined
                                 }
                                 className={`${cardClasses}${
-                                  kind === 'scheduled' && instanceId && canToggle && !isPending
+                                  kind === 'scheduled' && instanceId && isInteractive
                                     ? ' cursor-pointer'
                                     : ''
                                 }${isPending ? ' opacity-60' : ''}`}
                                 style={tStyle}
                                 onClick={() => {
                                   if (kind !== 'scheduled' || !instanceId) return
-                                  if (!canToggle || isPending) return
-                                  const nextStatus = isCompleted
-                                    ? 'scheduled'
-                                    : 'completed'
+                                  if (!isInteractive) return
                                   void handleToggleInstanceCompletion(
                                     instanceId,
-                                    nextStatus
+                                    'completed'
                                   )
                                 }}
                                 onKeyDown={event => {
@@ -3808,13 +3849,10 @@ export default function SchedulePage() {
                                   }
                                   if (kind !== 'scheduled' || !instanceId) return
                                   event.preventDefault()
-                                  if (!canToggle || isPending) return
-                                  const nextStatus = isCompleted
-                                    ? 'scheduled'
-                                    : 'completed'
+                                  if (!isInteractive) return
                                   void handleToggleInstanceCompletion(
                                     instanceId,
-                                    nextStatus
+                                    'completed'
                                   )
                                 }}
                                 initial={
@@ -3908,12 +3946,11 @@ export default function SchedulePage() {
               const pendingStatus = pendingInstanceStatuses.get(instance.id)
               const isPending = pendingStatus !== undefined
               const status = pendingStatus ?? instance.status ?? 'scheduled'
-              const canToggle =
-                status === 'completed' || status === 'scheduled'
               const isCompleted = status === 'completed'
+              const isInteractive = !isCompleted && !isPending
               const standaloneClassName = [
                 'absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]',
-                canToggle && !isPending ? 'cursor-pointer' : '',
+                isInteractive ? 'cursor-pointer' : '',
                 isPending ? 'opacity-60' : '',
               ]
                 .filter(Boolean)
@@ -3924,24 +3961,22 @@ export default function SchedulePage() {
                   data-schedule-instance-id={instance.id}
                   aria-label={`Task ${task.name}`}
                   role="button"
-                  tabIndex={canToggle ? 0 : -1}
+                  tabIndex={isInteractive ? 0 : -1}
                   aria-pressed={isCompleted}
-                  aria-disabled={!canToggle || isPending}
+                  aria-disabled={!isInteractive}
                   className={standaloneClassName}
                   style={style}
                   onClick={() => {
-                    if (!canToggle || isPending) return
-                    const nextStatus = isCompleted ? 'scheduled' : 'completed'
-                    void handleToggleInstanceCompletion(instance.id, nextStatus)
+                    if (!isInteractive) return
+                    void handleToggleInstanceCompletion(instance.id, 'completed')
                   }}
                   onKeyDown={event => {
                     if (event.key !== 'Enter' && event.key !== ' ') {
                       return
                     }
                     event.preventDefault()
-                    if (!canToggle || isPending) return
-                    const nextStatus = isCompleted ? 'scheduled' : 'completed'
-                    void handleToggleInstanceCompletion(instance.id, nextStatus)
+                    if (!isInteractive) return
+                    void handleToggleInstanceCompletion(instance.id, 'completed')
                   }}
                   initial={
                     prefersReducedMotion ? false : { opacity: 0, y: 4 }
