@@ -11,6 +11,7 @@ function clearManagedEnvVars() {
   delete process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL;
   delete process.env.NEXT_PUBLIC_SITE_URL;
   delete process.env.NEXT_PUBLIC_VERCEL_URL;
+  delete process.env.NEXT_PUBLIC_VERCEL_ENV;
 }
 
 beforeEach(() => {
@@ -40,20 +41,29 @@ describe("getAuthRedirectUrl", () => {
     expect(getAuthRedirectUrl()).toBe("https://site.example.com/auth/callback");
   });
 
-  it("normalizes the Vercel preview url when no explicit domains exist", () => {
+  it("skips Vercel preview hosts", () => {
     process.env.NEXT_PUBLIC_VERCEL_URL = "preview.vercel.app";
+    process.env.NEXT_PUBLIC_VERCEL_ENV = "preview";
 
-    expect(getAuthRedirectUrl()).toBe("https://preview.vercel.app/auth/callback");
+    expect(getAuthRedirectUrl()).toBeNull();
   });
 
-  it("uses the browser origin as a final fallback", () => {
+  it("uses the Vercel production host when available", () => {
+    process.env.NEXT_PUBLIC_VERCEL_URL = "prod.vercel.app";
+    process.env.NEXT_PUBLIC_VERCEL_ENV = "production";
+
+    expect(getAuthRedirectUrl()).toBe("https://prod.vercel.app/auth/callback");
+  });
+
+  it("uses the browser origin as a development fallback", () => {
     const origin = "https://preview.example.com";
+    process.env.NODE_ENV = "development";
     vi.stubGlobal("window", { location: { origin } });
 
     expect(getAuthRedirectUrl()).toBe(`${origin}/auth/callback`);
   });
 
-  it("returns a relative path when no context is available", () => {
-    expect(getAuthRedirectUrl("custom")).toBe("/custom");
+  it("returns null when no context is available", () => {
+    expect(getAuthRedirectUrl("custom")).toBeNull();
   });
 });

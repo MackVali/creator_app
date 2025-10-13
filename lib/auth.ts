@@ -13,11 +13,10 @@ export async function signInWithMagicLink(email: string) {
   if (!supabase) {
     return { error: { message: "Supabase client not initialized" } };
   }
+  const emailRedirectTo = getAuthRedirectUrl();
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: {
-      emailRedirectTo: getAuthRedirectUrl(),
-    },
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
   });
   return { error };
 }

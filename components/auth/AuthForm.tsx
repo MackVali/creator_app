@@ -187,34 +187,68 @@ export default function AuthForm() {
     setError(null);
     setSuccess(null);
 
+    const emailRedirectTo = getAuthRedirectUrl();
+
+    const finalizeSignup = (
+      resultData: Awaited<ReturnType<typeof supabase.auth.signUp>>["data"],
+      usedFallback = false,
+    ) => {
+      setAttempts(0);
+      if (resultData.user && !resultData.user.email_confirmed_at) {
+        setSuccess(
+          usedFallback
+            ? "Account created! Please check your email to confirm your account. If you started from a preview link, open the confirmation email on the main site domain."
+            : "Account created! Please check your email to confirm your account."
+        );
+      } else {
+        const redirectTo = searchParams.get("redirect") || "/dashboard";
+        router.replace(redirectTo);
+      }
+    };
+
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const metadata = { full_name: sanitizedFullName, role };
+      const signupOptions = {
+        data: metadata,
+        ...(emailRedirectTo ? { emailRedirectTo } : {}),
+      };
+
+      const initialResult = await supabase.auth.signUp({
         email: sanitizedEmail,
         password,
-        options: {
-          data: { full_name: sanitizedFullName, role },
-          emailRedirectTo: getAuthRedirectUrl(),
-        },
+        options: signupOptions,
       });
 
-      if (error) {
-        const appError = handleAuthError(error);
+      if (initialResult.error) {
+        const appError = handleAuthError(initialResult.error);
+
         if (appError.code === ERROR_CODES.AUTH_SIGNUPS_DISABLED) {
           setSuccess(null);
         }
-      } else {
-        setAttempts(0);
-        // Check if email confirmation is required
-        if (data.user && !data.user.email_confirmed_at) {
-          setSuccess(
-            "Account created! Please check your email to confirm your account."
-          );
-        } else {
-          // Email confirmation disabled, redirect to dashboard
-          const redirectTo = searchParams.get("redirect") || "/dashboard";
-          router.replace(redirectTo);
+
+        if (
+          appError.code === ERROR_CODES.AUTH_INVALID_REDIRECT &&
+          emailRedirectTo
+        ) {
+          const fallbackResult = await supabase.auth.signUp({
+            email: sanitizedEmail,
+            password,
+            options: { data: metadata },
+          });
+
+          if (fallbackResult.error) {
+            handleAuthError(fallbackResult.error);
+            return;
+          }
+
+          setError(null);
+          finalizeSignup(fallbackResult.data, true);
         }
+
+        return;
       }
+
+      finalizeSignup(initialResult.data);
     } catch (err) {
       handleAuthError(err as { message?: string });
     } finally {

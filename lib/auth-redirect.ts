@@ -11,29 +11,54 @@ function normalizeBaseUrl(url: string): string | null {
   return `https://${trimmed.replace(/\/$/, "")}`;
 }
 
-export function getAuthRedirectUrl(path: string = AUTH_CALLBACK_PATH): string {
-  const candidates = [
-    process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL,
-    process.env.NEXT_PUBLIC_SITE_URL,
-    process.env.NEXT_PUBLIC_VERCEL_URL,
-  ];
+function buildRedirect(url: string, path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${url}${normalizedPath}`;
+}
 
-  for (const candidate of candidates) {
-    if (candidate && candidate.trim()) {
-      const normalized = normalizeBaseUrl(candidate);
-      if (normalized) {
-        const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-        return `${normalized}${normalizedPath}`;
-      }
-    }
+function resolveConfiguredRedirect(path: string): string | null {
+  const explicitDomain =
+    process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL;
+
+  if (explicitDomain && explicitDomain.trim()) {
+    const normalized = normalizeBaseUrl(explicitDomain);
+    return normalized ? buildRedirect(normalized, path) : null;
   }
 
-  if (typeof window !== "undefined" && window.location?.origin) {
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    return `${window.location.origin}${normalizedPath}`;
+  const vercelEnv = process.env.NEXT_PUBLIC_VERCEL_ENV;
+  const vercelUrl = process.env.NEXT_PUBLIC_VERCEL_URL;
+
+  if (
+    vercelEnv &&
+    vercelEnv.toLowerCase() === "production" &&
+    vercelUrl &&
+    vercelUrl.trim()
+  ) {
+    const normalized = normalizeBaseUrl(vercelUrl);
+    return normalized ? buildRedirect(normalized, path) : null;
   }
 
-  return path.startsWith("/") ? path : `/${path}`;
+  return null;
+}
+
+function resolveBrowserRedirect(path: string): string | null {
+  if (typeof window === "undefined" || !window.location?.origin) {
+    return null;
+  }
+
+  return buildRedirect(window.location.origin, path);
+}
+
+export function getAuthRedirectUrl(
+  path: string = AUTH_CALLBACK_PATH,
+): string | null {
+  return (
+    resolveConfiguredRedirect(path) ||
+    (process.env.NODE_ENV === "development"
+      ? resolveBrowserRedirect(path)
+      : null)
+  );
 }
 
 export function getAuthCallbackPath() {
