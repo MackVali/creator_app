@@ -24,16 +24,10 @@ import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { FocusTimeline, FocusTimelineFab } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
-import { YearView } from '@/components/schedule/YearView'
-import { MonthView } from '@/components/schedule/MonthView'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
-import {
-  getChildView,
-  getParentView,
-  type ScheduleView,
-} from '@/components/schedule/viewUtils'
+import { type ScheduleView } from '@/components/schedule/viewUtils'
 import { RescheduleButton } from '@/components/schedule/RescheduleButton'
 import {
   fetchReadyTasks,
@@ -1616,7 +1610,7 @@ export default function SchedulePage() {
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
-    initialViewParam && ['year', 'month', 'day', 'focus'].includes(initialViewParam)
+    initialViewParam && ['day', 'focus'].includes(initialViewParam)
       ? initialViewParam
       : 'day'
   const initialDate = searchParams.get('date')
@@ -2121,20 +2115,6 @@ export default function SchedulePage() {
   }, [habits])
 
   const windowMap = useMemo(() => buildWindowMap(windows), [windows])
-
-  const dayEnergies = useMemo(() => {
-    const map: Record<string, FlameLevel> = {}
-    for (const inst of instances) {
-      const start = toLocal(inst.start_utc)
-      const key = formatLocalDateKey(start)
-      const level = (inst.energy_resolved?.toUpperCase() as FlameLevel) || 'NO'
-      const current = map[key]
-      if (!current || ENERGY.LIST.indexOf(level) > ENERGY.LIST.indexOf(current)) {
-        map[key] = level
-      }
-    }
-    return map
-  }, [instances])
 
   const projectInstances = useMemo(
     () => computeProjectInstances(instances, projectMap, windowMap),
@@ -2700,19 +2680,7 @@ export default function SchedulePage() {
   }
 
   function handleBack() {
-    if (view === 'year') {
-      router.push('/dashboard')
-      return
-    }
-
-    const parent = getParentView(view)
-    if (parent !== view) navigate(parent)
-  }
-
-  function handleDrillDown(date: Date) {
-    const next = getChildView(view, date)
-    updateCurrentDate(next.date)
-    if (next.view !== view) navigate(next.view)
+    router.push('/dashboard')
   }
 
   const handleToday = () => {
@@ -4289,25 +4257,6 @@ export default function SchedulePage() {
             />
           </div>
           <AnimatePresence mode="wait" initial={false}>
-            {view === 'year' && (
-              <ScheduleViewShell key="year">
-                <YearView
-                  energies={dayEnergies}
-                  selectedDate={currentDate}
-                  onSelectDate={handleDrillDown}
-                />
-              </ScheduleViewShell>
-            )}
-            {view === 'month' && (
-              <ScheduleViewShell key="month">
-                <MonthView
-                  date={currentDate}
-                  energies={dayEnergies}
-                  selectedDate={currentDate}
-                  onSelectDate={handleDrillDown}
-                />
-              </ScheduleViewShell>
-            )}
             {view === 'day' && (
               <ScheduleViewShell key="day">
                 {prefersReducedMotion ? (
