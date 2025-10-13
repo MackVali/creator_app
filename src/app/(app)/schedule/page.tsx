@@ -40,6 +40,7 @@ import {
   fetchWindowsForDate,
   fetchProjectsMap,
   fetchProjectSkillsForProjects,
+  updateTaskStage,
   type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
 import {
@@ -1646,6 +1647,7 @@ export default function SchedulePage() {
   const [pendingInstanceStatuses, setPendingInstanceStatuses] = useState<
     Map<string, ScheduleInstance['status']>
   >(new Map())
+  const [pendingBacklogTaskIds, setPendingBacklogTaskIds] = useState<Set<string>>(new Set())
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [hasInteractedWithProjects, setHasInteractedWithProjects] = useState(false)
   const [isScheduling, setIsScheduling] = useState(false)
@@ -1681,6 +1683,7 @@ export default function SchedulePage() {
     direction: 0,
     offset: 0,
   })
+  const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
   const [pxPerMin, setPxPerMin] = useState(2)
   const basePxPerMinRef = useRef(pxPerMin)
   const pinchStateRef = useRef<{
@@ -2027,6 +2030,8 @@ export default function SchedulePage() {
         if (!active) return
         setWindows(ws)
         setTasks(ts)
+        setPendingBacklogTaskIds(new Set())
+        backlogTaskPreviousStageRef.current = new Map()
         setProjects(Object.values(pm))
         setSkills(skillRows)
         setProjectSkillIds(projectSkillsMap)
@@ -2077,6 +2082,16 @@ export default function SchedulePage() {
     }
     return map
   }, [skills])
+
+  useEffect(() => {
+    const snapshots = backlogTaskPreviousStageRef.current
+    for (const [taskId] of snapshots) {
+      const task = taskMap[taskId]
+      if (!task || task.stage !== 'PERFECT') {
+        snapshots.delete(taskId)
+      }
+    }
+  }, [taskMap])
 
   const tasksByProjectId = useMemo(() => {
     const map: Record<string, TaskLite[]> = {}
@@ -2560,6 +2575,120 @@ export default function SchedulePage() {
       updateHabitCompletionStatus(dateKey, habitId, nextStatus)
     },
     [getHabitCompletionStatus, updateHabitCompletionStatus]
+  )
+
+  const handleToggleBacklogTaskCompletion = useCallback(
+    async (taskId: string) => {
+      const task = taskMap[taskId]
+      if (!task) return
+      if (pendingBacklogTaskIds.has(taskId)) return
+
+      const currentStage = task.stage
+      const isCurrentlyCompleted = currentStage === 'PERFECT'
+      const snapshots = backlogTaskPreviousStageRef.current
+
+      let nextStage: TaskLite['stage']
+      if (isCurrentlyCompleted) {
+        nextStage = snapshots.get(taskId) ?? 'PRODUCE'
+      } else {
+        snapshots.set(taskId, currentStage)
+        nextStage = 'PERFECT'
+      }
+
+      if (nextStage === currentStage) {
+        if (!isCurrentlyCompleted) {
+          snapshots.delete(taskId)
+        }
+        return
+      }
+
+      setPendingBacklogTaskIds(prev => {
+        const next = new Set(prev)
+        next.add(taskId)
+        return next
+      })
+
+      setTasks(prev =>
+        prev.map(t => (t.id === taskId ? { ...t, stage: nextStage } : t))
+      )
+
+      try {
+        const { error } = await updateTaskStage(taskId, nextStage)
+        if (error) {
+          throw error
+        }
+
+        if (isCurrentlyCompleted) {
+          snapshots.delete(taskId)
+        }
+
+        const shouldAwardXp = isCurrentlyCompleted || nextStage === 'PERFECT'
+        if (shouldAwardXp && userId) {
+          const isUndo = isCurrentlyCompleted
+          const skillIdsRaw = task.skill_id ? [task.skill_id] : []
+          const uniqueSkillIds = Array.from(
+            new Set(
+              skillIdsRaw.filter(
+                (id): id is string => typeof id === 'string' && id.length > 0
+              )
+            )
+          )
+          const monumentIds = uniqueSkillIds
+            .map(id => skillMonumentMap[id])
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
+
+          const baseAwardKey = `backlog:${taskId}:task`
+          const body: Record<string, unknown> = {
+            kind: 'task',
+            amount: isUndo ? -1 : 1,
+            awardKeyBase: isUndo ? `${baseAwardKey}:undo` : baseAwardKey,
+          }
+          if (uniqueSkillIds.length > 0) {
+            body.skillIds = uniqueSkillIds
+          }
+          if (monumentIds.length > 0) {
+            body.monumentIds = monumentIds
+          }
+
+          try {
+            const response = await fetch('/api/xp/award', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            })
+            if (!response.ok) {
+              console.error(
+                'Failed to award XP for backlog task completion',
+                await response.text()
+              )
+            }
+          } catch (awardError) {
+            console.error('Failed to award XP for backlog task completion', awardError)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to toggle backlog task completion', error)
+        setTasks(prev =>
+          prev.map(t => (t.id === taskId ? { ...t, stage: currentStage } : t))
+        )
+        if (!isCurrentlyCompleted) {
+          snapshots.delete(taskId)
+        }
+      } finally {
+        setPendingBacklogTaskIds(prev => {
+          const next = new Set(prev)
+          next.delete(taskId)
+          return next
+        })
+      }
+    },
+    [
+      taskMap,
+      pendingBacklogTaskIds,
+      setTasks,
+      skillMonumentMap,
+      userId,
+    ]
   )
   function navigate(next: ScheduleView) {
     if (navLock.current) return
@@ -3717,35 +3846,20 @@ export default function SchedulePage() {
                               'bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.88)_100%)] text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 backdrop-blur'
                             const fallbackTaskClasses =
                               'bg-[linear-gradient(135deg,_rgba(44,44,52,0.9)_0%,_rgba(68,70,80,0.88)_38%,_rgba(120,126,138,0.82)_100%)] text-zinc-100 shadow-[0_16px_32px_rgba(10,10,14,0.5)] ring-1 ring-white/15 backdrop-blur-[2px]'
-                            const cardClasses =
-                              kind === 'scheduled'
-                                ? `${baseTaskClasses} ${
-                                    isCompleted
-                                      ? completedTaskClasses
-                                      : shinyTaskClasses
-                                  }`
-                                : `${baseTaskClasses} ${fallbackTaskClasses}`
-                            const progressValue =
-                              kind === 'scheduled'
-                                ? Math.max(
-                                    0,
-                                    Math.min(
-                                      100,
-                                      (task as { progress?: number }).progress ?? 0
-                                    )
-                                  )
-                                : 0
+                            const isFallbackCard = kind === 'fallback'
+                            const fallbackStage = task.stage
+                              ? task.stage.toString().toUpperCase()
+                              : ''
+                            const fallbackCompleted =
+                              isFallbackCard && fallbackStage === 'PERFECT'
+                            const fallbackPending = isFallbackCard
+                              ? pendingBacklogTaskIds.has(task.id)
+                              : false
                             const durationLabel =
                               kind === 'fallback'
                                 ? `~${displayDurationMinutes}m`
                                 : `${displayDurationMinutes}m`
                             const metaTextClass = 'text-xs text-zinc-200/75'
-                            const progressBarClass =
-                              kind === 'scheduled'
-                                ? isCompleted
-                                  ? 'absolute left-0 bottom-0 h-[3px] bg-emerald-300/80'
-                                  : 'absolute left-0 bottom-0 h-[3px] bg-white/40'
-                                : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
                             const resolvedEnergyRaw = (
                               task.energy ?? project.energy ?? 'NO'
                             ).toString()
@@ -3759,59 +3873,81 @@ export default function SchedulePage() {
                               kind === 'scheduled' && instanceId
                                 ? pendingInstanceStatuses.get(instanceId)
                                 : undefined
-                            const isPending = pendingStatus !== undefined
+                            const scheduledIsPending = pendingStatus !== undefined
                             const status =
                               kind === 'scheduled' && instanceId
                                 ? pendingStatus ??
                                   instanceStatusById[instanceId] ??
                                   'scheduled'
                                 : null
-                            const canToggle =
+                            const scheduledCanToggle =
                               kind === 'scheduled' &&
                               !!instanceId &&
-                              (status === 'completed' ||
-                                status === 'scheduled')
-                            const isCompleted = status === 'completed'
+                              (status === 'completed' || status === 'scheduled')
+                            const scheduledCompleted = status === 'completed'
+                            const canToggle = isFallbackCard ? true : scheduledCanToggle
+                            const isPending = isFallbackCard
+                              ? fallbackPending
+                              : scheduledIsPending
+                            const isCompleted = isFallbackCard
+                              ? fallbackCompleted
+                              : scheduledCompleted
+                            const cardClasses = `${baseTaskClasses} ${
+                              isCompleted
+                                ? completedTaskClasses
+                                : isFallbackCard
+                                  ? fallbackTaskClasses
+                                  : shinyTaskClasses
+                            }`
+                            const progressValue =
+                              kind === 'scheduled'
+                                ? Math.max(
+                                    0,
+                                    Math.min(
+                                      100,
+                                      (task as { progress?: number }).progress ?? 0
+                                    )
+                                  )
+                                : isCompleted
+                                  ? 100
+                                  : 0
+                            const progressBarClass = isCompleted
+                              ? 'absolute left-0 bottom-0 h-[3px] bg-emerald-300/80'
+                              : kind === 'scheduled'
+                                ? 'absolute left-0 bottom-0 h-[3px] bg-white/40'
+                                : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
+                            const hasInteractiveRole =
+                              isFallbackCard || (kind === 'scheduled' && !!instanceId)
                             return (
                               <motion.div
                                 key={key}
                                 data-schedule-instance-id={
                                   kind === 'scheduled' && instanceId ? instanceId : undefined
                                 }
+                                data-backlog-task-id={
+                                  isFallbackCard ? task.id : undefined
+                                }
                                 aria-label={`Task ${task.name}`}
-                                role={
-                                  kind === 'scheduled' && instanceId
-                                    ? 'button'
-                                    : undefined
-                                }
-                                tabIndex={
-                                  kind === 'scheduled' && instanceId && canToggle ? 0 : -1
-                                }
+                                role={hasInteractiveRole ? 'button' : undefined}
+                                tabIndex={canToggle ? 0 : -1}
                                 aria-pressed={
-                                  kind === 'scheduled' && instanceId
-                                    ? isCompleted
-                                    : undefined
+                                  hasInteractiveRole ? isCompleted : undefined
                                 }
                                 aria-disabled={
-                                  kind === 'scheduled' && instanceId
-                                    ? !canToggle || isPending
-                                    : undefined
+                                  hasInteractiveRole ? !canToggle || isPending : undefined
                                 }
-                                data-completed={
-                                  kind === 'scheduled' && instanceId
-                                    ? isCompleted
-                                      ? 'true'
-                                      : 'false'
-                                    : undefined
-                                }
+                                data-completed={isCompleted ? 'true' : 'false'}
                                 className={`${cardClasses}${
-                                  kind === 'scheduled' && instanceId && canToggle && !isPending
-                                    ? ' cursor-pointer'
-                                    : ''
+                                  canToggle && !isPending ? ' cursor-pointer' : ''
                                 }${isPending ? ' opacity-60' : ''}`}
                                 style={tStyle}
                                 onClick={() => {
-                                  if (kind !== 'scheduled' || !instanceId) return
+                                  if (isFallbackCard) {
+                                    if (!canToggle || isPending) return
+                                    handleToggleBacklogTaskCompletion(task.id)
+                                    return
+                                  }
+                                  if (!instanceId) return
                                   if (!canToggle || isPending) return
                                   const nextStatus = isCompleted
                                     ? 'scheduled'
@@ -3825,8 +3961,13 @@ export default function SchedulePage() {
                                   if (event.key !== 'Enter' && event.key !== ' ') {
                                     return
                                   }
-                                  if (kind !== 'scheduled' || !instanceId) return
                                   event.preventDefault()
+                                  if (isFallbackCard) {
+                                    if (!canToggle || isPending) return
+                                    handleToggleBacklogTaskCompletion(task.id)
+                                    return
+                                  }
+                                  if (!instanceId) return
                                   if (!canToggle || isPending) return
                                   const nextStatus = isCompleted
                                     ? 'scheduled'
@@ -4027,8 +4168,10 @@ export default function SchedulePage() {
         setProjectExpansion,
         expandedProjects,
         pendingInstanceStatuses,
+        pendingBacklogTaskIds,
         getHabitCompletionStatus,
         handleToggleInstanceCompletion,
+        handleToggleBacklogTaskCompletion,
         instanceStatusById,
         toggleHabitCompletionStatus,
       ]
