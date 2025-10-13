@@ -40,4 +40,14 @@ describe("parseSupabaseError", () => {
     expect(error.code).toBe(ERROR_CODES.AUTH_INVALID_REDIRECT);
     expect(error.userMessage).toMatch(/domain is not allowed/i);
   });
+
+  it("guides configuration when Supabase site url is missing", () => {
+    const error = parseSupabaseError({
+      message:
+        "For security reasons, please configure your project URL: set the SITE_URL value in Authentication > URL Configuration.",
+    });
+
+    expect(error.code).toBe(ERROR_CODES.AUTH_INVALID_REDIRECT);
+    expect(error.userMessage).toMatch(/site_url/i);
+  });
 });

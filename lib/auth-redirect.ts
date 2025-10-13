@@ -42,23 +42,27 @@ function resolveConfiguredRedirect(path: string): string | null {
   return null;
 }
 
-function resolveBrowserRedirect(path: string): string | null {
+export function getAuthRedirectUrl(
+  path: string = AUTH_CALLBACK_PATH,
+): string | null {
+  const configuredRedirect = resolveConfiguredRedirect(path);
+  if (configuredRedirect) {
+    return configuredRedirect;
+  }
+
   if (typeof window === "undefined" || !window.location?.origin) {
     return null;
   }
 
-  return buildRedirect(window.location.origin, path);
-}
+  const shouldUseBrowserOrigin =
+    process.env.NODE_ENV === "development" ||
+    process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
 
-export function getAuthRedirectUrl(
-  path: string = AUTH_CALLBACK_PATH,
-): string | null {
-  return (
-    resolveConfiguredRedirect(path) ||
-    (process.env.NODE_ENV === "development"
-      ? resolveBrowserRedirect(path)
-      : null)
-  );
+  if (!shouldUseBrowserOrigin) {
+    return null;
+  }
+
+  return buildRedirect(window.location.origin, path);
 }
 
 export function getAuthCallbackPath() {

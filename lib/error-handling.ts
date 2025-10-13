@@ -103,6 +103,20 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
+  if (
+    lowerCasedMessage.includes("site_url") ||
+    lowerCasedMessage.includes("url configuration") ||
+    lowerCasedMessage.includes("configure your project url")
+  ) {
+    return {
+      code: ERROR_CODES.AUTH_INVALID_REDIRECT,
+      message: errorMessage,
+      userMessage:
+        "Supabase needs a redirect domain configured. Set NEXT_PUBLIC_SUPABASE_REDIRECT_URL, NEXT_PUBLIC_SITE_URL, or configure the SITE_URL in your Supabase Auth settings.",
+      shouldLog: true,
+    };
+  }
+
   if (errorMessage.includes("Too many requests")) {
     return {
       code: ERROR_CODES.AUTH_TOO_MANY_REQUESTS,

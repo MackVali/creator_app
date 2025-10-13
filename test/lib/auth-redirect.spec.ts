@@ -41,12 +41,14 @@ describe("getAuthRedirectUrl", () => {
     expect(getAuthRedirectUrl()).toBe("https://site.example.com/auth/callback");
   });
 
-  it("skips Vercel preview hosts", () => {
-    process.env.NEXT_PUBLIC_VERCEL_URL = "preview.vercel.app";
-    process.env.NEXT_PUBLIC_VERCEL_ENV = "preview";
+    it("uses the browser origin for Vercel previews", () => {
+      const origin = "https://preview.vercel.app";
+      process.env.NEXT_PUBLIC_VERCEL_URL = "preview.vercel.app";
+      process.env.NEXT_PUBLIC_VERCEL_ENV = "preview";
+      vi.stubGlobal("window", { location: { origin } });
 
-    expect(getAuthRedirectUrl()).toBeNull();
-  });
+      expect(getAuthRedirectUrl()).toBe(`${origin}/auth/callback`);
+    });
 
   it("uses the Vercel production host when available", () => {
     process.env.NEXT_PUBLIC_VERCEL_URL = "prod.vercel.app";
