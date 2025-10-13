@@ -41,6 +41,15 @@ describe("parseSupabaseError", () => {
     expect(error.userMessage).toMatch(/domain is not allowed/i);
   });
 
+  it("identifies when the Supabase email rate limit is hit", () => {
+    const error = parseSupabaseError({
+      message: "Email rate limit exceeded, please try again later",
+    });
+
+    expect(error.code).toBe(ERROR_CODES.AUTH_EMAIL_RATE_LIMIT);
+    expect(error.userMessage).toMatch(/hourly limit/i);
+  });
+
   it("guides configuration when Supabase site url is missing", () => {
     const error = parseSupabaseError({
       message:

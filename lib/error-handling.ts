@@ -25,6 +25,7 @@ export const ERROR_CODES = {
   AUTH_USER_NOT_FOUND: "auth/user-not-found",
   AUTH_EMAIL_NOT_CONFIRMED: "auth/email-not-confirmed",
   AUTH_TOO_MANY_REQUESTS: "auth/too-many-requests",
+  AUTH_EMAIL_RATE_LIMIT: "auth/email-rate-limit",
   AUTH_EMAIL_ALREADY_REGISTERED: "auth/email-already-registered",
   AUTH_SIGNUPS_DISABLED: "auth/signups-disabled",
   AUTH_WEAK_PASSWORD: "auth/weak-password",
@@ -42,6 +43,8 @@ const USER_FRIENDLY_MESSAGES = {
     "Please check your email and confirm your account",
   [ERROR_CODES.AUTH_TOO_MANY_REQUESTS]:
     "Too many attempts. Please wait before trying again",
+  [ERROR_CODES.AUTH_EMAIL_RATE_LIMIT]:
+    "We have reached the hourly limit for sending Supabase emails. Please wait a bit or increase the email rate limit in Supabase Auth settings.",
   [ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED]:
     "An account already exists with this email",
   [ERROR_CODES.AUTH_SIGNUPS_DISABLED]:
@@ -123,6 +126,15 @@ export function parseSupabaseError(error: SupabaseError): AppError {
       message: errorMessage,
       userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_TOO_MANY_REQUESTS],
       shouldLog: true,
+    };
+  }
+
+  if (lowerCasedMessage.includes("rate limit")) {
+    return {
+      code: ERROR_CODES.AUTH_EMAIL_RATE_LIMIT,
+      message: errorMessage,
+      userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_EMAIL_RATE_LIMIT],
+      shouldLog: false,
     };
   }
 
