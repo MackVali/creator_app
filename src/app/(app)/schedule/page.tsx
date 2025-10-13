@@ -3764,7 +3764,7 @@ export default function SchedulePage() {
                               kind === 'scheduled' && instanceId
                                 ? pendingStatus ??
                                   instanceStatusById[instanceId] ??
-                                  null
+                                  'scheduled'
                                 : null
                             const canToggle =
                               kind === 'scheduled' &&
