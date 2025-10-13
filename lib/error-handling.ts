@@ -25,6 +25,8 @@ export const ERROR_CODES = {
   AUTH_USER_NOT_FOUND: "auth/user-not-found",
   AUTH_EMAIL_NOT_CONFIRMED: "auth/email-not-confirmed",
   AUTH_TOO_MANY_REQUESTS: "auth/too-many-requests",
+  AUTH_EMAIL_ALREADY_REGISTERED: "auth/email-already-registered",
+  AUTH_SIGNUPS_DISABLED: "auth/signups-disabled",
   AUTH_WEAK_PASSWORD: "auth/weak-password",
   NETWORK_ERROR: "network/error",
   VALIDATION_ERROR: "validation/error",
@@ -39,6 +41,10 @@ const USER_FRIENDLY_MESSAGES = {
     "Please check your email and confirm your account",
   [ERROR_CODES.AUTH_TOO_MANY_REQUESTS]:
     "Too many attempts. Please wait before trying again",
+  [ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED]:
+    "An account already exists with this email",
+  [ERROR_CODES.AUTH_SIGNUPS_DISABLED]:
+    "New sign-ups are currently disabled. Contact support or your administrator",
   [ERROR_CODES.AUTH_WEAK_PASSWORD]:
     "Password does not meet security requirements",
   [ERROR_CODES.NETWORK_ERROR]:
@@ -73,6 +79,26 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
+  if (errorMessage.toLowerCase().includes("already registered")) {
+    return {
+      code: ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED,
+      message: errorMessage,
+      userMessage:
+        USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED],
+      shouldLog: false,
+    };
+  }
+
+  if (errorMessage.toLowerCase().includes("signups not allowed")) {
+    return {
+      code: ERROR_CODES.AUTH_SIGNUPS_DISABLED,
+      message: errorMessage,
+      userMessage:
+        USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_SIGNUPS_DISABLED],
+      shouldLog: true,
+    };
+  }
+
   if (errorMessage.includes("Too many requests")) {
     return {
       code: ERROR_CODES.AUTH_TOO_MANY_REQUESTS,
@@ -88,6 +114,15 @@ export function parseSupabaseError(error: SupabaseError): AppError {
       message: errorMessage,
       userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_WEAK_PASSWORD],
       shouldLog: true,
+    };
+  }
+
+  if (errorMessage.toLowerCase().includes("invalid email")) {
+    return {
+      code: ERROR_CODES.VALIDATION_ERROR,
+      message: errorMessage,
+      userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.VALIDATION_ERROR],
+      shouldLog: false,
     };
   }
 
