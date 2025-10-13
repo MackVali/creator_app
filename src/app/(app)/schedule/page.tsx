@@ -3601,9 +3601,6 @@ export default function SchedulePage() {
                 !hasScheduledBreakdown && displayCards.length > 0
               const detailParts: string[] = []
               if (tasksLabel) detailParts.push(tasksLabel)
-              if (usingFallback) {
-                detailParts.push('Backlog preview')
-              }
               const detailText = detailParts.join(' · ')
               const hiddenFallbackCount = usingFallback
                 ? Math.max(0, backlogTasks.length - displayCards.length)
