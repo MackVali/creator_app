@@ -137,16 +137,19 @@ export function DayTimeline({
 
       {showNowLine && (
         <>
-          <div className="now-line absolute left-20 right-6" style={{ top: nowTop }} />
           <div
-            className="absolute left-6 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
+            className="now-line pointer-events-none absolute left-20 right-6 z-50"
+            style={{ top: nowTop }}
+          />
+          <div
+            className="pointer-events-none absolute left-6 z-50 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
             style={{ top: nowTop }}
           >
             <Clock className="h-3 w-3 text-slate-700" />
             <span>Now</span>
           </div>
           <div
-            className="absolute right-6 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
+            className="pointer-events-none absolute right-6 z-50 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
             style={{ top: nowTop }}
           >
             {formatTime((nowMinutes ?? 0) + startHour * 60)}
