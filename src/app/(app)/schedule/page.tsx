@@ -470,6 +470,7 @@ function buildFallbackTaskCards({
     fallbackCards.push({
       key: `fallback:${instanceId}:${task.id}:${index}`,
       kind: 'fallback',
+      instanceId,
       task,
       start: startTime,
       end: endTime,
@@ -3743,56 +3744,51 @@ export default function SchedulePage() {
                             )
                               ? (resolvedEnergyUpper as FlameLevel)
                               : 'NO'
-                            const pendingStatus =
-                              kind === 'scheduled' && instanceId
-                                ? pendingInstanceStatuses.get(instanceId)
-                                : undefined
+                            const pendingStatus = instanceId
+                              ? pendingInstanceStatuses.get(instanceId)
+                              : undefined
                             const isPending = pendingStatus !== undefined
-                            const status =
-                              kind === 'scheduled' && instanceId
-                                ? pendingStatus ??
-                                  instanceStatusById[instanceId] ??
-                                  null
-                                : null
+                            const status = instanceId
+                              ? pendingStatus ??
+                                instanceStatusById[instanceId] ??
+                                null
+                              : null
                             const canToggle =
-                              kind === 'scheduled' &&
                               !!instanceId &&
                               (status === 'completed' ||
                                 status === 'scheduled')
                             const isCompleted = status === 'completed'
+                            const isInteractive =
+                              !!instanceId && canToggle && !isPending
                             return (
                               <motion.div
                                 key={key}
                                 data-schedule-instance-id={
-                                  kind === 'scheduled' && instanceId ? instanceId : undefined
+                                  instanceId ?? undefined
                                 }
                                 aria-label={`Task ${task.name}`}
                                 role={
-                                  kind === 'scheduled' && instanceId
-                                    ? 'button'
-                                    : undefined
+                                  instanceId && canToggle ? 'button' : undefined
                                 }
                                 tabIndex={
-                                  kind === 'scheduled' && instanceId && canToggle ? 0 : -1
+                                  instanceId && canToggle ? 0 : -1
                                 }
                                 aria-pressed={
-                                  kind === 'scheduled' && instanceId
+                                  instanceId && canToggle
                                     ? isCompleted
                                     : undefined
                                 }
                                 aria-disabled={
-                                  kind === 'scheduled' && instanceId
+                                  instanceId
                                     ? !canToggle || isPending
                                     : undefined
                                 }
                                 className={`${cardClasses}${
-                                  kind === 'scheduled' && instanceId && canToggle && !isPending
-                                    ? ' cursor-pointer'
-                                    : ''
+                                  isInteractive ? ' cursor-pointer' : ''
                                 }${isPending ? ' opacity-60' : ''}`}
                                 style={tStyle}
                                 onClick={() => {
-                                  if (kind !== 'scheduled' || !instanceId) return
+                                  if (!instanceId) return
                                   if (!canToggle || isPending) return
                                   const nextStatus = isCompleted
                                     ? 'scheduled'
@@ -3806,7 +3802,7 @@ export default function SchedulePage() {
                                   if (event.key !== 'Enter' && event.key !== ' ') {
                                     return
                                   }
-                                  if (kind !== 'scheduled' || !instanceId) return
+                                  if (!instanceId) return
                                   event.preventDefault()
                                   if (!canToggle || isPending) return
                                   const nextStatus = isCompleted
