@@ -46,6 +46,18 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
   );
 }
 
+export async function updateTaskStage(
+  taskId: string,
+  stage: TaskLite['stage'],
+  client?: Client,
+) {
+  const supabase = ensureClient(client);
+  return await supabase
+    .from('tasks')
+    .update({ stage })
+    .eq('id', taskId);
+}
+
 export async function fetchWindowsForDate(
   date: Date,
   client?: Client,
