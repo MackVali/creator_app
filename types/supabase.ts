@@ -794,6 +794,29 @@ export interface Database {
           amount?: number;
         };
       };
+      user_enrichment_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          event_type: string;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          event_type: string;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          event_type?: string;
+          payload?: Json;
+          created_at?: string;
+        };
+      };
       user_progress: {
         Row: {
           user_id: string;

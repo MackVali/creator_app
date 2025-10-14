@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { type UserEnrichmentPayload } from "@/lib/user-enrichment";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type { Database } from "@/types/supabase";
 
@@ -33,6 +36,8 @@ const DEFAULT_AMOUNTS: Record<Exclude<XpKind, "manual">, number> = {
 };
 
 type AwardRequest = z.infer<typeof awardRequestSchema>;
+
+type UserEnrichmentClient = SupabaseClient<Database>;
 
 function resolveAmount(kind: XpKind, amount: AwardRequest["amount"]): number {
   if (typeof amount === "number") return amount;
@@ -192,6 +197,15 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       if (error.code === "23505") {
+        await recordUserEnrichment(supabase, user.id, {
+          eventType: "xp_award",
+          context: buildEnrichmentContext(
+            awardRequest,
+            amount,
+            true,
+            0,
+          ),
+        });
         return NextResponse.json({ success: true, deduped: true, inserted: 0 });
       }
 
@@ -202,10 +216,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const inserted = data?.length ?? eventsToInsert.length;
+
+    await recordUserEnrichment(supabase, user.id, {
+      eventType: "xp_award",
+      context: buildEnrichmentContext(
+        awardRequest,
+        amount,
+        deduped,
+        inserted,
+      ),
+    });
+
     return NextResponse.json({
       success: true,
       deduped,
-      inserted: data?.length ?? eventsToInsert.length,
+      inserted,
     });
   } catch (error) {
     console.error("Unexpected error awarding XP", error);
@@ -213,5 +239,47 @@ export async function POST(request: NextRequest) {
       { error: "Unexpected error" },
       { status: 500 }
     );
+  }
+}
+
+function buildEnrichmentContext(
+  awardRequest: AwardRequest,
+  amount: number,
+  deduped: boolean,
+  inserted: number,
+) {
+  return {
+    scheduleInstanceId: awardRequest.scheduleInstanceId ?? null,
+    kind: awardRequest.kind,
+    amount,
+    skillIds: awardRequest.skillIds ?? [],
+    monumentIds: awardRequest.monumentIds ?? [],
+    deduped,
+    inserted,
+    source: awardRequest.source ?? null,
+  } satisfies UserEnrichmentPayload["context"];
+}
+
+async function recordUserEnrichment(
+  supabase: UserEnrichmentClient,
+  userId: string,
+  payload: { eventType: string; context?: Record<string, unknown> | null },
+) {
+  try {
+    const enrichmentPayload = {
+      user_id: userId,
+      event_type: payload.eventType,
+      payload: payload.context ?? {},
+    } satisfies Database["public"]["Tables"]["user_enrichment_events"]["Insert"];
+
+    const { error } = await supabase
+      .from("user_enrichment_events")
+      .insert(enrichmentPayload);
+
+    if (error) {
+      console.error("Failed to record XP enrichment event", error);
+    }
+  } catch (error) {
+    console.error("Unexpected error recording XP enrichment", error);
   }
 }

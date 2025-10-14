@@ -63,6 +63,7 @@ import {
   type SchedulerRunFailure,
 } from '@/lib/scheduler/windowReports'
 import { getSkillsForUser } from '@/lib/data/skills'
+import { enqueueUserEnrichment } from '@/lib/user-enrichment'
 import type { SkillRow } from '@/lib/types/skill'
 
 type DayTransitionDirection = -1 | 0 | 1
@@ -2465,6 +2466,8 @@ export default function SchedulePage() {
             if (payload.monumentIds.length > 0) {
               body.monumentIds = payload.monumentIds
             }
+            let xpAwarded = false
+            let xpResult: { deduped?: boolean; inserted?: number } | null = null
             try {
               const response = await fetch('/api/xp/award', {
                 method: 'POST',
@@ -2473,9 +2476,34 @@ export default function SchedulePage() {
               })
               if (!response.ok) {
                 console.error('Failed to award XP for schedule completion', await response.text())
+              } else {
+                xpAwarded = true
+                try {
+                  xpResult = await response.json()
+                } catch (parseError) {
+                  console.error('Failed to parse XP award response', parseError)
+                }
               }
             } catch (awardError) {
               console.error('Failed to award XP for schedule completion', awardError)
+            }
+
+            if (xpAwarded && !isUndo) {
+              void enqueueUserEnrichment({
+                eventType: 'schedule_instance_completed',
+                context: {
+                  scheduleInstanceId: instance.id,
+                  scheduleInstanceStatus: nextStatus,
+                  sourceType: instance.source_type,
+                  sourceId: instance.source_id,
+                  xpAmount: payload.amount,
+                  xpKind: payload.kind,
+                  skillIds: payload.skillIds,
+                  monumentIds: payload.monumentIds,
+                  xpDeduped: xpResult?.deduped ?? null,
+                  xpInserted: xpResult?.inserted ?? null,
+                },
+              })
             }
           }
         }
