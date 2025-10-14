@@ -31,6 +31,12 @@ import {
   type HabitSkillSelectOption,
   type HabitWindowSelectOption,
 } from "@/components/habits/habit-form-fields";
+import {
+  buildHabitRoutineSelectOptions,
+  buildHabitSkillSelectOptions,
+  buildHabitWindowSelectOptions,
+  type HabitRoutineSelectOption,
+} from "@/components/habits/habit-form-utils";
 import { Button } from "./button";
 import { Input } from "./input";
 import { Label } from "./label";
@@ -88,13 +94,6 @@ type RoutineOption = {
   id: string;
   name: string;
   description: string | null;
-};
-
-type RoutineSelectOption = {
-  value: string;
-  label: string;
-  description?: string | null;
-  disabled?: boolean;
 };
 
 const formatNameValue = (value: string) => value.toUpperCase();
@@ -309,60 +308,6 @@ interface WindowOption {
   start_local: string | null;
   end_local: string | null;
   energy: string | null;
-}
-
-function formatTimeLabel(value: string | null | undefined) {
-  if (!value) return null;
-
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const date = new Date();
-  date.setHours(Number(hour), Number(minute), 0, 0);
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function parseStartMinutes(value: string | null | undefined) {
-  if (!value) return null;
-
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const parsedHour = Number(hour);
-  const parsedMinute = Number(minute);
-
-  if (Number.isNaN(parsedHour) || Number.isNaN(parsedMinute)) {
-    return null;
-  }
-
-  return parsedHour * 60 + parsedMinute;
-}
-
-function formatWindowMeta(window: WindowOption) {
-  const start = formatTimeLabel(window.start_local);
-  const end = formatTimeLabel(window.end_local);
-  const energy = window.energy
-    ? window.energy.replace(/[_-]+/g, " ").toLowerCase()
-    : null;
-  const parts: string[] = [];
-
-  if (start && end) {
-    parts.push(`${start} – ${end}`);
-  }
-
-  if (energy) {
-    parts.push(`${energy} energy`);
-  }
-
-  return parts.join(" • ");
 }
 
 const DEFAULT_SKILL_ICON = "✦";
@@ -1166,120 +1111,24 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   );
 
   const windowSelectOptions = useMemo<HabitWindowSelectOption[]>(() => {
-    if (windowsLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading windows…",
-          disabled: true,
-        },
-      ];
-    }
-
-    if (windows.length === 0) {
-      return [
-        {
-          value: "none",
-          label: "No window preference",
-        },
-      ];
-    }
-
-    const sortedWindows = [...windows].sort((a, b) => {
-      const aMinutes = parseStartMinutes(a.start_local);
-      const bMinutes = parseStartMinutes(b.start_local);
-
-      if (aMinutes === null && bMinutes === null) {
-        return a.label.localeCompare(b.label, undefined, {
-          sensitivity: "base",
-        });
-      }
-
-      if (aMinutes === null) return 1;
-      if (bMinutes === null) return -1;
-
-      const minuteComparison = aMinutes - bMinutes;
-      if (minuteComparison !== 0) {
-        return minuteComparison;
-      }
-
-      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+    return buildHabitWindowSelectOptions({
+      windows,
+      isLoading: windowsLoading,
     });
-
-    return [
-      {
-        value: "none",
-        label: "No window preference",
-      },
-      ...sortedWindows.map((window) => ({
-        value: window.id,
-        label: window.label,
-        description: formatWindowMeta(window),
-      })),
-    ];
   }, [windows, windowsLoading]);
 
-  const routineSelectOptions = useMemo<RoutineSelectOption[]>(() => {
-    if (routinesLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading routines…",
-          disabled: true,
-        },
-      ];
-    }
-
-    const baseOptions = routineOptions.map((routine) => ({
-      value: routine.id,
-      label: routine.name,
-      description: routine.description,
-    }));
-
-    return [
-      {
-        value: "none",
-        label: "No routine",
-      },
-      ...baseOptions,
-      {
-        value: "__create__",
-        label: "Create a new routine",
-      },
-    ];
+  const routineSelectOptions = useMemo<HabitRoutineSelectOption[]>(() => {
+    return buildHabitRoutineSelectOptions({
+      routines: routineOptions,
+      isLoading: routinesLoading,
+    });
   }, [routineOptions, routinesLoading]);
 
   const habitSkillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
-    if (skillsLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading skills…",
-          disabled: true,
-        },
-      ];
-    }
-
-    if (sortedSkills.length === 0) {
-      return [
-        {
-          value: "none",
-          label: "No skill focus",
-        },
-      ];
-    }
-
-    return [
-      {
-        value: "none",
-        label: "No skill focus",
-      },
-      ...sortedSkills.map((skill) => ({
-        value: skill.id,
-        label: skill.name,
-        icon: skill.icon ?? null,
-      })),
-    ];
+    return buildHabitSkillSelectOptions({
+      skills: sortedSkills,
+      isLoading: skillsLoading,
+    });
   }, [skillsLoading, sortedSkills]);
 
   const handleTaskSkillSelect = (value: string) => {
