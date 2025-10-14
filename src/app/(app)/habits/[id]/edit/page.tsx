@@ -16,6 +16,12 @@ import {
   type HabitWindowSelectOption,
   type HabitSkillSelectOption,
 } from "@/components/habits/habit-form-fields";
+import {
+  buildHabitRoutineSelectOptions,
+  buildHabitSkillSelectOptions,
+  buildHabitWindowSelectOptions,
+  type HabitRoutineSelectOption,
+} from "@/components/habits/habit-form-utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,9 +38,9 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 interface WindowOption {
   id: string;
   label: string;
-  start_local: string;
-  end_local: string;
-  energy: string;
+  start_local: string | null;
+  end_local: string | null;
+  energy: string | null;
 }
 
 interface RoutineOption {
@@ -46,65 +52,10 @@ interface RoutineOption {
 interface SkillOption {
   id: string;
   name: string | null;
+  icon?: string | null;
 }
 
 type RoutineSelectValue = string;
-type RoutineSelectOption = {
-  value: string;
-  label: string;
-  description?: string | null;
-  disabled?: boolean;
-};
-
-function formatTimeLabel(value: string | null | undefined) {
-  if (!value) return null;
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const date = new Date();
-  date.setHours(Number(hour), Number(minute), 0, 0);
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function parseStartMinutes(value: string | null | undefined) {
-  if (!value) return null;
-
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const parsedHour = Number(hour);
-  const parsedMinute = Number(minute);
-
-  if (Number.isNaN(parsedHour) || Number.isNaN(parsedMinute)) {
-    return null;
-  }
-
-  return parsedHour * 60 + parsedMinute;
-}
-
-function formatWindowSummary(window: WindowOption) {
-  const start = formatTimeLabel(window.start_local);
-  const end = formatTimeLabel(window.end_local);
-  const energy = window.energy
-    ? window.energy.replace(/[_-]+/g, " ").toLowerCase()
-    : null;
-  const parts = [window.label];
-  if (start && end) {
-    parts.push(`${start} – ${end}`);
-  }
-  if (energy) {
-    parts.push(`${energy} energy`);
-  }
-  return parts.join(" • ");
-}
 
 export default function EditHabitPage() {
   const router = useRouter();
@@ -208,56 +159,10 @@ export default function EditHabitPage() {
   }, [supabase]);
 
   const windowSelectOptions = useMemo<HabitWindowSelectOption[]>(() => {
-    if (windowsLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading windows…",
-          disabled: true,
-        },
-      ];
-    }
-
-    if (windowOptions.length === 0) {
-      return [
-        {
-          value: "none",
-          label: "No window preference",
-        },
-      ];
-    }
-
-    const sortedWindows = [...windowOptions].sort((a, b) => {
-      const aMinutes = parseStartMinutes(a.start_local);
-      const bMinutes = parseStartMinutes(b.start_local);
-
-      if (aMinutes === null && bMinutes === null) {
-        return a.label.localeCompare(b.label, undefined, {
-          sensitivity: "base",
-        });
-      }
-
-      if (aMinutes === null) return 1;
-      if (bMinutes === null) return -1;
-
-      const minuteComparison = aMinutes - bMinutes;
-      if (minuteComparison !== 0) {
-        return minuteComparison;
-      }
-
-      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+    return buildHabitWindowSelectOptions({
+      windows: windowOptions,
+      isLoading: windowsLoading,
     });
-
-    return [
-      {
-        value: "none",
-        label: "No window preference",
-      },
-      ...sortedWindows.map((window) => ({
-        value: window.id,
-        label: formatWindowSummary(window),
-      })),
-    ];
   }, [windowOptions, windowsLoading]);
 
   useEffect(() => {
@@ -331,34 +236,11 @@ export default function EditHabitPage() {
     };
   }, [supabase]);
 
-  const routineSelectOptions = useMemo<RoutineSelectOption[]>(() => {
-    if (routinesLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading routines…",
-          disabled: true,
-        },
-      ];
-    }
-
-    const baseOptions = routineOptions.map((routine) => ({
-      value: routine.id,
-      label: routine.name,
-      description: routine.description,
-    }));
-
-    return [
-      {
-        value: "none",
-        label: "No routine",
-      },
-      ...baseOptions,
-      {
-        value: "__create__",
-        label: "Create a new routine",
-      },
-    ];
+  const routineSelectOptions = useMemo<HabitRoutineSelectOption[]>(() => {
+    return buildHabitRoutineSelectOptions({
+      routines: routineOptions,
+      isLoading: routinesLoading,
+    });
   }, [routineOptions, routinesLoading]);
 
   useEffect(() => {
@@ -392,7 +274,7 @@ export default function EditHabitPage() {
 
         const { data, error: skillsError } = await supabase
           .from("skills")
-          .select("id, name")
+          .select("id, name, icon")
           .eq("user_id", user.id)
           .order("name", { ascending: true });
 
@@ -433,35 +315,10 @@ export default function EditHabitPage() {
   }, [supabase]);
 
   const skillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
-    if (skillsLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading skills…",
-          disabled: true,
-        },
-      ];
-    }
-
-    if (skillOptions.length === 0) {
-      return [
-        {
-          value: "none",
-          label: "No skill linked",
-        },
-      ];
-    }
-
-    return [
-      {
-        value: "none",
-        label: "No skill linked",
-      },
-      ...skillOptions.map((skill) => ({
-        value: skill.id,
-        label: skill.name?.trim() ? skill.name : "Untitled skill",
-      })),
-    ];
+    return buildHabitSkillSelectOptions({
+      skills: skillOptions,
+      isLoading: skillsLoading,
+    });
   }, [skillOptions, skillsLoading]);
 
   useEffect(() => {
@@ -725,31 +582,30 @@ export default function EditHabitPage() {
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_20px_45px_-25px_rgba(15,23,42,0.85)] sm:p-8">
               <form onSubmit={handleSubmit} className="space-y-8">
-                  <HabitFormFields
-                    name={name}
-                    description={description}
-                    habitType={habitType}
-                    recurrence={recurrence}
-                    recurrenceDays={recurrenceDays}
-                    duration={duration}
-                    windowId={windowId}
-                    skillId={skillId}
-                    windowsLoading={windowsLoading}
-                    windowOptions={windowSelectOptions}
+                <HabitFormFields
+                  name={name}
+                  description={description}
+                  habitType={habitType}
+                  recurrence={recurrence}
+                  recurrenceDays={recurrenceDays}
+                  duration={duration}
+                  windowId={windowId}
+                  skillId={skillId}
+                  windowsLoading={windowsLoading}
+                  windowOptions={windowSelectOptions}
                   windowError={windowLoadError}
                   skillsLoading={skillsLoading}
                   skillOptions={skillSelectOptions}
                   skillError={skillLoadError}
                   onNameChange={setName}
-                    onDescriptionChange={setDescription}
-                    onHabitTypeChange={setHabitType}
-                    onRecurrenceChange={setRecurrence}
-                    onRecurrenceDaysChange={setRecurrenceDays}
-                    onWindowChange={setWindowId}
-                    onDurationChange={setDuration}
-                    onSkillChange={setSkillId}
-                    showDescriptionField={false}
-                    footerSlot={
+                  onDescriptionChange={setDescription}
+                  onHabitTypeChange={setHabitType}
+                  onRecurrenceChange={setRecurrence}
+                  onRecurrenceDaysChange={setRecurrenceDays}
+                  onWindowChange={setWindowId}
+                  onDurationChange={setDuration}
+                  onSkillChange={setSkillId}
+                  footerSlot={
                     <div className="space-y-4">
                       <div className="space-y-3">
                         <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
@@ -791,32 +647,33 @@ export default function EditHabitPage() {
                         ) : null}
                       </div>
 
-                      {routineId === "__create__" && (
-                        <div className="grid gap-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                          <div className="space-y-2">
+                      {routineId === "__create__" ? (
+                        <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+                          <div className="space-y-3">
                             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                               Routine name
                             </Label>
                             <Input
                               value={newRoutineName}
                               onChange={(event) => setNewRoutineName(event.target.value)}
-                              placeholder="Morning Focus"
-                              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                              placeholder="e.g. Morning kickoff"
+                              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
                             />
                           </div>
-                          <div className="space-y-2">
+
+                          <div className="space-y-3">
                             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                              Description
+                              Description (optional)
                             </Label>
                             <Textarea
                               value={newRoutineDescription}
                               onChange={(event) => setNewRoutineDescription(event.target.value)}
-                              placeholder="Group habits focused on deep work."
-                              className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                              placeholder="Give your routine a purpose so future habits stay aligned."
+                              className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
                             />
                           </div>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   }
                 />
