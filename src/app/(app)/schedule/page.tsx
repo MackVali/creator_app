@@ -589,16 +589,32 @@ function computeStandaloneTaskInstancesForDay(
   return items
 }
 
+function isSameLocalDay(
+  a: Date | null | undefined,
+  b: Date | null | undefined,
+) {
+  if (!a || !b) return false
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
 function computeHabitPlacementsForDay({
   habits,
   windows,
   date,
   timeZone,
+  now,
+  completionMap,
 }: {
   habits: HabitScheduleItem[]
   windows: RepoWindow[]
   date: Date
   timeZone: string
+  now?: Date | null
+  completionMap?: Record<string, HabitCompletionStatus>
 }): HabitTimelinePlacement[] {
   if (habits.length === 0 || windows.length === 0) return []
 
@@ -608,6 +624,9 @@ function computeHabitPlacementsForDay({
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const placements: HabitTimelinePlacement[] = []
   const availability = new Map<string, number>()
+  const dayCompletionMap = completionMap ?? null
+  const nowCandidate = now ?? null
+  const nowMs = isSameLocalDay(nowCandidate, date) ? nowCandidate?.getTime() ?? null : null
 
   const windowEntries = windows
     .map((window) => {
@@ -677,6 +696,7 @@ function computeHabitPlacementsForDay({
     const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
     const dueStartMs = dueStart ? dueStart.getTime() : null
+    const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
 
     let placed = false
     for (const entry of windowEntries) {
@@ -684,10 +704,17 @@ function computeHabitPlacementsForDay({
 
       const existingAvailability = availability.get(entry.key) ?? entry.startMs
       const baseStart = Math.max(existingAvailability, entry.startMs)
-      const startMs =
+      let startMs =
         typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)
           ? Math.max(baseStart, dueStartMs)
           : baseStart
+
+      if (!isHabitCompleted && typeof nowMs === 'number') {
+        const normalizedNow = Math.max(nowMs, entry.startMs)
+        if (normalizedNow > startMs) {
+          startMs = normalizedNow
+        }
+      }
       if (startMs >= entry.endMs) {
         availability.set(entry.key, entry.endMs)
         continue
@@ -1059,6 +1086,8 @@ function buildDayTimelineModel({
   timeZoneShortName,
   friendlyTimeZone,
   localTimeZone,
+  habitCompletionByDate,
+  now,
 }: {
   date: Date
   windows: RepoWindow[]
@@ -1076,7 +1105,12 @@ function buildDayTimelineModel({
   timeZoneShortName: string
   friendlyTimeZone: string
   localTimeZone: string
+  habitCompletionByDate?: Record<string, Record<string, HabitCompletionStatus>>
+  now?: Date | null
 }): DayTimelineModel {
+  const dayViewDateKey = formatLocalDateKey(date)
+  const completionMapForDay = habitCompletionByDate?.[dayViewDateKey] ?? null
+  const nowForModel = now ?? null
   const windowMap = buildWindowMap(windows)
   const projectInstances = computeProjectInstances(instances, projectMap, windowMap)
   const projectInstanceIds = collectProjectInstanceIds(projectInstances)
@@ -1095,6 +1129,8 @@ function buildDayTimelineModel({
     windows,
     date,
     timeZone: localTimeZone ?? 'UTC',
+    now: nowForModel,
+    completionMap: completionMapForDay ?? undefined,
   })
   const windowReports = computeWindowReportsForDay({
     windows,
@@ -1108,7 +1144,6 @@ function buildDayTimelineModel({
     habitPlacements,
     currentDate: date,
   })
-  const dayViewDateKey = formatLocalDateKey(date)
   return {
     date,
     isViewingToday: formatLocalDateKey(new Date()) === dayViewDateKey,
@@ -2277,6 +2312,8 @@ export default function SchedulePage() {
           timeZoneShortName,
           friendlyTimeZone,
           localTimeZone,
+          habitCompletionByDate,
+          now: new Date(),
         })
         if (cancelled) return
         if (model.dayViewDateKey !== targetKey) return
@@ -2310,6 +2347,7 @@ export default function SchedulePage() {
     schedulerTimelinePlacements,
     timeZoneShortName,
     friendlyTimeZone,
+    habitCompletionByDate,
   ])
 
   useEffect(() => {
@@ -3209,6 +3247,8 @@ export default function SchedulePage() {
         timeZoneShortName,
         friendlyTimeZone,
         localTimeZone,
+        habitCompletionByDate,
+        now: new Date(),
       }),
     [
       currentDate,
@@ -3227,6 +3267,7 @@ export default function SchedulePage() {
       timeZoneShortName,
       friendlyTimeZone,
       localTimeZone,
+      habitCompletionByDate,
     ]
   )
 
