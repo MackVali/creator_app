@@ -45,8 +45,13 @@ vi.mock("@supabase/ssr", () => {
   };
 });
 
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => ({})),
+}));
+
 describe("getSupabaseServer", () => {
   beforeEach(async () => {
+    vi.resetModules();
     vi.clearAllMocks();
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
@@ -66,10 +71,27 @@ describe("getSupabaseServer", () => {
 
     expect(() => getSupabaseServer(store)).not.toThrow();
     const { createServerClient } = await import("@supabase/ssr");
+    const { createClient } = await import("@supabase/supabase-js");
+    expect(createClient).toHaveBeenCalledWith(
+      "https://example.supabase.co",
+      "anon-key",
+      expect.objectContaining({
+        auth: expect.objectContaining({
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          persistSession: true,
+        }),
+      }),
+    );
     expect(createServerClient).toHaveBeenCalledWith(
       "https://example.supabase.co",
       "anon-key",
       expect.objectContaining({
+        auth: expect.objectContaining({
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          persistSession: true,
+        }),
         cookies: expect.objectContaining({
           get: expect.any(Function),
           set: expect.any(Function),

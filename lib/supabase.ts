@@ -1,10 +1,20 @@
-import {
-  createBrowserClient,
-  createServerClient,
-  type CookieOptions,
-} from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-function getEnv() {
+const authConfig = {
+  persistSession: true,
+  autoRefreshToken: true,
+  detectSessionInUrl: true,
+};
+
+const clientOptions = { auth: authConfig };
+
+type EnvConfig = {
+  url: string | null;
+  key: string | null;
+};
+
+function resolveEnv(): EnvConfig {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -19,10 +29,15 @@ function getEnv() {
   return { url, key };
 }
 
+const env = resolveEnv();
+
+let browserClient: SupabaseClient | null =
+  env.url && env.key ? createClient(env.url, env.key, clientOptions) : null;
+
+export const supabase: SupabaseClient | null = browserClient;
+
 export function getSupabaseBrowser() {
-  const { url, key } = getEnv();
-  if (!url || !key) return null;
-  return createBrowserClient(url, key);
+  return browserClient;
 }
 
 type CookieStore = {
@@ -31,9 +46,9 @@ type CookieStore = {
 };
 
 export function getSupabaseServer(cookies: CookieStore) {
-  const { url, key } = getEnv();
-  if (!url || !key) return null;
-  return createServerClient(url, key, {
+  if (!env.url || !env.key) return null;
+  return createServerClient(env.url, env.key, {
+    auth: authConfig,
     cookies: {
       get: (name) => cookies.get(name)?.value,
       set: (name, value, options) => {
