@@ -58,35 +58,38 @@ export interface Database {
           duration_minutes: number | null;
           window_id: string | null;
           skill_id: string | null;
+          energy: string | null;
         };
-        Insert: {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
-          user_id: string;
-          name: string;
-          description?: string | null;
-          habit_type?: string;
-          recurrence?: string | null;
-          recurrence_days?: number[] | null;
-          duration_minutes?: number | null;
-          window_id?: string | null;
-          skill_id?: string | null;
-        };
-        Update: {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
-          user_id?: string;
-          name?: string;
-          description?: string | null;
-          habit_type?: string;
-          recurrence?: string | null;
-          recurrence_days?: number[] | null;
-          duration_minutes?: number | null;
-          window_id?: string | null;
-          skill_id?: string | null;
-        };
+      Insert: {
+        id?: string;
+        created_at?: string;
+        updated_at?: string;
+        user_id: string;
+        name: string;
+        description?: string | null;
+        habit_type?: string;
+        recurrence?: string | null;
+        recurrence_days?: number[] | null;
+        duration_minutes?: number | null;
+        window_id?: string | null;
+        skill_id?: string | null;
+        energy?: string | null;
+      };
+      Update: {
+        id?: string;
+        created_at?: string;
+        updated_at?: string;
+        user_id?: string;
+        name?: string;
+        description?: string | null;
+        habit_type?: string;
+        recurrence?: string | null;
+        recurrence_days?: number[] | null;
+        duration_minutes?: number | null;
+        window_id?: string | null;
+        skill_id?: string | null;
+        energy?: string | null;
+      };
       };
       projects: {
         Row: {

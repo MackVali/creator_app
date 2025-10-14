@@ -38,6 +38,7 @@ export interface Habits extends BaseTable {
   type_id: number;
   window_id?: string | null;
   skill_id?: string | null;
+  energy?: string | null;
 }
 
 export interface Skills extends BaseTable {

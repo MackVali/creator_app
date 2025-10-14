@@ -13,7 +13,8 @@ import {
   HabitFormFields,
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
-  type HabitWindowSelectOption,
+  HABIT_ENERGY_OPTIONS,
+  type HabitEnergySelectOption,
   type HabitSkillSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { Button } from "@/components/ui/button";
@@ -28,14 +29,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseBrowser } from "@/lib/supabase";
-
-interface WindowOption {
-  id: string;
-  label: string;
-  start_local: string;
-  end_local: string;
-  energy: string;
-}
 
 interface RoutineOption {
   id: string;
@@ -56,56 +49,6 @@ type RoutineSelectOption = {
   disabled?: boolean;
 };
 
-function formatTimeLabel(value: string | null | undefined) {
-  if (!value) return null;
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const date = new Date();
-  date.setHours(Number(hour), Number(minute), 0, 0);
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function parseStartMinutes(value: string | null | undefined) {
-  if (!value) return null;
-
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const parsedHour = Number(hour);
-  const parsedMinute = Number(minute);
-
-  if (Number.isNaN(parsedHour) || Number.isNaN(parsedMinute)) {
-    return null;
-  }
-
-  return parsedHour * 60 + parsedMinute;
-}
-
-function formatWindowSummary(window: WindowOption) {
-  const start = formatTimeLabel(window.start_local);
-  const end = formatTimeLabel(window.end_local);
-  const energy = window.energy
-    ? window.energy.replace(/[_-]+/g, " ").toLowerCase()
-    : null;
-  const parts = [window.label];
-  if (start && end) {
-    parts.push(`${start} – ${end}`);
-  }
-  if (energy) {
-    parts.push(`${energy} energy`);
-  }
-  return parts.join(" • ");
-}
-
 export default function EditHabitPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -121,12 +64,9 @@ export default function EditHabitPage() {
   );
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
-  const [windowId, setWindowId] = useState("none");
+  const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [windowOptions, setWindowOptions] = useState<WindowOption[]>([]);
-  const [windowsLoading, setWindowsLoading] = useState(true);
-  const [windowLoadError, setWindowLoadError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(true);
   const [routineLoadError, setRoutineLoadError] = useState<string | null>(null);
@@ -140,125 +80,10 @@ export default function EditHabitPage() {
   const [habitLoading, setHabitLoading] = useState(true);
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-
-    const fetchWindows = async () => {
-      if (!supabase) {
-        if (active) {
-          setWindowsLoading(false);
-          setWindowLoadError("Supabase client not available.");
-        }
-        return;
-      }
-
-      try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) throw userError;
-
-        if (!user) {
-          if (active) {
-            setWindowOptions([]);
-            setWindowId("none");
-          }
-          return;
-        }
-
-        const { data, error: windowsError } = await supabase
-          .from("windows")
-          .select("id, label, start_local, end_local, energy")
-          .eq("user_id", user.id)
-          .order("start_local", { ascending: true });
-
-        if (windowsError) throw windowsError;
-
-        if (active) {
-          const safeWindows = data ?? [];
-          setWindowOptions(safeWindows);
-          setWindowLoadError(null);
-          setWindowId((current) => {
-            if (current === "none") return current;
-            return safeWindows.some((option) => option.id === current)
-              ? current
-              : "none";
-          });
-        }
-      } catch (err) {
-        console.error("Failed to load windows:", err);
-        if (active) {
-          setWindowOptions([]);
-          setWindowLoadError("Unable to load your time windows right now.");
-        }
-      } finally {
-        if (active) {
-          setWindowsLoading(false);
-        }
-      }
-    };
-
-    fetchWindows();
-
-    return () => {
-      active = false;
-    };
-  }, [supabase]);
-
-  const windowSelectOptions = useMemo<HabitWindowSelectOption[]>(() => {
-    if (windowsLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading windows…",
-          disabled: true,
-        },
-      ];
-    }
-
-    if (windowOptions.length === 0) {
-      return [
-        {
-          value: "none",
-          label: "No window preference",
-        },
-      ];
-    }
-
-    const sortedWindows = [...windowOptions].sort((a, b) => {
-      const aMinutes = parseStartMinutes(a.start_local);
-      const bMinutes = parseStartMinutes(b.start_local);
-
-      if (aMinutes === null && bMinutes === null) {
-        return a.label.localeCompare(b.label, undefined, {
-          sensitivity: "base",
-        });
-      }
-
-      if (aMinutes === null) return 1;
-      if (bMinutes === null) return -1;
-
-      const minuteComparison = aMinutes - bMinutes;
-      if (minuteComparison !== 0) {
-        return minuteComparison;
-      }
-
-      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
-    });
-
-    return [
-      {
-        value: "none",
-        label: "No window preference",
-      },
-      ...sortedWindows.map((window) => ({
-        value: window.id,
-        label: formatWindowSummary(window),
-      })),
-    ];
-  }, [windowOptions, windowsLoading]);
+  const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
+    () => HABIT_ENERGY_OPTIONS,
+    []
+  );
 
   useEffect(() => {
     let active = true;
@@ -503,7 +328,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, window_id, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -534,7 +359,13 @@ export default function EditHabitPage() {
               ? String(data.duration_minutes)
               : ""
           );
-          setWindowId(data.window_id ?? "none");
+          const normalizedEnergy = (data.energy ?? "").toString().trim().toUpperCase();
+          const fallbackEnergy = HABIT_ENERGY_OPTIONS[0]?.value ?? "NO";
+          setEnergy(
+            HABIT_ENERGY_OPTIONS.some((option) => option.value === normalizedEnergy)
+              ? normalizedEnergy
+              : fallbackEnergy
+          );
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
         }
@@ -658,7 +489,7 @@ export default function EditHabitPage() {
           recurrence: recurrenceValue,
           recurrence_days: recurrenceDaysValue,
           duration_minutes: durationMinutes,
-          window_id: windowId === "none" ? null : windowId,
+          energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
         })
@@ -693,7 +524,7 @@ export default function EditHabitPage() {
                 Edit habit
               </span>
             }
-            description="Refine the cadence, windows, and routines that shape your momentum."
+            description="Refine the cadence, energy, and routines that shape your momentum."
           >
             <Button asChild variant="outline" size="sm" className="text-white">
               <Link href="/habits">Back to habits</Link>
@@ -725,31 +556,29 @@ export default function EditHabitPage() {
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_20px_45px_-25px_rgba(15,23,42,0.85)] sm:p-8">
               <form onSubmit={handleSubmit} className="space-y-8">
-                  <HabitFormFields
-                    name={name}
-                    description={description}
-                    habitType={habitType}
-                    recurrence={recurrence}
-                    recurrenceDays={recurrenceDays}
-                    duration={duration}
-                    windowId={windowId}
-                    skillId={skillId}
-                    windowsLoading={windowsLoading}
-                    windowOptions={windowSelectOptions}
-                  windowError={windowLoadError}
-                  skillsLoading={skillsLoading}
-                  skillOptions={skillSelectOptions}
-                  skillError={skillLoadError}
-                  onNameChange={setName}
-                    onDescriptionChange={setDescription}
-                    onHabitTypeChange={setHabitType}
-                    onRecurrenceChange={setRecurrence}
-                    onRecurrenceDaysChange={setRecurrenceDays}
-                    onWindowChange={setWindowId}
-                    onDurationChange={setDuration}
-                    onSkillChange={setSkillId}
-                    showDescriptionField={false}
-                    footerSlot={
+              <HabitFormFields
+                name={name}
+                description={description}
+                habitType={habitType}
+                recurrence={recurrence}
+                recurrenceDays={recurrenceDays}
+                duration={duration}
+                energy={energy}
+                skillId={skillId}
+                energyOptions={energySelectOptions}
+                skillsLoading={skillsLoading}
+                skillOptions={skillSelectOptions}
+                skillError={skillLoadError}
+                onNameChange={setName}
+                onDescriptionChange={setDescription}
+                onHabitTypeChange={setHabitType}
+                onRecurrenceChange={setRecurrence}
+                onRecurrenceDaysChange={setRecurrenceDays}
+                onEnergyChange={setEnergy}
+                onDurationChange={setDuration}
+                onSkillChange={setSkillId}
+                showDescriptionField={false}
+                footerSlot={
                     <div className="space-y-4">
                       <div className="space-y-3">
                         <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">

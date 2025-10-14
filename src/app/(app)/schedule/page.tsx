@@ -589,152 +589,151 @@ function computeStandaloneTaskInstancesForDay(
   return items
 }
 
+function isSameLocalDay(
+  a: Date | null | undefined,
+  b: Date | null | undefined,
+) {
+  if (!a || !b) return false
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
 function computeHabitPlacementsForDay({
   habits,
   windows,
   date,
   timeZone,
+  now,
+  completionMap,
 }: {
   habits: HabitScheduleItem[]
   windows: RepoWindow[]
   date: Date
   timeZone: string
+  now?: Date | null
+  completionMap?: Record<string, HabitCompletionStatus>
 }): HabitTimelinePlacement[] {
   if (habits.length === 0 || windows.length === 0) return []
 
-  const windowMap = buildWindowMap(windows)
-  const grouped = new Map<string, HabitScheduleItem[]>()
-  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const zone = timeZone || 'UTC'
   const dayStart = startOfDayInTimeZone(date, zone)
   const defaultDueMs = dayStart.getTime()
+  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
+  const placements: HabitTimelinePlacement[] = []
+  const availability = new Map<string, number>()
+  const dayCompletionMap = completionMap ?? null
+  const nowCandidate = now ?? null
+  const nowMs = isSameLocalDay(nowCandidate, date) ? nowCandidate?.getTime() ?? null : null
 
-  for (const habit of habits) {
-    const windowId = habit.windowId
-    if (!windowId) continue
-    const window = windowMap[windowId]
-    if (!window) continue
+  const windowEntries = windows
+    .map((window) => {
+      const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(window, date)
+      if (!isValidDate(windowStart) || !isValidDate(windowEnd)) {
+        return null
+      }
+      const startMs = windowStart.getTime()
+      const endMs = windowEnd.getTime()
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+        return null
+      }
+      const energyIdx = energyIndexFromLabel(window.energy)
+      const key = `${window.id}:${windowStart.toISOString()}`
+      return { window, windowStart, windowEnd, startMs, endMs, energyIdx, key }
+    })
+    .filter((entry): entry is {
+      window: RepoWindow
+      windowStart: Date
+      windowEnd: Date
+      startMs: number
+      endMs: number
+      energyIdx: number
+      key: string
+    } => entry !== null)
+    .sort((a, b) => a.startMs - b.startMs)
+
+  if (windowEntries.length === 0) return []
+
+  const dueHabits = habits.filter((habit) => {
     const dueInfo = evaluateHabitDueOnDate({
       habit,
       date,
       timeZone: zone,
-      windowDays: window.days ?? habit.window?.days ?? null,
+      windowDays: habit.window?.days ?? null,
     })
-    if (!dueInfo.isDue) continue
+    if (!dueInfo.isDue) {
+      return false
+    }
     dueInfoByHabitId.set(habit.id, dueInfo)
-    const existing = grouped.get(windowId)
-    if (existing) {
-      existing.push(habit)
-    } else {
-      grouped.set(windowId, [habit])
-    }
-  }
+    return true
+  })
 
-  if (grouped.size === 0) return []
+  if (dueHabits.length === 0) return []
 
-  const placements: HabitTimelinePlacement[] = []
+  const sortedHabits = dueHabits.sort((a, b) => {
+    const dueA = dueInfoByHabitId.get(a.id)
+    const dueB = dueInfoByHabitId.get(b.id)
+    const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
+    if (dueDiff !== 0) return dueDiff
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    if (aTime !== bTime) return aTime - bTime
+    return a.name.localeCompare(b.name)
+  })
 
-  for (const [windowId, group] of grouped) {
-    const window = windowMap[windowId]
-    if (!window) continue
-    const { start: windowStart, end: windowEnd } = resolveWindowBoundsForDate(window, date)
-    if (!isValidDate(windowStart) || !isValidDate(windowEnd)) continue
+  for (const habit of sortedHabits) {
+    const rawDuration = Number(habit.durationMinutes ?? 0)
+    const durationMin =
+      Number.isFinite(rawDuration) && rawDuration > 0
+        ? rawDuration
+        : DEFAULT_HABIT_DURATION_MIN
+    const durationMs = durationMin * 60000
+    if (durationMs <= 0) continue
 
-    const windowStartMs = windowStart.getTime()
-    let cursorMs = windowStartMs
-    const windowEndMs = windowEnd.getTime()
-    if (!Number.isFinite(cursorMs) || !Number.isFinite(windowEndMs)) continue
+    const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
+    const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
+    const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
+    const dueStartMs = dueStart ? dueStart.getTime() : null
+    const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
 
-    const sorted = [...group].sort((a, b) => {
-      const dueA = dueInfoByHabitId.get(a.id)
-      const dueB = dueInfoByHabitId.get(b.id)
-      const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
-      if (dueDiff !== 0) return dueDiff
-      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
-      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
-      if (aTime !== bTime) return aTime - bTime
-      return a.name.localeCompare(b.name)
-    })
+    let placed = false
+    for (const entry of windowEntries) {
+      if (entry.energyIdx < requiredEnergyIdx) continue
 
-    const asyncHabitsInWindow = sorted.filter(habit => (habit.habitType ?? 'HABIT').toUpperCase() === 'ASYNC')
-    const sequentialHabitsInWindow = sorted.filter(
-      habit => (habit.habitType ?? 'HABIT').toUpperCase() !== 'ASYNC'
-    )
-
-    for (const habit of sequentialHabitsInWindow) {
-      if (cursorMs >= windowEndMs) break
-      const rawDuration = Number(habit.durationMinutes ?? 0)
-      const durationMin =
-        Number.isFinite(rawDuration) && rawDuration > 0
-          ? rawDuration
-          : DEFAULT_HABIT_DURATION_MIN
-      const durationMs = durationMin * 60000
-      if (durationMs <= 0) continue
-
-      const startMs = cursorMs
-      let endMs = startMs + durationMs
-      let truncated = false
-      if (endMs > windowEndMs) {
-        endMs = windowEndMs
-        truncated = true
-      }
-      if (endMs <= startMs) {
-        cursorMs = endMs
-        continue
-      }
-
-      const start = new Date(startMs)
-      const end = new Date(endMs)
-      placements.push({
-        habitId: habit.id,
-        habitName: habit.name,
-        habitType: habit.habitType,
-        start,
-        end,
-        durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
-        window,
-        truncated,
-      })
-
-      cursorMs = endMs
-    }
-
-    let asyncCursorMs = windowStartMs
-    for (const habit of asyncHabitsInWindow) {
-      if (asyncCursorMs >= windowEndMs) break
-      const rawDuration = Number(habit.durationMinutes ?? 0)
-      const durationMin =
-        Number.isFinite(rawDuration) && rawDuration > 0
-          ? rawDuration
-          : DEFAULT_HABIT_DURATION_MIN
-      const durationMs = durationMin * 60000
-      if (durationMs <= 0) continue
-
-      const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
-      const dueStartMs = dueStart?.getTime()
-      const baseStartMs =
+      const existingAvailability = availability.get(entry.key) ?? entry.startMs
+      const baseStart = Math.max(existingAvailability, entry.startMs)
+      let startMs =
         typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)
-          ? Math.max(windowStartMs, dueStartMs)
-          : windowStartMs
-      const startMs = Math.max(asyncCursorMs, baseStartMs)
-      if (startMs >= windowEndMs) {
-        asyncCursorMs = startMs
+          ? Math.max(baseStart, dueStartMs)
+          : baseStart
+
+      if (!isHabitCompleted && typeof nowMs === 'number') {
+        const normalizedNow = Math.max(nowMs, entry.startMs)
+        if (normalizedNow > startMs) {
+          startMs = normalizedNow
+        }
+      }
+      if (startMs >= entry.endMs) {
+        availability.set(entry.key, entry.endMs)
         continue
       }
 
       let endMs = startMs + durationMs
       let truncated = false
-      if (endMs > windowEndMs) {
-        endMs = windowEndMs
+      if (endMs > entry.endMs) {
+        endMs = entry.endMs
         truncated = true
       }
       if (endMs <= startMs) {
-        asyncCursorMs = endMs
+        availability.set(entry.key, endMs)
         continue
       }
 
       const start = new Date(startMs)
       const end = new Date(endMs)
+      availability.set(entry.key, endMs)
       placements.push({
         habitId: habit.id,
         habitName: habit.name,
@@ -742,11 +741,16 @@ function computeHabitPlacementsForDay({
         start,
         end,
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
-        window,
+        window: entry.window,
         truncated,
       })
+      placed = true
+      break
+    }
 
-      asyncCursorMs = endMs
+    if (!placed) {
+      // no suitable window found; skip
+      continue
     }
   }
 
@@ -1082,6 +1086,8 @@ function buildDayTimelineModel({
   timeZoneShortName,
   friendlyTimeZone,
   localTimeZone,
+  habitCompletionByDate,
+  now,
 }: {
   date: Date
   windows: RepoWindow[]
@@ -1099,7 +1105,12 @@ function buildDayTimelineModel({
   timeZoneShortName: string
   friendlyTimeZone: string
   localTimeZone: string
+  habitCompletionByDate?: Record<string, Record<string, HabitCompletionStatus>>
+  now?: Date | null
 }): DayTimelineModel {
+  const dayViewDateKey = formatLocalDateKey(date)
+  const completionMapForDay = habitCompletionByDate?.[dayViewDateKey] ?? null
+  const nowForModel = now ?? null
   const windowMap = buildWindowMap(windows)
   const projectInstances = computeProjectInstances(instances, projectMap, windowMap)
   const projectInstanceIds = collectProjectInstanceIds(projectInstances)
@@ -1118,6 +1129,8 @@ function buildDayTimelineModel({
     windows,
     date,
     timeZone: localTimeZone ?? 'UTC',
+    now: nowForModel,
+    completionMap: completionMapForDay ?? undefined,
   })
   const windowReports = computeWindowReportsForDay({
     windows,
@@ -1131,7 +1144,6 @@ function buildDayTimelineModel({
     habitPlacements,
     currentDate: date,
   })
-  const dayViewDateKey = formatLocalDateKey(date)
   return {
     date,
     isViewingToday: formatLocalDateKey(new Date()) === dayViewDateKey,
@@ -2300,6 +2312,8 @@ export default function SchedulePage() {
           timeZoneShortName,
           friendlyTimeZone,
           localTimeZone,
+          habitCompletionByDate,
+          now: new Date(),
         })
         if (cancelled) return
         if (model.dayViewDateKey !== targetKey) return
@@ -2333,6 +2347,7 @@ export default function SchedulePage() {
     schedulerTimelinePlacements,
     timeZoneShortName,
     friendlyTimeZone,
+    habitCompletionByDate,
   ])
 
   useEffect(() => {
@@ -3232,6 +3247,8 @@ export default function SchedulePage() {
         timeZoneShortName,
         friendlyTimeZone,
         localTimeZone,
+        habitCompletionByDate,
+        now: new Date(),
       }),
     [
       currentDate,
@@ -3250,6 +3267,7 @@ export default function SchedulePage() {
       timeZoneShortName,
       friendlyTimeZone,
       localTimeZone,
+      habitCompletionByDate,
     ]
   )
 

@@ -598,118 +598,119 @@ async function scheduleHabitsForDay(params: {
   }
 
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
-  const grouped = new Map<string, HabitScheduleItem[]>()
+  const dueHabits: HabitScheduleItem[] = []
+  const zone = timeZone || 'UTC'
+  const dayStart = startOfDayInTimeZone(day, zone)
+  const defaultDueMs = dayStart.getTime()
+  const baseNowMs = offset === 0 ? baseDate.getTime() : null
+  const placements: HabitDraftPlacement[] = []
+
   for (const habit of habits) {
-    if (!habit.windowId) continue
-    const window = windowsById.get(habit.windowId)
-    if (!window) continue
+    const windowDays = habit.window?.days ?? null
     const dueInfo = evaluateHabitDueOnDate({
       habit,
       date: day,
-      timeZone,
-      windowDays: window.days ?? habit.window?.days ?? null,
+      timeZone: zone,
+      windowDays,
     })
     if (!dueInfo.isDue) continue
     dueInfoByHabitId.set(habit.id, dueInfo)
-    const existing = grouped.get(window.id)
-    if (existing) {
-      existing.push(habit)
-    } else {
-      grouped.set(window.id, [habit])
-    }
+    dueHabits.push(habit)
   }
 
-  if (grouped.size === 0) return []
-  const baseNowMs = offset === 0 ? baseDate.getTime() : null
-  const placements: HabitDraftPlacement[] = []
-  const dayStart = startOfDayInTimeZone(day, timeZone)
-  const defaultDueMs = dayStart.getTime()
+  if (dueHabits.length === 0) return []
 
-  for (const [windowId, group] of grouped) {
-    const window = windowsById.get(windowId)
-    if (!window) continue
+  const sortedHabits = dueHabits.sort((a, b) => {
+    const dueA = dueInfoByHabitId.get(a.id)
+    const dueB = dueInfoByHabitId.get(b.id)
+    const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
+    if (dueDiff !== 0) return dueDiff
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    if (aTime !== bTime) return aTime - bTime
+    return a.name.localeCompare(b.name)
+  })
 
-    const startLocal = resolveWindowStart(window, day, timeZone)
-    const endLocal = resolveWindowEnd(window, day, timeZone)
-    const startMs = startLocal.getTime()
-    const endMs = endLocal.getTime()
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
-    if (endMs <= startMs) continue
+  for (const habit of sortedHabits) {
+    const rawDuration = Number(habit.durationMinutes ?? 0)
+    const durationMin =
+      Number.isFinite(rawDuration) && rawDuration > 0
+        ? rawDuration
+        : DEFAULT_HABIT_DURATION_MIN
+    const durationMs = durationMin * 60000
+    if (durationMs <= 0) continue
 
-    const key = windowKey(window.id, startLocal)
-    const existingAvailability = availability.get(key)
-    let cursorMs = existingAvailability?.getTime() ?? startMs
-    if (cursorMs < startMs) {
-      cursorMs = startMs
+    const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
+    const compatibleWindows = await fetchCompatibleWindowsForItem(
+      client,
+      day,
+      { energy: resolvedEnergy, duration_min: durationMin },
+      zone,
+      {
+        availability,
+        cache: windowCache,
+        now: offset === 0 ? baseDate : undefined,
+      }
+    )
+
+    if (compatibleWindows.length === 0) {
+      continue
     }
 
-    const sorted = [...group].sort((a, b) => {
-      const dueA = dueInfoByHabitId.get(a.id)
-      const dueB = dueInfoByHabitId.get(b.id)
-      const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
-      if (dueDiff !== 0) return dueDiff
-      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
-      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
-      if (aTime !== bTime) return aTime - bTime
-      return a.name.localeCompare(b.name)
+    const target = compatibleWindows[0]
+    const window = windowsById.get(target.id)
+    if (!window) {
+      continue
+    }
+
+    const startMs = target.availableStartLocal.getTime()
+    const endLimit = target.endLocal.getTime()
+    let startCandidate = startMs
+    if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endLimit) {
+      startCandidate = baseNowMs
+    }
+    if (startCandidate >= endLimit) {
+      availability.set(target.key, new Date(endLimit))
+      continue
+    }
+
+    let endCandidate = startCandidate + durationMs
+    let clipped = false
+    if (endCandidate > endLimit) {
+      endCandidate = endLimit
+      clipped = true
+    }
+    if (endCandidate <= startCandidate) {
+      availability.set(target.key, new Date(endCandidate))
+      continue
+    }
+
+    const startDate = new Date(startCandidate)
+    const endDate = new Date(endCandidate)
+    availability.set(target.key, endDate)
+
+    const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
+    const windowLabel = window.label ?? null
+    const windowStartLocal = resolveWindowStart(window, day, zone)
+
+    placements.push({
+      type: 'HABIT',
+      habit: {
+        id: habit.id,
+        name: habit.name,
+        windowId: window.id,
+        windowLabel,
+        startUTC: startDate.toISOString(),
+        endUTC: endDate.toISOString(),
+        durationMin: durationMinutes,
+        energyResolved: window.energy ? String(window.energy).toUpperCase() : resolvedEnergy,
+        clipped,
+      },
+      decision: 'kept',
+      scheduledDayOffset: offset,
+      availableStartLocal: startDate.toISOString(),
+      windowStartLocal: windowStartLocal.toISOString(),
     })
-
-    for (const habit of sorted) {
-      if (cursorMs >= endMs) break
-      const rawDuration = Number(habit.durationMinutes ?? 0)
-      const durationMin =
-        Number.isFinite(rawDuration) && rawDuration > 0
-          ? rawDuration
-          : DEFAULT_HABIT_DURATION_MIN
-      const durationMs = durationMin * 60000
-      if (durationMs <= 0) continue
-
-      let startCandidate = cursorMs
-      if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endMs) {
-        startCandidate = baseNowMs
-      }
-      if (startCandidate >= endMs) {
-        cursorMs = endMs
-        continue
-      }
-
-      let endCandidate = startCandidate + durationMs
-      let clipped = false
-      if (endCandidate > endMs) {
-        endCandidate = endMs
-        clipped = true
-      }
-      if (endCandidate <= startCandidate) {
-        cursorMs = endCandidate
-        continue
-      }
-
-      const startDate = new Date(startCandidate)
-      const endDate = new Date(endCandidate)
-      availability.set(key, endDate)
-      cursorMs = endCandidate
-
-      const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
-
-      placements.push({
-        type: 'HABIT',
-        habit: {
-          id: habit.id,
-          name: habit.name,
-          windowId: window.id,
-          windowLabel: window.label ?? null,
-          startUTC: startDate.toISOString(),
-          endUTC: endDate.toISOString(),
-          durationMin: durationMinutes,
-          energyResolved: window.energy ? String(window.energy).toUpperCase() : null,
-          clipped,
-        },
-        decision: 'kept',
-        scheduledDayOffset: offset,
-        availableStartLocal: startDate.toISOString(),
-        windowStartLocal: startLocal.toISOString(),
-      })
-    }
   }
 
   placements.sort((a, b) => {
