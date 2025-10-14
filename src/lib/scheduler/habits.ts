@@ -13,6 +13,7 @@ export type HabitScheduleItem = {
   lastCompletedAt: string | null
   habitType: string
   windowId: string | null
+  energy?: string | null
   recurrence: string | null
   recurrenceDays: number[] | null
   skillId: string | null
@@ -34,6 +35,7 @@ type HabitRecord = {
   updated_at?: string | null
   habit_type?: string | null
   window_id?: string | null
+  energy?: string | null
   recurrence?: string | null
   recurrence_days?: number[] | null
   skill_id?: string | null
@@ -80,7 +82,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   }
 
   const { data, error } = await query.select(
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
   )
 
   if (error) throw error
@@ -94,6 +96,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     lastCompletedAt: record.updated_at ?? record.created_at ?? null,
     habitType: (record.habit_type ?? 'HABIT').toUpperCase(),
     windowId: record.window_id ?? null,
+    energy: record.energy ?? record.window?.energy ?? null,
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
     skillId: record.skill_id ?? null,

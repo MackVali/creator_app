@@ -25,7 +25,7 @@ export type HabitRecurrenceOption = {
   value: string;
 };
 
-export type HabitWindowSelectOption = {
+export type HabitEnergySelectOption = {
   value: string;
   label: string;
   description?: string | null;
@@ -68,6 +68,15 @@ export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
   { label: "Every X Days", value: "every x days" },
 ];
 
+export const HABIT_ENERGY_OPTIONS: HabitEnergySelectOption[] = [
+  { value: "NO", label: "No Energy", description: "Fits when energy is scarce." },
+  { value: "LOW", label: "Low", description: "Great for gentle routines." },
+  { value: "MEDIUM", label: "Medium", description: "Requires a bit of focus." },
+  { value: "HIGH", label: "High", description: "Needs momentum and intention." },
+  { value: "ULTRA", label: "Ultra", description: "Best when you're in full flow." },
+  { value: "EXTREME", label: "Extreme", description: "Reserve for peak energy." },
+];
+
 const DAYS_OF_WEEK = [
   { value: 0, label: "Sun", fullLabel: "Sunday" },
   { value: 1, label: "Mon", fullLabel: "Monday" },
@@ -85,11 +94,9 @@ interface HabitFormFieldsProps {
   recurrence: string;
   recurrenceDays: number[];
   duration: string;
-  windowId: string;
+  energy: string;
   skillId: string;
-  windowsLoading: boolean;
-  windowOptions: HabitWindowSelectOption[];
-  windowError?: string | null;
+  energyOptions: HabitEnergySelectOption[];
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
   skillError?: string | null;
@@ -98,7 +105,7 @@ interface HabitFormFieldsProps {
   onHabitTypeChange: (value: string) => void;
   onRecurrenceChange: (value: string) => void;
   onRecurrenceDaysChange: (days: number[]) => void;
-  onWindowChange: (value: string) => void;
+  onEnergyChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
   typeOptions?: HabitTypeOption[];
@@ -114,11 +121,9 @@ export function HabitFormFields({
   recurrence,
   recurrenceDays,
   duration,
-  windowId,
+  energy,
   skillId,
-  windowsLoading,
-  windowOptions,
-  windowError,
+  energyOptions,
   skillsLoading,
   skillOptions,
   skillError,
@@ -127,7 +132,7 @@ export function HabitFormFields({
   onHabitTypeChange,
   onRecurrenceChange,
   onRecurrenceDaysChange,
-  onWindowChange,
+  onEnergyChange,
   onDurationChange,
   onSkillChange,
   typeOptions = HABIT_TYPE_OPTIONS,
@@ -232,11 +237,7 @@ export function HabitFormFields({
             </SelectTrigger>
             <SelectContent className="bg-[#0b101b] text-sm text-white">
               {recurrenceOptions.map((option) => (
-                <SelectItem
-                  key={option.value}
-                  value={option.value}
-                  disabled={option.value === "none" && windowsLoading}
-                >
+                <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
               ))}
@@ -316,18 +317,14 @@ export function HabitFormFields({
 
         <div className="space-y-3">
           <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-            Preferred window
+            Energy
           </Label>
-          <Select
-            value={windowId}
-            onValueChange={onWindowChange}
-            disabled={windowsLoading}
-          >
+          <Select value={energy} onValueChange={onEnergyChange}>
             <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-              <SelectValue placeholder="Choose when this fits best" />
+              <SelectValue placeholder="Choose the energy this habit needs" />
             </SelectTrigger>
             <SelectContent className="bg-[#0b101b] text-sm text-white">
-              {windowOptions.map((option) => (
+              {energyOptions.map((option) => (
                 <SelectItem
                   key={`${option.value}-${option.label}`}
                   value={option.value}
@@ -343,9 +340,6 @@ export function HabitFormFields({
               ))}
             </SelectContent>
           </Select>
-          {windowError ? (
-            <p className="text-xs text-red-300">{windowError}</p>
-          ) : null}
         </div>
 
         <div className="space-y-3">

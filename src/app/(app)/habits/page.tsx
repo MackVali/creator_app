@@ -98,32 +98,6 @@ function formatTitleCase(value: string | null | undefined) {
     .join(" ");
 }
 
-function formatTimeLabel(value: string | null | undefined) {
-  if (!value) return null;
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const date = new Date();
-  date.setHours(Number(hour), Number(minute), 0, 0);
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function formatWindowRange(
-  start: string | null | undefined,
-  end: string | null | undefined
-) {
-  const startLabel = formatTimeLabel(start);
-  const endLabel = formatTimeLabel(end);
-  if (!startLabel || !endLabel) return null;
-  return `${startLabel} – ${endLabel}`;
-}
-
 export default function HabitsPage() {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -449,13 +423,9 @@ export default function HabitsPage() {
                               const durationLabel = hasDuration
                                 ? `${habit.duration_minutes} min`
                                 : null;
-                              const windowLabel = habit.window?.label ?? null;
-                              const windowRange = formatWindowRange(
-                                habit.window?.start_local,
-                                habit.window?.end_local
-                              );
-                              const windowEnergy = formatTitleCase(habit.window?.energy);
-                              const tags = [habitType, recurrence].filter(Boolean) as string[];
+                              const energyLabel = formatTitleCase(habit.energy);
+                              const tags = [habitType, recurrence, energyLabel]
+                                .filter(Boolean) as string[];
                               const skillIcon = habit.skill?.icon?.trim();
                               const skillName = habit.skill?.name ?? null;
                               const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
@@ -523,14 +493,10 @@ export default function HabitsPage() {
                                         <span>{durationLabel}</span>
                                       </span>
                                     )}
-                                    {windowLabel && (
+                                    {energyLabel && (
                                       <span className="flex items-center gap-2">
-                                        <span className="text-base">🪟</span>
-                                        <span>
-                                          {windowLabel}
-                                          {windowRange ? ` • ${windowRange}` : ""}
-                                          {windowEnergy ? ` • ${windowEnergy}` : ""}
-                                        </span>
+                                        <span className="text-base">🔥</span>
+                                        <span>Energy • {energyLabel}</span>
                                       </span>
                                     )}
                                     <span className="flex items-center gap-2">
@@ -575,12 +541,7 @@ export default function HabitsPage() {
                       const durationLabel = hasDuration
                         ? `${habit.duration_minutes} min`
                         : null;
-                      const windowLabel = habit.window?.label ?? null;
-                      const windowRange = formatWindowRange(
-                        habit.window?.start_local,
-                        habit.window?.end_local
-                      );
-                      const windowEnergy = formatTitleCase(habit.window?.energy);
+                      const energyLabel = formatTitleCase(habit.energy);
                       const skillIcon = habit.skill?.icon?.trim();
                       const skillName = habit.skill?.name ?? null;
                       const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
@@ -613,6 +574,11 @@ export default function HabitsPage() {
                                 {durationLabel && (
                                   <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
                                     {durationLabel}
+                                  </span>
+                                )}
+                                {energyLabel && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                                    Energy: {energyLabel}
                                   </span>
                                 )}
                               </div>
@@ -654,14 +620,10 @@ export default function HabitsPage() {
                                 <span>Planned for {durationLabel}</span>
                               </div>
                             )}
-                            {windowLabel && (
+                            {energyLabel && (
                               <div className="flex items-center gap-2">
-                                <span className="text-base">🪟</span>
-                                <span>
-                                  {windowLabel}
-                                  {windowRange ? ` • ${windowRange}` : ""}
-                                  {windowEnergy ? ` • ${windowEnergy}` : ""}
-                                </span>
+                                <span className="text-base">🔥</span>
+                                <span>Energy • {energyLabel}</span>
                               </div>
                             )}
                             <div className="flex items-center gap-2">

@@ -11,6 +11,7 @@ export interface Habit {
   created_at: string;
   updated_at: string;
   skill_id: string | null;
+  energy: string | null;
   skill: {
     id: string;
     name: string;
@@ -24,14 +25,6 @@ export interface Habit {
     created_at: string;
     updated_at: string;
   } | null;
-  window_id: string | null;
-  window: {
-    id: string;
-    label: string;
-    start_local: string;
-    end_local: string;
-    energy: string;
-  } | null;
 }
 
 export async function getHabits(userId: string): Promise<Habit[]> {
@@ -43,7 +36,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
   const { data, error } = await supabase
     .from("habits")
     .select(
-      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at), window_id, window:windows(id, label, start_local, end_local, energy)"
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -54,7 +47,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     const fallback = await supabase
       .from("habits")
       .select(
-        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, window_id, window:windows(id, label, start_local, end_local, energy)"
+        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy"
       )
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
@@ -68,6 +61,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
       fallback.data?.map((habit) => ({
         ...habit,
         skill_id: habit.skill_id ?? null,
+        energy: habit.energy ?? null,
         skill: null,
         routine_id: null,
         routine: null,
@@ -79,6 +73,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     data?.map((habit) => ({
       ...habit,
       skill_id: habit.skill_id ?? null,
+      energy: habit.energy ?? null,
       skill: habit.skill
         ? {
             id: habit.skill.id,

@@ -28,8 +28,8 @@ import {
   HabitFormFields,
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
+  HABIT_ENERGY_OPTIONS,
   type HabitSkillSelectOption,
-  type HabitWindowSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { Button } from "./button";
 import { Input } from "./input";
@@ -303,68 +303,6 @@ const TASK_STAGE_OPTIONS: ChoiceOption[] = [
   { value: "PERFECT", label: "Perfect", description: "Review, tidy, and ship it." },
 ];
 
-interface WindowOption {
-  id: string;
-  label: string;
-  start_local: string | null;
-  end_local: string | null;
-  energy: string | null;
-}
-
-function formatTimeLabel(value: string | null | undefined) {
-  if (!value) return null;
-
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const date = new Date();
-  date.setHours(Number(hour), Number(minute), 0, 0);
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function parseStartMinutes(value: string | null | undefined) {
-  if (!value) return null;
-
-  const [hour, minute] = value.split(":");
-  if (typeof hour === "undefined" || typeof minute === "undefined") {
-    return null;
-  }
-
-  const parsedHour = Number(hour);
-  const parsedMinute = Number(minute);
-
-  if (Number.isNaN(parsedHour) || Number.isNaN(parsedMinute)) {
-    return null;
-  }
-
-  return parsedHour * 60 + parsedMinute;
-}
-
-function formatWindowMeta(window: WindowOption) {
-  const start = formatTimeLabel(window.start_local);
-  const end = formatTimeLabel(window.end_local);
-  const energy = window.energy
-    ? window.energy.replace(/[_-]+/g, " ").toLowerCase()
-    : null;
-  const parts: string[] = [];
-
-  if (start && end) {
-    parts.push(`${start} – ${end}`);
-  }
-
-  if (energy) {
-    parts.push(`${energy} energy`);
-  }
-
-  return parts.join(" • ");
-}
-
 const DEFAULT_SKILL_ICON = "✦";
 const getSkillIcon = (icon?: string | null) => icon?.trim() || DEFAULT_SKILL_ICON;
 
@@ -383,7 +321,6 @@ interface FormState {
   type: string;
   recurrence: string;
   recurrence_days: number[];
-  window_id: string;
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -433,7 +370,6 @@ const createInitialFormState = (
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
-  window_id: eventType === "HABIT" ? "none" : "",
 });
 
 type EventMeta = {
@@ -959,9 +895,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillError, setSkillError] = useState<string | null>(null);
-  const [windows, setWindows] = useState<WindowOption[]>([]);
-  const [windowsLoading, setWindowsLoading] = useState(false);
-  const [windowError, setWindowError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(false);
   const [routineLoadError, setRoutineLoadError] = useState<string | null>(
@@ -1055,49 +988,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
 
       if (eventType === "HABIT") {
-        setWindowsLoading(true);
-        setWindowError(null);
         setRoutinesLoading(true);
         setRoutineLoadError(null);
         try {
           const goalsData = await getGoalsForUser(user.id);
           setGoals(goalsData);
-
-          const { data, error: windowsError } = await supabase
-            .from("windows")
-            .select("id, label, start_local, end_local, energy")
-            .eq("user_id", user.id)
-            .order("start_local", { ascending: true });
-
-          if (windowsError) {
-            throw windowsError;
-          }
-
-          const safeWindows: WindowOption[] = (data ?? []).map((window) => ({
-            id: window.id as string,
-            label: (window.label as string | null) ?? "Untitled window",
-            start_local: (window.start_local as string | null) ?? null,
-            end_local: (window.end_local as string | null) ?? null,
-            energy: (window.energy as string | null) ?? null,
-          }));
-
-          setWindows(safeWindows);
-          setFormData((prev) => ({
-            ...prev,
-            window_id:
-              prev.window_id === "none" ||
-              safeWindows.some((option) => option.id === prev.window_id)
-                ? prev.window_id
-                : "none",
-          }));
-        } catch (error) {
-          console.error("Error loading habit helpers:", error);
-          setWindows([]);
-          setWindowError("Unable to load your time windows right now.");
-          setFormData((prev) => ({ ...prev, window_id: "none" }));
-        } finally {
-          setWindowsLoading(false);
-        }
 
         try {
           const { data, error: routinesError } = await supabase
@@ -1145,9 +1040,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
   useEffect(() => {
     if (eventType !== "HABIT") {
-      setWindows([]);
-      setWindowError(null);
-      setWindowsLoading(false);
       setRoutineOptions([]);
       setRoutineLoadError(null);
       setRoutinesLoading(false);
@@ -1165,59 +1057,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     [skills]
   );
 
-  const windowSelectOptions = useMemo<HabitWindowSelectOption[]>(() => {
-    if (windowsLoading) {
-      return [
-        {
-          value: "none",
-          label: "Loading windows…",
-          disabled: true,
-        },
-      ];
-    }
-
-    if (windows.length === 0) {
-      return [
-        {
-          value: "none",
-          label: "No window preference",
-        },
-      ];
-    }
-
-    const sortedWindows = [...windows].sort((a, b) => {
-      const aMinutes = parseStartMinutes(a.start_local);
-      const bMinutes = parseStartMinutes(b.start_local);
-
-      if (aMinutes === null && bMinutes === null) {
-        return a.label.localeCompare(b.label, undefined, {
-          sensitivity: "base",
-        });
-      }
-
-      if (aMinutes === null) return 1;
-      if (bMinutes === null) return -1;
-
-      const minuteComparison = aMinutes - bMinutes;
-      if (minuteComparison !== 0) {
-        return minuteComparison;
-      }
-
-      return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
-    });
-
-    return [
-      {
-        value: "none",
-        label: "No window preference",
-      },
-      ...sortedWindows.map((window) => ({
-        value: window.id,
-        label: window.label,
-        description: formatWindowMeta(window),
-      })),
-    ];
-  }, [windows, windowsLoading]);
+  const habitEnergyOptions = useMemo(
+    () => HABIT_ENERGY_OPTIONS,
+    []
+  );
 
   const routineSelectOptions = useMemo<RoutineSelectOption[]>(() => {
     if (routinesLoading) {
@@ -1474,16 +1317,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         duration_minutes?: number;
         monument_id?: string;
         skill_id?: string | null;
-        window_id?: string | null;
         routine_id?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
       };
 
+      insertData.energy = formData.energy;
       if (eventType !== "HABIT") {
         insertData.priority = formData.priority;
-        insertData.energy = formData.energy;
       }
 
       if (
@@ -1546,8 +1388,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.recurrence =
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
-        insertData.window_id =
-          formData.window_id === "none" ? null : formData.window_id;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
 
         let routineIdToUse: string | null = null;
@@ -2458,11 +2298,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               recurrence={formData.recurrence}
               recurrenceDays={formData.recurrence_days}
               duration={formData.duration_min}
-              windowId={formData.window_id}
+              energy={formData.energy}
               skillId={formData.skill_id || "none"}
-              windowsLoading={windowsLoading}
-              windowOptions={windowSelectOptions}
-              windowError={windowError}
+              energyOptions={habitEnergyOptions}
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
               skillError={skillError}
@@ -2488,8 +2326,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               onRecurrenceDaysChange={(days) =>
                 setFormData((prev) => ({ ...prev, recurrence_days: days }))
               }
-              onWindowChange={(value) =>
-                setFormData((prev) => ({ ...prev, window_id: value }))
+              onEnergyChange={(value) =>
+                setFormData((prev) => ({ ...prev, energy: value }))
               }
               onDurationChange={(value) =>
                 setFormData((prev) => ({ ...prev, duration_min: value }))
