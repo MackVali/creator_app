@@ -602,14 +602,10 @@ function computeHabitPlacementsForDay({
 }): HabitTimelinePlacement[] {
   if (habits.length === 0 || windows.length === 0) return []
 
-  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const zone = timeZone || 'UTC'
   const dayStart = startOfDayInTimeZone(date, zone)
   const defaultDueMs = dayStart.getTime()
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
-  const zone = timeZone || 'UTC'
-  const dayStart = startOfDayInTimeZone(date, zone)
-  const defaultDueMs = dayStart.getTime()
   const placements: HabitTimelinePlacement[] = []
   const availability = new Map<string, number>()
 

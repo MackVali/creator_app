@@ -994,7 +994,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           const goalsData = await getGoalsForUser(user.id);
           setGoals(goalsData);
 
-        try {
           const { data, error: routinesError } = await supabase
             .from("habit_routines")
             .select("id, name, description")
