@@ -55,12 +55,16 @@ describe("getSupabaseServer", () => {
     vi.clearAllMocks();
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
   });
 
   afterEach(() => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = originalEnv.NEXT_PUBLIC_SUPABASE_URL;
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY =
       originalEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.VITE_SUPABASE_URL = originalEnv.VITE_SUPABASE_URL;
+    process.env.VITE_SUPABASE_ANON_KEY = originalEnv.VITE_SUPABASE_ANON_KEY;
   });
 
   it("no-ops cookie set when store is read-only", async () => {
@@ -117,5 +121,34 @@ describe("getSupabaseServer", () => {
     }
     options.cookies.set("sb", "new-token", {});
     expect(set).toHaveBeenCalledWith("sb", "new-token", {});
+  });
+
+  it("falls back to legacy VITE env vars when NEXT_PUBLIC vars are absent", async () => {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.VITE_SUPABASE_URL = "https://legacy.supabase.co";
+    process.env.VITE_SUPABASE_ANON_KEY = "legacy-key";
+    const warn = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    const { getSupabaseBrowser } = await import("../../lib/supabase");
+    expect(getSupabaseBrowser()).toEqual({});
+    const { createClient } = await import("@supabase/supabase-js");
+    expect(createClient).toHaveBeenCalledWith(
+      "https://legacy.supabase.co",
+      "legacy-key",
+      expect.objectContaining({
+        auth: expect.objectContaining({
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          persistSession: true,
+        }),
+      }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      "Falling back to legacy VITE_SUPABASE_* environment variables. Update your configuration to NEXT_PUBLIC_SUPABASE_*.",
+    );
+    warn.mockRestore();
   });
 });
