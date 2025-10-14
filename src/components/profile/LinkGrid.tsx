@@ -21,7 +21,7 @@ export default function LinkGrid({
     .sort((a, b) => a.position - b.position);
 
   const listWrapperClass =
-    "mx-auto flex w-full max-w-xl flex-col gap-3 sm:gap-4 lg:max-w-2xl";
+    "mx-auto flex w-full max-w-xl flex-col gap-3 px-3 sm:gap-4 sm:px-0 lg:max-w-2xl";
 
   if (loading) {
     return (
