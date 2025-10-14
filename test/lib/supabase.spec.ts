@@ -134,6 +134,10 @@ describe("getSupabaseServer", () => {
 
     const { getSupabaseBrowser } = await import("../../lib/supabase");
     expect(getSupabaseBrowser()).toEqual({});
+    expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe(
+      "https://legacy.supabase.co",
+    );
+    expect(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY).toBe("legacy-key");
     const { createClient } = await import("@supabase/supabase-js");
     expect(createClient).toHaveBeenCalledWith(
       "https://legacy.supabase.co",

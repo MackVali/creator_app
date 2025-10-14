@@ -17,11 +17,35 @@ type EnvConfig = {
 let hasLoggedEnvFallback = false;
 
 function resolveEnv(): EnvConfig {
-  const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY;
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  const fallbackUrl = process.env.VITE_SUPABASE_URL;
+  const fallbackKey = process.env.VITE_SUPABASE_ANON_KEY;
+  const shouldUseFallback = (!url || !key) && (fallbackUrl || fallbackKey);
+
+  if (shouldUseFallback) {
+    if (!url && fallbackUrl) {
+      url = fallbackUrl;
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        process.env.NEXT_PUBLIC_SUPABASE_URL = fallbackUrl;
+      }
+    }
+
+    if (!key && fallbackKey) {
+      key = fallbackKey;
+      if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = fallbackKey;
+      }
+    }
+
+    if (!hasLoggedEnvFallback && url && key) {
+      console.warn(
+        "Falling back to legacy VITE_SUPABASE_* environment variables. Update your configuration to NEXT_PUBLIC_SUPABASE_*.",
+      );
+      hasLoggedEnvFallback = true;
+    }
+  }
 
   if (!url || !key) {
     console.error("Missing Supabase environment variables:", {
@@ -29,18 +53,6 @@ function resolveEnv(): EnvConfig {
       hasKey: !!key,
     });
     return { url: null, key: null };
-  }
-
-  if (!hasLoggedEnvFallback) {
-    const usingFallback = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (usingFallback && (process.env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_ANON_KEY)) {
-      console.warn(
-        "Falling back to legacy VITE_SUPABASE_* environment variables. Update your configuration to NEXT_PUBLIC_SUPABASE_*.",
-      );
-      hasLoggedEnvFallback = true;
-    }
   }
 
   return { url, key };
