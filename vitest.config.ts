@@ -1,4 +1,8 @@
+import path from "node:path";
+
 import { defineConfig } from "vitest/config";
+
+const projectRoot = path.resolve(__dirname);
 
 export default defineConfig({
   test: {
@@ -10,5 +14,13 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       reportsDirectory: "./coverage",
     },
+  },
+  resolve: {
+    alias: [
+      { find: "@/components", replacement: path.resolve(projectRoot, "src/components") },
+      { find: "@/lib", replacement: path.resolve(projectRoot, "lib") },
+      { find: "@/types", replacement: path.resolve(projectRoot, "src/types") },
+      { find: "@", replacement: path.resolve(projectRoot, "src") },
+    ],
   },
 });

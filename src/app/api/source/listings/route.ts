@@ -23,7 +23,7 @@ type ListingRow = {
   updated_at: string
 }
 
-type IntegrationRow = {
+export type IntegrationRow = {
   id: string
   provider: string
   display_name: string | null
@@ -223,109 +223,12 @@ export async function POST(request: Request) {
     )
   }
 
-  const publishContextListing = {
-    ...listing,
-    metadata: listing.metadata ?? {},
-  }
-
-  const publishResults: PublishResult[] = []
-
-  for (const integration of (integrations ?? []) as IntegrationRow[]) {
-    let integrationRecord = integration
-    let oauthToken: string | null = null
-
-    if (integrationRecord.auth_mode === "oauth2") {
-      const ensured = await ensureOAuthAccessToken(supabase, integrationRecord, user.id)
-      if ("error" in ensured) {
-        publishResults.push({
-          integrationId: integrationRecord.id,
-          integrationName: integrationRecord.display_name ?? integrationRecord.provider,
-          status: "failed",
-          responseCode: null,
-          responseBody: null,
-          error: ensured.error,
-          externalId: null,
-          completedAt: new Date().toISOString(),
-        })
-        continue
-      }
-
-      oauthToken = ensured.token
-      integrationRecord = ensured.integration
-    }
-
-    const context = {
-      listing: publishContextListing,
-      integration: {
-        id: integrationRecord.id,
-        provider: integrationRecord.provider,
-        displayName: integrationRecord.display_name,
-        connectionUrl: integrationRecord.connection_url,
-      },
-    }
-
-    const payloadBody = buildPayload(integrationRecord, context)
-    const headers = buildHeaders(integrationRecord, context, oauthToken ?? undefined)
-    const method = normalizeMethod(integrationRecord.publish_method)
-
-    const result: PublishResult = {
-      integrationId: integrationRecord.id,
-      integrationName: integrationRecord.display_name ?? integrationRecord.provider,
-      status: "failed",
-      responseCode: null,
-      responseBody: null,
-      error: null,
-      externalId: null,
-      completedAt: new Date().toISOString(),
-    }
-
-    try {
-      const response = await fetch(integrationRecord.publish_url, {
-        method,
-        headers,
-        body: JSON.stringify(payloadBody),
-      })
-
-      result.responseCode = response.status
-
-      const text = await response.text()
-      if (text) {
-        try {
-          result.responseBody = JSON.parse(text)
-        } catch {
-          result.responseBody = text
-        }
-      }
-
-      if (response.ok) {
-        result.status = "synced"
-        if (
-          result.responseBody &&
-          typeof result.responseBody === "object" &&
-          !Array.isArray(result.responseBody) &&
-          "id" in (result.responseBody as Record<string, unknown>)
-        ) {
-          const externalId = (result.responseBody as Record<string, unknown>).id
-          if (typeof externalId === "string" || typeof externalId === "number") {
-            result.externalId = String(externalId)
-          }
-        }
-      } else {
-        result.status = "failed"
-        result.error =
-          typeof result.responseBody === "string"
-            ? result.responseBody
-            : response.statusText || "Failed to sync"
-      }
-    } catch (error) {
-      result.status = "failed"
-      result.error = error instanceof Error ? error.message : "Unknown error"
-    }
-
-    publishResults.push(result)
-  }
-
-  const nextStatus = determineStatus(publishResults)
+  const { publishResults, nextStatus } = await publishToIntegrations({
+    supabase,
+    listing,
+    integrations: (integrations ?? []) as IntegrationRow[],
+    userId: user.id,
+  })
   const updatePayload: Partial<ListingRow> & {
     publish_results: PublishResult[] | null
   } = {
@@ -422,6 +325,124 @@ function sanitizePublishResults(value: unknown): PublishResult[] | null {
     .filter(Boolean) as PublishResult[]
 
   return mapped.length > 0 ? mapped : null
+}
+
+export async function publishToIntegrations({
+  supabase,
+  listing,
+  integrations,
+  userId,
+}: {
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>
+  listing: SourceListing
+  integrations: IntegrationRow[]
+  userId: string
+}) {
+  const publishContextListing = {
+    ...listing,
+    metadata: listing.metadata ?? {},
+  }
+
+  const publishResults: PublishResult[] = []
+
+  for (const integration of integrations) {
+    let integrationRecord = integration
+    let oauthToken: string | null = null
+
+    if (integrationRecord.auth_mode === "oauth2") {
+      const ensured = await ensureOAuthAccessToken(supabase, integrationRecord, userId)
+      if ("error" in ensured) {
+        publishResults.push({
+          integrationId: integrationRecord.id,
+          integrationName: integrationRecord.display_name ?? integrationRecord.provider,
+          status: "failed",
+          responseCode: null,
+          responseBody: null,
+          error: ensured.error,
+          externalId: null,
+          completedAt: new Date().toISOString(),
+        })
+        continue
+      }
+
+      oauthToken = ensured.token
+      integrationRecord = ensured.integration
+    }
+
+    const context = {
+      listing: publishContextListing,
+      integration: {
+        id: integrationRecord.id,
+        provider: integrationRecord.provider,
+        displayName: integrationRecord.display_name,
+        connectionUrl: integrationRecord.connection_url,
+      },
+    }
+
+    const payloadBody = buildPayload(integrationRecord, context)
+    const headers = buildHeaders(integrationRecord, context, oauthToken ?? undefined)
+    const method = normalizeMethod(integrationRecord.publish_method)
+
+    const result: PublishResult = {
+      integrationId: integrationRecord.id,
+      integrationName: integrationRecord.display_name ?? integrationRecord.provider,
+      status: "failed",
+      responseCode: null,
+      responseBody: null,
+      error: null,
+      externalId: null,
+      completedAt: new Date().toISOString(),
+    }
+
+    try {
+      const response = await fetch(integrationRecord.publish_url, {
+        method,
+        headers,
+        body: JSON.stringify(payloadBody),
+      })
+
+      result.responseCode = response.status
+
+      const text = await response.text()
+      if (text) {
+        try {
+          result.responseBody = JSON.parse(text)
+        } catch {
+          result.responseBody = text
+        }
+      }
+
+      if (response.ok) {
+        result.status = "synced"
+        if (
+          result.responseBody &&
+          typeof result.responseBody === "object" &&
+          !Array.isArray(result.responseBody) &&
+          "id" in (result.responseBody as Record<string, unknown>)
+        ) {
+          const externalId = (result.responseBody as Record<string, unknown>).id
+          if (typeof externalId === "string" || typeof externalId === "number") {
+            result.externalId = String(externalId)
+          }
+        }
+      } else {
+        result.status = "failed"
+        result.error =
+          typeof result.responseBody === "string"
+            ? result.responseBody
+            : response.statusText || "Failed to sync"
+      }
+    } catch (error) {
+      result.status = "failed"
+      result.error = error instanceof Error ? error.message : "Unknown error"
+    }
+
+    publishResults.push(result)
+  }
+
+  const nextStatus = determineStatus(publishResults)
+
+  return { publishResults, nextStatus }
 }
 
 function buildPayload(
@@ -745,4 +766,12 @@ function determineStatus(results: PublishResult[]): SourceListing["status"] {
   }
 
   return "needs_attention"
+}
+
+export const __testables = {
+  publishToIntegrations,
+  buildHeaders,
+  applyTemplate,
+  determineStatus,
+  sanitizePublishResults,
 }
