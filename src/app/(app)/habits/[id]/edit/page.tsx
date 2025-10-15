@@ -77,6 +77,7 @@ export default function EditHabitPage() {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
   const [skillId, setSkillId] = useState<string>("none");
+  const [contextLocations, setContextLocations] = useState<string[]>([]);
   const [habitLoading, setHabitLoading] = useState(true);
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
 
@@ -328,7 +329,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, context_locations"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -368,6 +369,14 @@ export default function EditHabitPage() {
           );
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
+          const contextList = Array.isArray(data.context_locations)
+            ? data.context_locations
+                .map((value) =>
+                  typeof value === "string" ? value.trim() : ""
+                )
+                .filter((value) => value.length > 0)
+            : [];
+          setContextLocations(contextList);
         }
       } catch (err) {
         console.error("Failed to load habit:", err);
@@ -451,6 +460,17 @@ export default function EditHabitPage() {
         normalizedRecurrence === "every x days" && recurrenceDays.length > 0
           ? recurrenceDays
           : null;
+      const normalizedContextLocations = contextLocations
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      const uniqueContextLocations: string[] = [];
+      const seenLocations = new Set<string>();
+      for (const location of normalizedContextLocations) {
+        const normalized = location.toLowerCase();
+        if (seenLocations.has(normalized)) continue;
+        seenLocations.add(normalized);
+        uniqueContextLocations.push(location);
+      }
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -492,6 +512,8 @@ export default function EditHabitPage() {
           energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
+          context_locations:
+            uniqueContextLocations.length > 0 ? uniqueContextLocations : null,
         })
         .eq("id", habitId)
         .eq("user_id", user.id);
@@ -565,6 +587,7 @@ export default function EditHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
+                contextLocations={contextLocations}
                 energyOptions={energySelectOptions}
                 skillsLoading={skillsLoading}
                 skillOptions={skillSelectOptions}
@@ -577,6 +600,7 @@ export default function EditHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
+                onContextLocationsChange={setContextLocations}
                 showDescriptionField={false}
                 footerSlot={
                     <div className="space-y-4">

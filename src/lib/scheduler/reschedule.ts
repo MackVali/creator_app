@@ -140,6 +140,7 @@ export async function scheduleBacklog(
     energy: string
     weight: number
     instanceId?: string | null
+    locations?: string[] | null
   }
 
   const queue: QueueItem[] = []
@@ -644,7 +645,11 @@ async function scheduleHabitsForDay(params: {
     const compatibleWindows = await fetchCompatibleWindowsForItem(
       client,
       day,
-      { energy: resolvedEnergy, duration_min: durationMin },
+      {
+        energy: resolvedEnergy,
+        duration_min: durationMin,
+        locations: habit.contextLocations ?? null,
+      },
       zone,
       {
         availability,
@@ -740,7 +745,7 @@ function placementKey(entry: ScheduleDraftPlacement) {
 async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
-  item: { energy: string; duration_min: number },
+  item: { energy: string; duration_min: number; locations?: string[] | null },
   timeZone: string,
   options?: {
     now?: Date
@@ -762,6 +767,9 @@ async function fetchCompatibleWindowsForItem(
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.availability
+  const allowedLocations = (item.locations ?? [])
+    .map((value) => value.trim().toLowerCase())
+    .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index)
 
   const compatible = [] as Array<{
     id: string
@@ -781,6 +789,13 @@ async function fetchCompatibleWindowsForItem(
       : ENERGY.LIST.length
     if (hasEnergyLabel && energyIdx >= ENERGY.LIST.length) continue
     if (energyIdx < itemIdx) continue
+
+    if (allowedLocations.length > 0) {
+      const windowLocation = typeof win.location === 'string' ? win.location.trim().toLowerCase() : ''
+      if (!windowLocation || !allowedLocations.includes(windowLocation)) {
+        continue
+      }
+    }
 
     const startLocal = resolveWindowStart(win, date, timeZone)
     const endLocal = resolveWindowEnd(win, date, timeZone)

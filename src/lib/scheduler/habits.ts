@@ -17,6 +17,7 @@ export type HabitScheduleItem = {
   recurrence: string | null
   recurrenceDays: number[] | null
   skillId: string | null
+  contextLocations: string[] | null
   window: {
     id: string
     label: string | null
@@ -24,6 +25,7 @@ export type HabitScheduleItem = {
     startLocal: string
     endLocal: string
     days: number[] | null
+    location?: string | null
   } | null
 }
 
@@ -39,6 +41,7 @@ type HabitRecord = {
   recurrence?: string | null
   recurrence_days?: number[] | null
   skill_id?: string | null
+  context_locations?: string[] | null
   window?: {
     id?: string
     label?: string | null
@@ -46,6 +49,7 @@ type HabitRecord = {
     start_local?: string | null
     end_local?: string | null
     days?: number[] | null
+    location?: string | null
   } | null
 }
 
@@ -82,7 +86,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   }
 
   const { data, error } = await query.select(
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, context_locations, window:windows(id, label, energy, start_local, end_local, days, location)`
   )
 
   if (error) throw error
@@ -100,6 +104,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
     skillId: record.skill_id ?? null,
+    contextLocations: record.context_locations ?? null,
     window: record.window
       ? {
           id: record.window.id ?? '',
@@ -108,6 +113,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
           startLocal: record.window.start_local ?? '00:00',
           endLocal: record.window.end_local ?? '00:00',
           days: record.window.days ?? null,
+          location: record.window.location ?? null,
         }
       : null,
   }))

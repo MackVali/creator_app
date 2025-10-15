@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ChevronDown, SlidersHorizontal } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,6 +78,13 @@ export const HABIT_ENERGY_OPTIONS: HabitEnergySelectOption[] = [
   { value: "EXTREME", label: "Extreme", description: "Reserve for peak energy." },
 ];
 
+export const HABIT_CONTEXT_LOCATION_OPTIONS = [
+  { value: "home", label: "Home" },
+  { value: "work", label: "Work" },
+  { value: "studio", label: "Studio" },
+  { value: "outdoors", label: "Outdoors" },
+];
+
 const DAYS_OF_WEEK = [
   { value: 0, label: "Sun", fullLabel: "Sunday" },
   { value: 1, label: "Mon", fullLabel: "Monday" },
@@ -96,6 +104,7 @@ interface HabitFormFieldsProps {
   duration: string;
   energy: string;
   skillId: string;
+  contextLocations: string[];
   energyOptions: HabitEnergySelectOption[];
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
@@ -108,6 +117,7 @@ interface HabitFormFieldsProps {
   onEnergyChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
+  onContextLocationsChange: (value: string[]) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
@@ -123,6 +133,7 @@ export function HabitFormFields({
   duration,
   energy,
   skillId,
+  contextLocations,
   energyOptions,
   skillsLoading,
   skillOptions,
@@ -135,6 +146,7 @@ export function HabitFormFields({
   onEnergyChange,
   onDurationChange,
   onSkillChange,
+  onContextLocationsChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
@@ -144,10 +156,20 @@ export function HabitFormFields({
   const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(() =>
+    contextLocations.some((value) => value.trim().length > 0)
+  );
+  const [customLocationInput, setCustomLocationInput] = useState("");
 
   useEffect(() => {
     setSkillSearchQuery("");
   }, [skillId, skillsLoading, skillOptions]);
+
+  useEffect(() => {
+    if (contextLocations.some((value) => value.trim().length > 0)) {
+      setAdvancedOpen(true);
+    }
+  }, [contextLocations]);
 
   const filteredSkillOptions = useMemo(() => {
     const query = skillSearchQuery.trim().toLowerCase();
@@ -163,12 +185,72 @@ export function HabitFormFields({
     });
   }, [skillOptions, skillSearchQuery]);
 
+  const recommendedLocationValues = useMemo(
+    () => HABIT_CONTEXT_LOCATION_OPTIONS.map((option) => option.value),
+    []
+  );
+
+  const customLocations = useMemo(
+    () =>
+      contextLocations.filter((value) => {
+        const normalized = value.trim().toLowerCase();
+        return (
+          normalized.length > 0 &&
+          !recommendedLocationValues.some(
+            (option) => option.toLowerCase() === normalized
+          )
+        );
+      }),
+    [contextLocations, recommendedLocationValues]
+  );
+
   const handleToggleRecurrenceDay = (day: number) => {
     const hasDay = recurrenceDays.includes(day);
     const next = hasDay
       ? recurrenceDays.filter((value) => value !== day)
       : [...recurrenceDays, day].sort((a, b) => a - b);
     onRecurrenceDaysChange(next);
+  };
+
+  const isLocationSelected = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    return contextLocations.some(
+      (existing) => existing.trim().toLowerCase() === normalized
+    );
+  };
+
+  const handleToggleContextLocation = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    const hasValue = isLocationSelected(normalized);
+    if (hasValue) {
+      onContextLocationsChange(
+        contextLocations.filter(
+          (existing) => existing.trim().toLowerCase() !== normalized
+        )
+      );
+    } else {
+      onContextLocationsChange([...contextLocations, value]);
+    }
+  };
+
+  const handleAddCustomLocation = () => {
+    const trimmed = customLocationInput.trim();
+    if (!trimmed) return;
+    if (isLocationSelected(trimmed)) {
+      setCustomLocationInput("");
+      return;
+    }
+    onContextLocationsChange([...contextLocations, trimmed]);
+    setCustomLocationInput("");
+  };
+
+  const handleRemoveCustomLocation = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    onContextLocationsChange(
+      contextLocations.filter(
+        (existing) => existing.trim().toLowerCase() !== normalized
+      )
+    );
   };
 
   return (
@@ -362,6 +444,120 @@ export function HabitFormFields({
             className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((open) => !open)}
+          aria-expanded={advancedOpen}
+          className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-white/5 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.25em] text-white/80 transition hover:border-white/15 hover:text-white"
+        >
+          <span className="flex items-center gap-2 text-[11px]">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Advanced options
+            {contextLocations.length > 0 ? (
+              <span className="text-[10px] font-medium tracking-[0.2em] text-white/60">
+                • {contextLocations.length} context
+                {contextLocations.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 transition-transform",
+              advancedOpen ? "rotate-180" : ""
+            )}
+          />
+        </button>
+
+        {advancedOpen ? (
+          <div className="mt-4 space-y-6 text-sm">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/70">
+                  Location context
+                </Label>
+                <p className="text-xs text-white/60">
+                  Choose the spaces where this habit fits. Leave empty to let it
+                  appear in any window.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {HABIT_CONTEXT_LOCATION_OPTIONS.map((option) => {
+                  const selected = isLocationSelected(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleToggleContextLocation(option.value)}
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] transition",
+                        selected
+                          ? "border-blue-400/60 bg-blue-500/20 text-white"
+                          : "border-white/10 bg-white/[0.05] text-white/70 hover:border-white/20 hover:text-white"
+                      )}
+                      aria-pressed={selected}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/50">
+                  Custom locations
+                </Label>
+                {customLocations.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {customLocations.map((location) => (
+                      <span
+                        key={location}
+                        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-white"
+                      >
+                        {location}
+                        <button
+                          type="button"
+                          className="rounded-full p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+                          onClick={() => handleRemoveCustomLocation(location)}
+                          aria-label={`Remove ${location}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-white/50">
+                    Add custom places you frequent, such as coworking studios or
+                    family visits.
+                  </p>
+                )}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={customLocationInput}
+                    onChange={(event) => setCustomLocationInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handleAddCustomLocation();
+                      }
+                    }}
+                    placeholder="Add another location"
+                    className="h-10 rounded-xl border border-white/10 bg-white/[0.06] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomLocation}
+                    className="inline-flex h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.08] px-4 text-xs font-semibold uppercase tracking-[0.25em] text-white/80 transition hover:border-white/20 hover:text-white"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {footerSlot}

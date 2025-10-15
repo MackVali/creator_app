@@ -697,9 +697,18 @@ function computeHabitPlacementsForDay({
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
     const dueStartMs = dueStart ? dueStart.getTime() : null
     const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
+    const normalizedLocations = (habit.contextLocations ?? [])
+      .map((value) => value.trim().toLowerCase())
+      .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index)
 
     let placed = false
     for (const entry of windowEntries) {
+      if (normalizedLocations.length > 0) {
+        const windowLocation = entry.window.location?.trim().toLowerCase() ?? ''
+        if (!windowLocation || !normalizedLocations.includes(windowLocation)) {
+          continue
+        }
+      }
       if (entry.energyIdx < requiredEnergyIdx) continue
 
       const existingAvailability = availability.get(entry.key) ?? entry.startMs

@@ -321,6 +321,7 @@ interface FormState {
   type: string;
   recurrence: string;
   recurrence_days: number[];
+  context_locations: string[];
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -370,6 +371,7 @@ const createInitialFormState = (
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
+  context_locations: [],
 });
 
 type EventMeta = {
@@ -1317,6 +1319,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         monument_id?: string;
         skill_id?: string | null;
         routine_id?: string | null;
+        context_locations?: string[] | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1388,6 +1391,20 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
+
+        const normalizedContextLocations = formData.context_locations
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0);
+        const uniqueContextLocations: string[] = [];
+        const seenContextLocations = new Set<string>();
+        for (const location of normalizedContextLocations) {
+          const normalized = location.toLowerCase();
+          if (seenContextLocations.has(normalized)) continue;
+          seenContextLocations.add(normalized);
+          uniqueContextLocations.push(location);
+        }
+        insertData.context_locations =
+          uniqueContextLocations.length > 0 ? uniqueContextLocations : null;
 
         let routineIdToUse: string | null = null;
         if (routineId === "__create__") {
@@ -2299,6 +2316,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               duration={formData.duration_min}
               energy={formData.energy}
               skillId={formData.skill_id || "none"}
+              contextLocations={formData.context_locations}
               energyOptions={habitEnergyOptions}
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
@@ -2335,6 +2353,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 setFormData((prev) => ({
                   ...prev,
                   skill_id: value === "none" ? "" : value,
+                }))
+              }
+              onContextLocationsChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  context_locations: value,
                 }))
               }
               footerSlot={

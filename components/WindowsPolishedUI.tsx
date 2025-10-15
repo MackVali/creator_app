@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   CalendarDays,
+  ChevronDown,
   Clock,
   Copy,
   Flame as FlameIcon,
@@ -905,10 +906,18 @@ function Drawer({
   const [form, setForm] = useState<WindowItem>(
     initial ? { ...initial } : createDefaultWindow(),
   )
+  const [advancedOpen, setAdvancedOpen] = useState(() =>
+    Boolean(initial?.location?.trim())
+  )
 
   useEffect(() => {
-    if (initial) setForm({ ...initial })
-    else setForm(createDefaultWindow())
+    if (initial) {
+      setForm({ ...initial })
+      setAdvancedOpen(Boolean(initial.location?.trim()))
+    } else {
+      setForm(createDefaultWindow())
+      setAdvancedOpen(false)
+    }
   }, [initial])
 
   useEffect(() => {
@@ -1022,15 +1031,46 @@ function Drawer({
               ))}
             </div>
           </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Location
-            </label>
-            <input
-              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
-              value={form.location ?? ""}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
-            />
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((open) => !open)}
+              aria-expanded={advancedOpen}
+              className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-white/5 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.25em] text-white/80 transition hover:border-white/15 hover:text-white"
+            >
+              <span className="flex items-center gap-2">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Advanced options
+                {form.location?.trim() ? (
+                  <span className="text-[10px] font-medium tracking-[0.25em] text-white/60">
+                    • Context set
+                  </span>
+                ) : null}
+              </span>
+              <ChevronDown
+                className={classNames(
+                  "h-4 w-4 transition-transform",
+                  advancedOpen ? "rotate-180" : "",
+                )}
+              />
+            </button>
+            {advancedOpen ? (
+              <div className="mt-4 space-y-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Location context
+                </label>
+                <p className="text-xs text-slate-400">
+                  Let the scheduler know where you will be during this window. Only
+                  habits that can happen here will show up.
+                </p>
+                <input
+                  className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
+                  value={form.location ?? ""}
+                  onChange={(e) => setForm({ ...form, location: e.target.value })}
+                  placeholder="e.g. Home, Office, Gym"
+                />
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <div>
