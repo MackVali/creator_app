@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft } from "lucide-react";
@@ -16,6 +16,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesGrid } from "@/components/notes/NotesGrid";
 import { Button } from "@/components/ui/button";
+import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
+import { normalizeTimeZone } from "@/lib/scheduler/timezone";
+import type { HabitScheduleItem } from "@/lib/scheduler/habits";
 
 interface Skill {
   id: string;
@@ -28,6 +31,93 @@ interface Skill {
 interface HabitSummary {
   id: string;
   name: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  lastCompletedAt: string | null;
+  recurrence: string | null;
+  recurrenceDays: number[] | null;
+  habitType: string | null;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MAX_LOOKAHEAD_DAYS = 365;
+
+function normalizeRecurrenceDays(value: unknown): number[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const normalized = Array.from(
+    new Set(
+      value
+        .map((day) => {
+          if (typeof day === "number") return day;
+          const parsed = Number(day);
+          return Number.isFinite(parsed) ? parsed : null;
+        })
+        .filter((day): day is number => day !== null)
+        .map((day) => {
+          const remainder = day % 7;
+          return remainder < 0 ? remainder + 7 : remainder;
+        })
+    )
+  );
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
+  return {
+    id: habit.id,
+    name: habit.name,
+    durationMinutes: null,
+    createdAt: habit.createdAt,
+    updatedAt: habit.updatedAt,
+    lastCompletedAt: habit.lastCompletedAt,
+    habitType: (habit.habitType ?? "HABIT").toUpperCase(),
+    windowId: null,
+    energy: null,
+    recurrence: habit.recurrence,
+    recurrenceDays: habit.recurrenceDays,
+    skillId: null,
+    locationContext: null,
+    daylightPreference: null,
+    window: null,
+  } satisfies HabitScheduleItem;
+}
+
+function computeHabitDueLabel(habit: HabitSummary, timeZone: string): string {
+  const normalizedZone = normalizeTimeZone(timeZone);
+  const scheduleHabit = buildScheduleHabit(habit);
+  const today = new Date();
+
+  const todayEvaluation = evaluateHabitDueOnDate({
+    habit: scheduleHabit,
+    date: today,
+    timeZone: normalizedZone,
+  });
+
+  if (todayEvaluation.isDue) {
+    return "Due Now";
+  }
+
+  for (let dayOffset = 1; dayOffset <= MAX_LOOKAHEAD_DAYS; dayOffset += 1) {
+    const futureDate = new Date(today.getTime() + dayOffset * MS_PER_DAY);
+    const evaluation = evaluateHabitDueOnDate({
+      habit: scheduleHabit,
+      date: futureDate,
+      timeZone: normalizedZone,
+    });
+
+    if (evaluation.isDue) {
+      if (dayOffset === 1) {
+        return "Due in 1 Day";
+      }
+      return `Due in ${dayOffset} Days`;
+    }
+  }
+
+  return "Due Now";
 }
 
 function describeLevel(level: number): string {
@@ -54,6 +144,24 @@ export default function SkillDetailPage() {
   const [habitsError, setHabitsError] = useState<string | null>(null);
   const supabase = getSupabaseBrowser();
   const router = useRouter();
+  const timeZone = useMemo(() => {
+    try {
+      return normalizeTimeZone(
+        Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC"
+      );
+    } catch (err) {
+      console.error("Failed to determine user timezone", err);
+      return "UTC";
+    }
+  }, []);
+  const decoratedHabits = useMemo(
+    () =>
+      relatedHabits.map((habit) => ({
+        ...habit,
+        dueLabel: computeHabitDueLabel(habit, timeZone),
+      })),
+    [relatedHabits, timeZone]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +178,9 @@ export default function SkillDetailPage() {
       try {
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
-          .select("id, name")
+          .select(
+            "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type"
+          )
           .eq("user_id", userId)
           .eq("skill_id", id)
           .order("name", { ascending: true });
@@ -83,15 +193,57 @@ export default function SkillDetailPage() {
           const formattedHabits = (habitsData ?? [])
             .map((habit) => {
               if (!habit) return null;
-              const habitId = typeof habit.id === "string" ? habit.id : null;
+
+              const habitRecord = habit as {
+                id?: unknown;
+                name?: unknown;
+                created_at?: unknown;
+                updated_at?: unknown;
+                recurrence?: unknown;
+                recurrence_days?: unknown;
+                habit_type?: unknown;
+              };
+
+              const habitId =
+                typeof habitRecord.id === "string" ? habitRecord.id : null;
               if (!habitId) return null;
 
               const habitName =
-                typeof habit.name === "string" && habit.name.trim().length > 0
-                  ? habit.name.trim()
+                typeof habitRecord.name === "string" && habitRecord.name.trim().length > 0
+                  ? habitRecord.name.trim()
                   : "Untitled habit";
 
-              return { id: habitId, name: habitName } satisfies HabitSummary;
+              const createdAt =
+                typeof habitRecord.created_at === "string"
+                  ? habitRecord.created_at
+                  : null;
+              const updatedAt =
+                typeof habitRecord.updated_at === "string"
+                  ? habitRecord.updated_at
+                  : null;
+              const recurrence =
+                typeof habitRecord.recurrence === "string" && habitRecord.recurrence.trim().length > 0
+                  ? habitRecord.recurrence
+                  : null;
+              const recurrenceDays = normalizeRecurrenceDays(
+                habitRecord.recurrence_days
+              );
+              const habitType =
+                typeof habitRecord.habit_type === "string" && habitRecord.habit_type.trim().length > 0
+                  ? habitRecord.habit_type
+                  : null;
+              const lastCompletedAt = updatedAt ?? createdAt;
+
+              return {
+                id: habitId,
+                name: habitName,
+                createdAt,
+                updatedAt,
+                lastCompletedAt,
+                recurrence,
+                recurrenceDays,
+                habitType,
+              } satisfies HabitSummary;
             })
             .filter((habit): habit is HabitSummary => habit !== null);
 
@@ -417,14 +569,17 @@ export default function SkillDetailPage() {
                 ) : relatedHabits.length === 0 ? (
                   <p className="text-xs text-white/60">no habits related to this skill yet</p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {relatedHabits.map((habit) => (
-                      <span
+                  <div className="grid gap-2">
+                    {decoratedHabits.map((habit) => (
+                      <div
                         key={habit.id}
-                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur"
+                        className="flex flex-col gap-1 rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-white/80 backdrop-blur transition hover:border-white/25 hover:bg-white/15"
                       >
-                        {habit.name}
-                      </span>
+                        <span className="text-sm font-medium text-white">{habit.name}</span>
+                        <span className="text-xs font-medium uppercase tracking-[0.18em] text-white/60">
+                          {habit.dueLabel}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 )}
