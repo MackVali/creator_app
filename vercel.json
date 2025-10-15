@@ -1,3 +1,11 @@
 {
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm approve-builds @tailwindcss/oxide sharp unrs-resolver || true && pnpm run build"
+  "installCommand": "pnpm install -w --frozen-lockfile",
+  "buildCommand": "pnpm -C premium-app build",
+  "outputDirectory": "premium-app/.next",
+  "git": {
+    "deploymentEnabled": {
+      "preview": true,
+      "production": true
+    }
+  }
 }
