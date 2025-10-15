@@ -1,65 +1,21 @@
-"use client";
+import { redirect } from "next/navigation";
+import { getCurrentUser, ensureProfile, getProfile } from "@/lib/db/profiles";
+import ProfileContent from "./ProfileContent";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/components/auth/AuthProvider";
-import { useProfileContext } from "@/components/ProfileProvider";
-import { ensureProfileExists } from "@/lib/db";
+export default async function ProfilePage() {
+  const user = await getCurrentUser();
 
-export default function ProfilePage() {
-  const router = useRouter();
-  const { session, isReady } = useAuth();
-  const { profile, loading, refreshProfile } = useProfileContext();
-  const existingHandle = profile?.username?.trim();
-  const userId = session?.user?.id ?? null;
+  if (!user) {
+    redirect("/auth");
+  }
 
-  useEffect(() => {
-    async function redirectToHandleProfile() {
-      if (!isReady) {
-        return;
-      }
+  await ensureProfile(user.id);
 
-      if (loading) {
-        return;
-      }
+  const profile = await getProfile(user.id);
 
-      if (!userId) {
-        router.push("/auth");
-        return;
-      }
+  if (!profile) {
+    redirect("/auth");
+  }
 
-      try {
-        if (existingHandle) {
-          router.replace(`/profile/${existingHandle}`);
-          return;
-        }
-
-        const ensuredProfile = await ensureProfileExists(userId);
-        const handle = ensuredProfile?.username?.trim();
-
-        if (handle) {
-          await refreshProfile();
-          router.replace(`/profile/${handle}`);
-          return;
-        }
-
-        router.push("/profile/edit");
-      } catch (err) {
-        console.error("Error loading profile:", err);
-        router.push("/profile/edit");
-      }
-    }
-
-    redirectToHandleProfile();
-  }, [isReady, userId, existingHandle, loading, refreshProfile, router]);
-
-  // Show loading while redirecting
-  return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-white/70">Loading your profile...</p>
-      </div>
-    </div>
-  );
+  return <ProfileContent profile={profile} userId={user.id} />;
 }
