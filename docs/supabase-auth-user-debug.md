@@ -1,8 +1,8 @@
 # Supabase auth user creation troubleshooting
 
-Use this checklist to figure out why you cannot create users even directly from the Supabase dashboard. Each step includes an SQL snippet you can paste into the Supabase SQL editor. Copy the results when you ask for help so the team can see exactly what Supabase is reporting.
+Run these checks inside the Supabase SQL editor that belongs to the same project where sign-ups are failing. Every query is compatible with Supabase’s managed Postgres instance.
 
-## 1. Confirm sign-ups are enabled
+## 1. Confirm email sign-ups are allowed and redirects are valid
 
 ```sql
 select
@@ -11,16 +11,15 @@ select
   enable_signup,
   is_email_confirm_required,
   double_confirm,
-  email_otp_exp,
-  sms_otp_exp,
   password_min_length
-from auth.config;
+from auth.config
+limit 1;
 ```
 
-* **enable_signup** must be `true`. If it is `false`, Supabase will reject every new user until the setting is flipped in **Authentication → Providers → Email**.
-* Verify the `site_url` and `additional_redirect_urls` match your production and preview domains so email confirmations are allowed to redirect back.
+* `enable_signup` must be `true` or Supabase will reject every new user until the toggle is turned back on under **Authentication → Providers → Email**.
+* The `site_url` and any entries in `additional_redirect_urls` must cover the preview or production domains you are testing so Supabase accepts the confirmation redirect.
 
-## 2. Check the audit log for rejected sign-ups
+## 2. Inspect the auth audit log for failures
 
 ```sql
 select
@@ -28,7 +27,7 @@ select
   event_type,
   status,
   error_message,
-  metadata->>'email' as email,
+  coalesce(metadata->>'email', user_email) as email,
   metadata->>'redirect_to' as redirect_to
 from auth.audit_log_entries
 where event_type like 'user.create%'
@@ -36,30 +35,24 @@ order by created_at desc
 limit 20;
 ```
 
-* Rows with `status = 'error'` include Supabase’s reason (for example: invalid redirect, rate limit, disabled email provider). Those errors bubble up to the dashboard too, so this is the quickest way to see why inserts are failing.
-* If the log does not show the attempt, you may be running the query against a different project.
+Rows with `status = 'error'` show the exact failure message that the dashboard also surfaces (for example: invalid redirect, disabled email provider, rate limit). If the attempt is missing entirely you may be looking at the wrong project.
 
-## 3. Inspect rate limit counters
+## 3. Check the current auth rate limits
 
 ```sql
 select
-  name,
-  value,
-  comment
-from auth.rate_limits
-where name in (
-  'email_sent',
-  'sms_sent',
-  'token_verifications',
-  'sign_in_sign_ups'
-);
+  rate_limit_email_sent,
+  rate_limit_invites,
+  rate_limit_token_refresh,
+  rate_limit_signups,
+  rate_limit_retries
+from auth.config
+limit 1;
 ```
 
-* Compare the values with the limits configured in the Supabase dashboard (**Authentication → Rate Limits**). If the limit is lower than you expect (for example `email_sent = 2`), increase it to match your preview testing needs.
+Compare each value with the quotas you expect from **Authentication → Rate Limits**. If `rate_limit_email_sent` is still the default `2`, confirmation emails will stop after the second attempt within an hour until you raise the number here or in the dashboard UI.
 
-## 4. Look for row-level security or trigger errors
-
-If Supabase reports a Postgres error in step 2, run this to see the failing trigger or constraint:
+## 4. Look for row-level security or trigger errors on `auth.users`
 
 ```sql
 select
@@ -72,24 +65,30 @@ where t.tgrelid = 'auth.users'::regclass
   and t.tgenabled != 'D';
 ```
 
-* Custom triggers on `auth.users` sometimes reject inserts (for example, enforcing domains or external sync). Disable or adjust them if they are not supposed to run for new sign-ups.
+If Supabase reports a Postgres error in the audit log, this list highlights custom triggers that may be rejecting new inserts. Disable or update any trigger that should not run during user creation.
 
-## 5. Verify email provider configuration
+## 5. Verify the email provider configuration
 
 ```sql
 select
-  (auth.email_provider() is not null) as email_provider_configured,
-  (auth.external_email_providers_enabled()) as external_provider_enabled;
+  smtp_admin_email,
+  smtp_sender_name,
+  smtp_host,
+  smtp_port,
+  smtp_user,
+  smtp_enabled
+from auth.config
+limit 1;
 ```
 
-* Both values must be `true` to deliver confirmation emails. If the provider is missing, go to **Authentication → Providers → Email** and supply valid SMTP credentials.
+All of the SMTP fields must be populated and `smtp_enabled` must be `true` for Supabase to deliver confirmation emails. If anything is missing, re-enter the provider credentials under **Authentication → Providers → Email**.
 
 ## 6. Retry and capture the raw error
 
-After making adjustments, try to create a user again in the Supabase dashboard. If it still fails, copy the exact error message shown in the UI together with the outputs from steps 1–5. That bundle of information uniquely identifies the configuration issue so we can guide the next fix quickly.
+After making changes, attempt to create a user again from the Supabase dashboard. If it still fails, copy the error string that appears together with the outputs from steps 1–5. Sharing that bundle pinpoints the configuration issue quickly so the team can recommend the next fix.
 
-## Optional: reset misconfigured redirect URLs
+## Optional: reset redirect URLs with the helper script
 
-If you need to reset the redirect allow-list entirely, run the SQL script in [`docs/supabase-site-url-update.sql`](./supabase-site-url-update.sql) after replacing the placeholder domain with your preview hostname.
+Need to wipe and replace your redirect allow-list? Run [`docs/supabase-site-url-update.sql`](./supabase-site-url-update.sql) after swapping in the preview or production domain that should receive confirmation emails.
 
-Keep this document next to the preview checklist so you can differentiate between Supabase configuration errors and issues inside the web app itself.
+Keep this guide next to the preview checklist so you can separate Supabase-side configuration problems from issues inside the web app.
