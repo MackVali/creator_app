@@ -20,6 +20,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { RescheduleButton } from "@/components/schedule/RescheduleButton";
 
 interface ScheduleTopBarProps {
   year: number;
@@ -28,6 +29,9 @@ interface ScheduleTopBarProps {
   canGoBack?: boolean;
   onOpenJumpToDate?: () => void;
   onOpenSearch?: () => void;
+  onReschedule?: () => void;
+  canReschedule?: boolean;
+  isRescheduling?: boolean;
 }
 
 export function ScheduleTopBar({
@@ -37,6 +41,9 @@ export function ScheduleTopBar({
   canGoBack = true,
   onOpenJumpToDate,
   onOpenSearch,
+  onReschedule,
+  canReschedule = true,
+  isRescheduling = false,
 }: ScheduleTopBarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -81,6 +88,25 @@ export function ScheduleTopBar({
         {year}
       </button>
       <div className="flex items-center gap-2">
+        {onReschedule ? (
+          <>
+            <RescheduleButton
+              onClick={onReschedule}
+              disabled={!canReschedule || isRescheduling}
+              isRunning={isRescheduling}
+              className="hidden sm:inline-flex"
+            />
+            <button
+              type="button"
+              onClick={onReschedule}
+              disabled={!canReschedule || isRescheduling}
+              aria-label={isRescheduling ? "Rescheduling…" : "Reschedule"}
+              className={`sm:hidden ${iconButtonClass}`}
+            >
+              <RefreshCcw className="h-5 w-5 text-[var(--accent-red)]" />
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           onClick={() => onOpenJumpToDate?.()}
