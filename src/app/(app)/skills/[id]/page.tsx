@@ -58,70 +58,44 @@ export default function SkillDetailPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const fetchRelatedHabits = async () => {
-      if (!supabase) {
+    const fetchRelatedHabits = async (userId: string | null) => {
+      if (!supabase || !userId) {
         if (!cancelled) {
+          setRelatedHabits([]);
           setHabitsLoading(false);
         }
         return;
       }
+
       try {
-        const habitSkillsQuery = supabase
-          .from("habit_skills")
-          .select("habit_id")
-          .eq("skill_id", id);
-
-        const { data: habitSkillRows, error: habitSkillError } = await habitSkillsQuery;
-
-        if (habitSkillError) {
-          throw habitSkillError;
-        }
-
-        const habitIds = Array.from(
-          new Set(
-            (habitSkillRows ?? [])
-              .map((row) => row?.habit_id)
-              .filter((value): value is string => typeof value === "string" && value.length > 0)
-          )
-        );
-
-        if (habitIds.length === 0) {
-          if (!cancelled) {
-            setRelatedHabits([]);
-          }
-          return;
-        }
-
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select("id, name")
-          .in("id", habitIds);
+          .eq("user_id", userId)
+          .eq("skill_id", id)
+          .order("name", { ascending: true });
 
         if (habitsError) {
           throw habitsError;
         }
 
-        const uniqueHabits = new Map<string, string>();
-
-        (habitsData ?? []).forEach((habit) => {
-          if (!habit) return;
-          const habitId = typeof habit.id === "string" ? habit.id : null;
-          if (!habitId) return;
-
-          const habitName =
-            typeof habit.name === "string" && habit.name.trim().length > 0
-              ? habit.name.trim()
-              : "Untitled habit";
-
-          uniqueHabits.set(habitId, habitName);
-        });
-
         if (!cancelled) {
-          setRelatedHabits(
-            Array.from(uniqueHabits.entries())
-              .map(([habitId, habitName]) => ({ id: habitId, name: habitName }))
-              .sort((a, b) => a.name.localeCompare(b.name))
-          );
+          const formattedHabits = (habitsData ?? [])
+            .map((habit) => {
+              if (!habit) return null;
+              const habitId = typeof habit.id === "string" ? habit.id : null;
+              if (!habitId) return null;
+
+              const habitName =
+                typeof habit.name === "string" && habit.name.trim().length > 0
+                  ? habit.name.trim()
+                  : "Untitled habit";
+
+              return { id: habitId, name: habitName } satisfies HabitSummary;
+            })
+            .filter((habit): habit is HabitSummary => habit !== null);
+
+          setRelatedHabits(formattedHabits);
         }
       } catch (habitErr) {
         if (!cancelled) {
@@ -175,7 +149,7 @@ export default function SkillDetailPage() {
             setHabitsLoading(false);
           } else {
             setSkill(data);
-            await fetchRelatedHabits();
+            await fetchRelatedHabits(userId);
           }
         }
       } catch (err) {
