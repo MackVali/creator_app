@@ -7,44 +7,55 @@ written—no role switching required.
 ## 1. Confirm email sign-ups are allowed and redirects are valid
 
 ```sql
-with raw as (
-  select raw_base_config
+with latest as (
+  select raw_base_config::text as raw
   from auth.instances
-  order by created_at desc
+  order by updated_at desc nulls last, inserted_at desc nulls last
   limit 1
 ),
-parsed as (
-  select
-    nullif(regexp_replace(raw_base_config, '(?ms).*\[auth\].*site_url\s*=\s*"([^"]+)".*', '\1'), raw_base_config) as site_url,
-    nullif(regexp_replace(raw_base_config, '(?ms).*\[auth\].*additional_redirect_urls\s*=\s*\[(.*?)\].*', '\1'), raw_base_config) as additional_redirect_urls_block,
-    nullif(regexp_replace(raw_base_config, '(?ms).*\[auth\].*enable_signup\s*=\s*(true|false).*', '\1'), raw_base_config)::boolean as enable_signup,
-    nullif(regexp_replace(raw_base_config, '(?ms).*\[auth.email\].*(enable_confirmations|is_email_confirm_required)\s*=\s*(true|false).*', '\2'), raw_base_config)::boolean as email_confirmation_required,
-    nullif(regexp_replace(raw_base_config, '(?ms).*\[auth.email\].*double_confirm_changes\s*=\s*(true|false).*', '\1'), raw_base_config)::boolean as double_confirm,
-    coalesce(
-      nullif(regexp_replace(raw_base_config, '(?ms).*\[auth.password\].*min_length\s*=\s*(\d+).*', '\1'), raw_base_config),
-      nullif(regexp_replace(raw_base_config, '(?ms).*\[auth\].*minimum_password_length\s*=\s*(\d+).*', '\1'), raw_base_config)
-    )::int as minimum_password_length
-  from raw
+redirect_block as (
+  select substring(raw from '(?ms)\[auth\][^\[]*?additional_redirect_urls\s*=\s*\[(.*?)\]') as block
+  from latest
 ),
-urls as (
-  select coalesce(array_agg(match[1]) filter (where match[1] is not null), '{}') as additional_redirect_urls
-  from parsed
-  left join lateral regexp_matches(additional_redirect_urls_block, '"([^"]+)"', 'g') as match on true
+redirects as (
+  select coalesce(
+    (
+      select array_agg(elem)
+      from jsonb_array_elements_text(
+        case
+          when rb.block is null or btrim(rb.block) = '' then '[]'::jsonb
+          else ('[' || rb.block || ']')::jsonb
+        end
+      ) as elem
+    ),
+    '{}'::text[]
+  ) as additional_redirect_urls
+  from redirect_block rb
 )
 select
-  site_url,
-  additional_redirect_urls,
-  enable_signup,
-  email_confirmation_required,
-  double_confirm,
-  minimum_password_length
-from parsed
-cross join urls;
+  substring(raw from '(?ms)\[auth\][^\[]*?site_url\s*=\s*"([^"]+)"') as site_url,
+  redirects.additional_redirect_urls,
+  substring(raw from '(?ms)\[auth\][^\[]*?enable_signup\s*=\s*(true|false)')::boolean as enable_signup,
+  coalesce(
+    substring(raw from '(?ms)\[auth.email\][^\[]*?enable_confirmations\s*=\s*(true|false)')::boolean,
+    substring(raw from '(?ms)\[auth.email\][^\[]*?is_email_confirm_required\s*=\s*(true|false)')::boolean
+  ) as email_confirmation_required,
+  coalesce(
+    substring(raw from '(?ms)\[auth.email\][^\[]*?double_confirm_changes\s*=\s*(true|false)')::boolean,
+    substring(raw from '(?ms)\[auth.email\][^\[]*?double_confirm\s*=\s*(true|false)')::boolean
+  ) as double_confirm,
+  coalesce(
+    substring(raw from '(?ms)\[auth\][^\[]*?minimum_password_length\s*=\s*(\d+)'),
+    substring(raw from '(?ms)\[auth.password\][^\[]*?min_length\s*=\s*(\d+)')
+  )::int as minimum_password_length
+from latest
+cross join redirects;
 ```
 
 * `enable_signup` must be `true` or Supabase will reject every new user until you toggle it on under **Authentication → Providers → Email**.
 * `email_confirmation_required` shows whether Supabase waits for email confirmations before activating accounts.
-* `site_url` and any `additional_redirect_urls` must include the production or preview domains you expect in confirmation links. The query parses both values directly from the live config stored in `auth.instances`.
+* `site_url` and any `additional_redirect_urls` must include the production or preview domains you expect in confirmation links. The query reads the live TOML config stored in `auth.instances` and surfaces just the auth settings you need to confirm.
+* `additional_redirect_urls` is returned as a Postgres `text[]`, so each element needs to match an allowed domain exactly—add or edit entries in Supabase until this array lines up with your preview and production hosts.
 
 ## 2. Inspect the auth audit log for failures
 
@@ -68,23 +79,22 @@ confirm you are querying the correct Supabase project.
 ## 3. Check the current auth rate limits
 
 ```sql
-with raw as (
-  select raw_base_config
+with latest as (
+  select raw_base_config::text as raw
   from auth.instances
-  order by created_at desc
+  order by updated_at desc nulls last, inserted_at desc nulls last
   limit 1
 )
 select
-  nullif(regexp_replace(raw_base_config, '(?ms).*rate_limit_email_sent\s*=\s*(\d+).*', '\1'), raw_base_config)::int as rate_limit_email_sent,
-  nullif(regexp_replace(raw_base_config, '(?ms).*rate_limit_invites\s*=\s*(\d+).*', '\1'), raw_base_config)::int as rate_limit_invites,
-  nullif(regexp_replace(raw_base_config, '(?ms).*rate_limit_token_refresh\s*=\s*(\d+).*', '\1'), raw_base_config)::int as rate_limit_token_refresh,
-  nullif(regexp_replace(raw_base_config, '(?ms).*rate_limit_signups\s*=\s*(\d+).*', '\1'), raw_base_config)::int as rate_limit_signups,
-  nullif(regexp_replace(raw_base_config, '(?ms).*(rate_limit_retries|rate_limit_retries_per_request)\s*=\s*(\d+).*', '\2'), raw_base_config)::int as rate_limit_retries
-from raw;
+  substring(raw from '(?ms)\[auth.rate_limit\][^\[]*?email_sent\s*=\s*(\d+)')::int as email_sent_per_hour,
+  substring(raw from '(?ms)\[auth.rate_limit\][^\[]*?sign_in_sign_ups\s*=\s*(\d+)')::int as sign_in_sign_ups_per_5m,
+  substring(raw from '(?ms)\[auth.rate_limit\][^\[]*?token_refresh\s*=\s*(\d+)')::int as token_refresh_per_5m,
+  substring(raw from '(?ms)\[auth.rate_limit\][^\[]*?token_verifications\s*=\s*(\d+)')::int as token_verifications_per_5m,
+  substring(raw from '(?ms)\[auth.rate_limit\][^\[]*?anonymous_users\s*=\s*(\d+)')::int as anonymous_users_per_hour
+from latest;
 ```
 
-Compare each value with the quotas under **Authentication → Rate Limits**. If `rate_limit_email_sent` is still `2`, confirmation
- emails stop after the second attempt in one hour until you raise the limit here or in the dashboard UI.
+Compare each value with the quotas under **Authentication → Rate Limits**. If `email_sent_per_hour` is still `2`, confirmation emails stop after the second attempt in one hour until you raise the limit here or in the dashboard UI.
 
 ## 4. Look for row-level security or trigger errors on `auth.users`
 
@@ -96,28 +106,30 @@ select
 from pg_trigger t
 join pg_proc p on p.oid = t.tgfoid
 where t.tgrelid = 'auth.users'::regclass
-  and t.tgenabled != 'D';
+  and t.tgenabled != 'D'
+  and not t.tgisinternal
+order by t.tgname;
 ```
 
-If the audit log reports a Postgres error, this list reveals custom triggers that may be rejecting inserts. Disable or update any trigger that should not run during user creation.
+Built-in foreign-key triggers (the ones prefixed with `RI_`) are filtered out so you can focus on custom logic like `trg_upsert_empty_profile`. If you need to inspect the full list, remove the `not t.tgisinternal` predicate temporarily.
 
 ## 5. Verify the email provider configuration
 
 ```sql
-with raw as (
-  select raw_base_config
+with latest as (
+  select raw_base_config::text as raw
   from auth.instances
-  order by created_at desc
+  order by updated_at desc nulls last, inserted_at desc nulls last
   limit 1
 )
 select
-  nullif(regexp_replace(raw_base_config, '(?ms).*smtp_admin_email\s*=\s*"([^"]+)".*', '\1'), raw_base_config) as smtp_admin_email,
-  nullif(regexp_replace(raw_base_config, '(?ms).*smtp_sender_name\s*=\s*"([^"]+)".*', '\1'), raw_base_config) as smtp_sender_name,
-  nullif(regexp_replace(raw_base_config, '(?ms).*smtp_host\s*=\s*"([^"]+)".*', '\1'), raw_base_config) as smtp_host,
-  nullif(regexp_replace(raw_base_config, '(?ms).*smtp_port\s*=\s*(\d+).*', '\1'), raw_base_config)::int as smtp_port,
-  nullif(regexp_replace(raw_base_config, '(?ms).*smtp_user\s*=\s*"([^"]+)".*', '\1'), raw_base_config) as smtp_user,
-  nullif(regexp_replace(raw_base_config, '(?ms).*smtp_enabled\s*=\s*(true|false).*', '\1'), raw_base_config)::boolean as smtp_enabled
-from raw;
+  substring(raw from '(?ms)smtp_admin_email\s*=\s*"([^"]+)"') as smtp_admin_email,
+  substring(raw from '(?ms)smtp_sender_name\s*=\s*"([^"]+)"') as smtp_sender_name,
+  substring(raw from '(?ms)smtp_host\s*=\s*"([^"]+)"') as smtp_host,
+  substring(raw from '(?ms)smtp_port\s*=\s*(\d+)')::int as smtp_port,
+  substring(raw from '(?ms)smtp_user\s*=\s*"([^"]+)"') as smtp_user,
+  substring(raw from '(?ms)smtp_enabled\s*=\s*(true|false)')::boolean as smtp_enabled
+from latest;
 ```
 
 All SMTP fields must be populated and `smtp_enabled` must be `true` for Supabase to deliver confirmation emails. Missing entries mean you need to re-enter provider credentials under **Authentication → Providers → Email**.
