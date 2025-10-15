@@ -44,6 +44,8 @@ This app uses Supabase for authentication with magic link sign-in. After setting
 
 This branch includes a minor documentation tweak to confirm the deployment pipeline is functioning as expected.
 
+> Redeployment note: touching this README is our lightweight way to poke the pipeline.
+
 ## Seeding Sample Data
 
 To populate your app with sample data for testing and development:
