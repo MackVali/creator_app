@@ -1,83 +1,177 @@
-# Profile Page Redesign Implementation Plan
+# Premium Profile Experience — Mini Codex PRD Prompts
 
-## 1. Objectives & Audience Alignment
-- Deliver a mobile-first, premium experience that mirrors modern link-in-bio products (e.g., Linktree, link.me) while showcasing individual creators and small-business owners.
-- Prioritize quick scanning, personality-driven visuals, and clear CTAs for promoting services, products, and social content.
-- Maintain accessibility (WCAG 2.1 AA) and fast load times despite high visual polish.
+The following prompts refine the vision for a premium, mobile-first profile experience inspired by the provided references. Each prompt is scoped so it can be handed to a feature team (or model) to generate a detailed PRD or implementation plan without ambiguity.
 
-## 2. Current Experience Audit (Key Files)
-- `src/app/(app)/profile/LinkMeProfile.tsx`: Primary profile rendering logic, currently mixing data fetching, layout, and UI state.
-- `src/app/(app)/profile/ProfileContent.tsx`: Secondary layout for content cards and social links.
-- `src/app/(app)/u/[username]/PublicProfileContent.tsx`: Public view used for discovery/SEO, needs parity with redesigned visuals.
-- `src/components/profile/ProfileSkeleton.tsx`: Loading state; must match the redesigned skeleton shimmer.
+---
 
-## 3. Information Architecture (Mobile-First)
-1. **Hero Stack**
-   - Edge-to-edge banner with gradient overlays and optional video loop.
-   - Floating avatar card with verified badge, pronouns, city, and tap-to-call/email CTAs.
-2. **Primary Action Row**
-   - Sticky row of customizable buttons ("Book a Call", "Shop Collection", "Join Newsletter") with icons.
-3. **Content Modules** (user-reorderable)
-   - Featured carousel for product cards/services (swipeable, 3D tilt).
-   - Link list using tiered emphasis (Primary highlight cards, secondary compact chips).
-   - Social proof strip (testimonials, follower counts).
-   - Embedded media (Reels/TikTok, Spotify, YouTube) in collapsible accordions to control page length.
-4. **Trust & Conversion Footer**
-   - Newsletter capture, location badge, business hours, and compliance/legal links.
+## Prompt 1 — "Hyper-Visual Profile Shell"
+**Goal**: Deliver a cinematic, mobile-first profile layout that instantly communicates brand personality and social proof.
 
-## 4. Visual Design System
-- Introduce a **"Profile Themes"** config (gradient backgrounds, typography presets, button radii, ambient shadows).
-- Use Tailwind `@layer` utilities to add glassmorphism (blurred cards), neon glows, and subtle grain textures.
-- Leverage CSS variables for dynamic theming (e.g., `--profile-accent`, `--profile-surface`).
-- Motion: micro-interactions via `framer-motion` for button press, card hover (tap) depth, and sticky CTA transitions.
+**Use this prompt**:
+> "Draft a PRD for a `Hyper-Visual Profile Shell` that replaces the current profile hero with an immersive background, floating avatar, and action badges. Include requirements for gradients/video backgrounds, avatar treatments, trust badges, and sticky contact buttons. Document accessibility, performance budgets, and loading skeleton expectations."
 
-## 5. Component Refactors & New Modules
-| Area | Actions |
-| --- | --- |
-| `LinkMeProfile.tsx` | Split into container (`LinkMeProfile`) and presentation components: `ProfileHero`, `ProfileActionRow`, `ProfileModules`. Use Suspense/React Query for async data. |
-| `ProfileContent.tsx` | Replace with modular renderer that accepts a `modules` config describing layout order and card types. |
-| New components | `ProfileThemeProvider`, `ProfileCarousel`, `ProfileLinkCard`, `SocialProofStrip`, `ProfileFooter`. |
-| Customization UI | Extend `/profile/edit` to include theme selector, button styles, module toggles, and preview. |
-| Analytics hooks | Add click tracking via `useProfileAnalytics` (sends events to Supabase or Segment). |
+**Primary outcomes**
+- Edge-to-edge hero with gradient/video support and parallax scroll.
+- Floating identity card with verified badge, pronouns/location chips, and one-tap contact buttons.
+- Sticky action row that keeps core CTAs in view during scroll.
 
-## 6. Data Model & API Updates
-- Extend `profiles` table to store `theme`, `accent_color`, `module_order`, `cta_links`, `testimonials`, `business_info` JSON fields.
-- Create new tables for `profile_products` and `profile_services` to allow curated items with pricing, URLs, media.
-- Update Supabase RPC/queries in `@/lib/db` to hydrate new modules efficiently.
-- Introduce caching layer (Edge-friendly) for public profile fetches to ensure fast global loads.
+**Dependencies**
+- Needs theme tokens and media handling groundwork (from Prompt 2).
+- Can run in parallel with module redesigns once shared spacing/typography tokens exist.
 
-## 7. Customization Experience Enhancements
-- Live preview mode on `/profile/edit` using a split-view mobile frame component.
-- Drag-and-drop ordering for modules (use `@dnd-kit/core`), inline editing of CTA text and URLs.
-- Theme presets (e.g., "Luxury", "Vibrant Creator", "Wellness") plus advanced custom controls for power users.
-- Asset management: integrate with existing upload pipeline for high-res banner/video and avatar, auto-generate blurhash placeholders.
+---
 
-## 8. Progressive Rollout Strategy
-1. Build new theming + module components behind a feature flag (`profile_v2`).
-2. Enable opt-in for beta testers; gather qualitative feedback.
-3. Ship analytics instrumentation to measure click-through and completion rates vs. current design.
-4. When metrics improve, migrate remaining users and deprecate legacy layout.
+## Prompt 2 — "Profile Themes & Visual System"
+**Goal**: Establish a theming foundation so users can choose premium presets without sacrificing performance or accessibility.
 
-## 9. Quality Assurance Checklist
-- Responsive snapshots at 360px, 414px, and 768px widths.
-- Accessibility: color contrast, focus states, screen reader labels for action buttons and module titles.
-- Performance budgets (<2.5s LCP on 4G); audit via Lighthouse.
-- Cross-browser verification (iOS Safari, Chrome Android, desktop fallback).
-- Regression tests: add Storybook visual regression or Percy snapshots for key components.
+**Use this prompt**:
+> "Create a PRD for `Profile Themes & Visual System` covering Tailwind/CSS variable tokens, gradient libraries, glassmorphism layers, and motion guidelines. Include editor controls for selecting themes, previewing changes, and saving presets. Detail how the system supports future premium upsells."
 
-## 10. Delivery Timeline (Aggressive 3-sprint outline)
-- **Sprint 1:** Data model updates, theming system foundation, refactor `LinkMeProfile` container.
-- **Sprint 2:** Build hero/action row/modules, integrate customization UI, launch beta flag.
-- **Sprint 3:** Polish animations, analytics, QA/lighthouse runs, rollout + documentation.
+**Primary outcomes**
+- Theme tokens (colors, typography scales, spacing) stored per user.
+- Ambient effects (blurs, glows, grain) applied consistently across modules.
+- Live preview inside profile editor with instant theme switching.
 
-## 11. Success Metrics
-- +20% increase in CTA click-through rates vs. baseline.
-- +15% increase in profile completion rate during onboarding.
-- Retention: 80% of beta users adopt at least one premium theme or CTA module.
+**Dependencies**
+- Blocks all other visual refresh work; must land before shell/modules to avoid rework.
+- Can run concurrently with analytics/instrumentation planning.
 
-## 12. Open Questions & Next Steps
-- Confirm backend capacity for storing larger media (video banners) and CDN strategy.
-- Decide on monetization toggles (e.g., premium themes behind paywall?).
-- Validate legal requirements for international businesses (address display, VAT IDs).
-- Schedule design review with brand team to finalize gradients, iconography, and typography pairings.
+---
 
+## Prompt 3 — "Modular Link & Media Blocks"
+**Goal**: Transform the link list into swipeable, reorderable modules for links, products, media, and testimonials.
+
+**Use this prompt**:
+> "Write a PRD for `Modular Link & Media Blocks` that defines content modules (featured carousel, link cards, social proof strip, embedded media accordions). Specify data contracts, drag-and-drop ordering, and responsive behaviors. Include empty states, loading skeletons, and analytics events."
+
+**Primary outcomes**
+- Config-driven module renderer supporting reorderable sections.
+- Swipeable product/service cards with pricing and CTA buttons.
+- Collapsible media embeds to manage page length on mobile.
+
+**Dependencies**
+- Requires theme tokens (Prompt 2) for consistent styling.
+- Requires data model updates (Prompt 4) for storing module configuration.
+- Can be developed in parallel with scheduling/ticketing once schemas exist.
+
+---
+
+## Prompt 4 — "Profile Data Model Expansion"
+**Goal**: Update Supabase schemas and APIs to persist new modules, theme selections, and commerce-ready metadata.
+
+**Use this prompt**:
+> "Produce a PRD for `Profile Data Model Expansion` covering new fields/tables for themes, CTA buttons, product/service listings, testimonials, business info, and scheduling availability. Detail migration strategy, caching, and public API read models. Include performance limits and privacy considerations."
+
+**Primary outcomes**
+- Extended `profiles` table for theme + CTA metadata.
+- New relational tables for products/services, testimonials, events, and availability slots.
+- Optimized public profile query with caching layer for fast global loads.
+
+**Dependencies**
+- Must precede feature work that surfaces new modules (Prompts 3, 5, 6).
+- Can be staged ahead of visual work; migrations can happen first while UI remains unchanged.
+
+---
+
+## Prompt 5 — "Ticketing & Event Showcase"
+**Goal**: Launch tour date and ticket modules resembling the provided reference, optimized for mobile scanning and conversion.
+
+**Use this prompt**:
+> "Draft a PRD for `Ticketing & Event Showcase` including horizontal and vertical variants, time zone handling, ticket CTA states, and deep links to third-party ticketing providers. Capture analytics requirements and fallback states when events sell out."
+
+**Primary outcomes**
+- Scrollable tour date cards with localized date/time formatting.
+- Prominent ticket buttons with status badges (Available, Low stock, Sold out).
+- Optional countdown timer for upcoming shows.
+
+**Dependencies**
+- Requires data model support for events (Prompt 4).
+- Requires modular renderer (Prompt 3) to place event blocks.
+- Can run concurrently with merch/services module (Prompt 6) once schemas are ready.
+
+---
+
+## Prompt 6 — "Merch & Services Commerce Modules"
+**Goal**: Provide monetization blocks for physical merch and bookable services with high-impact visuals.
+
+**Use this prompt**:
+> "Compose a PRD for `Merch & Services Commerce Modules` that outlines product card layouts, price display rules, inventory badges, and CTA behaviors (add to cart, external checkout, book now). Include support for appointment duration/price and integration hooks for payment providers."
+
+**Primary outcomes**
+- Carousel/grid cards for merch with pricing and stock messaging.
+- Services block with duration, price, and booking CTA linking to scheduler or in-app flow.
+- Analytics events for impressions, clicks, and conversions.
+
+**Dependencies**
+- Requires product/service schemas (Prompt 4).
+- Shares theming tokens (Prompt 2) and module renderer (Prompt 3).
+- Can run in parallel with scheduling integration (Prompt 7) if API contracts are defined.
+
+---
+
+## Prompt 7 — "Scheduling & Availability Integration"
+**Goal**: Enable creators to surface bookable appointments directly on the profile, aligned with the provided design references.
+
+**Use this prompt**:
+> "Prepare a PRD for `Scheduling & Availability Integration` specifying availability data ingestion, booking CTA behavior, confirmation flows, and third-party calendar sync. Include safeguards for double-booking and fallback when no slots are available."
+
+**Primary outcomes**
+- Availability widget showing upcoming slots with quick book buttons.
+- Integration with external scheduling APIs (Calendly, Acuity) or internal booking service.
+- Confirmation and reminder touchpoints (email/SMS triggers).
+
+**Dependencies**
+- Depends on data model expansion (Prompt 4) for storing availability and bookings.
+- Can develop alongside merch/services if API provider differs, but UI depends on module renderer (Prompt 3).
+
+---
+
+## Prompt 8 — "Monetization & Premium Upsell Strategy"
+**Goal**: Define how premium themes and advanced modules are packaged, priced, and surfaced to drive revenue.
+
+**Use this prompt**:
+> "Author a PRD for `Monetization & Premium Upsell Strategy` detailing paywall logic, upgrade flows, free vs. premium feature gating, and analytics to measure conversion. Include lifecycle messaging (email, in-app nudges) and success metrics."
+
+**Primary outcomes**
+- Clear delineation of free vs. premium modules/themes.
+- Upgrade CTA placement within profile editor and public profile.
+- Telemetry dashboards tracking adoption and revenue per user.
+
+**Dependencies**
+- Can proceed after foundational theming/data model work is scoped (Prompts 2 & 4) since it references their outputs.
+- Should inform prioritization of modules developed in Prompts 3, 5, 6, and 7.
+
+---
+
+## Prompt 9 — "Analytics & Experimentation Framework"
+**Goal**: Ensure every new module/action is instrumented and comparable to the legacy profile performance.
+
+**Use this prompt**:
+> "Generate a PRD for `Analytics & Experimentation Framework` capturing event schemas, click-through funnels, A/B test setup, and dashboards. Document success metrics aligned with premium profile goals."
+
+**Primary outcomes**
+- Unified event taxonomy for profile interactions (CTA clicks, module impressions, conversions).
+- Experimentation plan for testing new themes/modules against control groups.
+- Reporting dashboards for marketing and product teams.
+
+**Dependencies**
+- Can kick off in parallel with Prompts 2 and 4.
+- Must be completed before GA launch to capture baseline metrics.
+
+---
+
+## Sequencing & Parallelization Overview
+1. **Foundational Phase** (Prompts 2, 4, 9)
+   - Run themes/system (2) and analytics planning (9) concurrently.
+   - Start data model expansion (4) immediately; ship migrations behind feature flags.
+2. **Experience Core** (Prompts 1, 3)
+   - Once theme tokens exist, tackle shell (1) and modular blocks (3) together, sharing design reviews.
+3. **Commercial Modules** (Prompts 5, 6, 7)
+   - Kick off event showcase (5) and merch/services (6) concurrently after module renderer is stable.
+   - Scheduling integration (7) follows data model completion but can overlap with merch/services if API contracts are ready.
+4. **Monetization Layer** (Prompt 8)
+   - Begin after core experience is feature-complete enough to define paywall tiers; depends on outputs from 1–7.
+5. **Rollout & Measurement**
+   - Use analytics framework (9) to run controlled rollouts; ensure monetization strategy (8) informs beta and GA gates.
+
+This structure clarifies scope, sequencing, and interdependencies so each mini PRD can be generated and executed with minimal ambiguity.
