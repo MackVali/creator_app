@@ -59,6 +59,8 @@ export interface Database {
           window_id: string | null;
           skill_id: string | null;
           energy: string | null;
+          location_context: string | null;
+          daylight_preference: string | null;
         };
       Insert: {
         id?: string;
@@ -74,6 +76,8 @@ export interface Database {
         window_id?: string | null;
         skill_id?: string | null;
         energy?: string | null;
+        location_context?: string | null;
+        daylight_preference?: string | null;
       };
       Update: {
         id?: string;
@@ -89,6 +93,8 @@ export interface Database {
         window_id?: string | null;
         skill_id?: string | null;
         energy?: string | null;
+        location_context?: string | null;
+        daylight_preference?: string | null;
       };
       };
       projects: {
@@ -632,6 +638,8 @@ export interface Database {
           start_local: string;
           end_local: string;
           energy: string;
+          location_context: string | null;
+          daylight_preference: string | null;
         };
         Insert: {
           id?: string;
@@ -642,6 +650,8 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy?: string;
+          location_context?: string | null;
+          daylight_preference?: string | null;
         };
         Update: {
           id?: string;
@@ -652,6 +662,8 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy?: string;
+          location_context?: string | null;
+          daylight_preference?: string | null;
         };
       };
       schedule_instances: {

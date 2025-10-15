@@ -11,6 +11,8 @@ export type WindowLite = {
   start_local: string;
   end_local: string;
   days: number[] | null;
+  location_context: string | null;
+  daylight_preference: string | null;
   fromPrevDay?: boolean;
 };
 
@@ -68,7 +70,7 @@ export async function fetchWindowsForDate(
   const normalizedTimeZone = normalizeTimeZone(timeZone);
   const weekday = weekdayInTimeZone(date, normalizedTimeZone);
   const prevWeekday = (weekday + 6) % 7;
-  const columns = 'id, label, energy, start_local, end_local, days';
+  const columns = 'id, label, energy, start_local, end_local, days, location_context, daylight_preference';
 
   const [
     { data: today, error: errToday },

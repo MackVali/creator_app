@@ -24,6 +24,14 @@ function normalizeText(value: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function escapeForIlike(value: string) {
+  return value.replace(/([%_\\])/g, '\\$1');
+}
+
+export function formatMemoNoteTitle(habitName: string, index: number) {
+  return `${habitName} Memo #${index}`;
+}
+
 export async function getNotes(skillId: string): Promise<Note[]> {
   if (!skillId) return [];
 
@@ -116,6 +124,51 @@ export async function createSkillNote(
   }
 
   return mapRowToSkillNote(data);
+}
+
+export async function getNextMemoNoteIndex(
+  skillId: string,
+  habitName: string
+): Promise<number> {
+  if (!skillId || !habitName.trim()) return 1;
+
+  const supabase = getSupabaseBrowser();
+  if (!supabase) return 1;
+
+  const userId = await getCurrentUserId();
+  if (!userId) return 1;
+
+  const normalizedName = habitName.trim();
+  const prefix = `${normalizedName} Memo #`;
+  const escapedPrefix = escapeForIlike(prefix);
+
+  const { data, error } = await supabase
+    .from(NOTES_TABLE)
+    .select('title')
+    .eq('user_id', userId)
+    .eq('skill_id', skillId)
+    .ilike('title', `${escapedPrefix}%`);
+
+  if (error) {
+    console.error('Failed to load memo notes for index', { error, skillId, habitName });
+    return 1;
+  }
+
+  let maxIndex = 0;
+  const regex = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)$`, 'i');
+  for (const row of data ?? []) {
+    const title = (row as { title?: string | null }).title;
+    if (!title) continue;
+    const match = title.match(regex);
+    if (match) {
+      const value = Number(match[1]);
+      if (Number.isFinite(value)) {
+        maxIndex = Math.max(maxIndex, value);
+      }
+    }
+  }
+
+  return maxIndex + 1;
 }
 
 export async function updateSkillNote(

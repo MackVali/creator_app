@@ -14,6 +14,8 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
   HABIT_ENERGY_OPTIONS,
+  HABIT_LOCATION_OPTIONS,
+  HABIT_DAYLIGHT_OPTIONS,
   type HabitEnergySelectOption,
   type HabitSkillSelectOption,
 } from "@/components/habits/habit-form-fields";
@@ -77,6 +79,8 @@ export default function EditHabitPage() {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
   const [skillId, setSkillId] = useState<string>("none");
+  const [locationContext, setLocationContext] = useState("ANY");
+  const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [habitLoading, setHabitLoading] = useState(true);
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
 
@@ -328,7 +332,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -368,6 +372,26 @@ export default function EditHabitPage() {
           );
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
+          const normalizedLocation = (data.location_context ?? "")
+            .toString()
+            .trim()
+            .toUpperCase();
+          setLocationContext(
+            normalizedLocation &&
+              HABIT_LOCATION_OPTIONS.some((option) => option.value === normalizedLocation)
+              ? normalizedLocation
+              : "ANY"
+          );
+          const normalizedDaylight = (data.daylight_preference ?? "")
+            .toString()
+            .trim()
+            .toUpperCase();
+          setDaylightPreference(
+            normalizedDaylight &&
+              HABIT_DAYLIGHT_OPTIONS.some((option) => option.value === normalizedDaylight)
+              ? normalizedDaylight
+              : "ALL_DAY"
+          );
         }
       } catch (err) {
         console.error("Failed to load habit:", err);
@@ -492,6 +516,9 @@ export default function EditHabitPage() {
           energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
+          location_context:
+            locationContext.toUpperCase() === "ANY" ? null : locationContext,
+          daylight_preference: daylightPreference?.toUpperCase() || "ALL_DAY",
         })
         .eq("id", habitId)
         .eq("user_id", user.id);
@@ -565,6 +592,8 @@ export default function EditHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
+                locationContext={locationContext}
+                daylightPreference={daylightPreference}
                 energyOptions={energySelectOptions}
                 skillsLoading={skillsLoading}
                 skillOptions={skillSelectOptions}
@@ -577,6 +606,10 @@ export default function EditHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
+                onLocationContextChange={setLocationContext}
+                onDaylightPreferenceChange={setDaylightPreference}
+                locationOptions={HABIT_LOCATION_OPTIONS}
+                daylightOptions={HABIT_DAYLIGHT_OPTIONS}
                 showDescriptionField={false}
                 footerSlot={
                     <div className="space-y-4">

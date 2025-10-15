@@ -12,6 +12,8 @@ export interface Habit {
   updated_at: string;
   skill_id: string | null;
   energy: string | null;
+  location_context: string | null;
+  daylight_preference: string | null;
   skill: {
     id: string;
     name: string;
@@ -36,7 +38,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
   const { data, error } = await supabase
     .from("habits")
     .select(
-      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, location_context, daylight_preference, skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -47,7 +49,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     const fallback = await supabase
       .from("habits")
       .select(
-        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy"
+        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, location_context, daylight_preference"
       )
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
@@ -62,6 +64,8 @@ export async function getHabits(userId: string): Promise<Habit[]> {
         ...habit,
         skill_id: habit.skill_id ?? null,
         energy: habit.energy ?? null,
+        location_context: habit.location_context ?? null,
+        daylight_preference: habit.daylight_preference ?? null,
         skill: null,
         routine_id: null,
         routine: null,
@@ -74,6 +78,8 @@ export async function getHabits(userId: string): Promise<Habit[]> {
       ...habit,
       skill_id: habit.skill_id ?? null,
       energy: habit.energy ?? null,
+      location_context: habit.location_context ?? null,
+      daylight_preference: habit.daylight_preference ?? null,
       skill: habit.skill
         ? {
             id: habit.skill.id,

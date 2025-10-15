@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ChevronDown, Sparkles } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +40,18 @@ export type HabitSkillSelectOption = {
   disabled?: boolean;
 };
 
+export type HabitLocationOption = {
+  value: string;
+  label: string;
+  description?: string;
+};
+
+export type HabitDaylightOption = {
+  value: string;
+  label: string;
+  description?: string;
+};
+
 export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
   {
     label: "Habit",
@@ -54,6 +67,40 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     label: "Async",
     value: "ASYNC",
     description: "Self-paced rituals you can do anytime.",
+  },
+  {
+    label: "Memo",
+    value: "MEMO",
+    description: "Capture reflections that mark your growth.",
+  },
+];
+
+export const HABIT_LOCATION_OPTIONS: HabitLocationOption[] = [
+  {
+    value: "ANY",
+    label: "Anywhere",
+    description: "Show in every window regardless of location.",
+  },
+  { value: "HOME", label: "Home" },
+  { value: "WORK", label: "Work" },
+  { value: "OUTSIDE", label: "Outside" },
+];
+
+export const HABIT_DAYLIGHT_OPTIONS: HabitDaylightOption[] = [
+  {
+    value: "ALL_DAY",
+    label: "All day",
+    description: "Schedule at any hour with no daylight limits.",
+  },
+  {
+    value: "DAY",
+    label: "Day",
+    description: "Keep this habit while the sun’s still up.",
+  },
+  {
+    value: "NIGHT",
+    label: "Night",
+    description: "Reserve for evenings, twilight, and after dark.",
   },
 ];
 
@@ -96,6 +143,8 @@ interface HabitFormFieldsProps {
   duration: string;
   energy: string;
   skillId: string;
+  locationContext: string;
+  daylightPreference: string;
   energyOptions: HabitEnergySelectOption[];
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
@@ -108,8 +157,12 @@ interface HabitFormFieldsProps {
   onEnergyChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
+  onLocationContextChange: (value: string) => void;
+  onDaylightPreferenceChange: (value: string) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
+  locationOptions?: HabitLocationOption[];
+  daylightOptions?: HabitDaylightOption[];
   footerSlot?: ReactNode;
   showDescriptionField?: boolean;
 }
@@ -123,6 +176,8 @@ export function HabitFormFields({
   duration,
   energy,
   skillId,
+  locationContext,
+  daylightPreference,
   energyOptions,
   skillsLoading,
   skillOptions,
@@ -135,8 +190,12 @@ export function HabitFormFields({
   onEnergyChange,
   onDurationChange,
   onSkillChange,
+  onLocationContextChange,
+  onDaylightPreferenceChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
+  locationOptions = HABIT_LOCATION_OPTIONS,
+  daylightOptions = HABIT_DAYLIGHT_OPTIONS,
   footerSlot,
   showDescriptionField = true,
 }: HabitFormFieldsProps) {
@@ -144,6 +203,11 @@ export function HabitFormFields({
   const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(() => {
+    const normalizedLocation = locationContext.toUpperCase();
+    const normalizedDaylight = daylightPreference.toUpperCase();
+    return normalizedLocation !== "ANY" || normalizedDaylight !== "ALL_DAY";
+  });
 
   useEffect(() => {
     setSkillSearchQuery("");
@@ -342,29 +406,104 @@ export function HabitFormFields({
           </Select>
         </div>
 
-        <div className="space-y-3">
-          <Label
-            htmlFor="habit-duration"
-            className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-          >
-            Duration (minutes)
-          </Label>
-          <Input
-            id="habit-duration"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            step={1}
-            value={duration}
-            onChange={(event) => onDurationChange(event.target.value)}
-            placeholder="e.g. 25"
-            required
-            className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-          />
-        </div>
+      <div className="space-y-3">
+        <Label
+          htmlFor="habit-duration"
+          className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+        >
+          Duration (minutes)
+        </Label>
+        <Input
+          id="habit-duration"
+          type="number"
+          inputMode="numeric"
+          min={1}
+          step={1}
+          value={duration}
+          onChange={(event) => onDurationChange(event.target.value)}
+          placeholder="e.g. 25"
+          required
+          className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+        />
       </div>
-
-      {footerSlot}
     </div>
-  );
+
+    <div className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+      <button
+        type="button"
+        onClick={() => setAdvancedOpen((value) => !value)}
+        className="flex w-full items-center justify-between rounded-lg bg-white/[0.04] px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-white/[0.08]"
+        aria-expanded={advancedOpen}
+      >
+        <span>Advanced context</span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 transition-transform text-white/70",
+            advancedOpen ? "rotate-180" : "rotate-0"
+          )}
+        />
+      </button>
+
+      {advancedOpen ? (
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Location context
+            </Label>
+            <Select value={locationContext} onValueChange={onLocationContextChange}>
+              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectValue placeholder="Where does this habit belong?" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                {locationOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <div className="flex flex-col gap-0.5">
+                      <span>{option.label}</span>
+                      {option.description ? (
+                        <span className="text-xs text-white/60">{option.description}</span>
+                      ) : null}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Daylight preference
+            </Label>
+            <Select value={daylightPreference} onValueChange={onDaylightPreferenceChange}>
+              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectValue placeholder="When should this show up?" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                {daylightOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <div className="flex flex-col gap-0.5">
+                      <span>{option.label}</span>
+                      {option.description ? (
+                        <span className="text-xs text-white/60">{option.description}</span>
+                      ) : null}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="sm:col-span-2">
+            <p className="flex items-center gap-2 text-xs text-white/60">
+              <Sparkles className="h-3.5 w-3.5 text-violet-300" />
+              These settings make habits location and daylight aware, so they only
+              appear in windows that match the moment you’re in.
+            </p>
+          </div>
+        </div>
+      ) : null}
+    </div>
+
+    {footerSlot}
+  </div>
+);
 }

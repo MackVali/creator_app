@@ -28,6 +28,7 @@ import {
   setTimeInTimeZone,
   startOfDayInTimeZone,
 } from './timezone'
+import { isTimeAllowedByDaylight } from './daylight'
 
 type Client = SupabaseClient<Database>
 
@@ -641,10 +642,23 @@ async function scheduleHabitsForDay(params: {
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
+    const resolvedLocationRaw = habit.locationContext ?? habit.window?.locationContext ?? null
+    const habitLocation = resolvedLocationRaw
+      ? String(resolvedLocationRaw).toUpperCase()
+      : null
+    const resolvedDaylightRaw = habit.daylightPreference ?? habit.window?.daylightPreference ?? 'ALL_DAY'
+    const habitDaylight = resolvedDaylightRaw
+      ? String(resolvedDaylightRaw).toUpperCase()
+      : 'ALL_DAY'
     const compatibleWindows = await fetchCompatibleWindowsForItem(
       client,
       day,
-      { energy: resolvedEnergy, duration_min: durationMin },
+      {
+        energy: resolvedEnergy,
+        duration_min: durationMin,
+        locationContext: habitLocation,
+        daylightPreference: habitDaylight,
+      },
       zone,
       {
         availability,
@@ -740,7 +754,12 @@ function placementKey(entry: ScheduleDraftPlacement) {
 async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
-  item: { energy: string; duration_min: number },
+  item: {
+    energy: string
+    duration_min: number
+    locationContext?: string | null
+    daylightPreference?: string | null
+  },
   timeZone: string,
   options?: {
     now?: Date
@@ -758,6 +777,12 @@ async function fetchCompatibleWindowsForItem(
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)
+  const itemLocation = item.locationContext
+    ? String(item.locationContext).toUpperCase().trim()
+    : null
+  const itemDaylight = item.daylightPreference
+    ? String(item.daylightPreference).toUpperCase().trim()
+    : 'ALL_DAY'
   const now = options?.now ? new Date(options.now) : null
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
@@ -782,6 +807,14 @@ async function fetchCompatibleWindowsForItem(
     if (hasEnergyLabel && energyIdx >= ENERGY.LIST.length) continue
     if (energyIdx < itemIdx) continue
 
+    const windowLocation = win.location_context
+      ? String(win.location_context).toUpperCase().trim()
+      : null
+    if (itemLocation) {
+      if (!windowLocation) continue
+      if (windowLocation !== itemLocation) continue
+    }
+
     const startLocal = resolveWindowStart(win, date, timeZone)
     const endLocal = resolveWindowEnd(win, date, timeZone)
     const key = windowKey(win.id, startLocal)
@@ -801,6 +834,11 @@ async function fetchCompatibleWindowsForItem(
     if (availableStartMs + durationMs > endMs) continue
 
     const availableStartLocal = new Date(availableStartMs)
+    const windowDaylight = win.daylight_preference
+      ? String(win.daylight_preference).toUpperCase().trim()
+      : 'ALL_DAY'
+    if (!isTimeAllowedByDaylight(windowDaylight, availableStartLocal, timeZone)) continue
+    if (!isTimeAllowedByDaylight(itemDaylight, availableStartLocal, timeZone)) continue
     if (availability) {
       const existing = availability.get(key)
       if (!existing || existing.getTime() !== availableStartMs) {
