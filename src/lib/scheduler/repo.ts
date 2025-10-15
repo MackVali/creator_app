@@ -12,6 +12,7 @@ export type WindowLite = {
   end_local: string;
   days: number[] | null;
   fromPrevDay?: boolean;
+  location?: string | null;
 };
 
 type Client = SupabaseClient<Database>;
@@ -68,7 +69,7 @@ export async function fetchWindowsForDate(
   const normalizedTimeZone = normalizeTimeZone(timeZone);
   const weekday = weekdayInTimeZone(date, normalizedTimeZone);
   const prevWeekday = (weekday + 6) % 7;
-  const columns = 'id, label, energy, start_local, end_local, days';
+  const columns = 'id, label, energy, start_local, end_local, days, location';
 
   const [
     { data: today, error: errToday },
@@ -117,7 +118,7 @@ export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
 
   const { data, error } = await supabase
     .from('windows')
-    .select('id, label, energy, start_local, end_local, days');
+    .select('id, label, energy, start_local, end_local, days, location');
 
   if (error) throw error;
 

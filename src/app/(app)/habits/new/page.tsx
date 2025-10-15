@@ -56,6 +56,7 @@ export default function NewHabitPage() {
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [skillId, setSkillId] = useState("none");
+  const [contextLocations, setContextLocations] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -336,6 +337,17 @@ export default function NewHabitPage() {
         normalizedRecurrence === "every x days" && recurrenceDays.length > 0
           ? recurrenceDays
           : null;
+      const normalizedContextLocations = contextLocations
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      const uniqueContextLocations: string[] = [];
+      const seenLocations = new Set<string>();
+      for (const location of normalizedContextLocations) {
+        const normalized = location.toLowerCase();
+        if (seenLocations.has(normalized)) continue;
+        seenLocations.add(normalized);
+        uniqueContextLocations.push(location);
+      }
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -376,6 +388,8 @@ export default function NewHabitPage() {
         energy,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
+        context_locations:
+          uniqueContextLocations.length > 0 ? uniqueContextLocations : null,
       });
 
       if (insertError) {
@@ -420,24 +434,26 @@ export default function NewHabitPage() {
                 description={description}
                 habitType={habitType}
                 recurrence={recurrence}
-                recurrenceDays={recurrenceDays}
-                duration={duration}
-                energy={energy}
-                skillId={skillId}
-                energyOptions={energySelectOptions}
-                skillsLoading={skillsLoading}
-                skillOptions={skillSelectOptions}
-                skillError={skillLoadError}
-                onNameChange={setName}
+              recurrenceDays={recurrenceDays}
+              duration={duration}
+              energy={energy}
+              skillId={skillId}
+              contextLocations={contextLocations}
+              energyOptions={energySelectOptions}
+              skillsLoading={skillsLoading}
+              skillOptions={skillSelectOptions}
+              skillError={skillLoadError}
+              onNameChange={setName}
                 onDescriptionChange={setDescription}
                 onHabitTypeChange={setHabitType}
                 onRecurrenceChange={setRecurrence}
                 onRecurrenceDaysChange={setRecurrenceDays}
-                onEnergyChange={setEnergy}
-                onDurationChange={setDuration}
-                onSkillChange={setSkillId}
-                footerSlot={
-                  <div className="space-y-4">
+              onEnergyChange={setEnergy}
+              onDurationChange={setDuration}
+              onSkillChange={setSkillId}
+              onContextLocationsChange={setContextLocations}
+              footerSlot={
+                <div className="space-y-4">
                     <div className="space-y-3">
                       <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
                         Routine

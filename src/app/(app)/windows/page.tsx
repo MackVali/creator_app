@@ -24,7 +24,7 @@ export default function WindowsPage() {
     }
     const { data, error } = await supabase
       .from("windows")
-      .select("id,label,days,start_local,end_local,energy")
+      .select("id,label,days,start_local,end_local,energy,location")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
@@ -35,6 +35,8 @@ export default function WindowsPage() {
         start: w.start_local,
         end: w.end_local,
         energy: w.energy?.toLowerCase() as WindowItem["energy"],
+        location:
+          typeof w.location === "string" ? w.location.trim() : "",
         active: true,
       }));
       setWindows(mapped);
@@ -53,6 +55,7 @@ export default function WindowsPage() {
     if (!user) return false;
 
     const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
+    const normalizedLocation = item.location?.trim() ?? "";
     const payload = {
       user_id: user.id,
       label: item.name,
@@ -60,6 +63,7 @@ export default function WindowsPage() {
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
+      location: normalizedLocation.length > 0 ? normalizedLocation : null,
     };
 
     const [sh, sm] = item.start.split(":").map(Number);
@@ -78,7 +82,10 @@ export default function WindowsPage() {
         setWindows((prev) => [...(prev ?? []), { ...item, id }]);
       } else {
         const nextDays = baseDays.map((d) => (d + 1) % 7);
-        const firstPayload = { ...payload, end_local: "23:59" };
+        const firstPayload = {
+          ...payload,
+          end_local: "23:59",
+        };
         const secondPayload = {
           ...payload,
           days: nextDays,
@@ -133,12 +140,14 @@ export default function WindowsPage() {
       return true;
     }
 
+    const normalizedLocation = item.location?.trim() ?? "";
     const payload = {
       label: item.name,
       days: baseDays,
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
+      location: normalizedLocation.length > 0 ? normalizedLocation : null,
     };
 
     const { error } = await supabase.from("windows").update(payload).eq("id", id);

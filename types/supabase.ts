@@ -59,6 +59,8 @@ export interface Database {
           window_id: string | null;
           skill_id: string | null;
           energy: string | null;
+          routine_id: string | null;
+          context_locations: string[] | null;
         };
       Insert: {
         id?: string;
@@ -74,6 +76,8 @@ export interface Database {
         window_id?: string | null;
         skill_id?: string | null;
         energy?: string | null;
+        routine_id?: string | null;
+        context_locations?: string[] | null;
       };
       Update: {
         id?: string;
@@ -89,6 +93,8 @@ export interface Database {
         window_id?: string | null;
         skill_id?: string | null;
         energy?: string | null;
+        routine_id?: string | null;
+        context_locations?: string[] | null;
       };
       };
       projects: {
@@ -632,6 +638,7 @@ export interface Database {
           start_local: string;
           end_local: string;
           energy: string;
+          location: string | null;
         };
         Insert: {
           id?: string;
@@ -642,6 +649,7 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy?: string;
+          location?: string | null;
         };
         Update: {
           id?: string;
@@ -652,6 +660,7 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy?: string;
+          location?: string | null;
         };
       };
       schedule_instances: {
