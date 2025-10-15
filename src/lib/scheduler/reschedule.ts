@@ -37,6 +37,19 @@ const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
 
+const HABIT_TYPE_PRIORITY: Record<string, number> = {
+  CHORE: 0,
+  HABIT: 1,
+  MEMO: 2,
+  SYNC: 3,
+}
+
+function habitTypePriority(value?: string | null) {
+  const normalized = (value ?? 'HABIT').toUpperCase()
+  if (normalized === 'ASYNC') return HABIT_TYPE_PRIORITY.SYNC
+  return HABIT_TYPE_PRIORITY[normalized] ?? Number.MAX_SAFE_INTEGER
+}
+
 type ScheduleFailure = {
   itemId: string
   reason: string
@@ -337,18 +350,22 @@ export async function scheduleBacklog(
     return placements
   }
 
-  if (habits.length > 0) {
-    let availability = windowAvailabilityByDay.get(0)
-    if (!availability) {
-      availability = new Map<string, Date>()
-      windowAvailabilityByDay.set(0, availability)
-    }
-    await ensureHabitPlacementsForDay(0, baseStart, availability)
-  }
   const lookaheadDays = Math.min(
     MAX_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
   )
+
+  if (habits.length > 0) {
+    for (let offset = 0; offset < lookaheadDays; offset += 1) {
+      let availability = windowAvailabilityByDay.get(offset)
+      if (!availability) {
+        availability = new Map<string, Date>()
+        windowAvailabilityByDay.set(offset, availability)
+      }
+      const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
+      await ensureHabitPlacementsForDay(offset, day, availability)
+    }
+  }
 
   for (const item of queue) {
     let scheduled = false
@@ -644,6 +661,8 @@ async function scheduleHabitsForDay(params: {
     const dueB = dueInfoByHabitId.get(b.id)
     const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
     if (dueDiff !== 0) return dueDiff
+    const typeDiff = habitTypePriority(a.habitType) - habitTypePriority(b.habitType)
+    if (typeDiff !== 0) return typeDiff
     const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
     const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
     if (aTime !== bTime) return aTime - bTime
@@ -692,6 +711,7 @@ async function scheduleHabitsForDay(params: {
         now: offset === 0 ? baseDate : undefined,
         locationContext,
         daylight: daylightConstraint,
+        matchEnergyLevel: true,
       }
     )
 
@@ -800,6 +820,7 @@ async function fetchCompatibleWindowsForItem(
     cache?: Map<string, WindowLite[]>
     locationContext?: string | null
     daylight?: DaylightConstraint | null
+    matchEnergyLevel?: boolean
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -839,7 +860,13 @@ async function fetchCompatibleWindowsForItem(
       ? energyIndex(energyLabel, { fallback: ENERGY.LIST.length })
       : ENERGY.LIST.length
     if (hasEnergyLabel && energyIdx >= ENERGY.LIST.length) continue
-    if (energyIdx < itemIdx) continue
+    const requireExactEnergy = options?.matchEnergyLevel ?? false
+    if (requireExactEnergy) {
+      if (!hasEnergyLabel) continue
+      if (energyIdx !== itemIdx) continue
+    } else if (energyIdx < itemIdx) {
+      continue
+    }
 
     const windowLocationRaw = win.location_context
       ? String(win.location_context).toUpperCase().trim()

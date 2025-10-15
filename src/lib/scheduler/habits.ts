@@ -70,6 +70,12 @@ function ensureClient(client?: Client): Client | null {
   return null
 }
 
+function normalizeHabitType(value?: string | null) {
+  const raw = (value ?? 'HABIT').toUpperCase()
+  if (raw === 'ASYNC') return 'SYNC'
+  return raw
+}
+
 export async function fetchHabitsForSchedule(client?: Client): Promise<HabitScheduleItem[]> {
   const supabase = ensureClient(client)
   if (!supabase) return []
@@ -100,7 +106,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     createdAt: record.created_at ?? null,
     updatedAt: record.updated_at ?? null,
     lastCompletedAt: record.updated_at ?? record.created_at ?? null,
-    habitType: (record.habit_type ?? 'HABIT').toUpperCase(),
+    habitType: normalizeHabitType(record.habit_type),
     windowId: record.window_id ?? null,
     energy: record.energy ?? record.window?.energy ?? null,
     recurrence: record.recurrence ?? null,
