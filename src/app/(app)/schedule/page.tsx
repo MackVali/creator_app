@@ -89,6 +89,69 @@ const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
 
+function sanitizeSkillIcon(icon?: string | null) {
+  if (typeof icon !== 'string') return null
+  const trimmed = icon.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function resolveSkillIcon({
+  explicitIcon,
+  primarySkillId,
+  fallbackSkillIds = [],
+  iconMap,
+}: {
+  explicitIcon?: string | null
+  primarySkillId?: string | null
+  fallbackSkillIds?: (string | null | undefined)[]
+  iconMap: Record<string, string | null>
+}) {
+  const direct = sanitizeSkillIcon(explicitIcon)
+  if (direct) return direct
+  if (primarySkillId) {
+    const fromPrimary = sanitizeSkillIcon(iconMap[primarySkillId] ?? null)
+    if (fromPrimary) return fromPrimary
+  }
+  for (const id of fallbackSkillIds) {
+    if (!id) continue
+    const resolved = sanitizeSkillIcon(iconMap[id] ?? null)
+    if (resolved) return resolved
+  }
+  return null
+}
+
+function TimelineSkillEnergy({
+  skillIcon,
+  energyLevel,
+  className,
+  iconClassName,
+}: {
+  skillIcon?: string | null
+  energyLevel: FlameLevel
+  className?: string
+  iconClassName?: string
+}) {
+  const containerClass = ['flex items-center gap-1', className]
+    .filter(Boolean)
+    .join(' ')
+  const iconClass = ['text-lg leading-none', iconClassName]
+    .filter(Boolean)
+    .join(' ')
+
+  const resolvedIcon = sanitizeSkillIcon(skillIcon)
+
+  return (
+    <div className={containerClass}>
+      {resolvedIcon ? (
+        <span aria-hidden className={iconClass}>
+          {resolvedIcon}
+        </span>
+      ) : null}
+      <FlameEmber level={energyLevel} size="sm" className="shrink-0" />
+    </div>
+  )
+}
+
 function computeDayTimelineHeightPx(
   startHour: number,
   pxPerMin: number,
@@ -2345,6 +2408,14 @@ export default function SchedulePage() {
     return map
   }, [skills])
 
+  const skillIconById = useMemo(() => {
+    const map: Record<string, string | null> = {}
+    for (const skill of skills) {
+      map[skill.id] = sanitizeSkillIcon(skill.icon) ?? null
+    }
+    return map
+  }, [skills])
+
   useEffect(() => {
     const snapshots = backlogTaskPreviousStageRef.current
     for (const [taskId] of snapshots) {
@@ -3831,6 +3902,13 @@ export default function SchedulePage() {
                 },
                 layoutMode
               )
+              const habitSkillIcon = resolveSkillIcon({
+                primarySkillId: placement.skillId,
+                iconMap: skillIconById,
+              })
+              const habitEnergyLevel = normalizeEnergyLabel(
+                placement.window?.energy ?? null
+              ) as FlameLevel
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
@@ -3858,9 +3936,16 @@ export default function SchedulePage() {
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
-                  <span className="truncate text-sm font-medium leading-snug">
-                    {placement.habitName}
-                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm font-medium leading-snug">
+                      {placement.habitName}
+                    </span>
+                  </div>
+                  <TimelineSkillEnergy
+                    skillIcon={habitSkillIcon}
+                    energyLevel={habitEnergyLevel}
+                    className="flex-shrink-0"
+                  />
                 </motion.div>
               )
             })}
@@ -3982,6 +4067,15 @@ export default function SchedulePage() {
               const projectBorderClass = isCompleted
                 ? 'border-emerald-400/60'
                 : 'border-black/70'
+              const projectSkillIdsForProject = projectSkillIds[projectId] ?? []
+              const projectSkillIcon = resolveSkillIcon({
+                explicitIcon: project.skill_icon,
+                fallbackSkillIds: projectSkillIdsForProject,
+                iconMap: skillIconById,
+              })
+              const projectEnergyLevel = normalizeEnergyLabel(
+                instance.energy_resolved ?? null
+              ) as FlameLevel
               return (
                 <motion.div
                   key={instance.id}
@@ -4081,21 +4175,11 @@ export default function SchedulePage() {
                             ) : null}
                           </div>
                         </div>
-                        <div className="flex flex-shrink-0 items-center gap-2">
-                          {project.skill_icon && (
-                            <span className="text-lg leading-none" aria-hidden>
-                              {project.skill_icon}
-                            </span>
-                          )}
-                          <FlameEmber
-                            level={
-                              (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                              'NO'
-                            }
-                            size="sm"
-                            className="flex-shrink-0"
-                          />
-                        </div>
+                        <TimelineSkillEnergy
+                          skillIcon={projectSkillIcon}
+                          energyLevel={projectEnergyLevel}
+                          className="flex-shrink-0 gap-2"
+                        />
                       </motion.div>
                     ) : (
                       <motion.div
@@ -4210,6 +4294,13 @@ export default function SchedulePage() {
                             )
                               ? (resolvedEnergyUpper as FlameLevel)
                               : 'NO'
+                            const taskSkillIcon = resolveSkillIcon({
+                              explicitIcon: task.skill_icon,
+                              primarySkillId:
+                                (task as { skill_id?: string | null }).skill_id ?? null,
+                              fallbackSkillIds: projectSkillIds[projectId] ?? [],
+                              iconMap: skillIconById,
+                            })
                             const pendingStatus =
                               kind === 'scheduled' && instanceId
                                 ? pendingInstanceStatuses.get(instanceId)
@@ -4348,23 +4439,15 @@ export default function SchedulePage() {
                                       }
                                 }
                               >
-                                <div className="flex flex-col">
+                                <div className="flex min-w-0 flex-1 flex-col">
                                   <span className="truncate text-sm font-medium">
                                     {task.name}
                                   </span>
                                 </div>
-                                {task.skill_icon && (
-                                  <span
-                                    className="ml-2 text-lg leading-none flex-shrink-0"
-                                    aria-hidden
-                                  >
-                                    {task.skill_icon}
-                                  </span>
-                                )}
-                                <FlameEmber
-                                  level={energyLevel}
-                                  size="sm"
-                                  className="absolute -top-1 -right-1"
+                                <TimelineSkillEnergy
+                                  skillIcon={taskSkillIcon}
+                                  energyLevel={energyLevel}
+                                  className="ml-3 flex-shrink-0"
                                 />
                                 {progressValue > 0 && (
                                   <div
@@ -4403,6 +4486,18 @@ export default function SchedulePage() {
                 outlineOffset: '-1px',
               }
               const progress = (task as { progress?: number }).progress ?? 0
+              const fallbackSkillIdsForStandalone = task.project_id
+                ? projectSkillIds[task.project_id] ?? []
+                : []
+              const standaloneSkillIcon = resolveSkillIcon({
+                explicitIcon: task.skill_icon,
+                primarySkillId: task.skill_id ?? null,
+                fallbackSkillIds: fallbackSkillIdsForStandalone,
+                iconMap: skillIconById,
+              })
+              const standaloneEnergyLevel = normalizeEnergyLabel(
+                task.energy ?? null
+              ) as FlameLevel
               const pendingStatus = pendingInstanceStatuses.get(instance.id)
               const isPending = pendingStatus !== undefined
               const status = pendingStatus ?? instance.status ?? 'scheduled'
@@ -4458,7 +4553,7 @@ export default function SchedulePage() {
                     prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
                   }
                 >
-                  <div className="flex flex-col">
+                  <div className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-medium">
                       {task.name}
                     </span>
@@ -4472,18 +4567,10 @@ export default function SchedulePage() {
                       {Math.round((end.getTime() - start.getTime()) / 60000)}m
                     </div>
                   </div>
-                  {task.skill_icon && (
-                    <span
-                      className="ml-2 text-lg leading-none flex-shrink-0"
-                      aria-hidden
-                    >
-                      {task.skill_icon}
-                    </span>
-                  )}
-                  <FlameEmber
-                    level={(task.energy as FlameLevel) || 'NO'}
-                    size="sm"
-                    className="absolute -top-1 -right-1"
+                  <TimelineSkillEnergy
+                    skillIcon={standaloneSkillIcon}
+                    energyLevel={standaloneEnergyLevel}
+                    className="ml-3 flex-shrink-0"
                   />
                   <div
                     className={
@@ -4507,6 +4594,8 @@ export default function SchedulePage() {
         expandedProjects,
         pendingInstanceStatuses,
         pendingBacklogTaskIds,
+        projectSkillIds,
+        skillIconById,
         getHabitCompletionStatus,
         handleToggleInstanceCompletion,
         handleToggleBacklogTaskCompletion,
