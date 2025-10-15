@@ -11,10 +11,19 @@ import {
   Clock,
   Flame,
   ArrowLeft,
+  Bookmark,
+  PenLine,
+  Share2,
+  Sparkles,
 } from "lucide-react";
 import type {
   AnalyticsResponse,
   AnalyticsKpiId,
+  AnalyticsHabitSummary,
+  AnalyticsHabitRoutine,
+  AnalyticsHabitPerformance,
+  AnalyticsHabitStreakPoint,
+  AnalyticsHabitWeeklyReflection,
 } from "@/types/analytics";
 
 const KPI_ICON_MAP: Record<
@@ -42,6 +51,208 @@ function formatNumber(num: number): string {
 function formatDelta(delta: number): string {
   const sign = delta > 0 ? "+" : "";
   return `${sign}${delta}`;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
+  const base: AnalyticsHabitSummary = {
+    currentStreak: 0,
+    longestStreak: 0,
+    calendarDays: 28,
+    calendarCompleted: [],
+    routines: [],
+    streakHistory: [],
+    bestTimes: [],
+    bestDays: [],
+    weeklyReflections: [],
+  };
+
+  if (!summary || typeof summary !== "object") {
+    return base;
+  }
+
+  const record = summary as Record<string, unknown>;
+
+  const toNonNegativeInt = (value: unknown, fallback: number): number => {
+    if (!isFiniteNumber(value)) {
+      return fallback;
+    }
+    const rounded = Math.round(value);
+    return rounded >= 0 ? rounded : fallback;
+  };
+
+  const toPositiveInt = (value: unknown, fallback: number): number => {
+    if (!isFiniteNumber(value)) {
+      return fallback;
+    }
+    const rounded = Math.round(value);
+    return rounded > 0 ? rounded : fallback;
+  };
+
+  const toPerformanceList = (
+    value: unknown
+  ): AnalyticsHabitPerformance[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const entry = item as Record<string, unknown>;
+        const label = typeof entry.label === "string" ? entry.label : null;
+        const successRate = isFiniteNumber(entry.successRate)
+          ? Math.max(0, Math.min(entry.successRate, 100))
+          : null;
+
+        if (label == null || successRate == null) {
+          return null;
+        }
+
+        return { label, successRate } satisfies AnalyticsHabitPerformance;
+      })
+      .filter((item): item is AnalyticsHabitPerformance => item !== null);
+  };
+
+  const calendarDays = toPositiveInt(record.calendarDays, base.calendarDays);
+
+  const calendarCompleted = Array.isArray(record.calendarCompleted)
+    ? record.calendarCompleted
+        .map((value) =>
+          isFiniteNumber(value) ? Math.round(value) : null
+        )
+        .filter(
+          (value): value is number =>
+            value != null && value >= 1 && value <= calendarDays
+        )
+    : base.calendarCompleted;
+
+  const routines = Array.isArray(record.routines)
+    ? record.routines
+        .map((item, index) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const routineRecord = item as Record<string, unknown>;
+          const rawHeatmap = routineRecord.heatmap;
+          const heatmap = Array.isArray(rawHeatmap)
+            ? rawHeatmap.map((week) =>
+                Array.isArray(week)
+                  ? week.map((value) =>
+                      isFiniteNumber(value) ? value : 0
+                    )
+                  : Array(7).fill(0)
+              )
+            : [];
+
+          const id =
+            typeof routineRecord.id === "string"
+              ? routineRecord.id
+              : `routine-${index}`;
+          const name =
+            typeof routineRecord.name === "string"
+              ? routineRecord.name
+              : `Routine ${index + 1}`;
+
+          return { id, name, heatmap } satisfies AnalyticsHabitRoutine;
+        })
+        .filter((routine): routine is AnalyticsHabitRoutine => routine !== null)
+    : base.routines;
+
+  const streakHistory = Array.isArray(record.streakHistory)
+    ? record.streakHistory
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const point = item as Record<string, unknown>;
+          const label = typeof point.label === "string" ? point.label : null;
+          const value = isFiniteNumber(point.value) ? point.value : null;
+
+          if (label == null || value == null) {
+            return null;
+          }
+
+          return { label, value } satisfies AnalyticsHabitStreakPoint;
+        })
+        .filter(
+          (point): point is AnalyticsHabitStreakPoint => point !== null
+        )
+    : base.streakHistory;
+
+  const weeklyReflections = Array.isArray(record.weeklyReflections)
+    ? record.weeklyReflections
+        .map((item, index) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const reflection = item as Record<string, unknown>;
+          const id =
+            typeof reflection.id === "string"
+              ? reflection.id
+              : `reflection-${index}`;
+          const weekLabel =
+            typeof reflection.weekLabel === "string"
+              ? reflection.weekLabel
+              : `Week ${index + 1}`;
+          const streak = isFiniteNumber(reflection.streak)
+            ? Math.max(0, Math.round(reflection.streak))
+            : 0;
+          const bestDay =
+            typeof reflection.bestDay === "string"
+              ? reflection.bestDay
+              : "—";
+          const lesson =
+            typeof reflection.lesson === "string"
+              ? reflection.lesson
+              : "Keep logging habits to uncover insights.";
+          const pinned =
+            typeof reflection.pinned === "boolean" ? reflection.pinned : false;
+          const recommendation =
+            typeof reflection.recommendation === "string"
+              ? reflection.recommendation
+              : undefined;
+
+          return {
+            id,
+            weekLabel,
+            streak,
+            bestDay,
+            lesson,
+            pinned,
+            recommendation,
+          } satisfies AnalyticsHabitWeeklyReflection;
+        })
+        .filter(
+          (entry): entry is AnalyticsHabitWeeklyReflection => entry !== null
+        )
+    : base.weeklyReflections;
+
+  return {
+    currentStreak: toNonNegativeInt(
+      record.currentStreak,
+      base.currentStreak
+    ),
+    longestStreak: toNonNegativeInt(
+      record.longestStreak,
+      base.longestStreak
+    ),
+    calendarDays,
+    calendarCompleted,
+    routines,
+    streakHistory,
+    bestTimes: toPerformanceList(record.bestTimes),
+    bestDays: toPerformanceList(record.bestDays),
+    weeklyReflections,
+  };
 }
 
 interface Kpi {
@@ -151,12 +362,7 @@ export default function AnalyticsDashboard() {
   const windows = analytics?.windows ?? { heatmap: [], energy: [] };
   const activity = analytics?.activity ?? [];
   const projectVelocity = analytics?.projectVelocity ?? [];
-  const habitSummary = analytics?.habit ?? {
-    currentStreak: 0,
-    longestStreak: 0,
-    calendarDays: 28,
-    calendarCompleted: [] as number[],
-  };
+  const habitSummary = normalizeHabitSummary(analytics?.habit);
 
   const bestSkill =
     skills.length > 0
@@ -193,6 +399,11 @@ export default function AnalyticsDashboard() {
 
   const longestStreak = habitSummary.longestStreak;
   const currentStreak = habitSummary.currentStreak;
+  const routineTrends = habitSummary.routines;
+  const streakHistory = habitSummary.streakHistory;
+  const bestTimes = habitSummary.bestTimes;
+  const bestDays = habitSummary.bestDays;
+  const weeklyReflections = habitSummary.weeklyReflections;
 
   const focusInsights = [
     {
@@ -349,31 +560,51 @@ export default function AnalyticsDashboard() {
               <ErrorState message={error} />
             ) : (
               <div className="space-y-6">
-                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4">
-                  <StreakCalendar
-                    days={habitSummary.calendarDays}
-                    completed={habitSummary.calendarCompleted}
+                <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                          Daily consistency
+                        </div>
+                        <p className="mt-1 text-sm text-[#9DA6BB]">
+                          Track check-ins across the past {habitSummary.calendarDays} days.
+                        </p>
+                      </div>
+                      <span className="hidden text-xs font-medium text-[#6E7A96] sm:inline-flex">
+                        {habitSummary.calendarDays}-day view
+                      </span>
+                    </div>
+                    <div className="mt-4">
+                      <StreakCalendar
+                        days={habitSummary.calendarDays}
+                        completed={habitSummary.calendarCompleted}
+                      />
+                    </div>
+                  </div>
+                  <StreakTrendCard
+                    currentStreak={currentStreak}
+                    longestStreak={longestStreak}
+                    history={streakHistory}
                   />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB]">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                      Longest streak
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-white">
-                      {longestStreak} days
-                    </div>
-                    <p className="mt-1">Sustain this pace to unlock a new badge.</p>
-                  </div>
-                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB]">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                      Current streak
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-white">
-                      {currentStreak} days
-                    </div>
-                    <p className="mt-1">Log today’s habit to keep the momentum going.</p>
-                  </div>
+                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                  <RoutineHeatmap routines={routineTrends} />
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <BestPerformanceList
+                    title="Best time slots"
+                    emptyLabel="Log routines to surface timing insights."
+                    data={bestTimes}
+                  />
+                  <BestPerformanceList
+                    title="Most consistent days"
+                    emptyLabel="Add more entries to reveal pattern days."
+                    data={bestDays}
+                  />
+                </div>
+                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                  <WeeklyReflectionPanel reflections={weeklyReflections} />
                 </div>
                 <div className="flex justify-end">
                   <Link
@@ -1008,6 +1239,495 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
         );
       })}
     </ul>
+  );
+}
+
+function StreakTrendCard({
+  currentStreak,
+  longestStreak,
+  history,
+}: {
+  currentStreak: number;
+  longestStreak: number;
+  history: { label: string; value: number }[];
+}) {
+  return (
+    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+            Streak momentum
+          </div>
+          <p className="mt-1 text-sm text-[#9DA6BB]">
+            See how your streak evolved over time.
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+            Current streak
+          </div>
+          <div className="mt-1 text-2xl font-semibold text-white">
+            {currentStreak} days
+          </div>
+        </div>
+      </div>
+      <div className="mt-6">
+        <StreakSparkline data={history} />
+      </div>
+      <div className="mt-4 rounded-xl border border-[#1F2736] bg-[#101624] p-4 text-xs text-[#9DA6BB]">
+        <div className="flex items-center justify-between">
+          <span className="uppercase tracking-[0.2em] text-[#6E7A96]">
+            Longest streak
+          </span>
+          <span className="text-lg font-semibold text-white">
+            {longestStreak} days
+          </span>
+        </div>
+        <p className="mt-2 text-[13px]">
+          Use these momentum bursts to plan your next focus block.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function StreakSparkline({
+  data,
+}: {
+  data: { label: string; value: number }[];
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[#273041] bg-[#0D131E] text-center text-xs text-[#6E7A96]">
+        Log more rituals to unlock streak trends.
+      </div>
+    );
+  }
+
+  const width = 280;
+  const height = 120;
+  const values = data.map((point) => point.value);
+  const maxValue = Math.max(...values, 1);
+  const minValue = Math.min(...values, 0);
+  const verticalPadding = 12;
+  const range = maxValue - minValue || 1;
+  const points = data.map((point, index) => {
+    const x =
+      data.length === 1
+        ? width / 2
+        : (index / (data.length - 1)) * width;
+    const normalized = (point.value - minValue) / range;
+    const y =
+      height -
+      (normalized * (height - verticalPadding * 2) + verticalPadding);
+    return { x, y };
+  });
+
+  const linePath = points
+    .map((point, index) =>
+      `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`
+    )
+    .join(" ");
+
+  const areaPath = [
+    `M0,${height}`,
+    ...points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`),
+    `L${width},${height}`,
+    "Z",
+  ].join(" ");
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full">
+        <defs>
+          <linearGradient id="streakGradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(177,156,255,0.6)" />
+            <stop offset="100%" stopColor="rgba(126,107,255,0.05)" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill="url(#streakGradient)" />
+        <path
+          d={linePath}
+          fill="none"
+          stroke="url(#streakGradient)"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="mt-2 flex items-center justify-between text-xs text-[#6E7A96]">
+        <span>{data[0]?.label ?? ""}</span>
+        <span>{data[data.length - 1]?.label ?? ""}</span>
+      </div>
+    </div>
+  );
+}
+
+function RoutineHeatmap({
+  routines,
+}: {
+  routines: { id: string; name: string; heatmap: number[][] }[];
+}) {
+  if (routines.length === 0) {
+    return (
+      <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#273041] bg-[#0D131E] text-center text-sm text-[#6E7A96]">
+        No routine data yet.
+        <span className="text-xs text-[#4E5A73]">
+          Log habits like exercise or journaling to reveal patterns.
+        </span>
+      </div>
+    );
+  }
+
+  const weekCounts = routines.map((routine) => routine.heatmap.length);
+  const weeks = weekCounts.length > 0 ? Math.max(...weekCounts) : 0;
+  const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+            Routine trends
+          </div>
+          <p className="mt-1 text-sm text-[#9DA6BB]">
+            Visualize which habits stay consistent week over week.
+          </p>
+        </div>
+        {weeks > 0 ? (
+          <span className="text-xs font-medium text-[#6E7A96]">
+            Past {weeks} week{weeks === 1 ? "" : "s"}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-5 space-y-5">
+        {routines.map((routine) => {
+          const flattened = routine.heatmap.flat();
+          const totalDays = flattened.length;
+          const total = flattened.reduce((sum, value) => sum + value, 0);
+          const average =
+            totalDays === 0
+              ? 0
+              : Math.round((total / totalDays) * 100);
+
+          return (
+            <div key={routine.id} className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-white">{routine.name}</span>
+                <span className="text-xs text-[#6E7A96]">
+                  {average}% consistency
+                </span>
+              </div>
+              <div className="grid grid-cols-[auto,1fr] gap-3">
+                <div className="flex flex-col justify-between text-[10px] uppercase tracking-[0.2em] text-[#465066]">
+                  {dayLabels.map((label) => (
+                    <span key={label} className="h-6">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {routine.heatmap.map((week, weekIndex) => (
+                    <div
+                      key={`${routine.id}-week-${weekIndex}`}
+                      className="grid grid-rows-7 gap-1.5"
+                    >
+                      {week.map((value, dayIndex) => {
+                        const ratio =
+                          value > 1
+                            ? Math.min(value / 100, 1)
+                            : Math.max(0, Math.min(value, 1));
+                        const opacity = ratio === 0 ? 0.12 : 0.25 + ratio * 0.55;
+                        const backgroundColor =
+                          ratio === 0
+                            ? "#0B1018"
+                            : `rgba(126,107,255,${opacity.toFixed(2)})`;
+                        const boxShadow =
+                          ratio === 0
+                            ? undefined
+                            : "0 3px 10px rgba(126,107,255,0.35)";
+                        const percent = Math.round(ratio * 100);
+                        return (
+                          <span
+                            key={`${routine.id}-week-${weekIndex}-day-${dayIndex}`}
+                            className="h-6 w-6 rounded-md border border-[#1F2736]"
+                            style={{ backgroundColor, boxShadow }}
+                            title={`${dayLabels[dayIndex]} · ${percent}%`}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BestPerformanceList({
+  title,
+  data,
+  emptyLabel,
+}: {
+  title: string;
+  data: { label: string; successRate: number }[];
+  emptyLabel: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
+      <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+        {title}
+      </div>
+      {data.length === 0 ? (
+        <p className="mt-3 text-sm text-[#6E7A96]">{emptyLabel}</p>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {data.map((item) => {
+            const percent =
+              item.successRate > 1
+                ? Math.round(item.successRate)
+                : Math.round(item.successRate * 100);
+            return (
+              <li key={item.label} className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-[#6E7A96]">
+                  <span className="text-sm font-medium text-white">
+                    {item.label}
+                  </span>
+                  <span>{percent}%</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1F2736]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#7E6BFF] via-[#B19CFF] to-[#6DD3A8]"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function WeeklyReflectionPanel({
+  reflections,
+}: {
+  reflections: AnalyticsHabitWeeklyReflection[];
+}) {
+  const [pinnedState, setPinnedState] = useState<Record<string, boolean>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [saveStatus, setSaveStatus] = useState<
+    Record<string, "idle" | "saved">
+  >({});
+  const [shareStatus, setShareStatus] = useState<
+    Record<string, "idle" | "copied" | "error">
+  >({});
+
+  useEffect(() => {
+    setPinnedState((prev) => {
+      const next: Record<string, boolean> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? reflection.pinned;
+      });
+      return next;
+    });
+    setNotes((prev) => {
+      const next: Record<string, string> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? "";
+      });
+      return next;
+    });
+    setSaveStatus((prev) => {
+      const next: Record<string, "idle" | "saved"> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? "idle";
+      });
+      return next;
+    });
+    setShareStatus((prev) => {
+      const next: Record<string, "idle" | "copied" | "error"> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? "idle";
+      });
+      return next;
+    });
+  }, [reflections]);
+
+  if (reflections.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#273041] bg-[#0D131E] p-6 text-center text-sm text-[#6E7A96]">
+        Weekly reflections will appear once you build a streak.
+        <span className="text-xs text-[#4E5A73]">
+          Capture highlights to train smarter recommendations.
+        </span>
+      </div>
+    );
+  }
+
+  const handleTogglePin = (id: string) => {
+    setPinnedState((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleSave = (id: string) => {
+    setSaveStatus((prev) => ({ ...prev, [id]: "saved" }));
+    window.setTimeout(() => {
+      setSaveStatus((prev) => ({ ...prev, [id]: "idle" }));
+    }, 3000);
+  };
+
+  const handleShare = async (id: string) => {
+    const reflection = reflections.find((entry) => entry.id === id);
+    if (!reflection) {
+      return;
+    }
+
+    const summary = `Week: ${reflection.weekLabel}\nStreak: ${reflection.streak} days\nBest day: ${reflection.bestDay}\nLesson: ${reflection.lesson}`;
+
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(summary);
+        setShareStatus((prev) => ({ ...prev, [id]: "copied" }));
+        window.setTimeout(() => {
+          setShareStatus((prev) => ({ ...prev, [id]: "idle" }));
+        }, 3000);
+      } else {
+        throw new Error("Clipboard unavailable");
+      }
+    } catch (error) {
+      console.error("Unable to copy weekly reflection", error);
+      setShareStatus((prev) => ({ ...prev, [id]: "error" }));
+      window.setTimeout(() => {
+        setShareStatus((prev) => ({ ...prev, [id]: "idle" }));
+      }, 4000);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-1 text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+        <span>Weekly reflection</span>
+        <span className="text-[11px] normal-case tracking-normal text-[#9DA6BB]">
+          Summaries feed your future habit recommendations.
+        </span>
+      </div>
+      <div className="space-y-5">
+        {reflections.map((reflection) => {
+          const pinned = pinnedState[reflection.id] ?? reflection.pinned;
+          const note = notes[reflection.id] ?? "";
+          const saved = saveStatus[reflection.id] ?? "idle";
+          const shared = shareStatus[reflection.id] ?? "idle";
+          return (
+            <div
+              key={reflection.id}
+              className="space-y-4 rounded-2xl border border-[#1F2736] bg-[#0D131E] p-5 shadow-[0_16px_36px_rgba(7,9,14,0.45)]"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-[#6E7A96]">
+                    <Sparkles className="h-4 w-4 text-[#B19CFF]" />
+                    {reflection.weekLabel}
+                  </div>
+                  <h3 className="mt-2 text-lg font-semibold text-white">
+                    {reflection.streak} day streak snapshot
+                  </h3>
+                  <dl className="mt-3 grid gap-3 text-sm text-[#9DA6BB] sm:grid-cols-2">
+                    <div className="rounded-xl border border-[#1F2736] bg-[#0B1018] p-3">
+                      <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
+                        Best day
+                      </dt>
+                      <dd className="mt-1 text-white">{reflection.bestDay}</dd>
+                    </div>
+                    <div className="rounded-xl border border-[#1F2736] bg-[#0B1018] p-3">
+                      <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
+                        Lesson learned
+                      </dt>
+                      <dd className="mt-1 text-white">{reflection.lesson}</dd>
+                    </div>
+                  </dl>
+                  {reflection.recommendation ? (
+                    <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#253149] bg-[#111725] p-3 text-sm text-[#9DA6BB]">
+                      <PenLine className="h-4 w-4 text-[#6DD3A8]" />
+                      <span>{reflection.recommendation}</span>
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleTogglePin(reflection.id)}
+                  className={classNames(
+                    "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80",
+                    pinned
+                      ? "border-[#7E6BFF] bg-[#7E6BFF]/10 text-[#B19CFF]"
+                      : "border-[#273041] text-[#9DA6BB] hover:text-white"
+                  )}
+                >
+                  <Bookmark className="h-4 w-4" />
+                  {pinned ? "Pinned for insights" : "Pin this week"}
+                </button>
+              </div>
+              <div className="space-y-3">
+                <label className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                  <span>Journal prompt</span>
+                  <span className="text-[11px] normal-case tracking-normal text-[#4E5A73]">
+                    What made this week so consistent?
+                  </span>
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(event) =>
+                    setNotes((prev) => ({
+                      ...prev,
+                      [reflection.id]: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-[#273041] bg-[#070A12] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#7E6BFF] focus:outline-none focus:ring-2 focus:ring-[#7E6BFF]/50"
+                  placeholder="Capture the habits, supports, or rituals that unlocked momentum."
+                />
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSave(reflection.id)}
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#7E6BFF] to-[#B19CFF] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(126,107,255,0.45)] transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80"
+                  >
+                    <PenLine className="h-4 w-4" />
+                    Save reflection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleShare(reflection.id)}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#273041] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80"
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Share snapshot
+                  </button>
+                  <div className="flex items-center text-xs text-[#6E7A96]">
+                    {saved === "saved" ? (
+                      <span className="text-[#6DD3A8]">Saved! We’ll tailor future nudges.</span>
+                    ) : shared === "copied" ? (
+                      <span className="text-[#B19CFF]">Copied summary to clipboard.</span>
+                    ) : shared === "error" ? (
+                      <span className="text-[#FFB4A2]">Clipboard unavailable—share manually.</span>
+                    ) : pinned ? (
+                      <span>Pinned weeks guide your habit recommendations.</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
