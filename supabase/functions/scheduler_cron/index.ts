@@ -370,6 +370,7 @@ type TaskLite = {
   energy: string | null
   project_id?: string | null
   skill_icon?: string | null
+  due_date?: string | null
 }
 
 type ProjectLite = {
@@ -379,6 +380,7 @@ type ProjectLite = {
   stage: string
   energy?: string | null
   duration_min?: number | null
+  due_date?: string | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -393,7 +395,7 @@ type ProjectItem = ProjectLite & {
 async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite[]> {
   const { data, error } = await client
     .from('tasks')
-    .select('id, name, priority, stage, duration_min, energy, project_id, skills(icon)')
+    .select('id, name, priority, stage, duration_min, energy, project_id, due_date, skills(icon)')
     .eq('user_id', userId)
 
   if (error) {
@@ -412,13 +414,14 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
     skill_icon: ((task.skills as { icon?: string | null } | null)?.icon ?? null) as
       | string
       | null,
+    due_date: task.due_date ?? null,
   }))
 }
 
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
   const { data, error } = await client
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min')
+    .select('id, name, priority, stage, energy, duration_min, due_date')
     .eq('user_id', userId)
 
   if (error) {
@@ -435,6 +438,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       stage: project.stage ?? 'RESEARCH',
       energy: project.energy ?? 'NO',
       duration_min: project.duration_min ?? null,
+      due_date: project.due_date ?? null,
     }
   }
   return map
@@ -1062,14 +1066,39 @@ const PROJECT_STAGE_WEIGHT: Record<string, number> = {
   RELEASE: 10,
 }
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24
+
+function dueDateWeight(
+  dueDate: string | null | undefined,
+  windowDays = 14,
+  maxBoost = 1000
+): number {
+  if (!dueDate || windowDays <= 0 || maxBoost <= 0) return 0
+  const dueTime = Date.parse(dueDate)
+  if (Number.isNaN(dueTime)) return 0
+  const now = Date.now()
+  if (dueTime <= now) {
+    return maxBoost
+  }
+  const windowMs = windowDays * MS_PER_DAY
+  const remaining = dueTime - now
+  if (remaining >= windowMs) {
+    return 0
+  }
+  const urgency = 1 - remaining / windowMs
+  return Math.max(0, Math.min(1, urgency)) * maxBoost
+}
+
 function taskWeight(task: TaskLite) {
   const priority = TASK_PRIORITY_WEIGHT[task.priority] ?? 0
   const stage = TASK_STAGE_WEIGHT[task.stage] ?? 0
-  return priority + stage
+  const due = dueDateWeight(task.due_date, 14, 1000)
+  return priority + stage + due
 }
 
 function projectWeight(project: ProjectLite, relatedTaskWeightsSum: number) {
   const priority = PROJECT_PRIORITY_WEIGHT[project.priority] ?? 0
   const stage = PROJECT_STAGE_WEIGHT[project.stage] ?? 0
-  return relatedTaskWeightsSum / 1000 + priority + stage
+  const due = dueDateWeight(project.due_date, 28, 800)
+  return relatedTaskWeightsSum / 1000 + priority + stage + due
 }
