@@ -28,6 +28,7 @@ import {
   setTimeInTimeZone,
   startOfDayInTimeZone,
 } from './timezone'
+import { normalizeCoordinates, resolveSunlightBounds, type GeoCoordinates } from './sunlight'
 
 type Client = SupabaseClient<Database>
 
@@ -113,11 +114,12 @@ export async function scheduleBacklog(
   userId: string,
   baseDate = new Date(),
   client?: Client,
-  options?: { timeZone?: string | null }
+  options?: { timeZone?: string | null; location?: GeoCoordinates | null }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
   const timeZone = normalizeTimeZone(options?.timeZone)
+  const location = normalizeCoordinates(options?.location ?? null)
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
   if (missed.error) {
@@ -324,6 +326,7 @@ export async function scheduleBacklog(
       baseDate,
       windowCache,
       client: supabase,
+      sunlightLocation: location,
     })
 
     if (placements.length > 0) {
@@ -579,8 +582,19 @@ async function scheduleHabitsForDay(params: {
   baseDate: Date
   windowCache: Map<string, WindowLite[]>
   client: Client
+  sunlightLocation?: GeoCoordinates | null
 }): Promise<HabitDraftPlacement[]> {
-  const { habits, day, offset, timeZone, availability, baseDate, windowCache, client } = params
+  const {
+    habits,
+    day,
+    offset,
+    timeZone,
+    availability,
+    baseDate,
+    windowCache,
+    client,
+    sunlightLocation,
+  } = params
   if (!habits.length) return []
 
   const cacheKey = dateCacheKey(day)
@@ -600,6 +614,11 @@ async function scheduleHabitsForDay(params: {
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const dueHabits: HabitScheduleItem[] = []
   const zone = timeZone || 'UTC'
+  const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
+  const previousDay = addDaysInTimeZone(day, -1, zone)
+  const nextDay = addDaysInTimeZone(day, 1, zone)
+  const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
+  const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
   const dayStart = startOfDayInTimeZone(day, zone)
   const defaultDueMs = dayStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
@@ -641,6 +660,27 @@ async function scheduleHabitsForDay(params: {
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
+    const locationContext = habit.locationContext
+      ? String(habit.locationContext).toUpperCase().trim()
+      : null
+    const rawDaylight = habit.daylightPreference
+      ? String(habit.daylightPreference).toUpperCase().trim()
+      : 'ALL_DAY'
+    const daylightPreference =
+      rawDaylight === 'DAY' || rawDaylight === 'NIGHT' ? rawDaylight : 'ALL_DAY'
+    const daylightConstraint =
+      daylightPreference === 'ALL_DAY'
+        ? null
+        : {
+            preference: daylightPreference as 'DAY' | 'NIGHT',
+            sunrise: sunlightToday.sunrise ?? null,
+            sunset: sunlightToday.sunset ?? null,
+            dawn: sunlightToday.dawn ?? null,
+            dusk: sunlightToday.dusk ?? null,
+            previousDusk:
+              sunlightPrevious.dusk ?? sunlightPrevious.sunset ?? null,
+            nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
+          }
     const compatibleWindows = await fetchCompatibleWindowsForItem(
       client,
       day,
@@ -650,6 +690,8 @@ async function scheduleHabitsForDay(params: {
         availability,
         cache: windowCache,
         now: offset === 0 ? baseDate : undefined,
+        locationContext,
+        daylight: daylightConstraint,
       }
     )
 
@@ -737,6 +779,16 @@ function placementKey(entry: ScheduleDraftPlacement) {
   return `HABIT:${entry.habit.id}`
 }
 
+type DaylightConstraint = {
+  preference: 'DAY' | 'NIGHT'
+  sunrise: Date | null
+  sunset: Date | null
+  dawn: Date | null
+  dusk: Date | null
+  previousDusk: Date | null
+  nextDawn: Date | null
+}
+
 async function fetchCompatibleWindowsForItem(
   supabase: Client,
   date: Date,
@@ -746,6 +798,8 @@ async function fetchCompatibleWindowsForItem(
     now?: Date
     availability?: Map<string, Date>
     cache?: Map<string, WindowLite[]>
+    locationContext?: string | null
+    daylight?: DaylightConstraint | null
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -762,6 +816,11 @@ async function fetchCompatibleWindowsForItem(
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.availability
+
+  const desiredLocation = options?.locationContext
+    ? String(options.locationContext).toUpperCase().trim()
+    : null
+  const daylight = options?.daylight ?? null
 
   const compatible = [] as Array<{
     id: string
@@ -782,6 +841,14 @@ async function fetchCompatibleWindowsForItem(
     if (hasEnergyLabel && energyIdx >= ENERGY.LIST.length) continue
     if (energyIdx < itemIdx) continue
 
+    const windowLocationRaw = win.location_context
+      ? String(win.location_context).toUpperCase().trim()
+      : null
+    if (desiredLocation) {
+      if (!windowLocationRaw) continue
+      if (windowLocationRaw !== desiredLocation) continue
+    }
+
     const startLocal = resolveWindowStart(win, date, timeZone)
     const endLocal = resolveWindowEnd(win, date, timeZone)
     const key = windowKey(win.id, startLocal)
@@ -793,14 +860,54 @@ async function fetchCompatibleWindowsForItem(
     const baseAvailableStartMs =
       typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
     const carriedStartMs = availability?.get(key)?.getTime()
-    const availableStartMs =
+    let availableStartMs =
       typeof carriedStartMs === 'number'
         ? Math.max(baseAvailableStartMs, carriedStartMs)
         : baseAvailableStartMs
-    if (availableStartMs >= endMs) continue
-    if (availableStartMs + durationMs > endMs) continue
+    let endLimitMs = endMs
+
+    if (daylight) {
+      if (daylight.preference === 'DAY') {
+        const sunriseMs = daylight.sunrise?.getTime()
+        const sunsetMs = daylight.sunset?.getTime()
+        if (typeof sunriseMs === 'number') {
+          availableStartMs = Math.max(availableStartMs, sunriseMs)
+        }
+        if (typeof sunsetMs === 'number') {
+          endLimitMs = Math.min(endLimitMs, sunsetMs)
+        }
+      } else if (daylight.preference === 'NIGHT') {
+        const sunriseMs = daylight.sunrise?.getTime() ?? null
+        const duskMs = daylight.dusk?.getTime() ?? daylight.sunset?.getTime() ?? null
+        const previousDuskMs =
+          daylight.previousDusk?.getTime() ?? duskMs ?? null
+        const nextDawnMs = daylight.nextDawn?.getTime() ?? sunriseMs ?? null
+        const isEarlyMorning =
+          typeof sunriseMs === 'number' ? startMs < sunriseMs : false
+
+        if (isEarlyMorning) {
+          if (typeof previousDuskMs === 'number') {
+            availableStartMs = Math.max(availableStartMs, previousDuskMs)
+          }
+          if (typeof sunriseMs === 'number') {
+            endLimitMs = Math.min(endLimitMs, sunriseMs)
+          }
+        } else {
+          if (typeof duskMs === 'number') {
+            availableStartMs = Math.max(availableStartMs, duskMs)
+          }
+          if (typeof nextDawnMs === 'number') {
+            endLimitMs = Math.min(endLimitMs, nextDawnMs)
+          }
+        }
+      }
+    }
+
+    if (availableStartMs >= endLimitMs) continue
+    if (availableStartMs + durationMs > endLimitMs) continue
 
     const availableStartLocal = new Date(availableStartMs)
+    const endLimitLocal = new Date(endLimitMs)
     if (availability) {
       const existing = availability.get(key)
       if (!existing || existing.getTime() !== availableStartMs) {
@@ -812,7 +919,7 @@ async function fetchCompatibleWindowsForItem(
       id: win.id,
       key,
       startLocal,
-      endLocal,
+      endLocal: endLimitLocal,
       availableStartLocal,
       energyIdx,
     })

@@ -24,7 +24,7 @@ export default function WindowsPage() {
     }
     const { data, error } = await supabase
       .from("windows")
-      .select("id,label,days,start_local,end_local,energy")
+      .select("id,label,days,start_local,end_local,energy,location_context")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
@@ -35,6 +35,9 @@ export default function WindowsPage() {
         start: w.start_local,
         end: w.end_local,
         energy: w.energy?.toLowerCase() as WindowItem["energy"],
+        location: w.location_context
+          ? String(w.location_context).toUpperCase()
+          : "ANY",
         active: true,
       }));
       setWindows(mapped);
@@ -60,6 +63,10 @@ export default function WindowsPage() {
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
+      location_context:
+        item.location && item.location.toUpperCase() !== "ANY"
+          ? item.location.toUpperCase()
+          : null,
     };
 
     const [sh, sm] = item.start.split(":").map(Number);
@@ -139,6 +146,10 @@ export default function WindowsPage() {
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
+      location_context:
+        item.location && item.location.toUpperCase() !== "ANY"
+          ? item.location.toUpperCase()
+          : null,
     };
 
     const { error } = await supabase.from("windows").update(payload).eq("id", id);

@@ -52,6 +52,11 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from '@/lib/scheduler/habits'
+import {
+  normalizeCoordinates,
+  resolveSunlightSpan,
+  type GeoCoordinates,
+} from '@/lib/scheduler/sunlight'
 import { evaluateHabitDueOnDate, type HabitDueEvaluation } from '@/lib/scheduler/habitRecurrence'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
@@ -64,6 +69,8 @@ import {
 } from '@/lib/scheduler/windowReports'
 import { getSkillsForUser } from '@/lib/data/skills'
 import type { SkillRow } from '@/lib/types/skill'
+import { createMemoNoteForHabit } from '@/lib/notesStorage'
+import { MemoNoteSheet } from '@/components/schedule/MemoNoteSheet'
 
 type DayTransitionDirection = -1 | 0 | 1
 
@@ -370,6 +377,7 @@ type HabitTimelinePlacement = {
   habitId: string
   habitName: string
   habitType: HabitScheduleItem['habitType']
+  skillId: string | null
   start: Date
   end: Date
   durationMinutes: number
@@ -378,6 +386,13 @@ type HabitTimelinePlacement = {
 }
 
 type TimelineCardLayoutMode = 'full' | 'paired-left' | 'paired-right'
+
+type MemoNoteDraftState = {
+  habitId: string
+  habitName: string
+  skillId: string | null
+  dateKey: string
+}
 
 function isValidDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime())
@@ -608,6 +623,7 @@ function computeHabitPlacementsForDay({
   timeZone,
   now,
   completionMap,
+  sunlightCoordinates,
 }: {
   habits: HabitScheduleItem[]
   windows: RepoWindow[]
@@ -615,6 +631,7 @@ function computeHabitPlacementsForDay({
   timeZone: string
   now?: Date | null
   completionMap?: Record<string, HabitCompletionStatus>
+  sunlightCoordinates?: GeoCoordinates | null
 }): HabitTimelinePlacement[] {
   if (habits.length === 0 || windows.length === 0) return []
 
@@ -672,6 +689,8 @@ function computeHabitPlacementsForDay({
 
   if (dueHabits.length === 0) return []
 
+  const sunlightSpan = resolveSunlightSpan(date, zone, sunlightCoordinates ?? null)
+
   const sortedHabits = dueHabits.sort((a, b) => {
     const dueA = dueInfoByHabitId.get(a.id)
     const dueB = dueInfoByHabitId.get(b.id)
@@ -694,6 +713,27 @@ function computeHabitPlacementsForDay({
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
+    const locationContext = habit.locationContext
+      ? String(habit.locationContext).toUpperCase().trim()
+      : null
+    const rawDaylight = habit.daylightPreference
+      ? String(habit.daylightPreference).toUpperCase().trim()
+      : 'ALL_DAY'
+    const daylightPreference =
+      rawDaylight === 'DAY' || rawDaylight === 'NIGHT' ? rawDaylight : 'ALL_DAY'
+    const daylightConstraint =
+      daylightPreference === 'ALL_DAY'
+        ? null
+        : {
+            preference: daylightPreference as 'DAY' | 'NIGHT',
+            sunrise: sunlightSpan.current.sunrise ?? null,
+            sunset: sunlightSpan.current.sunset ?? null,
+            dawn: sunlightSpan.current.dawn ?? null,
+            dusk: sunlightSpan.current.dusk ?? null,
+            previousDusk:
+              sunlightSpan.previous.dusk ?? sunlightSpan.previous.sunset ?? null,
+            nextDawn: sunlightSpan.next.dawn ?? sunlightSpan.next.sunrise ?? null,
+          }
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
     const dueStartMs = dueStart ? dueStart.getTime() : null
     const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
@@ -701,6 +741,14 @@ function computeHabitPlacementsForDay({
     let placed = false
     for (const entry of windowEntries) {
       if (entry.energyIdx < requiredEnergyIdx) continue
+
+      const windowLocationRaw = entry.window.location_context
+        ? String(entry.window.location_context).toUpperCase().trim()
+        : null
+      if (locationContext) {
+        if (!windowLocationRaw) continue
+        if (windowLocationRaw !== locationContext) continue
+      }
 
       const existingAvailability = availability.get(entry.key) ?? entry.startMs
       const baseStart = Math.max(existingAvailability, entry.startMs)
@@ -715,15 +763,58 @@ function computeHabitPlacementsForDay({
           startMs = normalizedNow
         }
       }
-      if (startMs >= entry.endMs) {
-        availability.set(entry.key, entry.endMs)
+
+      let endLimitMs = entry.endMs
+      if (daylightConstraint) {
+        if (daylightConstraint.preference === 'DAY') {
+          const sunriseMs = daylightConstraint.sunrise?.getTime()
+          const sunsetMs = daylightConstraint.sunset?.getTime()
+          if (typeof sunriseMs === 'number') {
+            startMs = Math.max(startMs, sunriseMs)
+          }
+          if (typeof sunsetMs === 'number') {
+            endLimitMs = Math.min(endLimitMs, sunsetMs)
+          }
+        } else {
+          const sunriseMs = daylightConstraint.sunrise?.getTime() ?? null
+          const duskMs =
+            daylightConstraint.dusk?.getTime() ??
+            daylightConstraint.sunset?.getTime() ??
+            null
+          const previousDuskMs =
+            daylightConstraint.previousDusk?.getTime() ?? duskMs ?? null
+          const nextDawnMs =
+            daylightConstraint.nextDawn?.getTime() ?? sunriseMs ?? null
+          const isEarlyMorning =
+            typeof sunriseMs === 'number' ? entry.startMs < sunriseMs : false
+
+          if (isEarlyMorning) {
+            if (typeof previousDuskMs === 'number') {
+              startMs = Math.max(startMs, previousDuskMs)
+            }
+            if (typeof sunriseMs === 'number') {
+              endLimitMs = Math.min(endLimitMs, sunriseMs)
+            }
+          } else {
+            if (typeof duskMs === 'number') {
+              startMs = Math.max(startMs, duskMs)
+            }
+            if (typeof nextDawnMs === 'number') {
+              endLimitMs = Math.min(endLimitMs, nextDawnMs)
+            }
+          }
+        }
+      }
+
+      if (startMs >= endLimitMs) {
+        availability.set(entry.key, endLimitMs)
         continue
       }
 
       let endMs = startMs + durationMs
       let truncated = false
-      if (endMs > entry.endMs) {
-        endMs = entry.endMs
+      if (endMs > endLimitMs) {
+        endMs = endLimitMs
         truncated = true
       }
       if (endMs <= startMs) {
@@ -738,6 +829,7 @@ function computeHabitPlacementsForDay({
         habitId: habit.id,
         habitName: habit.name,
         habitType: habit.habitType,
+        skillId: habit.skillId ?? null,
         start,
         end,
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
@@ -1088,6 +1180,7 @@ function buildDayTimelineModel({
   localTimeZone,
   habitCompletionByDate,
   now,
+  sunlightCoordinates,
 }: {
   date: Date
   windows: RepoWindow[]
@@ -1107,6 +1200,7 @@ function buildDayTimelineModel({
   localTimeZone: string
   habitCompletionByDate?: Record<string, Record<string, HabitCompletionStatus>>
   now?: Date | null
+  sunlightCoordinates?: GeoCoordinates | null
 }): DayTimelineModel {
   const dayViewDateKey = formatLocalDateKey(date)
   const completionMapForDay = habitCompletionByDate?.[dayViewDateKey] ?? null
@@ -1131,6 +1225,7 @@ function buildDayTimelineModel({
     timeZone: localTimeZone ?? 'UTC',
     now: nowForModel,
     completionMap: completionMapForDay ?? undefined,
+    sunlightCoordinates,
   })
   const windowReports = computeWindowReportsForDay({
     windows,
@@ -1615,10 +1710,64 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const { session } = useAuth()
   const userId = session?.user.id ?? null
+  const userMetadata = session?.user?.user_metadata ?? null
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
     [userId]
   )
+
+  const userCoordinates = useMemo<GeoCoordinates | null>(() => {
+    if (!userMetadata || typeof userMetadata !== 'object') {
+      return null
+    }
+
+    const metadata = userMetadata as Record<string, unknown>
+    const coords = (metadata.coords as Record<string, unknown> | null) ?? null
+    const location = (metadata.location as Record<string, unknown> | null) ?? null
+
+    const pickNumericValue = (value: unknown): number | null => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value
+      }
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Number.parseFloat(value)
+        return Number.isFinite(parsed) ? parsed : null
+      }
+      return null
+    }
+
+    const pickFromCandidates = (candidates: unknown[]): number | null => {
+      for (const candidate of candidates) {
+        const numeric = pickNumericValue(candidate)
+        if (numeric !== null) {
+          return numeric
+        }
+      }
+      return null
+    }
+
+    const latitude = pickFromCandidates([
+      metadata.latitude,
+      metadata.lat,
+      coords?.latitude,
+      coords?.lat,
+      location?.latitude,
+    ])
+    const longitude = pickFromCandidates([
+      metadata.longitude,
+      metadata.lng,
+      metadata.lon,
+      coords?.longitude,
+      coords?.lng,
+      location?.longitude,
+    ])
+
+    if (latitude === null || longitude === null) {
+      return null
+    }
+
+    return normalizeCoordinates({ latitude, longitude })
+  }, [userMetadata])
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -1683,6 +1832,7 @@ export default function SchedulePage() {
     timeZoneShortName: string
     friendlyTimeZone: string
     localTimeZone: string | null
+    sunlightCoordinates: GeoCoordinates | null
   } | null>(null)
 
   const [peekState, setPeekState] = useState<PeekState>({
@@ -1702,6 +1852,9 @@ export default function SchedulePage() {
   const pinchActiveRef = useRef(false)
   const hasLoadedHabitCompletionState = useRef(false)
   const lastTimelineChromeHeightRef = useRef(0)
+  const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(null)
+  const [memoNoteSaving, setMemoNoteSaving] = useState(false)
+  const [memoNoteError, setMemoNoteError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!habitCompletionStorageKey) {
@@ -1818,6 +1971,12 @@ export default function SchedulePage() {
     () => formatLocalDateKey(currentDate),
     [currentDate]
   )
+
+  useEffect(() => {
+    setMemoNoteState(null)
+    setMemoNoteError(null)
+    setMemoNoteSaving(false)
+  }, [dayViewDateKey])
   const timeZoneShortName = useMemo(() => {
     try {
       const formatter = new Intl.DateTimeFormat(undefined, {
@@ -2246,7 +2405,11 @@ export default function SchedulePage() {
           previousDeps.schedulerTimelinePlacements !== schedulerTimelinePlacements ||
           previousDeps.timeZoneShortName !== timeZoneShortName ||
           previousDeps.friendlyTimeZone !== friendlyTimeZone ||
-          previousDeps.localTimeZone !== localTimeZone
+          previousDeps.localTimeZone !== localTimeZone ||
+          previousDeps.sunlightCoordinates?.latitude !==
+            userCoordinates?.latitude ||
+          previousDeps.sunlightCoordinates?.longitude !==
+            userCoordinates?.longitude
         )
     )
 
@@ -2262,6 +2425,7 @@ export default function SchedulePage() {
       timeZoneShortName,
       friendlyTimeZone,
       localTimeZone,
+      sunlightCoordinates: userCoordinates,
     }
 
     let cancelled = false
@@ -2314,6 +2478,7 @@ export default function SchedulePage() {
           localTimeZone,
           habitCompletionByDate,
           now: new Date(),
+          sunlightCoordinates: userCoordinates,
         })
         if (cancelled) return
         if (model.dayViewDateKey !== targetKey) return
@@ -2348,6 +2513,7 @@ export default function SchedulePage() {
     timeZoneShortName,
     friendlyTimeZone,
     habitCompletionByDate,
+    userCoordinates,
   ])
 
   useEffect(() => {
@@ -2570,6 +2736,79 @@ export default function SchedulePage() {
       updateHabitCompletionStatus(dateKey, habitId, nextStatus)
     },
     [getHabitCompletionStatus, updateHabitCompletionStatus]
+  )
+
+  const handleHabitCardActivation = useCallback(
+    (placement: HabitTimelinePlacement, dateKey: string) => {
+      if (placement.habitType === 'MEMO') {
+        setMemoNoteError(null)
+        setMemoNoteState({
+          habitId: placement.habitId,
+          habitName: placement.habitName,
+          skillId: placement.skillId,
+          dateKey,
+        })
+        return
+      }
+      toggleHabitCompletionStatus(dateKey, placement.habitId)
+    },
+    [toggleHabitCompletionStatus]
+  )
+
+  useEffect(() => {
+    if (!memoNoteState) {
+      setMemoNoteError(null)
+    }
+  }, [memoNoteState])
+
+  const handleCloseMemoSheet = useCallback(() => {
+    if (memoNoteSaving) return
+    setMemoNoteState(null)
+  }, [memoNoteSaving])
+
+  const handleMemoSave = useCallback(
+    async (content: string) => {
+      if (!memoNoteState) return
+      const skillId = memoNoteState.skillId
+      if (!skillId) {
+        setMemoNoteError('Assign a skill to this memo habit to save notes.')
+        return
+      }
+
+      const trimmedContent = content.trim()
+      if (!trimmedContent) {
+        setMemoNoteError('Write a note before saving this memo.')
+        return
+      }
+
+      setMemoNoteSaving(true)
+      setMemoNoteError(null)
+      try {
+        const note = await createMemoNoteForHabit(
+          skillId,
+          memoNoteState.habitId,
+          memoNoteState.habitName,
+          trimmedContent
+        )
+        if (!note) {
+          setMemoNoteError('Unable to save your memo right now. Please try again.')
+          return
+        }
+
+        updateHabitCompletionStatus(
+          memoNoteState.dateKey,
+          memoNoteState.habitId,
+          'completed'
+        )
+        setMemoNoteState(null)
+      } catch (error) {
+        console.error('Failed to save memo note', error)
+        setMemoNoteError('Something went wrong while saving this memo. Please try again.')
+      } finally {
+        setMemoNoteSaving(false)
+      }
+    },
+    [memoNoteState, updateHabitCompletionStatus]
   )
 
   const handleToggleBacklogTaskCompletion = useCallback(
@@ -3249,6 +3488,7 @@ export default function SchedulePage() {
         localTimeZone,
         habitCompletionByDate,
         now: new Date(),
+        sunlightCoordinates: userCoordinates,
       }),
     [
       currentDate,
@@ -3268,6 +3508,7 @@ export default function SchedulePage() {
       friendlyTimeZone,
       localTimeZone,
       habitCompletionByDate,
+      userCoordinates,
     ]
   )
 
@@ -3409,6 +3650,10 @@ export default function SchedulePage() {
                 'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
               const asyncCardBackground =
                 'radial-gradient(circle at 12% -20%, rgba(250, 204, 21, 0.32), transparent 58%), linear-gradient(135deg, rgba(74, 60, 9, 0.9) 0%, rgba(202, 138, 4, 0.82) 45%, rgba(250, 204, 21, 0.7) 100%)'
+              const memoCardBackground =
+                'radial-gradient(circle at 8% -18%, rgba(192, 132, 252, 0.34), transparent 60%), linear-gradient(138deg, rgba(59, 7, 100, 0.94) 0%, rgba(99, 37, 141, 0.88) 46%, rgba(168, 85, 247, 0.74) 100%)'
+              const memoCompletedBackground =
+                'radial-gradient(circle at 10% -18%, rgba(216, 180, 254, 0.4), transparent 60%), linear-gradient(138deg, rgba(76, 29, 149, 0.95) 0%, rgba(124, 58, 237, 0.88) 48%, rgba(192, 132, 252, 0.78) 100%)'
               const completedCardBackground =
                 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
               const scheduledShadow = [
@@ -3426,6 +3671,16 @@ export default function SchedulePage() {
                 '0 8px 18px rgba(82, 62, 18, 0.24)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
+              const memoShadow = [
+                '0 22px 44px rgba(76, 29, 149, 0.42)',
+                '0 10px 24px rgba(59, 7, 100, 0.36)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
+              ].join(', ')
+              const memoCompletedShadow = [
+                '0 24px 48px rgba(124, 58, 237, 0.42)',
+                '0 12px 28px rgba(88, 28, 135, 0.34)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.16)',
+              ].join(', ')
               const completedShadow = [
                 '0 26px 52px rgba(2, 32, 24, 0.6)',
                 '0 12px 28px rgba(1, 55, 34, 0.45)',
@@ -3436,7 +3691,19 @@ export default function SchedulePage() {
               let cardOutline = '1px solid rgba(10, 10, 12, 0.85)'
               let habitBorderClass = 'border-black/70'
 
-              if (isHabitCompleted) {
+              if (habitType === 'MEMO') {
+                if (isHabitCompleted) {
+                  cardBackground = memoCompletedBackground
+                  cardShadow = memoCompletedShadow
+                  cardOutline = '1px solid rgba(216, 180, 254, 0.55)'
+                  habitBorderClass = 'border-purple-200/65'
+                } else {
+                  cardBackground = memoCardBackground
+                  cardShadow = memoShadow
+                  cardOutline = '1px solid rgba(147, 51, 234, 0.5)'
+                  habitBorderClass = 'border-purple-300/55'
+                }
+              } else if (isHabitCompleted) {
                 cardBackground = completedCardBackground
                 cardShadow = completedShadow
                 cardOutline = '1px solid rgba(16, 185, 129, 0.55)'
@@ -3478,7 +3745,7 @@ export default function SchedulePage() {
                   style={cardStyle}
                   onClick={() => {
                     if (options?.disableInteractions) return
-                    toggleHabitCompletionStatus(dayViewDateKey, placement.habitId)
+                    handleHabitCardActivation(placement, dayViewDateKey)
                   }}
                   onKeyDown={event => {
                     if (event.key !== 'Enter' && event.key !== ' ') {
@@ -3486,7 +3753,7 @@ export default function SchedulePage() {
                     }
                     event.preventDefault()
                     if (options?.disableInteractions) return
-                    toggleHabitCompletionStatus(dayViewDateKey, placement.habitId)
+                    handleHabitCardActivation(placement, dayViewDateKey)
                   }}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -4145,7 +4412,7 @@ export default function SchedulePage() {
         handleToggleInstanceCompletion,
         handleToggleBacklogTaskCompletion,
         instanceStatusById,
-        toggleHabitCompletionStatus,
+        handleHabitCardActivation,
       ]
     )
 
@@ -4332,6 +4599,15 @@ export default function SchedulePage() {
         </div>
       </div>
       </ProtectedRoute>
+      <MemoNoteSheet
+        open={Boolean(memoNoteState)}
+        habitName={memoNoteState?.habitName ?? ''}
+        skillId={memoNoteState?.skillId ?? null}
+        saving={memoNoteSaving}
+        error={memoNoteError}
+        onClose={handleCloseMemoSheet}
+        onSubmit={handleMemoSave}
+      />
       <JumpToDateSheet
         open={isJumpToDateOpen}
         onOpenChange={open => setIsJumpToDateOpen(open)}

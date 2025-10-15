@@ -12,7 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 
 export type HabitTypeOption = {
   label: string;
@@ -55,6 +57,11 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     value: "ASYNC",
     description: "Self-paced rituals you can do anytime.",
   },
+  {
+    label: "Memo",
+    value: "MEMO",
+    description: "Capture reflections or notes tied to a skill.",
+  },
 ];
 
 export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
@@ -96,6 +103,8 @@ interface HabitFormFieldsProps {
   duration: string;
   energy: string;
   skillId: string;
+  locationContext?: string | null;
+  daylightPreference?: string | null;
   energyOptions: HabitEnergySelectOption[];
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
@@ -108,11 +117,19 @@ interface HabitFormFieldsProps {
   onEnergyChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
+  onLocationContextChange?: (value: string | null) => void;
+  onDaylightPreferenceChange?: (value: string) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
   showDescriptionField?: boolean;
 }
+
+const DAYLIGHT_OPTIONS = [
+  { value: "ALL_DAY", label: "All day" },
+  { value: "DAY", label: "Daytime" },
+  { value: "NIGHT", label: "Night" },
+];
 
 export function HabitFormFields({
   name,
@@ -123,6 +140,8 @@ export function HabitFormFields({
   duration,
   energy,
   skillId,
+  locationContext = null,
+  daylightPreference = "ALL_DAY",
   energyOptions,
   skillsLoading,
   skillOptions,
@@ -135,6 +154,8 @@ export function HabitFormFields({
   onEnergyChange,
   onDurationChange,
   onSkillChange,
+  onLocationContextChange,
+  onDaylightPreferenceChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
@@ -144,6 +165,24 @@ export function HabitFormFields({
   const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(() => {
+    const hasLocation = Boolean(locationContext && locationContext.trim());
+    const daylightUpper = (daylightPreference ?? "ALL_DAY").toUpperCase();
+    const hasDaylight = daylightUpper === "DAY" || daylightUpper === "NIGHT";
+    return hasLocation || hasDaylight;
+  });
+  const [customLocationName, setCustomLocationName] = useState("");
+  const [customLocationError, setCustomLocationError] = useState<string | null>(
+    null,
+  );
+  const [savingCustomLocation, setSavingCustomLocation] = useState(false);
+
+  const {
+    options: locationOptions,
+    loading: locationOptionsLoading,
+    error: locationOptionsError,
+    createContext: createLocationContext,
+  } = useLocationContexts();
 
   useEffect(() => {
     setSkillSearchQuery("");
@@ -169,6 +208,34 @@ export function HabitFormFields({
       ? recurrenceDays.filter((value) => value !== day)
       : [...recurrenceDays, day].sort((a, b) => a - b);
     onRecurrenceDaysChange(next);
+  };
+
+  const locationValue = (locationContext ?? "").toUpperCase().trim() || "ANY";
+  const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
+
+  const handleAddCustomLocation = async () => {
+    const name = customLocationName;
+    if (!name.trim()) {
+      setCustomLocationError("Enter a location name first.");
+      return;
+    }
+
+    setSavingCustomLocation(true);
+    setCustomLocationError(null);
+
+    try {
+      const result = await createLocationContext(name);
+      if (!result.success) {
+        setCustomLocationError(result.error);
+        return;
+      }
+
+      setCustomLocationName("");
+      onLocationContextChange?.(result.option.value);
+      setAdvancedOpen(true);
+    } finally {
+      setSavingCustomLocation(false);
+    }
   };
 
   return (
@@ -362,6 +429,109 @@ export function HabitFormFields({
             className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setAdvancedOpen((prev) => !prev)}
+          className="h-10 rounded-xl border-white/15 bg-white/[0.03] text-xs font-semibold uppercase tracking-[0.2em] text-white/80 hover:border-white/30 hover:bg-white/[0.07]"
+        >
+          {advancedOpen ? "Hide advanced options" : "Show advanced options"}
+        </Button>
+
+        {advancedOpen ? (
+          <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Location context
+              </Label>
+              <Select
+                value={locationValue}
+                onValueChange={(value) =>
+                  onLocationContextChange?.(value === "ANY" ? null : value)
+                }
+                disabled={locationOptionsLoading}
+              >
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="Where does this habit happen?" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {locationOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-white/60">
+                Choose a location to keep this habit aligned with compatible schedule windows.
+              </p>
+              {locationOptionsError ? (
+                <p className="text-xs text-amber-300/90">
+                  {locationOptionsError}
+                </p>
+              ) : null}
+              <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/60">
+                  Add a new location
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={customLocationName}
+                    onChange={(event) => {
+                      setCustomLocationName(event.target.value)
+                      setCustomLocationError(null)
+                    }}
+                    placeholder="e.g. Gym or Studio"
+                    className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleAddCustomLocation}
+                    disabled={savingCustomLocation}
+                    className="h-10 shrink-0 rounded-lg bg-blue-500/80 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-blue-500"
+                  >
+                    {savingCustomLocation ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+                {customLocationError ? (
+                  <p className="text-xs text-red-300">{customLocationError}</p>
+                ) : null}
+                <p className="text-[0.65rem] text-white/50">
+                  Custom locations sync across your habits and windows.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Daylight preference
+              </Label>
+              <Select
+                value={daylightValue || "ALL_DAY"}
+                onValueChange={(value) =>
+                  onDaylightPreferenceChange?.(value)
+                }
+              >
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="When should this habit run?" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {DAYLIGHT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-white/60">
+                Restrict this habit to daylight or night windows. We’ll respect your local sunrise and sunset when scheduling.
+              </p>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {footerSlot}

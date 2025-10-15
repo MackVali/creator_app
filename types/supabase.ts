@@ -55,11 +55,13 @@ export interface Database {
           habit_type: string;
           recurrence: string | null;
           recurrence_days: number[] | null;
-          duration_minutes: number | null;
-          window_id: string | null;
-          skill_id: string | null;
-          energy: string | null;
-        };
+        duration_minutes: number | null;
+        window_id: string | null;
+        skill_id: string | null;
+        energy: string | null;
+        location_context: string | null;
+        daylight_preference: string | null;
+      };
       Insert: {
         id?: string;
         created_at?: string;
@@ -74,6 +76,8 @@ export interface Database {
         window_id?: string | null;
         skill_id?: string | null;
         energy?: string | null;
+        location_context?: string | null;
+        daylight_preference?: string | null;
       };
       Update: {
         id?: string;
@@ -89,7 +93,35 @@ export interface Database {
         window_id?: string | null;
         skill_id?: string | null;
         energy?: string | null;
+        location_context?: string | null;
+        daylight_preference?: string | null;
       };
+      };
+      location_contexts: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          value: string;
+          label: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          value: string;
+          label: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          value?: string;
+          label?: string;
+        };
       };
       projects: {
         Row: {
@@ -212,32 +244,35 @@ export interface Database {
           id: string;
           created_at: string;
           updated_at: string | null;
-          user_id: string;
-          title: string | null;
-          content: string | null;
-          monument_id: string | null;
-          skill_id: string | null;
-        };
-        Insert: {
-          id?: string;
-          created_at?: string;
-          updated_at?: string | null;
-          user_id: string;
-          title?: string | null;
-          content?: string | null;
-          monument_id?: string | null;
-          skill_id?: string | null;
-        };
-        Update: {
-          id?: string;
-          created_at?: string;
-          updated_at?: string | null;
-          user_id?: string;
-          title?: string | null;
-          content?: string | null;
-          monument_id?: string | null;
-          skill_id?: string | null;
-        };
+        user_id: string;
+        title: string | null;
+        content: string | null;
+        monument_id: string | null;
+        skill_id: string | null;
+        metadata: Json | null;
+      };
+      Insert: {
+        id?: string;
+        created_at?: string;
+        updated_at?: string | null;
+        user_id: string;
+        title?: string | null;
+        content?: string | null;
+        monument_id?: string | null;
+        skill_id?: string | null;
+        metadata?: Json | null;
+      };
+      Update: {
+        id?: string;
+        created_at?: string;
+        updated_at?: string | null;
+        user_id?: string;
+        title?: string | null;
+        content?: string | null;
+        monument_id?: string | null;
+        skill_id?: string | null;
+        metadata?: Json | null;
+      };
       };
       friend_connections: {
         Row: {
@@ -627,32 +662,35 @@ export interface Database {
           id: string;
           created_at: string;
           user_id: string;
-          label: string;
-          days: number[];
-          start_local: string;
-          end_local: string;
-          energy: string;
-        };
-        Insert: {
-          id?: string;
-          created_at?: string;
-          user_id: string;
-          label: string;
-          days?: number[];
-          start_local?: string;
-          end_local?: string;
-          energy?: string;
-        };
-        Update: {
-          id?: string;
-          created_at?: string;
-          user_id?: string;
-          label?: string;
-          days?: number[];
-          start_local?: string;
-          end_local?: string;
-          energy?: string;
-        };
+        label: string;
+        days: number[];
+        start_local: string;
+        end_local: string;
+        energy: string;
+        location_context: string | null;
+      };
+      Insert: {
+        id?: string;
+        created_at?: string;
+        user_id: string;
+        label: string;
+        days?: number[];
+        start_local?: string;
+        end_local?: string;
+        energy?: string;
+        location_context?: string | null;
+      };
+      Update: {
+        id?: string;
+        created_at?: string;
+        user_id?: string;
+        label?: string;
+        days?: number[];
+        start_local?: string;
+        end_local?: string;
+        energy?: string;
+        location_context?: string | null;
+      };
       };
       schedule_instances: {
         Row: {
