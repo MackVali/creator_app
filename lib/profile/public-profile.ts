@@ -259,6 +259,6 @@ export const getPublicProfileReadModel = unstable_cache(fetchPublicProfile, [
   tags: ["public-profile-read-model"],
 });
 
-export function revalidatePublicProfileCache() {
+export async function revalidatePublicProfileCache() {
   revalidateTag("public-profile-read-model");
 }
