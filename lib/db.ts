@@ -392,6 +392,32 @@ export async function ensureProfileExists(
     // Check if profile exists
     let profile = await getProfileByUserId(userId);
 
+    if (profile && (!profile.username || !profile.username.trim())) {
+      const fallbackUsername = `user_${userId.slice(0, 8)}`;
+
+      const supabase = getSupabaseBrowser();
+
+      if (supabase) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .update({
+            username: fallbackUsername,
+          })
+          .eq("user_id", userId)
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Error backfilling missing username while ensuring profile:", error);
+          profile = { ...profile, username: fallbackUsername } as Profile;
+        } else {
+          profile = data as Profile;
+        }
+      } else {
+        profile = { ...profile, username: fallbackUsername } as Profile;
+      }
+    }
+
     if (!profile) {
       // Create profile if it doesn't exist
       const result = await createProfile(userId, {});
