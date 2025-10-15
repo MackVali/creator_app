@@ -662,6 +662,7 @@ async function scheduleHabitsForDay(params: {
   const defaultDueMs = dayStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
   const placements: HabitDraftPlacement[] = []
+  const anchorStartsByWindowKey = new Map<string, number[]>()
 
   for (const habit of habits) {
     const windowDays = habit.window?.days ?? null
@@ -722,6 +723,8 @@ async function scheduleHabitsForDay(params: {
               sunlightPrevious.dusk ?? sunlightPrevious.sunset ?? null,
             nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
           }
+    const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
+    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
     const anchorRaw = habit.windowEdgePreference
       ? String(habit.windowEdgePreference).toUpperCase().trim()
       : 'FRONT'
@@ -739,6 +742,7 @@ async function scheduleHabitsForDay(params: {
         locationContext,
         daylight: daylightConstraint,
         matchEnergyLevel: true,
+        ignoreAvailability: isSyncHabit,
         anchor: anchorPreference,
       }
     )
@@ -756,6 +760,46 @@ async function scheduleHabitsForDay(params: {
     const bounds = availability.get(target.key)
     const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
+    const windowStartMs = target.startLocal.getTime()
+    let constraintLowerBound = startMs
+    const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null
+    const dueStartMs = dueStart ? dueStart.getTime() : null
+    if (typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)) {
+      constraintLowerBound = Math.max(constraintLowerBound, dueStartMs)
+    }
+    if (
+      typeof baseNowMs === 'number' &&
+      baseNowMs > constraintLowerBound &&
+      baseNowMs < endLimit
+    ) {
+      constraintLowerBound = baseNowMs
+    }
+    let startCandidate = constraintLowerBound
+    if (isSyncHabit) {
+      const anchors = anchorStartsByWindowKey.get(target.key) ?? null
+      const safeWindowStart = Number.isFinite(windowStartMs) ? windowStartMs : startMs
+      const fallbackStart = Math.max(safeWindowStart, startMs)
+      let anchorStartMs: number | null = null
+
+      if (anchors && anchors.length > 0) {
+        anchorStartMs = anchors.find(value => value >= constraintLowerBound && value < endLimit) ?? null
+        if (anchorStartMs === null) {
+          anchorStartMs = anchors.find(value => value >= startMs && value < endLimit) ?? null
+        }
+        if (anchorStartMs === null) {
+          anchorStartMs = anchors[0]
+        }
+      }
+
+      if (typeof anchorStartMs === 'number' && Number.isFinite(anchorStartMs)) {
+        startCandidate = Math.max(anchorStartMs, constraintLowerBound)
+      } else {
+        startCandidate = Math.max(fallbackStart, constraintLowerBound)
+      }
+    }
+    if (startCandidate >= endLimit) {
+      if (!isSyncHabit) {
+        availability.set(target.key, new Date(endLimit))
     let startCandidate = startLimit
     if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endLimit) {
       if (anchorPreference === 'BACK') {
@@ -793,6 +837,8 @@ async function scheduleHabitsForDay(params: {
       clipped = true
     }
     if (endCandidate <= startCandidate) {
+      if (!isSyncHabit) {
+        availability.set(target.key, new Date(endCandidate))
       if (bounds) {
         if (anchorPreference === 'BACK') {
           bounds.back = new Date(Math.max(bounds.front.getTime(), startCandidate))
@@ -811,6 +857,10 @@ async function scheduleHabitsForDay(params: {
 
     const startDate = new Date(startCandidate)
     const endDate = new Date(endCandidate)
+    if (!isSyncHabit) {
+      availability.set(target.key, endDate)
+    }
+    addAnchorStart(anchorStartsByWindowKey, target.key, startCandidate)
     if (bounds) {
       if (anchorPreference === 'BACK') {
         bounds.back = new Date(startDate)
@@ -873,6 +923,23 @@ function placementKey(entry: ScheduleDraftPlacement) {
   return `HABIT:${entry.habit.id}`
 }
 
+function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number) {
+  if (!Number.isFinite(startMs)) return
+  const existing = map.get(key)
+  if (!existing) {
+    map.set(key, [startMs])
+    return
+  }
+  if (existing.includes(startMs)) {
+    return
+  }
+  let insertIndex = 0
+  while (insertIndex < existing.length && existing[insertIndex] < startMs) {
+    insertIndex += 1
+  }
+  existing.splice(insertIndex, 0, startMs)
+}
+
 type DaylightConstraint = {
   preference: 'DAY' | 'NIGHT'
   sunrise: Date | null
@@ -895,6 +962,7 @@ async function fetchCompatibleWindowsForItem(
     locationContext?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
+    ignoreAvailability?: boolean
     anchor?: 'FRONT' | 'BACK'
   }
 ) {
@@ -911,7 +979,8 @@ async function fetchCompatibleWindowsForItem(
   const now = options?.now ? new Date(options.now) : null
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
-  const availability = options?.availability
+  const availability = options?.ignoreAvailability ? undefined : options?.availability
+  const shouldTrackAvailability = !options?.ignoreAvailability && Boolean(options?.availability)
 
   const desiredLocation = options?.locationContext
     ? String(options.locationContext).toUpperCase().trim()
@@ -1024,6 +1093,12 @@ async function fetchCompatibleWindowsForItem(
 
     if (frontBoundMs >= backBoundMs) continue
 
+    const availableStartLocal = new Date(availableStartMs)
+    const endLimitLocal = new Date(endLimitMs)
+    if (shouldTrackAvailability && availability) {
+      const existing = availability.get(key)
+      if (!existing || existing.getTime() !== availableStartMs) {
+        availability.set(key, availableStartLocal)
     let candidateStartMs: number
     if (anchorPreference === 'BACK') {
       candidateStartMs = backBoundMs - durationMs

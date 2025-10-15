@@ -624,6 +624,8 @@ function computeHabitPlacementsForDay({
   now,
   completionMap,
   sunlightCoordinates,
+  projectInstances,
+  schedulerTimelinePlacements,
 }: {
   habits: HabitScheduleItem[]
   windows: RepoWindow[]
@@ -632,6 +634,8 @@ function computeHabitPlacementsForDay({
   now?: Date | null
   completionMap?: Record<string, HabitCompletionStatus>
   sunlightCoordinates?: GeoCoordinates | null
+  projectInstances?: ReturnType<typeof computeProjectInstances>
+  schedulerTimelinePlacements?: SchedulerTimelinePlacement[]
 }): HabitTimelinePlacement[] {
   if (habits.length === 0 || windows.length === 0) return []
 
@@ -670,6 +674,42 @@ function computeHabitPlacementsForDay({
       key: string
     } => entry !== null)
     .sort((a, b) => a.startMs - b.startMs)
+
+  const anchorStartsByWindowKey = new Map<string, number[]>()
+
+  for (const entry of windowEntries) {
+    addAnchorStart(anchorStartsByWindowKey, entry.key, entry.startMs)
+  }
+
+  if (projectInstances && projectInstances.length > 0) {
+    for (const instance of projectInstances) {
+      const instanceStart = instance.start.getTime()
+      const instanceEnd = instance.end.getTime()
+      if (!Number.isFinite(instanceStart) || !Number.isFinite(instanceEnd)) continue
+
+      for (const entry of windowEntries) {
+        const overlaps = instanceEnd > entry.startMs && instanceStart < entry.endMs
+        if (!overlaps) continue
+        const anchor = Math.max(entry.startMs, instanceStart)
+        addAnchorStart(anchorStartsByWindowKey, entry.key, anchor)
+      }
+    }
+  }
+
+  if (schedulerTimelinePlacements && schedulerTimelinePlacements.length > 0) {
+    for (const placement of schedulerTimelinePlacements) {
+      const startMs = placement.start.getTime()
+      const endMs = placement.end.getTime()
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
+
+      for (const entry of windowEntries) {
+        const overlaps = endMs > entry.startMs && startMs < entry.endMs
+        if (!overlaps) continue
+        const anchor = Math.max(entry.startMs, startMs)
+        addAnchorStart(anchorStartsByWindowKey, entry.key, anchor)
+      }
+    }
+  }
 
   if (windowEntries.length === 0) return []
 
@@ -737,6 +777,8 @@ function computeHabitPlacementsForDay({
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
     const dueStartMs = dueStart ? dueStart.getTime() : null
     const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
+    const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
+    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
 
     let placed = false
     for (const entry of windowEntries) {
@@ -751,19 +793,21 @@ function computeHabitPlacementsForDay({
       }
 
       const existingAvailability = availability.get(entry.key) ?? entry.startMs
-      const baseStart = Math.max(existingAvailability, entry.startMs)
-      let startMs =
+      const windowStartMs = entry.startMs
+      const baseStart = isSyncHabit ? windowStartMs : Math.max(existingAvailability, windowStartMs)
+      let earliestStart =
         typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)
           ? Math.max(baseStart, dueStartMs)
           : baseStart
 
       if (!isHabitCompleted && typeof nowMs === 'number') {
-        const normalizedNow = Math.max(nowMs, entry.startMs)
-        if (normalizedNow > startMs) {
-          startMs = normalizedNow
+        const normalizedNow = Math.max(nowMs, windowStartMs)
+        if (normalizedNow > earliestStart) {
+          earliestStart = normalizedNow
         }
       }
 
+      let startMs = earliestStart
       let endLimitMs = entry.endMs
       if (daylightConstraint) {
         if (daylightConstraint.preference === 'DAY') {
@@ -807,8 +851,30 @@ function computeHabitPlacementsForDay({
       }
 
       if (startMs >= endLimitMs) {
-        availability.set(entry.key, endLimitMs)
+        if (!isSyncHabit) {
+          availability.set(entry.key, endLimitMs)
+        }
         continue
+      }
+
+      if (isSyncHabit) {
+        const anchors = anchorStartsByWindowKey.get(entry.key) ?? []
+        let anchorStart: number | null = null
+        if (anchors.length > 0) {
+          anchorStart = anchors.find((value) => value >= startMs && value < endLimitMs) ?? null
+          if (anchorStart === null) {
+            anchorStart = anchors.find((value) => value >= windowStartMs && value < endLimitMs) ?? null
+          }
+          if (anchorStart === null) {
+            anchorStart = anchors[0] ?? null
+          }
+        }
+
+        if (typeof anchorStart === 'number' && Number.isFinite(anchorStart)) {
+          startMs = Math.max(startMs, anchorStart)
+        } else {
+          startMs = Math.max(startMs, windowStartMs)
+        }
       }
 
       let endMs = startMs + durationMs
@@ -818,13 +884,18 @@ function computeHabitPlacementsForDay({
         truncated = true
       }
       if (endMs <= startMs) {
-        availability.set(entry.key, endMs)
+        if (!isSyncHabit) {
+          availability.set(entry.key, endMs)
+        }
         continue
       }
 
       const start = new Date(startMs)
       const end = new Date(endMs)
-      availability.set(entry.key, endMs)
+      if (!isSyncHabit) {
+        availability.set(entry.key, endMs)
+      }
+      addAnchorStart(anchorStartsByWindowKey, entry.key, startMs)
       placements.push({
         habitId: habit.id,
         habitName: habit.name,
@@ -848,6 +919,28 @@ function computeHabitPlacementsForDay({
 
   placements.sort((a, b) => a.start.getTime() - b.start.getTime())
   return placements
+}
+
+function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number) {
+  if (!Number.isFinite(startMs)) return
+  const existing = map.get(key)
+  if (!existing) {
+    map.set(key, [startMs])
+    return
+  }
+  const alreadyPresent = existing.some((value) => Math.abs(value - startMs) < 30)
+  if (alreadyPresent) return
+  let inserted = false
+  for (let index = 0; index < existing.length; index += 1) {
+    if (startMs < existing[index]) {
+      existing.splice(index, 0, startMs)
+      inserted = true
+      break
+    }
+  }
+  if (!inserted) {
+    existing.push(startMs)
+  }
 }
 
 function computeWindowReportsForDay({
@@ -992,9 +1085,8 @@ function computeWindowReportsForDay({
 
 const TIMELINE_LEFT_OFFSET = '4rem'
 const TIMELINE_RIGHT_OFFSET = '0.5rem'
-const ASYNC_PAIR_GAP = '0.0625rem'
-const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET} - ${ASYNC_PAIR_GAP}) / 2)`
-const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH} + ${ASYNC_PAIR_GAP})`
+const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET}) / 2)`
+const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH})`
 
 function computeTimelineLayoutForAsyncHabits({
   habitPlacements,
@@ -1017,7 +1109,7 @@ function computeTimelineLayoutForAsyncHabits({
 
   habitPlacements.forEach((placement, index) => {
     const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
-    if (habitType === 'ASYNC') return
+    if (habitType === 'SYNC' || habitType === 'ASYNC') return
     const startMs = placement.start.getTime()
     const endMs = placement.end.getTime()
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
@@ -1038,7 +1130,10 @@ function computeTimelineLayoutForAsyncHabits({
 
   const asyncHabits = habitPlacements
     .map((placement, index) => ({ placement, index }))
-    .filter(({ placement }) => (placement.habitType ?? 'HABIT').toUpperCase() === 'ASYNC')
+    .filter(({ placement }) => {
+      const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
+      return habitType === 'SYNC' || habitType === 'ASYNC'
+    })
     .map(({ placement, index }) => ({
       index,
       startMs: placement.start.getTime(),
@@ -1226,6 +1321,8 @@ function buildDayTimelineModel({
     now: nowForModel,
     completionMap: completionMapForDay ?? undefined,
     sunlightCoordinates,
+    projectInstances,
+    schedulerTimelinePlacements,
   })
   const windowReports = computeWindowReportsForDay({
     windows,
