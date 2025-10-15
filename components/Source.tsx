@@ -15,6 +15,7 @@ import {
   RefreshCcw,
   UploadCloud,
   X,
+  type LucideIcon,
 } from "lucide-react"
 
 import { Badge } from "./ui/badge"
@@ -632,6 +633,30 @@ const integrationPresets: IntegrationPreset[] = [
   },
 ]
 
+const setupSteps: { id: string; title: string; description: string; icon: LucideIcon }[] = [
+  {
+    id: "choose",
+    title: "Choose a connector",
+    description:
+      "Start with a preset to auto-fill URLs, headers, and payload tokens for popular storefronts.",
+    icon: Plug,
+  },
+  {
+    id: "authorize",
+    title: "Authorize access",
+    description:
+      "Sign in with OAuth or drop in API keys so Source can publish on your behalf securely.",
+    icon: Lock,
+  },
+  {
+    id: "publish",
+    title: "Publish everywhere",
+    description:
+      "Create a product or service once and we fan the listing out to every active integration instantly.",
+    icon: UploadCloud,
+  },
+]
+
 export default function Source() {
   const queryClient = useQueryClient()
   const [integrationForm, setIntegrationForm] = useState(defaultIntegrationForm)
@@ -643,6 +668,7 @@ export default function Source() {
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
   const [presetError, setPresetError] = useState<string | null>(null)
   const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
+  const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
 
   useEffect(() => {
@@ -757,6 +783,7 @@ export default function Source() {
       setPresetInputs({})
       setPresetNotice(null)
       setPresetError(null)
+      setShowIntegrationAdvanced(false)
       return
     }
 
@@ -769,8 +796,10 @@ export default function Source() {
         defaults[field.id] = ""
       }
       setPresetInputs(defaults)
+      setShowIntegrationAdvanced(true)
     } else {
       setPresetInputs({})
+      setShowIntegrationAdvanced(false)
     }
 
     setPresetNotice(null)
@@ -790,6 +819,7 @@ export default function Source() {
         `${selectedPreset.label} defaults applied. Review and save to finish.`
       )
       setPresetError(null)
+      setShowIntegrationAdvanced(true)
     } catch (error) {
       setPresetNotice(null)
       setPresetError(
@@ -1028,6 +1058,17 @@ export default function Source() {
       (integration.auth_mode !== "oauth2" || integration.oauth?.connected)
   ).length
 
+  const integrationAdvancedForced = integrationForm.authMode === "oauth2"
+  const integrationAdvancedVisible = integrationAdvancedForced || showIntegrationAdvanced
+
+  const scrollToIntegrationForm = () => {
+    if (typeof document === "undefined") return
+    const el = document.getElementById("integration-form")
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-900/60 bg-slate-950/80 backdrop-blur">
@@ -1076,6 +1117,45 @@ export default function Source() {
       </header>
 
       <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10">
+        <section className="overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 shadow-lg shadow-slate-950/40">
+          <div className="flex flex-col gap-3 border-b border-slate-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">How Source syncs your listings</h2>
+              <p className="text-sm text-slate-300">
+                Follow these steps to connect storefronts and publish everywhere in minutes.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="self-start md:self-auto"
+              onClick={scrollToIntegrationForm}
+            >
+              Start connecting
+            </Button>
+          </div>
+          <div className="grid gap-4 px-6 py-6 sm:grid-cols-2 lg:grid-cols-3">
+            {setupSteps.map((step) => {
+              const Icon = step.icon
+              return (
+                <div
+                  key={step.id}
+                  className="flex gap-3 rounded-xl border border-slate-900/60 bg-slate-950/60 p-4"
+                >
+                  <div className="rounded-lg bg-slate-900/60 p-2">
+                    <Icon className="size-4 text-sky-300" />
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="font-medium text-white">{step.title}</p>
+                    <p className="text-xs text-slate-400">{step.description}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
         <section className="space-y-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1146,6 +1226,7 @@ export default function Source() {
 
         <section className="grid gap-6 lg:grid-cols-2">
           <form
+            id="integration-form"
             className="rounded-2xl border border-slate-900/60 bg-slate-950/70 p-6 shadow-xl shadow-slate-950/40"
             onSubmit={(event) => {
               event.preventDefault()
@@ -1266,365 +1347,411 @@ export default function Source() {
               )}
             </div>
 
-            <div className="mt-5 grid gap-4">
-              <FieldStack label="Platform" htmlFor="provider">
-                <Input
-                  id="provider"
-                  value={integrationForm.provider}
-                  onChange={(event) =>
-                    setIntegrationForm((prev) => ({
-                      ...prev,
-                      provider: event.target.value,
-                    }))
-                  }
-                  placeholder="Shopify, Wix, Depop, Custom"
-                  required
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <div className="space-y-5">
+                <FormSubheading
+                  title="Connection basics"
+                  description="Tell Source where to send your listings and what to call the integration."
                 />
-              </FieldStack>
+                <div className="grid gap-4">
+                  <FieldStack label="Platform" htmlFor="provider">
+                    <Input
+                      id="provider"
+                      value={integrationForm.provider}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          provider: event.target.value,
+                        }))
+                      }
+                      placeholder="Shopify, Wix, Depop, Custom"
+                      required
+                    />
+                  </FieldStack>
 
-              <FieldStack label="Display name" htmlFor="displayName">
-                <Input
-                  id="displayName"
-                  value={integrationForm.displayName}
-                  onChange={(event) =>
-                    setIntegrationForm((prev) => ({
-                      ...prev,
-                      displayName: event.target.value,
-                    }))
-                  }
-                  placeholder="Optional label for dashboards"
-                />
-              </FieldStack>
+                  <FieldStack label="Display name" htmlFor="displayName">
+                    <Input
+                      id="displayName"
+                      value={integrationForm.displayName}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          displayName: event.target.value,
+                        }))
+                      }
+                      placeholder="Shown in your integration list"
+                    />
+                  </FieldStack>
 
-              <FieldStack label="Website URL" htmlFor="connectionUrl">
-                <Input
-                  id="connectionUrl"
-                  value={integrationForm.connectionUrl}
-                  onChange={(event) =>
-                    setIntegrationForm((prev) => ({
-                      ...prev,
-                      connectionUrl: event.target.value,
-                    }))
-                  }
-                  placeholder="https://your-storefront.example"
-                  required
-                  type="url"
-                />
-              </FieldStack>
+                  <FieldStack label="Website URL" htmlFor="connectionUrl">
+                    <Input
+                      id="connectionUrl"
+                      value={integrationForm.connectionUrl}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          connectionUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://yourstore.com"
+                      type="url"
+                      required
+                    />
+                  </FieldStack>
 
-              <FieldStack label="Publish endpoint" htmlFor="publishUrl">
-                <Input
-                  id="publishUrl"
-                  value={integrationForm.publishUrl}
-                  onChange={(event) =>
-                    setIntegrationForm((prev) => ({
-                      ...prev,
-                      publishUrl: event.target.value,
-                    }))
-                  }
-                  placeholder="https://api.example.com/listings"
-                  required
-                  type="url"
-                />
-              </FieldStack>
+                  <FieldStack label="Publish endpoint" htmlFor="publishUrl">
+                    <Input
+                      id="publishUrl"
+                      value={integrationForm.publishUrl}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          publishUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://api.marketplace.com/v1/listings"
+                      type="url"
+                      required
+                    />
+                  </FieldStack>
+                </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FieldStack label="HTTP method" htmlFor="publishMethod">
-                  <Select
-                    value={integrationForm.publishMethod}
-                    onValueChange={(value) =>
-                      setIntegrationForm((prev) => ({
-                        ...prev,
-                        publishMethod: value as IntegrationFormState["publishMethod"],
-                      }))
-                    }
-                  >
-                    <SelectContent>
-                      {httpMethods.map((method) => (
-                        <SelectItem key={method} value={method}>
-                          {method}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FieldStack>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FieldStack label="HTTP method" htmlFor="publishMethod">
+                    <Select
+                      value={integrationForm.publishMethod}
+                      onValueChange={(value) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          publishMethod: value as IntegrationFormState["publishMethod"],
+                        }))
+                      }
+                    >
+                      <SelectContent>
+                        {httpMethods.map((method) => (
+                          <SelectItem key={method} value={method}>
+                            {method}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FieldStack>
 
-                <FieldStack label="Status" htmlFor="status">
-                  <Select
-                    value={integrationForm.status}
-                    onValueChange={(value) =>
-                      setIntegrationForm((prev) => ({
-                        ...prev,
-                        status: value as "active" | "disabled",
-                      }))
-                    }
-                  >
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="disabled">Disabled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FieldStack>
+                  <FieldStack label="Status" htmlFor="status">
+                    <Select
+                      value={integrationForm.status}
+                      onValueChange={(value) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          status: value as IntegrationFormState["status"],
+                        }))
+                      }
+                    >
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="disabled">Disabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FieldStack>
+                </div>
               </div>
 
-              <FieldStack label="Authentication" htmlFor="authMode">
-                <Select
-                  value={integrationForm.authMode}
-                  onValueChange={(value) =>
-                    setIntegrationForm((prev) => {
-                      const nextMode = value as IntegrationFormState["authMode"]
-
-                      if (nextMode === "oauth2") {
-                        return {
-                          ...prev,
-                          authMode: nextMode,
-                          authToken: "",
-                        }
-                      }
-
-                      return {
-                        ...prev,
-                        authMode: nextMode,
-                        authToken: nextMode === "none" ? "" : prev.authToken,
-                        oauthAuthorizeUrl: "",
-                        oauthTokenUrl: "",
-                        oauthScopes: "",
-                        oauthClientId: "",
-                        oauthClientSecret: "",
-                        oauthMetadata: "",
-                      }
-                    })
-                  }
-                >
-                  <SelectContent>
-                    {authModes.map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {mode === "api_key"
-                          ? "API key header"
-                          : mode === "none"
-                          ? "No auth"
-                          : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
-                  <p className="text-xs text-slate-400">
-                    Stored securely in your Supabase project. Bearer tokens add
-                    an Authorization header automatically. API keys let you
-                    choose the header name (for example
-                    <code className="mx-1 rounded bg-slate-800 px-1">
-                      X-Shopify-Access-Token
-                    </code>
-                    ). Basic auth expects username:password.
-                  </p>
-                )}
-                {integrationForm.authMode === "oauth2" && (
-                  <p className="text-xs text-slate-400">
-                    After saving, Source opens the provider&apos;s consent screen so you can
-                    authorize access and capture tokens securely.
-                  </p>
-                )}
-              </FieldStack>
-
-              {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
-                <FieldStack label="Credentials" htmlFor="authToken">
-                  <Input
-                    id="authToken"
-                    value={integrationForm.authToken}
-                    onChange={(event) =>
-                      setIntegrationForm((prev) => ({
-                        ...prev,
-                        authToken: event.target.value,
-                      }))
-                    }
-                    placeholder={
-                      integrationForm.authMode === "basic"
-                        ? "username:password"
-                        : "Secret value"
-                    }
-                    required
-                  />
-                </FieldStack>
-              )}
-
-              {integrationForm.authMode === "api_key" && (
-                <FieldStack
-                  label="API key header"
-                  htmlFor="authHeader"
-                  description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
-                >
-                  <Input
-                    id="authHeader"
-                    value={integrationForm.authHeader}
-                    onChange={(event) =>
-                      setIntegrationForm((prev) => ({
-                        ...prev,
-                        authHeader: event.target.value,
-                      }))
-                    }
-                    placeholder="X-API-Key"
-                    required
-                  />
-                </FieldStack>
-              )}
-
-              {integrationForm.authMode === "oauth2" && (
+              <div className="space-y-5">
+                <FormSubheading
+                  title="Authentication"
+                  description="Choose how Source authenticates when publishing to this channel."
+                />
                 <div className="grid gap-4">
-                  <FieldStack
-                    label="Authorization URL"
-                    htmlFor="oauth-authorize"
-                    description="Where Source sends users to approve access."
-                  >
-                    <Input
-                      id="oauth-authorize"
-                      value={integrationForm.oauthAuthorizeUrl}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          oauthAuthorizeUrl: event.target.value,
-                        }))
-                      }
-                      placeholder="https://provider.com/oauth/authorize"
-                      type="url"
-                      required
-                    />
+                  <FieldStack label="Authentication" htmlFor="authMode">
+                    <Select
+                      value={integrationForm.authMode}
+                      onValueChange={(value) => {
+                        const nextMode = value as IntegrationFormState["authMode"]
+                        setIntegrationForm((prev) => {
+                          if (nextMode === "oauth2") {
+                            return {
+                              ...prev,
+                              authMode: nextMode,
+                              authToken: "",
+                            }
+                          }
+
+                          return {
+                            ...prev,
+                            authMode: nextMode,
+                            authToken: nextMode === "none" ? "" : prev.authToken,
+                            oauthAuthorizeUrl: "",
+                            oauthTokenUrl: "",
+                            oauthScopes: "",
+                            oauthClientId: "",
+                            oauthClientSecret: "",
+                            oauthMetadata: "",
+                          }
+                        })
+
+                        if (nextMode === "oauth2") {
+                          setShowIntegrationAdvanced(true)
+                        }
+                      }}
+                    >
+                      <SelectContent>
+                        {authModes.map((mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {mode === "api_key"
+                              ? "API key header"
+                              : mode === "none"
+                              ? "No auth"
+                              : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                      <p className="text-xs text-slate-400">
+                        Stored securely in your Supabase project. Bearer tokens add
+                        an Authorization header automatically. API keys let you
+                        choose the header name (for example
+                        <code className="mx-1 rounded bg-slate-800 px-1">
+                          X-Shopify-Access-Token
+                        </code>
+                        ). Basic auth expects username:password.
+                      </p>
+                    )}
+                    {integrationForm.authMode === "oauth2" && (
+                      <p className="text-xs text-slate-400">
+                        After saving, Source opens the provider&apos;s consent screen so you can
+                        authorize access and capture tokens securely.
+                      </p>
+                    )}
                   </FieldStack>
 
-                  <FieldStack
-                    label="Token URL"
-                    htmlFor="oauth-token"
-                    description="Source exchanges the authorization code for tokens at this URL."
-                  >
-                    <Input
-                      id="oauth-token"
-                      value={integrationForm.oauthTokenUrl}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          oauthTokenUrl: event.target.value,
-                        }))
-                      }
-                      placeholder="https://provider.com/oauth/token"
-                      type="url"
-                      required
-                    />
-                  </FieldStack>
+                  {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                    <FieldStack label="Credentials" htmlFor="authToken">
+                      <Input
+                        id="authToken"
+                        value={integrationForm.authToken}
+                        onChange={(event) =>
+                          setIntegrationForm((prev) => ({
+                            ...prev,
+                            authToken: event.target.value,
+                          }))
+                        }
+                        placeholder={
+                          integrationForm.authMode === "basic"
+                            ? "username:password"
+                            : "Secret value"
+                        }
+                        required
+                      />
+                    </FieldStack>
+                  )}
 
-                  <FieldStack
-                    label="Client ID"
-                    htmlFor="oauth-client-id"
-                    description="Registered OAuth client identifier."
-                  >
-                    <Input
-                      id="oauth-client-id"
-                      value={integrationForm.oauthClientId}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          oauthClientId: event.target.value,
-                        }))
-                      }
-                      placeholder="client-id-123"
-                      required
-                    />
-                  </FieldStack>
+                  {integrationForm.authMode === "api_key" && (
+                    <FieldStack
+                      label="API key header"
+                      htmlFor="authHeader"
+                      description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
+                    >
+                      <Input
+                        id="authHeader"
+                        value={integrationForm.authHeader}
+                        onChange={(event) =>
+                          setIntegrationForm((prev) => ({
+                            ...prev,
+                            authHeader: event.target.value,
+                          }))
+                        }
+                        placeholder="X-API-Key"
+                        required
+                      />
+                    </FieldStack>
+                  )}
 
-                  <FieldStack
-                    label="Client secret"
-                    htmlFor="oauth-client-secret"
-                    description="Stored securely and used during token refresh."
-                  >
-                    <Input
-                      id="oauth-client-secret"
-                      value={integrationForm.oauthClientSecret}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          oauthClientSecret: event.target.value,
-                        }))
-                      }
-                      placeholder="Optional"
-                      type="password"
-                    />
-                  </FieldStack>
+                  {integrationForm.authMode === "oauth2" && (
+                    <div className="grid gap-4">
+                      <FieldStack
+                        label="Authorization URL"
+                        htmlFor="oauth-authorize"
+                        description="Where Source sends users to approve access."
+                      >
+                        <Input
+                          id="oauth-authorize"
+                          value={integrationForm.oauthAuthorizeUrl}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthAuthorizeUrl: event.target.value,
+                            }))
+                          }
+                          placeholder="https://provider.com/oauth/authorize"
+                          type="url"
+                          required
+                        />
+                      </FieldStack>
 
-                  <FieldStack
-                    label="Scopes"
-                    htmlFor="oauth-scopes"
-                    description="Space separated list of scopes requested during authorization."
-                  >
-                    <Input
-                      id="oauth-scopes"
-                      value={integrationForm.oauthScopes}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          oauthScopes: event.target.value,
-                        }))
-                      }
-                      placeholder="inventory.write listings.read"
-                    />
-                  </FieldStack>
+                      <FieldStack
+                        label="Token URL"
+                        htmlFor="oauth-token"
+                        description="Source exchanges the authorization code for tokens at this URL."
+                      >
+                        <Input
+                          id="oauth-token"
+                          value={integrationForm.oauthTokenUrl}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthTokenUrl: event.target.value,
+                            }))
+                          }
+                          placeholder="https://provider.com/oauth/token"
+                          type="url"
+                          required
+                        />
+                      </FieldStack>
 
+                      <FieldStack
+                        label="Client ID"
+                        htmlFor="oauth-client-id"
+                        description="Registered OAuth client identifier."
+                      >
+                        <Input
+                          id="oauth-client-id"
+                          value={integrationForm.oauthClientId}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthClientId: event.target.value,
+                            }))
+                          }
+                          placeholder="client-id-123"
+                          required
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="Client secret"
+                        htmlFor="oauth-client-secret"
+                        description="Stored securely and used during token refresh."
+                      >
+                        <Input
+                          id="oauth-client-secret"
+                          value={integrationForm.oauthClientSecret}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthClientSecret: event.target.value,
+                            }))
+                          }
+                          placeholder="Optional"
+                          type="password"
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="Scopes"
+                        htmlFor="oauth-scopes"
+                        description="Space separated list of scopes requested during authorization."
+                      >
+                        <Input
+                          id="oauth-scopes"
+                          value={integrationForm.oauthScopes}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthScopes: event.target.value,
+                            }))
+                          }
+                          placeholder="inventory.write listings.read"
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="OAuth metadata (JSON)"
+                        htmlFor="oauth-metadata"
+                        description="Optional JSON persisted with the integration for custom providers."
+                      >
+                        <Textarea
+                          id="oauth-metadata"
+                          value={integrationForm.oauthMetadata}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthMetadata: event.target.value,
+                            }))
+                          }
+                          rows={3}
+                          placeholder='{"audience": "marketplace"}'
+                        />
+                      </FieldStack>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 space-y-4 rounded-2xl border border-slate-900/70 bg-slate-950/50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Advanced options
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Control custom headers and the JSON body Source sends to your integration.
+                  </p>
+                </div>
+                {!integrationAdvancedForced && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setShowIntegrationAdvanced((prev) => !prev)}
+                  >
+                    {integrationAdvancedVisible ? "Hide advanced" : "Show advanced"}
+                  </Button>
+                )}
+              </div>
+
+              {integrationAdvancedVisible && (
+                <div className="grid gap-4 lg:grid-cols-2">
                   <FieldStack
-                    label="OAuth metadata (JSON)"
-                    htmlFor="oauth-metadata"
-                    description="Optional JSON persisted with the integration for custom providers."
+                    label="Custom headers (JSON)"
+                    htmlFor="headers"
+                    description="Use key/value pairs for any additional headers you want on publish requests."
                   >
                     <Textarea
-                      id="oauth-metadata"
-                      value={integrationForm.oauthMetadata}
+                      id="headers"
+                      value={integrationForm.headers}
                       onChange={(event) =>
                         setIntegrationForm((prev) => ({
                           ...prev,
-                          oauthMetadata: event.target.value,
+                          headers: event.target.value,
                         }))
                       }
-                      rows={3}
-                      placeholder='{"audience": "marketplace"}'
+                      placeholder='{"X-Shop-Domain": "{{integration.connectionUrl}}"}'
+                      rows={integrationAdvancedForced ? 4 : 3}
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Payload template (JSON)"
+                    htmlFor="payloadTemplate"
+                    description="Optional structure for the request body. Use {{listing.title}} style tokens to reference listing data."
+                  >
+                    <Textarea
+                      id="payloadTemplate"
+                      value={integrationForm.payloadTemplate}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          payloadTemplate: event.target.value,
+                        }))
+                      }
+                      placeholder='{"name": "{{listing.title}}", "price": "{{listing.price}}"}'
+                      rows={integrationAdvancedForced ? 6 : 5}
                     />
                   </FieldStack>
                 </div>
               )}
-
-              <FieldStack
-                label="Custom headers (JSON)"
-                htmlFor="headers"
-                description="Use key/value pairs for any additional headers you want on publish requests."
-              >
-                <Textarea
-                  id="headers"
-                  value={integrationForm.headers}
-                  onChange={(event) =>
-                    setIntegrationForm((prev) => ({
-                      ...prev,
-                      headers: event.target.value,
-                    }))
-                  }
-                  placeholder='{"X-Shop-Domain": "{{integration.connectionUrl}}"}'
-                  rows={4}
-                />
-              </FieldStack>
-
-              <FieldStack
-                label="Payload template (JSON)"
-                htmlFor="payloadTemplate"
-                description="Optional structure for the request body. Use {{listing.title}} style tokens to reference listing data."
-              >
-                <Textarea
-                  id="payloadTemplate"
-                  value={integrationForm.payloadTemplate}
-                  onChange={(event) =>
-                    setIntegrationForm((prev) => ({
-                      ...prev,
-                      payloadTemplate: event.target.value,
-                    }))
-                  }
-                  placeholder='{"name": "{{listing.title}}", "price": "{{listing.price}}"}'
-                  rows={6}
-                />
-              </FieldStack>
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
@@ -1638,6 +1765,7 @@ export default function Source() {
                   setPresetInputs({})
                   setPresetNotice(null)
                   setPresetError(null)
+                  setShowIntegrationAdvanced(false)
                 }}
               >
                 Reset
@@ -1679,166 +1807,185 @@ export default function Source() {
               </div>
             )}
 
-            <div className="mt-5 grid gap-4">
-              <FieldStack label="Type" htmlFor="listing-type">
-                <Select
-                  value={listingForm.type}
-                  onValueChange={(value) =>
-                    setListingForm((prev) => ({
-                      ...prev,
-                      type: value as ListingFormState["type"],
-                    }))
-                  }
-                >
-                  <SelectContent>
-                    <SelectItem value="product">Product</SelectItem>
-                    <SelectItem value="service">Service</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FieldStack>
 
-              <FieldStack label="Title" htmlFor="listing-title">
-                <Input
-                  id="listing-title"
-                  value={listingForm.title}
-                  onChange={(event) =>
-                    setListingForm((prev) => ({
-                      ...prev,
-                      title: event.target.value,
-                    }))
-                  }
-                  placeholder="Summer drop or design sprint"
-                  required
-                />
-              </FieldStack>
-
-              <FieldStack label="Description" htmlFor="listing-description">
-                <Textarea
-                  id="listing-description"
-                  value={listingForm.description}
-                  onChange={(event) =>
-                    setListingForm((prev) => ({
-                      ...prev,
-                      description: event.target.value,
-                    }))
-                  }
-                  placeholder="What customers receive when they purchase"
-                  rows={5}
-                />
-              </FieldStack>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FieldStack label="Price" htmlFor="listing-price">
-                  <Input
-                    id="listing-price"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
-                    value={listingForm.price}
-                    onChange={(event) =>
-                      setListingForm((prev) => ({
-                        ...prev,
-                        price: event.target.value,
-                      }))
-                    }
-                    placeholder="99.00"
-                  />
-                </FieldStack>
-
-                <FieldStack label="Currency" htmlFor="listing-currency">
-                  <Input
-                    id="listing-currency"
-                    value={listingForm.currency}
-                    onChange={(event) =>
-                      setListingForm((prev) => ({
-                        ...prev,
-                        currency: event.target.value.toUpperCase(),
-                      }))
-                    }
-                    placeholder="USD"
-                    maxLength={3}
-                  />
-                </FieldStack>
-              </div>
-
-              {listingForm.type === "product" && (
-                <FieldStack label="Inventory" htmlFor="listing-inventory">
-                  <Input
-                    id="listing-inventory"
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    value={listingForm.inventory}
-                    onChange={(event) =>
-                      setListingForm((prev) => ({
-                        ...prev,
-                        inventory: event.target.value,
-                      }))
-                    }
-                    placeholder="50"
-                  />
-                </FieldStack>
-              )}
-
-              {listingForm.type === "service" && (
-                <FieldStack
-                  label="Duration (minutes)"
-                  htmlFor="listing-duration"
-                >
-                  <Input
-                    id="listing-duration"
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    value={listingForm.durationMinutes}
-                    onChange={(event) =>
-                      setListingForm((prev) => ({
-                        ...prev,
-                        durationMinutes: event.target.value,
-                      }))
-                    }
-                    placeholder="60"
-                  />
-                </FieldStack>
-              )}
-
-              <FieldStack
-                label="Additional metadata (JSON)"
-                htmlFor="listing-metadata"
-                description="Merge extra fields into the payload you send to partners."
-              >
-                <Textarea
-                  id="listing-metadata"
-                  value={listingForm.metadata}
-                  onChange={(event) =>
-                    setListingForm((prev) => ({
-                      ...prev,
-                      metadata: event.target.value,
-                    }))
-                  }
-                  rows={4}
-                  placeholder='{"tags": ["summer", "drop"], "sku": "SKU-1001"}'
-                />
-              </FieldStack>
-
-              <div className="rounded-lg border border-slate-800/70 bg-slate-900/60 p-3 text-xs text-slate-300">
+            <div className="mt-5 space-y-6">
+              <div className="rounded-xl border border-slate-900/60 bg-slate-950/60 p-4 text-xs text-slate-300">
                 {activeIntegrationCount > 0 ? (
-                  <>
-                    This listing will publish instantly to your {activeIntegrationCount}
+                  <span>
+                    Publishing now will post to
                     {" "}
-                    active integration{activeIntegrationCount === 1 ? "" : "s"} once you
-                    hit create.
-                  </>
+                    <span className="font-semibold text-white">
+                      all {activeIntegrationCount} active connection{activeIntegrationCount === 1 ? "" : "s"}
+                    </span>
+                    . Check the delivery log below to confirm every marketplace accepts the payload.
+                  </span>
                 ) : (
-                  <>
-                    Add an integration to automatically post new listings everywhere you
-                    sell. Drafts are stored even before connections are configured.
-                  </>
+                  <span>
+                    Connect at least one integration above to start auto-posting listings everywhere you sell. We&apos;ll keep the draft ready until you finish connecting.
+                  </span>
                 )}
               </div>
-            </div>
 
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                <div className="space-y-5">
+                  <FormSubheading
+                    title="Listing basics"
+                    description="Give shoppers the title and context they&apos;ll see across every channel."
+                  />
+                  <div className="grid gap-4">
+                    <FieldStack label="Type" htmlFor="listing-type">
+                      <Select
+                        value={listingForm.type}
+                        onValueChange={(value) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            type: value as ListingFormState["type"],
+                          }))
+                        }
+                      >
+                        <SelectContent>
+                          <SelectItem value="product">Product</SelectItem>
+                          <SelectItem value="service">Service</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FieldStack>
+
+                    <FieldStack label="Title" htmlFor="listing-title">
+                      <Input
+                        id="listing-title"
+                        value={listingForm.title}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            title: event.target.value,
+                          }))
+                        }
+                        placeholder="Summer drop or design sprint"
+                        required
+                      />
+                    </FieldStack>
+
+                    <FieldStack label="Description" htmlFor="listing-description">
+                      <Textarea
+                        id="listing-description"
+                        value={listingForm.description}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            description: event.target.value,
+                          }))
+                        }
+                        placeholder="What customers receive when they purchase"
+                        rows={5}
+                      />
+                    </FieldStack>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <FormSubheading
+                    title="Pricing & availability"
+                    description="These values merge into every integration payload the moment you publish."
+                  />
+                  <div className="grid gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FieldStack label="Price" htmlFor="listing-price">
+                        <Input
+                          id="listing-price"
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          min="0"
+                          value={listingForm.price}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              price: event.target.value,
+                            }))
+                          }
+                          placeholder="99.00"
+                        />
+                      </FieldStack>
+
+                      <FieldStack label="Currency" htmlFor="listing-currency">
+                        <Input
+                          id="listing-currency"
+                          value={listingForm.currency}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              currency: event.target.value.toUpperCase(),
+                            }))
+                          }
+                          placeholder="USD"
+                          maxLength={3}
+                        />
+                      </FieldStack>
+                    </div>
+
+                    {listingForm.type === "product" && (
+                      <FieldStack label="Inventory" htmlFor="listing-inventory">
+                        <Input
+                          id="listing-inventory"
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          value={listingForm.inventory}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              inventory: event.target.value,
+                            }))
+                          }
+                          placeholder="50"
+                        />
+                      </FieldStack>
+                    )}
+
+                    {listingForm.type === "service" && (
+                      <FieldStack
+                        label="Duration (minutes)"
+                        htmlFor="listing-duration"
+                      >
+                        <Input
+                          id="listing-duration"
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          value={listingForm.durationMinutes}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              durationMinutes: event.target.value,
+                            }))
+                          }
+                          placeholder="60"
+                        />
+                      </FieldStack>
+                    )}
+
+                    <FieldStack
+                      label="Additional metadata (JSON)"
+                      htmlFor="listing-metadata"
+                      description="Merge extra fields into the payload you send to partners."
+                    >
+                      <Textarea
+                        id="listing-metadata"
+                        value={listingForm.metadata}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            metadata: event.target.value,
+                          }))
+                        }
+                        rows={4}
+                        placeholder='{"tags": ["summer", "drop"], "sku": "SKU-1001"}'
+                      />
+                    </FieldStack>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="mt-6 flex justify-end gap-2">
               <Button
                 type="button"
@@ -1932,6 +2079,20 @@ function FieldStack({ label, htmlFor, description, children }: FieldStackProps) 
       {description && (
         <p className="text-xs text-slate-500">{description}</p>
       )}
+    </div>
+  )
+}
+
+type FormSubheadingProps = {
+  title: string
+  description?: string
+}
+
+function FormSubheading({ title, description }: FormSubheadingProps) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">{title}</p>
+      {description && <p className="text-xs text-slate-400">{description}</p>}
     </div>
   )
 }
