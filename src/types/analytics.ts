@@ -45,11 +45,31 @@ export type AnalyticsActivityEvent = {
   date: string;
 };
 
+export type AnalyticsHabitStreakPoint = {
+  label: string;
+  value: number;
+};
+
+export type AnalyticsHabitRoutine = {
+  id: string;
+  name: string;
+  heatmap: number[][];
+};
+
+export type AnalyticsHabitPerformance = {
+  label: string;
+  successRate: number;
+};
+
 export type AnalyticsHabitSummary = {
   currentStreak: number;
   longestStreak: number;
   calendarDays: number;
   calendarCompleted: number[];
+  routines: AnalyticsHabitRoutine[];
+  streakHistory: AnalyticsHabitStreakPoint[];
+  bestTimes: AnalyticsHabitPerformance[];
+  bestDays: AnalyticsHabitPerformance[];
 };
 
 export type AnalyticsWindowsSummary = {

@@ -156,6 +156,10 @@ export default function AnalyticsDashboard() {
     longestStreak: 0,
     calendarDays: 28,
     calendarCompleted: [] as number[],
+    routines: [] as { id: string; name: string; heatmap: number[][] }[],
+    streakHistory: [] as { label: string; value: number }[],
+    bestTimes: [] as { label: string; successRate: number }[],
+    bestDays: [] as { label: string; successRate: number }[],
   };
 
   const bestSkill =
@@ -193,6 +197,10 @@ export default function AnalyticsDashboard() {
 
   const longestStreak = habitSummary.longestStreak;
   const currentStreak = habitSummary.currentStreak;
+  const routineTrends = habitSummary.routines;
+  const streakHistory = habitSummary.streakHistory;
+  const bestTimes = habitSummary.bestTimes;
+  const bestDays = habitSummary.bestDays;
 
   const focusInsights = [
     {
@@ -349,31 +357,48 @@ export default function AnalyticsDashboard() {
               <ErrorState message={error} />
             ) : (
               <div className="space-y-6">
-                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4">
-                  <StreakCalendar
-                    days={habitSummary.calendarDays}
-                    completed={habitSummary.calendarCompleted}
+                <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                          Daily consistency
+                        </div>
+                        <p className="mt-1 text-sm text-[#9DA6BB]">
+                          Track check-ins across the past {habitSummary.calendarDays} days.
+                        </p>
+                      </div>
+                      <span className="hidden text-xs font-medium text-[#6E7A96] sm:inline-flex">
+                        {habitSummary.calendarDays}-day view
+                      </span>
+                    </div>
+                    <div className="mt-4">
+                      <StreakCalendar
+                        days={habitSummary.calendarDays}
+                        completed={habitSummary.calendarCompleted}
+                      />
+                    </div>
+                  </div>
+                  <StreakTrendCard
+                    currentStreak={currentStreak}
+                    longestStreak={longestStreak}
+                    history={streakHistory}
                   />
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB]">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                      Longest streak
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-white">
-                      {longestStreak} days
-                    </div>
-                    <p className="mt-1">Sustain this pace to unlock a new badge.</p>
-                  </div>
-                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB]">
-                    <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                      Current streak
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-white">
-                      {currentStreak} days
-                    </div>
-                    <p className="mt-1">Log today’s habit to keep the momentum going.</p>
-                  </div>
+                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                  <RoutineHeatmap routines={routineTrends} />
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <BestPerformanceList
+                    title="Best time slots"
+                    emptyLabel="Log routines to surface timing insights."
+                    data={bestTimes}
+                  />
+                  <BestPerformanceList
+                    title="Most consistent days"
+                    emptyLabel="Add more entries to reveal pattern days."
+                    data={bestDays}
+                  />
                 </div>
                 <div className="flex justify-end">
                   <Link
@@ -1008,6 +1033,276 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
         );
       })}
     </ul>
+  );
+}
+
+function StreakTrendCard({
+  currentStreak,
+  longestStreak,
+  history,
+}: {
+  currentStreak: number;
+  longestStreak: number;
+  history: { label: string; value: number }[];
+}) {
+  return (
+    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+            Streak momentum
+          </div>
+          <p className="mt-1 text-sm text-[#9DA6BB]">
+            See how your streak evolved over time.
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+            Current streak
+          </div>
+          <div className="mt-1 text-2xl font-semibold text-white">
+            {currentStreak} days
+          </div>
+        </div>
+      </div>
+      <div className="mt-6">
+        <StreakSparkline data={history} />
+      </div>
+      <div className="mt-4 rounded-xl border border-[#1F2736] bg-[#101624] p-4 text-xs text-[#9DA6BB]">
+        <div className="flex items-center justify-between">
+          <span className="uppercase tracking-[0.2em] text-[#6E7A96]">
+            Longest streak
+          </span>
+          <span className="text-lg font-semibold text-white">
+            {longestStreak} days
+          </span>
+        </div>
+        <p className="mt-2 text-[13px]">
+          Use these momentum bursts to plan your next focus block.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function StreakSparkline({
+  data,
+}: {
+  data: { label: string; value: number }[];
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[#273041] bg-[#0D131E] text-center text-xs text-[#6E7A96]">
+        Log more rituals to unlock streak trends.
+      </div>
+    );
+  }
+
+  const width = 280;
+  const height = 120;
+  const values = data.map((point) => point.value);
+  const maxValue = Math.max(...values, 1);
+  const minValue = Math.min(...values, 0);
+  const verticalPadding = 12;
+  const range = maxValue - minValue || 1;
+  const points = data.map((point, index) => {
+    const x =
+      data.length === 1
+        ? width / 2
+        : (index / (data.length - 1)) * width;
+    const normalized = (point.value - minValue) / range;
+    const y =
+      height -
+      (normalized * (height - verticalPadding * 2) + verticalPadding);
+    return { x, y };
+  });
+
+  const linePath = points
+    .map((point, index) =>
+      `${index === 0 ? "M" : "L"}${point.x.toFixed(2)},${point.y.toFixed(2)}`
+    )
+    .join(" ");
+
+  const areaPath = [
+    `M0,${height}`,
+    ...points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`),
+    `L${width},${height}`,
+    "Z",
+  ].join(" ");
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full">
+        <defs>
+          <linearGradient id="streakGradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(177,156,255,0.6)" />
+            <stop offset="100%" stopColor="rgba(126,107,255,0.05)" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill="url(#streakGradient)" />
+        <path
+          d={linePath}
+          fill="none"
+          stroke="url(#streakGradient)"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="mt-2 flex items-center justify-between text-xs text-[#6E7A96]">
+        <span>{data[0]?.label ?? ""}</span>
+        <span>{data[data.length - 1]?.label ?? ""}</span>
+      </div>
+    </div>
+  );
+}
+
+function RoutineHeatmap({
+  routines,
+}: {
+  routines: { id: string; name: string; heatmap: number[][] }[];
+}) {
+  if (routines.length === 0) {
+    return (
+      <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#273041] bg-[#0D131E] text-center text-sm text-[#6E7A96]">
+        No routine data yet.
+        <span className="text-xs text-[#4E5A73]">
+          Log habits like exercise or journaling to reveal patterns.
+        </span>
+      </div>
+    );
+  }
+
+  const weeks = Math.max(...routines.map((routine) => routine.heatmap.length));
+  const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+            Routine trends
+          </div>
+          <p className="mt-1 text-sm text-[#9DA6BB]">
+            Visualize which habits stay consistent week over week.
+          </p>
+        </div>
+        {weeks > 0 ? (
+          <span className="text-xs font-medium text-[#6E7A96]">
+            Past {weeks} week{weeks === 1 ? "" : "s"}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-5 space-y-5">
+        {routines.map((routine) => {
+          const flattened = routine.heatmap.flat();
+          const totalDays = flattened.length;
+          const total = flattened.reduce((sum, value) => sum + value, 0);
+          const average =
+            totalDays === 0
+              ? 0
+              : Math.round((total / totalDays) * 100);
+
+          return (
+            <div key={routine.id} className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-white">{routine.name}</span>
+                <span className="text-xs text-[#6E7A96]">
+                  {average}% consistency
+                </span>
+              </div>
+              <div className="grid grid-cols-[auto,1fr] gap-3">
+                <div className="flex flex-col justify-between text-[10px] uppercase tracking-[0.2em] text-[#465066]">
+                  {dayLabels.map((label) => (
+                    <span key={label} className="h-6">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {routine.heatmap.map((week, weekIndex) => (
+                    <div
+                      key={`${routine.id}-week-${weekIndex}`}
+                      className="grid grid-rows-7 gap-1.5"
+                    >
+                      {week.map((value, dayIndex) => {
+                        const ratio =
+                          value > 1
+                            ? Math.min(value / 100, 1)
+                            : Math.max(0, Math.min(value, 1));
+                        const opacity = ratio === 0 ? 0.12 : 0.25 + ratio * 0.55;
+                        const backgroundColor =
+                          ratio === 0
+                            ? "#0B1018"
+                            : `rgba(126,107,255,${opacity.toFixed(2)})`;
+                        const boxShadow =
+                          ratio === 0
+                            ? undefined
+                            : "0 3px 10px rgba(126,107,255,0.35)";
+                        const percent = Math.round(ratio * 100);
+                        return (
+                          <span
+                            key={`${routine.id}-week-${weekIndex}-day-${dayIndex}`}
+                            className="h-6 w-6 rounded-md border border-[#1F2736]"
+                            style={{ backgroundColor, boxShadow }}
+                            title={`${dayLabels[dayIndex]} · ${percent}%`}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BestPerformanceList({
+  title,
+  data,
+  emptyLabel,
+}: {
+  title: string;
+  data: { label: string; successRate: number }[];
+  emptyLabel: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
+      <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+        {title}
+      </div>
+      {data.length === 0 ? (
+        <p className="mt-3 text-sm text-[#6E7A96]">{emptyLabel}</p>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {data.map((item) => {
+            const percent =
+              item.successRate > 1
+                ? Math.round(item.successRate)
+                : Math.round(item.successRate * 100);
+            return (
+              <li key={item.label} className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-[#6E7A96]">
+                  <span className="text-sm font-medium text-white">
+                    {item.label}
+                  </span>
+                  <span>{percent}%</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1F2736]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#7E6BFF] via-[#B19CFF] to-[#6DD3A8]"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
