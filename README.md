@@ -46,7 +46,7 @@ Each sign-up triggers an email from Supabase. If your project is still using the
 
 ### Quick fix for preview sign-up errors (plain English checklist)
 
-Need to get Vercel previews signing up again? Follow the simple steps in [`docs/supabase-preview-signup-instructions.md`](./docs/supabase-preview-signup-instructions.md). It walks through the Supabase dashboard changes, the matching Vercel env variables, and what to double-check before trying again.
+Need to get Vercel previews signing up again? Follow the simple steps in [`docs/supabase-preview-signup-instructions.md`](./docs/supabase-preview-signup-instructions.md). It walks through the Supabase dashboard changes, the matching Vercel env variables, and what to double-check before trying again. When you need a "set it and forget it" remediation with SQL that enforces the correct redirect allow-list, sign-up toggles, and email rate limits, jump straight to [`docs/supabase-preview-signup-remediation.md`](./docs/supabase-preview-signup-remediation.md).
 
 ### When Supabase refuses to create users
 
