@@ -15,6 +15,10 @@ import {
 import type {
   AnalyticsResponse,
   AnalyticsKpiId,
+  AnalyticsHabitSummary,
+  AnalyticsHabitRoutine,
+  AnalyticsHabitPerformance,
+  AnalyticsHabitStreakPoint,
 } from "@/types/analytics";
 
 const KPI_ICON_MAP: Record<
@@ -42,6 +46,157 @@ function formatNumber(num: number): string {
 function formatDelta(delta: number): string {
   const sign = delta > 0 ? "+" : "";
   return `${sign}${delta}`;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
+  const base: AnalyticsHabitSummary = {
+    currentStreak: 0,
+    longestStreak: 0,
+    calendarDays: 28,
+    calendarCompleted: [],
+    routines: [],
+    streakHistory: [],
+    bestTimes: [],
+    bestDays: [],
+  };
+
+  if (!summary || typeof summary !== "object") {
+    return base;
+  }
+
+  const record = summary as Record<string, unknown>;
+
+  const toNonNegativeInt = (value: unknown, fallback: number): number => {
+    if (!isFiniteNumber(value)) {
+      return fallback;
+    }
+    const rounded = Math.round(value);
+    return rounded >= 0 ? rounded : fallback;
+  };
+
+  const toPositiveInt = (value: unknown, fallback: number): number => {
+    if (!isFiniteNumber(value)) {
+      return fallback;
+    }
+    const rounded = Math.round(value);
+    return rounded > 0 ? rounded : fallback;
+  };
+
+  const toPerformanceList = (
+    value: unknown
+  ): AnalyticsHabitPerformance[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return null;
+        }
+        const entry = item as Record<string, unknown>;
+        const label = typeof entry.label === "string" ? entry.label : null;
+        const successRate = isFiniteNumber(entry.successRate)
+          ? Math.max(0, Math.min(entry.successRate, 100))
+          : null;
+
+        if (label == null || successRate == null) {
+          return null;
+        }
+
+        return { label, successRate } satisfies AnalyticsHabitPerformance;
+      })
+      .filter((item): item is AnalyticsHabitPerformance => item !== null);
+  };
+
+  const calendarDays = toPositiveInt(record.calendarDays, base.calendarDays);
+
+  const calendarCompleted = Array.isArray(record.calendarCompleted)
+    ? record.calendarCompleted
+        .map((value) =>
+          isFiniteNumber(value) ? Math.round(value) : null
+        )
+        .filter(
+          (value): value is number =>
+            value != null && value >= 1 && value <= calendarDays
+        )
+    : base.calendarCompleted;
+
+  const routines = Array.isArray(record.routines)
+    ? record.routines
+        .map((item, index) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const routineRecord = item as Record<string, unknown>;
+          const rawHeatmap = routineRecord.heatmap;
+          const heatmap = Array.isArray(rawHeatmap)
+            ? rawHeatmap.map((week) =>
+                Array.isArray(week)
+                  ? week.map((value) =>
+                      isFiniteNumber(value) ? value : 0
+                    )
+                  : Array(7).fill(0)
+              )
+            : [];
+
+          const id =
+            typeof routineRecord.id === "string"
+              ? routineRecord.id
+              : `routine-${index}`;
+          const name =
+            typeof routineRecord.name === "string"
+              ? routineRecord.name
+              : `Routine ${index + 1}`;
+
+          return { id, name, heatmap } satisfies AnalyticsHabitRoutine;
+        })
+        .filter((routine): routine is AnalyticsHabitRoutine => routine !== null)
+    : base.routines;
+
+  const streakHistory = Array.isArray(record.streakHistory)
+    ? record.streakHistory
+        .map((item) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const point = item as Record<string, unknown>;
+          const label = typeof point.label === "string" ? point.label : null;
+          const value = isFiniteNumber(point.value) ? point.value : null;
+
+          if (label == null || value == null) {
+            return null;
+          }
+
+          return { label, value } satisfies AnalyticsHabitStreakPoint;
+        })
+        .filter(
+          (point): point is AnalyticsHabitStreakPoint => point !== null
+        )
+    : base.streakHistory;
+
+  return {
+    currentStreak: toNonNegativeInt(
+      record.currentStreak,
+      base.currentStreak
+    ),
+    longestStreak: toNonNegativeInt(
+      record.longestStreak,
+      base.longestStreak
+    ),
+    calendarDays,
+    calendarCompleted,
+    routines,
+    streakHistory,
+    bestTimes: toPerformanceList(record.bestTimes),
+    bestDays: toPerformanceList(record.bestDays),
+  };
 }
 
 interface Kpi {
@@ -151,16 +306,7 @@ export default function AnalyticsDashboard() {
   const windows = analytics?.windows ?? { heatmap: [], energy: [] };
   const activity = analytics?.activity ?? [];
   const projectVelocity = analytics?.projectVelocity ?? [];
-  const habitSummary = analytics?.habit ?? {
-    currentStreak: 0,
-    longestStreak: 0,
-    calendarDays: 28,
-    calendarCompleted: [] as number[],
-    routines: [] as { id: string; name: string; heatmap: number[][] }[],
-    streakHistory: [] as { label: string; value: number }[],
-    bestTimes: [] as { label: string; successRate: number }[],
-    bestDays: [] as { label: string; successRate: number }[],
-  };
+  const habitSummary = normalizeHabitSummary(analytics?.habit);
 
   const bestSkill =
     skills.length > 0
@@ -1172,7 +1318,8 @@ function RoutineHeatmap({
     );
   }
 
-  const weeks = Math.max(...routines.map((routine) => routine.heatmap.length));
+  const weekCounts = routines.map((routine) => routine.heatmap.length);
+  const weeks = weekCounts.length > 0 ? Math.max(...weekCounts) : 0;
   const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   return (
