@@ -13,6 +13,10 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
       process.env.VITE_SUPABASE_ANON_KEY ??
       "",
+    NEXT_PUBLIC_VERCEL_ENV:
+      process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.VERCEL_ENV ?? "",
+    NEXT_PUBLIC_VERCEL_URL:
+      process.env.NEXT_PUBLIC_VERCEL_URL ?? process.env.VERCEL_URL ?? "",
   },
   images: {
     remotePatterns: [
