@@ -2291,4 +2291,255 @@ describe("scheduleBacklog", () => {
 
     expect(requestedDates[0]).toBe("2024-01-01T08:00:00.000Z");
   });
+
+  it("reduces project duration in rush mode", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-rush": {
+        id: "proj-rush",
+        name: "Rush Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    });
+
+    const durations: number[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => {
+        durations.push(params.item.duration_min);
+        const start = new Date("2024-01-02T09:00:00Z");
+        const end = new Date(start.getTime() + params.item.duration_min * 60000);
+        return {
+          data: createInstanceRecord({
+            id: "inst-rush",
+            source_id: params.item.id,
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: params.item.duration_min,
+            window_id: params.windows[0]?.id ?? "win-1",
+            status: "scheduled",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      },
+    );
+
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, baseDate, mockClient, {
+      mode: { type: "rush" },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.placed).toHaveLength(1);
+    expect(durations).toEqual([48]);
+    expect(result.placed[0]?.duration_min).toBe(48);
+  });
+
+  it("only schedules projects linked to the selected monument in monumental mode", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-focus": {
+        id: "proj-focus",
+        name: "Focus Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+      "proj-other": {
+        id: "proj-other",
+        name: "Other Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-focus",
+        label: "Afternoon",
+        energy: "LOW",
+        start_local: "15:00",
+        end_local: "17:00",
+        days: [2],
+      },
+    ]);
+
+    const projectSkillsSpy = vi
+      .spyOn(repo, "fetchProjectSkillsForProjects")
+      .mockResolvedValue({
+        "proj-focus": ["skill-focus"],
+        "proj-other": ["skill-other"],
+      });
+
+    const skillEqMock = vi.fn(async () => ({
+      data: [
+        { id: "skill-focus", monument_id: "mon-target" },
+        { id: "skill-other", monument_id: "mon-other" },
+      ],
+      error: null,
+    }));
+
+    const { client: baseClient } = createSupabaseMock();
+    const baseFrom = (baseClient as unknown as { from: (table: string) => unknown }).from;
+    const fromMock = vi.fn((table: string) => {
+      if (table === "skills") {
+        return {
+          select: () => ({ eq: skillEqMock }),
+        };
+      }
+      return baseFrom(table);
+    });
+    const supabaseClient = {
+      ...(baseClient as object),
+      from: fromMock,
+    } as ScheduleBacklogClient;
+
+    const attempted: string[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => {
+        attempted.push(params.item.id);
+        expect(params.item.id).toBe("proj-focus");
+        const start = new Date("2024-01-02T09:00:00Z");
+        const end = new Date(start.getTime() + params.item.duration_min * 60000);
+        return {
+          data: createInstanceRecord({
+            id: `inst-${params.item.id}`,
+            source_id: params.item.id,
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: params.item.duration_min,
+            window_id: params.windows[0]?.id ?? "win-1",
+            status: "scheduled",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      },
+    );
+
+    const result = await scheduleBacklog(userId, baseDate, supabaseClient, {
+      mode: { type: "monumental", monumentId: "mon-target" },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(projectSkillsSpy).toHaveBeenCalled();
+    expect(skillEqMock).toHaveBeenCalled();
+    expect(result.failures).toEqual([]);
+    expect(attempted).toEqual(["proj-focus"]);
+    expect(result.placed).toHaveLength(1);
+    expect(result.placed[0]?.source_id).toBe("proj-focus");
+  });
+
+  it("only schedules projects for selected skills in skilled mode", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-focus": {
+        id: "proj-focus",
+        name: "Focus Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+      "proj-other": {
+        id: "proj-other",
+        name: "Other Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: null,
+        duration_min: 60,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-focus",
+        label: "Afternoon",
+        energy: "LOW",
+        start_local: "15:00",
+        end_local: "17:00",
+        days: [2],
+      },
+    ]);
+
+    const projectSkillsSpy = vi
+      .spyOn(repo, "fetchProjectSkillsForProjects")
+      .mockResolvedValue({
+        "proj-focus": ["skill-focus"],
+        "proj-other": ["skill-other"],
+      });
+
+    const skillEqMock = vi.fn(async () => ({
+      data: [
+        { id: "skill-focus", monument_id: null },
+        { id: "skill-other", monument_id: null },
+      ],
+      error: null,
+    }));
+
+    const { client: baseClient } = createSupabaseMock();
+    const baseFrom = (baseClient as unknown as { from: (table: string) => unknown }).from;
+    const fromMock = vi.fn((table: string) => {
+      if (table === "skills") {
+        return {
+          select: () => ({ eq: skillEqMock }),
+        };
+      }
+      return baseFrom(table);
+    });
+    const supabaseClient = {
+      ...(baseClient as object),
+      from: fromMock,
+    } as ScheduleBacklogClient;
+
+    const attempted: string[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async params => {
+        attempted.push(params.item.id);
+        expect(params.item.id).toBe("proj-other");
+        const start = new Date("2024-01-02T09:00:00Z");
+        const end = new Date(start.getTime() + params.item.duration_min * 60000);
+        return {
+          data: createInstanceRecord({
+            id: `inst-${params.item.id}`,
+            source_id: params.item.id,
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: params.item.duration_min,
+            window_id: params.windows[0]?.id ?? "win-1",
+            status: "scheduled",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      },
+    );
+
+    const result = await scheduleBacklog(userId, baseDate, supabaseClient, {
+      mode: { type: "skilled", skillIds: ["skill-other"] },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(projectSkillsSpy).toHaveBeenCalled();
+    expect(skillEqMock).toHaveBeenCalled();
+    expect(result.failures).toEqual([]);
+    expect(attempted).toEqual(["proj-other"]);
+    expect(result.placed).toHaveLength(1);
+    expect(result.placed[0]?.source_id).toBe("proj-other");
+  });
 });

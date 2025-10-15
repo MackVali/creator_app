@@ -25,6 +25,10 @@ import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { FocusTimeline, FocusTimelineFab } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
+import {
+  ScheduleModeMenu,
+  type MonumentOption,
+} from '@/components/schedule/ScheduleModeMenu'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
@@ -68,6 +72,8 @@ import {
 } from '@/lib/scheduler/windowReports'
 import { getSkillsForUser } from '@/lib/data/skills'
 import type { SkillRow } from '@/lib/types/skill'
+import { getMonumentsForUser } from '@/lib/queries/monuments'
+import type { SchedulerModePayload, SchedulerModeType } from '@/lib/scheduler/modes'
 import { createMemoNoteForHabit } from '@/lib/notesStorage'
 import { MemoNoteSheet } from '@/components/schedule/MemoNoteSheet'
 
@@ -1884,6 +1890,11 @@ export default function SchedulePage() {
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [skills, setSkills] = useState<SkillRow[]>([])
+  const [monuments, setMonuments] = useState<MonumentOption[]>([])
+  const [modeMenuOpen, setModeMenuOpen] = useState(false)
+  const [modeType, setModeType] = useState<SchedulerModeType>('regular')
+  const [selectedMonumentId, setSelectedMonumentId] = useState<string | null>(null)
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [projectSkillIds, setProjectSkillIds] = useState<Record<string, string[]>>({})
   const [habits, setHabits] = useState<HabitScheduleItem[]>([])
   const [habitCompletionByDate, setHabitCompletionByDate] = useState<
@@ -1938,6 +1949,98 @@ export default function SchedulePage() {
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
   const [pxPerMin, setPxPerMin] = useState(2)
   const basePxPerMinRef = useRef(pxPerMin)
+
+  useEffect(() => {
+    if (!userId) {
+      setMonuments([])
+      return
+    }
+
+    let active = true
+
+    const loadMonuments = async () => {
+      try {
+        const data = await getMonumentsForUser(userId)
+        if (!active) return
+        setMonuments(
+          data.map(monument => ({
+            id: monument.id,
+            title: monument.title,
+            emoji: monument.emoji ?? null,
+          }))
+        )
+      } catch (error) {
+        console.error('Failed to load monuments for scheduler modes', error)
+        if (!active) return
+        setMonuments([])
+      }
+    }
+
+    void loadMonuments()
+
+    return () => {
+      active = false
+    }
+  }, [userId])
+
+  useEffect(() => {
+    setSelectedSkillIds(prev =>
+      prev.filter(id => skills.some(skill => skill.id === id))
+    )
+  }, [skills])
+
+  useEffect(() => {
+    if (monuments.length === 0) {
+      if (selectedMonumentId !== null) {
+        setSelectedMonumentId(null)
+      }
+      return
+    }
+    setSelectedMonumentId(prev => {
+      if (prev && monuments.some(monument => monument.id === prev)) {
+        return prev
+      }
+      return monuments[0]?.id ?? prev
+    })
+  }, [monuments, selectedMonumentId])
+
+  const modePayload = useMemo<SchedulerModePayload>(() => {
+    if (modeType === 'rush') {
+      return { type: 'rush' }
+    }
+    if (modeType === 'rest') {
+      return { type: 'rest' }
+    }
+    if (modeType === 'monumental') {
+      if (selectedMonumentId) {
+        return { type: 'monumental', monumentId: selectedMonumentId }
+      }
+      return { type: 'regular' }
+    }
+    if (modeType === 'skilled') {
+      const uniqueSkillIds = Array.from(new Set(selectedSkillIds)).filter(
+        (id): id is string => typeof id === 'string' && id.length > 0
+      )
+      if (uniqueSkillIds.length > 0) {
+        return { type: 'skilled', skillIds: uniqueSkillIds }
+      }
+      return { type: 'regular' }
+    }
+    return { type: 'regular' }
+  }, [modeType, selectedMonumentId, selectedSkillIds])
+
+  const handleToggleSkillSelection = useCallback((skillId: string) => {
+    setSelectedSkillIds(prev => {
+      if (prev.includes(skillId)) {
+        return prev.filter(id => id !== skillId)
+      }
+      return [...prev, skillId]
+    })
+  }, [])
+
+  const handleModeTypeChange = useCallback((nextType: SchedulerModeType) => {
+    setModeType(nextType)
+  }, [])
   const pinchStateRef = useRef<{
     initialDistance: number
     initialPxPerMin: number
@@ -3109,6 +3212,7 @@ export default function SchedulePage() {
         body: JSON.stringify({
           localTimeIso: localNow.toISOString(),
           timeZone,
+          mode: modePayload,
         }),
       })
       let payload: unknown = null
@@ -3184,7 +3288,7 @@ export default function SchedulePage() {
         console.error('Failed to refresh scheduled project history', error)
       }
     }
-  }, [userId, refreshScheduledProjectIds, localTimeZone])
+  }, [userId, refreshScheduledProjectIds, localTimeZone, modePayload])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -4614,6 +4718,19 @@ export default function SchedulePage() {
   return (
     <>
       <ProtectedRoute>
+        <ScheduleModeMenu
+          open={modeMenuOpen}
+          onOpenChange={setModeMenuOpen}
+          modeType={modeType}
+          onModeTypeChange={handleModeTypeChange}
+          monuments={monuments}
+          selectedMonumentId={selectedMonumentId}
+          onSelectMonument={setSelectedMonumentId}
+          skills={skills}
+          selectedSkillIds={selectedSkillIds}
+          onToggleSkill={handleToggleSkillSelection}
+          onClearSkillSelection={() => setSelectedSkillIds([])}
+        />
         <ScheduleTopBar
           year={year}
           onBack={handleBack}
@@ -4623,6 +4740,7 @@ export default function SchedulePage() {
           onReschedule={handleRescheduleClick}
           canReschedule={!isScheduling}
           isRescheduling={isScheduling}
+          onOpenModeMenu={() => setModeMenuOpen(true)}
         />
         <div className="text-zinc-100 space-y-4 pt-[calc(4rem + env(safe-area-inset-top, 0px))]">
           <div
