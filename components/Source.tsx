@@ -1,942 +1,2399 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element */
-import React, { useEffect, useState } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
-import { Sparkles, Package, X } from "lucide-react"
+"use client"
+
+import { type ReactNode, useEffect, useRef, useState } from "react"
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
+import {
+  ExternalLink,
+  Globe,
+  Loader2,
+  Lock,
+  Plug,
+  RefreshCcw,
+  UploadCloud,
+  X,
+  type LucideIcon,
+} from "lucide-react"
 
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
-import { Textarea } from "./ui/textarea"
 import { Select, SelectContent, SelectItem } from "./ui/select"
+import { Textarea } from "./ui/textarea"
 
-// utility helpers
-function classNames(...classes: (string | undefined | null | false)[]) {
-  return classes.filter(Boolean).join(" ")
-}
-const formatUSD = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n)
-const timeAgo = (iso: string) => {
-  const diff = Date.now() - new Date(iso).getTime()
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return `${sec}s ago`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  return `${day}d ago`
+import type {
+  IntegrationsResponse,
+  ListingsResponse,
+  PublishResult,
+  SourceIntegration,
+  SourceListing,
+} from "@/types/source"
+import { cn } from "@/lib/utils"
+
+const httpMethods = ["POST", "PUT", "PATCH"] as const
+const authModes = ["none", "bearer", "basic", "api_key", "oauth2"] as const
+const listingStatuses: Record<SourceListing["status"], string> = {
+  draft: "Draft",
+  queued: "Queued",
+  published: "Published",
+  needs_attention: "Needs attention",
 }
 
-// types
-export type Service = {
-  id: string
+const statusAccent: Record<SourceListing["status"], string> = {
+  draft: "bg-slate-800 text-slate-200",
+  queued: "bg-sky-500/10 text-sky-300 border border-sky-500/30",
+  published: "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30",
+  needs_attention: "bg-amber-500/10 text-amber-300 border border-amber-500/40",
+}
+
+type IntegrationFormState = {
+  provider: string
+  displayName: string
+  connectionUrl: string
+  publishUrl: string
+  publishMethod: (typeof httpMethods)[number]
+  authMode: (typeof authModes)[number]
+  authToken: string
+  authHeader: string
+  headers: string
+  payloadTemplate: string
+  status: "active" | "disabled"
+  oauthAuthorizeUrl: string
+  oauthTokenUrl: string
+  oauthScopes: string
+  oauthClientId: string
+  oauthClientSecret: string
+  oauthMetadata: string
+}
+
+type ListingFormState = {
+  type: "product" | "service"
   title: string
-  price: number
-  durationMins?: number
-  thumbnail?: string
-  status: "draft" | "published"
-  updatedAt: string
+  description: string
+  price: string
+  currency: string
+  inventory: string
+  durationMinutes: string
+  metadata: string
 }
-export type Product = {
+
+type ApiError = { error: string }
+
+const defaultIntegrationForm: IntegrationFormState = {
+  provider: "",
+  displayName: "",
+  connectionUrl: "",
+  publishUrl: "",
+  publishMethod: "POST",
+  authMode: "none",
+  authToken: "",
+  authHeader: "X-API-Key",
+  headers: "",
+  payloadTemplate: "",
+  status: "active",
+  oauthAuthorizeUrl: "",
+  oauthTokenUrl: "",
+  oauthScopes: "",
+  oauthClientId: "",
+  oauthClientSecret: "",
+  oauthMetadata: "",
+}
+
+const defaultListingForm: ListingFormState = {
+  type: "product",
+  title: "",
+  description: "",
+  price: "",
+  currency: "USD",
+  inventory: "",
+  durationMinutes: "",
+  metadata: "",
+}
+
+type IntegrationPresetField = {
   id: string
-  title: string
-  price: number
-  inventory?: number
-  thumbnail?: string
-  status: "draft" | "published"
-  updatedAt: string
+  label: string
+  placeholder?: string
+  help?: string
+  type?: "text" | "url" | "password"
 }
 
-export interface SourceProps {
-  services?: Service[]
-  products?: Product[]
-  onCreateService?(draft: Service): void
-  onCreateProduct?(draft: Product): void
-  onUpdateService?(id: string, patch: Partial<Service>): void
-  onUpdateProduct?(id: string, patch: Partial<Product>): void
-  onDeleteService?(id: string): void
-  onDeleteProduct?(id: string): void
+type IntegrationPreset = {
+  id: string
+  label: string
+  description: string
+  docsUrl?: string
+  fields: IntegrationPresetField[]
+  build(inputs: Record<string, string>): Partial<IntegrationFormState>
 }
 
-export default function Source({
-  services: servicesProp,
-  products: productsProp,
-  onCreateService,
-  onCreateProduct,
-  onUpdateService,
-  onUpdateProduct,
-  onDeleteService,
-  onDeleteProduct,
-}: SourceProps) {
-  const [services, setServices] = useState<Service[]>(servicesProp ?? [])
-  const [products, setProducts] = useState<Product[]>(productsProp ?? [])
+const integrationPresets: IntegrationPreset[] = [
+  {
+    id: "shopify",
+    label: "Shopify Admin",
+    description:
+      "Create products via the Shopify Admin REST API using a private app access token.",
+    docsUrl: "https://shopify.dev/docs/api/admin-rest",
+    fields: [
+      {
+        id: "storeDomain",
+        label: "Store domain",
+        placeholder: "your-shop.myshopify.com",
+        help: "Use the myshopify.com domain for your storefront.",
+      },
+      {
+        id: "accessToken",
+        label: "Admin API access token",
+        placeholder: "shpat_xxxxx",
+        type: "password",
+        help: "Generate from Shopify admin under Apps → Develop apps.",
+      },
+    ],
+    build: (inputs) => {
+      const domainInput = inputs.storeDomain?.trim()
+      if (!domainInput) {
+        throw new Error("Shopify store domain is required")
+      }
 
-  const [activeTab, setActiveTab] = useState<"services" | "products">("services")
-  const [subTab, setSubTab] = useState<"draft" | "published">("draft")
-  const [rawSearch, setRawSearch] = useState("")
-  const [search, setSearch] = useState("")
+      const normalizedDomain = domainInput.startsWith("http")
+        ? domainInput
+        : `https://${domainInput}`
+
+      let parsed: URL
+      try {
+        parsed = new URL(normalizedDomain)
+      } catch {
+        throw new Error("Enter a valid Shopify domain")
+      }
+
+      const token = inputs.accessToken?.trim()
+      if (!token) {
+        throw new Error("Shopify access token is required")
+      }
+
+      const base = `${parsed.protocol}//${parsed.host}`
+
+      const payload = {
+        product: {
+          title: "{{listing.title}}",
+          body_html: "{{listing.description}}",
+          status: "active",
+          variants: [
+            {
+              price: "{{listing.price}}",
+              sku: "{{listing.id}}",
+              inventory_quantity: "{{listing.metadata.inventory}}",
+            },
+          ],
+          tags: "{{listing.metadata.tags}}",
+          product_type: "{{listing.metadata.product_type}}",
+        },
+      }
+
+      return {
+        provider: "Shopify",
+        displayName: "Shopify Admin",
+        connectionUrl: base,
+        publishUrl: `${base}/admin/api/2024-01/products.json`,
+        publishMethod: "POST",
+        authMode: "api_key",
+        authToken: token,
+        authHeader: "X-Shopify-Access-Token",
+        headers: JSON.stringify({}, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+  {
+    id: "wix",
+    label: "Wix Stores",
+    description:
+      "Push inventory into Wix Stores using an OAuth app and your site identifier.",
+    docsUrl: "https://dev.wix.com/docs/rest/api-reference/stores",
+    fields: [
+      {
+        id: "siteId",
+        label: "Wix site ID",
+        placeholder: "12345678-1234-1234-1234-1234567890ab",
+        help: "Copy from Wix Developers → My Apps → Site details.",
+      },
+      {
+        id: "accessToken",
+        label: "OAuth access token",
+        placeholder: "wix-access-token",
+        type: "password",
+        help: "Exchange your refresh token for an access token before saving.",
+      },
+    ],
+    build: (inputs) => {
+      const siteId = inputs.siteId?.trim()
+      if (!siteId) {
+        throw new Error("Wix site ID is required")
+      }
+
+      const token = inputs.accessToken?.trim()
+      if (!token) {
+        throw new Error("Wix access token is required")
+      }
+
+      const headers = {
+        "wix-site-id": siteId,
+      }
+
+      const payload = {
+        product: {
+          name: "{{listing.title}}",
+          description: {
+            plainText: "{{listing.description}}",
+          },
+          price: {
+            price: "{{listing.price}}",
+            currency: "{{listing.currency}}",
+          },
+          ribbon: "{{listing.metadata.ribbon}}",
+          sku: "{{listing.id}}",
+        },
+      }
+
+      return {
+        provider: "Wix Stores",
+        displayName: "Wix",
+        connectionUrl: "https://www.wix.com",
+        publishUrl: "https://www.wixapis.com/stores/v1/products",
+        publishMethod: "POST",
+        authMode: "bearer",
+        authToken: token,
+        authHeader: "Authorization",
+        headers: JSON.stringify(headers, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+  {
+    id: "woocommerce",
+    label: "WooCommerce",
+    description:
+      "Publish catalog entries to WooCommerce using the REST API consumer credentials.",
+    docsUrl: "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+    fields: [
+      {
+        id: "storeUrl",
+        label: "Storefront URL",
+        placeholder: "https://store.example.com",
+      },
+      {
+        id: "consumerKey",
+        label: "Consumer key",
+        placeholder: "ck_xxxxxxxxx",
+        type: "password",
+      },
+      {
+        id: "consumerSecret",
+        label: "Consumer secret",
+        placeholder: "cs_xxxxxxxxx",
+        type: "password",
+      },
+    ],
+    build: (inputs) => {
+      const rawUrl = inputs.storeUrl?.trim()
+      if (!rawUrl) {
+        throw new Error("WooCommerce store URL is required")
+      }
+
+      let parsed: URL
+      try {
+        parsed = new URL(rawUrl)
+      } catch {
+        throw new Error("Enter a valid WooCommerce store URL")
+      }
+
+      const key = inputs.consumerKey?.trim()
+      const secret = inputs.consumerSecret?.trim()
+      if (!key || !secret) {
+        throw new Error("WooCommerce consumer key and secret are required")
+      }
+
+      const base = `${parsed.protocol}//${parsed.host}`
+
+      const payload = {
+        name: "{{listing.title}}",
+        type: "simple",
+        regular_price: "{{listing.price}}",
+        description: "{{listing.description}}",
+        sku: "{{listing.id}}",
+        stock_quantity: "{{listing.metadata.inventory}}",
+        manage_stock: true,
+      }
+
+      return {
+        provider: "WooCommerce",
+        displayName: parsed.host,
+        connectionUrl: base,
+        publishUrl: `${base}/wp-json/wc/v3/products`,
+        publishMethod: "POST",
+        authMode: "basic",
+        authToken: `${key}:${secret}`,
+        authHeader: "Authorization",
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+  {
+    id: "ebay",
+    label: "eBay Marketplace",
+    description:
+      "Authenticate with the eBay Sell APIs to push inventory into your connected marketplace account.",
+    docsUrl: "https://developer.ebay.com/api-docs/sell/static/overview.html",
+    fields: [
+      {
+        id: "environment",
+        label: "Environment",
+        placeholder: "production or sandbox",
+        help: "Use production for live sellers or sandbox for testing credentials.",
+      },
+      {
+        id: "clientId",
+        label: "OAuth client ID",
+        placeholder: "Your eBay App ID",
+      },
+      {
+        id: "clientSecret",
+        label: "OAuth client secret",
+        placeholder: "Your eBay Cert ID",
+        type: "password",
+      },
+    ],
+    build: (inputs) => {
+      const rawEnvironment = inputs.environment?.trim().toLowerCase()
+      const environment = rawEnvironment === "sandbox" ? "sandbox" : "production"
+
+      const clientId = inputs.clientId?.trim()
+      if (!clientId) {
+        throw new Error("eBay client ID is required")
+      }
+
+      const clientSecret = inputs.clientSecret?.trim()
+      if (!clientSecret) {
+        throw new Error("eBay client secret is required")
+      }
+
+      const authorizeUrl =
+        environment === "sandbox"
+          ? "https://auth.sandbox.ebay.com/oauth2/authorize"
+          : "https://auth.ebay.com/oauth2/authorize"
+      const tokenUrl =
+        environment === "sandbox"
+          ? "https://api.sandbox.ebay.com/identity/v1/oauth2/token"
+          : "https://api.ebay.com/identity/v1/oauth2/token"
+      const apiBase =
+        environment === "sandbox" ? "https://api.sandbox.ebay.com" : "https://api.ebay.com"
+
+      const payload = {
+        sku: "{{listing.id}}",
+        product: {
+          title: "{{listing.title}}",
+          description: "{{listing.description}}",
+          aspects: {},
+        },
+        availability: {
+          shipToLocationAvailability: {
+            quantity: "{{listing.metadata.inventory}}",
+          },
+        },
+        price: {
+          currency: "{{listing.currency}}",
+          value: "{{listing.price}}",
+        },
+      }
+
+      const metadata = {
+        environment,
+        authorize_params: {
+          prompt: "login",
+        },
+      }
+
+      return {
+        provider: "eBay",
+        displayName: `eBay ${environment === "sandbox" ? "Sandbox" : "Marketplace"}`,
+        connectionUrl: apiBase,
+        publishUrl: `${apiBase}/sell/inventory/v1/inventory_item`,
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: authorizeUrl,
+        oauthTokenUrl: tokenUrl,
+        oauthScopes:
+          "https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+        oauthClientId: clientId,
+        oauthClientSecret: clientSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
+      }
+    },
+  },
+  {
+    id: "square",
+    label: "Square Catalog",
+    description:
+      "Connect a Square application to keep your item catalog in sync with the listings you publish.",
+    docsUrl: "https://developer.squareup.com/docs/catalog-api/overview",
+    fields: [
+      {
+        id: "environment",
+        label: "Environment",
+        placeholder: "production or sandbox",
+        help: "Match the environment configured for your Square OAuth app.",
+      },
+      {
+        id: "applicationId",
+        label: "OAuth application ID",
+        placeholder: "sq0idp-xxxx",
+      },
+      {
+        id: "applicationSecret",
+        label: "OAuth application secret",
+        placeholder: "sq0csp-xxxx",
+        type: "password",
+      },
+      {
+        id: "locationId",
+        label: "Default location ID",
+        placeholder: "L88917ABCD0X1",
+        help: "Find this under Locations in the Square Dashboard.",
+      },
+    ],
+    build: (inputs) => {
+      const rawEnvironment = inputs.environment?.trim().toLowerCase()
+      const environment = rawEnvironment === "sandbox" ? "sandbox" : "production"
+
+      const applicationId = inputs.applicationId?.trim()
+      if (!applicationId) {
+        throw new Error("Square application ID is required")
+      }
+
+      const applicationSecret = inputs.applicationSecret?.trim()
+      if (!applicationSecret) {
+        throw new Error("Square application secret is required")
+      }
+
+      const locationId = inputs.locationId?.trim()
+      if (!locationId) {
+        throw new Error("Square location ID is required")
+      }
+
+      const domain =
+        environment === "sandbox"
+          ? "connect.squareupsandbox.com"
+          : "connect.squareup.com"
+      const baseUrl = `https://${domain}`
+
+      const payload = {
+        idempotency_key: "{{listing.id}}-{{listing.updated_at}}",
+        object: {
+          type: "ITEM",
+          id: "#{{listing.id}}",
+          item_data: {
+            name: "{{listing.title}}",
+            description: "{{listing.description}}",
+            variations: [
+              {
+                type: "ITEM_VARIATION",
+                id: "#{{listing.id}}-default",
+                item_variation_data: {
+                  item_id: "#{{listing.id}}",
+                  name: "Standard",
+                  pricing_type: "FIXED_PRICING",
+                  price_money: {
+                    amount: "{{listing.price}}",
+                    currency: "{{listing.currency}}",
+                  },
+                  location_overrides: [
+                    {
+                      location_id: locationId,
+                      track_inventory: true,
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      }
+
+      const metadata = {
+        environment,
+      }
+
+      return {
+        provider: "Square",
+        displayName: `Square ${environment === "sandbox" ? "Sandbox" : "Catalog"}`,
+        connectionUrl: baseUrl,
+        publishUrl: `${baseUrl}/v2/catalog/object`,
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify(
+          {
+            "Content-Type": "application/json",
+            "Square-Version": "2024-05-15",
+          },
+          null,
+          2
+        ),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: `${baseUrl}/oauth2/authorize`,
+        oauthTokenUrl: `${baseUrl}/oauth2/token`,
+        oauthScopes: "ITEMS_READ ITEMS_WRITE MERCHANT_PROFILE_READ",
+        oauthClientId: applicationId,
+        oauthClientSecret: applicationSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
+      }
+    },
+  },
+  {
+    id: "automation",
+    label: "Zapier / Make bridge",
+    description:
+      "Trigger a no-code automation that can fan listings out to Depop, Facebook Marketplace, Craigslist, eBay, and more.",
+    docsUrl: "https://zapier.com/apps/webhooks",
+    fields: [
+      {
+        id: "webhookUrl",
+        label: "Webhook URL",
+        placeholder: "https://hooks.zapier.com/hooks/catch/...",
+        type: "url",
+        help: "Paste the catch hook URL from Zapier, Make, or n8n.",
+      },
+      {
+        id: "connectionName",
+        label: "Connection label",
+        placeholder: "Marketplace autoposter",
+      },
+    ],
+    build: (inputs) => {
+      const urlInput = inputs.webhookUrl?.trim()
+      if (!urlInput) {
+        throw new Error("Webhook URL is required")
+      }
+
+      let parsed: URL
+      try {
+        parsed = new URL(urlInput)
+      } catch {
+        throw new Error("Enter a valid webhook URL")
+      }
+
+      const label = inputs.connectionName?.trim() || "Marketplace bridge"
+
+      const payload = {
+        listing: {
+          id: "{{listing.id}}",
+          title: "{{listing.title}}",
+          description: "{{listing.description}}",
+          price: "{{listing.price}}",
+          currency: "{{listing.currency}}",
+          type: "{{listing.type}}",
+          metadata: "{{listing.metadata}}",
+        },
+        integration: {
+          id: "{{integration.id}}",
+          provider: "{{integration.provider}}",
+          connectionUrl: "{{integration.connectionUrl}}",
+        },
+      }
+
+      return {
+        provider: label,
+        displayName: label,
+        connectionUrl: `${parsed.protocol}//${parsed.host}`,
+        publishUrl: parsed.toString(),
+        publishMethod: "POST",
+        authMode: "none",
+        authToken: "",
+        authHeader: "X-API-Key",
+        headers: JSON.stringify({ "X-Source-Channel": "source-automation" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+]
+
+const setupSteps: { id: string; title: string; description: string; icon: LucideIcon }[] = [
+  {
+    id: "choose",
+    title: "Choose a connector",
+    description:
+      "Start with a preset to auto-fill URLs, headers, and payload tokens for popular storefronts.",
+    icon: Plug,
+  },
+  {
+    id: "authorize",
+    title: "Authorize access",
+    description:
+      "Sign in with OAuth or drop in API keys so Source can publish on your behalf securely.",
+    icon: Lock,
+  },
+  {
+    id: "publish",
+    title: "Publish everywhere",
+    description:
+      "Create a product or service once and we fan the listing out to every active integration instantly.",
+    icon: UploadCloud,
+  },
+]
+
+export default function Source() {
+  const queryClient = useQueryClient()
+  const [integrationForm, setIntegrationForm] = useState(defaultIntegrationForm)
+  const [listingForm, setListingForm] = useState(defaultListingForm)
+  const [integrationError, setIntegrationError] = useState<string | null>(null)
+  const [listingError, setListingError] = useState<string | null>(null)
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
+  const [presetInputs, setPresetInputs] = useState<Record<string, string>>({})
+  const [presetNotice, setPresetNotice] = useState<string | null>(null)
+  const [presetError, setPresetError] = useState<string | null>(null)
+  const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
+  const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
+  const oauthWindowRef = useRef<Window | null>(null)
+
   useEffect(() => {
-    const t = setTimeout(() => setSearch(rawSearch.toLowerCase()), 200)
-    return () => clearTimeout(t)
-  }, [rawSearch])
+    const handleMessage = (event: MessageEvent) => {
+      if (typeof window === "undefined") return
+      if (event.origin !== window.location.origin) return
+      if (!event.data || typeof event.data !== "object") return
 
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 600)
-    return () => clearTimeout(t)
-  }, [])
+      const data = event.data as Record<string, unknown>
+      if (data.type !== "source:oauth:complete") return
 
-  // drawer state
-  const [drawer, setDrawer] = useState<{
-    type: "service" | "product"
-    open: boolean
-    draft: any | null
-  }>({ type: "service", open: false, draft: null })
-  const [preview, setPreview] = useState<{ type: "service" | "product"; item: any } | null>(null)
-  const [confirm, setConfirm] = useState<{ type: "service" | "product"; id: string } | null>(null)
+      if (oauthWindowRef.current && !oauthWindowRef.current.closed) {
+        oauthWindowRef.current.close()
+      }
+      oauthWindowRef.current = null
+      setConnectingIntegrationId(null)
 
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  useEffect(() => {
-    const create = searchParams.get("create")
-    if (create === "service" || create === "product") {
-      setDrawer({ type: create, open: true, draft: null })
-      setActiveTab(create === "service" ? "services" : "products")
-      router.replace("/source")
+      if (data.status === "error" && typeof data.message === "string") {
+        setIntegrationError(data.message)
+      } else {
+        setIntegrationError(null)
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
     }
-  }, [searchParams, router])
 
-  const currentList = activeTab === "services" ? services : products
-  const setCurrentList = activeTab === "services" ? setServices : setProducts
+    window.addEventListener("message", handleMessage)
+    return () => window.removeEventListener("message", handleMessage)
+  }, [queryClient])
 
-  const filtered = currentList.filter(
-    (i) => i.status === subTab && i.title.toLowerCase().includes(search)
-  )
+  useEffect(() => {
+    if (!connectingIntegrationId) return
 
-  // handlers
-  function handleSave(item: any) {
-    item.type = drawer.type;
-    item.updatedAt = new Date().toISOString()
-    if (drawer.draft?.id) {
-      // edit
-      setCurrentList((prev: any[]) =>
-        prev.map((p) => (p.id === item.id ? item : p))
+    const watcher = window.setInterval(() => {
+      const popup = oauthWindowRef.current
+      if (!popup) {
+        window.clearInterval(watcher)
+        return
+      }
+
+      if (popup.closed) {
+        window.clearInterval(watcher)
+        oauthWindowRef.current = null
+        setConnectingIntegrationId(null)
+        setIntegrationError((prev) => prev ?? "Connection window closed before finishing authentication.")
+      }
+    }, 750)
+
+    return () => window.clearInterval(watcher)
+  }, [connectingIntegrationId])
+
+  const beginOAuthConnection = async (integration: SourceIntegration) => {
+    if (integration.auth_mode !== "oauth2") return
+
+    if (!integration.oauth || !integration.oauth.authorize_url || !integration.oauth.token_url) {
+      setIntegrationError(
+        "Complete the OAuth configuration (authorization and token URLs) before connecting."
       )
-      if (item.type === "service" && onUpdateService)
-        onUpdateService(item.id, item)
-      if (item.type === "product" && onUpdateProduct)
-        onUpdateProduct(item.id, item)
-    } else {
-      // new
-      item.id = Math.random().toString(36).slice(2)
-      setCurrentList((prev: any[]) => [...prev, item])
-      if (item.type === "service" && onCreateService) onCreateService(item)
-      if (item.type === "product" && onCreateProduct) onCreateProduct(item)
+      return
     }
-    setDrawer({ ...drawer, open: false, draft: null })
+
+    try {
+      setIntegrationError(null)
+      setConnectingIntegrationId(integration.id)
+
+      const res = await fetch(`/api/source/integrations/${integration.id}/oauth/start`, {
+        method: "POST",
+      })
+
+      const json = (await res.json().catch(() => null)) as
+        | { authorizationUrl?: string }
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        const error = json as ApiError | null
+        throw new Error(error?.error ?? "Unable to start OAuth flow")
+      }
+
+      const authorizationUrl = (json as { authorizationUrl?: string } | null)?.authorizationUrl
+      if (!authorizationUrl || typeof authorizationUrl !== "string") {
+        throw new Error("OAuth provider did not return a redirect URL")
+      }
+
+      const popup = window.open(
+        authorizationUrl,
+        `source-oauth-${integration.id}`,
+        "width=480,height=720,menubar=no,toolbar=no,status=no,scrollbars=yes"
+      )
+
+      if (!popup) {
+        throw new Error("Enable pop-ups to continue connecting your account")
+      }
+
+      oauthWindowRef.current = popup
+    } catch (error) {
+      setConnectingIntegrationId(null)
+      setIntegrationError(
+        error instanceof Error ? error.message : "Unable to launch OAuth authentication"
+      )
+    }
   }
 
-  function handleDelete() {
-    if (!confirm) return
-    const { type, id } = confirm
-    if (type === "service") {
-      setServices((prev) => prev.filter((s) => s.id !== id))
-      onDeleteService?.(id)
-    } else {
-      setProducts((prev) => prev.filter((p) => p.id !== id))
-      onDeleteProduct?.(id)
+  const selectedPreset =
+    selectedPresetId === null
+      ? null
+      : integrationPresets.find((preset) => preset.id === selectedPresetId) ?? null
+
+  const handlePresetChange = (value: string) => {
+    if (value === "manual") {
+      setSelectedPresetId(null)
+      setPresetInputs({})
+      setPresetNotice(null)
+      setPresetError(null)
+      setShowIntegrationAdvanced(false)
+      return
     }
-    setConfirm(null)
+
+    const preset = integrationPresets.find((item) => item.id === value) ?? null
+    setSelectedPresetId(preset ? preset.id : null)
+
+    if (preset) {
+      const defaults: Record<string, string> = {}
+      for (const field of preset.fields) {
+        defaults[field.id] = ""
+      }
+      setPresetInputs(defaults)
+      setShowIntegrationAdvanced(true)
+    } else {
+      setPresetInputs({})
+      setShowIntegrationAdvanced(false)
+    }
+
+    setPresetNotice(null)
+    setPresetError(null)
   }
 
-  function duplicate(item: any) {
-    const copy = { ...item, id: Math.random().toString(36).slice(2), title: item.title + " Copy", updatedAt: new Date().toISOString() }
-    if (activeTab === "services") setServices((p) => [...p, copy])
-    else setProducts((p) => [...p, copy])
+  const handlePresetApply = () => {
+    if (!selectedPreset) return
+
+    try {
+      const next = selectedPreset.build(presetInputs)
+      setIntegrationForm((prev) => ({
+        ...prev,
+        ...next,
+      }))
+      setPresetNotice(
+        `${selectedPreset.label} defaults applied. Review and save to finish.`
+      )
+      setPresetError(null)
+      setShowIntegrationAdvanced(true)
+    } catch (error) {
+      setPresetNotice(null)
+      setPresetError(
+        error instanceof Error
+          ? error.message
+          : "Unable to apply connector template"
+      )
+    }
+  }
+
+  const integrationsQuery = useQuery<IntegrationsResponse, Error>({
+    queryKey: ["source", "integrations"],
+    queryFn: async () => {
+      const res = await fetch("/api/source/integrations")
+      const json = (await res.json().catch(() => null)) as
+        | IntegrationsResponse
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        throw new Error((json as ApiError | null)?.error ?? "Unable to load integrations")
+      }
+
+      return (json ?? { integrations: [] }) as IntegrationsResponse
+    },
+  })
+
+  const listingsQuery = useQuery<ListingsResponse, Error>({
+    queryKey: ["source", "listings"],
+    queryFn: async () => {
+      const res = await fetch("/api/source/listings")
+      const json = (await res.json().catch(() => null)) as
+        | ListingsResponse
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        throw new Error((json as ApiError | null)?.error ?? "Unable to load listings")
+      }
+
+      return (json ?? { listings: [] }) as ListingsResponse
+    },
+  })
+
+  const createIntegration = useMutation({
+    mutationFn: async (payload: IntegrationFormState) => {
+      let parsedHeaders: Record<string, unknown> | null = null
+      if (payload.headers.trim()) {
+        try {
+          parsedHeaders = JSON.parse(payload.headers)
+        } catch {
+          throw new Error("Custom headers must be valid JSON")
+        }
+      }
+
+      let parsedTemplate: Record<string, unknown> | null = null
+      if (payload.payloadTemplate.trim()) {
+        try {
+          parsedTemplate = JSON.parse(payload.payloadTemplate)
+        } catch {
+          throw new Error("Payload template must be valid JSON")
+        }
+      }
+
+      let parsedOauthMetadata: Record<string, unknown> | null = null
+      if (payload.oauthMetadata.trim()) {
+        try {
+          parsedOauthMetadata = JSON.parse(payload.oauthMetadata)
+        } catch {
+          throw new Error("OAuth metadata must be valid JSON")
+        }
+      }
+
+      const body = {
+        provider: payload.provider.trim(),
+        displayName: payload.displayName.trim() || null,
+        connectionUrl: payload.connectionUrl.trim(),
+        publishUrl: payload.publishUrl.trim(),
+        publishMethod: payload.publishMethod,
+        authMode: payload.authMode,
+        authToken:
+          payload.authMode === "none" || payload.authMode === "oauth2"
+            ? null
+            : payload.authToken.trim() || null,
+        authHeader:
+          payload.authMode === "api_key"
+            ? payload.authHeader.trim() || "X-API-Key"
+            : null,
+        headers: parsedHeaders,
+        payloadTemplate: parsedTemplate,
+        status: payload.status,
+        oauthAuthorizeUrl:
+          payload.authMode === "oauth2" ? payload.oauthAuthorizeUrl.trim() || null : null,
+        oauthTokenUrl:
+          payload.authMode === "oauth2" ? payload.oauthTokenUrl.trim() || null : null,
+        oauthScopes:
+          payload.authMode === "oauth2"
+            ? payload.oauthScopes.trim()
+              ? payload.oauthScopes
+              : null
+            : null,
+        oauthClientId:
+          payload.authMode === "oauth2" ? payload.oauthClientId.trim() || null : null,
+        oauthClientSecret:
+          payload.authMode === "oauth2" ? payload.oauthClientSecret.trim() || null : null,
+        oauthMetadata:
+          payload.authMode === "oauth2" ? parsedOauthMetadata : null,
+      }
+
+      const res = await fetch("/api/source/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const error = (await res.json().catch(() => null)) as ApiError | null
+        throw new Error(error?.error ?? "Unable to create integration")
+      }
+
+      return (await res.json()) as { integration: SourceIntegration }
+    },
+    onSuccess: (response) => {
+      setIntegrationForm(defaultIntegrationForm)
+      setIntegrationError(null)
+      setSelectedPresetId(null)
+      setPresetInputs({})
+      setPresetNotice(null)
+      setPresetError(null)
+      queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
+
+      if (
+        response?.integration &&
+        response.integration.auth_mode === "oauth2" &&
+        response.integration.oauth &&
+        !response.integration.oauth.connected
+      ) {
+        void beginOAuthConnection(response.integration)
+      }
+    },
+    onError: (err: Error) => setIntegrationError(err.message),
+  })
+
+  const deleteIntegration = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/source/integrations/${id}`, {
+        method: "DELETE",
+      })
+
+      if (!res.ok) {
+        const error = (await res.json().catch(() => null)) as ApiError | null
+        throw new Error(error?.error ?? "Unable to remove integration")
+      }
+
+      return true
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
+    },
+    onError: (err: Error) => setIntegrationError(err.message),
+  })
+
+  const createListing = useMutation({
+    mutationFn: async (payload: ListingFormState) => {
+      const metadata: Record<string, unknown> = {}
+
+      if (payload.type === "product" && payload.inventory.trim()) {
+        const count = Number.parseInt(payload.inventory, 10)
+        if (Number.isNaN(count) || count < 0) {
+          throw new Error("Inventory must be a positive integer")
+        }
+        metadata.inventory = count
+      }
+
+      if (payload.type === "service" && payload.durationMinutes.trim()) {
+        const duration = Number.parseInt(payload.durationMinutes, 10)
+        if (Number.isNaN(duration) || duration <= 0) {
+          throw new Error("Duration must be a positive number of minutes")
+        }
+        metadata.duration_minutes = duration
+      }
+
+      if (payload.metadata.trim()) {
+        const parsed = JSON.parse(payload.metadata)
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Additional metadata must be a JSON object")
+        }
+        Object.assign(metadata, parsed as Record<string, unknown>)
+      }
+
+      const body = {
+        type: payload.type,
+        title: payload.title.trim(),
+        description: payload.description.trim() || null,
+        price: payload.price.trim() ? Number.parseFloat(payload.price) : null,
+        currency: payload.currency.trim() || "USD",
+        metadata,
+        publishNow: true,
+      }
+
+      if (!body.title) {
+        throw new Error("A title is required")
+      }
+
+      if (body.price !== null && Number.isNaN(body.price)) {
+        throw new Error("Price must be a number")
+      }
+
+      const res = await fetch("/api/source/listings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const error = (await res.json().catch(() => null)) as ApiError | null
+        throw new Error(error?.error ?? "Unable to create listing")
+      }
+
+      return (await res.json()) as { listing: SourceListing }
+    },
+    onSuccess: () => {
+      setListingForm(defaultListingForm)
+      setListingError(null)
+      queryClient.invalidateQueries({ queryKey: ["source", "listings"] })
+    },
+    onError: (err: Error) => setListingError(err.message),
+  })
+
+  const integrations = integrationsQuery.data?.integrations ?? []
+  const listings = listingsQuery.data?.listings ?? []
+
+  const activeIntegrationCount = integrations.filter(
+    (integration) =>
+      integration.status === "active" &&
+      (integration.auth_mode !== "oauth2" || integration.oauth?.connected)
+  ).length
+
+  const integrationAdvancedForced = integrationForm.authMode === "oauth2"
+  const integrationAdvancedVisible = integrationAdvancedForced || showIntegrationAdvanced
+
+  const scrollToIntegrationForm = () => {
+    if (typeof document === "undefined") return
+    const el = document.getElementById("integration-form")
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
   }
 
   return (
-    <div
-      className="min-h-screen bg-[#111315] text-[#E6E6E6]"
-      style={{ fontFamily: "ui-sans-serif, system-ui" }}
-    >
-      <HeaderBar
-        onNewService={() => {
-          setDrawer({ type: "service", open: true, draft: null })
-          setActiveTab("services")
-        }}
-        onNewProduct={() => {
-          setDrawer({ type: "product", open: true, draft: null })
-          setActiveTab("products")
-        }}
-      />
-      <div className="border-b border-[#2F343A] flex">
-        <TabButton active={activeTab === "services"} onClick={() => setActiveTab("services")}>Services</TabButton>
-        <TabButton active={activeTab === "products"} onClick={() => setActiveTab("products")}>Products</TabButton>
-      </div>
-
-      <div className="p-4 space-y-4">
-        <InsightsRow />
-        <div className="flex items-center gap-2">
-          <SubTab active={subTab === "draft"} onClick={() => setSubTab("draft")}>Drafts</SubTab>
-          <SubTab active={subTab === "published"} onClick={() => setSubTab("published")}>Published</SubTab>
-          <SearchBox value={rawSearch} onChange={setRawSearch} />
-        </div>
-
-        {loading ? (
-          <div className="grid grid-cols-2 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <header className="border-b border-slate-900/60 bg-slate-950/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                Source
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold text-white">
+                Connect your storefronts
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm text-slate-300">
+                Link every website you sell on and publish listings once. Source
+                will send the payload to each integration with the structure and
+                headers you provide.
+              </p>
+            </div>
+            <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
+              <Plug className="size-3" /> Paid upgrade
+            </Badge>
           </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            onCreate={() =>
-              setDrawer({
-                type: activeTab === "services" ? "service" : "product",
-                open: true,
-                draft: null,
-              })
-            }
-          />
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {filtered.map((item) => (
-              <CatalogCard
-                key={item.id}
-                item={item}
-                type={activeTab === "services" ? "service" : "product"}
-                onEdit={(it) =>
-                  setDrawer({ type: activeTab === "services" ? "service" : "product", open: true, draft: it })
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
+            <div className="flex items-center gap-2">
+              <Plug className="size-4 text-slate-300" />
+              <span>
+                {integrationsQuery.isLoading
+                  ? "Loading connections..."
+                  : `${activeIntegrationCount} active connection${
+                      activeIntegrationCount === 1 ? "" : "s"
+                    }`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <UploadCloud className="size-4 text-slate-300" />
+              <span>
+                {listingsQuery.isLoading
+                  ? "Loading listings..."
+                  : `${listings.length} recent listing${
+                      listings.length === 1 ? "" : "s"
+                    }`}
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10">
+        <section className="overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 shadow-lg shadow-slate-950/40">
+          <div className="flex flex-col gap-3 border-b border-slate-900/60 px-6 py-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">How Source syncs your listings</h2>
+              <p className="text-sm text-slate-300">
+                Follow these steps to connect storefronts and publish everywhere in minutes.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="self-start md:self-auto"
+              onClick={scrollToIntegrationForm}
+            >
+              Start connecting
+            </Button>
+          </div>
+          <div className="grid gap-4 px-6 py-6 sm:grid-cols-2 lg:grid-cols-3">
+            {setupSteps.map((step) => {
+              const Icon = step.icon
+              return (
+                <div
+                  key={step.id}
+                  className="flex gap-3 rounded-xl border border-slate-900/60 bg-slate-950/60 p-4"
+                >
+                  <div className="rounded-lg bg-slate-900/60 p-2">
+                    <Icon className="size-4 text-sky-300" />
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="font-medium text-white">{step.title}</p>
+                    <p className="text-xs text-slate-400">{step.description}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Connected websites
+              </h2>
+              <p className="text-sm text-slate-300">
+                Each integration defines how Source authenticates, which
+                endpoint receives payloads, and any custom headers you need.
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                queryClient.invalidateQueries({
+                  queryKey: ["source", "integrations"],
+                })
+              }}
+              disabled={integrationsQuery.isFetching}
+            >
+              <RefreshCcw className="size-4" />
+              Refresh
+            </Button>
+          </div>
+
+          {integrationError && (
+            <div className="rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+              {integrationError}
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {integrationsQuery.isLoading &&
+              Array.from({ length: 2 }).map((_, idx) => (
+                <div
+                  key={`integration-skeleton-${idx}`}
+                  className="h-40 animate-pulse rounded-xl border border-slate-800/80 bg-slate-900/50"
+                />
+              ))}
+
+            {!integrationsQuery.isLoading && integrations.length === 0 && (
+              <div className="col-span-full rounded-xl border border-slate-800/70 bg-slate-900/40 p-6 text-sm text-slate-300">
+                No connections yet. Add your first integration to sync listings
+                anywhere you publish.
+              </div>
+            )}
+
+            {integrations.map((integration) => (
+              <IntegrationCard
+                key={integration.id}
+                integration={integration}
+                onRemove={() => deleteIntegration.mutate(integration.id)}
+                removing={
+                  deleteIntegration.isPending &&
+                  deleteIntegration.variables === integration.id
                 }
-                onDuplicate={duplicate}
-                onToggleStatus={(it) => {
-                  const upd = { ...it, status: it.status === "draft" ? "published" : "draft" }
-                  setCurrentList((prev: any[]) => prev.map((p) => (p.id === upd.id ? upd : p)))
-                }}
-                onDelete={(it) => setConfirm({ type: activeTab === "services" ? "service" : "product", id: it.id })}
-                onPreview={(it) => setPreview({ type: activeTab === "services" ? "service" : "product", item: it })}
+                onConnect={
+                  integration.auth_mode === "oauth2" && !integration.oauth?.connected
+                    ? () => beginOAuthConnection(integration)
+                    : undefined
+                }
+                connecting={connectingIntegrationId === integration.id}
               />
             ))}
+          </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
+          <form
+            id="integration-form"
+            className="rounded-2xl border border-slate-900/60 bg-slate-950/70 p-6 shadow-xl shadow-slate-950/40"
+            onSubmit={(event) => {
+              event.preventDefault()
+              setIntegrationError(null)
+
+              try {
+                createIntegration.mutate(integrationForm)
+              } catch (err) {
+                if (err instanceof Error) setIntegrationError(err.message)
+              }
+            }}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">
+                  Add integration
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Provide the destination endpoint and any authentication so
+                  Source can call it when you publish a listing.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-4 rounded-xl border border-slate-900/70 bg-slate-950/60 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">Connector library</p>
+                <p className="text-xs text-slate-400">
+                  Prefill this form for Shopify, Wix, WooCommerce, or trigger automation
+                  hooks that fan listings out to Depop, Facebook Marketplace, Craigslist,
+                  and more.
+                </p>
+              </div>
+              <Select
+                value={selectedPresetId ?? "manual"}
+                onValueChange={handlePresetChange}
+                placeholder="Manual setup"
+              >
+                <SelectContent>
+                  <SelectItem value="manual">Manual setup</SelectItem>
+                  {integrationPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {selectedPreset && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-slate-300">
+                      {selectedPreset.description}
+                    </p>
+                    {selectedPreset.docsUrl && (
+                      <a
+                        href={selectedPreset.docsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-sky-300 hover:text-sky-200"
+                      >
+                        View docs
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {selectedPreset.fields.map((field) => (
+                      <div key={field.id} className="space-y-2">
+                        <Label htmlFor={`preset-${field.id}`}>{field.label}</Label>
+                        <Input
+                          id={`preset-${field.id}`}
+                          type={
+                            field.type === "password"
+                              ? "password"
+                              : field.type === "url"
+                              ? "url"
+                              : "text"
+                          }
+                          value={presetInputs[field.id] ?? ""}
+                          onChange={(event) =>
+                            setPresetInputs((prev) => ({
+                              ...prev,
+                              [field.id]: event.target.value,
+                            }))
+                          }
+                          placeholder={field.placeholder}
+                        />
+                        {field.help && (
+                          <p className="text-xs text-slate-500">{field.help}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                    {presetError ? (
+                      <span className="text-rose-300">{presetError}</span>
+                    ) : presetNotice ? (
+                      <span className="text-emerald-300">{presetNotice}</span>
+                    ) : (
+                      <span className="text-slate-400">
+                        Fill in the required details, then apply to load the integration
+                        fields automatically.
+                      </span>
+                    )}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handlePresetApply}
+                      disabled={!selectedPreset}
+                    >
+                      Apply details
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <div className="space-y-5">
+                <FormSubheading
+                  title="Connection basics"
+                  description="Tell Source where to send your listings and what to call the integration."
+                />
+                <div className="grid gap-4">
+                  <FieldStack label="Platform" htmlFor="provider">
+                    <Input
+                      id="provider"
+                      value={integrationForm.provider}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          provider: event.target.value,
+                        }))
+                      }
+                      placeholder="Shopify, Wix, Depop, Custom"
+                      required
+                    />
+                  </FieldStack>
+
+                  <FieldStack label="Display name" htmlFor="displayName">
+                    <Input
+                      id="displayName"
+                      value={integrationForm.displayName}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          displayName: event.target.value,
+                        }))
+                      }
+                      placeholder="Shown in your integration list"
+                    />
+                  </FieldStack>
+
+                  <FieldStack label="Website URL" htmlFor="connectionUrl">
+                    <Input
+                      id="connectionUrl"
+                      value={integrationForm.connectionUrl}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          connectionUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://yourstore.com"
+                      type="url"
+                      required
+                    />
+                  </FieldStack>
+
+                  <FieldStack label="Publish endpoint" htmlFor="publishUrl">
+                    <Input
+                      id="publishUrl"
+                      value={integrationForm.publishUrl}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          publishUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://api.marketplace.com/v1/listings"
+                      type="url"
+                      required
+                    />
+                  </FieldStack>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FieldStack label="HTTP method" htmlFor="publishMethod">
+                    <Select
+                      value={integrationForm.publishMethod}
+                      onValueChange={(value) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          publishMethod: value as IntegrationFormState["publishMethod"],
+                        }))
+                      }
+                    >
+                      <SelectContent>
+                        {httpMethods.map((method) => (
+                          <SelectItem key={method} value={method}>
+                            {method}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FieldStack>
+
+                  <FieldStack label="Status" htmlFor="status">
+                    <Select
+                      value={integrationForm.status}
+                      onValueChange={(value) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          status: value as IntegrationFormState["status"],
+                        }))
+                      }
+                    >
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="disabled">Disabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FieldStack>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <FormSubheading
+                  title="Authentication"
+                  description="Choose how Source authenticates when publishing to this channel."
+                />
+                <div className="grid gap-4">
+                  <FieldStack label="Authentication" htmlFor="authMode">
+                    <Select
+                      value={integrationForm.authMode}
+                      onValueChange={(value) => {
+                        const nextMode = value as IntegrationFormState["authMode"]
+                        setIntegrationForm((prev) => {
+                          if (nextMode === "oauth2") {
+                            return {
+                              ...prev,
+                              authMode: nextMode,
+                              authToken: "",
+                            }
+                          }
+
+                          return {
+                            ...prev,
+                            authMode: nextMode,
+                            authToken: nextMode === "none" ? "" : prev.authToken,
+                            oauthAuthorizeUrl: "",
+                            oauthTokenUrl: "",
+                            oauthScopes: "",
+                            oauthClientId: "",
+                            oauthClientSecret: "",
+                            oauthMetadata: "",
+                          }
+                        })
+
+                        if (nextMode === "oauth2") {
+                          setShowIntegrationAdvanced(true)
+                        }
+                      }}
+                    >
+                      <SelectContent>
+                        {authModes.map((mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {mode === "api_key"
+                              ? "API key header"
+                              : mode === "none"
+                              ? "No auth"
+                              : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                      <p className="text-xs text-slate-400">
+                        Stored securely in your Supabase project. Bearer tokens add
+                        an Authorization header automatically. API keys let you
+                        choose the header name (for example
+                        <code className="mx-1 rounded bg-slate-800 px-1">
+                          X-Shopify-Access-Token
+                        </code>
+                        ). Basic auth expects username:password.
+                      </p>
+                    )}
+                    {integrationForm.authMode === "oauth2" && (
+                      <p className="text-xs text-slate-400">
+                        After saving, Source opens the provider&apos;s consent screen so you can
+                        authorize access and capture tokens securely.
+                      </p>
+                    )}
+                  </FieldStack>
+
+                  {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                    <FieldStack label="Credentials" htmlFor="authToken">
+                      <Input
+                        id="authToken"
+                        value={integrationForm.authToken}
+                        onChange={(event) =>
+                          setIntegrationForm((prev) => ({
+                            ...prev,
+                            authToken: event.target.value,
+                          }))
+                        }
+                        placeholder={
+                          integrationForm.authMode === "basic"
+                            ? "username:password"
+                            : "Secret value"
+                        }
+                        required
+                      />
+                    </FieldStack>
+                  )}
+
+                  {integrationForm.authMode === "api_key" && (
+                    <FieldStack
+                      label="API key header"
+                      htmlFor="authHeader"
+                      description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
+                    >
+                      <Input
+                        id="authHeader"
+                        value={integrationForm.authHeader}
+                        onChange={(event) =>
+                          setIntegrationForm((prev) => ({
+                            ...prev,
+                            authHeader: event.target.value,
+                          }))
+                        }
+                        placeholder="X-API-Key"
+                        required
+                      />
+                    </FieldStack>
+                  )}
+
+                  {integrationForm.authMode === "oauth2" && (
+                    <div className="grid gap-4">
+                      <FieldStack
+                        label="Authorization URL"
+                        htmlFor="oauth-authorize"
+                        description="Where Source sends users to approve access."
+                      >
+                        <Input
+                          id="oauth-authorize"
+                          value={integrationForm.oauthAuthorizeUrl}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthAuthorizeUrl: event.target.value,
+                            }))
+                          }
+                          placeholder="https://provider.com/oauth/authorize"
+                          type="url"
+                          required
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="Token URL"
+                        htmlFor="oauth-token"
+                        description="Source exchanges the authorization code for tokens at this URL."
+                      >
+                        <Input
+                          id="oauth-token"
+                          value={integrationForm.oauthTokenUrl}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthTokenUrl: event.target.value,
+                            }))
+                          }
+                          placeholder="https://provider.com/oauth/token"
+                          type="url"
+                          required
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="Client ID"
+                        htmlFor="oauth-client-id"
+                        description="Registered OAuth client identifier."
+                      >
+                        <Input
+                          id="oauth-client-id"
+                          value={integrationForm.oauthClientId}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthClientId: event.target.value,
+                            }))
+                          }
+                          placeholder="client-id-123"
+                          required
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="Client secret"
+                        htmlFor="oauth-client-secret"
+                        description="Stored securely and used during token refresh."
+                      >
+                        <Input
+                          id="oauth-client-secret"
+                          value={integrationForm.oauthClientSecret}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthClientSecret: event.target.value,
+                            }))
+                          }
+                          placeholder="Optional"
+                          type="password"
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="Scopes"
+                        htmlFor="oauth-scopes"
+                        description="Space separated list of scopes requested during authorization."
+                      >
+                        <Input
+                          id="oauth-scopes"
+                          value={integrationForm.oauthScopes}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthScopes: event.target.value,
+                            }))
+                          }
+                          placeholder="inventory.write listings.read"
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="OAuth metadata (JSON)"
+                        htmlFor="oauth-metadata"
+                        description="Optional JSON persisted with the integration for custom providers."
+                      >
+                        <Textarea
+                          id="oauth-metadata"
+                          value={integrationForm.oauthMetadata}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              oauthMetadata: event.target.value,
+                            }))
+                          }
+                          rows={3}
+                          placeholder='{"audience": "marketplace"}'
+                        />
+                      </FieldStack>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 space-y-4 rounded-2xl border border-slate-900/70 bg-slate-950/50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Advanced options
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Control custom headers and the JSON body Source sends to your integration.
+                  </p>
+                </div>
+                {!integrationAdvancedForced && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setShowIntegrationAdvanced((prev) => !prev)}
+                  >
+                    {integrationAdvancedVisible ? "Hide advanced" : "Show advanced"}
+                  </Button>
+                )}
+              </div>
+
+              {integrationAdvancedVisible && (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <FieldStack
+                    label="Custom headers (JSON)"
+                    htmlFor="headers"
+                    description="Use key/value pairs for any additional headers you want on publish requests."
+                  >
+                    <Textarea
+                      id="headers"
+                      value={integrationForm.headers}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          headers: event.target.value,
+                        }))
+                      }
+                      placeholder='{"X-Shop-Domain": "{{integration.connectionUrl}}"}'
+                      rows={integrationAdvancedForced ? 4 : 3}
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Payload template (JSON)"
+                    htmlFor="payloadTemplate"
+                    description="Optional structure for the request body. Use {{listing.title}} style tokens to reference listing data."
+                  >
+                    <Textarea
+                      id="payloadTemplate"
+                      value={integrationForm.payloadTemplate}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          payloadTemplate: event.target.value,
+                        }))
+                      }
+                      placeholder='{"name": "{{listing.title}}", "price": "{{listing.price}}"}'
+                      rows={integrationAdvancedForced ? 6 : 5}
+                    />
+                  </FieldStack>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setIntegrationForm(defaultIntegrationForm)
+                  setIntegrationError(null)
+                  setSelectedPresetId(null)
+                  setPresetInputs({})
+                  setPresetNotice(null)
+                  setPresetError(null)
+                  setShowIntegrationAdvanced(false)
+                }}
+              >
+                Reset
+              </Button>
+              <Button type="submit" disabled={createIntegration.isPending}>
+                {createIntegration.isPending ? "Saving..." : "Save integration"}
+              </Button>
+            </div>
+          </form>
+
+          <form
+            className="rounded-2xl border border-slate-900/60 bg-slate-950/70 p-6 shadow-xl shadow-slate-950/40"
+            onSubmit={(event) => {
+              event.preventDefault()
+              setListingError(null)
+
+              try {
+                createListing.mutate(listingForm)
+              } catch (err) {
+                if (err instanceof Error) setListingError(err.message)
+              }
+            }}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">
+                  Publish listing
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Listings publish to every active integration immediately when
+                  you choose “Publish now”.
+                </p>
+              </div>
+            </div>
+
+            {listingError && (
+              <div className="mt-4 rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+                {listingError}
+              </div>
+            )}
+
+
+            <div className="mt-5 space-y-6">
+              <div className="rounded-xl border border-slate-900/60 bg-slate-950/60 p-4 text-xs text-slate-300">
+                {activeIntegrationCount > 0 ? (
+                  <span>
+                    Publishing now will post to
+                    {" "}
+                    <span className="font-semibold text-white">
+                      all {activeIntegrationCount} active connection{activeIntegrationCount === 1 ? "" : "s"}
+                    </span>
+                    . Check the delivery log below to confirm every marketplace accepts the payload.
+                  </span>
+                ) : (
+                  <span>
+                    Connect at least one integration above to start auto-posting listings everywhere you sell. We&apos;ll keep the draft ready until you finish connecting.
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                <div className="space-y-5">
+                  <FormSubheading
+                    title="Listing basics"
+                    description="Give shoppers the title and context they&apos;ll see across every channel."
+                  />
+                  <div className="grid gap-4">
+                    <FieldStack label="Type" htmlFor="listing-type">
+                      <Select
+                        value={listingForm.type}
+                        onValueChange={(value) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            type: value as ListingFormState["type"],
+                          }))
+                        }
+                      >
+                        <SelectContent>
+                          <SelectItem value="product">Product</SelectItem>
+                          <SelectItem value="service">Service</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FieldStack>
+
+                    <FieldStack label="Title" htmlFor="listing-title">
+                      <Input
+                        id="listing-title"
+                        value={listingForm.title}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            title: event.target.value,
+                          }))
+                        }
+                        placeholder="Summer drop or design sprint"
+                        required
+                      />
+                    </FieldStack>
+
+                    <FieldStack label="Description" htmlFor="listing-description">
+                      <Textarea
+                        id="listing-description"
+                        value={listingForm.description}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            description: event.target.value,
+                          }))
+                        }
+                        placeholder="What customers receive when they purchase"
+                        rows={5}
+                      />
+                    </FieldStack>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <FormSubheading
+                    title="Pricing & availability"
+                    description="These values merge into every integration payload the moment you publish."
+                  />
+                  <div className="grid gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FieldStack label="Price" htmlFor="listing-price">
+                        <Input
+                          id="listing-price"
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          min="0"
+                          value={listingForm.price}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              price: event.target.value,
+                            }))
+                          }
+                          placeholder="99.00"
+                        />
+                      </FieldStack>
+
+                      <FieldStack label="Currency" htmlFor="listing-currency">
+                        <Input
+                          id="listing-currency"
+                          value={listingForm.currency}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              currency: event.target.value.toUpperCase(),
+                            }))
+                          }
+                          placeholder="USD"
+                          maxLength={3}
+                        />
+                      </FieldStack>
+                    </div>
+
+                    {listingForm.type === "product" && (
+                      <FieldStack label="Inventory" htmlFor="listing-inventory">
+                        <Input
+                          id="listing-inventory"
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          value={listingForm.inventory}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              inventory: event.target.value,
+                            }))
+                          }
+                          placeholder="50"
+                        />
+                      </FieldStack>
+                    )}
+
+                    {listingForm.type === "service" && (
+                      <FieldStack
+                        label="Duration (minutes)"
+                        htmlFor="listing-duration"
+                      >
+                        <Input
+                          id="listing-duration"
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          value={listingForm.durationMinutes}
+                          onChange={(event) =>
+                            setListingForm((prev) => ({
+                              ...prev,
+                              durationMinutes: event.target.value,
+                            }))
+                          }
+                          placeholder="60"
+                        />
+                      </FieldStack>
+                    )}
+
+                    <FieldStack
+                      label="Additional metadata (JSON)"
+                      htmlFor="listing-metadata"
+                      description="Merge extra fields into the payload you send to partners."
+                    >
+                      <Textarea
+                        id="listing-metadata"
+                        value={listingForm.metadata}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            metadata: event.target.value,
+                          }))
+                        }
+                        rows={4}
+                        placeholder='{"tags": ["summer", "drop"], "sku": "SKU-1001"}'
+                      />
+                    </FieldStack>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setListingForm(defaultListingForm)
+                  setListingError(null)
+                }}
+              >
+                Reset
+              </Button>
+              <Button type="submit" disabled={createListing.isPending}>
+                {createListing.isPending ? "Publishing..." : "Create listing"}
+              </Button>
+            </div>
+          </form>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Recent listings
+              </h2>
+              <p className="text-sm text-slate-300">
+                Track what was sent to each integration and surface payload
+                errors instantly.
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                queryClient.invalidateQueries({
+                  queryKey: ["source", "listings"],
+                })
+              }
+              disabled={listingsQuery.isFetching}
+            >
+              <RefreshCcw className="size-4" />
+              Refresh
+            </Button>
+          </div>
+
+          {listingsQuery.error && (
+            <div className="rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+              {listingsQuery.error.message}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {listingsQuery.isLoading &&
+              Array.from({ length: 3 }).map((_, idx) => (
+                <div
+                  key={`listing-skeleton-${idx}`}
+                  className="h-32 animate-pulse rounded-xl border border-slate-900/80 bg-slate-950/60"
+                />
+              ))}
+
+            {!listingsQuery.isLoading && listings.length === 0 && (
+              <div className="rounded-xl border border-slate-900/70 bg-slate-950/60 p-6 text-sm text-slate-300">
+                No listings yet. When you publish a product or service it will
+                appear here with delivery status per integration.
+              </div>
+            )}
+
+            {listings.map((listing) => (
+              <ListingCard key={listing.id} listing={listing} />
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
+  )
+}
+
+type FieldStackProps = {
+  label: string
+  htmlFor: string
+  description?: string
+  children: ReactNode
+}
+
+function FieldStack({ label, htmlFor, description, children }: FieldStackProps) {
+  return (
+    <div className="space-y-2 text-sm">
+      <Label htmlFor={htmlFor} className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+        {label}
+      </Label>
+      {children}
+      {description && (
+        <p className="text-xs text-slate-500">{description}</p>
+      )}
+    </div>
+  )
+}
+
+type FormSubheadingProps = {
+  title: string
+  description?: string
+}
+
+function FormSubheading({ title, description }: FormSubheadingProps) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">{title}</p>
+      {description && <p className="text-xs text-slate-400">{description}</p>}
+    </div>
+  )
+}
+
+type IntegrationCardProps = {
+  integration: SourceIntegration
+  removing: boolean
+  onRemove(): void
+  onConnect?: () => void
+  connecting?: boolean
+}
+
+function IntegrationCard({ integration, removing, onRemove, onConnect, connecting }: IntegrationCardProps) {
+  const headers = integration.headers ?? {}
+  const authSummary = (() => {
+    switch (integration.auth_mode) {
+      case "bearer":
+        return "Bearer token header"
+      case "basic":
+        return "HTTP basic auth"
+      case "api_key":
+        return `API key header: ${integration.auth_header || "X-API-Key"}`
+      case "oauth2":
+        return integration.oauth?.connected
+          ? "OAuth 2.0 access token"
+          : "OAuth 2.0 (connection required)"
+      default:
+        return "No authentication"
+    }
+  })()
+
+  const oauthConnected = integration.auth_mode === "oauth2" && integration.oauth?.connected
+  const oauthExpiresAt = integration.oauth?.expires_at ?? null
+  const oauthExpiryLabel = (() => {
+    if (!oauthExpiresAt) return null
+    const date = new Date(oauthExpiresAt)
+    if (Number.isNaN(date.getTime())) return null
+    return date.toLocaleString()
+  })()
+
+  return (
+    <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Globe className="size-4 text-slate-300" />
+              <p className="text-sm font-semibold text-white">
+                {integration.display_name || integration.provider}
+              </p>
+            </div>
+            <p className="break-all text-xs text-slate-400">{integration.connection_url}</p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Badge
+              variant={integration.status === "active" ? "default" : "secondary"}
+              className={cn(
+                integration.status === "active"
+                  ? "bg-emerald-500/20 text-emerald-200"
+                  : "bg-slate-800 text-slate-300",
+              )}
+            >
+              {integration.status === "active" ? "Active" : "Disabled"}
+            </Badge>
+            {integration.auth_mode === "oauth2" && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "gap-1",
+                  oauthConnected
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-100",
+                )}
+              >
+                <Lock className="size-3" />
+                {oauthConnected ? "Connected" : "Auth needed"}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-900/70 bg-slate-950/70 p-3 text-xs text-slate-300">
+          <p className="font-semibold text-slate-200">Publish request</p>
+          <p className="mt-1 flex items-center gap-2 break-all font-mono text-[11px] text-slate-400">
+            <span className="rounded bg-slate-900 px-2 py-0.5 uppercase tracking-wide">
+              {integration.publish_method}
+            </span>
+            {integration.publish_url}
+          </p>
+        </div>
+
+        <div className="space-y-2 text-xs text-slate-300">
+          <div>
+            <p className="font-semibold text-slate-200">Authentication</p>
+            <p className="text-slate-400">{authSummary}</p>
+          </div>
+          {integration.auth_mode === "oauth2" && (
+            <div className="flex flex-col gap-1 text-[11px] text-slate-400">
+              <div className="flex items-center gap-2">
+                <Lock className={cn("size-3", oauthConnected ? "text-emerald-300" : "text-amber-300")} />
+                <span>{oauthConnected ? "Authorized" : "Not authorized"}</span>
+              </div>
+              {oauthConnected && oauthExpiryLabel && (
+                <span className="pl-5">Token refresh by {oauthExpiryLabel}</span>
+              )}
+              {!oauthConnected && (
+                <span className="pl-5 text-amber-200">
+                  Connect this integration so Source can publish automatically.
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {Object.keys(headers).length > 0 && (
+          <div className="space-y-2 text-xs text-slate-300">
+            <p className="font-semibold text-slate-200">Custom headers</p>
+            <div className="space-y-1">
+              {Object.entries(headers).map(([key, value]) => (
+                <div key={key} className="flex items-center gap-3 break-all font-mono text-[11px]">
+                  <span className="rounded bg-slate-900 px-2 py-0.5 text-slate-200">{key}</span>
+                  <span className="text-slate-400">{String(value)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {drawer.open && (
-        <Drawer
-          type={drawer.type}
-          draft={drawer.draft}
-          onClose={() => setDrawer({ ...drawer, open: false, draft: null })}
-          onSave={handleSave}
-          onPreview={(it) => setPreview({ type: drawer.type, item: it })}
-        />
-      )}
-      {preview && (
-        <PreviewSheet
-          type={preview.type}
-          item={preview.item}
-          onClose={() => setPreview(null)}
-          onEdit={() => {
-            setDrawer({ type: preview.type, open: true, draft: preview.item })
-            setPreview(null)
-          }}
-        />
-      )}
-      {confirm && (
-        <ConfirmDelete
-          onCancel={() => setConfirm(null)}
-          onConfirm={handleDelete}
-        />
-      )}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+        <a
+          href={integration.connection_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-slate-300 hover:text-white"
+        >
+          Visit site <ExternalLink className="size-3" />
+        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          {onConnect && (
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={connecting || removing}
+              className="inline-flex items-center gap-2 rounded border border-sky-500/40 px-2 py-1 text-sky-200 transition hover:bg-sky-500/10 disabled:opacity-50"
+            >
+              {connecting ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Plug className="size-3" />
+              )}
+              {connecting ? "Connecting" : "Connect account"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={removing}
+            className="inline-flex items-center gap-1 rounded border border-rose-500/40 px-2 py-1 text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-50"
+          >
+            <X className="size-3" />
+            {removing ? "Removing" : "Disconnect"}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
-// ----- sub components -----
-function HeaderBar({
-  onNewService,
-  onNewProduct,
-}: {
-  onNewService: () => void
-  onNewProduct: () => void
-}) {
+type ListingCardProps = {
+  listing: SourceListing
+}
+
+function ListingCard({ listing }: ListingCardProps) {
+  const status = listing.status
+  const publishResults = listing.publish_results ?? []
+
   return (
-    <header className="p-4 border-b border-[#2F343A]">
-      <h1 className="text-lg font-semibold">Pro Dashboard</h1>
-      <p className="text-sm text-[#A6A6A6] mt-1">
-        Create products & services for your profile
-      </p>
-      <div className="mt-4 flex gap-2">
-        <button
-          onClick={onNewService}
-          className="px-3 py-2 bg-[#9966CC] text-white rounded-md text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#9966CC]"
-        >
-          New Service
-        </button>
-        <button
-          onClick={onNewProduct}
-          className="px-3 py-2 bg-[#9966CC] text-white rounded-md text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#9966CC]"
-        >
-          New Product
-        </button>
+    <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-lg font-semibold text-white">{listing.title}</h3>
+            <Badge className="bg-slate-800 text-slate-200">
+              {listing.type === "product" ? "Product" : "Service"}
+            </Badge>
+          </div>
+          <p className="text-sm text-slate-300">
+            {listing.description || "No description"}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2 text-right">
+          <Badge className={cn("border", statusAccent[status])}>
+            {listingStatuses[status]}
+          </Badge>
+          {listing.price !== null && (
+            <p className="font-mono text-sm text-slate-200">
+              {formatCurrency(listing.price, listing.currency)}
+            </p>
+          )}
+          <p className="text-xs text-slate-400">
+            Updated {formatRelativeTime(listing.updated_at)}
+          </p>
+        </div>
       </div>
-    </header>
-  )
-}
 
-function TabButton({
-  children,
-  active,
-  onClick,
-}: {
-  children: React.ReactNode
-  active?: boolean
-  onClick(): void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={classNames(
-        "flex-1 py-2 text-sm border-b-2",
-        active ? "border-[#9966CC]" : "border-transparent text-[#A6A6A6]"
+      {Object.keys(listing.metadata ?? {}).length > 0 && (
+        <div className="mt-4 space-y-1 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
+          <p className="font-semibold text-slate-200">Metadata</p>
+          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-400">
+            {JSON.stringify(listing.metadata, null, 2)}
+          </pre>
+        </div>
       )}
-    >
-      {children}
-    </button>
+
+      <div className="mt-4 space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+          Delivery log
+        </p>
+        {publishResults.length === 0 ? (
+          <p className="text-xs text-slate-400">
+            Not sent to any integrations yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {publishResults.map((result, index) => (
+              <PublishRow key={`${result.integrationId}-${index}`} result={result} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
-function SubTab({
-  children,
-  active,
-  onClick,
-}: {
-  children: React.ReactNode
-  active?: boolean
-  onClick(): void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={classNames(
-        "px-3 py-1 rounded-md text-sm",
-        active
-          ? "bg-[#22262A] text-[#E6E6E6]"
-          : "text-[#A6A6A6]"
-      )}
-    >
-      {children}
-    </button>
-  )
+type PublishRowProps = {
+  result: PublishResult
 }
 
-function SearchBox({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange(v: string): void
-}) {
-  return (
-    <input
-      aria-label="Search"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="Search"
-      className="ml-auto px-3 py-1.5 rounded-md bg-[#1C1F22] text-sm border border-[#2F343A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9966CC]"
-    />
-  )
-}
-
-function StatusPill({ status }: { status: "draft" | "published" }) {
-  return (
-    <span
-      className={classNames(
-        "px-2 py-0.5 text-xs rounded-full",
-        status === "published"
-          ? "bg-[#6DD3A8]/20 text-[#6DD3A8]"
-          : "bg-[#E8C268]/20 text-[#E8C268]"
-      )}
-    >
-      {status === "published" ? "Published" : "Draft"}
-    </span>
-  )
-}
-
-function CatalogCard({
-  item,
-  type,
-  onEdit,
-  onDuplicate,
-  onToggleStatus,
-  onDelete,
-  onPreview,
-}: {
-  item: any
-  type: "service" | "product"
-  onEdit(it: any): void
-  onDuplicate(it: any): void
-  onToggleStatus(it: any): void
-  onDelete(it: any): void
-  onPreview(it: any): void
-}) {
-  const [menu, setMenu] = useState(false)
+function PublishRow({ result }: PublishRowProps) {
+  const ok = result.status === "synced"
   return (
     <div
-      className="relative bg-[#1C1F22] border border-[#2F343A] rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-[#9966CC] transition-transform hover:scale-[1.02]"
-    >
-      {item.thumbnail ? (
-        <img
-          src={item.thumbnail}
-          alt=""
-          className="w-full h-32 object-cover"
-        />
-      ) : (
-        <div className="h-32 bg-[#22262A] flex items-center justify-center text-[#7C838A] text-sm">
-          No Image
-        </div>
+      className={cn(
+        "flex flex-col gap-2 rounded-lg border p-3 text-xs transition",
+        ok
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-100"
       )}
-      <div className="p-2 text-sm space-y-1">
-        <div className="flex justify-between items-start">
-          <h3 className="font-medium leading-tight">{item.title}</h3>
-          <StatusPill status={item.status} />
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Plug className="size-3" />
+          <span className="font-semibold">
+            {result.integrationName || result.integrationId}
+          </span>
         </div>
-        <div className="flex justify-between text-[#A6A6A6] text-xs">
-          <span>{formatUSD(item.price)}</span>
-          {type === "service" && item.durationMins && (
-            <span>{item.durationMins}m</span>
-          )}
-          {type === "product" && item.inventory !== undefined && (
-            <span>{item.inventory} in stock</span>
-          )}
-        </div>
-        <div className="flex justify-between items-center mt-1">
-          <button
-            className="text-[#9966CC] text-xs"
-            onClick={() => onPreview(item)}
-          >
-            Preview
-          </button>
-          <div className="relative">
-            <button
-              aria-label="More"
-              onClick={() => setMenu((m) => !m)}
-              className="px-2"
-            >
-              ⋯
-            </button>
-            {menu && (
-              <div className="absolute right-0 mt-1 w-36 bg-[#22262A] border border-[#2F343A] rounded-md z-20 text-xs">
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
-                  onClick={() => {
-                    setMenu(false)
-                    onEdit(item)
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
-                  onClick={() => {
-                    setMenu(false)
-                    onDuplicate(item)
-                  }}
-                >
-                  Duplicate
-                </button>
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22]"
-                  onClick={() => {
-                    setMenu(false)
-                    onToggleStatus(item)
-                  }}
-                >
-                  {item.status === "draft" ? "Publish" : "Move to Draft"}
-                </button>
-                <button
-                  className="block w-full text-left px-3 py-2 hover:bg-[#1C1F22] text-[#E8C268]"
-                  onClick={() => {
-                    setMenu(false)
-                    onDelete(item)
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="text-[10px] text-[#7C838A]">
-          Last updated {timeAgo(item.updatedAt)}
-        </div>
+        <span className="font-mono">
+          {ok ? "Synced" : "Failed"}
+          {result.responseCode ? ` · ${result.responseCode}` : ""}
+        </span>
       </div>
+      {result.error && <p className="text-[11px]">{result.error}</p>}
+      {result.responseBody && (
+        <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px]">
+          {JSON.stringify(result.responseBody, null, 2)}
+        </pre>
+      )}
     </div>
   )
 }
 
-function Drawer({
-  type,
-  draft,
-  onClose,
-  onSave,
-  onPreview,
-}: {
-  type: "service" | "product"
-  draft: any | null
-  onClose(): void
-  onSave(it: any): void
-  onPreview(it: any): void
-}) {
-  const [item, setItem] = useState<any>(
-    draft ?? {
-      type,
-      title: "",
-      description: "",
-      price: 0,
-      status: "draft",
+  function formatCurrency(value: number, currency: string) {
+    try {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency,
+      }).format(value)
+    } catch {
+      return `${currency} ${value.toFixed(2)}`
     }
-  )
-
-  useEffect(() => {
-    setItem(draft ?? { type, title: "", description: "", price: 0, status: "draft" })
-  }, [draft, type])
-
-  function update(field: string, value: any) {
-    setItem((prev: any) => ({ ...prev, [field]: value }))
   }
 
-  const meta =
-    type === "service"
-      ? {
-          eyebrow: "Source",
-          badge: "Service",
-          title: draft ? "Update your service" : "Create a new service",
-          description: "Craft a bookable experience that fits your offer stack.",
-          highlight: "Services live in Source and let people reserve time with you.",
-          accent: "from-[#5E3EFF]/70 via-[#9966FF]/55 to-[#1A86FF]/60",
-          icon: Sparkles,
-        }
-      : {
-          eyebrow: "Source",
-          badge: "Product",
-          title: draft ? "Update your product" : "Create a new product",
-          description: "Package what you sell with the clarity it deserves.",
-          highlight: "Products appear in Source for supporters to purchase instantly.",
-          accent: "from-[#27D7A1]/70 via-[#3EC7FF]/55 to-[#1D7BFF]/60",
-          icon: Package,
-        }
+function formatRelativeTime(iso: string) {
+  const now = Date.now()
+  const updated = new Date(iso).getTime()
+  const diff = now - updated
 
-  const Icon = meta.icon
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
 
-  return (
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-4 py-6 backdrop-blur-sm sm:py-10"
-      role="dialog"
-      aria-modal
-      onClick={onClose}
-    >
-      <div className="flex min-h-full items-start justify-center sm:items-center" onClick={(event) => event.stopPropagation()}>
-        <div className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0B1016]/95 shadow-[0_45px_90px_-40px_rgba(15,23,42,0.8)] max-h-[calc(100dvh-2rem)] sm:max-h-[85vh]">
-          <div className="relative flex-none overflow-hidden">
-            <div
-              className={classNames(
-                "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-90",
-                meta.accent
-              )}
-            />
-            <div className="relative flex flex-col gap-2.5 px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-4 sm:pt-3.5">
-              <div className="flex flex-1 flex-col gap-2">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-white shadow-inner">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <Badge
-                        variant="outline"
-                        className="border-white/20 bg-white/10 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-200"
-                      >
-                        {meta.eyebrow}
-                      </Badge>
-                      <Badge className="bg-white/15 text-[11px] font-semibold text-white">
-                        {meta.badge}
-                      </Badge>
-                    </div>
-                    <h2 className="text-lg font-semibold leading-snug text-white sm:text-xl">
-                      {meta.title}
-                    </h2>
-                    <p className="text-[11px] text-zinc-200 sm:text-sm">{meta.description}</p>
-                  </div>
-                </div>
-              </div>
-              <Button
-                type="button"
-                onClick={onClose}
-                variant="ghost"
-                className="self-start rounded-full bg-white/10 p-1.5 text-zinc-100 hover:bg-white/20"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-            <div className="border-t border-white/10 px-4 py-1.5 text-[11px] text-zinc-300 sm:px-6 sm:py-2">
-              {meta.highlight}
-            </div>
-          </div>
-
-          <form
-            className="flex flex-1 flex-col gap-6 overflow-y-auto px-5 pb-6 pt-6 sm:px-8 sm:pb-8"
-            onSubmit={(e) => {
-              e.preventDefault()
-              const nextItem = {
-                ...item,
-                price: item.price === "" || item.price === undefined ? 0 : item.price,
-                durationMins:
-                  item.durationMins === "" || item.durationMins === undefined
-                    ? undefined
-                    : Number(item.durationMins),
-                inventory:
-                  item.inventory === "" || item.inventory === undefined
-                    ? undefined
-                    : Number(item.inventory),
-              }
-              onSave(nextItem)
-            }}
-          >
-            <FormSection
-              title="Show the vibe"
-              description="Give people a quick sense of what they'll get when they choose this offering."
-            >
-              <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] px-4 py-6 text-center text-sm text-zinc-300">
-                <p className="text-sm font-medium text-white">Cover image</p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Drop a file here or browse to upload a promo image.
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mt-4 rounded-xl border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-white/20"
-                >
-                  Upload
-                </Button>
-              </div>
-            </FormSection>
-
-            <FormSection
-              title="Overview"
-              description={
-                type === "service"
-                  ? "Describe the experience in your words so clients know exactly what to expect."
-                  : "Explain what supporters get the moment they check out."
-              }
-            >
-              <div className="space-y-2">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Title
-                </Label>
-                <Input
-                  value={item.title}
-                  onChange={(e) => update("title", e.target.value)}
-                  placeholder={
-                    type === "service" ? "Name your service" : "Name your product"
-                  }
-                  className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Description
-                </Label>
-                <Textarea
-                  value={item.description}
-                  onChange={(e) => update("description", e.target.value)}
-                  placeholder={
-                    type === "service"
-                      ? "What’s the flow, outcome, or deliverable of this service?"
-                      : "Tell supporters what’s included, specs, or delivery details."
-                  }
-                  className="min-h-[140px] rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                />
-              </div>
-            </FormSection>
-
-            <FormSection
-              title="Pricing & logistics"
-              description={
-                type === "service"
-                  ? "Set the price and time commitment so scheduling is effortless."
-                  : "Track inventory and set pricing so supporters can check out smoothly."
-              }
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                    Price (USD)
-                  </Label>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    value={item.price ?? ""}
-                    onChange={(e) => {
-                      const { value } = e.target
-                      update("price", value === "" ? "" : parseFloat(value))
-                    }}
-                    min={0}
-                    step="0.01"
-                    className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                  />
-                </div>
-                {type === "service" ? (
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Duration (mins)
-                    </Label>
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      value={item.durationMins ?? ""}
-                      onChange={(e) => {
-                        const { value } = e.target
-                        update("durationMins", value === "" ? "" : parseInt(value, 10))
-                      }}
-                      min={0}
-                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Inventory
-                    </Label>
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      value={item.inventory ?? ""}
-                      onChange={(e) => {
-                        const { value } = e.target
-                        update("inventory", value === "" ? "" : parseInt(value, 10))
-                      }}
-                      min={0}
-                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                    />
-                  </div>
-                )}
-              </div>
-              {type === "product" && (
-                <div className="space-y-2">
-                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                    SKU (optional)
-                  </Label>
-                  <Input
-                    value={item.sku || ""}
-                    onChange={(e) => update("sku", e.target.value)}
-                    placeholder="Add a SKU so you can track this product later"
-                    className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                  />
-                </div>
-              )}
-            </FormSection>
-
-            <FormSection
-              title="Visibility"
-              description="Choose whether to keep this hidden while you refine the details or ship it immediately."
-            >
-              <div className="space-y-3">
-                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                  Status
-                </Label>
-                <Select value={item.status} onValueChange={(value) => update("status", value)}>
-                  <SelectContent className="space-y-1 bg-[#0B1222]">
-                    <SelectItem value="draft" label="Draft">
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-white">Draft</p>
-                        <p className="text-xs text-zinc-400">
-                          Keep polishing without publishing to Source yet.
-                        </p>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="published" label="Published">
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-white">Published</p>
-                        <p className="text-xs text-zinc-400">
-                          Make it live so members can discover and buy.
-                        </p>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </FormSection>
-
-            <div className="sticky bottom-0 -mx-5 flex flex-col gap-3 border-t border-white/5 bg-[#070B12]/80 px-5 py-4 backdrop-blur sm:-mx-8 sm:flex-row sm:items-center sm:justify-end sm:gap-2 sm:px-8">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={onClose}
-                className="h-11 rounded-xl border border-white/10 bg-white/[0.02] px-5 text-sm font-medium text-zinc-200 hover:bg-white/10 hover:text-white"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => onPreview(item)}
-                className="h-11 rounded-xl border border-white/10 bg-white/[0.04] px-5 text-sm font-medium text-zinc-100 hover:bg-white/15"
-              >
-                Preview
-              </Button>
-              <Button
-                type="submit"
-                className="h-11 rounded-xl bg-gradient-to-r from-blue-500 via-violet-500 to-fuchsia-500 px-6 text-sm font-semibold text-white shadow-[0_12px_30px_-10px_rgba(88,28,228,0.65)] transition hover:from-blue-400 hover:via-violet-400 hover:to-fuchsia-400"
-              >
-                {draft ? "Save changes" : type === "service" ? "Create service" : "Create product"}
-              </Button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  )
+  if (diff < minute) return "just now"
+  if (diff < hour) {
+    const minutes = Math.floor(diff / minute)
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`
+  }
+  if (diff < day) {
+    const hours = Math.floor(diff / hour)
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`
+  }
+  const days = Math.floor(diff / day)
+  return `${days} day${days === 1 ? "" : "s"} ago`
 }
-
-function FormSection({
-  title,
-  description,
-  children,
-}: {
-  title: string
-  description?: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="space-y-4 rounded-2xl border border-white/5 bg-white/[0.02] p-4 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.75)] sm:p-5">
-      <div className="space-y-1">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-400">
-          {title}
-        </p>
-        {description ? (
-          <p className="text-xs text-zinc-500 sm:text-sm">{description}</p>
-        ) : null}
-      </div>
-      <div className="grid gap-4">{children}</div>
-    </section>
-  )
-}
-
-function PreviewSheet({
-  type,
-  item,
-  onClose,
-  onEdit,
-}: {
-  type: "service" | "product"
-  item: any
-  onClose(): void
-  onEdit(): void
-}) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex justify-center items-end" role="dialog" aria-modal>
-      <div className="w-full max-w-md bg-[#1C1F22] border-t border-[#2F343A] p-4 rounded-t-lg space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-lg font-semibold">Preview</h2>
-          <button onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div className="space-y-2 text-sm">
-          {item.thumbnail && (
-            <img src={item.thumbnail} alt="" className="w-full h-40 object-cover rounded" />
-          )}
-          <h3 className="text-base font-medium">{item.title}</h3>
-          <p className="text-[#A6A6A6]">{item.description}</p>
-          <div>{formatUSD(item.price)}</div>
-          <button className="w-full mt-2 py-2 bg-[#9966CC] text-white rounded-md">
-            {type === "service" ? "Book Now" : "Buy Now"}
-          </button>
-        </div>
-        <div className="flex gap-2 pt-2">
-          <button
-            onClick={onEdit}
-            className="flex-1 px-3 py-2 bg-[#22262A] rounded-md"
-          >
-            Edit
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 px-3 py-2 bg-[#22262A] rounded-md"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ConfirmDelete({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel(): void
-  onConfirm(): void
-}) {
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center" role="dialog" aria-modal>
-      <div className="bg-[#1C1F22] border border-[#2F343A] rounded-md p-4 w-72 space-y-4 text-sm">
-        <p>Delete this item? This action cannot be undone.</p>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-3 py-1.5 rounded-md bg-[#22262A]">
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-3 py-1.5 rounded-md bg-[#E8C268] text-black"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function EmptyState({ onCreate }: { onCreate(): void }) {
-  return (
-    <div className="text-center py-20 text-sm text-[#A6A6A6]">
-      <p>No items found.</p>
-      <button
-        onClick={onCreate}
-        className="mt-4 px-3 py-2 bg-[#9966CC] text-white rounded-md"
-      >
-        Create your first
-      </button>
-    </div>
-  )
-}
-
-function SkeletonCard() {
-  return (
-    <div className="animate-pulse bg-[#1C1F22] border border-[#2F343A] rounded-md h-48" />
-  )
-}
-
-function InsightsRow() {
-  return (
-    <div className="flex gap-2 text-xs">
-      <StatChip label="Views" value={123} />
-      <StatChip label="Clicks" value={45} />
-      <StatChip label="Sales" value={8} />
-    </div>
-  )
-}
-
-function StatChip({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="px-3 py-1 bg-[#1C1F22] border border-[#2F343A] rounded-md">
-      <span className="text-[#A6A6A6] mr-1">{label}</span>
-      <span>{value}</span>
-    </div>
-  )
-}
-
