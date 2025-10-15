@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @next/next/no-img-element */
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Sparkles, Package, X } from "lucide-react"
 
@@ -36,6 +36,7 @@ export type Service = {
   durationMins?: number
   thumbnail?: string
   status: "draft" | "published"
+  channels?: string[]
   updatedAt: string
 }
 export type Product = {
@@ -45,6 +46,7 @@ export type Product = {
   inventory?: number
   thumbnail?: string
   status: "draft" | "published"
+  channels?: string[]
   updatedAt: string
 }
 
@@ -58,6 +60,21 @@ export interface SourceProps {
   onDeleteService?(id: string): void
   onDeleteProduct?(id: string): void
 }
+
+const integrationDirectory = [
+  { id: "shopify", name: "Shopify", accent: "from-emerald-400/30 to-emerald-500/30", icon: "🛍️" },
+  { id: "wix", name: "Wix", accent: "from-blue-400/30 to-sky-500/30", icon: "🧩" },
+  { id: "custom", name: "Custom Site", accent: "from-fuchsia-400/30 to-purple-500/30", icon: "🛠️" },
+  { id: "depop", name: "Depop", accent: "from-orange-400/30 to-red-500/30", icon: "🧢" },
+  { id: "facebook", name: "Facebook Marketplace", accent: "from-blue-500/30 to-indigo-500/30", icon: "📦" },
+  { id: "ebay", name: "eBay", accent: "from-yellow-400/30 to-blue-500/30", icon: "🎯" },
+  { id: "offerup", name: "OfferUp", accent: "from-emerald-400/30 to-teal-500/30", icon: "🚚" },
+  { id: "vinted", name: "Vinted", accent: "from-cyan-400/30 to-emerald-400/30", icon: "🧥" },
+]
+
+const channelLookup = Object.fromEntries(
+  integrationDirectory.map((integration) => [integration.id, integration])
+)
 
 export default function Source({
   services: servicesProp,
@@ -177,6 +194,8 @@ export default function Source({
       </div>
 
       <div className="p-4 space-y-4">
+        <IntegrationBanner />
+        <IntegrationsOverview />
         <InsightsRow />
         <div className="flex items-center gap-2">
           <SubTab active={subTab === "draft"} onClick={() => setSubTab("draft")}>Drafts</SubTab>
@@ -263,10 +282,26 @@ function HeaderBar({
 }) {
   return (
     <header className="p-4 border-b border-[#2F343A]">
-      <h1 className="text-lg font-semibold">Pro Dashboard</h1>
-      <p className="text-sm text-[#A6A6A6] mt-1">
-        Create products & services for your profile
-      </p>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold">Source integrations</h1>
+            <Badge className="bg-[#1C1F22] text-[11px] font-medium uppercase tracking-[0.25em] text-[#E8C268]">
+              Paid feature
+            </Badge>
+          </div>
+          <p className="text-sm text-[#A6A6A6] mt-1 max-w-2xl">
+            Plug Source into Shopify, Wix, or any custom storefront and blast new listings
+            to every connected marketplace in a single publish flow.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center justify-center rounded-md border border-[#2F343A] px-3 py-1.5 text-xs uppercase tracking-[0.3em] text-[#A6A6A6] hover:border-[#9966CC] hover:text-white sm:mt-0"
+        >
+          Manage connections
+        </button>
+      </div>
       <div className="mt-4 flex gap-2">
         <button
           onClick={onNewService}
@@ -468,6 +503,20 @@ function CatalogCard({
             )}
           </div>
         </div>
+        {item.channels?.length ? (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {item.channels.slice(0, 3).map((channelId: string) => (
+              <ChannelBadge key={channelId} channelId={channelId} />
+            ))}
+            {item.channels.length > 3 && (
+              <span className="text-[10px] text-[#7C838A]">
+                +{item.channels.length - 3} more
+              </span>
+            )}
+          </div>
+        ) : (
+          <p className="mt-2 text-[10px] text-[#7C838A]">Not connected to any channels yet</p>
+        )}
         <div className="text-[10px] text-[#7C838A]">
           Last updated {timeAgo(item.updatedAt)}
         </div>
@@ -489,22 +538,38 @@ function Drawer({
   onSave(it: any): void
   onPreview(it: any): void
 }) {
-  const [item, setItem] = useState<any>(
-    draft ?? {
+  const baseItem = useMemo(
+    () => ({
       type,
       title: "",
       description: "",
       price: 0,
       status: "draft",
-    }
+      channels: [] as string[],
+    }),
+    [type]
   )
 
+  const [item, setItem] = useState<any>(draft ? { ...baseItem, ...draft } : baseItem)
+
   useEffect(() => {
-    setItem(draft ?? { type, title: "", description: "", price: 0, status: "draft" })
-  }, [draft, type])
+    setItem(draft ? { ...baseItem, ...draft } : baseItem)
+  }, [draft, baseItem])
 
   function update(field: string, value: any) {
     setItem((prev: any) => ({ ...prev, [field]: value }))
+  }
+
+  function toggleChannel(channelId: string) {
+    setItem((prev: any) => {
+      const current = new Set(prev.channels ?? [])
+      if (current.has(channelId)) {
+        current.delete(channelId)
+      } else {
+        current.add(channelId)
+      }
+      return { ...prev, channels: Array.from(current) }
+    })
   }
 
   const meta =
@@ -513,8 +578,8 @@ function Drawer({
           eyebrow: "Source",
           badge: "Service",
           title: draft ? "Update your service" : "Create a new service",
-          description: "Craft a bookable experience that fits your offer stack.",
-          highlight: "Services live in Source and let people reserve time with you.",
+          description: "Craft a bookable experience that syndicates to every storefront you run.",
+          highlight: "Services publish to Source and auto-post to your connected channels.",
           accent: "from-[#5E3EFF]/70 via-[#9966FF]/55 to-[#1A86FF]/60",
           icon: Sparkles,
         }
@@ -522,8 +587,8 @@ function Drawer({
           eyebrow: "Source",
           badge: "Product",
           title: draft ? "Update your product" : "Create a new product",
-          description: "Package what you sell with the clarity it deserves.",
-          highlight: "Products appear in Source for supporters to purchase instantly.",
+          description: "Package what you sell and share it to every marketplace at once.",
+          highlight: "Products go live in Source and broadcast to every integration you enable.",
           accent: "from-[#27D7A1]/70 via-[#3EC7FF]/55 to-[#1D7BFF]/60",
           icon: Package,
         }
@@ -741,6 +806,41 @@ function Drawer({
             </FormSection>
 
             <FormSection
+              title="Distribution"
+              description="Choose the marketplaces and storefronts that should receive this listing when it goes live."
+            >
+              <p className="text-xs text-zinc-500">
+                Integrations are part of the Source Pro add-on. We’ll sync pricing, availability, and imagery everywhere for you.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {integrationDirectory.map((integration) => {
+                  const selected = (item.channels ?? []).includes(integration.id)
+                  return (
+                    <button
+                      key={integration.id}
+                      type="button"
+                      onClick={() => toggleChannel(integration.id)}
+                      className={classNames(
+                        "flex items-center justify-between rounded-xl border px-3 py-3 text-left",
+                        selected
+                          ? "border-[#9966CC] bg-[#9966CC]/10 text-white"
+                          : "border-white/10 bg-white/[0.03] text-zinc-200 hover:border-[#9966CC]/60"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{integration.icon}</span>
+                        <span className="text-sm font-medium">{integration.name}</span>
+                      </div>
+                      <span className="text-[11px] uppercase tracking-[0.3em] text-[#7C838A]">
+                        {selected ? "Added" : "Add"}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </FormSection>
+
+            <FormSection
               title="Visibility"
               description="Choose whether to keep this hidden while you refine the details or ship it immediately."
             >
@@ -851,6 +951,18 @@ function PreviewSheet({
           <h3 className="text-base font-medium">{item.title}</h3>
           <p className="text-[#A6A6A6]">{item.description}</p>
           <div>{formatUSD(item.price)}</div>
+          {item.channels?.length ? (
+            <div className="pt-2">
+              <p className="text-[11px] uppercase tracking-[0.35em] text-[#7C838A]">
+                Connected channels
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {item.channels.map((channelId: string) => (
+                  <ChannelBadge key={channelId} channelId={channelId} />
+                ))}
+              </div>
+            </div>
+          ) : null}
           <button className="w-full mt-2 py-2 bg-[#9966CC] text-white rounded-md">
             {type === "service" ? "Book Now" : "Buy Now"}
           </button>
@@ -904,12 +1016,12 @@ function ConfirmDelete({
 function EmptyState({ onCreate }: { onCreate(): void }) {
   return (
     <div className="text-center py-20 text-sm text-[#A6A6A6]">
-      <p>No items found.</p>
+      <p>Your catalog is quiet. Connect a site and launch your first cross-platform drop.</p>
       <button
         onClick={onCreate}
         className="mt-4 px-3 py-2 bg-[#9966CC] text-white rounded-md"
       >
-        Create your first
+        Create your first listing
       </button>
     </div>
   )
@@ -921,17 +1033,137 @@ function SkeletonCard() {
   )
 }
 
+function IntegrationBanner() {
+  return (
+    <section className="flex flex-col gap-4 rounded-xl border border-[#2F343A] bg-gradient-to-r from-[#141821] via-[#111315] to-[#0b1017] p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-2">
+        <p className="text-[11px] uppercase tracking-[0.35em] text-[#7C838A]">
+          Cross-platform publishing
+        </p>
+        <h2 className="text-lg font-semibold text-white">
+          Launch once. Sell everywhere.
+        </h2>
+        <p className="text-sm text-[#A6A6A6]">
+          Connect every storefront you own—from Shopify and Wix to personal sites—and
+          automatically syndicate new drops to marketplaces like Depop, Vinted, Facebook
+          Marketplace, eBay, OfferUp, and more the moment you hit publish.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3 rounded-lg border border-white/5 bg-white/[0.03] p-4 text-xs text-[#A6A6A6]">
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#7C838A]">
+            Why upgrade
+          </p>
+          <ul className="space-y-1">
+            <li className="flex items-center gap-2 text-sm text-white/90">
+              <span>⚡</span>
+              <span>Save hours with one-click multi-channel publishing</span>
+            </li>
+            <li className="flex items-center gap-2 text-sm text-white/90">
+              <span>📦</span>
+              <span>Keep inventory synced across every marketplace</span>
+            </li>
+            <li className="flex items-center gap-2 text-sm text-white/90">
+              <span>📈</span>
+              <span>Track performance from a single dashboard</span>
+            </li>
+          </ul>
+        </div>
+        <button
+          type="button"
+          className="rounded-md bg-[#9966CC] px-3 py-2 text-sm font-medium text-white shadow-[0_10px_25px_-12px_rgba(153,102,204,0.9)]"
+        >
+          Explore Source Pro plans
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function IntegrationsOverview() {
+  const integrations = [
+    {
+      id: "shopify",
+      status: "Connected",
+      meta: "Syncing 24 products nightly",
+    },
+    {
+      id: "depop",
+      status: "Connected",
+      meta: "Listings mirrored instantly",
+    },
+    {
+      id: "facebook",
+      status: "Requires review",
+      meta: "Reconnect to continue auto-posting",
+    },
+  ]
+
+  return (
+    <section className="grid gap-3 sm:grid-cols-3">
+      {integrations.map((integration) => {
+        const meta = channelLookup[integration.id]
+        return (
+          <div
+            key={integration.id}
+            className="rounded-xl border border-[#2F343A] bg-[#1C1F22] p-4 text-sm shadow-[0_12px_30px_-25px_rgba(15,23,42,0.8)]"
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-r ${meta?.accent ?? "from-white/10 to-white/5"}`}
+              >
+                <span className="text-lg">{meta?.icon ?? "🌐"}</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">{meta?.name ?? integration.id}</p>
+                <p className="text-xs text-[#A6A6A6]">{integration.meta}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <span className="text-xs uppercase tracking-[0.3em] text-[#7C838A]">
+                {integration.status}
+              </span>
+              <button type="button" className="text-xs font-medium text-[#9966CC]">
+                Manage
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
 function InsightsRow() {
   return (
     <div className="flex gap-2 text-xs">
-      <StatChip label="Views" value={123} />
-      <StatChip label="Clicks" value={45} />
-      <StatChip label="Sales" value={8} />
+      <StatChip label="Listings live" value="32" />
+      <StatChip label="Channels synced" value="6" />
+      <StatChip label="Time saved" value="14h" />
     </div>
   )
 }
 
-function StatChip({ label, value }: { label: string; value: number }) {
+function ChannelBadge({ channelId }: { channelId: string }) {
+  const channel = channelLookup[channelId]
+  if (!channel) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#22262A] px-2 py-1 text-[10px] text-[#A6A6A6]">
+        <span>🌐</span>
+        <span className="font-medium capitalize">{channelId}</span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-[#22262A] px-2 py-1 text-[10px] text-[#E6E6E6]">
+      <span>{channel.icon}</span>
+      <span className="font-medium">{channel.name}</span>
+    </span>
+  )
+}
+
+function StatChip({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="px-3 py-1 bg-[#1C1F22] border border-[#2F343A] rounded-md">
       <span className="text-[#A6A6A6] mr-1">{label}</span>
