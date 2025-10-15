@@ -5,10 +5,16 @@ import Link from "next/link";
 import { Edit3, Link2 } from "lucide-react";
 
 import HeroHeader from "@/components/profile/HeroHeader";
-import LinkGrid from "@/components/profile/LinkGrid";
+import ProfileModules from "@/components/profile/modules/ProfileModules";
+import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
 import { Button } from "@/components/ui/button";
 import { getContentCards, getSocialLinks } from "@/lib/db/profile-management";
-import type { ContentCard, Profile, SocialLink } from "@/lib/types";
+import type {
+  ContentCard,
+  Profile,
+  ProfileModule,
+  SocialLink,
+} from "@/lib/types";
 
 interface ProfileContentProps {
   profile: Profile;
@@ -83,6 +89,59 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
   const activeSocialCount = socialLinks.filter((link) => !!link.url).length;
   const activeLinkCount = contentCards.filter((card) => card.is_active !== false).length;
 
+  const composedModules = useMemo(
+    () => buildProfileModules({ profile, contentCards, socialLinks }),
+    [profile, contentCards, socialLinks],
+  );
+
+  const [moduleLayout, setModuleLayout] = useState<ProfileModule[]>(composedModules);
+
+  useEffect(() => {
+    setModuleLayout((prev) => {
+      if (prev.length === 0) {
+        return composedModules;
+      }
+
+      const nextMap = new Map(composedModules.map((module) => [module.id, module]));
+      const prevIds = new Set(prev.map((module) => module.id));
+
+      const merged = prev
+        .map((module) => {
+          const next = nextMap.get(module.id);
+          if (!next) return module;
+          return { ...next, position: module.position };
+        })
+        .filter((module): module is ProfileModule => !!module);
+
+      composedModules.forEach((module) => {
+        if (!prevIds.has(module.id)) {
+          merged.push(module);
+        }
+      });
+
+      return merged.map((module, index) => ({ ...module, position: index }));
+    });
+  }, [composedModules]);
+
+  const activeModuleCount = useMemo(
+    () =>
+      moduleLayout.filter((module) => {
+        switch (module.type) {
+          case "featured_carousel":
+            return module.slides.length > 0;
+          case "link_cards":
+            return module.cards.some((card) => card.is_active);
+          case "social_proof_strip":
+            return module.items.length > 0;
+          case "embedded_media_accordion":
+            return module.sections.length > 0;
+          default:
+            return false;
+        }
+      }).length,
+    [moduleLayout],
+  );
+
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -130,18 +189,18 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
           <section className="mx-auto mt-6 w-full max-w-5xl px-1 pb-12 sm:mt-10">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-semibold text-white">Featured links</h2>
+                <h2 className="text-2xl font-semibold text-white">
+                  Modular link & media blocks
+                </h2>
                 <p className="mt-1 text-sm text-white/55">
-                  {activeLinkCount > 0
-                    ? "These are the cards your audience can explore."
-                    : "Add links to surface the highlights you want to share."}
+                  Drag, reorder, and curate immersive modules to orchestrate your narrative.
                 </p>
               </div>
 
-              {activeLinkCount > 0 ? (
+              {activeModuleCount > 0 ? (
                 <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
                   <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
-                  {activeLinkCount} {activeLinkCount === 1 ? "link" : "links"}
+                  {activeModuleCount} {activeModuleCount === 1 ? "active module" : "active modules"}
                 </span>
               ) : null}
             </div>
@@ -153,7 +212,12 @@ export default function ProfileContent({ profile, userId }: ProfileContentProps)
             ) : null}
 
             <div className="mt-8">
-              <LinkGrid links={contentCards} loading={loading} isOwner />
+              <ProfileModules
+                modules={moduleLayout}
+                loading={loading}
+                isOwner
+                onReorder={(next) => setModuleLayout(next)}
+              />
             </div>
           </section>
         </div>

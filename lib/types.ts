@@ -117,6 +117,116 @@ export interface ProfileQuickActionBadge {
   analytics_event?: string | null;
 }
 
+export interface ContentCard {
+  id: string;
+  user_id: string;
+  title: string;
+  description?: string | null;
+  url: string;
+  thumbnail_url?: string | null;
+  category?: string | null;
+  position: number;
+  is_active: boolean;
+  media_type?: "video" | "audio" | "article" | "livestream" | "gallery" | null;
+  embed_url?: string | null;
+  embed_html?: string | null;
+  poster_url?: string | null;
+  cta_label?: string | null;
+  accent_color?: string | null;
+  stats_label?: string | null;
+  stats_value?: string | null;
+  tags?: string[] | null;
+  analytics_event?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProfileModuleType =
+  | "featured_carousel"
+  | "link_cards"
+  | "social_proof_strip"
+  | "embedded_media_accordion";
+
+export interface ProfileModuleBase {
+  id: string;
+  type: ProfileModuleType;
+  title?: string | null;
+  subtitle?: string | null;
+  position: number;
+  is_active?: boolean | null;
+  analytics_event_prefix?: string | null;
+  layout_variant?: "default" | "compact" | "expanded" | "immersive" | null;
+  settings?: Record<string, unknown> | null;
+}
+
+export interface ProfileModuleFeaturedSlide {
+  id: string;
+  title: string;
+  description?: string | null;
+  media_url?: string | null;
+  media_type?: "image" | "video" | "gradient" | null;
+  href?: string | null;
+  cta_label?: string | null;
+  accent_color?: string | null;
+  analytics_event?: string | null;
+}
+
+export interface ProfileModuleFeaturedCarousel extends ProfileModuleBase {
+  type: "featured_carousel";
+  slides: ProfileModuleFeaturedSlide[];
+  autoplay?: boolean;
+  loop?: boolean;
+  interval_ms?: number | null;
+}
+
+export interface ProfileModuleLinkCards extends ProfileModuleBase {
+  type: "link_cards";
+  cards: ContentCard[];
+  layout?: "stacked" | "grid" | "list" | null;
+}
+
+export interface ProfileModuleSocialProofItem {
+  id: string;
+  label: string;
+  value: string;
+  platform?: string | null;
+  url?: string | null;
+  icon?: string | null;
+  aria_label?: string | null;
+  analytics_event?: string | null;
+}
+
+export interface ProfileModuleSocialProofStrip extends ProfileModuleBase {
+  type: "social_proof_strip";
+  items: ProfileModuleSocialProofItem[];
+  display_mode?: "row" | "grid" | "marquee" | null;
+}
+
+export interface ProfileModuleEmbeddedSection {
+  id: string;
+  title: string;
+  description?: string | null;
+  media_url?: string | null;
+  media_type?: "video" | "audio" | "article" | "gallery" | null;
+  embed_html?: string | null;
+  poster_url?: string | null;
+  cta_label?: string | null;
+  cta_href?: string | null;
+  analytics_event?: string | null;
+}
+
+export interface ProfileModuleEmbeddedMediaAccordion extends ProfileModuleBase {
+  type: "embedded_media_accordion";
+  sections: ProfileModuleEmbeddedSection[];
+  allow_multiple_open?: boolean | null;
+}
+
+export type ProfileModule =
+  | ProfileModuleFeaturedCarousel
+  | ProfileModuleLinkCards
+  | ProfileModuleSocialProofStrip
+  | ProfileModuleEmbeddedMediaAccordion;
+
 export interface Profile {
   id: number;
   user_id: string;
@@ -141,6 +251,7 @@ export interface Profile {
   avatar_frame_style?: "circle" | "rounded-square" | "halo" | null;
   partner_badges?: ProfilePartnerBadge[] | null;
   quick_action_badges?: ProfileQuickActionBadge[] | null;
+  modules?: ProfileModule[] | null;
   theme_color?: string;
   font_family?: string;
   accent_color?: string;
@@ -173,19 +284,13 @@ export interface SocialLink {
   updated_at: string;
 }
 
-// Content Cards
-export interface ContentCard {
-  id: string;
-  user_id: string;
-  title: string;
-  description?: string | null;
-  url: string;
-  thumbnail_url?: string | null;
-  category?: string | null;
-  position: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+export interface ProfileModuleAnalyticsEvent {
+  moduleId: string;
+  moduleType: ProfileModuleType;
+  action: string;
+  label?: string;
+  value?: string | number;
+  metadata?: Record<string, unknown>;
 }
 
 // Profile Themes

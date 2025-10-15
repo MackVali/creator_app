@@ -9,6 +9,7 @@ interface LinkTileProps {
   url: string;
   thumbUrl?: string;
   description?: string;
+  onClick?: () => void;
 }
 
 export default function LinkTile({
@@ -16,6 +17,7 @@ export default function LinkTile({
   url,
   thumbUrl,
   description,
+  onClick,
 }: LinkTileProps) {
   const displayHost = (() => {
     try {
@@ -45,6 +47,7 @@ export default function LinkTile({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={onClick}
       className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
     >
       <article className="flex items-center gap-4 rounded-full border border-white/10 bg-white/5 px-5 py-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/10 hover:shadow-[0_18px_45px_-20px_rgba(2,6,23,0.65)]">

@@ -1,5 +1,7 @@
 "use client";
 
+import { ProfileModulesSkeleton } from "./modules/ProfileModules";
+
 export function ProfileSkeleton() {
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)]">
@@ -91,16 +93,7 @@ export function ProfileSkeleton() {
       </div>
 
       <div className="relative mx-auto mt-12 w-full max-w-6xl px-4 pb-16">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div
-              key={`link-card-skeleton-${index}`}
-              className="h-80 rounded-[38px] border border-white/12 bg-white/5"
-            >
-              <div className="h-full w-full animate-pulse rounded-[38px] bg-gradient-to-br from-black/40 via-black/30 to-black/20" />
-            </div>
-          ))}
-        </div>
+        <ProfileModulesSkeleton />
       </div>
     </div>
   );

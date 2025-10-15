@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Profile, SocialLink, ContentCard } from "@/lib/types";
+import { Profile, SocialLink, ContentCard, ProfileModule } from "@/lib/types";
 import { getProfileByHandle, getProfileLinks } from "@/lib/db";
 import { getSocialLinks } from "@/lib/db/profile-management";
 import HeroHeader from "@/components/profile/HeroHeader";
-import LinkGrid from "@/components/profile/LinkGrid";
+import ProfileModules from "@/components/profile/modules/ProfileModules";
+import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 
 export default function ProfileByHandlePage() {
@@ -137,6 +138,30 @@ export default function ProfileByHandlePage() {
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
   const isOwner = session?.user?.id === profile.user_id;
 
+  const modules = useMemo<ProfileModule[]>(() => {
+    if (!profile) return [];
+    return buildProfileModules({ profile, contentCards, socialLinks });
+  }, [profile, contentCards, socialLinks]);
+
+  const activeModuleCount = useMemo(
+    () =>
+      modules.filter((module) => {
+        switch (module.type) {
+          case "featured_carousel":
+            return module.slides.length > 0;
+          case "link_cards":
+            return module.cards.some((card) => card.is_active);
+          case "social_proof_strip":
+            return module.items.length > 0;
+          case "embedded_media_accordion":
+            return module.sections.length > 0;
+          default:
+            return false;
+        }
+      }).length,
+    [modules],
+  );
+
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -158,24 +183,24 @@ export default function ProfileByHandlePage() {
         <section className="mx-auto mt-14 w-full max-w-5xl px-4 pb-20">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-semibold text-white">Featured links</h2>
+              <h2 className="text-2xl font-semibold text-white">Creator lineup</h2>
               <p className="mt-1 text-sm text-white/55">
-                {activeLinkCount > 0
-                  ? "Curated highlights from across this creator's world."
-                  : "Links you add will appear here for your audience."}
+                {activeModuleCount > 0
+                  ? "Tap through the modules to explore their latest drops, socials, and media."
+                  : "Modules will unlock here once this creator publishes their first block."}
               </p>
             </div>
 
-            {activeLinkCount > 0 ? (
+            {activeModuleCount > 0 ? (
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-white/75 shadow-[0_10px_25px_rgba(15,23,42,0.45)]">
                 <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
-                {activeLinkCount} {activeLinkCount === 1 ? "link" : "links"}
+                {activeModuleCount} {activeModuleCount === 1 ? "module live" : "modules live"}
               </span>
             ) : null}
           </div>
 
           <div className="mt-8">
-            <LinkGrid links={contentCards} isOwner={isOwner} />
+            <ProfileModules modules={modules} loading={false} isOwner={isOwner} />
           </div>
         </section>
       </main>
