@@ -35,6 +35,15 @@ type IntegrationRow = {
   auth_header: string | null
   headers: Record<string, unknown> | null
   payload_template: Record<string, unknown> | null
+  status: string
+  oauth_token_url: string | null
+  oauth_client_id: string | null
+  oauth_client_secret: string | null
+  oauth_access_token: string | null
+  oauth_refresh_token: string | null
+  oauth_expires_at: string | null
+  oauth_scopes: string[] | null
+  oauth_metadata: Record<string, unknown> | null
 }
 
 const listingFields =
@@ -201,7 +210,7 @@ export async function POST(request: Request) {
   const { data: integrations, error: integrationsError } = await supabase
     .from("source_integrations")
     .select(
-      "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_token, auth_header, headers, payload_template, status"
+      "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_token, auth_header, headers, payload_template, status, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_access_token, oauth_refresh_token, oauth_expires_at, oauth_scopes, oauth_metadata"
     )
     .eq("user_id", user.id)
     .eq("status", "active")
@@ -222,23 +231,46 @@ export async function POST(request: Request) {
   const publishResults: PublishResult[] = []
 
   for (const integration of (integrations ?? []) as IntegrationRow[]) {
+    let integrationRecord = integration
+    let oauthToken: string | null = null
+
+    if (integrationRecord.auth_mode === "oauth2") {
+      const ensured = await ensureOAuthAccessToken(supabase, integrationRecord, user.id)
+      if ("error" in ensured) {
+        publishResults.push({
+          integrationId: integrationRecord.id,
+          integrationName: integrationRecord.display_name ?? integrationRecord.provider,
+          status: "failed",
+          responseCode: null,
+          responseBody: null,
+          error: ensured.error,
+          externalId: null,
+          completedAt: new Date().toISOString(),
+        })
+        continue
+      }
+
+      oauthToken = ensured.token
+      integrationRecord = ensured.integration
+    }
+
     const context = {
       listing: publishContextListing,
       integration: {
-        id: integration.id,
-        provider: integration.provider,
-        displayName: integration.display_name,
-        connectionUrl: integration.connection_url,
+        id: integrationRecord.id,
+        provider: integrationRecord.provider,
+        displayName: integrationRecord.display_name,
+        connectionUrl: integrationRecord.connection_url,
       },
     }
 
-    const payloadBody = buildPayload(integration, context)
-    const headers = buildHeaders(integration, context)
-    const method = normalizeMethod(integration.publish_method)
+    const payloadBody = buildPayload(integrationRecord, context)
+    const headers = buildHeaders(integrationRecord, context, oauthToken ?? undefined)
+    const method = normalizeMethod(integrationRecord.publish_method)
 
     const result: PublishResult = {
-      integrationId: integration.id,
-      integrationName: integration.display_name ?? integration.provider,
+      integrationId: integrationRecord.id,
+      integrationName: integrationRecord.display_name ?? integrationRecord.provider,
       status: "failed",
       responseCode: null,
       responseBody: null,
@@ -248,7 +280,7 @@ export async function POST(request: Request) {
     }
 
     try {
-      const response = await fetch(integration.publish_url, {
+      const response = await fetch(integrationRecord.publish_url, {
         method,
         headers,
         body: JSON.stringify(payloadBody),
@@ -416,9 +448,208 @@ function buildPayload(
   }
 }
 
+async function ensureOAuthAccessToken(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  integration: IntegrationRow,
+  userId: string
+): Promise<{ token: string; integration: IntegrationRow } | { error: string }> {
+  if (!integration.oauth_access_token) {
+    return { error: "Connect this integration to authorize API access." }
+  }
+
+  const expiresAt = integration.oauth_expires_at ? new Date(integration.oauth_expires_at).getTime() : null
+  if (!expiresAt || Number.isNaN(expiresAt) || expiresAt - Date.now() > 60_000) {
+    return { token: integration.oauth_access_token, integration }
+  }
+
+  if (!integration.oauth_refresh_token) {
+    return { error: "OAuth access token expired and no refresh token is available." }
+  }
+
+  if (!integration.oauth_token_url || !integration.oauth_client_id) {
+    return { error: "OAuth refresh settings are incomplete for this integration." }
+  }
+
+  const params = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: integration.oauth_refresh_token,
+    client_id: integration.oauth_client_id,
+  })
+
+  if (integration.oauth_client_secret) {
+    params.append("client_secret", integration.oauth_client_secret)
+  }
+
+  const metadata = isRecord(integration.oauth_metadata) ? integration.oauth_metadata : null
+  const extraTokenParams = metadata ? extractTokenParams(metadata) : null
+  if (extraTokenParams) {
+    for (const [key, value] of Object.entries(extraTokenParams)) {
+      params.set(key, value)
+    }
+  }
+
+  let tokenResponse: Response
+  try {
+    tokenResponse = await fetch(integration.oauth_token_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to refresh OAuth token"
+    return { error: message }
+  }
+
+  let tokenJson: Record<string, unknown> | null = null
+  try {
+    tokenJson = (await tokenResponse.clone().json()) as Record<string, unknown>
+  } catch {
+    tokenJson = null
+  }
+
+  let rawBody: string | null = null
+  try {
+    rawBody = await tokenResponse.text()
+  } catch {
+    rawBody = null
+  }
+
+  let tokenPayload = tokenJson
+  if (!tokenPayload && rawBody) {
+    const contentType = tokenResponse.headers.get("content-type")?.toLowerCase() ?? ""
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      const form = new URLSearchParams(rawBody)
+      tokenPayload = Object.fromEntries(form.entries())
+    } else {
+      try {
+        tokenPayload = JSON.parse(rawBody) as Record<string, unknown>
+      } catch {
+        tokenPayload = null
+      }
+    }
+  }
+
+  if (!tokenResponse.ok) {
+    const message = deriveOAuthErrorMessage(tokenResponse, tokenPayload, rawBody)
+    return { error: message }
+  }
+
+  if (!tokenPayload) {
+    return { error: "OAuth refresh returned an unreadable response." }
+  }
+
+  const accessToken = coerceString(tokenPayload.access_token)
+  if (!accessToken) {
+    return { error: "OAuth refresh did not return an access token." }
+  }
+
+  const refreshToken = coerceString(tokenPayload.refresh_token) ?? integration.oauth_refresh_token
+
+  const expiresIn = coerceNumber(tokenPayload.expires_in)
+  const nextExpiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null
+
+  const { data, error } = await supabase
+    .from("source_integrations")
+    .update({
+      oauth_access_token: accessToken,
+      oauth_refresh_token: refreshToken,
+      oauth_expires_at: nextExpiresAt,
+    })
+    .eq("id", integration.id)
+    .eq("user_id", userId)
+    .select("oauth_access_token, oauth_refresh_token, oauth_expires_at")
+    .single()
+
+  if (error) {
+    console.error("Failed to store refreshed OAuth token", error)
+    return { error: "Unable to store refreshed OAuth credentials." }
+  }
+
+  return {
+    token: data?.oauth_access_token ?? accessToken,
+    integration: {
+      ...integration,
+      oauth_access_token: data?.oauth_access_token ?? accessToken,
+      oauth_refresh_token: data?.oauth_refresh_token ?? refreshToken,
+      oauth_expires_at: data?.oauth_expires_at ?? nextExpiresAt,
+    },
+  }
+}
+
+function extractTokenParams(metadata: Record<string, unknown>) {
+  const raw = metadata.token_params
+  if (!isRecord(raw)) {
+    return null
+  }
+
+  return Object.entries(raw).reduce((acc, [key, value]) => {
+    if (!key) return acc
+    if (value === null || value === undefined) return acc
+    acc[key] = typeof value === "string" ? value : String(value)
+    return acc
+  }, {} as Record<string, string>)
+}
+
+function deriveOAuthErrorMessage(
+  response: Response,
+  payload: Record<string, unknown> | null,
+  rawBody: string | null
+) {
+  if (payload) {
+    const description = coerceString(payload.error_description)
+    if (description) return description
+
+    const error = coerceString(payload.error)
+    if (error) return error
+
+    const message = coerceString(payload.message)
+    if (message) return message
+  }
+
+  const snippet = sanitizeResponseSnippet(rawBody)
+  if (snippet) {
+    return snippet
+  }
+
+  return response.statusText || "Failed to refresh OAuth token"
+}
+
+function sanitizeResponseSnippet(rawBody: string | null) {
+  if (!rawBody) return null
+  const stripped = rawBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  if (!stripped) return null
+  return stripped.slice(0, 200)
+}
+
+function coerceString(value: unknown) {
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+  return null
+}
+
+function coerceNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isNaN(parsed) ? null : parsed
+  }
+
+  return null
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
 function buildHeaders(
   integration: IntegrationRow,
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  oauthAccessToken?: string
 ): Headers {
   const headers = new Headers({ "Content-Type": "application/json" })
 
@@ -434,6 +665,10 @@ function buildHeaders(
   if (integration.auth_mode === "api_key" && integration.auth_token) {
     const headerName = integration.auth_header?.trim() || "X-API-Key"
     headers.set(headerName, integration.auth_token)
+  }
+
+  if (integration.auth_mode === "oauth2" && oauthAccessToken) {
+    headers.set("Authorization", `Bearer ${oauthAccessToken}`)
   }
 
   if (integration.headers) {

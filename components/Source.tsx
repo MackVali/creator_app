@@ -1,6 +1,6 @@
 "use client"
 
-import { type ReactNode, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import {
   useMutation,
   useQuery,
@@ -9,6 +9,8 @@ import {
 import {
   ExternalLink,
   Globe,
+  Loader2,
+  Lock,
   Plug,
   RefreshCcw,
   UploadCloud,
@@ -32,7 +34,7 @@ import type {
 import { cn } from "@/lib/utils"
 
 const httpMethods = ["POST", "PUT", "PATCH"] as const
-const authModes = ["none", "bearer", "basic", "api_key"] as const
+const authModes = ["none", "bearer", "basic", "api_key", "oauth2"] as const
 const listingStatuses: Record<SourceListing["status"], string> = {
   draft: "Draft",
   queued: "Queued",
@@ -59,6 +61,12 @@ type IntegrationFormState = {
   headers: string
   payloadTemplate: string
   status: "active" | "disabled"
+  oauthAuthorizeUrl: string
+  oauthTokenUrl: string
+  oauthScopes: string
+  oauthClientId: string
+  oauthClientSecret: string
+  oauthMetadata: string
 }
 
 type ListingFormState = {
@@ -86,6 +94,12 @@ const defaultIntegrationForm: IntegrationFormState = {
   headers: "",
   payloadTemplate: "",
   status: "active",
+  oauthAuthorizeUrl: "",
+  oauthTokenUrl: "",
+  oauthScopes: "",
+  oauthClientId: "",
+  oauthClientSecret: "",
+  oauthMetadata: "",
 }
 
 const defaultListingForm: ListingFormState = {
@@ -325,9 +339,227 @@ const integrationPresets: IntegrationPreset[] = [
         authMode: "basic",
         authToken: `${key}:${secret}`,
         authHeader: "Authorization",
-        headers: JSON.stringify({"Content-Type": "application/json"}, null, 2),
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
         payloadTemplate: JSON.stringify(payload, null, 2),
         status: "active",
+      }
+    },
+  },
+  {
+    id: "ebay",
+    label: "eBay Marketplace",
+    description:
+      "Authenticate with the eBay Sell APIs to push inventory into your connected marketplace account.",
+    docsUrl: "https://developer.ebay.com/api-docs/sell/static/overview.html",
+    fields: [
+      {
+        id: "environment",
+        label: "Environment",
+        placeholder: "production or sandbox",
+        help: "Use production for live sellers or sandbox for testing credentials.",
+      },
+      {
+        id: "clientId",
+        label: "OAuth client ID",
+        placeholder: "Your eBay App ID",
+      },
+      {
+        id: "clientSecret",
+        label: "OAuth client secret",
+        placeholder: "Your eBay Cert ID",
+        type: "password",
+      },
+    ],
+    build: (inputs) => {
+      const rawEnvironment = inputs.environment?.trim().toLowerCase()
+      const environment = rawEnvironment === "sandbox" ? "sandbox" : "production"
+
+      const clientId = inputs.clientId?.trim()
+      if (!clientId) {
+        throw new Error("eBay client ID is required")
+      }
+
+      const clientSecret = inputs.clientSecret?.trim()
+      if (!clientSecret) {
+        throw new Error("eBay client secret is required")
+      }
+
+      const authorizeUrl =
+        environment === "sandbox"
+          ? "https://auth.sandbox.ebay.com/oauth2/authorize"
+          : "https://auth.ebay.com/oauth2/authorize"
+      const tokenUrl =
+        environment === "sandbox"
+          ? "https://api.sandbox.ebay.com/identity/v1/oauth2/token"
+          : "https://api.ebay.com/identity/v1/oauth2/token"
+      const apiBase =
+        environment === "sandbox" ? "https://api.sandbox.ebay.com" : "https://api.ebay.com"
+
+      const payload = {
+        sku: "{{listing.id}}",
+        product: {
+          title: "{{listing.title}}",
+          description: "{{listing.description}}",
+          aspects: {},
+        },
+        availability: {
+          shipToLocationAvailability: {
+            quantity: "{{listing.metadata.inventory}}",
+          },
+        },
+        price: {
+          currency: "{{listing.currency}}",
+          value: "{{listing.price}}",
+        },
+      }
+
+      const metadata = {
+        environment,
+        authorize_params: {
+          prompt: "login",
+        },
+      }
+
+      return {
+        provider: "eBay",
+        displayName: `eBay ${environment === "sandbox" ? "Sandbox" : "Marketplace"}`,
+        connectionUrl: apiBase,
+        publishUrl: `${apiBase}/sell/inventory/v1/inventory_item`,
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: authorizeUrl,
+        oauthTokenUrl: tokenUrl,
+        oauthScopes:
+          "https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+        oauthClientId: clientId,
+        oauthClientSecret: clientSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
+      }
+    },
+  },
+  {
+    id: "square",
+    label: "Square Catalog",
+    description:
+      "Connect a Square application to keep your item catalog in sync with the listings you publish.",
+    docsUrl: "https://developer.squareup.com/docs/catalog-api/overview",
+    fields: [
+      {
+        id: "environment",
+        label: "Environment",
+        placeholder: "production or sandbox",
+        help: "Match the environment configured for your Square OAuth app.",
+      },
+      {
+        id: "applicationId",
+        label: "OAuth application ID",
+        placeholder: "sq0idp-xxxx",
+      },
+      {
+        id: "applicationSecret",
+        label: "OAuth application secret",
+        placeholder: "sq0csp-xxxx",
+        type: "password",
+      },
+      {
+        id: "locationId",
+        label: "Default location ID",
+        placeholder: "L88917ABCD0X1",
+        help: "Find this under Locations in the Square Dashboard.",
+      },
+    ],
+    build: (inputs) => {
+      const rawEnvironment = inputs.environment?.trim().toLowerCase()
+      const environment = rawEnvironment === "sandbox" ? "sandbox" : "production"
+
+      const applicationId = inputs.applicationId?.trim()
+      if (!applicationId) {
+        throw new Error("Square application ID is required")
+      }
+
+      const applicationSecret = inputs.applicationSecret?.trim()
+      if (!applicationSecret) {
+        throw new Error("Square application secret is required")
+      }
+
+      const locationId = inputs.locationId?.trim()
+      if (!locationId) {
+        throw new Error("Square location ID is required")
+      }
+
+      const domain =
+        environment === "sandbox"
+          ? "connect.squareupsandbox.com"
+          : "connect.squareup.com"
+      const baseUrl = `https://${domain}`
+
+      const payload = {
+        idempotency_key: "{{listing.id}}-{{listing.updated_at}}",
+        object: {
+          type: "ITEM",
+          id: "#{{listing.id}}",
+          item_data: {
+            name: "{{listing.title}}",
+            description: "{{listing.description}}",
+            variations: [
+              {
+                type: "ITEM_VARIATION",
+                id: "#{{listing.id}}-default",
+                item_variation_data: {
+                  item_id: "#{{listing.id}}",
+                  name: "Standard",
+                  pricing_type: "FIXED_PRICING",
+                  price_money: {
+                    amount: "{{listing.price}}",
+                    currency: "{{listing.currency}}",
+                  },
+                  location_overrides: [
+                    {
+                      location_id: locationId,
+                      track_inventory: true,
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      }
+
+      const metadata = {
+        environment,
+      }
+
+      return {
+        provider: "Square",
+        displayName: `Square ${environment === "sandbox" ? "Sandbox" : "Catalog"}`,
+        connectionUrl: baseUrl,
+        publishUrl: `${baseUrl}/v2/catalog/object`,
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify(
+          {
+            "Content-Type": "application/json",
+            "Square-Version": "2024-05-15",
+          },
+          null,
+          2
+        ),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: `${baseUrl}/oauth2/authorize`,
+        oauthTokenUrl: `${baseUrl}/oauth2/token`,
+        oauthScopes: "ITEMS_READ ITEMS_WRITE MERCHANT_PROFILE_READ",
+        oauthClientId: applicationId,
+        oauthClientSecret: applicationSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
       }
     },
   },
@@ -410,6 +642,109 @@ export default function Source() {
   const [presetInputs, setPresetInputs] = useState<Record<string, string>>({})
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
   const [presetError, setPresetError] = useState<string | null>(null)
+  const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
+  const oauthWindowRef = useRef<Window | null>(null)
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (typeof window === "undefined") return
+      if (event.origin !== window.location.origin) return
+      if (!event.data || typeof event.data !== "object") return
+
+      const data = event.data as Record<string, unknown>
+      if (data.type !== "source:oauth:complete") return
+
+      if (oauthWindowRef.current && !oauthWindowRef.current.closed) {
+        oauthWindowRef.current.close()
+      }
+      oauthWindowRef.current = null
+      setConnectingIntegrationId(null)
+
+      if (data.status === "error" && typeof data.message === "string") {
+        setIntegrationError(data.message)
+      } else {
+        setIntegrationError(null)
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
+    }
+
+    window.addEventListener("message", handleMessage)
+    return () => window.removeEventListener("message", handleMessage)
+  }, [queryClient])
+
+  useEffect(() => {
+    if (!connectingIntegrationId) return
+
+    const watcher = window.setInterval(() => {
+      const popup = oauthWindowRef.current
+      if (!popup) {
+        window.clearInterval(watcher)
+        return
+      }
+
+      if (popup.closed) {
+        window.clearInterval(watcher)
+        oauthWindowRef.current = null
+        setConnectingIntegrationId(null)
+        setIntegrationError((prev) => prev ?? "Connection window closed before finishing authentication.")
+      }
+    }, 750)
+
+    return () => window.clearInterval(watcher)
+  }, [connectingIntegrationId])
+
+  const beginOAuthConnection = async (integration: SourceIntegration) => {
+    if (integration.auth_mode !== "oauth2") return
+
+    if (!integration.oauth || !integration.oauth.authorize_url || !integration.oauth.token_url) {
+      setIntegrationError(
+        "Complete the OAuth configuration (authorization and token URLs) before connecting."
+      )
+      return
+    }
+
+    try {
+      setIntegrationError(null)
+      setConnectingIntegrationId(integration.id)
+
+      const res = await fetch(`/api/source/integrations/${integration.id}/oauth/start`, {
+        method: "POST",
+      })
+
+      const json = (await res.json().catch(() => null)) as
+        | { authorizationUrl?: string }
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        const error = json as ApiError | null
+        throw new Error(error?.error ?? "Unable to start OAuth flow")
+      }
+
+      const authorizationUrl = (json as { authorizationUrl?: string } | null)?.authorizationUrl
+      if (!authorizationUrl || typeof authorizationUrl !== "string") {
+        throw new Error("OAuth provider did not return a redirect URL")
+      }
+
+      const popup = window.open(
+        authorizationUrl,
+        `source-oauth-${integration.id}`,
+        "width=480,height=720,menubar=no,toolbar=no,status=no,scrollbars=yes"
+      )
+
+      if (!popup) {
+        throw new Error("Enable pop-ups to continue connecting your account")
+      }
+
+      oauthWindowRef.current = popup
+    } catch (error) {
+      setConnectingIntegrationId(null)
+      setIntegrationError(
+        error instanceof Error ? error.message : "Unable to launch OAuth authentication"
+      )
+    }
+  }
 
   const selectedPreset =
     selectedPresetId === null
@@ -501,6 +836,33 @@ export default function Source() {
 
   const createIntegration = useMutation({
     mutationFn: async (payload: IntegrationFormState) => {
+      let parsedHeaders: Record<string, unknown> | null = null
+      if (payload.headers.trim()) {
+        try {
+          parsedHeaders = JSON.parse(payload.headers)
+        } catch {
+          throw new Error("Custom headers must be valid JSON")
+        }
+      }
+
+      let parsedTemplate: Record<string, unknown> | null = null
+      if (payload.payloadTemplate.trim()) {
+        try {
+          parsedTemplate = JSON.parse(payload.payloadTemplate)
+        } catch {
+          throw new Error("Payload template must be valid JSON")
+        }
+      }
+
+      let parsedOauthMetadata: Record<string, unknown> | null = null
+      if (payload.oauthMetadata.trim()) {
+        try {
+          parsedOauthMetadata = JSON.parse(payload.oauthMetadata)
+        } catch {
+          throw new Error("OAuth metadata must be valid JSON")
+        }
+      }
+
       const body = {
         provider: payload.provider.trim(),
         displayName: payload.displayName.trim() || null,
@@ -508,16 +870,33 @@ export default function Source() {
         publishUrl: payload.publishUrl.trim(),
         publishMethod: payload.publishMethod,
         authMode: payload.authMode,
-        authToken: payload.authToken.trim() || null,
+        authToken:
+          payload.authMode === "none" || payload.authMode === "oauth2"
+            ? null
+            : payload.authToken.trim() || null,
         authHeader:
           payload.authMode === "api_key"
             ? payload.authHeader.trim() || "X-API-Key"
             : null,
-        headers: payload.headers.trim() ? JSON.parse(payload.headers) : null,
-        payloadTemplate: payload.payloadTemplate.trim()
-          ? JSON.parse(payload.payloadTemplate)
-          : null,
+        headers: parsedHeaders,
+        payloadTemplate: parsedTemplate,
         status: payload.status,
+        oauthAuthorizeUrl:
+          payload.authMode === "oauth2" ? payload.oauthAuthorizeUrl.trim() || null : null,
+        oauthTokenUrl:
+          payload.authMode === "oauth2" ? payload.oauthTokenUrl.trim() || null : null,
+        oauthScopes:
+          payload.authMode === "oauth2"
+            ? payload.oauthScopes.trim()
+              ? payload.oauthScopes
+              : null
+            : null,
+        oauthClientId:
+          payload.authMode === "oauth2" ? payload.oauthClientId.trim() || null : null,
+        oauthClientSecret:
+          payload.authMode === "oauth2" ? payload.oauthClientSecret.trim() || null : null,
+        oauthMetadata:
+          payload.authMode === "oauth2" ? parsedOauthMetadata : null,
       }
 
       const res = await fetch("/api/source/integrations", {
@@ -533,7 +912,7 @@ export default function Source() {
 
       return (await res.json()) as { integration: SourceIntegration }
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
       setIntegrationForm(defaultIntegrationForm)
       setIntegrationError(null)
       setSelectedPresetId(null)
@@ -541,6 +920,15 @@ export default function Source() {
       setPresetNotice(null)
       setPresetError(null)
       queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
+
+      if (
+        response?.integration &&
+        response.integration.auth_mode === "oauth2" &&
+        response.integration.oauth &&
+        !response.integration.oauth.connected
+      ) {
+        void beginOAuthConnection(response.integration)
+      }
     },
     onError: (err: Error) => setIntegrationError(err.message),
   })
@@ -635,7 +1023,9 @@ export default function Source() {
   const listings = listingsQuery.data?.listings ?? []
 
   const activeIntegrationCount = integrations.filter(
-    (integration) => integration.status === "active"
+    (integration) =>
+      integration.status === "active" &&
+      (integration.auth_mode !== "oauth2" || integration.oauth?.connected)
   ).length
 
   return (
@@ -743,6 +1133,12 @@ export default function Source() {
                   deleteIntegration.isPending &&
                   deleteIntegration.variables === integration.id
                 }
+                onConnect={
+                  integration.auth_mode === "oauth2" && !integration.oauth?.connected
+                    ? () => beginOAuthConnection(integration)
+                    : undefined
+                }
+                connecting={connectingIntegrationId === integration.id}
               />
             ))}
           </div>
@@ -975,10 +1371,29 @@ export default function Source() {
                 <Select
                   value={integrationForm.authMode}
                   onValueChange={(value) =>
-                    setIntegrationForm((prev) => ({
-                      ...prev,
-                      authMode: value as IntegrationFormState["authMode"],
-                    }))
+                    setIntegrationForm((prev) => {
+                      const nextMode = value as IntegrationFormState["authMode"]
+
+                      if (nextMode === "oauth2") {
+                        return {
+                          ...prev,
+                          authMode: nextMode,
+                          authToken: "",
+                        }
+                      }
+
+                      return {
+                        ...prev,
+                        authMode: nextMode,
+                        authToken: nextMode === "none" ? "" : prev.authToken,
+                        oauthAuthorizeUrl: "",
+                        oauthTokenUrl: "",
+                        oauthScopes: "",
+                        oauthClientId: "",
+                        oauthClientSecret: "",
+                        oauthMetadata: "",
+                      }
+                    })
                   }
                 >
                   <SelectContent>
@@ -993,7 +1408,7 @@ export default function Source() {
                     ))}
                   </SelectContent>
                 </Select>
-                {integrationForm.authMode !== "none" && (
+                {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
                   <p className="text-xs text-slate-400">
                     Stored securely in your Supabase project. Bearer tokens add
                     an Authorization header automatically. API keys let you
@@ -1004,9 +1419,15 @@ export default function Source() {
                     ). Basic auth expects username:password.
                   </p>
                 )}
+                {integrationForm.authMode === "oauth2" && (
+                  <p className="text-xs text-slate-400">
+                    After saving, Source opens the provider&apos;s consent screen so you can
+                    authorize access and capture tokens securely.
+                  </p>
+                )}
               </FieldStack>
 
-              {integrationForm.authMode !== "none" && (
+              {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
                 <FieldStack label="Credentials" htmlFor="authToken">
                   <Input
                     id="authToken"
@@ -1046,6 +1467,125 @@ export default function Source() {
                     required
                   />
                 </FieldStack>
+              )}
+
+              {integrationForm.authMode === "oauth2" && (
+                <div className="grid gap-4">
+                  <FieldStack
+                    label="Authorization URL"
+                    htmlFor="oauth-authorize"
+                    description="Where Source sends users to approve access."
+                  >
+                    <Input
+                      id="oauth-authorize"
+                      value={integrationForm.oauthAuthorizeUrl}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          oauthAuthorizeUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://provider.com/oauth/authorize"
+                      type="url"
+                      required
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Token URL"
+                    htmlFor="oauth-token"
+                    description="Source exchanges the authorization code for tokens at this URL."
+                  >
+                    <Input
+                      id="oauth-token"
+                      value={integrationForm.oauthTokenUrl}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          oauthTokenUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://provider.com/oauth/token"
+                      type="url"
+                      required
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Client ID"
+                    htmlFor="oauth-client-id"
+                    description="Registered OAuth client identifier."
+                  >
+                    <Input
+                      id="oauth-client-id"
+                      value={integrationForm.oauthClientId}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          oauthClientId: event.target.value,
+                        }))
+                      }
+                      placeholder="client-id-123"
+                      required
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Client secret"
+                    htmlFor="oauth-client-secret"
+                    description="Stored securely and used during token refresh."
+                  >
+                    <Input
+                      id="oauth-client-secret"
+                      value={integrationForm.oauthClientSecret}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          oauthClientSecret: event.target.value,
+                        }))
+                      }
+                      placeholder="Optional"
+                      type="password"
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Scopes"
+                    htmlFor="oauth-scopes"
+                    description="Space separated list of scopes requested during authorization."
+                  >
+                    <Input
+                      id="oauth-scopes"
+                      value={integrationForm.oauthScopes}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          oauthScopes: event.target.value,
+                        }))
+                      }
+                      placeholder="inventory.write listings.read"
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="OAuth metadata (JSON)"
+                    htmlFor="oauth-metadata"
+                    description="Optional JSON persisted with the integration for custom providers."
+                  >
+                    <Textarea
+                      id="oauth-metadata"
+                      value={integrationForm.oauthMetadata}
+                      onChange={(event) =>
+                        setIntegrationForm((prev) => ({
+                          ...prev,
+                          oauthMetadata: event.target.value,
+                        }))
+                      }
+                      rows={3}
+                      placeholder='{"audience": "marketplace"}'
+                    />
+                  </FieldStack>
+                </div>
               )}
 
               <FieldStack
@@ -1400,9 +1940,11 @@ type IntegrationCardProps = {
   integration: SourceIntegration
   removing: boolean
   onRemove(): void
+  onConnect?: () => void
+  connecting?: boolean
 }
 
-function IntegrationCard({ integration, removing, onRemove }: IntegrationCardProps) {
+function IntegrationCard({ integration, removing, onRemove, onConnect, connecting }: IntegrationCardProps) {
   const headers = integration.headers ?? {}
   const authSummary = (() => {
     switch (integration.auth_mode) {
@@ -1412,10 +1954,24 @@ function IntegrationCard({ integration, removing, onRemove }: IntegrationCardPro
         return "HTTP basic auth"
       case "api_key":
         return `API key header: ${integration.auth_header || "X-API-Key"}`
+      case "oauth2":
+        return integration.oauth?.connected
+          ? "OAuth 2.0 access token"
+          : "OAuth 2.0 (connection required)"
       default:
         return "No authentication"
     }
   })()
+
+  const oauthConnected = integration.auth_mode === "oauth2" && integration.oauth?.connected
+  const oauthExpiresAt = integration.oauth?.expires_at ?? null
+  const oauthExpiryLabel = (() => {
+    if (!oauthExpiresAt) return null
+    const date = new Date(oauthExpiresAt)
+    if (Number.isNaN(date.getTime())) return null
+    return date.toLocaleString()
+  })()
+
   return (
     <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
       <div className="space-y-3">
@@ -1427,20 +1983,34 @@ function IntegrationCard({ integration, removing, onRemove }: IntegrationCardPro
                 {integration.display_name || integration.provider}
               </p>
             </div>
-            <p className="text-xs text-slate-400">
-              {integration.connection_url}
-            </p>
+            <p className="break-all text-xs text-slate-400">{integration.connection_url}</p>
           </div>
-          <Badge
-            variant={integration.status === "active" ? "default" : "secondary"}
-            className={cn(
-              integration.status === "active"
-                ? "bg-emerald-500/20 text-emerald-200"
-                : "bg-slate-800 text-slate-300"
+          <div className="flex flex-wrap justify-end gap-2">
+            <Badge
+              variant={integration.status === "active" ? "default" : "secondary"}
+              className={cn(
+                integration.status === "active"
+                  ? "bg-emerald-500/20 text-emerald-200"
+                  : "bg-slate-800 text-slate-300",
+              )}
+            >
+              {integration.status === "active" ? "Active" : "Disabled"}
+            </Badge>
+            {integration.auth_mode === "oauth2" && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "gap-1",
+                  oauthConnected
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-100",
+                )}
+              >
+                <Lock className="size-3" />
+                {oauthConnected ? "Connected" : "Auth needed"}
+              </Badge>
             )}
-          >
-            {integration.status === "active" ? "Active" : "Disabled"}
-          </Badge>
+          </div>
         </div>
 
         <div className="rounded-lg border border-slate-900/70 bg-slate-950/70 p-3 text-xs text-slate-300">
@@ -1453,9 +2023,27 @@ function IntegrationCard({ integration, removing, onRemove }: IntegrationCardPro
           </p>
         </div>
 
-        <div className="space-y-1 text-xs text-slate-300">
-          <p className="font-semibold text-slate-200">Authentication</p>
-          <p className="text-slate-400">{authSummary}</p>
+        <div className="space-y-2 text-xs text-slate-300">
+          <div>
+            <p className="font-semibold text-slate-200">Authentication</p>
+            <p className="text-slate-400">{authSummary}</p>
+          </div>
+          {integration.auth_mode === "oauth2" && (
+            <div className="flex flex-col gap-1 text-[11px] text-slate-400">
+              <div className="flex items-center gap-2">
+                <Lock className={cn("size-3", oauthConnected ? "text-emerald-300" : "text-amber-300")} />
+                <span>{oauthConnected ? "Authorized" : "Not authorized"}</span>
+              </div>
+              {oauthConnected && oauthExpiryLabel && (
+                <span className="pl-5">Token refresh by {oauthExpiryLabel}</span>
+              )}
+              {!oauthConnected && (
+                <span className="pl-5 text-amber-200">
+                  Connect this integration so Source can publish automatically.
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {Object.keys(headers).length > 0 && (
@@ -1464,9 +2052,7 @@ function IntegrationCard({ integration, removing, onRemove }: IntegrationCardPro
             <div className="space-y-1">
               {Object.entries(headers).map(([key, value]) => (
                 <div key={key} className="flex items-center gap-3 break-all font-mono text-[11px]">
-                  <span className="rounded bg-slate-900 px-2 py-0.5 text-slate-200">
-                    {key}
-                  </span>
+                  <span className="rounded bg-slate-900 px-2 py-0.5 text-slate-200">{key}</span>
                   <span className="text-slate-400">{String(value)}</span>
                 </div>
               ))}
@@ -1475,7 +2061,7 @@ function IntegrationCard({ integration, removing, onRemove }: IntegrationCardPro
         )}
       </div>
 
-      <div className="mt-5 flex items-center justify-between text-xs text-slate-400">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
         <a
           href={integration.connection_url}
           target="_blank"
@@ -1484,15 +2070,32 @@ function IntegrationCard({ integration, removing, onRemove }: IntegrationCardPro
         >
           Visit site <ExternalLink className="size-3" />
         </a>
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={removing}
-          className="inline-flex items-center gap-1 rounded border border-rose-500/40 px-2 py-1 text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-50"
-        >
-          <X className="size-3" />
-          {removing ? "Removing" : "Disconnect"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onConnect && (
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={connecting || removing}
+              className="inline-flex items-center gap-2 rounded border border-sky-500/40 px-2 py-1 text-sky-200 transition hover:bg-sky-500/10 disabled:opacity-50"
+            >
+              {connecting ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Plug className="size-3" />
+              )}
+              {connecting ? "Connecting" : "Connect account"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={removing}
+            className="inline-flex items-center gap-1 rounded border border-rose-500/40 px-2 py-1 text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-50"
+          >
+            <X className="size-3" />
+            {removing ? "Removing" : "Disconnect"}
+          </button>
+        </div>
       </div>
     </div>
   )

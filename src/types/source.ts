@@ -5,13 +5,21 @@ export type SourceIntegration = {
   connection_url: string
   publish_url: string
   publish_method: "POST" | "PUT" | "PATCH"
-  auth_mode: "none" | "bearer" | "basic" | "api_key"
+  auth_mode: "none" | "bearer" | "basic" | "api_key" | "oauth2"
   auth_header: string | null
   headers: Record<string, string> | null
   payload_template: unknown | null
   status: "active" | "disabled"
   created_at: string
   updated_at: string
+  oauth: {
+    authorize_url: string | null
+    token_url: string | null
+    scopes: string[]
+    client_id: string | null
+    connected: boolean
+    expires_at: string | null
+  } | null
 }
 
 export type PublishResult = {
