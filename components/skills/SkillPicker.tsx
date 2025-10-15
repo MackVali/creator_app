@@ -83,7 +83,11 @@ export function SkillMultiPicker({
   const hasSkills = sortedSkills.length > 0;
   const triggerDisabled = disabled || loading || !hasSkills;
 
-  const buttonLabel = hasSkills ? summary : emptyLabel;
+  const buttonLabel = loading
+    ? "Loading skills…"
+    : hasSkills
+    ? summary
+    : emptyLabel;
 
   return (
     <DropdownMenu>
