@@ -700,6 +700,9 @@ async function scheduleHabitsForDay(params: {
               sunlightPrevious.dusk ?? sunlightPrevious.sunset ?? null,
             nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
           }
+    const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
+    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
+
     const compatibleWindows = await fetchCompatibleWindowsForItem(
       client,
       day,
@@ -712,6 +715,7 @@ async function scheduleHabitsForDay(params: {
         locationContext,
         daylight: daylightConstraint,
         matchEnergyLevel: true,
+        ignoreAvailability: isSyncHabit,
       }
     )
 
@@ -732,7 +736,9 @@ async function scheduleHabitsForDay(params: {
       startCandidate = baseNowMs
     }
     if (startCandidate >= endLimit) {
-      availability.set(target.key, new Date(endLimit))
+      if (!isSyncHabit) {
+        availability.set(target.key, new Date(endLimit))
+      }
       continue
     }
 
@@ -743,13 +749,17 @@ async function scheduleHabitsForDay(params: {
       clipped = true
     }
     if (endCandidate <= startCandidate) {
-      availability.set(target.key, new Date(endCandidate))
+      if (!isSyncHabit) {
+        availability.set(target.key, new Date(endCandidate))
+      }
       continue
     }
 
     const startDate = new Date(startCandidate)
     const endDate = new Date(endCandidate)
-    availability.set(target.key, endDate)
+    if (!isSyncHabit) {
+      availability.set(target.key, endDate)
+    }
 
     const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
     const windowLabel = window.label ?? null
@@ -821,6 +831,7 @@ async function fetchCompatibleWindowsForItem(
     locationContext?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
+    ignoreAvailability?: boolean
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -836,7 +847,8 @@ async function fetchCompatibleWindowsForItem(
   const now = options?.now ? new Date(options.now) : null
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
-  const availability = options?.availability
+  const availability = options?.ignoreAvailability ? undefined : options?.availability
+  const shouldTrackAvailability = !options?.ignoreAvailability && Boolean(options?.availability)
 
   const desiredLocation = options?.locationContext
     ? String(options.locationContext).toUpperCase().trim()
@@ -935,7 +947,7 @@ async function fetchCompatibleWindowsForItem(
 
     const availableStartLocal = new Date(availableStartMs)
     const endLimitLocal = new Date(endLimitMs)
-    if (availability) {
+    if (shouldTrackAvailability && availability) {
       const existing = availability.get(key)
       if (!existing || existing.getTime() !== availableStartMs) {
         availability.set(key, availableStartLocal)

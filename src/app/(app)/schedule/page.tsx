@@ -1017,7 +1017,7 @@ function computeTimelineLayoutForAsyncHabits({
 
   habitPlacements.forEach((placement, index) => {
     const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
-    if (habitType === 'ASYNC') return
+    if (habitType === 'SYNC' || habitType === 'ASYNC') return
     const startMs = placement.start.getTime()
     const endMs = placement.end.getTime()
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
@@ -1038,7 +1038,10 @@ function computeTimelineLayoutForAsyncHabits({
 
   const asyncHabits = habitPlacements
     .map((placement, index) => ({ placement, index }))
-    .filter(({ placement }) => (placement.habitType ?? 'HABIT').toUpperCase() === 'ASYNC')
+    .filter(({ placement }) => {
+      const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
+      return habitType === 'SYNC' || habitType === 'ASYNC'
+    })
     .map(({ placement, index }) => ({
       index,
       startMs: placement.start.getTime(),
