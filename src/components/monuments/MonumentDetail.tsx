@@ -184,7 +184,7 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
               </div>
             </section>
 
-            <ActivityPanel />
+            <ActivityPanel monumentId={id} />
           </div>
         </div>
       </div>
