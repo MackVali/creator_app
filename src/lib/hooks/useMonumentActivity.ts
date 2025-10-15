@@ -30,6 +30,47 @@ type XpEventRow = {
   schedule_instance_id: string | null;
 };
 
+function removeCancellingScheduleXpEvents(events: XpEventRow[]): XpEventRow[] {
+  if (events.length === 0) return events;
+
+  const scheduleAggregates = new Map<string, { sum: number; indexes: number[] }>();
+
+  events.forEach((event, index) => {
+    const scheduleId = event.schedule_instance_id;
+    if (!scheduleId) return;
+
+    const amount = typeof event.amount === "number" ? event.amount : 0;
+    const aggregate = scheduleAggregates.get(scheduleId);
+
+    if (aggregate) {
+      aggregate.sum += amount;
+      aggregate.indexes.push(index);
+    } else {
+      scheduleAggregates.set(scheduleId, {
+        sum: amount,
+        indexes: [index],
+      });
+    }
+  });
+
+  if (scheduleAggregates.size === 0) return events;
+
+  const cancelledIndexes = new Set<number>();
+
+  for (const aggregate of scheduleAggregates.values()) {
+    if (aggregate.indexes.length < 2) continue;
+    if (aggregate.sum === 0) {
+      for (const index of aggregate.indexes) {
+        cancelledIndexes.add(index);
+      }
+    }
+  }
+
+  if (cancelledIndexes.size === 0) return events;
+
+  return events.filter((_, index) => !cancelledIndexes.has(index));
+}
+
 const XP_KIND_WEIGHTS: Record<"task" | "habit" | "project" | "goal", number> = {
   task: 1,
   habit: 1,
@@ -189,7 +230,9 @@ export function useMonumentActivity(monumentId: string) {
       }
 
       const notes = (notesRes.data ?? []) as NoteRow[];
-      const xpEvents = (xpRes.data ?? []) as XpEventRow[];
+      const xpEvents = removeCancellingScheduleXpEvents(
+        (xpRes.data ?? []) as XpEventRow[]
+      );
       const goals = (goalsRes.data ?? []) as GoalRow[];
 
       const events: MonumentActivityEvent[] = [];
