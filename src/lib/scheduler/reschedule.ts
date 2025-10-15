@@ -94,6 +94,11 @@ type ScheduleBacklogResult = {
   timeline: ScheduleDraftPlacement[]
 }
 
+type WindowAvailabilityBounds = {
+  front: Date
+  back: Date
+}
+
 async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client
 
@@ -317,14 +322,17 @@ export async function scheduleBacklog(
     return a.id.localeCompare(b.id)
   })
 
-  const windowAvailabilityByDay = new Map<number, Map<string, Date>>()
+  const windowAvailabilityByDay = new Map<
+    number,
+    Map<string, WindowAvailabilityBounds>
+  >()
   const windowCache = new Map<string, WindowLite[]>()
   const habitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
 
   const ensureHabitPlacementsForDay = async (
     offset: number,
     day: Date,
-    availability: Map<string, Date>
+    availability: Map<string, WindowAvailabilityBounds>
   ) => {
     if (habitPlacementsByOffset.has(offset)) {
       return habitPlacementsByOffset.get(offset) ?? []
@@ -359,7 +367,7 @@ export async function scheduleBacklog(
     for (let offset = 0; offset < lookaheadDays; offset += 1) {
       let availability = windowAvailabilityByDay.get(offset)
       if (!availability) {
-        availability = new Map<string, Date>()
+        availability = new Map<string, WindowAvailabilityBounds>()
         windowAvailabilityByDay.set(offset, availability)
       }
       const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
@@ -372,7 +380,7 @@ export async function scheduleBacklog(
     for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
       let windowAvailability = windowAvailabilityByDay.get(offset)
       if (!windowAvailability) {
-        windowAvailability = new Map<string, Date>()
+        windowAvailability = new Map<string, WindowAvailabilityBounds>()
         windowAvailabilityByDay.set(offset, windowAvailability)
       }
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
@@ -420,10 +428,24 @@ export async function scheduleBacklog(
           placed.data
         )
         if (placementWindow?.key) {
-          windowAvailability.set(
-            placementWindow.key,
-            new Date(placed.data.end_utc)
-          )
+          const placementEnd = new Date(placed.data.end_utc)
+          const existingBounds = windowAvailability.get(placementWindow.key)
+          if (existingBounds) {
+            const nextFront = Math.min(
+              placementEnd.getTime(),
+              existingBounds.back.getTime(),
+            )
+            existingBounds.front = new Date(nextFront)
+            if (existingBounds.front.getTime() > existingBounds.back.getTime()) {
+              existingBounds.back = new Date(existingBounds.front)
+            }
+          } else {
+            const endLocal = placementWindow.endLocal ?? placementEnd
+            windowAvailability.set(placementWindow.key, {
+              front: placementEnd,
+              back: new Date(endLocal),
+            })
+          }
         }
         const decision: ScheduleDraftPlacement['decision'] = item.instanceId
           ? 'rescheduled'
@@ -595,7 +617,7 @@ async function scheduleHabitsForDay(params: {
   day: Date
   offset: number
   timeZone: string
-  availability: Map<string, Date>
+  availability: Map<string, WindowAvailabilityBounds>
   baseDate: Date
   windowCache: Map<string, WindowLite[]>
   client: Client
@@ -703,6 +725,10 @@ async function scheduleHabitsForDay(params: {
           }
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
     const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
+    const anchorRaw = habit.windowEdgePreference
+      ? String(habit.windowEdgePreference).toUpperCase().trim()
+      : 'FRONT'
+    const anchorPreference = anchorRaw === 'BACK' ? 'BACK' : 'FRONT'
 
     const compatibleWindows = await fetchCompatibleWindowsForItem(
       client,
@@ -717,6 +743,7 @@ async function scheduleHabitsForDay(params: {
         daylight: daylightConstraint,
         matchEnergyLevel: true,
         ignoreAvailability: isSyncHabit,
+        anchor: anchorPreference,
       }
     )
 
@@ -730,7 +757,8 @@ async function scheduleHabitsForDay(params: {
       continue
     }
 
-    const startMs = target.availableStartLocal.getTime()
+    const bounds = availability.get(target.key)
+    const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
     const windowStartMs = target.startLocal.getTime()
     let constraintLowerBound = startMs
@@ -772,6 +800,32 @@ async function scheduleHabitsForDay(params: {
     if (startCandidate >= endLimit) {
       if (!isSyncHabit) {
         availability.set(target.key, new Date(endLimit))
+    let startCandidate = startLimit
+    if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endLimit) {
+      if (anchorPreference === 'BACK') {
+        const latestStart = endLimit - durationMs
+        const desiredStart = Math.min(latestStart, baseNowMs)
+        startCandidate = Math.max(startLimit, desiredStart)
+      } else {
+        startCandidate = baseNowMs
+      }
+    }
+
+    const latestStartAllowed = endLimit - durationMs
+    if (startCandidate > latestStartAllowed) {
+      if (bounds) {
+        if (anchorPreference === 'BACK') {
+          const clamped = Math.max(bounds.front.getTime(), latestStartAllowed)
+          bounds.back = new Date(clamped)
+          if (bounds.back.getTime() < bounds.front.getTime()) {
+            bounds.front = new Date(bounds.back)
+          }
+        } else {
+          bounds.front = new Date(endLimit)
+          if (bounds.back.getTime() < bounds.front.getTime()) {
+            bounds.back = new Date(bounds.front)
+          }
+        }
       }
       continue
     }
@@ -785,6 +839,18 @@ async function scheduleHabitsForDay(params: {
     if (endCandidate <= startCandidate) {
       if (!isSyncHabit) {
         availability.set(target.key, new Date(endCandidate))
+      if (bounds) {
+        if (anchorPreference === 'BACK') {
+          bounds.back = new Date(Math.max(bounds.front.getTime(), startCandidate))
+          if (bounds.back.getTime() < bounds.front.getTime()) {
+            bounds.front = new Date(bounds.back)
+          }
+        } else {
+          bounds.front = new Date(endCandidate)
+          if (bounds.back.getTime() < bounds.front.getTime()) {
+            bounds.back = new Date(bounds.front)
+          }
+        }
       }
       continue
     }
@@ -795,6 +861,19 @@ async function scheduleHabitsForDay(params: {
       availability.set(target.key, endDate)
     }
     addAnchorStart(anchorStartsByWindowKey, target.key, startCandidate)
+    if (bounds) {
+      if (anchorPreference === 'BACK') {
+        bounds.back = new Date(startDate)
+        if (bounds.front.getTime() > bounds.back.getTime()) {
+          bounds.front = new Date(bounds.back)
+        }
+      } else {
+        bounds.front = new Date(endDate)
+        if (bounds.back.getTime() < bounds.front.getTime()) {
+          bounds.back = new Date(bounds.front)
+        }
+      }
+    }
 
     const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
     const windowLabel = window.label ?? null
@@ -878,12 +957,13 @@ async function fetchCompatibleWindowsForItem(
   timeZone: string,
   options?: {
     now?: Date
-    availability?: Map<string, Date>
+    availability?: Map<string, WindowAvailabilityBounds>
     cache?: Map<string, WindowLite[]>
     locationContext?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
     ignoreAvailability?: boolean
+    anchor?: 'FRONT' | 'BACK'
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -906,6 +986,7 @@ async function fetchCompatibleWindowsForItem(
     ? String(options.locationContext).toUpperCase().trim()
     : null
   const daylight = options?.daylight ?? null
+  const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
 
   const compatible = [] as Array<{
     id: string
@@ -948,24 +1029,18 @@ async function fetchCompatibleWindowsForItem(
 
     if (typeof nowMs === 'number' && endMs <= nowMs) continue
 
-    const baseAvailableStartMs =
-      typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
-    const carriedStartMs = availability?.get(key)?.getTime()
-    let availableStartMs =
-      typeof carriedStartMs === 'number'
-        ? Math.max(baseAvailableStartMs, carriedStartMs)
-        : baseAvailableStartMs
-    let endLimitMs = endMs
+    let frontBoundMs = typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
+    let backBoundMs = endMs
 
     if (daylight) {
       if (daylight.preference === 'DAY') {
         const sunriseMs = daylight.sunrise?.getTime()
         const sunsetMs = daylight.sunset?.getTime()
         if (typeof sunriseMs === 'number') {
-          availableStartMs = Math.max(availableStartMs, sunriseMs)
+          frontBoundMs = Math.max(frontBoundMs, sunriseMs)
         }
         if (typeof sunsetMs === 'number') {
-          endLimitMs = Math.min(endLimitMs, sunsetMs)
+          backBoundMs = Math.min(backBoundMs, sunsetMs)
         }
       } else if (daylight.preference === 'NIGHT') {
         const sunriseMs = daylight.sunrise?.getTime() ?? null
@@ -978,24 +1053,45 @@ async function fetchCompatibleWindowsForItem(
 
         if (isEarlyMorning) {
           if (typeof previousDuskMs === 'number') {
-            availableStartMs = Math.max(availableStartMs, previousDuskMs)
+            frontBoundMs = Math.max(frontBoundMs, previousDuskMs)
           }
           if (typeof sunriseMs === 'number') {
-            endLimitMs = Math.min(endLimitMs, sunriseMs)
+            backBoundMs = Math.min(backBoundMs, sunriseMs)
           }
         } else {
           if (typeof duskMs === 'number') {
-            availableStartMs = Math.max(availableStartMs, duskMs)
+            frontBoundMs = Math.max(frontBoundMs, duskMs)
           }
           if (typeof nextDawnMs === 'number') {
-            endLimitMs = Math.min(endLimitMs, nextDawnMs)
+            backBoundMs = Math.min(backBoundMs, nextDawnMs)
           }
         }
       }
     }
 
-    if (availableStartMs >= endLimitMs) continue
-    if (availableStartMs + durationMs > endLimitMs) continue
+    if (frontBoundMs >= backBoundMs) continue
+
+    const existingBounds = availability?.get(key) ?? null
+    if (existingBounds) {
+      const nextFront = Math.max(frontBoundMs, existingBounds.front.getTime())
+      const nextBack = Math.min(backBoundMs, existingBounds.back.getTime())
+      if (nextFront >= nextBack) {
+        existingBounds.front = new Date(nextBack)
+        existingBounds.back = new Date(nextBack)
+        continue
+      }
+      existingBounds.front = new Date(nextFront)
+      existingBounds.back = new Date(nextBack)
+      frontBoundMs = existingBounds.front.getTime()
+      backBoundMs = existingBounds.back.getTime()
+    } else if (availability) {
+      availability.set(key, {
+        front: new Date(frontBoundMs),
+        back: new Date(backBoundMs),
+      })
+    }
+
+    if (frontBoundMs >= backBoundMs) continue
 
     const availableStartLocal = new Date(availableStartMs)
     const endLimitLocal = new Date(endLimitMs)
@@ -1003,8 +1099,25 @@ async function fetchCompatibleWindowsForItem(
       const existing = availability.get(key)
       if (!existing || existing.getTime() !== availableStartMs) {
         availability.set(key, availableStartLocal)
+    let candidateStartMs: number
+    if (anchorPreference === 'BACK') {
+      candidateStartMs = backBoundMs - durationMs
+      if (candidateStartMs < startMs) {
+        candidateStartMs = startMs
       }
+    } else {
+      candidateStartMs = frontBoundMs
     }
+
+    if (candidateStartMs < frontBoundMs) {
+      candidateStartMs = frontBoundMs
+    }
+
+    const candidateEndMs = candidateStartMs + durationMs
+    if (candidateEndMs > backBoundMs) continue
+
+    const availableStartLocal = new Date(candidateStartMs)
+    const endLimitLocal = new Date(backBoundMs)
 
     compatible.push({
       id: win.id,
