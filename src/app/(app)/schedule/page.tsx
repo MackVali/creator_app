@@ -619,8 +619,7 @@ function computeHabitPlacementsForDay({
   if (habits.length === 0 || windows.length === 0) return []
 
   const zone = timeZone || 'UTC'
-  const dayStart = startOfDayInTimeZone(date, zone)
-  const defaultDueMs = dayStart.getTime()
+  const defaultDueMs = startOfDayInTimeZone(date, zone).getTime()
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const placements: HabitTimelinePlacement[] = []
   const availability = new Map<string, number>()
