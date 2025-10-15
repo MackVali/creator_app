@@ -83,6 +83,8 @@ export function SkillMultiPicker({
   const hasSkills = sortedSkills.length > 0;
   const triggerDisabled = disabled || loading || !hasSkills;
 
+  const buttonLabel = hasSkills ? summary : emptyLabel;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -90,13 +92,15 @@ export function SkillMultiPicker({
           type="button"
           variant="outline"
           disabled={triggerDisabled}
+          aria-label={buttonLabel}
+          title={buttonLabel}
           className={cn(
             "h-10 w-full justify-between rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white",
             triggerDisabled && "cursor-not-allowed opacity-60",
             buttonClassName
           )}
         >
-          <span className="truncate">{hasSkills ? summary : emptyLabel}</span>
+          <span className="truncate">{buttonLabel}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -161,6 +165,12 @@ export function SkillSinglePicker({
 
   const normalizedValue = value ?? "none";
   const isDisabled = disabled || loading;
+  const selectedName = value
+    ? sortedSkills.find((skill) => skill.id === value)?.name
+    : null;
+  const triggerLabel = loading
+    ? "Loading skills…"
+    : selectedName ?? placeholder;
 
   return (
     <Select
@@ -169,6 +179,8 @@ export function SkillSinglePicker({
       disabled={isDisabled}
     >
       <SelectTrigger
+        aria-label={triggerLabel}
+        title={triggerLabel}
         className={cn(
           "h-10 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0",
           isDisabled && "cursor-not-allowed opacity-60",
