@@ -7,7 +7,7 @@ import { useProfile } from "../../lib/hooks/useProfile";
 
 vi.mock("../../lib/hooks/useProfile");
 vi.mock("../../components/auth/AuthProvider", () => ({
-  useAuth: () => ({ session: null }),
+  useAuth: () => ({ session: null, isReady: true }),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),

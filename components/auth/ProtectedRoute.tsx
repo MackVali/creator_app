@@ -9,14 +9,22 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { session } = useAuth();
+  const { session, isReady } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
     if (!session?.user) {
       router.push("/auth");
     }
-  }, [session, router]);
+  }, [isReady, session, router]);
+
+  if (!isReady) {
+    return null;
+  }
 
   if (!session?.user) {
     return null;
