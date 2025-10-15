@@ -55,6 +55,7 @@ type IntegrationFormState = {
   publishMethod: (typeof httpMethods)[number]
   authMode: (typeof authModes)[number]
   authToken: string
+  authHeader: string
   headers: string
   payloadTemplate: string
   status: "active" | "disabled"
@@ -69,7 +70,6 @@ type ListingFormState = {
   inventory: string
   durationMinutes: string
   metadata: string
-  publishNow: boolean
 }
 
 type ApiError = { error: string }
@@ -82,6 +82,7 @@ const defaultIntegrationForm: IntegrationFormState = {
   publishMethod: "POST",
   authMode: "none",
   authToken: "",
+  authHeader: "X-API-Key",
   headers: "",
   payloadTemplate: "",
   status: "active",
@@ -96,8 +97,308 @@ const defaultListingForm: ListingFormState = {
   inventory: "",
   durationMinutes: "",
   metadata: "",
-  publishNow: true,
 }
+
+type IntegrationPresetField = {
+  id: string
+  label: string
+  placeholder?: string
+  help?: string
+  type?: "text" | "url" | "password"
+}
+
+type IntegrationPreset = {
+  id: string
+  label: string
+  description: string
+  docsUrl?: string
+  fields: IntegrationPresetField[]
+  build(inputs: Record<string, string>): Partial<IntegrationFormState>
+}
+
+const integrationPresets: IntegrationPreset[] = [
+  {
+    id: "shopify",
+    label: "Shopify Admin",
+    description:
+      "Create products via the Shopify Admin REST API using a private app access token.",
+    docsUrl: "https://shopify.dev/docs/api/admin-rest",
+    fields: [
+      {
+        id: "storeDomain",
+        label: "Store domain",
+        placeholder: "your-shop.myshopify.com",
+        help: "Use the myshopify.com domain for your storefront.",
+      },
+      {
+        id: "accessToken",
+        label: "Admin API access token",
+        placeholder: "shpat_xxxxx",
+        type: "password",
+        help: "Generate from Shopify admin under Apps → Develop apps.",
+      },
+    ],
+    build: (inputs) => {
+      const domainInput = inputs.storeDomain?.trim()
+      if (!domainInput) {
+        throw new Error("Shopify store domain is required")
+      }
+
+      const normalizedDomain = domainInput.startsWith("http")
+        ? domainInput
+        : `https://${domainInput}`
+
+      let parsed: URL
+      try {
+        parsed = new URL(normalizedDomain)
+      } catch {
+        throw new Error("Enter a valid Shopify domain")
+      }
+
+      const token = inputs.accessToken?.trim()
+      if (!token) {
+        throw new Error("Shopify access token is required")
+      }
+
+      const base = `${parsed.protocol}//${parsed.host}`
+
+      const payload = {
+        product: {
+          title: "{{listing.title}}",
+          body_html: "{{listing.description}}",
+          status: "active",
+          variants: [
+            {
+              price: "{{listing.price}}",
+              sku: "{{listing.id}}",
+              inventory_quantity: "{{listing.metadata.inventory}}",
+            },
+          ],
+          tags: "{{listing.metadata.tags}}",
+          product_type: "{{listing.metadata.product_type}}",
+        },
+      }
+
+      return {
+        provider: "Shopify",
+        displayName: "Shopify Admin",
+        connectionUrl: base,
+        publishUrl: `${base}/admin/api/2024-01/products.json`,
+        publishMethod: "POST",
+        authMode: "api_key",
+        authToken: token,
+        authHeader: "X-Shopify-Access-Token",
+        headers: JSON.stringify({}, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+  {
+    id: "wix",
+    label: "Wix Stores",
+    description:
+      "Push inventory into Wix Stores using an OAuth app and your site identifier.",
+    docsUrl: "https://dev.wix.com/docs/rest/api-reference/stores",
+    fields: [
+      {
+        id: "siteId",
+        label: "Wix site ID",
+        placeholder: "12345678-1234-1234-1234-1234567890ab",
+        help: "Copy from Wix Developers → My Apps → Site details.",
+      },
+      {
+        id: "accessToken",
+        label: "OAuth access token",
+        placeholder: "wix-access-token",
+        type: "password",
+        help: "Exchange your refresh token for an access token before saving.",
+      },
+    ],
+    build: (inputs) => {
+      const siteId = inputs.siteId?.trim()
+      if (!siteId) {
+        throw new Error("Wix site ID is required")
+      }
+
+      const token = inputs.accessToken?.trim()
+      if (!token) {
+        throw new Error("Wix access token is required")
+      }
+
+      const headers = {
+        "wix-site-id": siteId,
+      }
+
+      const payload = {
+        product: {
+          name: "{{listing.title}}",
+          description: {
+            plainText: "{{listing.description}}",
+          },
+          price: {
+            price: "{{listing.price}}",
+            currency: "{{listing.currency}}",
+          },
+          ribbon: "{{listing.metadata.ribbon}}",
+          sku: "{{listing.id}}",
+        },
+      }
+
+      return {
+        provider: "Wix Stores",
+        displayName: "Wix",
+        connectionUrl: "https://www.wix.com",
+        publishUrl: "https://www.wixapis.com/stores/v1/products",
+        publishMethod: "POST",
+        authMode: "bearer",
+        authToken: token,
+        authHeader: "Authorization",
+        headers: JSON.stringify(headers, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+  {
+    id: "woocommerce",
+    label: "WooCommerce",
+    description:
+      "Publish catalog entries to WooCommerce using the REST API consumer credentials.",
+    docsUrl: "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+    fields: [
+      {
+        id: "storeUrl",
+        label: "Storefront URL",
+        placeholder: "https://store.example.com",
+      },
+      {
+        id: "consumerKey",
+        label: "Consumer key",
+        placeholder: "ck_xxxxxxxxx",
+        type: "password",
+      },
+      {
+        id: "consumerSecret",
+        label: "Consumer secret",
+        placeholder: "cs_xxxxxxxxx",
+        type: "password",
+      },
+    ],
+    build: (inputs) => {
+      const rawUrl = inputs.storeUrl?.trim()
+      if (!rawUrl) {
+        throw new Error("WooCommerce store URL is required")
+      }
+
+      let parsed: URL
+      try {
+        parsed = new URL(rawUrl)
+      } catch {
+        throw new Error("Enter a valid WooCommerce store URL")
+      }
+
+      const key = inputs.consumerKey?.trim()
+      const secret = inputs.consumerSecret?.trim()
+      if (!key || !secret) {
+        throw new Error("WooCommerce consumer key and secret are required")
+      }
+
+      const base = `${parsed.protocol}//${parsed.host}`
+
+      const payload = {
+        name: "{{listing.title}}",
+        type: "simple",
+        regular_price: "{{listing.price}}",
+        description: "{{listing.description}}",
+        sku: "{{listing.id}}",
+        stock_quantity: "{{listing.metadata.inventory}}",
+        manage_stock: true,
+      }
+
+      return {
+        provider: "WooCommerce",
+        displayName: parsed.host,
+        connectionUrl: base,
+        publishUrl: `${base}/wp-json/wc/v3/products`,
+        publishMethod: "POST",
+        authMode: "basic",
+        authToken: `${key}:${secret}`,
+        authHeader: "Authorization",
+        headers: JSON.stringify({"Content-Type": "application/json"}, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+  {
+    id: "automation",
+    label: "Zapier / Make bridge",
+    description:
+      "Trigger a no-code automation that can fan listings out to Depop, Facebook Marketplace, Craigslist, eBay, and more.",
+    docsUrl: "https://zapier.com/apps/webhooks",
+    fields: [
+      {
+        id: "webhookUrl",
+        label: "Webhook URL",
+        placeholder: "https://hooks.zapier.com/hooks/catch/...",
+        type: "url",
+        help: "Paste the catch hook URL from Zapier, Make, or n8n.",
+      },
+      {
+        id: "connectionName",
+        label: "Connection label",
+        placeholder: "Marketplace autoposter",
+      },
+    ],
+    build: (inputs) => {
+      const urlInput = inputs.webhookUrl?.trim()
+      if (!urlInput) {
+        throw new Error("Webhook URL is required")
+      }
+
+      let parsed: URL
+      try {
+        parsed = new URL(urlInput)
+      } catch {
+        throw new Error("Enter a valid webhook URL")
+      }
+
+      const label = inputs.connectionName?.trim() || "Marketplace bridge"
+
+      const payload = {
+        listing: {
+          id: "{{listing.id}}",
+          title: "{{listing.title}}",
+          description: "{{listing.description}}",
+          price: "{{listing.price}}",
+          currency: "{{listing.currency}}",
+          type: "{{listing.type}}",
+          metadata: "{{listing.metadata}}",
+        },
+        integration: {
+          id: "{{integration.id}}",
+          provider: "{{integration.provider}}",
+          connectionUrl: "{{integration.connectionUrl}}",
+        },
+      }
+
+      return {
+        provider: label,
+        displayName: label,
+        connectionUrl: `${parsed.protocol}//${parsed.host}`,
+        publishUrl: parsed.toString(),
+        publishMethod: "POST",
+        authMode: "none",
+        authToken: "",
+        authHeader: "X-API-Key",
+        headers: JSON.stringify({ "X-Source-Channel": "source-automation" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active",
+      }
+    },
+  },
+]
 
 export default function Source() {
   const queryClient = useQueryClient()
@@ -105,6 +406,64 @@ export default function Source() {
   const [listingForm, setListingForm] = useState(defaultListingForm)
   const [integrationError, setIntegrationError] = useState<string | null>(null)
   const [listingError, setListingError] = useState<string | null>(null)
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
+  const [presetInputs, setPresetInputs] = useState<Record<string, string>>({})
+  const [presetNotice, setPresetNotice] = useState<string | null>(null)
+  const [presetError, setPresetError] = useState<string | null>(null)
+
+  const selectedPreset =
+    selectedPresetId === null
+      ? null
+      : integrationPresets.find((preset) => preset.id === selectedPresetId) ?? null
+
+  const handlePresetChange = (value: string) => {
+    if (value === "manual") {
+      setSelectedPresetId(null)
+      setPresetInputs({})
+      setPresetNotice(null)
+      setPresetError(null)
+      return
+    }
+
+    const preset = integrationPresets.find((item) => item.id === value) ?? null
+    setSelectedPresetId(preset ? preset.id : null)
+
+    if (preset) {
+      const defaults: Record<string, string> = {}
+      for (const field of preset.fields) {
+        defaults[field.id] = ""
+      }
+      setPresetInputs(defaults)
+    } else {
+      setPresetInputs({})
+    }
+
+    setPresetNotice(null)
+    setPresetError(null)
+  }
+
+  const handlePresetApply = () => {
+    if (!selectedPreset) return
+
+    try {
+      const next = selectedPreset.build(presetInputs)
+      setIntegrationForm((prev) => ({
+        ...prev,
+        ...next,
+      }))
+      setPresetNotice(
+        `${selectedPreset.label} defaults applied. Review and save to finish.`
+      )
+      setPresetError(null)
+    } catch (error) {
+      setPresetNotice(null)
+      setPresetError(
+        error instanceof Error
+          ? error.message
+          : "Unable to apply connector template"
+      )
+    }
+  }
 
   const integrationsQuery = useQuery<IntegrationsResponse, Error>({
     queryKey: ["source", "integrations"],
@@ -150,6 +509,10 @@ export default function Source() {
         publishMethod: payload.publishMethod,
         authMode: payload.authMode,
         authToken: payload.authToken.trim() || null,
+        authHeader:
+          payload.authMode === "api_key"
+            ? payload.authHeader.trim() || "X-API-Key"
+            : null,
         headers: payload.headers.trim() ? JSON.parse(payload.headers) : null,
         payloadTemplate: payload.payloadTemplate.trim()
           ? JSON.parse(payload.payloadTemplate)
@@ -173,6 +536,10 @@ export default function Source() {
     onSuccess: () => {
       setIntegrationForm(defaultIntegrationForm)
       setIntegrationError(null)
+      setSelectedPresetId(null)
+      setPresetInputs({})
+      setPresetNotice(null)
+      setPresetError(null)
       queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
     },
     onError: (err: Error) => setIntegrationError(err.message),
@@ -232,7 +599,7 @@ export default function Source() {
         price: payload.price.trim() ? Number.parseFloat(payload.price) : null,
         currency: payload.currency.trim() || "USD",
         metadata,
-        publishNow: payload.publishNow,
+        publishNow: true,
       }
 
       if (!body.title) {
@@ -407,6 +774,102 @@ export default function Source() {
               </div>
             </div>
 
+            <div className="mt-5 space-y-4 rounded-xl border border-slate-900/70 bg-slate-950/60 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">Connector library</p>
+                <p className="text-xs text-slate-400">
+                  Prefill this form for Shopify, Wix, WooCommerce, or trigger automation
+                  hooks that fan listings out to Depop, Facebook Marketplace, Craigslist,
+                  and more.
+                </p>
+              </div>
+              <Select
+                value={selectedPresetId ?? "manual"}
+                onValueChange={handlePresetChange}
+                placeholder="Manual setup"
+              >
+                <SelectContent>
+                  <SelectItem value="manual">Manual setup</SelectItem>
+                  {integrationPresets.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {selectedPreset && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-slate-300">
+                      {selectedPreset.description}
+                    </p>
+                    {selectedPreset.docsUrl && (
+                      <a
+                        href={selectedPreset.docsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-sky-300 hover:text-sky-200"
+                      >
+                        View docs
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {selectedPreset.fields.map((field) => (
+                      <div key={field.id} className="space-y-2">
+                        <Label htmlFor={`preset-${field.id}`}>{field.label}</Label>
+                        <Input
+                          id={`preset-${field.id}`}
+                          type={
+                            field.type === "password"
+                              ? "password"
+                              : field.type === "url"
+                              ? "url"
+                              : "text"
+                          }
+                          value={presetInputs[field.id] ?? ""}
+                          onChange={(event) =>
+                            setPresetInputs((prev) => ({
+                              ...prev,
+                              [field.id]: event.target.value,
+                            }))
+                          }
+                          placeholder={field.placeholder}
+                        />
+                        {field.help && (
+                          <p className="text-xs text-slate-500">{field.help}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                    {presetError ? (
+                      <span className="text-rose-300">{presetError}</span>
+                    ) : presetNotice ? (
+                      <span className="text-emerald-300">{presetNotice}</span>
+                    ) : (
+                      <span className="text-slate-400">
+                        Fill in the required details, then apply to load the integration
+                        fields automatically.
+                      </span>
+                    )}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handlePresetApply}
+                      disabled={!selectedPreset}
+                    >
+                      Apply details
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="mt-5 grid gap-4">
               <FieldStack label="Platform" htmlFor="provider">
                 <Input
@@ -533,11 +996,12 @@ export default function Source() {
                 {integrationForm.authMode !== "none" && (
                   <p className="text-xs text-slate-400">
                     Stored securely in your Supabase project. Bearer tokens add
-                    an Authorization header automatically. API keys use the
+                    an Authorization header automatically. API keys let you
+                    choose the header name (for example
                     <code className="mx-1 rounded bg-slate-800 px-1">
-                      X-API-Key
+                      X-Shopify-Access-Token
                     </code>
-                    header. Basic auth expects username:password.
+                    ). Basic auth expects username:password.
                   </p>
                 )}
               </FieldStack>
@@ -558,6 +1022,27 @@ export default function Source() {
                         ? "username:password"
                         : "Secret value"
                     }
+                    required
+                  />
+                </FieldStack>
+              )}
+
+              {integrationForm.authMode === "api_key" && (
+                <FieldStack
+                  label="API key header"
+                  htmlFor="authHeader"
+                  description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
+                >
+                  <Input
+                    id="authHeader"
+                    value={integrationForm.authHeader}
+                    onChange={(event) =>
+                      setIntegrationForm((prev) => ({
+                        ...prev,
+                        authHeader: event.target.value,
+                      }))
+                    }
+                    placeholder="X-API-Key"
                     required
                   />
                 </FieldStack>
@@ -609,6 +1094,10 @@ export default function Source() {
                 onClick={() => {
                   setIntegrationForm(defaultIntegrationForm)
                   setIntegrationError(null)
+                  setSelectedPresetId(null)
+                  setPresetInputs({})
+                  setPresetNotice(null)
+                  setPresetError(null)
                 }}
               >
                 Reset
@@ -793,20 +1282,21 @@ export default function Source() {
                 />
               </FieldStack>
 
-              <label className="flex items-center gap-3 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border border-slate-600 bg-slate-900 accent-emerald-500"
-                  checked={listingForm.publishNow}
-                  onChange={(event) =>
-                    setListingForm((prev) => ({
-                      ...prev,
-                      publishNow: event.target.checked,
-                    }))
-                  }
-                />
-                Publish to all active integrations immediately
-              </label>
+              <div className="rounded-lg border border-slate-800/70 bg-slate-900/60 p-3 text-xs text-slate-300">
+                {activeIntegrationCount > 0 ? (
+                  <>
+                    This listing will publish instantly to your {activeIntegrationCount}
+                    {" "}
+                    active integration{activeIntegrationCount === 1 ? "" : "s"} once you
+                    hit create.
+                  </>
+                ) : (
+                  <>
+                    Add an integration to automatically post new listings everywhere you
+                    sell. Drafts are stored even before connections are configured.
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
@@ -914,6 +1404,18 @@ type IntegrationCardProps = {
 
 function IntegrationCard({ integration, removing, onRemove }: IntegrationCardProps) {
   const headers = integration.headers ?? {}
+  const authSummary = (() => {
+    switch (integration.auth_mode) {
+      case "bearer":
+        return "Bearer token header"
+      case "basic":
+        return "HTTP basic auth"
+      case "api_key":
+        return `API key header: ${integration.auth_header || "X-API-Key"}`
+      default:
+        return "No authentication"
+    }
+  })()
   return (
     <div className="flex h-full flex-col justify-between rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
       <div className="space-y-3">
@@ -949,6 +1451,11 @@ function IntegrationCard({ integration, removing, onRemove }: IntegrationCardPro
             </span>
             {integration.publish_url}
           </p>
+        </div>
+
+        <div className="space-y-1 text-xs text-slate-300">
+          <p className="font-semibold text-slate-200">Authentication</p>
+          <p className="text-slate-400">{authSummary}</p>
         </div>
 
         {Object.keys(headers).length > 0 && (

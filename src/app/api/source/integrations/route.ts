@@ -17,6 +17,7 @@ type IntegrationRow = {
   publish_url: string
   publish_method: string
   auth_mode: string
+  auth_header: string | null
   headers: Record<string, unknown> | null
   payload_template: Record<string, unknown> | null
   status: string
@@ -25,7 +26,7 @@ type IntegrationRow = {
 }
 
 const integrationFields =
-  "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, headers, payload_template, status, created_at, updated_at"
+  "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_header, headers, payload_template, status, created_at, updated_at"
 
 export async function GET() {
   const supabase = await createSupabaseServerClient()
@@ -98,6 +99,7 @@ export async function POST(request: Request) {
     publishMethod = "POST",
     authMode = "none",
     authToken,
+    authHeader,
     headers = null,
     payloadTemplate = null,
     status = "active",
@@ -125,6 +127,14 @@ export async function POST(request: Request) {
 
   if (typeof status !== "string" || !allowedStatuses.includes(status as typeof allowedStatuses[number])) {
     return NextResponse.json({ error: "Unsupported status value" }, { status: 400 })
+  }
+
+  let normalizedAuthHeader: string | null = null
+  if (authMode === "api_key") {
+    if (authHeader !== undefined && authHeader !== null && typeof authHeader !== "string") {
+      return NextResponse.json({ error: "API key header must be text" }, { status: 400 })
+    }
+    normalizedAuthHeader = (authHeader as string | undefined)?.trim() || "X-API-Key"
   }
 
   let preparedHeaders: Record<string, string> | null = null
@@ -167,6 +177,7 @@ export async function POST(request: Request) {
     auth_mode: authMode,
     auth_token:
       typeof authToken === "string" && authToken.trim() ? authToken.trim() : null,
+    auth_header: normalizedAuthHeader,
     headers: preparedHeaders,
     payload_template: preparedTemplate,
     status,
@@ -201,6 +212,7 @@ function serializeIntegration(row: IntegrationRow): SourceIntegration {
     publish_url: row.publish_url,
     publish_method: row.publish_method as SourceIntegration["publish_method"],
     auth_mode: row.auth_mode as SourceIntegration["auth_mode"],
+    auth_header: row.auth_header,
     headers: sanitizeHeaders(row.headers),
     payload_template: row.payload_template ?? null,
     status: row.status as SourceIntegration["status"],

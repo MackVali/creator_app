@@ -6,6 +6,7 @@ export type SourceIntegration = {
   publish_url: string
   publish_method: "POST" | "PUT" | "PATCH"
   auth_mode: "none" | "bearer" | "basic" | "api_key"
+  auth_header: string | null
   headers: Record<string, string> | null
   payload_template: unknown | null
   status: "active" | "disabled"

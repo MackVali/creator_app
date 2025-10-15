@@ -32,6 +32,7 @@ type IntegrationRow = {
   publish_method: string
   auth_mode: string
   auth_token: string | null
+  auth_header: string | null
   headers: Record<string, unknown> | null
   payload_template: Record<string, unknown> | null
 }
@@ -200,7 +201,7 @@ export async function POST(request: Request) {
   const { data: integrations, error: integrationsError } = await supabase
     .from("source_integrations")
     .select(
-      "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_token, headers, payload_template, status"
+      "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_token, auth_header, headers, payload_template, status"
     )
     .eq("user_id", user.id)
     .eq("status", "active")
@@ -431,7 +432,8 @@ function buildHeaders(
   }
 
   if (integration.auth_mode === "api_key" && integration.auth_token) {
-    headers.set("X-API-Key", integration.auth_token)
+    const headerName = integration.auth_header?.trim() || "X-API-Key"
+    headers.set(headerName, integration.auth_token)
   }
 
   if (integration.headers) {
