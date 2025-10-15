@@ -1,16 +1,21 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
+import { normalizeSchedulerMode, type SchedulerMode } from '@/lib/scheduler/modes'
 
 export const runtime = 'nodejs'
 
 type SchedulerRunContext = {
   localNow: Date | null
   timeZone: string | null
+  mode: SchedulerMode
+  monumentId: string | null
+  skillIds: string[]
 }
 
 export async function POST(request: Request) {
-  const { localNow, timeZone: requestTimeZone } = await readRunRequestContext(request)
+  const { localNow, timeZone: requestTimeZone, mode, monumentId, skillIds } =
+    await readRunRequestContext(request)
   const supabase = await createClient()
   if (!supabase) {
     return NextResponse.json(
@@ -50,6 +55,9 @@ export async function POST(request: Request) {
   const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
     timeZone: userTimeZone,
     location: coordinates,
+    mode,
+    monumentId,
+    skillIds,
   })
   const status = scheduleResult.error ? 500 : 200
 
@@ -116,18 +124,21 @@ function pickNumericValue(values: unknown[]): number | null {
 
 async function readRunRequestContext(request: Request): Promise<SchedulerRunContext> {
   if (!request) {
-    return { localNow: null, timeZone: null }
+    return { localNow: null, timeZone: null, mode: 'regular', monumentId: null, skillIds: [] }
   }
 
   const contentType = request.headers.get('content-type') ?? ''
   if (!contentType.toLowerCase().includes('application/json')) {
-    return { localNow: null, timeZone: null }
+    return { localNow: null, timeZone: null, mode: 'regular', monumentId: null, skillIds: [] }
   }
 
   try {
     const payload = (await request.json()) as {
       localTimeIso?: unknown
       timeZone?: unknown
+      mode?: unknown
+      monumentId?: unknown
+      skillIds?: unknown
     }
 
     let localNow: Date | null = null
@@ -143,10 +154,21 @@ async function readRunRequestContext(request: Request): Promise<SchedulerRunCont
       timeZone = payload.timeZone
     }
 
-    return { localNow, timeZone }
+    const mode = normalizeSchedulerMode(payload?.mode)
+    const monumentId =
+      typeof payload?.monumentId === 'string' && payload.monumentId.trim()
+        ? payload.monumentId.trim()
+        : null
+    const skillIds = Array.isArray(payload?.skillIds)
+      ? (payload.skillIds as unknown[]).filter(
+          (value): value is string => typeof value === 'string' && value.trim().length > 0
+        )
+      : []
+
+    return { localNow, timeZone, mode, monumentId, skillIds }
   } catch (error) {
     console.warn('Failed to parse scheduler run payload', error)
-    return { localNow: null, timeZone: null }
+    return { localNow: null, timeZone: null, mode: 'regular', monumentId: null, skillIds: [] }
   }
 }
 

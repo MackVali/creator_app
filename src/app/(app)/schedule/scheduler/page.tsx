@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { RescheduleButton } from "@/components/schedule/RescheduleButton";
 import { ENERGY } from "@/lib/scheduler/config";
@@ -12,6 +14,24 @@ import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import { toLocal } from "@/lib/time/tz";
 import { useSchedulerMeta } from "@/lib/scheduler/useSchedulerMeta";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Select, SelectContent, SelectItem } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  SCHEDULER_MODE_OPTIONS,
+  modeRequiresMonument,
+  modeRequiresSkills,
+  type SchedulerMode,
+} from "@/lib/scheduler/modes";
+import { getMonumentsForUser } from "@/lib/queries/monuments";
+import { getSkillsForUser } from "@/lib/data/skills";
+import type { SkillRow } from "@/lib/types/skill";
 
 const GAP_THRESHOLD_MINUTES = 1;
 
@@ -70,15 +90,84 @@ type TimelineEntry =
   | GapEntry;
 
 export default function SchedulerPage() {
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">(
     "idle",
   );
   const [error, setError] = useState<string | null>(null);
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft | null>(null);
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
+  const [mode, setMode] = useState<SchedulerMode>("regular");
+  const [selectedMonumentId, setSelectedMonumentId] = useState<string>("");
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [monuments, setMonuments] = useState<
+    Awaited<ReturnType<typeof getMonumentsForUser>>
+  >([]);
+  const [isLoadingMonuments, setIsLoadingMonuments] = useState(false);
+  const [skills, setSkills] = useState<SkillRow[]>([]);
+  const [isLoadingSkills, setIsLoadingSkills] = useState(false);
 
   const { tasks, projects, windowMap, status: metaStatus, error: metaError } =
     useSchedulerMeta();
+
+  useEffect(() => {
+    let active = true;
+    if (!userId) {
+      setMonuments([]);
+      setIsLoadingMonuments(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setIsLoadingMonuments(true);
+    getMonumentsForUser(userId)
+      .then(data => {
+        if (!active) return;
+        setMonuments(data ?? []);
+      })
+      .catch(err => {
+        console.error("Failed to load monuments", err);
+        if (active) setMonuments([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingMonuments(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!userId) {
+      setSkills([]);
+      setIsLoadingSkills(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setIsLoadingSkills(true);
+    getSkillsForUser(userId)
+      .then(data => {
+        if (!active) return;
+        setSkills(data ?? []);
+      })
+      .catch(err => {
+        console.error("Failed to load skills", err);
+        if (active) setSkills([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingSkills(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
@@ -143,6 +232,36 @@ export default function SchedulerPage() {
       };
     });
   }, [scheduleDraft, projectMap, windowMap]);
+
+  const requiresMonument = modeRequiresMonument(mode);
+  const requiresSkills = modeRequiresSkills(mode);
+  const activeMode = useMemo(
+    () => SCHEDULER_MODE_OPTIONS.find(option => option.value === mode),
+    [mode],
+  );
+  const selectedSkillDetails = useMemo(() => {
+    if (selectedSkillIds.length === 0) return [] as SkillRow[];
+    const map = new Map(skills.map(skill => [skill.id, skill]));
+    return selectedSkillIds
+      .map(id => map.get(id))
+      .filter((skill): skill is SkillRow => Boolean(skill));
+  }, [skills, selectedSkillIds]);
+  const skillTriggerLabel = requiresSkills
+    ? selectedSkillIds.length > 0
+      ? `${selectedSkillIds.length} selected`
+      : isLoadingSkills
+        ? "Loading skills…"
+        : "Choose skills"
+    : "Choose skills";
+  const monumentPlaceholder = isLoadingMonuments
+    ? "Loading monuments…"
+    : monuments.length > 0
+      ? "Choose monument"
+      : "No monuments available";
+  const isRescheduleDisabled =
+    status === "pending" ||
+    (requiresMonument && !selectedMonumentId) ||
+    (requiresSkills && selectedSkillIds.length === 0);
 
   const failureDetails = useMemo(() => {
     if (!scheduleDraft) return [] as Array<{
@@ -219,9 +338,31 @@ export default function SchedulerPage() {
     setError(null);
 
     try {
+      const requestBody: Record<string, unknown> = {
+        mode,
+        monumentId: requiresMonument
+          ? selectedMonumentId.trim() || null
+          : null,
+        skillIds: requiresSkills ? selectedSkillIds : [],
+        localTimeIso: new Date().toISOString(),
+      };
+
+      try {
+        if (typeof Intl !== "undefined") {
+          const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (resolved) {
+            requestBody.timeZone = resolved;
+          }
+        }
+      } catch (tzError) {
+        console.debug("Failed to resolve local time zone", tzError);
+      }
+
       const response = await fetch("/api/scheduler/run", {
         method: "POST",
         cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestBody),
       });
 
       let payload: unknown = null;
@@ -284,9 +425,176 @@ export default function SchedulerPage() {
             <Link href="/schedule">Back</Link>
           </Button>
         </div>
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
+          <div className="flex flex-col gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-100">
+                Scheduler mode
+              </h2>
+              <p className="text-xs text-zinc-400">
+                {activeMode?.description ??
+                  "Choose how the scheduler should prioritize work."}
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <Label className="text-xs font-semibold text-zinc-300">
+                  Mode
+                </Label>
+                <Select
+                  value={mode}
+                  onValueChange={value => setMode(value as SchedulerMode)}
+                  className="mt-1"
+                  triggerClassName="h-10 rounded-xl border-white/10 bg-white/[0.05] px-3 text-left text-sm text-zinc-100"
+                  contentWrapperClassName="bg-zinc-900/95"
+                >
+                  <SelectContent>
+                    {SCHEDULER_MODE_OPTIONS.map(option => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        label={option.label}
+                        className="text-sm text-zinc-100"
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium text-zinc-100">
+                            {option.label}
+                          </span>
+                          <span className="text-xs text-zinc-400">
+                            {option.description}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {requiresMonument && (
+                <div>
+                  <Label className="text-xs font-semibold text-zinc-300">
+                    Focus monument
+                  </Label>
+                  <Select
+                    value={selectedMonumentId}
+                    onValueChange={setSelectedMonumentId}
+                    placeholder={monumentPlaceholder}
+                    className="mt-1"
+                    triggerClassName="h-10 rounded-xl border-white/10 bg-white/[0.05] px-3 text-left text-sm text-zinc-100"
+                    contentWrapperClassName="bg-zinc-900/95"
+                  >
+                    <SelectContent>
+                      <SelectItem
+                        value=""
+                        label="Clear selection"
+                        className="text-sm text-zinc-300"
+                      >
+                        <span className="text-zinc-400">Clear selection</span>
+                      </SelectItem>
+                      {monuments.map(monument => (
+                        <SelectItem
+                          key={monument.id}
+                          value={monument.id}
+                          label={`${monument.emoji ?? "🏛️"} ${monument.title}`}
+                          className="text-sm text-zinc-100"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">
+                              {monument.emoji ?? "🏛️"}
+                            </span>
+                            <span>{monument.title}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {monuments.length === 0 && !isLoadingMonuments && (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Add a monument to enable Monumental mode.
+                    </p>
+                  )}
+                </div>
+              )}
+              {requiresSkills && (
+                <div className={requiresMonument ? "md:col-span-2" : undefined}>
+                  <Label className="text-xs font-semibold text-zinc-300">
+                    Focus skills
+                  </Label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={isLoadingSkills || skills.length === 0}
+                        className="mt-1 flex h-10 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] px-3 text-left text-sm text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span>{skillTriggerLabel}</span>
+                        <ChevronDown className="h-4 w-4 opacity-60" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="min-w-[14rem] bg-zinc-900/95 text-sm text-zinc-100">
+                      {skills.map(skill => (
+                        <DropdownMenuCheckboxItem
+                          key={skill.id}
+                          checked={selectedSkillIds.includes(skill.id)}
+                          onCheckedChange={checked => {
+                            setSelectedSkillIds(prev => {
+                              const isChecked = checked === true;
+                              if (isChecked) {
+                                if (prev.includes(skill.id)) return prev;
+                                return [...prev, skill.id];
+                              }
+                              return prev.filter(id => id !== skill.id);
+                            });
+                          }}
+                        >
+                          <span className="text-lg leading-none">
+                            {skill.icon ?? "✦"}
+                          </span>
+                          <span>{skill.name}</span>
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                      {skills.length === 0 && (
+                        <div className="px-2 py-1.5 text-xs text-zinc-400">
+                          No skills available.
+                        </div>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {selectedSkillDetails.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {selectedSkillDetails.map(skill => (
+                        <Badge
+                          key={skill.id}
+                          variant="secondary"
+                          className="bg-zinc-800/80 text-zinc-100"
+                        >
+                          <span>{skill.icon ?? "✦"}</span>
+                          <span>{skill.name}</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-zinc-500">
+                      {isLoadingSkills
+                        ? "Loading skills…"
+                        : "Select at least one skill to use Skilled mode."}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            {(requiresMonument && !selectedMonumentId) ||
+            (requiresSkills && selectedSkillIds.length === 0) ? (
+              <p className="text-xs text-amber-400">
+                {requiresMonument && !selectedMonumentId
+                  ? "Select a monument to enable Monumental mode."
+                  : "Choose at least one skill to enable Skilled mode."}
+              </p>
+            ) : null}
+          </div>
+        </section>
         <RescheduleButton
           onClick={handleReschedule}
-          disabled={status === "pending"}
+          disabled={isRescheduleDisabled}
           isRunning={status === "pending"}
         />
         {status === "success" && (
