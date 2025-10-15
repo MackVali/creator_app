@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getAuthRedirectUrl } from "../../lib/auth-redirect";
+import {
+  getAuthRedirectResolution,
+  getAuthRedirectUrl,
+} from "../../lib/auth-redirect";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -41,14 +44,14 @@ describe("getAuthRedirectUrl", () => {
     expect(getAuthRedirectUrl()).toBe("https://site.example.com/auth/callback");
   });
 
-    it("uses the browser origin for Vercel previews", () => {
-      const origin = "https://preview.vercel.app";
-      process.env.NEXT_PUBLIC_VERCEL_URL = "preview.vercel.app";
-      process.env.NEXT_PUBLIC_VERCEL_ENV = "preview";
-      vi.stubGlobal("window", { location: { origin } });
+  it("uses the browser origin for Vercel previews", () => {
+    const origin = "https://preview.vercel.app";
+    process.env.NEXT_PUBLIC_VERCEL_URL = "preview.vercel.app";
+    process.env.NEXT_PUBLIC_VERCEL_ENV = "preview";
+    vi.stubGlobal("window", { location: { origin } });
 
-      expect(getAuthRedirectUrl()).toBe(`${origin}/auth/callback`);
-    });
+    expect(getAuthRedirectUrl()).toBe(`${origin}/auth/callback`);
+  });
 
   it("uses the Vercel production host when available", () => {
     process.env.NEXT_PUBLIC_VERCEL_URL = "prod.vercel.app";
@@ -67,5 +70,35 @@ describe("getAuthRedirectUrl", () => {
 
   it("returns null when no context is available", () => {
     expect(getAuthRedirectUrl("custom")).toBeNull();
+  });
+});
+
+describe("getAuthRedirectResolution", () => {
+  it("returns metadata for explicit redirect envs", () => {
+    process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL = "https://app.example.com";
+
+    const resolution = getAuthRedirectResolution();
+    expect(resolution).toEqual({
+      url: "https://app.example.com/auth/callback",
+      source: "supabaseRedirectEnv",
+      details: {
+        domain: "https://app.example.com",
+        envVar: "NEXT_PUBLIC_SUPABASE_REDIRECT_URL",
+      },
+    });
+  });
+
+  it("captures the browser fallback metadata", () => {
+    const origin = "https://preview.vercel.app";
+    process.env.NEXT_PUBLIC_VERCEL_ENV = "preview";
+    vi.stubGlobal("window", { location: { origin } });
+
+    const resolution = getAuthRedirectResolution();
+    expect(resolution.url).toBe(`${origin}/auth/callback`);
+    expect(resolution.source).toBe("browserPreview");
+    expect(resolution.details).toEqual({
+      domain: origin,
+      note: "Using the browser origin because this is a Vercel preview.",
+    });
   });
 });

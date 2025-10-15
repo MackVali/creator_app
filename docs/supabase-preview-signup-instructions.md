@@ -23,6 +23,7 @@ Follow these steps in order. Everything is written in plain English so you can c
 4. **Confirm the app loads correctly.**
    * Open the fresh preview link.
    * If you see a warning about missing Supabase variables, double-check steps 2–3.
+   * Click **"Show Supabase debugging details"** at the bottom of the auth form to copy the loaded env vars, redirect source, and the last Supabase error message when asking for help.
 
 5. **Try signing up again.**
    * Use an email that has not been used in the last hour.

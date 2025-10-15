@@ -68,7 +68,9 @@ describe("getSupabaseServer", () => {
   });
 
   it("no-ops cookie set when store is read-only", async () => {
-    const { getSupabaseServer } = await import("../../lib/supabase");
+    const { getSupabaseServer, supabaseEnvDebug } = await import(
+      "../../lib/supabase",
+    );
     const store: CookieStore = {
       get: vi.fn(() => ({ name: "sb", value: "token" })),
     };
@@ -102,6 +104,13 @@ describe("getSupabaseServer", () => {
         }),
       }),
     );
+    expect(supabaseEnvDebug).toEqual({
+      url: "https://example.supabase.co",
+      keyPresent: true,
+      urlSource: "next_public",
+      keySource: "next_public",
+      usedFallback: false,
+    });
   });
 
   it("forwards to the underlying cookie store when set exists", async () => {
@@ -132,7 +141,9 @@ describe("getSupabaseServer", () => {
       .spyOn(console, "warn")
       .mockImplementation(() => undefined);
 
-    const { getSupabaseBrowser } = await import("../../lib/supabase");
+    const { getSupabaseBrowser, supabaseEnvDebug } = await import(
+      "../../lib/supabase",
+    );
     expect(getSupabaseBrowser()).toEqual({});
     expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe(
       "https://legacy.supabase.co",
@@ -153,6 +164,13 @@ describe("getSupabaseServer", () => {
     expect(warn).toHaveBeenCalledWith(
       "Falling back to legacy VITE_SUPABASE_* environment variables. Update your configuration to NEXT_PUBLIC_SUPABASE_*.",
     );
+    expect(supabaseEnvDebug).toEqual({
+      url: "https://legacy.supabase.co",
+      keyPresent: true,
+      urlSource: "vite",
+      keySource: "vite",
+      usedFallback: true,
+    });
     warn.mockRestore();
   });
 });

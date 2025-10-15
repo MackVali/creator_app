@@ -1,5 +1,25 @@
 const AUTH_CALLBACK_PATH = "/auth/callback";
 
+export type AuthRedirectSource =
+  | "supabaseRedirectEnv"
+  | "siteUrlEnv"
+  | "vercelProduction"
+  | "browserPreview"
+  | "browserDevelopment"
+  | "none";
+
+export type AuthRedirectResolution = {
+  url: string | null;
+  source: AuthRedirectSource;
+  details?: {
+    domain?: string;
+    envVar?: string;
+    note?: string;
+  };
+};
+
+const EMPTY_RESOLUTION: AuthRedirectResolution = { url: null, source: "none" };
+
 function normalizeBaseUrl(url: string): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;
@@ -16,14 +36,33 @@ function buildRedirect(url: string, path: string) {
   return `${url}${normalizedPath}`;
 }
 
-function resolveConfiguredRedirect(path: string): string | null {
-  const explicitDomain =
-    process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL;
+function resolveConfiguredRedirect(
+  path: string,
+): AuthRedirectResolution | null {
+  const explicitRedirect = process.env.NEXT_PUBLIC_SUPABASE_REDIRECT_URL;
+  if (explicitRedirect && explicitRedirect.trim()) {
+    const normalized = normalizeBaseUrl(explicitRedirect);
+    return {
+      url: normalized ? buildRedirect(normalized, path) : null,
+      source: "supabaseRedirectEnv",
+      details: {
+        domain: normalized ?? undefined,
+        envVar: "NEXT_PUBLIC_SUPABASE_REDIRECT_URL",
+      },
+    };
+  }
 
-  if (explicitDomain && explicitDomain.trim()) {
-    const normalized = normalizeBaseUrl(explicitDomain);
-    return normalized ? buildRedirect(normalized, path) : null;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (siteUrl && siteUrl.trim()) {
+    const normalized = normalizeBaseUrl(siteUrl);
+    return {
+      url: normalized ? buildRedirect(normalized, path) : null,
+      source: "siteUrlEnv",
+      details: {
+        domain: normalized ?? undefined,
+        envVar: "NEXT_PUBLIC_SITE_URL",
+      },
+    };
   }
 
   const vercelEnv = process.env.NEXT_PUBLIC_VERCEL_ENV;
@@ -36,22 +75,29 @@ function resolveConfiguredRedirect(path: string): string | null {
     vercelUrl.trim()
   ) {
     const normalized = normalizeBaseUrl(vercelUrl);
-    return normalized ? buildRedirect(normalized, path) : null;
+    return {
+      url: normalized ? buildRedirect(normalized, path) : null,
+      source: "vercelProduction",
+      details: {
+        domain: normalized ?? undefined,
+        envVar: "NEXT_PUBLIC_VERCEL_URL",
+      },
+    };
   }
 
   return null;
 }
 
-export function getAuthRedirectUrl(
+export function getAuthRedirectResolution(
   path: string = AUTH_CALLBACK_PATH,
-): string | null {
+): AuthRedirectResolution {
   const configuredRedirect = resolveConfiguredRedirect(path);
   if (configuredRedirect) {
     return configuredRedirect;
   }
 
   if (typeof window === "undefined" || !window.location?.origin) {
-    return null;
+    return EMPTY_RESOLUTION;
   }
 
   const shouldUseBrowserOrigin =
@@ -59,10 +105,31 @@ export function getAuthRedirectUrl(
     process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
 
   if (!shouldUseBrowserOrigin) {
-    return null;
+    return EMPTY_RESOLUTION;
   }
 
-  return buildRedirect(window.location.origin, path);
+  const source =
+    process.env.NODE_ENV === "development"
+      ? "browserDevelopment"
+      : "browserPreview";
+
+  return {
+    url: buildRedirect(window.location.origin, path),
+    source,
+    details: {
+      domain: window.location.origin,
+      note:
+        source === "browserPreview"
+          ? "Using the browser origin because this is a Vercel preview."
+          : "Using the browser origin in development mode.",
+    },
+  };
+}
+
+export function getAuthRedirectUrl(
+  path: string = AUTH_CALLBACK_PATH,
+): string | null {
+  return getAuthRedirectResolution(path).url;
 }
 
 export function getAuthCallbackPath() {
