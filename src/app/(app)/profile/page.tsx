@@ -3,11 +3,15 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useProfileContext } from "@/components/ProfileProvider";
 import { ensureProfileExists } from "@/lib/db";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { session, isReady } = useAuth();
+  const { profile, loading, refreshProfile } = useProfileContext();
+  const existingHandle = profile?.username?.trim();
+  const userId = session?.user?.id ?? null;
 
   useEffect(() => {
     async function redirectToHandleProfile() {
@@ -15,29 +19,39 @@ export default function ProfilePage() {
         return;
       }
 
-      if (!session?.user?.id) {
+      if (loading) {
+        return;
+      }
+
+      if (!userId) {
         router.push("/auth");
         return;
       }
 
       try {
-        // Ensure profile exists
-        const profile = await ensureProfileExists(session.user.id);
-        if (profile?.username) {
-          // Redirect to handle-based profile route
-          router.push(`/profile/${profile.username}`);
-        } else {
-          // Fallback to dashboard if no username
-          router.push("/dashboard");
+        if (existingHandle) {
+          router.replace(`/profile/${existingHandle}`);
+          return;
         }
+
+        const ensuredProfile = await ensureProfileExists(userId);
+        const handle = ensuredProfile?.username?.trim();
+
+        if (handle) {
+          await refreshProfile();
+          router.replace(`/profile/${handle}`);
+          return;
+        }
+
+        router.push("/profile/edit");
       } catch (err) {
         console.error("Error loading profile:", err);
-        router.push("/dashboard");
+        router.push("/profile/edit");
       }
     }
 
     redirectToHandleProfile();
-  }, [isReady, session, router]);
+  }, [isReady, userId, existingHandle, loading, refreshProfile, router]);
 
   // Show loading while redirecting
   return (
