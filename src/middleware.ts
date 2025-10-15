@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
+  const isProfileRoute = pathname === "/profile" || pathname.startsWith("/profile/");
 
   console.log(`[Middleware] Processing ${pathname}`);
 
@@ -26,8 +27,8 @@ export async function middleware(req: NextRequest) {
       console.log(
         `[Middleware] Missing env vars - URL: ${!!supabaseUrl}, KEY: ${!!supabaseKey}`
       );
-      // If no Supabase config, redirect to auth for all non-auth routes
-      if (pathname !== "/auth") {
+      // If no Supabase config, redirect to auth for all non-auth routes except public profiles
+      if (!isProfileRoute && pathname !== "/auth") {
         const redirectUrl = new URL("/auth", req.url);
         redirectUrl.searchParams.set("redirect", pathname + req.nextUrl.search);
         console.log(
@@ -68,7 +69,7 @@ export async function middleware(req: NextRequest) {
     );
 
     // If NO session and path !== /auth: redirect → /auth?redirect=<path+search>
-    if (!hasSession && !isAuthRoute) {
+    if (!hasSession && !isAuthRoute && !isProfileRoute) {
       const redirectUrl = new URL("/auth", req.url);
       redirectUrl.searchParams.set("redirect", pathname + req.nextUrl.search);
       console.log(`[Middleware] Redirecting to: ${redirectUrl.toString()}`);

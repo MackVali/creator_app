@@ -22,6 +22,13 @@ type PublicSupabaseClient = SupabaseClient<Database, "public", Database["public"
 
 let cachedClient: PublicSupabaseClient | null = null;
 
+function normalizeHandle(rawHandle: string): string {
+  return rawHandle
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/\s+/g, "");
+}
+
 function getSupabasePublicClient(): PublicSupabaseClient {
   if (cachedClient) {
     return cachedClient;
@@ -202,11 +209,16 @@ async function resolveAvailability(
 
 async function fetchPublicProfile(handle: string): Promise<PublicProfileReadModel | null> {
   const client = getSupabasePublicClient();
+  const normalizedHandle = normalizeHandle(handle);
+
+  if (!normalizedHandle) {
+    return null;
+  }
 
   const { data, error } = await client
     .from("profiles")
     .select("*")
-    .ilike("username", handle)
+    .ilike("username", normalizedHandle)
     .maybeSingle();
 
   if (error) {
@@ -259,6 +271,6 @@ export const getPublicProfileReadModel = unstable_cache(fetchPublicProfile, [
   tags: ["public-profile-read-model"],
 });
 
-export function revalidatePublicProfileCache() {
+export async function revalidatePublicProfileCache() {
   revalidateTag("public-profile-read-model");
 }
