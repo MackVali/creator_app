@@ -1,3 +1,7 @@
 {
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm approve-builds @tailwindcss/oxide sharp unrs-resolver || true && pnpm run build"
+  "framework": "nextjs",
+  "rootDirectory": "apps/web",
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm build",
+  "outputDirectory": ".next"
 }

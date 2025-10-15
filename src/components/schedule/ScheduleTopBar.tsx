@@ -14,6 +14,7 @@ import {
   ListChecks,
   RefreshCcw,
   PanelsTopLeft,
+  Sparkles,
 } from "lucide-react";
 import {
   Sheet,
@@ -32,6 +33,7 @@ interface ScheduleTopBarProps {
   onReschedule?: () => void;
   canReschedule?: boolean;
   isRescheduling?: boolean;
+  onOpenModeMenu?: () => void;
 }
 
 export function ScheduleTopBar({
@@ -44,6 +46,7 @@ export function ScheduleTopBar({
   onReschedule,
   canReschedule = true,
   isRescheduling = false,
+  onOpenModeMenu,
 }: ScheduleTopBarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -123,6 +126,16 @@ export function ScheduleTopBar({
         >
           <Search className="h-5 w-5 text-[var(--accent-red)]" />
         </button>
+        {onOpenModeMenu ? (
+          <button
+            type="button"
+            onClick={onOpenModeMenu}
+            aria-label="Select scheduling mode"
+            className={iconButtonClass}
+          >
+            <Sparkles className="h-5 w-5 text-[var(--accent-red)]" />
+          </button>
+        ) : null}
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <button type="button" aria-label="Open schedule quick actions" className={iconButtonClass}>
