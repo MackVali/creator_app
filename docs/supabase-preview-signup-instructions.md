@@ -15,9 +15,10 @@ Follow these steps in order. Everything is written in plain English so you can c
    * Prefer using the dashboard controls, but if you would rather run SQL, copy
      [`docs/supabase-site-url-update.sql`](./supabase-site-url-update.sql),
      replace the placeholder domain with your preview URL, and execute it in
-     the Supabase SQL editor. The script updates both `auth.config.site_url`
-     (used for email confirmation links) and `auth.config.additional_redirect_urls`
-     so Supabase accepts the preview domain when your app passes `redirect_to`.
+     the Supabase SQL editor. The script updates the modern `auth.instances`
+     config (and falls back to the legacy `auth.config` table) so Supabase both
+     sends preview confirmations to the right host and accepts it when your app
+     passes `redirect_to`.
 
 3. **Optional safety net inside Vercel.**
    * In your project on [https://vercel.com](https://vercel.com) go to **Settings → Environment Variables**.
