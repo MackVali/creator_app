@@ -756,6 +756,20 @@ async function scheduleHabitsForDay(params: {
     const bounds = availability.get(target.key)
     const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
+    const latestStartAllowed = endLimit - durationMs
+    if (
+      anchorPreference === 'BACK' &&
+      typeof baseNowMs === 'number' &&
+      baseNowMs > latestStartAllowed
+    ) {
+      if (bounds) {
+        bounds.back = new Date(Math.max(bounds.front.getTime(), latestStartAllowed))
+        if (bounds.back.getTime() < bounds.front.getTime()) {
+          bounds.front = new Date(bounds.back)
+        }
+      }
+      continue
+    }
     let startCandidate = startLimit
     if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endLimit) {
       if (anchorPreference === 'BACK') {
@@ -767,7 +781,6 @@ async function scheduleHabitsForDay(params: {
       }
     }
 
-    const latestStartAllowed = endLimit - durationMs
     if (startCandidate > latestStartAllowed) {
       if (bounds) {
         if (anchorPreference === 'BACK') {
