@@ -323,6 +323,7 @@ interface FormState {
   recurrence_days: number[];
   location_context: string;
   daylight_preference: string;
+  window_edge_preference: string;
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -374,6 +375,7 @@ const createInitialFormState = (
   recurrence_days: [],
   location_context: "",
   daylight_preference: "ALL_DAY",
+  window_edge_preference: "FRONT",
 });
 
 type EventMeta = {
@@ -1323,6 +1325,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         routine_id?: string | null;
         location_context?: string | null;
         daylight_preference?: string | null;
+        window_edge_preference?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1402,6 +1405,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           formData.daylight_preference !== "ALL_DAY"
             ? formData.daylight_preference
             : null;
+        insertData.window_edge_preference =
+          (formData.window_edge_preference || "FRONT").toUpperCase();
 
         if (formData.type?.toUpperCase() === "MEMO" && !insertData.skill_id) {
           toast.error(
@@ -2329,6 +2334,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               daylightPreference={
                 formData.daylight_preference || "ALL_DAY"
               }
+              windowEdgePreference={
+                formData.window_edge_preference || "FRONT"
+              }
               energyOptions={habitEnergyOptions}
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
@@ -2377,6 +2385,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 setFormData((prev) => ({
                   ...prev,
                   daylight_preference: value.toUpperCase(),
+                }))
+              }
+              onWindowEdgePreferenceChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  window_edge_preference: value.toUpperCase(),
                 }))
               }
               footerSlot={

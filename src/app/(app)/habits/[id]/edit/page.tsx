@@ -67,6 +67,7 @@ export default function EditHabitPage() {
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [locationContext, setLocationContext] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
+  const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -330,7 +331,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference, window_edge_preference"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -377,6 +378,11 @@ export default function EditHabitPage() {
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
               : "ALL_DAY"
+          );
+          setWindowEdgePreference(
+            data.window_edge_preference
+              ? String(data.window_edge_preference).toUpperCase()
+              : "FRONT"
           );
         }
       } catch (err) {
@@ -512,6 +518,7 @@ export default function EditHabitPage() {
             daylightPreference && daylightPreference !== "ALL_DAY"
               ? daylightPreference
               : null,
+          window_edge_preference: windowEdgePreference,
         })
         .eq("id", habitId)
         .eq("user_id", user.id);
@@ -576,37 +583,41 @@ export default function EditHabitPage() {
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_20px_45px_-25px_rgba(15,23,42,0.85)] sm:p-8">
               <form onSubmit={handleSubmit} className="space-y-8">
-              <HabitFormFields
-                name={name}
-                description={description}
-                habitType={habitType}
-                recurrence={recurrence}
-                recurrenceDays={recurrenceDays}
-                duration={duration}
-                energy={energy}
-                skillId={skillId}
-                locationContext={locationContext}
-                daylightPreference={daylightPreference}
-                energyOptions={energySelectOptions}
-                skillsLoading={skillsLoading}
-                skillOptions={skillSelectOptions}
-                skillError={skillLoadError}
-                onNameChange={setName}
-                onDescriptionChange={setDescription}
-                onHabitTypeChange={setHabitType}
-                onRecurrenceChange={setRecurrence}
-                onRecurrenceDaysChange={setRecurrenceDays}
-                onEnergyChange={setEnergy}
-                onDurationChange={setDuration}
-                onSkillChange={setSkillId}
-                onLocationContextChange={(value) =>
-                  setLocationContext(value ? value.toUpperCase() : null)
-                }
-                onDaylightPreferenceChange={(value) =>
-                  setDaylightPreference(value.toUpperCase())
-                }
-                showDescriptionField={false}
-                footerSlot={
+                <HabitFormFields
+                  name={name}
+                  description={description}
+                  habitType={habitType}
+                  recurrence={recurrence}
+                  recurrenceDays={recurrenceDays}
+                  duration={duration}
+                  energy={energy}
+                  skillId={skillId}
+                  locationContext={locationContext}
+                  daylightPreference={daylightPreference}
+                  windowEdgePreference={windowEdgePreference}
+                  energyOptions={energySelectOptions}
+                  skillsLoading={skillsLoading}
+                  skillOptions={skillSelectOptions}
+                  skillError={skillLoadError}
+                  onNameChange={setName}
+                  onDescriptionChange={setDescription}
+                  onHabitTypeChange={setHabitType}
+                  onRecurrenceChange={setRecurrence}
+                  onRecurrenceDaysChange={setRecurrenceDays}
+                  onEnergyChange={setEnergy}
+                  onDurationChange={setDuration}
+                  onSkillChange={setSkillId}
+                  onLocationContextChange={(value) =>
+                    setLocationContext(value ? value.toUpperCase() : null)
+                  }
+                  onDaylightPreferenceChange={(value) =>
+                    setDaylightPreference(value.toUpperCase())
+                  }
+                  onWindowEdgePreferenceChange={(value) =>
+                    setWindowEdgePreference(value.toUpperCase())
+                  }
+                  showDescriptionField={false}
+                  footerSlot={
                     <div className="space-y-4">
                       <div className="space-y-3">
                         <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
