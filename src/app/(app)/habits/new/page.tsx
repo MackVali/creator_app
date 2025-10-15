@@ -58,6 +58,7 @@ export default function NewHabitPage() {
   const [skillId, setSkillId] = useState("none");
   const [locationContext, setLocationContext] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
+  const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -388,6 +389,7 @@ export default function NewHabitPage() {
           daylightPreference && daylightPreference !== "ALL_DAY"
             ? daylightPreference
             : null,
+        window_edge_preference: windowEdgePreference,
       });
 
       if (insertError) {
@@ -438,6 +440,7 @@ export default function NewHabitPage() {
                 skillId={skillId}
                 locationContext={locationContext}
                 daylightPreference={daylightPreference}
+                windowEdgePreference={windowEdgePreference}
                 energyOptions={energySelectOptions}
                 skillsLoading={skillsLoading}
                 skillOptions={skillSelectOptions}
@@ -455,6 +458,9 @@ export default function NewHabitPage() {
                 }
                 onDaylightPreferenceChange={(value) =>
                   setDaylightPreference(value.toUpperCase())
+                }
+                onWindowEdgePreferenceChange={(value) =>
+                  setWindowEdgePreference(value.toUpperCase())
                 }
                 footerSlot={
                   <div className="space-y-4">

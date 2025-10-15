@@ -105,6 +105,7 @@ interface HabitFormFieldsProps {
   skillId: string;
   locationContext?: string | null;
   daylightPreference?: string | null;
+  windowEdgePreference?: string | null;
   energyOptions: HabitEnergySelectOption[];
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
@@ -119,6 +120,7 @@ interface HabitFormFieldsProps {
   onSkillChange: (value: string) => void;
   onLocationContextChange?: (value: string | null) => void;
   onDaylightPreferenceChange?: (value: string) => void;
+  onWindowEdgePreferenceChange?: (value: string) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
@@ -129,6 +131,11 @@ const DAYLIGHT_OPTIONS = [
   { value: "ALL_DAY", label: "All day" },
   { value: "DAY", label: "Daytime" },
   { value: "NIGHT", label: "Night" },
+];
+
+const WINDOW_EDGE_OPTIONS = [
+  { value: "FRONT", label: "Front" },
+  { value: "BACK", label: "Back" },
 ];
 
 export function HabitFormFields({
@@ -142,6 +149,7 @@ export function HabitFormFields({
   skillId,
   locationContext = null,
   daylightPreference = "ALL_DAY",
+  windowEdgePreference = "FRONT",
   energyOptions,
   skillsLoading,
   skillOptions,
@@ -156,6 +164,7 @@ export function HabitFormFields({
   onSkillChange,
   onLocationContextChange,
   onDaylightPreferenceChange,
+  onWindowEdgePreferenceChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
@@ -169,7 +178,9 @@ export function HabitFormFields({
     const hasLocation = Boolean(locationContext && locationContext.trim());
     const daylightUpper = (daylightPreference ?? "ALL_DAY").toUpperCase();
     const hasDaylight = daylightUpper === "DAY" || daylightUpper === "NIGHT";
-    return hasLocation || hasDaylight;
+    const edgeUpper = (windowEdgePreference ?? "FRONT").toUpperCase();
+    const usesBackEdge = edgeUpper === "BACK";
+    return hasLocation || hasDaylight || usesBackEdge;
   });
   const [customLocationName, setCustomLocationName] = useState("");
   const [customLocationError, setCustomLocationError] = useState<string | null>(
@@ -212,6 +223,9 @@ export function HabitFormFields({
 
   const locationValue = (locationContext ?? "").toUpperCase().trim() || "ANY";
   const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
+  const windowEdgeValue = (windowEdgePreference ?? "FRONT")
+    .toUpperCase()
+    .trim();
 
   const handleAddCustomLocation = async () => {
     const name = customLocationName;
@@ -528,6 +542,30 @@ export function HabitFormFields({
               </Select>
               <p className="text-xs text-white/60">
                 Restrict this habit to daylight or night windows. We’ll respect your local sunrise and sunset when scheduling.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Front/Back
+              </Label>
+              <Select
+                value={windowEdgeValue || "FRONT"}
+                onValueChange={(value) => onWindowEdgePreferenceChange?.(value)}
+              >
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="Where should this habit anchor?" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {WINDOW_EDGE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-white/60">
+                Choose whether this habit should schedule from the beginning of a window or stack from the end instead.
               </p>
             </div>
           </div>
