@@ -1,6 +1,6 @@
 # Premium Profile Experience — Mini Codex PRD Prompts
 
-The following prompts refine the vision for a premium, mobile-first profile experience inspired by the provided references. Each prompt is scoped so it can be handed to a feature team (or model) to generate a detailed PRD or implementation plan without ambiguity.
+The following prompts refine the vision for a premium, mobile-first profile experience inspired by the provided references. Each prompt is scoped so it can be handed to a feature team (or model) to generate production-ready deliverables without ambiguity.
 
 ---
 
@@ -8,7 +8,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Deliver a cinematic, mobile-first profile layout that instantly communicates brand personality and social proof.
 
 **Use this prompt**:
-> "Draft a PRD for a `Hyper-Visual Profile Shell` that replaces the current profile hero with an immersive background, floating avatar, and action badges. Include requirements for gradients/video backgrounds, avatar treatments, trust badges, and sticky contact buttons. Document accessibility, performance budgets, and loading skeleton expectations."
+> "Implement the `Hyper-Visual Profile Shell`: replace the current profile hero with an immersive background, floating avatar, and action badges. Include requirements for gradients/video backgrounds, avatar treatments, trust badges, and sticky contact buttons. Ensure accessibility, performance budgets, and loading skeleton expectations are met."
 
 **Primary outcomes**
 - Edge-to-edge hero with gradient/video support and parallax scroll.
@@ -28,7 +28,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Establish a theming foundation so users can choose premium presets without sacrificing performance or accessibility.
 
 **Use this prompt**:
-> "Create a PRD for `Profile Themes & Visual System` covering Tailwind/CSS variable tokens, gradient libraries, glassmorphism layers, and motion guidelines. Include editor controls for selecting themes, previewing changes, and saving presets. Detail how the system supports future premium upsells."
+> "Build the `Profile Themes & Visual System`: cover Tailwind/CSS variable tokens, gradient libraries, glassmorphism layers, and motion guidelines. Include editor controls for selecting themes, previewing changes, and saving presets. Detail how the system supports future premium upsells."
 
 **Primary outcomes**
 - Theme tokens (colors, typography scales, spacing) stored per user.
@@ -45,7 +45,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Transform the link list into swipeable, reorderable modules for links, products, media, and testimonials.
 
 **Use this prompt**:
-> "Write a PRD for `Modular Link & Media Blocks` that defines content modules (featured carousel, link cards, social proof strip, embedded media accordions). Specify data contracts, drag-and-drop ordering, and responsive behaviors. Include empty states, loading skeletons, and analytics events."
+> "Develop the `Modular Link & Media Blocks`: define content modules (featured carousel, link cards, social proof strip, embedded media accordions). Specify data contracts, drag-and-drop ordering, and responsive behaviors. Include empty states, loading skeletons, and analytics events."
 
 **Primary outcomes**
 - Config-driven module renderer supporting reorderable sections.
@@ -63,7 +63,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Update Supabase schemas and APIs to persist new modules, theme selections, and commerce-ready metadata.
 
 **Use this prompt**:
-> "Produce a PRD for `Profile Data Model Expansion` covering new fields/tables for themes, CTA buttons, product/service listings, testimonials, business info, and scheduling availability. Detail migration strategy, caching, and public API read models. Include performance limits and privacy considerations."
+> "Expand the `Profile Data Model`: add new fields/tables for themes, CTA buttons, product/service listings, testimonials, business info, and scheduling availability. Detail migration strategy, caching, and public API read models. Include performance limits and privacy considerations."
 
 **Primary outcomes**
 - Extended `profiles` table for theme + CTA metadata.
@@ -80,7 +80,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Launch tour date and ticket modules resembling the provided reference, optimized for mobile scanning and conversion.
 
 **Use this prompt**:
-> "Draft a PRD for `Ticketing & Event Showcase` including horizontal and vertical variants, time zone handling, ticket CTA states, and deep links to third-party ticketing providers. Capture analytics requirements and fallback states when events sell out."
+> "Deliver the `Ticketing & Event Showcase`: include horizontal and vertical variants, time zone handling, ticket CTA states, and deep links to third-party ticketing providers. Capture analytics requirements and fallback states when events sell out."
 
 **Primary outcomes**
 - Scrollable tour date cards with localized date/time formatting.
@@ -98,7 +98,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Provide monetization blocks for physical merch and bookable services with high-impact visuals.
 
 **Use this prompt**:
-> "Compose a PRD for `Merch & Services Commerce Modules` that outlines product card layouts, price display rules, inventory badges, and CTA behaviors (add to cart, external checkout, book now). Include support for appointment duration/price and integration hooks for payment providers."
+> "Launch the `Merch & Services Commerce Modules`: outline product card layouts, price display rules, inventory badges, and CTA behaviors (add to cart, external checkout, book now). Include support for appointment duration/price and integration hooks for payment providers."
 
 **Primary outcomes**
 - Carousel/grid cards for merch with pricing and stock messaging.
@@ -116,7 +116,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Enable creators to surface bookable appointments directly on the profile, aligned with the provided design references.
 
 **Use this prompt**:
-> "Prepare a PRD for `Scheduling & Availability Integration` specifying availability data ingestion, booking CTA behavior, confirmation flows, and third-party calendar sync. Include safeguards for double-booking and fallback when no slots are available."
+> "Integrate `Scheduling & Availability`: specify availability data ingestion, booking CTA behavior, confirmation flows, and third-party calendar sync. Include safeguards for double-booking and fallback when no slots are available."
 
 **Primary outcomes**
 - Availability widget showing upcoming slots with quick book buttons.
@@ -133,7 +133,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Define how premium themes and advanced modules are packaged, priced, and surfaced to drive revenue.
 
 **Use this prompt**:
-> "Author a PRD for `Monetization & Premium Upsell Strategy` detailing paywall logic, upgrade flows, free vs. premium feature gating, and analytics to measure conversion. Include lifecycle messaging (email, in-app nudges) and success metrics."
+> "Activate the `Monetization & Premium Upsell Strategy`: detail paywall logic, upgrade flows, free vs. premium feature gating, and analytics to measure conversion. Include lifecycle messaging (email, in-app nudges) and success metrics."
 
 **Primary outcomes**
 - Clear delineation of free vs. premium modules/themes.
@@ -150,7 +150,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 **Goal**: Ensure every new module/action is instrumented and comparable to the legacy profile performance.
 
 **Use this prompt**:
-> "Generate a PRD for `Analytics & Experimentation Framework` capturing event schemas, click-through funnels, A/B test setup, and dashboards. Document success metrics aligned with premium profile goals."
+> "Implement the `Analytics & Experimentation Framework`: capture event schemas, click-through funnels, A/B test setup, and dashboards. Document success metrics aligned with premium profile goals."
 
 **Primary outcomes**
 - Unified event taxonomy for profile interactions (CTA clicks, module impressions, conversions).

@@ -8,7 +8,7 @@ The cinematic profile shell concept is broad, so break the work into the followi
 **Goal**: Replace the static banner with an edge-to-edge hero that supports gradients, imagery, and short looping video while delivering a smooth parallax scroll experience.
 
 **Use this prompt**:
-> "Draft a PRD for `Cinematic Hero Background & Motion` that defines gradient presets, custom media uploads (image/video), autoplay/loop rules, parallax depth ranges, and fallback behaviors. Include performance budgets, lazy loading strategy, accessibility accommodations for reduced motion, and loading skeleton expectations."
+> "Implement the `Cinematic Hero Background & Motion` feature set: define gradient presets, custom media uploads (image/video), autoplay/loop rules, parallax depth ranges, and fallback behaviors. Enforce performance budgets, a lazy loading strategy, accessibility accommodations for reduced motion, and loading skeleton expectations."
 
 **Primary outcomes**
 - Gradient/video background system with ambient theming and parallax.
@@ -25,7 +25,7 @@ The cinematic profile shell concept is broad, so break the work into the followi
 **Goal**: Introduce a floating identity card that centers the creator’s avatar, pronouns, location, tagline, and trust badges without sacrificing readability over cinematic media.
 
 **Use this prompt**:
-> "Draft a PRD for `Floating Identity & Trust Layer` covering avatar framing options (circle, rounded-square, halo), verification and partner badges, pronoun/location chips, and quick action badges (e.g., Watch, Read). Document contrast management, assistive text/ARIA, tooltip semantics, and skeleton/empty states."
+> "Ship the `Floating Identity & Trust Layer`: cover avatar framing options (circle, rounded-square, halo), verification and partner badges, pronoun/location chips, and quick action badges (e.g., Watch, Read). Ensure contrast management, assistive text/ARIA, tooltip semantics, and skeleton/empty states are in place."
 
 **Primary outcomes**
 - Floating identity card with avatar treatments and trust signals.
@@ -42,7 +42,7 @@ The cinematic profile shell concept is broad, so break the work into the followi
 **Goal**: Deliver a persistent, mobile-friendly CTA row that keeps contact, book, and shop actions within thumb reach while respecting accessibility and embeddable webviews.
 
 **Use this prompt**:
-> "Draft a PRD for `Sticky Action Row & Contact Pill` that specifies sticky behavior thresholds, button states (available, disabled, external), haptic/micro-interactions, and overflow actions. Include accessibility (focus order, aria-labels), performance safeguards, and handling for hosted in-app browsers."
+> "Launch the `Sticky Action Row & Contact Pill`: specify sticky behavior thresholds, button states (available, disabled, external), haptic/micro-interactions, and overflow actions. Include accessibility (focus order, aria-labels), performance safeguards, and handling for hosted in-app browsers."
 
 **Primary outcomes**
 - Sticky CTA row that animates in after hero load and stays docked on scroll.
