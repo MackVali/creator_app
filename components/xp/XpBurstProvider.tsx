@@ -1,7 +1,13 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useReducedMotion,
+} from "framer-motion";
+import type { LucideIcon } from "lucide-react";
+import { CheckCircle2, Flame, Trophy } from "lucide-react";
 import React, {
   createContext,
   useCallback,
@@ -14,77 +20,81 @@ import React, {
 
 type XpBurstKind = "task" | "project" | "habit";
 
-type XpBurstTrigger = {
+export type XpBurstTrigger = {
   amount: number;
   kind: XpBurstKind;
 };
 
-type Sparkle = {
+type BurstParticle = {
   id: string;
-  x: number;
-  y: number;
+  kind: "orb" | "spark";
+  angle: number;
+  distance: number;
   delay: number;
-  scale: number;
+  size: number;
+  travel: number;
 };
 
 type XpBurst = XpBurstTrigger & {
   id: string;
-  sparkles: Sparkle[];
+  particles: BurstParticle[];
 };
 
 type XpBurstContextValue = {
   triggerXpBurst: (burst: XpBurstTrigger) => void;
 };
 
-const XP_BURST_LIFETIME_MS = 1600;
+const XP_BURST_LIFETIME_MS = 2000;
 
 const XpBurstContext = createContext<XpBurstContextValue | null>(null);
 
-const KIND_STYLES: Record<
-  XpBurstKind,
-  {
-    glow: string;
-    ring: string;
-    iconGradient: string;
-    textColor: string;
-    textShadow: string;
-    sparkle: string;
-    sparkleShadow: string;
-    label: string;
-  }
-> = {
+type BurstStyle = {
+  aura: string;
+  echo: string;
+  iconGradient: string;
+  accent: string;
+  accentSoft: string;
+  label: string;
+  labelGlow: string;
+  Icon: LucideIcon;
+};
+
+const KIND_STYLES: Record<XpBurstKind, BurstStyle> = {
   task: {
-    glow: "radial-gradient(circle at center, rgba(16,185,129,0.45) 0%, rgba(16,185,129,0.28) 42%, rgba(5,150,105,0.08) 65%, rgba(6,95,70,0) 100%)",
-    ring: "rgba(16, 185, 129, 0.45)",
+    aura:
+      "radial-gradient(circle at 30% 30%, rgba(16,185,129,0.65) 0%, rgba(6,95,70,0.05) 65%, transparent 100%)",
+    echo: "rgba(59, 130, 246, 0.45)",
     iconGradient:
-      "linear-gradient(135deg, rgba(16,185,129,0.95) 0%, rgba(59,130,246,0.55) 100%)",
-    textColor: "#d1fae5",
-    textShadow: "0 0 18px rgba(16,185,129,0.75)",
-    sparkle: "rgba(110, 231, 183, 0.95)",
-    sparkleShadow: "0 0 16px rgba(16,185,129,0.85)",
+      "linear-gradient(135deg, rgba(16,185,129,0.95) 0%, rgba(59,130,246,0.75) 100%)",
+    accent: "#6ee7b7",
+    accentSoft: "rgba(167, 243, 208, 0.45)",
     label: "Task Complete!",
+    labelGlow: "0 0 28px rgba(52,211,153,0.85)",
+    Icon: CheckCircle2,
   },
   project: {
-    glow: "radial-gradient(circle at center, rgba(168,85,247,0.5) 0%, rgba(168,85,247,0.3) 40%, rgba(91,33,182,0.1) 66%, rgba(59,7,100,0) 100%)",
-    ring: "rgba(168, 85, 247, 0.45)",
+    aura:
+      "radial-gradient(circle at 70% 30%, rgba(192,132,252,0.72) 0%, rgba(67,56,202,0.08) 55%, transparent 100%)",
+    echo: "rgba(244, 114, 182, 0.45)",
     iconGradient:
-      "linear-gradient(135deg, rgba(168,85,247,0.95) 0%, rgba(244,114,182,0.6) 100%)",
-    textColor: "#ede9fe",
-    textShadow: "0 0 18px rgba(168,85,247,0.75)",
-    sparkle: "rgba(233, 213, 255, 0.95)",
-    sparkleShadow: "0 0 16px rgba(168,85,247,0.8)",
+      "linear-gradient(135deg, rgba(168,85,247,0.95) 0%, rgba(244,114,182,0.75) 100%)",
+    accent: "#f5d0fe",
+    accentSoft: "rgba(196, 181, 253, 0.5)",
     label: "Project Complete!",
+    labelGlow: "0 0 30px rgba(192,132,252,0.85)",
+    Icon: Trophy,
   },
   habit: {
-    glow: "radial-gradient(circle at center, rgba(251,191,36,0.55) 0%, rgba(251,191,36,0.32) 42%, rgba(217,119,6,0.1) 68%, rgba(120,53,15,0) 100%)",
-    ring: "rgba(251, 191, 36, 0.45)",
+    aura:
+      "radial-gradient(circle at 50% 25%, rgba(251,191,36,0.75) 0%, rgba(249,115,22,0.08) 60%, transparent 100%)",
+    echo: "rgba(248, 113, 113, 0.45)",
     iconGradient:
-      "linear-gradient(135deg, rgba(251,191,36,0.95) 0%, rgba(248,113,113,0.6) 100%)",
-    textColor: "#fef3c7",
-    textShadow: "0 0 18px rgba(251,191,36,0.75)",
-    sparkle: "rgba(252, 211, 77, 0.95)",
-    sparkleShadow: "0 0 16px rgba(251,191,36,0.8)",
+      "linear-gradient(135deg, rgba(251,191,36,0.95) 0%, rgba(248,113,113,0.75) 100%)",
+    accent: "#fde68a",
+    accentSoft: "rgba(253, 230, 138, 0.55)",
     label: "Habit Complete!",
+    labelGlow: "0 0 30px rgba(251,191,36,0.85)",
+    Icon: Flame,
   },
 };
 
@@ -95,91 +105,171 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function createSparkles(baseId: string, count = 8): Sparkle[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `${baseId}-sparkle-${index}`,
-    x: (Math.random() - 0.5) * 180,
-    y: (Math.random() - 0.5) * 140,
-    delay: Math.random() * 0.2,
-    scale: 0.6 + Math.random() * 0.9,
-  }));
+function createParticles(baseId: string, count = 16): BurstParticle[] {
+  return Array.from({ length: count }, (_, index) => {
+    const type = index % 4 === 0 ? "spark" : "orb";
+    return {
+      id: `${baseId}-${type}-${index}`,
+      kind: type,
+      angle: Math.random() * Math.PI * 2,
+      distance: 120 + Math.random() * 160,
+      delay: Math.random() * 0.22,
+      size: type === "orb" ? 10 + Math.random() * 12 : 4 + Math.random() * 6,
+      travel: 40 + Math.random() * 120,
+    } satisfies BurstParticle;
+  });
+}
+
+function formatAmount(amount: number) {
+  return Math.max(0, Math.round(amount)).toLocaleString();
 }
 
 function XpBurstVisual({ burst }: { burst: XpBurst }) {
   const style = KIND_STYLES[burst.kind];
+  const prefersReducedMotion = useReducedMotion();
+  const [displayAmount, setDisplayAmount] = useState(() => formatAmount(0));
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setDisplayAmount(formatAmount(burst.amount));
+      return;
+    }
+
+    const controls = animate(0, burst.amount, {
+      duration: 0.6,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate: value => setDisplayAmount(formatAmount(value)),
+    });
+
+    return () => controls.stop();
+  }, [burst.amount, prefersReducedMotion]);
+
+  const Icon = style.Icon;
 
   return (
     <motion.div
       className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      initial={{ opacity: 0, scale: 0.8 }}
+      initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ duration: 0.2, ease: [0.33, 1, 0.68, 1] }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
     >
-      <div className="relative flex flex-col items-center justify-center gap-3">
+      <div className="relative flex flex-col items-center justify-center">
         <motion.div
-          className="absolute h-48 w-48 -translate-y-6 rounded-full blur-3xl"
-          style={{ background: style.glow }}
-          initial={{ opacity: 0.6, scale: 0.6 }}
-          animate={{ opacity: [0.6, 0.75, 0], scale: [0.6, 1.15, 1.3] }}
-          transition={{ duration: 1.3, times: [0, 0.6, 1] }}
+          className="absolute inset-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 0.85, 0] }}
+          transition={{ duration: 1.6, times: [0, 0.35, 1], ease: "easeOut" }}
+          style={{ background: style.aura, filter: "blur(60px)" }}
         />
+
         <motion.div
-          className="absolute h-40 w-40 -translate-y-6 rounded-full"
-          style={{ border: `1px solid ${style.ring}` }}
-          initial={{ opacity: 0.8, scale: 0.5 }}
-          animate={{ opacity: [0.8, 0.4, 0], scale: [0.5, 1.05, 1.4] }}
-          transition={{ duration: 1.3, times: [0, 0.7, 1] }}
+          className="absolute h-72 w-72 rounded-full"
+          style={{ border: `1px solid ${style.accentSoft}` }}
+          initial={{ opacity: 0.7, scale: 0.4 }}
+          animate={{ opacity: [0.7, 0.35, 0], scale: [0.4, 1.1, 1.4] }}
+          transition={{ duration: 1.4, times: [0, 0.6, 1], ease: [0.12, 0.76, 0.3, 1.01] }}
         />
+
         <motion.div
-          className="relative flex h-20 w-20 items-center justify-center rounded-full shadow-[0_0_35px_rgba(0,0,0,0.35)]"
+          className="absolute h-56 w-56 rounded-full"
+          style={{ border: `1px solid ${style.echo}` }}
+          initial={{ opacity: 0.9, scale: 0.5 }}
+          animate={{ opacity: [0.9, 0.45, 0], scale: [0.5, 1.05, 1.28] }}
+          transition={{ duration: 1.3, times: [0, 0.55, 1], ease: [0.19, 0.82, 0.33, 1.02] }}
+        />
+
+        <motion.div
+          className="relative flex h-28 w-28 items-center justify-center rounded-full shadow-[0_25px_45px_rgba(0,0,0,0.35)]"
           style={{ background: style.iconGradient }}
-          initial={{ scale: 0.4, rotate: -12 }}
-          animate={{ scale: [0.4, 1, 1.08, 1], rotate: [-12, 0, 4, 0] }}
-          transition={{ duration: 1.1, times: [0, 0.45, 0.7, 1], ease: "easeOut" }}
+          initial={{ scale: 0.45, rotate: -18 }}
+          animate={{ scale: [0.45, 1.05, 0.96, 1], rotate: [-18, 0, 6, 0] }}
+          transition={{ duration: 1, times: [0, 0.45, 0.68, 1], ease: [0.18, 0.89, 0.32, 1] }}
         >
-          <Sparkles className="h-10 w-10 text-white drop-shadow-[0_0_14px_rgba(255,255,255,0.75)]" />
+          <Icon className="h-16 w-16 text-white drop-shadow-[0_0_22px_rgba(255,255,255,0.65)]" />
         </motion.div>
-        <motion.span
-          className="relative px-6 text-3xl font-semibold tracking-wide"
-          style={{ color: style.textColor, textShadow: style.textShadow }}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: [0, 1, 0.9, 0], y: [12, 0, -6, -8] }}
-          transition={{ duration: 1.25, times: [0, 0.25, 0.72, 1], ease: "easeOut" }}
+
+        <motion.div
+          className="mt-4 flex flex-col items-center gap-2"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
         >
-          +{burst.amount} XP
-        </motion.span>
-        <motion.span
-          className="text-sm font-medium uppercase tracking-[0.3em] text-white/80"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: [0, 0.8, 0], y: [8, 0, -4] }}
-          transition={{ duration: 1.2, times: [0, 0.4, 1], ease: "easeOut" }}
-        >
-          {style.label}
-        </motion.span>
-        {burst.sparkles.map(sparkle => (
           <motion.span
-            key={sparkle.id}
-            className="absolute block h-2 w-2 rounded-full"
-            style={{
-              background: style.sparkle,
-              boxShadow: style.sparkleShadow,
-            }}
-            initial={{ opacity: 0, scale: 0, x: 0, y: 0 }}
-            animate={{
-              opacity: [0, 1, 0],
-              scale: [0, sparkle.scale, 0],
-              x: [0, sparkle.x],
-              y: [0, sparkle.y],
-            }}
-            transition={{
-              duration: 1.1,
-              times: [0, 0.65, 1],
-              delay: sparkle.delay,
-              ease: "easeOut",
-            }}
-          />
-        ))}
+            className="text-4xl font-semibold tracking-wide text-white"
+            style={{ textShadow: style.labelGlow }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: [0, 1, 1, 0], y: [8, 0, -2, -6] }}
+            transition={{ duration: 1.4, times: [0, 0.25, 0.75, 1], ease: [0.18, 0.89, 0.32, 1] }}
+          >
+            +{displayAmount} XP
+          </motion.span>
+          <motion.span
+            className="text-sm font-semibold uppercase tracking-[0.45em] text-white/80"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: [0, 0.85, 0], y: [6, 0, -4] }}
+            transition={{ duration: 1.3, times: [0, 0.42, 1], ease: [0.18, 0.89, 0.32, 1] }}
+          >
+            {style.label}
+          </motion.span>
+        </motion.div>
+
+        {!prefersReducedMotion && (
+          <>
+            <motion.div
+              className="absolute h-44 w-44 rounded-full"
+              style={{ border: `1px solid ${style.accent}`, filter: "blur(1px)" }}
+              initial={{ opacity: 0.65, scale: 0.3 }}
+              animate={{ opacity: [0.65, 0.15, 0], scale: [0.3, 0.9, 1.4] }}
+              transition={{ duration: 1.6, times: [0, 0.6, 1], ease: [0.12, 0.76, 0.3, 1.01] }}
+            />
+            {burst.particles.map(particle => {
+              const x = Math.cos(particle.angle) * particle.distance;
+              const y = Math.sin(particle.angle) * particle.distance;
+              const upward = -particle.travel * 0.6;
+
+              return (
+                <motion.span
+                  key={particle.id}
+                  className="absolute rounded-full"
+                  style={{
+                    width: particle.size,
+                    height: particle.size,
+                    background:
+                      particle.kind === "orb"
+                        ? style.accent
+                        : "linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,255,255,0.15))",
+                    boxShadow:
+                      particle.kind === "orb"
+                        ? `0 0 22px ${style.accentSoft}`
+                        : `0 0 18px rgba(255,255,255,0.6)`,
+                  }}
+                  initial={{
+                    opacity: 0,
+                    x: 0,
+                    y: 0,
+                    scale: particle.kind === "orb" ? 0.3 : 0.2,
+                  }}
+                  animate={{
+                    opacity: [0, 1, 0],
+                    x: [0, x, x * 1.18],
+                    y: [0, y, y + upward],
+                    scale:
+                      particle.kind === "orb"
+                        ? [0.3, 1, 0.6]
+                        : [0.2, 0.75, 0.4],
+                  }}
+                  transition={{
+                    delay: particle.delay,
+                    duration: 1.35,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
+                />
+              );
+            })}
+          </>
+        )}
       </div>
     </motion.div>
   );
@@ -200,9 +290,9 @@ export function XpBurstProvider({ children }: { children: React.ReactNode }) {
 
   const triggerXpBurst = useCallback(
     (burst: XpBurstTrigger) => {
-      if (burst.amount <= 0) return;
+      if (!burst || burst.amount <= 0) return;
       const id = createId();
-      setBursts(prev => [...prev, { ...burst, id, sparkles: createSparkles(id) }]);
+      setBursts(prev => [...prev, { ...burst, id, particles: createParticles(id) }]);
       if (typeof window !== "undefined") {
         const timeoutId = window.setTimeout(() => {
           removeBurst(id);
