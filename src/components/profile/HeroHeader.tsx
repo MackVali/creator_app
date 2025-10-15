@@ -9,8 +9,97 @@ import {
   Sparkles,
 } from "lucide-react";
 import Image from "next/image";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import { Profile } from "@/lib/types";
+
 import SocialPillsRow from "./SocialPillsRow";
+import {
+  DEFAULT_HERO_GRADIENT_ID,
+  getHeroGradientPreset,
+} from "./hero-presets";
+
+const HERO_PARALLAX_BASE_RANGE = { min: -28, max: 36 } as const;
+const HERO_VIDEO_MAX_DURATION_SECONDS = 18;
+const HERO_MEDIA_MAX_SIZE_BYTES = 16 * 1024 * 1024; // 16MB guardrail for 4G networks
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function usePrefersReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReducedMotion(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setPrefersReducedMotion(event.matches);
+    };
+
+    try {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    } catch {
+      // Safari <14 fallback
+      mediaQuery.addListener(handleChange);
+      return () => mediaQuery.removeListener(handleChange);
+    }
+  }, []);
+
+  return prefersReducedMotion;
+}
+
+function detectMediaType(url: string | null | undefined, explicitType?: string | null) {
+  if (explicitType === "image" || explicitType === "video") {
+    return explicitType;
+  }
+
+  if (!url) return null;
+
+  const normalized = url.split("?")[0].toLowerCase();
+  const extension = normalized.split(".").pop();
+  if (!extension) return null;
+
+  const videoExtensions = new Set([
+    "mp4",
+    "webm",
+    "mov",
+    "m4v",
+    "ogg",
+  ]);
+
+  if (videoExtensions.has(extension)) {
+    return "video";
+  }
+
+  const imageExtensions = new Set([
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "avif",
+    "heic",
+  ]);
+
+  if (imageExtensions.has(extension)) {
+    return "image";
+  }
+
+  return null;
+}
 
 interface HeroHeaderProps {
   profile: Profile;
@@ -30,6 +119,13 @@ export default function HeroHeader({
   onShare,
   onBack,
 }: HeroHeaderProps) {
+  const heroRef = useRef<HTMLElement | null>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
+  const [mediaFailed, setMediaFailed] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [parallaxOffset, setParallaxOffset] = useState(0);
+
   const getInitials = (name: string | null, username: string) => {
     if (name) {
       return name
@@ -72,20 +168,209 @@ export default function HeroHeader({
   const linkCount = stats?.linkCount ?? 0;
   const socialCount = stats?.socialCount ?? 0;
 
+  const heroMediaUrl = profile.hero_media_url ?? profile.banner_url ?? null;
+  const heroMediaType = detectMediaType(heroMediaUrl, profile.hero_media_type);
+  const normalizedBackgroundType = useMemo(() => {
+    if (profile.hero_background_type === "gradient") return "gradient" as const;
+    if (profile.hero_background_type === "image") return "image" as const;
+    if (profile.hero_background_type === "video") return "video" as const;
+    return null;
+  }, [profile.hero_background_type]);
+  const heroPosterUrl = useMemo(() => {
+    if (!profile.banner_url) return undefined;
+    if (profile.banner_url === heroMediaUrl) return undefined;
+    return detectMediaType(profile.banner_url) === "image" ? profile.banner_url : undefined;
+  }, [heroMediaUrl, profile.banner_url]);
+  const heroBackgroundType =
+    normalizedBackgroundType ??
+    (heroMediaType === "video" || heroMediaType === "image" ? heroMediaType : "gradient");
+  const gradientPreset = useMemo(
+    () => getHeroGradientPreset(profile.hero_gradient_preset ?? DEFAULT_HERO_GRADIENT_ID),
+    [profile.hero_gradient_preset],
+  );
+
+  const parallaxDepth = useMemo(() => {
+    const intensity = clamp((profile.hero_parallax_intensity ?? 65) / 100, 0, 1);
+    return {
+      min: HERO_PARALLAX_BASE_RANGE.min * intensity,
+      max: HERO_PARALLAX_BASE_RANGE.max * intensity,
+    };
+  }, [profile.hero_parallax_intensity]);
+
+  const motionFeatureEnabled = profile.hero_motion_enabled ?? true;
+  const isMotionAllowed = motionFeatureEnabled && !prefersReducedMotion;
+  const shouldAnimateParallax = isMotionAllowed;
+
+  const heroMediaWithinSizeBudget =
+    !profile.hero_media_size_bytes || profile.hero_media_size_bytes <= HERO_MEDIA_MAX_SIZE_BYTES;
+
+  const videoIsWithinDurationBudget =
+    !profile.hero_media_duration_seconds ||
+    profile.hero_media_duration_seconds <= HERO_VIDEO_MAX_DURATION_SECONDS;
+
+  const heroShouldUseVideo =
+    heroBackgroundType === "video" &&
+    heroMediaUrl &&
+    !mediaFailed &&
+    heroMediaWithinSizeBudget &&
+    videoIsWithinDurationBudget;
+
+  const heroShouldUseImage =
+    heroBackgroundType === "image" &&
+    heroMediaUrl &&
+    !mediaFailed &&
+    heroMediaWithinSizeBudget;
+
+  const mediaOpacity = shouldLoadMedia && mediaLoaded ? 1 : 0;
+
+  const parallaxStyle = useMemo(() => {
+    if (!shouldAnimateParallax) {
+      return undefined;
+    }
+
+    return {
+      transform: `translate3d(0, ${parallaxOffset.toFixed(2)}px, 0) scale(1.05)`,
+    };
+  }, [parallaxOffset, shouldAnimateParallax]);
+
+  useEffect(() => {
+    const node = heroRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setShouldLoadMedia(true);
+          }
+        });
+      },
+      { rootMargin: "0px 0px 300px 0px" },
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!shouldAnimateParallax) {
+      setParallaxOffset(0);
+      return;
+    }
+
+    const handleScroll = () => {
+      const target = heroRef.current;
+      if (!target) return;
+
+      const rect = target.getBoundingClientRect();
+      const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+      if (!viewportHeight) return;
+
+      const progress = clamp((viewportHeight - rect.top) / (viewportHeight + rect.height), 0, 1);
+      const offset = parallaxDepth.min + (parallaxDepth.max - parallaxDepth.min) * progress;
+      setParallaxOffset(offset);
+    };
+
+    let animationFrame: number | null = null;
+    const onScroll = () => {
+      if (animationFrame) return;
+      animationFrame = window.requestAnimationFrame(() => {
+        handleScroll();
+        animationFrame = null;
+      });
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [parallaxDepth.max, parallaxDepth.min, shouldAnimateParallax]);
+
+  const handleMediaError = useCallback(() => {
+    setMediaFailed(true);
+  }, []);
+
+  const handleMediaLoaded = useCallback(() => {
+    setMediaLoaded(true);
+  }, []);
+
   return (
-    <section className="relative mx-auto w-full max-w-6xl px-4">
+    <section
+      ref={(node) => {
+        heroRef.current = node;
+      }}
+      className="relative mx-auto w-full max-w-6xl px-4"
+    >
       <div className="absolute inset-x-0 -top-36 -z-10 flex justify-center">
         <div className="h-72 w-72 rounded-full bg-gradient-to-br from-neutral-500/35 via-neutral-900/20 to-transparent blur-[160px]" />
       </div>
 
-      <article className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-[#050505] via-[#101010] to-[#1d1d1d] shadow-[0_60px_120px_-35px_rgba(2,6,23,0.9)] sm:rounded-[36px] md:rounded-[44px]">
-        <div className="absolute inset-0">
-          <div className="absolute -left-12 -top-20 h-64 w-64 rounded-full bg-gradient-to-br from-white/10 via-white/0 to-transparent blur-[120px]" />
-          <div className="absolute right-[-15%] top-16 h-72 w-72 rounded-full bg-gradient-to-bl from-white/8 via-transparent to-transparent blur-[160px]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
+      <article className="relative overflow-hidden rounded-[30px] border border-white/12 bg-black/70 shadow-[0_70px_140px_-45px_rgba(2,6,23,0.9)] backdrop-blur-xl sm:rounded-[38px] md:rounded-[46px]">
+        <div className="absolute inset-0" aria-hidden="true">
+          <div
+            className="absolute inset-0"
+            style={{
+              background: gradientPreset.background,
+              transformOrigin: "center top",
+              ...parallaxStyle,
+            }}
+          >
+            {gradientPreset.overlay ? (
+              <div
+                className="absolute inset-0 opacity-90"
+                style={{ background: gradientPreset.overlay }}
+              />
+            ) : null}
+
+            {shouldLoadMedia && heroShouldUseVideo ? (
+              <video
+                className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-700 ease-out"
+                style={{ opacity: mediaOpacity }}
+                muted
+                playsInline
+                loop
+                preload="metadata"
+                poster={heroPosterUrl}
+                autoPlay={isMotionAllowed}
+                aria-hidden="true"
+                onLoadedData={handleMediaLoaded}
+                onError={handleMediaError}
+              >
+                <source src={heroMediaUrl ?? undefined} />
+              </video>
+            ) : null}
+
+            {shouldLoadMedia && heroShouldUseImage ? (
+              <div className="absolute inset-0">
+                <Image
+                  src={heroMediaUrl ?? ""}
+                  alt=""
+                  fill
+                  priority={heroBackgroundType === "image"}
+                  loading={heroBackgroundType === "image" ? "eager" : undefined}
+                  sizes="100vw"
+                  onLoad={handleMediaLoaded}
+                  onError={handleMediaError}
+                  className="object-cover opacity-0 transition-opacity duration-700 ease-out"
+                  style={{ opacity: mediaOpacity }}
+                />
+              </div>
+            ) : null}
+
+            <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/20 to-black/65" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.12),_transparent_58%)]" />
+          </div>
         </div>
 
-        <div className="relative flex flex-col gap-10 px-5 pb-10 pt-8 sm:gap-12 sm:px-8 sm:pb-12 sm:pt-10 md:px-12 md:pt-12">
+        <div className="relative flex flex-col gap-10 px-5 pb-10 pt-24 sm:gap-12 sm:px-8 sm:pb-12 sm:pt-28 md:px-12 md:pt-32">
           <header className="flex flex-col gap-3 text-white/80 sm:flex-row sm:items-center sm:justify-between">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.35em] sm:gap-3 sm:px-4 sm:text-xs">
               <Sparkles className="h-3.5 w-3.5 text-white/50 sm:h-4 sm:w-4" aria-hidden="true" />

@@ -110,6 +110,14 @@ export interface Profile {
   bio?: string | null;
   avatar_url?: string | null;
   banner_url?: string | null;
+  hero_background_type?: "gradient" | "image" | "video" | null;
+  hero_gradient_preset?: string | null;
+  hero_media_url?: string | null;
+  hero_media_type?: "image" | "video" | null;
+  hero_media_size_bytes?: number | null;
+  hero_media_duration_seconds?: number | null;
+  hero_parallax_intensity?: number | null;
+  hero_motion_enabled?: boolean | null;
   verified?: boolean;
   theme_color?: string;
   font_family?: string;
