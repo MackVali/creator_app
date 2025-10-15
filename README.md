@@ -134,3 +134,4 @@ npx supabase migration repair --status applied <version>   # or --status reverte
 ```
 
   - After baselining/repair, return to the local-first flow (`db diff` → `db push`).
+
