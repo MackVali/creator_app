@@ -40,6 +40,10 @@ This app uses Supabase for authentication with magic link sign-in. After setting
 2. **Check email**: Click the magic link in your email
 3. **Access dashboard**: You'll be redirected to `/dashboard`
 
+## Deployment
+
+This branch includes a minor documentation tweak to confirm the deployment pipeline is functioning as expected.
+
 ## Seeding Sample Data
 
 To populate your app with sample data for testing and development:
