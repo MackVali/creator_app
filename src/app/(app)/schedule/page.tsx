@@ -28,7 +28,6 @@ import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
-import { RescheduleButton } from '@/components/schedule/RescheduleButton'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -4621,6 +4620,9 @@ export default function SchedulePage() {
           onToday={handleToday}
           onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
           onOpenSearch={() => setIsSearchOpen(true)}
+          onReschedule={handleRescheduleClick}
+          canReschedule={!isScheduling}
+          isRescheduling={isScheduling}
         />
         <div className="text-zinc-100 space-y-4 pt-[calc(4rem + env(safe-area-inset-top, 0px))]">
           <div
@@ -4633,13 +4635,6 @@ export default function SchedulePage() {
             }}
             onTouchCancel={handleTouchCancel}
           >
-          <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
-            <RescheduleButton
-              onClick={handleRescheduleClick}
-              disabled={isScheduling}
-              isRunning={isScheduling}
-            />
-          </div>
           <AnimatePresence mode="wait" initial={false}>
             {view === 'day' && (
               <ScheduleViewShell key="day">
