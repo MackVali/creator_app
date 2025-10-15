@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   CalendarDays,
+  ChevronDown,
   Clock,
   Copy,
   Flame as FlameIcon,
@@ -35,7 +36,8 @@ export interface WindowItem {
   start: string
   end: string
   energy?: Energy
-  location?: string
+  location?: 'ANY' | 'HOME' | 'WORK' | 'OUTSIDE' | null
+  daylight?: 'ALL_DAY' | 'DAY' | 'NIGHT'
   active?: boolean
 }
 
@@ -57,6 +59,32 @@ const energyAccent: Record<Energy, string> = {
   extreme: "#f97316",
 }
 
+const windowLocationOptions: Array<{ value: WindowItem['location']; label: string }> = [
+  { value: 'ANY', label: 'Anywhere' },
+  { value: 'HOME', label: 'Home' },
+  { value: 'WORK', label: 'Work' },
+  { value: 'OUTSIDE', label: 'Outside' },
+]
+
+const windowDaylightOptions: Array<{ value: NonNullable<WindowItem['daylight']>; label: string; description: string }> = [
+  { value: 'ALL_DAY', label: 'All day', description: 'Use this window at any hour.' },
+  { value: 'DAY', label: 'Daytime', description: 'Only schedule when the sun is up.' },
+  { value: 'NIGHT', label: 'Night & twilight', description: 'Reserve for evenings and late hours.' },
+]
+
+const locationLabelMap: Record<NonNullable<WindowItem['location']>, string> = {
+  ANY: 'Anywhere',
+  HOME: 'Home',
+  WORK: 'Work',
+  OUTSIDE: 'Outside',
+}
+
+const daylightLabelMap: Record<NonNullable<WindowItem['daylight']>, string> = {
+  ALL_DAY: 'All day',
+  DAY: 'Daytime only',
+  NIGHT: 'Night window',
+}
+
 // Mock data if none provided
 const mockWindows: WindowItem[] = [
   {
@@ -66,7 +94,8 @@ const mockWindows: WindowItem[] = [
     start: "09:00",
     end: "11:00",
     energy: "high",
-    location: "Home Studio",
+    location: 'HOME',
+    daylight: 'DAY',
     active: true,
   },
   {
@@ -76,7 +105,8 @@ const mockWindows: WindowItem[] = [
     start: "18:00",
     end: "19:30",
     energy: "ultra",
-    location: "Fitness Club",
+    location: 'OUTSIDE',
+    daylight: 'NIGHT',
     active: false,
   },
   {
@@ -86,7 +116,8 @@ const mockWindows: WindowItem[] = [
     start: "12:00",
     end: "15:00",
     energy: "medium",
-    location: "Library",
+    location: 'WORK',
+    daylight: 'DAY',
     active: true,
   },
 ]
@@ -194,17 +225,26 @@ export default function WindowsPolishedUI({
 
   async function handleSave(data: WindowItem) {
     try {
+      const normalizedLocation =
+        data.location && data.location !== 'ANY' ? data.location : null
+      const normalized: WindowItem = {
+        ...data,
+        location: normalizedLocation,
+        daylight: data.daylight ?? 'ALL_DAY',
+      }
       if (editing) {
         if (onEdit) {
-          const ok = await onEdit(editing.id, data)
+          const ok = await onEdit(editing.id, normalized)
           if (ok === false) throw new Error("save failed")
         } else {
           setList((prev) =>
-            prev?.map((w) => (w.id === editing.id ? { ...data, id: editing.id } : w)),
+            prev?.map((w) =>
+              w.id === editing.id ? { ...normalized, id: editing.id } : w,
+            ),
           )
         }
       } else {
-        const newItem = { ...data, id: Date.now().toString() }
+        const newItem = { ...normalized, id: Date.now().toString() }
         if (onCreate) {
           const ok = await onCreate(newItem)
           if (ok === false) throw new Error("save failed")
@@ -783,10 +823,16 @@ function WindowCard({
                 <span className="capitalize">{item.energy}</span>
               </span>
             )}
-            {item.location && (
+            {item.location && item.location !== 'ANY' && (
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 text-slate-200">
                 <Sparkles className="h-3 w-3" />
-                {item.location}
+                {locationLabelMap[item.location] ?? item.location}
+              </span>
+            )}
+            {item.daylight && item.daylight !== 'ALL_DAY' && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-blue-300/20 bg-blue-500/10 px-3 py-1 text-slate-200">
+                <SunMedium className="h-3 w-3" />
+                {daylightLabelMap[item.daylight] ?? item.daylight}
               </span>
             )}
           </div>
@@ -888,7 +934,8 @@ function createDefaultWindow(): WindowItem {
     start: "08:00",
     end: "09:00",
     energy: "no",
-    location: "",
+    location: 'ANY',
+    daylight: 'ALL_DAY',
     active: true,
   }
 }
@@ -903,12 +950,34 @@ function Drawer({
   onSave: (data: WindowItem) => void
 }) {
   const [form, setForm] = useState<WindowItem>(
-    initial ? { ...initial } : createDefaultWindow(),
+    initial
+      ? {
+          ...initial,
+          location: initial.location ?? 'ANY',
+          daylight: initial.daylight ?? 'ALL_DAY',
+        }
+      : createDefaultWindow(),
+  )
+  const [showAdvanced, setShowAdvanced] = useState(
+    Boolean(initial?.location && initial.location !== 'ANY') ||
+      Boolean(initial?.daylight && initial.daylight !== 'ALL_DAY'),
   )
 
   useEffect(() => {
-    if (initial) setForm({ ...initial })
-    else setForm(createDefaultWindow())
+    if (initial) {
+      setForm({
+        ...initial,
+        location: initial.location ?? 'ANY',
+        daylight: initial.daylight ?? 'ALL_DAY',
+      })
+      setShowAdvanced(
+        Boolean(initial.location && initial.location !== 'ANY') ||
+          Boolean(initial.daylight && initial.daylight !== 'ALL_DAY'),
+      )
+    } else {
+      setForm(createDefaultWindow())
+      setShowAdvanced(false)
+    }
   }, [initial])
 
   useEffect(() => {
@@ -1022,15 +1091,72 @@ function Drawer({
               ))}
             </div>
           </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Location
-            </label>
-            <input
-              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
-              value={form.location ?? ""}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
-            />
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((value) => !value)}
+              className="flex w-full items-center justify-between rounded-xl bg-white/[0.05] px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:bg-white/[0.08]"
+              aria-expanded={showAdvanced}
+            >
+              <span>Advanced context</span>
+              <ChevronDown
+                className={classNames(
+                  'h-4 w-4 transition-transform text-slate-300',
+                  showAdvanced ? 'rotate-180 text-indigo-300' : 'rotate-0',
+                )}
+              />
+            </button>
+
+            {showAdvanced ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Location
+                  </label>
+                  <select
+                    className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+                    value={form.location ?? 'ANY'}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        location: e.target.value as WindowItem['location'],
+                      })
+                    }
+                  >
+                    {windowLocationOptions.map((option) => (
+                      <option key={option.value} value={option.value ?? 'ANY'}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Daylight preference
+                  </label>
+                  <select
+                    className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+                    value={form.daylight ?? 'ALL_DAY'}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        daylight: e.target.value as NonNullable<WindowItem['daylight']>,
+                      })
+                    }
+                  >
+                    {windowDaylightOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Daylight rules help memo and day/night habits find the right window automatically.
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <div>

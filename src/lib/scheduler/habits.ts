@@ -17,6 +17,8 @@ export type HabitScheduleItem = {
   recurrence: string | null
   recurrenceDays: number[] | null
   skillId: string | null
+  locationContext?: string | null
+  daylightPreference?: string | null
   window: {
     id: string
     label: string | null
@@ -24,6 +26,8 @@ export type HabitScheduleItem = {
     startLocal: string
     endLocal: string
     days: number[] | null
+    locationContext: string | null
+    daylightPreference: string | null
   } | null
 }
 
@@ -39,6 +43,8 @@ type HabitRecord = {
   recurrence?: string | null
   recurrence_days?: number[] | null
   skill_id?: string | null
+  location_context?: string | null
+  daylight_preference?: string | null
   window?: {
     id?: string
     label?: string | null
@@ -46,6 +52,8 @@ type HabitRecord = {
     start_local?: string | null
     end_local?: string | null
     days?: number[] | null
+    location_context?: string | null
+    daylight_preference?: string | null
   } | null
 }
 
@@ -82,7 +90,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   }
 
   const { data, error } = await query.select(
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, window:windows(id, label, energy, start_local, end_local, days)`
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window:windows(id, label, energy, start_local, end_local, days, location_context, daylight_preference)`
   )
 
   if (error) throw error
@@ -100,6 +108,8 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
     skillId: record.skill_id ?? null,
+    locationContext: record.location_context ?? null,
+    daylightPreference: record.daylight_preference ?? null,
     window: record.window
       ? {
           id: record.window.id ?? '',
@@ -108,6 +118,8 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
           startLocal: record.window.start_local ?? '00:00',
           endLocal: record.window.end_local ?? '00:00',
           days: record.window.days ?? null,
+          locationContext: record.window.location_context ?? null,
+          daylightPreference: record.window.daylight_preference ?? null,
         }
       : null,
   }))

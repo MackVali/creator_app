@@ -29,6 +29,8 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
   HABIT_ENERGY_OPTIONS,
+  HABIT_LOCATION_OPTIONS,
+  HABIT_DAYLIGHT_OPTIONS,
   type HabitSkillSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { Button } from "./button";
@@ -321,6 +323,8 @@ interface FormState {
   type: string;
   recurrence: string;
   recurrence_days: number[];
+  location_context: string;
+  daylight_preference: string;
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -370,6 +374,8 @@ const createInitialFormState = (
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
+  location_context: eventType === "HABIT" ? "ANY" : "",
+  daylight_preference: eventType === "HABIT" ? "ALL_DAY" : "",
 });
 
 type EventMeta = {
@@ -1388,6 +1394,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
+        insertData.location_context =
+          formData.location_context.toUpperCase() === "ANY"
+            ? null
+            : formData.location_context;
+        insertData.daylight_preference =
+          formData.daylight_preference?.toUpperCase() || "ALL_DAY";
 
         let routineIdToUse: string | null = null;
         if (routineId === "__create__") {
@@ -2299,6 +2311,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               duration={formData.duration_min}
               energy={formData.energy}
               skillId={formData.skill_id || "none"}
+              locationContext={
+                formData.location_context || "ANY"
+              }
+              daylightPreference={
+                formData.daylight_preference || "ALL_DAY"
+              }
               energyOptions={habitEnergyOptions}
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
@@ -2337,6 +2355,20 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   skill_id: value === "none" ? "" : value,
                 }))
               }
+              onLocationContextChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  location_context: value,
+                }))
+              }
+              onDaylightPreferenceChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  daylight_preference: value,
+                }))
+              }
+              locationOptions={HABIT_LOCATION_OPTIONS}
+              daylightOptions={HABIT_DAYLIGHT_OPTIONS}
               footerSlot={
                 <div className="space-y-4">
                   <div className="space-y-3">

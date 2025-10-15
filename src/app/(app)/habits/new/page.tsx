@@ -10,6 +10,8 @@ import {
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
   HABIT_ENERGY_OPTIONS,
+  HABIT_LOCATION_OPTIONS,
+  HABIT_DAYLIGHT_OPTIONS,
   type HabitSkillSelectOption,
   type HabitEnergySelectOption,
 } from "@/components/habits/habit-form-fields";
@@ -56,6 +58,8 @@ export default function NewHabitPage() {
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [skillId, setSkillId] = useState("none");
+  const [locationContext, setLocationContext] = useState("ANY");
+  const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -376,6 +380,9 @@ export default function NewHabitPage() {
         energy,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
+        location_context:
+          locationContext.toUpperCase() === "ANY" ? null : locationContext,
+        daylight_preference: daylightPreference?.toUpperCase() || "ALL_DAY",
       });
 
       if (insertError) {
@@ -424,6 +431,8 @@ export default function NewHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
+                locationContext={locationContext}
+                daylightPreference={daylightPreference}
                 energyOptions={energySelectOptions}
                 skillsLoading={skillsLoading}
                 skillOptions={skillSelectOptions}
@@ -436,6 +445,10 @@ export default function NewHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
+                onLocationContextChange={setLocationContext}
+                onDaylightPreferenceChange={setDaylightPreference}
+                locationOptions={HABIT_LOCATION_OPTIONS}
+                daylightOptions={HABIT_DAYLIGHT_OPTIONS}
                 footerSlot={
                   <div className="space-y-4">
                     <div className="space-y-3">

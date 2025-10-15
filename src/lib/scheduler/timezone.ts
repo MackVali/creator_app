@@ -207,6 +207,18 @@ export function getDatePartsInTimeZone(date: Date, timeZone: string) {
   }
 }
 
+export function getDateTimeInTimeZone(date: Date, timeZone: string) {
+  const parts = getDateTimeParts(date, timeZone)
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second,
+  }
+}
+
 export function weekdayInTimeZone(date: Date, timeZone: string) {
   const parts = getDateTimeParts(date, timeZone)
   const utcMidnight = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0, 0))

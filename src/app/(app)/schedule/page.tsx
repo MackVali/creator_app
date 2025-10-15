@@ -12,6 +12,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
   AnimatePresence,
@@ -29,6 +30,9 @@ import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import { RescheduleButton } from '@/components/schedule/RescheduleButton'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -37,6 +41,12 @@ import {
   updateTaskStage,
   type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
+import { useToastHelpers } from '@/components/ui/toast'
+import {
+  createSkillNote,
+  formatMemoNoteTitle,
+  getNextMemoNoteIndex,
+} from '@/lib/notesStorage'
 import {
   fetchInstancesForRange,
   fetchScheduledProjectIds,
@@ -375,6 +385,7 @@ type HabitTimelinePlacement = {
   durationMinutes: number
   window: RepoWindow
   truncated: boolean
+  skillId: string | null
 }
 
 type TimelineCardLayoutMode = 'full' | 'paired-left' | 'paired-right'
@@ -743,6 +754,7 @@ function computeHabitPlacementsForDay({
         durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
         window: entry.window,
         truncated,
+        skillId: habit.skillId ?? null,
       })
       placed = true
       break
@@ -1665,11 +1677,82 @@ export default function SchedulePage() {
   const [isJumpToDateOpen, setIsJumpToDateOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null)
+  const toast = useToastHelpers()
+  const [memoDialog, setMemoDialog] = useState<{
+    habitId: string
+    habitName: string
+    skillId: string | null
+    dateKey: string
+  } | null>(null)
+  const [memoNoteContent, setMemoNoteContent] = useState('')
+  const [memoSaving, setMemoSaving] = useState(false)
+  const [memoError, setMemoError] = useState<string | null>(null)
+  const [memoNoteIndex, setMemoNoteIndex] = useState(1)
+  const memoTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const sliderControls = useAnimationControls()
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
     next?: DayTimelineModel | null
   }>({})
+
+  useEffect(() => {
+    if (!memoDialog) {
+      setMemoNoteContent('')
+      setMemoError(null)
+      setMemoNoteIndex(1)
+      return
+    }
+    setMemoNoteContent('')
+    setMemoError(null)
+    if (!memoDialog.skillId) {
+      setMemoNoteIndex(1)
+      return
+    }
+    let active = true
+    getNextMemoNoteIndex(memoDialog.skillId, memoDialog.habitName)
+      .then((index) => {
+        if (active) {
+          setMemoNoteIndex(index)
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to determine memo note index', error)
+        if (active) {
+          setMemoNoteIndex(1)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [memoDialog])
+
+  const memoSkillName = useMemo(() => {
+    if (!memoDialog?.skillId) return null
+    const skill = skills.find(entry => entry.id === memoDialog.skillId)
+    return skill?.name ?? null
+  }, [memoDialog, skills])
+
+  const memoNoteTitle = useMemo(() => {
+    if (!memoDialog) return null
+    return formatMemoNoteTitle(memoDialog.habitName, memoNoteIndex)
+  }, [memoDialog, memoNoteIndex])
+
+  useEffect(() => {
+    if (!memoDialog) return
+    const frame = requestAnimationFrame(() => {
+      const target = memoTextareaRef.current
+      if (target) {
+        target.focus()
+        const valueLength = target.value.length
+        try {
+          target.setSelectionRange(valueLength, valueLength)
+        } catch (error) {
+          console.warn('Unable to set selection for memo textarea', error)
+        }
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [memoDialog])
 
   const peekDataDepsRef = useRef<{
     projectMap: typeof projectMap
@@ -2572,6 +2655,82 @@ export default function SchedulePage() {
     [getHabitCompletionStatus, updateHabitCompletionStatus]
   )
 
+  const handleHabitActivation = useCallback(
+    (
+      placement: HabitTimelinePlacement,
+      dateKey: string,
+      disableInteractions?: boolean
+    ) => {
+      if (disableInteractions) return
+      if (placement.habitType === 'MEMO') {
+        setMemoDialog({
+          habitId: placement.habitId,
+          habitName: placement.habitName,
+          skillId: placement.skillId ?? null,
+          dateKey,
+        })
+        return
+      }
+      toggleHabitCompletionStatus(dateKey, placement.habitId)
+    },
+    [toggleHabitCompletionStatus]
+  )
+
+  const handleCloseMemoDialog = useCallback(() => {
+    if (memoSaving) return
+    setMemoDialog(null)
+    setMemoError(null)
+    setMemoNoteContent('')
+    setMemoNoteIndex(1)
+  }, [memoSaving])
+
+  const handleSaveMemoNote = useCallback(async () => {
+    if (!memoDialog) return
+    setMemoError(null)
+    if (!memoDialog.skillId) {
+      setMemoError('Assign a skill to this habit before saving memos.')
+      return
+    }
+    if (!memoNoteContent.trim()) {
+      setMemoError('Write your memo before saving it.')
+      return
+    }
+    setMemoSaving(true)
+    try {
+      const title = formatMemoNoteTitle(memoDialog.habitName, memoNoteIndex)
+      const note = await createSkillNote(memoDialog.skillId, {
+        title,
+        content: memoNoteContent,
+      })
+      if (!note) {
+        throw new Error('Unable to create memo note')
+      }
+      updateHabitCompletionStatus(memoDialog.dateKey, memoDialog.habitId, 'completed')
+      toast.success('Memo saved')
+      setMemoDialog(null)
+      setMemoNoteContent('')
+      setMemoError(null)
+    } catch (error) {
+      console.error('Failed to save memo note', error)
+      setMemoError('We couldn’t save your memo. Try again in a moment.')
+    } finally {
+      setMemoSaving(false)
+    }
+  }, [memoDialog, memoNoteContent, memoNoteIndex, updateHabitCompletionStatus, toast])
+
+  useEffect(() => {
+    if (!memoDialog) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      handleCloseMemoDialog()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [memoDialog, handleCloseMemoDialog])
+
   const handleToggleBacklogTaskCompletion = useCallback(
     async (taskId: string) => {
       const task = taskMap[taskId]
@@ -3409,6 +3568,8 @@ export default function SchedulePage() {
                 'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
               const asyncCardBackground =
                 'radial-gradient(circle at 12% -20%, rgba(250, 204, 21, 0.32), transparent 58%), linear-gradient(135deg, rgba(74, 60, 9, 0.9) 0%, rgba(202, 138, 4, 0.82) 45%, rgba(250, 204, 21, 0.7) 100%)'
+              const memoCardBackground =
+                'radial-gradient(circle at 15% -20%, rgba(192, 132, 252, 0.35), transparent 60%), linear-gradient(140deg, rgba(50, 16, 82, 0.92) 0%, rgba(76, 29, 149, 0.88) 45%, rgba(167, 139, 250, 0.72) 100%)'
               const completedCardBackground =
                 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
               const scheduledShadow = [
@@ -3425,6 +3586,11 @@ export default function SchedulePage() {
                 '0 18px 36px rgba(58, 44, 14, 0.32)',
                 '0 8px 18px rgba(82, 62, 18, 0.24)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+              ].join(', ')
+              const memoShadow = [
+                '0 20px 40px rgba(74, 29, 149, 0.35)',
+                '0 10px 24px rgba(59, 7, 100, 0.28)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
               ].join(', ')
               const completedShadow = [
                 '0 26px 52px rgba(2, 32, 24, 0.6)',
@@ -3451,6 +3617,11 @@ export default function SchedulePage() {
                 cardShadow = asyncShadow
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-amber-200/45'
+              } else if (habitType === 'MEMO') {
+                cardBackground = memoCardBackground
+                cardShadow = memoShadow
+                cardOutline = '1px solid rgba(88, 28, 135, 0.6)'
+                habitBorderClass = 'border-violet-200/45'
               }
               const layoutMode = habitLayouts[index] ?? 'full'
               const habitCornerClass = getTimelineCardCornerClass(layoutMode)
@@ -3477,16 +3648,22 @@ export default function SchedulePage() {
                   aria-disabled={options?.disableInteractions ?? false}
                   style={cardStyle}
                   onClick={() => {
-                    if (options?.disableInteractions) return
-                    toggleHabitCompletionStatus(dayViewDateKey, placement.habitId)
+                    handleHabitActivation(
+                      placement,
+                      dayViewDateKey,
+                      options?.disableInteractions
+                    )
                   }}
                   onKeyDown={event => {
                     if (event.key !== 'Enter' && event.key !== ' ') {
                       return
                     }
                     event.preventDefault()
-                    if (options?.disableInteractions) return
-                    toggleHabitCompletionStatus(dayViewDateKey, placement.habitId)
+                    handleHabitActivation(
+                      placement,
+                      dayViewDateKey,
+                      options?.disableInteractions
+                    )
                   }}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -4145,7 +4322,7 @@ export default function SchedulePage() {
         handleToggleInstanceCompletion,
         handleToggleBacklogTaskCompletion,
         instanceStatusById,
-        toggleHabitCompletionStatus,
+        handleHabitActivation,
       ]
     )
 
@@ -4156,6 +4333,23 @@ export default function SchedulePage() {
       }),
     [renderDayTimeline, dayTimelineModel]
   )
+
+  const memoDialogTitleId = memoDialog
+    ? `memo-dialog-title-${memoDialog.habitId}`
+    : undefined
+  const memoDialogDescriptionId = memoDialog
+    ? `memo-dialog-description-${memoDialog.habitId}`
+    : undefined
+  const memoTextareaId = memoDialog
+    ? `memo-dialog-textarea-${memoDialog.habitId}`
+    : undefined
+  const memoNoteContentTrimmed = memoNoteContent.trim()
+  const isMemoSkillMissing = Boolean(memoDialog && !memoDialog.skillId)
+  const isMemoSaveDisabled =
+    !memoDialog ||
+    memoSaving ||
+    isMemoSkillMissing ||
+    memoNoteContentTrimmed.length === 0
 
   useEffect(() => {
     if (view !== 'day') {
@@ -4332,6 +4526,109 @@ export default function SchedulePage() {
         </div>
       </div>
       </ProtectedRoute>
+      {memoDialog && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 px-4 py-8 backdrop-blur-sm">
+              <div className="absolute inset-0" onClick={handleCloseMemoDialog} />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={memoDialogTitleId}
+                aria-describedby={memoDialogDescriptionId}
+                className="relative z-[1] w-full max-w-xl overflow-hidden rounded-3xl border border-white/10 bg-[#080b14]/95 p-6 text-white shadow-[0_32px_68px_rgba(6,8,20,0.78)]"
+                onClick={event => event.stopPropagation()}
+              >
+                <div className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(139,92,246,0.38),_transparent_70%)]" />
+                <div className="relative space-y-4">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/40 bg-violet-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-violet-100/80">
+                    Memo habit
+                  </div>
+                  <div className="space-y-2">
+                    <h2 id={memoDialogTitleId} className="text-2xl font-semibold tracking-tight text-white">
+                      {memoDialog.habitName}
+                    </h2>
+                    <p
+                      id={memoDialogDescriptionId}
+                      className="text-sm text-white/70"
+                    >
+                      Capture a quick note to log today’s progress for this skill.
+                    </p>
+                  </div>
+                  {memoNoteTitle ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                        Note title
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-white">
+                        {memoNoteTitle}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                      Skill destination
+                    </div>
+                    {memoSkillName ? (
+                      <p className="mt-1 text-sm font-medium text-white">{memoSkillName}</p>
+                    ) : (
+                      <p className="mt-1 text-sm text-amber-200">
+                        Assign this habit to a skill to save memo notes automatically.
+                      </p>
+                    )}
+                  </div>
+                  <form
+                    className="space-y-5"
+                    onSubmit={event => {
+                      event.preventDefault()
+                      void handleSaveMemoNote()
+                    }}
+                  >
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor={memoTextareaId}
+                        className="text-xs font-semibold uppercase tracking-[0.28em] text-white/60"
+                      >
+                        Memo note
+                      </Label>
+                      <Textarea
+                        id={memoTextareaId}
+                        ref={memoTextareaRef}
+                        value={memoNoteContent}
+                        onChange={event => {
+                          setMemoNoteContent(event.target.value)
+                          if (memoError) {
+                            setMemoError(null)
+                          }
+                        }}
+                        placeholder="Write a brief reflection, log, or journal entry..."
+                        className="min-h-[160px] rounded-2xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-white/40 focus-visible:border-violet-400/60 focus-visible:ring-2 focus-visible:ring-violet-400/40"
+                      />
+                    </div>
+                    {memoError ? (
+                      <p className="text-sm text-rose-300" role="alert">
+                        {memoError}
+                      </p>
+                    ) : null}
+                    <div className="flex justify-end gap-3 pt-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={handleCloseMemoDialog}
+                        disabled={memoSaving}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={isMemoSaveDisabled} aria-busy={memoSaving}>
+                        {memoSaving ? 'Saving…' : 'Save memo'}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
       <JumpToDateSheet
         open={isJumpToDateOpen}
         onOpenChange={open => setIsJumpToDateOpen(open)}
