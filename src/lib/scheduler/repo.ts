@@ -130,9 +130,18 @@ export async function fetchProjectsMap(
 ): Promise<Record<string, ProjectLite>> {
   const supabase = ensureClient(client);
 
-  const { data, error } = await supabase
+  const selectColumns =
+    'id, name, priority, stage, energy, duration_min, goal_id, monument_id, goals!projects_goal_id_fkey(monument_id)';
+
+  let { data, error } = await supabase
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min');
+    .select(selectColumns);
+
+  if (error) {
+    ({ data, error } = await supabase
+      .from('projects')
+      .select('id, name, priority, stage, energy, duration_min, goal_id'));
+  }
 
   if (error) throw error;
   const map: Record<string, ProjectLite> = {};
@@ -143,9 +152,36 @@ export async function fetchProjectsMap(
     stage: string;
     energy?: string | null;
     duration_min?: number | null;
+    goal_id?: string | null;
+    monument_id?: string | null;
+    goals?:
+      | { monument_id?: string | null }[]
+      | { monument_id?: string | null }
+      | null;
   };
 
   for (const p of (data ?? []) as ProjectRecord[]) {
+    const goalRelation = p.goals;
+    let relatedMonumentId: string | null = null;
+    if (Array.isArray(goalRelation)) {
+      for (const entry of goalRelation) {
+        if (!entry) continue;
+        if (typeof entry.monument_id === 'string' && entry.monument_id) {
+          relatedMonumentId = entry.monument_id;
+          break;
+        }
+      }
+    } else if (goalRelation && typeof goalRelation === 'object') {
+      const candidate = (goalRelation as { monument_id?: string | null }).monument_id;
+      if (typeof candidate === 'string' && candidate) {
+        relatedMonumentId = candidate;
+      }
+    }
+
+    const directMonumentId =
+      typeof p.monument_id === 'string' && p.monument_id ? p.monument_id : null;
+    const monumentId = directMonumentId ?? relatedMonumentId;
+
     map[p.id] = {
       id: p.id,
       name: p.name ?? undefined,
@@ -153,6 +189,8 @@ export async function fetchProjectsMap(
       stage: p.stage,
       energy: p.energy ?? null,
       duration_min: p.duration_min ?? null,
+      goal_id: p.goal_id ?? null,
+      monument_id: monumentId,
     };
   }
   return map;

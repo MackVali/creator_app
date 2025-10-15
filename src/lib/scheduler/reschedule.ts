@@ -6,11 +6,12 @@ import {
   fetchInstancesForRange,
   type ScheduleInstance,
 } from './instanceRepo'
-import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
+import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN, type ProjectItem } from './projects'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
   fetchProjectsMap,
+  fetchProjectSkillsForProjects,
   type WindowLite,
 } from './repo'
 import { placeItemInWindows } from './placement'
@@ -29,6 +30,15 @@ import {
   startOfDayInTimeZone,
 } from './timezone'
 import { normalizeCoordinates, resolveSunlightBounds, type GeoCoordinates } from './sunlight'
+import {
+  modeDurationMultiplier,
+  modeRequiresMonument,
+  modeRequiresSkills,
+  modeRestrictsProjectsToToday,
+  normalizeSchedulerMode,
+  restModeEnergy,
+  type SchedulerMode,
+} from './modes'
 
 type Client = SupabaseClient<Database>
 
@@ -127,12 +137,33 @@ export async function scheduleBacklog(
   userId: string,
   baseDate = new Date(),
   client?: Client,
-  options?: { timeZone?: string | null; location?: GeoCoordinates | null }
+  options?: {
+    timeZone?: string | null
+    location?: GeoCoordinates | null
+    mode?: SchedulerMode | null
+    monumentId?: string | null
+    skillIds?: string[] | null
+  }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
   const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
   const timeZone = normalizeTimeZone(options?.timeZone)
   const location = normalizeCoordinates(options?.location ?? null)
+  const mode = normalizeSchedulerMode(options?.mode)
+  const durationMultiplier = modeDurationMultiplier(mode)
+  const restrictProjectsToToday = modeRestrictsProjectsToToday(mode)
+  const energyOverride = mode === 'rest' ? restModeEnergy : undefined
+  const monumentId = modeRequiresMonument(mode)
+    ? typeof options?.monumentId === 'string' && options?.monumentId.trim()
+      ? options.monumentId.trim()
+      : null
+    : null
+  const selectedSkillIds = modeRequiresSkills(mode)
+    ? (options?.skillIds ?? []).filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0
+      )
+    : []
+  const skillFilterSet = new Set(selectedSkillIds)
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
   if (missed.error) {
@@ -148,6 +179,63 @@ export async function scheduleBacklog(
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
   for (const item of projectItems) projectItemMap[item.id] = item
 
+  const projectSkillMembership = new Map<string, Set<string>>()
+  if (modeRequiresSkills(mode)) {
+    for (const task of tasks) {
+      const projectId = task.project_id
+      const skillId = task.skill_id
+      if (!projectId || !skillId) continue
+      const normalized = skillId.trim()
+      if (!normalized) continue
+      const existing = projectSkillMembership.get(projectId) ?? new Set<string>()
+      existing.add(normalized)
+      projectSkillMembership.set(projectId, existing)
+    }
+
+    if (projectItems.length > 0) {
+      const relations = await fetchProjectSkillsForProjects(
+        projectItems.map(item => item.id),
+        supabase
+      )
+      for (const [projectId, skills] of Object.entries(relations)) {
+        if (!Array.isArray(skills)) continue
+        const existing = projectSkillMembership.get(projectId) ?? new Set<string>()
+        for (const skillId of skills) {
+          if (typeof skillId !== 'string') continue
+          const normalized = skillId.trim()
+          if (!normalized) continue
+          existing.add(normalized)
+        }
+        if (existing.size > 0) {
+          projectSkillMembership.set(projectId, existing)
+        }
+      }
+    }
+  }
+
+  const projectHasSelectedSkill = (projectId: string) => {
+    if (!modeRequiresSkills(mode)) return true
+    if (skillFilterSet.size === 0) return false
+    const skills = projectSkillMembership.get(projectId)
+    if (!skills || skills.size === 0) return false
+    for (const skillId of skillFilterSet) {
+      if (skills.has(skillId)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  const isProjectEligible = (project: (typeof projectItems)[number]) => {
+    if (monumentId && (project.monument_id ?? null) !== monumentId) {
+      return false
+    }
+    if (!projectHasSelectedSkill(project.id)) {
+      return false
+    }
+    return true
+  }
+
   type QueueItem = {
     id: string
     sourceType: 'PROJECT'
@@ -158,6 +246,12 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
+  const adjustDuration = (minutes: number) => {
+    if (!Number.isFinite(minutes) || minutes <= 0) return 0
+    if (durationMultiplier === 1) return minutes
+    const scaled = Math.round(minutes * durationMultiplier)
+    return Math.max(1, scaled)
+  }
   const baseStart = startOfDayInTimeZone(baseDate, timeZone)
   const dayOffsetFor = (startUTC: string): number | undefined => {
     const start = new Date(startUTC)
@@ -185,6 +279,7 @@ export async function scheduleBacklog(
     seenMissedProjects.add(m.source_id)
     const def = projectItemMap[m.source_id]
     if (!def) continue
+    if (!isProjectEligible(def)) continue
 
     let duration = Number(def.duration_min ?? 0)
     if (!Number.isFinite(duration) || duration <= 0) {
@@ -195,6 +290,8 @@ export async function scheduleBacklog(
         duration = DEFAULT_PROJECT_DURATION_MIN
       }
     }
+    const adjustedDuration = adjustDuration(duration)
+    if (adjustedDuration <= 0) continue
 
     const resolvedEnergy =
       ('energy' in def && def.energy)
@@ -208,7 +305,7 @@ export async function scheduleBacklog(
     queue.push({
       id: def.id,
       sourceType: 'PROJECT',
-      duration_min: duration,
+      duration_min: adjustedDuration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
       instanceId: m.id,
@@ -238,25 +335,19 @@ export async function scheduleBacklog(
 
   const queuedProjectIds = new Set(queue.map(item => item.id))
 
-  const enqueue = (
-    def:
-      | {
-          id: string
-          duration_min: number
-          energy: string | null | undefined
-          weight: number
-        }
-      | null
-  ) => {
+  const enqueue = (def: ProjectItem | null) => {
     if (!def) return
+    if (!isProjectEligible(def)) return
     const duration = Number(def.duration_min ?? 0)
     if (!Number.isFinite(duration) || duration <= 0) return
+    const adjustedDuration = adjustDuration(duration)
+    if (adjustedDuration <= 0) return
     if (queuedProjectIds.has(def.id)) return
     const energy = (def.energy ?? 'NO').toString().toUpperCase()
     queue.push({
       id: def.id,
       sourceType: 'PROJECT',
-      duration_min: duration,
+      duration_min: adjustedDuration,
       energy,
       weight: def.weight ?? 0,
     })
@@ -340,6 +431,8 @@ export async function scheduleBacklog(
       windowCache,
       client: supabase,
       sunlightLocation: location,
+      durationMultiplier,
+      energyOverride,
     })
 
     if (placements.length > 0) {
@@ -354,6 +447,7 @@ export async function scheduleBacklog(
     MAX_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
   )
+  const projectLookaheadDays = restrictProjectsToToday ? 1 : lookaheadDays
 
   if (habits.length > 0) {
     for (let offset = 0; offset < lookaheadDays; offset += 1) {
@@ -369,7 +463,7 @@ export async function scheduleBacklog(
 
   for (const item of queue) {
     let scheduled = false
-    for (let offset = 0; offset < lookaheadDays && !scheduled; offset += 1) {
+    for (let offset = 0; offset < projectLookaheadDays && !scheduled; offset += 1) {
       let windowAvailability = windowAvailabilityByDay.get(offset)
       if (!windowAvailability) {
         windowAvailability = new Map<string, Date>()
@@ -386,6 +480,7 @@ export async function scheduleBacklog(
           availability: windowAvailability,
           now: offset === 0 ? baseDate : undefined,
           cache: windowCache,
+          energyOverride,
         }
       )
       if (windows.length === 0) continue
@@ -600,6 +695,8 @@ async function scheduleHabitsForDay(params: {
   windowCache: Map<string, WindowLite[]>
   client: Client
   sunlightLocation?: GeoCoordinates | null
+  durationMultiplier?: number
+  energyOverride?: (energy: string | null | undefined) => string
 }): Promise<HabitDraftPlacement[]> {
   const {
     habits,
@@ -611,15 +708,26 @@ async function scheduleHabitsForDay(params: {
     windowCache,
     client,
     sunlightLocation,
+    durationMultiplier = 1,
+    energyOverride: energyOverrideFn,
   } = params
   if (!habits.length) return []
 
   const cacheKey = dateCacheKey(day)
-  let windows = windowCache.get(cacheKey)
-  if (!windows) {
-    windows = await fetchWindowsForDate(day, client, timeZone)
-    windowCache.set(cacheKey, windows)
+  let baseWindows = windowCache.get(cacheKey)
+  if (!baseWindows) {
+    baseWindows = await fetchWindowsForDate(day, client, timeZone)
+    windowCache.set(cacheKey, baseWindows)
   }
+
+  const windows = baseWindows
+    ? energyOverrideFn
+      ? baseWindows.map(win => ({
+          ...win,
+          energy: energyOverrideFn(win.energy ?? null),
+        }))
+      : baseWindows
+    : []
 
   if (!windows || windows.length === 0) return []
 
@@ -675,7 +783,12 @@ async function scheduleHabitsForDay(params: {
       Number.isFinite(rawDuration) && rawDuration > 0
         ? rawDuration
         : DEFAULT_HABIT_DURATION_MIN
-    const durationMs = durationMin * 60000
+    const adjustedDuration =
+      durationMultiplier === 1
+        ? durationMin
+        : Math.max(1, Math.round(durationMin * durationMultiplier))
+    const effectiveDurationMin = adjustedDuration
+    const durationMs = effectiveDurationMin * 60000
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
@@ -703,7 +816,7 @@ async function scheduleHabitsForDay(params: {
     const compatibleWindows = await fetchCompatibleWindowsForItem(
       client,
       day,
-      { energy: resolvedEnergy, duration_min: durationMin },
+      { energy: resolvedEnergy, duration_min: effectiveDurationMin },
       zone,
       {
         availability,
@@ -712,6 +825,7 @@ async function scheduleHabitsForDay(params: {
         locationContext,
         daylight: daylightConstraint,
         matchEnergyLevel: true,
+        energyOverride: energyOverrideFn,
       }
     )
 
@@ -821,6 +935,7 @@ async function fetchCompatibleWindowsForItem(
     locationContext?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
+    energyOverride?: (energy: string | null | undefined) => string
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -832,6 +947,13 @@ async function fetchCompatibleWindowsForItem(
     windows = await fetchWindowsForDate(date, supabase, timeZone)
     cache?.set(cacheKey, windows)
   }
+  const energyOverrideFn = options?.energyOverride
+  const effectiveWindows = energyOverrideFn
+    ? windows.map(win => ({
+        ...win,
+        energy: energyOverrideFn(win.energy ?? null),
+      }))
+    : windows
   const itemIdx = energyIndex(item.energy)
   const now = options?.now ? new Date(options.now) : null
   const nowMs = now?.getTime()
@@ -852,7 +974,7 @@ async function fetchCompatibleWindowsForItem(
     energyIdx: number
   }>
 
-  for (const win of windows) {
+  for (const win of effectiveWindows) {
     const energyRaw = win.energy ? String(win.energy).toUpperCase().trim() : ''
     const hasEnergyLabel = energyRaw.length > 0
     const energyLabel = hasEnergyLabel ? energyRaw : null
