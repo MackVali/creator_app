@@ -14,6 +14,9 @@ importers:
       is-ci:
         specifier: ^3.0.1
         version: 3.0.1
+      next:
+        specifier: ^15.5.0
+        version: 15.5.0(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
 
   premium-app:
     dependencies:

@@ -8,7 +8,8 @@
   },
   "devDependencies": {
     "husky": "^9.1.7",
-    "is-ci": "^3.0.1"
+    "is-ci": "^3.0.1",
+    "next": "^15.5.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
