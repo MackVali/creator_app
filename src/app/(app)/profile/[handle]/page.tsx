@@ -96,6 +96,30 @@ export default function ProfileByHandlePage() {
     }
   };
 
+  const modules = useMemo<ProfileModule[]>(() => {
+    if (!profile) return [];
+    return buildProfileModules({ profile, contentCards, socialLinks });
+  }, [profile, contentCards, socialLinks]);
+
+  const activeModuleCount = useMemo(
+    () =>
+      modules.filter((module) => {
+        switch (module.type) {
+          case "featured_carousel":
+            return module.slides.length > 0;
+          case "link_cards":
+            return module.cards.some((card) => card.is_active);
+          case "social_proof_strip":
+            return module.items.length > 0;
+          case "embedded_media_accordion":
+            return module.sections.length > 0;
+          default:
+            return false;
+        }
+      }).length,
+    [modules],
+  );
+
   if (loading) {
     return <ProfileSkeleton />;
   }
@@ -137,30 +161,6 @@ export default function ProfileByHandlePage() {
   ).length;
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
   const isOwner = session?.user?.id === profile.user_id;
-
-  const modules = useMemo<ProfileModule[]>(() => {
-    if (!profile) return [];
-    return buildProfileModules({ profile, contentCards, socialLinks });
-  }, [profile, contentCards, socialLinks]);
-
-  const activeModuleCount = useMemo(
-    () =>
-      modules.filter((module) => {
-        switch (module.type) {
-          case "featured_carousel":
-            return module.slides.length > 0;
-          case "link_cards":
-            return module.cards.some((card) => card.is_active);
-          case "social_proof_strip":
-            return module.items.length > 0;
-          case "embedded_media_accordion":
-            return module.sections.length > 0;
-          default:
-            return false;
-        }
-      }).length,
-    [modules],
-  );
 
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
