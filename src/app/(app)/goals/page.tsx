@@ -132,6 +132,7 @@ async function syncProjectsAndTasks(
         stage: project.stage ?? projectStatusToStage(project.status),
         energy: project.energyCode ?? energyToDbValue(project.energy),
         priority: project.priorityCode ?? "NO",
+        due_date: project.dueDate ?? null,
       }))
     );
     if (error) {
@@ -150,6 +151,7 @@ async function syncProjectsAndTasks(
             stage: project.stage ?? projectStatusToStage(project.status),
             energy: project.energyCode ?? energyToDbValue(project.energy),
             priority: project.priorityCode ?? "NO",
+            due_date: project.dueDate ?? null,
           })
           .eq("id", project.id);
         if (error) {
@@ -165,12 +167,14 @@ async function syncProjectsAndTasks(
     stage: string;
     project_id: string;
     user_id: string;
+    due_date?: string | null;
   }[] = [];
   const taskUpdates: {
     id: string;
     name: string;
     stage: string;
     project_id: string;
+    due_date?: string | null;
   }[] = [];
 
   projects.forEach((project) => {
@@ -183,6 +187,7 @@ async function syncProjectsAndTasks(
           stage: task.stage,
           project_id: project.id,
           user_id: userId,
+          due_date: task.dueDate ?? null,
         });
       } else {
         taskUpdates.push({
@@ -190,6 +195,7 @@ async function syncProjectsAndTasks(
           name: trimmedName,
           stage: task.stage,
           project_id: project.id,
+          due_date: task.dueDate ?? null,
         });
       }
     });
@@ -211,6 +217,7 @@ async function syncProjectsAndTasks(
             name: task.name,
             stage: task.stage,
             project_id: task.project_id,
+            due_date: task.due_date ?? null,
           })
           .eq("id", task.id);
         if (error) {
@@ -312,11 +319,12 @@ export default function GoalsPage() {
           stage: string;
           name: string;
           skill_id: string | null;
+          due_date: string | null;
         }[] = [];
         try {
           const tasksRes = await supabase
             .from("tasks")
-            .select("id, project_id, stage, name, skill_id")
+            .select("id, project_id, stage, name, skill_id, due_date")
             .eq("user_id", user.id);
           tasksData = tasksRes.data || [];
         } catch (err) {
@@ -355,7 +363,13 @@ export default function GoalsPage() {
           (
             acc: Record<
               string,
-              { id: string; name: string; stage: string; skill_id: string | null }[]
+              {
+                id: string;
+                name: string;
+                stage: string;
+                skillId: string | null;
+                dueDate?: string;
+              }[]
             >,
             task
           ) => {
@@ -366,6 +380,7 @@ export default function GoalsPage() {
               name: task.name,
               stage: task.stage,
               skillId: task.skill_id ?? null,
+              dueDate: task.due_date ?? undefined,
             });
             return acc;
           },
@@ -414,6 +429,7 @@ export default function GoalsPage() {
             priorityCode: p.priority ?? undefined,
             isNew: false,
             tasks: normalizedTasks,
+            dueDate: p.due_date ?? undefined,
           };
           const list = projectsByGoal.get(p.goal_id) || [];
           list.push(proj);
@@ -454,6 +470,7 @@ export default function GoalsPage() {
             monumentId: g.monument_id ?? null,
             skills: Array.from(skillsByGoal.get(g.id) || []),
             why: g.why || undefined,
+            dueDate: g.due_date ?? undefined,
           };
         });
 
@@ -705,6 +722,7 @@ export default function GoalsPage() {
                         : "ACTIVE",
                     why: goal.why ?? null,
                     monument_id: goal.monumentId || null,
+                    due_date: goal.dueDate ?? null,
                   })
                   .eq("id", goal.id);
 

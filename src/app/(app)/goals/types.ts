@@ -3,6 +3,7 @@ export interface Task {
   name: string;
   stage: string;
   skillId?: string | null;
+  dueDate?: string;
   isNew?: boolean;
 }
 

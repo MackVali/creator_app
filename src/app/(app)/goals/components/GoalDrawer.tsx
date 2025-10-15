@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Calendar, ChevronDown, Plus, Sparkles, X } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -151,10 +151,41 @@ const computeGoalProgress = (projects: Project[]): number => {
   return Math.round(total / projects.length);
 };
 
-type EditableTask = Task & { isNew?: boolean };
+const formatDateForInput = (value?: string | null): string => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toIsoDateString = (value: string): string | null => {
+  if (!value) return null;
+  const [yearStr, monthStr, dayStr] = value.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    return null;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+};
+
+type EditableTask = Task & { isNew?: boolean; showAdvanced?: boolean };
 type EditableProject = Project & {
   tasks: EditableTask[];
   isNew?: boolean;
+  showAdvanced?: boolean;
 };
 
 export function GoalDrawer({
@@ -172,6 +203,8 @@ export function GoalDrawer({
   const [energy, setEnergy] = useState<Goal["energy"]>("No");
   const [active, setActive] = useState(true);
   const [why, setWhy] = useState("");
+  const [goalDueDate, setGoalDueDate] = useState<string | null>(null);
+  const [goalAdvancedOpen, setGoalAdvancedOpen] = useState(false);
   const [monumentId, setMonumentId] = useState<string>("");
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
@@ -187,13 +220,17 @@ export function GoalDrawer({
       setEnergy(initialGoal.energy);
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
+      setGoalDueDate(initialGoal.dueDate ?? null);
+      setGoalAdvancedOpen(Boolean(initialGoal.dueDate));
       setMonumentId(initialGoal.monumentId || "");
       setProjectsState(
         (initialGoal.projects || []).map((project) => {
           const stage = project.stage ?? projectStatusToStage(project.status);
           const tasks = (project.tasks || []).map((task) => ({
             ...task,
+            dueDate: task.dueDate,
             isNew: false,
+            showAdvanced: Boolean(task.dueDate),
           }));
           const progress = computeProjectProgress(tasks);
           return {
@@ -206,6 +243,7 @@ export function GoalDrawer({
             progress,
             tasks,
             isNew: false,
+            showAdvanced: Boolean(project.dueDate),
           } satisfies EditableProject;
         })
       );
@@ -216,6 +254,8 @@ export function GoalDrawer({
       setEnergy("No");
       setActive(true);
       setWhy("");
+      setGoalDueDate(null);
+      setGoalAdvancedOpen(false);
       setMonumentId("");
       setProjectsState([]);
     }
@@ -227,6 +267,8 @@ export function GoalDrawer({
     if (!monuments.length) return [] as { id: string; title: string }[];
     return [...monuments].sort((a, b) => a.title.localeCompare(b.title));
   }, [monuments]);
+
+  const goalDueDateValue = formatDateForInput(goalDueDate);
 
   const projectsValid = projectsState.every((project) => {
     const hasValidName = project.name.trim().length > 0;
@@ -256,6 +298,8 @@ export function GoalDrawer({
       stage,
       priorityCode: "NO",
       isNew: true,
+      dueDate: undefined,
+      showAdvanced: false,
     };
     setProjectsState((projects) => [...projects, nextProject]);
   };
@@ -299,6 +343,111 @@ export function GoalDrawer({
     );
   };
 
+  const handleGoalDueDateChange = (value: string) => {
+    const next = toIsoDateString(value);
+    setGoalDueDate(next);
+    if (next) {
+      setGoalAdvancedOpen(true);
+    }
+  };
+
+  const clearGoalDueDate = () => {
+    setGoalDueDate(null);
+  };
+
+  const toggleProjectAdvanced = (projectId: string) => {
+    setProjectsState((projects) =>
+      projects.map((project) =>
+        project.id === projectId
+          ? { ...project, showAdvanced: !project.showAdvanced }
+          : project
+      )
+    );
+  };
+
+  const handleProjectDueDateChange = (projectId: string, value: string) => {
+    const next = toIsoDateString(value);
+    setProjectsState((projects) =>
+      projects.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              dueDate: next ?? undefined,
+              showAdvanced: next ? true : project.showAdvanced,
+            }
+          : project
+      )
+    );
+  };
+
+  const clearProjectDueDate = (projectId: string) => {
+    setProjectsState((projects) =>
+      projects.map((project) =>
+        project.id === projectId
+          ? { ...project, dueDate: undefined }
+          : project
+      )
+    );
+  };
+
+  const toggleTaskAdvanced = (projectId: string, taskId: string) => {
+    setProjectsState((projects) =>
+      projects.map((project) => {
+        if (project.id !== projectId) return project;
+        const nextTasks = project.tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, showAdvanced: !task.showAdvanced }
+            : task
+        );
+        return {
+          ...project,
+          tasks: nextTasks,
+        };
+      })
+    );
+  };
+
+  const handleTaskDueDateChange = (
+    projectId: string,
+    taskId: string,
+    value: string
+  ) => {
+    const next = toIsoDateString(value);
+    setProjectsState((projects) =>
+      projects.map((project) => {
+        if (project.id !== projectId) return project;
+        const nextTasks = project.tasks.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                dueDate: next ?? undefined,
+                showAdvanced: next ? true : task.showAdvanced,
+              }
+            : task
+        );
+        return {
+          ...project,
+          tasks: nextTasks,
+        };
+      })
+    );
+  };
+
+  const clearTaskDueDate = (projectId: string, taskId: string) => {
+    setProjectsState((projects) =>
+      projects.map((project) => {
+        if (project.id !== projectId) return project;
+        const nextTasks = project.tasks.map((task) =>
+          task.id === taskId ? { ...task, dueDate: undefined } : task
+        );
+        return {
+          ...project,
+          tasks: nextTasks,
+        };
+      })
+    );
+  };
+
   const handleRemoveProject = (projectId: string) => {
     let removedProject: EditableProject | null = null;
     setProjectsState((projects) => {
@@ -328,6 +477,8 @@ export function GoalDrawer({
       name: "",
       stage: DEFAULT_TASK_STAGE,
       isNew: true,
+      dueDate: undefined,
+      showAdvanced: false,
     };
     setProjectsState((projects) =>
       projects.map((project) => {
@@ -425,6 +576,7 @@ export function GoalDrawer({
         name: task.name.trim(),
         stage: task.stage,
         skillId: task.skillId,
+        dueDate: task.dueDate,
       }));
       const progress = computeProjectProgress(sanitizedTasks);
       return {
@@ -457,7 +609,7 @@ export function GoalDrawer({
       id: initialGoal?.id || Date.now().toString(),
       title: title.trim(),
       emoji: emoji.trim() || undefined,
-      dueDate: initialGoal?.dueDate,
+      dueDate: goalDueDate ?? undefined,
       priority,
       energy,
       progress: goalProgress,
@@ -623,6 +775,69 @@ export function GoalDrawer({
                 </div>
               </div>
 
+              <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <button
+                  type="button"
+                  onClick={() => setGoalAdvancedOpen((prev) => !prev)}
+                  className="flex w-full items-center justify-between gap-3 text-left text-sm font-semibold text-white"
+                >
+                  <span className="flex items-center gap-2 text-white/80">
+                    <Sparkles className="h-4 w-4 text-indigo-300" aria-hidden="true" />
+                    Advanced goal options
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 text-white/50 transition-transform duration-200",
+                      goalAdvancedOpen ? "rotate-180" : "rotate-0"
+                    )}
+                    aria-hidden="true"
+                  />
+                </button>
+                {goalAdvancedOpen ? (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <div className="flex-1 space-y-2">
+                        <Label
+                          htmlFor="goal-due-date"
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60"
+                        >
+                          Due date
+                        </Label>
+                        <div className="relative">
+                          <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                          <Input
+                            id="goal-due-date"
+                            type="date"
+                            value={goalDueDateValue}
+                            onChange={(event) => handleGoalDueDateChange(event.target.value)}
+                            className="h-11 rounded-xl border-white/10 bg-white/[0.04] pl-10 text-sm"
+                          />
+                        </div>
+                      </div>
+                      {goalDueDate ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 rounded-full border border-white/10 bg-white/[0.02] px-4 text-xs font-semibold text-white/80 hover:border-rose-400/40 hover:text-white"
+                          onClick={clearGoalDueDate}
+                        >
+                          Clear due date
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-white/60 sm:max-w-xs">
+                          Deadlines gently raise this goal’s weight so it rises to the top as the date approaches.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-white/60">
+                    Use due dates to gradually pull this goal forward when timing matters.
+                  </p>
+                )}
+              </div>
+
               <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
                 <div>
                   <p className="text-sm font-medium text-white">Goal visibility</p>
@@ -687,6 +902,8 @@ export function GoalDrawer({
                     {projectsState.map((project, index) => {
                       const stageValue =
                         project.stage ?? projectStatusToStage(project.status);
+                      const projectAdvancedOpen = project.showAdvanced ?? false;
+                      const projectDueDateValue = formatDateForInput(project.dueDate);
                       return (
                         <div
                           key={project.id}
@@ -772,6 +989,72 @@ export function GoalDrawer({
                             </div>
                           </div>
 
+                          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleProjectAdvanced(project.id)}
+                              className="flex w-full items-center justify-between gap-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-white/70"
+                            >
+                              <span className="flex items-center gap-2 text-white/70">
+                                <Sparkles className="h-3.5 w-3.5 text-indigo-300" aria-hidden="true" />
+                                Advanced
+                              </span>
+                              <ChevronDown
+                                className={cn(
+                                  "h-3.5 w-3.5 text-white/50 transition-transform duration-200",
+                                  projectAdvancedOpen ? "rotate-180" : "rotate-0"
+                                )}
+                                aria-hidden="true"
+                              />
+                            </button>
+                            {projectAdvancedOpen ? (
+                              <div className="mt-3 space-y-2">
+                                <Label
+                                  htmlFor={`project-${project.id}-due-date`}
+                                  className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60"
+                                >
+                                  Due date
+                                </Label>
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                  <div className="relative flex-1">
+                                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                                    <Input
+                                      id={`project-${project.id}-due-date`}
+                                      type="date"
+                                      value={projectDueDateValue}
+                                      onChange={(event) =>
+                                        handleProjectDueDateChange(
+                                          project.id,
+                                          event.target.value
+                                        )
+                                      }
+                                      className="h-10 rounded-xl border-white/10 bg-white/[0.04] pl-10 text-sm"
+                                    />
+                                  </div>
+                                  {project.dueDate ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-9 rounded-full border border-white/10 bg-white/[0.03] px-3 text-[11px] font-semibold text-white/75 hover:border-rose-400/40 hover:text-white"
+                                      onClick={() => clearProjectDueDate(project.id)}
+                                    >
+                                      Clear
+                                    </Button>
+                                  ) : (
+                                    <p className="text-[11px] text-white/60 sm:max-w-[200px]">
+                                      Due dates steadily increase this project’s scheduling weight.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-[11px] text-white/55">
+                                Unlock due dates and other timing tools.
+                              </p>
+                            )}
+                          </div>
+
                           <div className="space-y-3">
                             <div className="flex items-center justify-between gap-3">
                               <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
@@ -796,86 +1079,157 @@ export function GoalDrawer({
                               </p>
                             ) : (
                               <div className="space-y-3">
-                                {project.tasks.map((task, taskIndex) => (
-                                  <div
-                                    key={task.id}
-                                    className="space-y-3 rounded-xl border border-white/10 bg-white/[0.04] p-3"
-                                  >
-                                    <div className="flex items-start gap-3">
-                                      <div className="flex-1 space-y-1">
-                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                                          Task {taskIndex + 1}
-                                        </Label>
-                                        <Input
-                                          value={task.name}
-                                          onChange={(event) =>
-                                            handleTaskNameChange(
-                                              project.id,
-                                              task.id,
-                                              event.target.value
-                                            )
+                                {project.tasks.map((task, taskIndex) => {
+                                  const taskAdvancedOpen = task.showAdvanced ?? false;
+                                  const taskDueDateValue = formatDateForInput(task.dueDate);
+                                  return (
+                                    <div
+                                      key={task.id}
+                                      className="space-y-3 rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                    >
+                                      <div className="flex items-start gap-3">
+                                        <div className="flex-1 space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                            Task {taskIndex + 1}
+                                          </Label>
+                                          <Input
+                                            value={task.name}
+                                            onChange={(event) =>
+                                              handleTaskNameChange(
+                                                project.id,
+                                                task.id,
+                                                event.target.value
+                                              )
+                                            }
+                                            placeholder="Describe the task"
+                                            className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm"
+                                          />
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="mt-1 size-8 rounded-full border border-white/10 bg-white/[0.05] text-white/60 hover:border-rose-400/50 hover:text-rose-200"
+                                          onClick={() =>
+                                            handleRemoveTask(project.id, task.id)
                                           }
-                                          placeholder="Describe the task"
-                                          className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm"
-                                        />
-                                      </div>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="mt-1 size-8 rounded-full border border-white/10 bg-white/[0.05] text-white/60 hover:border-rose-400/50 hover:text-rose-200"
-                                        onClick={() =>
-                                          handleRemoveTask(project.id, task.id)
-                                        }
-                                        aria-label={`Remove task ${taskIndex + 1}`}
-                                      >
-                                        <X className="h-4 w-4" aria-hidden="true" />
-                                      </Button>
-                                    </div>
-
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                      <div className="space-y-1">
-                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                                          Stage
-                                        </Label>
-                                        <Select
-                                          value={task.stage}
-                                          onValueChange={(value) =>
-                                            handleTaskStageChange(
-                                              project.id,
-                                              task.id,
-                                              value
-                                            )
-                                          }
-                                          triggerClassName="h-9 rounded-lg border-white/10 bg-white/[0.05] text-left text-sm"
+                                          aria-label={`Remove task ${taskIndex + 1}`}
                                         >
-                                          <SelectContent className="bg-[#0f172a] text-sm text-white">
-                                            {TASK_STAGE_OPTIONS.map((option) => (
-                                              <SelectItem
-                                                key={option.value}
-                                                value={option.value}
-                                              >
-                                                {option.label}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                          <X className="h-4 w-4" aria-hidden="true" />
+                                        </Button>
                                       </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
-                                          Status
-                                        </Label>
-                                        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/60">
-                                          {task.stage === "PERFECT"
-                                            ? "Complete"
-                                            : task.stage === "PRODUCE"
-                                            ? "In progress"
-                                            : "Preparing"}
+
+                                      <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                            Stage
+                                          </Label>
+                                          <Select
+                                            value={task.stage}
+                                            onValueChange={(value) =>
+                                              handleTaskStageChange(
+                                                project.id,
+                                                task.id,
+                                                value
+                                              )
+                                            }
+                                            triggerClassName="h-9 rounded-lg border-white/10 bg-white/[0.05] text-left text-sm"
+                                          >
+                                            <SelectContent className="bg-[#0f172a] text-sm text-white">
+                                              {TASK_STAGE_OPTIONS.map((option) => (
+                                                <SelectItem
+                                                  key={option.value}
+                                                  value={option.value}
+                                                >
+                                                  {option.label}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                            Status
+                                          </Label>
+                                          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/60">
+                                            {task.stage === "PERFECT"
+                                              ? "Complete"
+                                              : task.stage === "PRODUCE"
+                                              ? "In progress"
+                                              : "Preparing"}
+                                          </div>
                                         </div>
                                       </div>
+
+                                      <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleTaskAdvanced(project.id, task.id)}
+                                          className="flex w-full items-center justify-between gap-3 text-left text-[11px] font-semibold uppercase tracking-[0.35em] text-white/70"
+                                        >
+                                          <span className="flex items-center gap-2 text-white/70">
+                                            <Sparkles className="h-3 w-3 text-indigo-300" aria-hidden="true" />
+                                            Advanced
+                                          </span>
+                                          <ChevronDown
+                                            className={cn(
+                                              "h-3 w-3 text-white/50 transition-transform duration-200",
+                                              taskAdvancedOpen ? "rotate-180" : "rotate-0"
+                                            )}
+                                            aria-hidden="true"
+                                          />
+                                        </button>
+                                        {taskAdvancedOpen ? (
+                                          <div className="mt-3 space-y-2">
+                                            <Label
+                                              htmlFor={`task-${task.id}-due-date`}
+                                              className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60"
+                                            >
+                                              Due date
+                                            </Label>
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                              <div className="relative flex-1">
+                                                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                                                <Input
+                                                  id={`task-${task.id}-due-date`}
+                                                  type="date"
+                                                  value={taskDueDateValue}
+                                                  onChange={(event) =>
+                                                    handleTaskDueDateChange(
+                                                      project.id,
+                                                      task.id,
+                                                      event.target.value
+                                                    )
+                                                  }
+                                                  className="h-9 rounded-lg border-white/10 bg-white/[0.04] pl-9 text-sm"
+                                                />
+                                              </div>
+                                              {task.dueDate ? (
+                                                <Button
+                                                  type="button"
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="h-8 rounded-full border border-white/10 bg-white/[0.03] px-3 text-[11px] font-semibold text-white/75 hover:border-rose-400/40 hover:text-white"
+                                                  onClick={() => clearTaskDueDate(project.id, task.id)}
+                                                >
+                                                  Clear
+                                                </Button>
+                                              ) : (
+                                                <p className="text-[11px] text-white/60 sm:max-w-[200px]">
+                                                  Due dates nudge this task toward the top of your queue as the deadline closes in.
+                                                </p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <p className="mt-2 text-[11px] text-white/55">
+                                            Fine-tune timing with due dates.
+                                          </p>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
