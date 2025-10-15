@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:tp": "next dev --turbopack",
-    "build": "next build",
+    "build": "pnpm --filter premium-app exec next build",
     "start": "next start",
     "preview": "pnpm build && pnpm start",
     "clean": "rm -rf .next",
