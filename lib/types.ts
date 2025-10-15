@@ -232,6 +232,7 @@ export interface Profile {
   user_id: string;
   username: string;
   name?: string | null;
+  tagline?: string | null;
   dob?: string | null;
   city?: string | null;
   location_display?: string | null;
@@ -247,6 +248,13 @@ export interface Profile {
   hero_media_duration_seconds?: number | null;
   hero_parallax_intensity?: number | null;
   hero_motion_enabled?: boolean | null;
+  hero_background_overlay?: string | null;
+  hero_video_autoplay?: boolean | null;
+  hero_video_loop?: boolean | null;
+  hero_primary_cta_label?: string | null;
+  hero_primary_cta_url?: string | null;
+  hero_secondary_cta_label?: string | null;
+  hero_secondary_cta_url?: string | null;
   verified?: boolean;
   avatar_frame_style?: "circle" | "rounded-square" | "halo" | null;
   partner_badges?: ProfilePartnerBadge[] | null;
@@ -255,10 +263,24 @@ export interface Profile {
   theme_color?: string;
   font_family?: string;
   accent_color?: string;
+  business_name?: string | null;
+  business_industry?: string | null;
+  scheduling_provider?: string | null;
+  scheduling_link?: string | null;
+  contact_email_public?: string | null;
+  contact_phone_public?: string | null;
+  availability_last_synced_at?: string | null;
+  active_theme_settings_id?: string | null;
   prefers_dark_mode?: boolean;
   notifications_enabled?: boolean;
   created_at: string;
   updated_at?: string;
+  theme_settings?: ProfileThemeSettings | null;
+  cta_buttons?: ProfileCTAButton[] | null;
+  offers?: ProfileOffer[] | null;
+  testimonials?: ProfileTestimonial[] | null;
+  business_info?: ProfileBusinessInfo | null;
+  availability?: ProfileAvailabilityWindow[] | null;
 }
 
 // Social Links
@@ -304,6 +326,135 @@ export interface ProfileTheme {
   font_family: string;
   is_premium: boolean;
   created_at: string;
+}
+
+export type ProfileOfferType = "product" | "service";
+
+export type ProfileAvailabilityStatus = "available" | "booked" | "blocked";
+
+export interface ProfileThemeSettings {
+  id: string;
+  profile_id: string;
+  user_id: string;
+  theme_id?: string | null;
+  gradient_preset?: string | null;
+  hero_background_mode?: string | null;
+  custom_colors?: Record<string, string> | null;
+  ambient_glow_strength?: string | null;
+  motion_level?: string | null;
+  typography_scale?: string | null;
+  is_public?: boolean | null;
+  created_at: string;
+  updated_at: string;
+  theme?: ProfileTheme | null;
+}
+
+export interface ProfileCTAButton {
+  id: string;
+  profile_id: string;
+  user_id: string;
+  label: string;
+  href: string;
+  intent?: string | null;
+  icon?: string | null;
+  analytics_event?: string | null;
+  sort_order: number;
+  is_primary: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileOffer {
+  id: string;
+  profile_id: string;
+  user_id: string;
+  offer_type: ProfileOfferType;
+  title: string;
+  description?: string | null;
+  price_cents?: number | null;
+  currency?: string | null;
+  media_url?: string | null;
+  cta_label?: string | null;
+  cta_url?: string | null;
+  inventory_status?: string | null;
+  duration_minutes?: number | null;
+  position: number;
+  is_featured: boolean;
+  is_active: boolean;
+  tags?: string[] | null;
+  analytics_event?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileTestimonial {
+  id: string;
+  profile_id: string;
+  user_id: string;
+  quote: string;
+  author_name: string;
+  author_title?: string | null;
+  source_url?: string | null;
+  rating?: number | null;
+  highlight: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileBusinessInfo {
+  id: string;
+  profile_id: string;
+  user_id: string;
+  legal_name?: string | null;
+  display_name?: string | null;
+  tagline?: string | null;
+  industry?: string | null;
+  website_url?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  timezone?: string | null;
+  booking_policy?: string | null;
+  privacy_notice?: string | null;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileAvailabilityWindow {
+  id: string;
+  profile_id: string;
+  user_id: string;
+  start_time: string;
+  end_time: string;
+  timezone: string;
+  status: ProfileAvailabilityStatus;
+  capacity: number;
+  booking_url?: string | null;
+  external_id?: string | null;
+  is_virtual: boolean;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicProfileReadModel {
+  profile: Profile;
+  theme: ProfileThemeSettings | null;
+  ctas: ProfileCTAButton[];
+  offers: ProfileOffer[];
+  testimonials: ProfileTestimonial[];
+  businessInfo: ProfileBusinessInfo | null;
+  availability: ProfileAvailabilityWindow[];
+  generated_at: string;
 }
 
 // Profile Form Data

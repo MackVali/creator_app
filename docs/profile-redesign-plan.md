@@ -70,6 +70,9 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 - New relational tables for products/services, testimonials, events, and availability slots.
 - Optimized public profile query with caching layer for fast global loads.
 
+**Deliverable**
+- [Profile Data Model Expansion schema notes](prd/profile-data-model-expansion.md)
+
 **Dependencies**
 - Must precede feature work that surfaces new modules (Prompts 3, 5, 6).
 - Can be staged ahead of visual work; migrations can happen first while UI remains unchanged.
