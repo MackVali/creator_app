@@ -1,47 +1,21 @@
-"use client";
+import { redirect } from "next/navigation";
+import { getCurrentUser, ensureProfile, getProfile } from "@/lib/db/profiles";
+import ProfileContent from "./ProfileContent";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/components/auth/AuthProvider";
-import { ensureProfileExists } from "@/lib/db";
+export default async function ProfilePage() {
+  const user = await getCurrentUser();
 
-export default function ProfilePage() {
-  const router = useRouter();
-  const { session } = useAuth();
+  if (!user) {
+    redirect("/auth");
+  }
 
-  useEffect(() => {
-    async function redirectToHandleProfile() {
-      if (!session?.user?.id) {
-        router.push("/auth");
-        return;
-      }
+  await ensureProfile(user.id);
 
-      try {
-        // Ensure profile exists
-        const profile = await ensureProfileExists(session.user.id);
-        if (profile?.username) {
-          // Redirect to handle-based profile route
-          router.push(`/profile/${profile.username}`);
-        } else {
-          // Fallback to dashboard if no username
-          router.push("/dashboard");
-        }
-      } catch (err) {
-        console.error("Error loading profile:", err);
-        router.push("/dashboard");
-      }
-    }
+  const profile = await getProfile(user.id);
 
-    redirectToHandleProfile();
-  }, [session, router]);
+  if (!profile) {
+    redirect("/auth");
+  }
 
-  // Show loading while redirecting
-  return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-white/70">Loading your profile...</p>
-      </div>
-    </div>
-  );
+  return <ProfileContent profile={profile} userId={user.id} />;
 }

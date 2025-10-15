@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getCurrentUserId } from "@/lib/auth";
 import { getProfileByUserId } from "@/lib/db";
 import { Profile } from "@/lib/types";
@@ -33,7 +33,7 @@ export function useProfile() {
     loadProfile();
   }, []);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (!userId) return;
 
     try {
@@ -47,7 +47,7 @@ export function useProfile() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
 
   return {
     profile,

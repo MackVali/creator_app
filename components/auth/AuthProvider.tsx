@@ -3,7 +3,15 @@ import { useEffect, useState, createContext, useContext } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 
-const AuthCtx = createContext<{ session: Session | null }>({ session: null });
+type AuthContextValue = {
+  session: Session | null;
+  isReady: boolean;
+};
+
+const AuthCtx = createContext<AuthContextValue>({
+  session: null,
+  isReady: false,
+});
 export const useAuth = () => useContext(AuthCtx);
 
 export default function AuthProvider({
@@ -30,5 +38,9 @@ export default function AuthProvider({
   }, [])
 
   if (!ready) return null;
-  return <AuthCtx.Provider value={{ session }}>{children}</AuthCtx.Provider>;
+  return (
+    <AuthCtx.Provider value={{ session, isReady: ready }}>
+      {children}
+    </AuthCtx.Provider>
+  );
 }
