@@ -1110,6 +1110,7 @@ function computeTimelineLayoutForSyncHabits({
     const startMs = placement.start.getTime()
     const endMs = placement.end.getTime()
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    // Include every habit placement so sync entries can pair with one another.
     candidates.push({ kind: 'habit', index, startMs, endMs })
   })
 
