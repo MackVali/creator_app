@@ -20,6 +20,10 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  SchedulerModeMenu,
+  type SchedulerModeMenuProps,
+} from "./SchedulerModeMenu";
 
 interface ScheduleTopBarProps {
   year: number;
@@ -28,6 +32,7 @@ interface ScheduleTopBarProps {
   canGoBack?: boolean;
   onOpenJumpToDate?: () => void;
   onOpenSearch?: () => void;
+  modeMenu?: SchedulerModeMenuProps;
 }
 
 export function ScheduleTopBar({
@@ -37,12 +42,17 @@ export function ScheduleTopBar({
   canGoBack = true,
   onOpenJumpToDate,
   onOpenSearch,
+  modeMenu,
 }: ScheduleTopBarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const iconButtonClass =
     "inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-[var(--text-primary)] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/5";
+
+  const modeMenuNode = modeMenu ? (
+    <SchedulerModeMenu triggerClassName={iconButtonClass} {...modeMenu} />
+  ) : null;
 
   const actions = [
     { label: "Add Task", icon: CheckSquare, onClick: () => router.push("/tasks/new") },
@@ -81,6 +91,7 @@ export function ScheduleTopBar({
         {year}
       </button>
       <div className="flex items-center gap-2">
+        {modeMenuNode}
         <button
           type="button"
           onClick={() => onOpenJumpToDate?.()}

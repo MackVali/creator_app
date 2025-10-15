@@ -71,6 +71,15 @@ import { getSkillsForUser } from '@/lib/data/skills'
 import type { SkillRow } from '@/lib/types/skill'
 import { createMemoNoteForHabit } from '@/lib/notesStorage'
 import { MemoNoteSheet } from '@/components/schedule/MemoNoteSheet'
+import {
+  modeRequiresMonument,
+  modeRequiresSkills,
+  type SchedulerMode,
+} from '@/lib/scheduler/modes'
+import {
+  getMonumentsForUser,
+  type Monument,
+} from '@/lib/queries/monuments'
 
 type DayTransitionDirection = -1 | 0 | 1
 
@@ -1788,6 +1797,7 @@ export default function SchedulePage() {
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [skills, setSkills] = useState<SkillRow[]>([])
+  const [monuments, setMonuments] = useState<Monument[]>([])
   const [projectSkillIds, setProjectSkillIds] = useState<Record<string, string[]>>({})
   const [habits, setHabits] = useState<HabitScheduleItem[]>([])
   const [habitCompletionByDate, setHabitCompletionByDate] = useState<
@@ -1813,6 +1823,10 @@ export default function SchedulePage() {
   const [skipNextDayAnimation, setSkipNextDayAnimation] = useState(false)
   const [isJumpToDateOpen, setIsJumpToDateOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [schedulerMode, setSchedulerMode] = useState<SchedulerMode>('regular')
+  const [schedulerModeMonumentId, setSchedulerModeMonumentId] =
+    useState<string>('')
+  const [schedulerModeSkillIds, setSchedulerModeSkillIds] = useState<string[]>([])
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null)
   const sliderControls = useAnimationControls()
   const [peekModels, setPeekModels] = useState<{
@@ -2134,6 +2148,22 @@ export default function SchedulePage() {
     }
   }, [determineDensity, applyDensity])
 
+  useEffect(() => {
+    setSchedulerModeMonumentId(current => {
+      if (!current) return current
+      return monuments.some(monument => monument.id === current) ? current : ''
+    })
+  }, [monuments])
+
+  useEffect(() => {
+    setSchedulerModeSkillIds(prev => {
+      if (prev.length === 0) return prev
+      const available = new Set(skills.map(skill => skill.id))
+      const next = prev.filter(id => available.has(id))
+      return next.length === prev.length ? prev : next
+    })
+  }, [skills])
+
   const startHour = 0
   const year = currentDate.getFullYear()
 
@@ -2142,6 +2172,26 @@ export default function SchedulePage() {
     const ids = await fetchScheduledProjectIds(userId)
     setScheduledProjectIds(new Set(ids))
   }, [userId])
+
+  const handleModeSkillToggle = useCallback((skillId: string, checked: boolean) => {
+    setSchedulerModeSkillIds(prev => {
+      if (checked) {
+        if (prev.includes(skillId)) return prev
+        return [...prev, skillId]
+      }
+      if (prev.length === 0) return prev
+      const next = prev.filter(id => id !== skillId)
+      return next.length === prev.length ? prev : next
+    })
+  }, [])
+
+  const handleClearModeSkills = useCallback(() => {
+    setSchedulerModeSkillIds([])
+  }, [])
+
+  const handleModeMonumentChange = useCallback((monumentId: string) => {
+    setSchedulerModeMonumentId(monumentId.trim())
+  }, [])
 
   useEffect(() => {
     setSchedulerDebug(null)
@@ -2164,9 +2214,13 @@ export default function SchedulePage() {
       setTasks([])
       setProjects([])
       setSkills([])
+      setMonuments([])
       setProjectSkillIds({})
       setScheduledProjectIds(new Set())
       setMetaStatus('idle')
+      setSchedulerMode('regular')
+      setSchedulerModeMonumentId('')
+      setSchedulerModeSkillIds([])
       return
     }
 
@@ -2175,13 +2229,22 @@ export default function SchedulePage() {
 
     async function load() {
       try {
-        const [ws, ts, pm, scheduledIds, hs, skillRows] = await Promise.all([
+        const [
+          ws,
+          ts,
+          pm,
+          scheduledIds,
+          hs,
+          skillRows,
+          monumentRows,
+        ] = await Promise.all([
           fetchWindowsForDate(currentDate, undefined, localTimeZone),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
           fetchHabitsForSchedule(),
           getSkillsForUser(userId),
+          getMonumentsForUser(userId),
         ])
         let projectSkillsMap: Record<string, string[]> = {}
         try {
@@ -2199,6 +2262,7 @@ export default function SchedulePage() {
         backlogTaskPreviousStageRef.current = new Map()
         setProjects(Object.values(pm))
         setSkills(skillRows)
+        setMonuments(monumentRows)
         setProjectSkillIds(projectSkillsMap)
         setHabits(hs)
         setScheduledProjectIds(prev => {
@@ -2215,6 +2279,7 @@ export default function SchedulePage() {
         setTasks([])
         setProjects([])
         setSkills([])
+        setMonuments([])
         setProjectSkillIds({})
         setHabits([])
       } finally {
@@ -3003,6 +3068,33 @@ export default function SchedulePage() {
     if (isSchedulingRef.current) return
     isSchedulingRef.current = true
     setIsScheduling(true)
+    const requiresMonument = modeRequiresMonument(schedulerMode)
+    const requiresSkills = modeRequiresSkills(schedulerMode)
+    const trimmedMonumentId = schedulerModeMonumentId.trim()
+    const hasMonument = !requiresMonument || trimmedMonumentId.length > 0
+    const hasSkills = !requiresSkills || schedulerModeSkillIds.length > 0
+    let requestMode: SchedulerMode = schedulerMode
+    if (requiresMonument && !hasMonument) {
+      console.warn(
+        'Monument selection required for scheduler mode, falling back to regular mode'
+      )
+      requestMode = 'regular'
+    }
+    if (requiresSkills && !hasSkills) {
+      console.warn(
+        'Skill selection required for scheduler mode, falling back to regular mode'
+      )
+      requestMode = 'regular'
+    }
+    const includeMonument = modeRequiresMonument(requestMode)
+    const includeSkills = modeRequiresSkills(requestMode)
+    const requestBody: Record<string, unknown> = {
+      localTimeIso: localNow.toISOString(),
+      timeZone,
+      mode: requestMode,
+      monumentId: includeMonument ? trimmedMonumentId || null : null,
+      skillIds: includeSkills ? [...schedulerModeSkillIds] : [],
+    }
     try {
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
@@ -3010,10 +3102,7 @@ export default function SchedulePage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          localTimeIso: localNow.toISOString(),
-          timeZone,
-        }),
+        body: JSON.stringify(requestBody),
       })
       let payload: unknown = null
       let parseError: unknown = null
@@ -3088,7 +3177,14 @@ export default function SchedulePage() {
         console.error('Failed to refresh scheduled project history', error)
       }
     }
-  }, [userId, refreshScheduledProjectIds, localTimeZone])
+  }, [
+    userId,
+    refreshScheduledProjectIds,
+    localTimeZone,
+    schedulerMode,
+    schedulerModeMonumentId,
+    schedulerModeSkillIds,
+  ])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -3131,11 +3227,26 @@ export default function SchedulePage() {
 
   const handleRescheduleClick = useCallback(async () => {
     if (!userId) return
+    const requiresMonument = modeRequiresMonument(schedulerMode)
+    const requiresSkills = modeRequiresSkills(schedulerMode)
+    if (
+      (requiresMonument && !schedulerModeMonumentId.trim()) ||
+      (requiresSkills && schedulerModeSkillIds.length === 0)
+    ) {
+      return
+    }
     const todayKey = formatLocalDateKey(new Date())
     await runScheduler()
     persistAutoRunDate(todayKey)
     setHasAutoRunToday(true)
-  }, [userId, runScheduler, persistAutoRunDate])
+  }, [
+    userId,
+    runScheduler,
+    persistAutoRunDate,
+    schedulerMode,
+    schedulerModeMonumentId,
+    schedulerModeSkillIds,
+  ])
 
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null)
   const swipeContainerRef = useRef<HTMLDivElement | null>(null)
@@ -4515,6 +4626,26 @@ export default function SchedulePage() {
     return () => cancelAnimationFrame(raf)
   }, [focusInstanceId, dayTimelineModel.dayViewDateKey])
 
+  const requiresMonumentSelection = modeRequiresMonument(schedulerMode)
+  const requiresSkillSelection = modeRequiresSkills(schedulerMode)
+  const trimmedSchedulerMonumentId = schedulerModeMonumentId.trim()
+  const hasMonumentSelection =
+    !requiresMonumentSelection || trimmedSchedulerMonumentId.length > 0
+  const hasSkillSelection =
+    !requiresSkillSelection || schedulerModeSkillIds.length > 0
+  const isSchedulerModeReady = hasMonumentSelection && hasSkillSelection
+  const modeBlockingReason =
+    isSchedulerModeReady || metaStatus !== 'loaded'
+      ? null
+      : requiresMonumentSelection
+        ? monuments.length === 0
+          ? 'Add a monument to use Monumental mode.'
+          : 'Select a monument to enable Monumental mode.'
+        : skills.length === 0
+          ? 'Create a skill to use Skilled mode.'
+          : 'Choose at least one skill to enable Skilled mode.'
+  const rescheduleDisabled = isScheduling || !isSchedulerModeReady
+
   return (
     <>
       <ProtectedRoute>
@@ -4524,6 +4655,19 @@ export default function SchedulePage() {
           onToday={handleToday}
           onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
           onOpenSearch={() => setIsSearchOpen(true)}
+          modeMenu={{
+            mode: schedulerMode,
+            onModeChange: setSchedulerMode,
+            monuments,
+            selectedMonumentId: trimmedSchedulerMonumentId,
+            onMonumentChange: handleModeMonumentChange,
+            isLoadingMonuments: metaStatus !== 'loaded',
+            skills,
+            selectedSkillIds: schedulerModeSkillIds,
+            onSkillToggle: handleModeSkillToggle,
+            onClearSkills: handleClearModeSkills,
+            isLoadingSkills: metaStatus !== 'loaded',
+          }}
         />
         <div className="text-zinc-100 space-y-4 pt-[calc(4rem + env(safe-area-inset-top, 0px))]">
           <div
@@ -4539,9 +4683,22 @@ export default function SchedulePage() {
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
             <RescheduleButton
               onClick={handleRescheduleClick}
-              disabled={isScheduling}
+              disabled={rescheduleDisabled}
               isRunning={isScheduling}
+              title={
+                modeBlockingReason ??
+                `Run scheduler${
+                  schedulerMode === 'regular'
+                    ? ''
+                    : ` in ${schedulerMode} mode`
+                }`
+              }
             />
+            {modeBlockingReason && (
+              <p className="max-w-[14rem] text-right text-xs text-amber-200/80">
+                {modeBlockingReason}
+              </p>
+            )}
           </div>
           <AnimatePresence mode="wait" initial={false}>
             {view === 'day' && (
