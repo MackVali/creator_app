@@ -1795,8 +1795,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
       if (formData.type === "ASYNC") {
         return {
-          title: "Create New Async Habit",
-          badge: "Async Habit",
+          title: "Create New Sync Habit",
+          badge: "Sync Habit",
           eyebrow: "On Your Time",
           accent: "from-cyan-500/25 via-cyan-500/10 to-transparent",
           iconBg: "border-cyan-500/40 bg-cyan-500/10 text-cyan-100",

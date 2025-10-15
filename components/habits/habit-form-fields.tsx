@@ -53,7 +53,7 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     description: "Maintenance that keeps life running.",
   },
   {
-    label: "Async",
+    label: "Sync",
     value: "ASYNC",
     description: "Self-paced rituals you can do anytime.",
   },
