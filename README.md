@@ -40,6 +40,10 @@ This app uses Supabase for authentication with magic link sign-in. After setting
 2. **Check email**: Click the magic link in your email
 3. **Access dashboard**: You'll be redirected to `/dashboard`
 
+### Avoiding Supabase email rate limits
+
+Each sign-up triggers an email from Supabase. If your project is still using the default rate limit from this repo (`auth.rate_limit.email_sent`), raise the "Emails sent per hour" value under **Supabase Dashboard → Authentication → Rate Limits** for preview and production environments. The sample configuration in `supabase/config.toml` now allows 60 messages per hour so preview builds on Vercel can create new accounts without immediately exhausting the quota.
+
 ## Seeding Sample Data
 
 To populate your app with sample data for testing and development:

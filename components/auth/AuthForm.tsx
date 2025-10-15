@@ -3,8 +3,20 @@
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { parseSupabaseError } from "@/lib/error-handling";
+import { ERROR_CODES, parseSupabaseError } from "@/lib/error-handling";
+import { getAuthRedirectUrl } from "@/lib/auth-redirect";
 import RoleOption from "@/components/auth/RoleOption";
+
+// Email validation helper
+const validateEmail = (email: string): string | null => {
+  const trimmed = email.trim();
+  if (!trimmed) return "Email is required";
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmed)) {
+    return "Please enter a valid email address";
+  }
+  return null;
+};
 
 // Password validation function - relaxed requirements
 const validatePassword = (password: string): string | null => {
@@ -83,7 +95,7 @@ export default function AuthForm() {
     lockoutTime &&
     new Date().getTime() - lockoutTime.getTime() < lockoutDuration;
 
-  const handleAuthError = (error: { message?: string }) => {
+  const handleAuthError = (error: { message?: string; code?: string }) => {
     const appError = parseSupabaseError(error);
     setAttempts((prev: number) => prev + 1);
 
@@ -96,6 +108,7 @@ export default function AuthForm() {
     } else {
       setError(appError.userMessage);
     }
+    return appError;
   };
 
   async function handleSignIn(e: React.FormEvent) {
@@ -109,13 +122,21 @@ export default function AuthForm() {
       return;
     }
 
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+
+    const sanitizedEmail = email.trim().toLowerCase();
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: sanitizedEmail,
         password,
       });
       if (error) {
@@ -143,6 +164,19 @@ export default function AuthForm() {
       return;
     }
 
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+
+    const sanitizedEmail = email.trim().toLowerCase();
+    const sanitizedFullName = fullName.trim();
+    if (!sanitizedFullName) {
+      setError("Please provide your full name");
+      return;
+    }
+
     const passwordError = validatePassword(password);
     if (passwordError) {
       setError(passwordError);
@@ -153,31 +187,68 @@ export default function AuthForm() {
     setError(null);
     setSuccess(null);
 
+    const emailRedirectTo = getAuthRedirectUrl();
+
+    const finalizeSignup = (
+      resultData: Awaited<ReturnType<typeof supabase.auth.signUp>>["data"],
+      usedFallback = false,
+    ) => {
+      setAttempts(0);
+      if (resultData.user && !resultData.user.email_confirmed_at) {
+        setSuccess(
+          usedFallback
+            ? "Account created! Please check your email to confirm your account. If you started from a preview link, open the confirmation email on the main site domain."
+            : "Account created! Please check your email to confirm your account."
+        );
+      } else {
+        const redirectTo = searchParams.get("redirect") || "/dashboard";
+        router.replace(redirectTo);
+      }
+    };
+
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
+      const metadata = { full_name: sanitizedFullName, role };
+      const signupOptions = {
+        data: metadata,
+        ...(emailRedirectTo ? { emailRedirectTo } : {}),
+      };
+
+      const initialResult = await supabase.auth.signUp({
+        email: sanitizedEmail,
         password,
-        options: {
-          data: { full_name: fullName, role },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+        options: signupOptions,
       });
 
-      if (error) {
-        handleAuthError(error);
-      } else {
-        setAttempts(0);
-        // Check if email confirmation is required
-        if (data.user && !data.user.email_confirmed_at) {
-          setSuccess(
-            "Account created! Please check your email to confirm your account."
-          );
-        } else {
-          // Email confirmation disabled, redirect to dashboard
-          const redirectTo = searchParams.get("redirect") || "/dashboard";
-          router.replace(redirectTo);
+      if (initialResult.error) {
+        const appError = handleAuthError(initialResult.error);
+
+        if (appError.code === ERROR_CODES.AUTH_SIGNUPS_DISABLED) {
+          setSuccess(null);
         }
+
+        if (
+          appError.code === ERROR_CODES.AUTH_INVALID_REDIRECT &&
+          emailRedirectTo
+        ) {
+          const fallbackResult = await supabase.auth.signUp({
+            email: sanitizedEmail,
+            password,
+            options: { data: metadata },
+          });
+
+          if (fallbackResult.error) {
+            handleAuthError(fallbackResult.error);
+            return;
+          }
+
+          setError(null);
+          finalizeSignup(fallbackResult.data, true);
+        }
+
+        return;
       }
+
+      finalizeSignup(initialResult.data);
     } catch (err) {
       handleAuthError(err as { message?: string });
     } finally {
