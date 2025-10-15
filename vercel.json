@@ -3,6 +3,5 @@
   "rootDirectory": "apps/web",
   "installCommand": "pnpm install",
   "buildCommand": "pnpm build",
-  "outputDirectory": ".next",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- apps/web"
+  "outputDirectory": ".next"
 }
