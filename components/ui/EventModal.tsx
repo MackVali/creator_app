@@ -321,6 +321,8 @@ interface FormState {
   type: string;
   recurrence: string;
   recurrence_days: number[];
+  location_context: string;
+  daylight_preference: string;
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -370,6 +372,8 @@ const createInitialFormState = (
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
+  location_context: "",
+  daylight_preference: "ALL_DAY",
 });
 
 type EventMeta = {
@@ -1317,6 +1321,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         monument_id?: string;
         skill_id?: string | null;
         routine_id?: string | null;
+        location_context?: string | null;
+        daylight_preference?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1388,6 +1394,22 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
+        insertData.location_context = formData.location_context
+          ? formData.location_context
+          : null;
+        insertData.daylight_preference =
+          formData.daylight_preference &&
+          formData.daylight_preference !== "ALL_DAY"
+            ? formData.daylight_preference
+            : null;
+
+        if (formData.type?.toUpperCase() === "MEMO" && !insertData.skill_id) {
+          toast.error(
+            "Skill required",
+            "Memo habits need a skill so their notes have somewhere to land."
+          );
+          return;
+        }
 
         let routineIdToUse: string | null = null;
         if (routineId === "__create__") {
@@ -2299,6 +2321,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               duration={formData.duration_min}
               energy={formData.energy}
               skillId={formData.skill_id || "none"}
+              locationContext={
+                formData.location_context
+                  ? formData.location_context.toUpperCase()
+                  : null
+              }
+              daylightPreference={
+                formData.daylight_preference || "ALL_DAY"
+              }
               energyOptions={habitEnergyOptions}
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
@@ -2335,6 +2365,18 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 setFormData((prev) => ({
                   ...prev,
                   skill_id: value === "none" ? "" : value,
+                }))
+              }
+              onLocationContextChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  location_context: value ? value.toUpperCase() : "",
+                }))
+              }
+              onDaylightPreferenceChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  daylight_preference: value.toUpperCase(),
                 }))
               }
               footerSlot={

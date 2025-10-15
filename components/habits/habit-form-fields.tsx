@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type HabitTypeOption = {
@@ -55,6 +56,11 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     value: "ASYNC",
     description: "Self-paced rituals you can do anytime.",
   },
+  {
+    label: "Memo",
+    value: "MEMO",
+    description: "Capture reflections or notes tied to a skill.",
+  },
 ];
 
 export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
@@ -96,6 +102,8 @@ interface HabitFormFieldsProps {
   duration: string;
   energy: string;
   skillId: string;
+  locationContext?: string | null;
+  daylightPreference?: string | null;
   energyOptions: HabitEnergySelectOption[];
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
@@ -108,11 +116,26 @@ interface HabitFormFieldsProps {
   onEnergyChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
+  onLocationContextChange?: (value: string | null) => void;
+  onDaylightPreferenceChange?: (value: string) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
   showDescriptionField?: boolean;
 }
+
+const LOCATION_OPTIONS = [
+  { value: "ANY", label: "Anywhere" },
+  { value: "HOME", label: "Home" },
+  { value: "WORK", label: "Work" },
+  { value: "OUTSIDE", label: "Outside" },
+];
+
+const DAYLIGHT_OPTIONS = [
+  { value: "ALL_DAY", label: "All day" },
+  { value: "DAY", label: "Daytime" },
+  { value: "NIGHT", label: "Night" },
+];
 
 export function HabitFormFields({
   name,
@@ -123,6 +146,8 @@ export function HabitFormFields({
   duration,
   energy,
   skillId,
+  locationContext = null,
+  daylightPreference = "ALL_DAY",
   energyOptions,
   skillsLoading,
   skillOptions,
@@ -135,6 +160,8 @@ export function HabitFormFields({
   onEnergyChange,
   onDurationChange,
   onSkillChange,
+  onLocationContextChange,
+  onDaylightPreferenceChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
@@ -144,6 +171,12 @@ export function HabitFormFields({
   const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(() => {
+    const hasLocation = Boolean(locationContext && locationContext.trim());
+    const daylightUpper = (daylightPreference ?? "ALL_DAY").toUpperCase();
+    const hasDaylight = daylightUpper === "DAY" || daylightUpper === "NIGHT";
+    return hasLocation || hasDaylight;
+  });
 
   useEffect(() => {
     setSkillSearchQuery("");
@@ -170,6 +203,9 @@ export function HabitFormFields({
       : [...recurrenceDays, day].sort((a, b) => a - b);
     onRecurrenceDaysChange(next);
   };
+
+  const locationValue = (locationContext ?? "").toUpperCase().trim() || "ANY";
+  const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
 
   return (
     <div className="space-y-8">
@@ -362,6 +398,73 @@ export function HabitFormFields({
             className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setAdvancedOpen((prev) => !prev)}
+          className="h-10 rounded-xl border-white/15 bg-white/[0.03] text-xs font-semibold uppercase tracking-[0.2em] text-white/80 hover:border-white/30 hover:bg-white/[0.07]"
+        >
+          {advancedOpen ? "Hide advanced options" : "Show advanced options"}
+        </Button>
+
+        {advancedOpen ? (
+          <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Location context
+              </Label>
+              <Select
+                value={locationValue}
+                onValueChange={(value) =>
+                  onLocationContextChange?.(value === "ANY" ? null : value)
+                }
+              >
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="Where does this habit happen?" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {LOCATION_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-white/60">
+                Choose a location to keep this habit aligned with compatible schedule windows.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Daylight preference
+              </Label>
+              <Select
+                value={daylightValue || "ALL_DAY"}
+                onValueChange={(value) =>
+                  onDaylightPreferenceChange?.(value)
+                }
+              >
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="When should this habit run?" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {DAYLIGHT_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-white/60">
+                Restrict this habit to daylight or night windows. We’ll respect your local sunrise and sunset when scheduling.
+              </p>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {footerSlot}

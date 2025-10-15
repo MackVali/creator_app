@@ -28,6 +28,20 @@ type Energy = "no" | "low" | "medium" | "high" | "ultra" | "extreme"
 type Day = "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat"
 type SortOption = "az" | "start" | "end" | "active"
 
+const WINDOW_LOCATION_OPTIONS = [
+  { value: "ANY", label: "Anywhere" },
+  { value: "HOME", label: "Home" },
+  { value: "WORK", label: "Work" },
+  { value: "OUTSIDE", label: "Outside" },
+]
+
+const WINDOW_LOCATION_LABELS: Record<string, string> = {
+  ANY: "Anywhere",
+  HOME: "Home",
+  WORK: "Work",
+  OUTSIDE: "Outside",
+}
+
 export interface WindowItem {
   id: string
   name: string
@@ -194,17 +208,19 @@ export default function WindowsPolishedUI({
 
   async function handleSave(data: WindowItem) {
     try {
+      const normalizedLocation = (data.location ?? "ANY").toUpperCase()
+      const nextData = { ...data, location: normalizedLocation as WindowItem["location"] }
       if (editing) {
         if (onEdit) {
-          const ok = await onEdit(editing.id, data)
+          const ok = await onEdit(editing.id, nextData)
           if (ok === false) throw new Error("save failed")
         } else {
           setList((prev) =>
-            prev?.map((w) => (w.id === editing.id ? { ...data, id: editing.id } : w)),
+            prev?.map((w) => (w.id === editing.id ? { ...nextData, id: editing.id } : w)),
           )
         }
       } else {
-        const newItem = { ...data, id: Date.now().toString() }
+        const newItem = { ...nextData, id: Date.now().toString() }
         if (onCreate) {
           const ok = await onCreate(newItem)
           if (ok === false) throw new Error("save failed")
@@ -709,6 +725,9 @@ function WindowCard({
   const endPct = (toMins(item.end) / 1440) * 100
   const daySummary =
     item.days.length === 7 ? "Every day" : item.days.join(" · ")
+  const displayLocation = item.location
+    ? WINDOW_LOCATION_LABELS[item.location] ?? item.location
+    : null
 
   return (
     <article
@@ -783,10 +802,10 @@ function WindowCard({
                 <span className="capitalize">{item.energy}</span>
               </span>
             )}
-            {item.location && (
+            {displayLocation && (
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 text-slate-200">
                 <Sparkles className="h-3 w-3" />
-                {item.location}
+                {displayLocation}
               </span>
             )}
           </div>
@@ -888,7 +907,7 @@ function createDefaultWindow(): WindowItem {
     start: "08:00",
     end: "09:00",
     energy: "no",
-    location: "",
+    location: "ANY",
     active: true,
   }
 }
@@ -1026,11 +1045,19 @@ function Drawer({
             <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Location
             </label>
-            <input
-              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
-              value={form.location ?? ""}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
-            />
+            <select
+              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+              value={(form.location ?? "ANY").toUpperCase()}
+              onChange={(e) =>
+                setForm({ ...form, location: e.target.value.toUpperCase() })
+              }
+            >
+              {WINDOW_LOCATION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <div>
