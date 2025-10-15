@@ -48,6 +48,10 @@ Each sign-up triggers an email from Supabase. If your project is still using the
 
 Need to get Vercel previews signing up again? Follow the simple steps in [`docs/supabase-preview-signup-instructions.md`](./docs/supabase-preview-signup-instructions.md). It walks through the Supabase dashboard changes, the matching Vercel env variables, and what to double-check before trying again.
 
+### When Supabase refuses to create users
+
+If the Supabase dashboard itself cannot create a new user, grab the SQL snippets in [`docs/supabase-auth-user-debug.md`](./docs/supabase-auth-user-debug.md). They walk you through confirming sign-ups are enabled, inspecting the auth audit log, checking rate limits, and spotting trigger or email-provider issues that block inserts at the platform level.
+
 ## Seeding Sample Data
 
 To populate your app with sample data for testing and development:
