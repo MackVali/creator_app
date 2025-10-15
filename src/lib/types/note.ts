@@ -5,4 +5,5 @@ export type Note = {
   content: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+  metadata?: Record<string, unknown> | null;
 };

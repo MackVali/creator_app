@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+"use client"
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import {
   CalendarDays,
   Clock,
@@ -18,6 +27,11 @@ import {
 
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber"
 import { useToastHelpers } from "@/components/ui/toast"
+import {
+  useLocationContexts,
+  type CreateLocationResult,
+  type LocationContextOption,
+} from "@/lib/hooks/useLocationContexts"
 
 // Utility to join class names conditionally
 function classNames(...classes: Array<string | false | null | undefined>) {
@@ -27,6 +41,17 @@ function classNames(...classes: Array<string | false | null | undefined>) {
 type Energy = "no" | "low" | "medium" | "high" | "ultra" | "extreme"
 type Day = "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat"
 type SortOption = "az" | "start" | "end" | "active"
+
+function formatLocationLabel(value: string) {
+  return value
+    .replace(/[_\s]+/g, " ")
+    .trim()
+    .toLowerCase()
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+}
 
 export interface WindowItem {
   id: string
@@ -100,6 +125,29 @@ export default function WindowsPolishedUI({
   const [list, setList] = useState<WindowItem[] | undefined>(windows)
   const [loading, setLoading] = useState(!windows)
   const toast = useToastHelpers()
+  const {
+    options: locationOptions,
+    loading: locationOptionsLoading,
+    error: locationOptionsError,
+    createContext: createLocationContext,
+  } = useLocationContexts()
+
+  const locationLabelMap = useMemo(() => {
+    const map = new Map<string, string>()
+    locationOptions.forEach((option) => {
+      map.set(option.value, option.label)
+    })
+    return map
+  }, [locationOptions])
+
+  const resolveLocationLabel = useCallback(
+    (value?: string | null) => {
+      if (!value) return null
+      const normalized = value.toUpperCase()
+      return locationLabelMap.get(normalized) ?? formatLocationLabel(normalized)
+    },
+    [locationLabelMap],
+  )
 
   useEffect(() => {
     if (!windows) {
@@ -194,17 +242,19 @@ export default function WindowsPolishedUI({
 
   async function handleSave(data: WindowItem) {
     try {
+      const normalizedLocation = (data.location ?? "ANY").toUpperCase()
+      const nextData = { ...data, location: normalizedLocation as WindowItem["location"] }
       if (editing) {
         if (onEdit) {
-          const ok = await onEdit(editing.id, data)
+          const ok = await onEdit(editing.id, nextData)
           if (ok === false) throw new Error("save failed")
         } else {
           setList((prev) =>
-            prev?.map((w) => (w.id === editing.id ? { ...data, id: editing.id } : w)),
+            prev?.map((w) => (w.id === editing.id ? { ...nextData, id: editing.id } : w)),
           )
         }
       } else {
-        const newItem = { ...data, id: Date.now().toString() }
+        const newItem = { ...nextData, id: Date.now().toString() }
         if (onCreate) {
           const ok = await onCreate(newItem)
           if (ok === false) throw new Error("save failed")
@@ -252,6 +302,7 @@ export default function WindowsPolishedUI({
                     setEditing(w)
                     setDrawerOpen(true)
                   }}
+                  resolveLocationLabel={resolveLocationLabel}
                 />
               ))}
             </div>
@@ -286,6 +337,10 @@ export default function WindowsPolishedUI({
             setEditing(null)
           }}
           onSave={handleSave}
+          locationOptions={locationOptions}
+          locationLoading={locationOptionsLoading}
+          locationError={locationOptionsError}
+          onCreateLocation={createLocationContext}
         />
       )}
       {confirmDelete && (
@@ -682,10 +737,12 @@ function WindowCard({
   item,
   onEdit,
   onDelete,
+  resolveLocationLabel,
 }: {
   item: WindowItem
   onEdit: () => void
   onDelete: () => void
+  resolveLocationLabel: (value?: string | null) => string | null
 }) {
   const [menu, setMenu] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -709,6 +766,7 @@ function WindowCard({
   const endPct = (toMins(item.end) / 1440) * 100
   const daySummary =
     item.days.length === 7 ? "Every day" : item.days.join(" · ")
+  const displayLocation = resolveLocationLabel(item.location)
 
   return (
     <article
@@ -783,10 +841,10 @@ function WindowCard({
                 <span className="capitalize">{item.energy}</span>
               </span>
             )}
-            {item.location && (
+            {displayLocation && (
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 text-slate-200">
                 <Sparkles className="h-3 w-3" />
-                {item.location}
+                {displayLocation}
               </span>
             )}
           </div>
@@ -888,7 +946,7 @@ function createDefaultWindow(): WindowItem {
     start: "08:00",
     end: "09:00",
     energy: "no",
-    location: "",
+    location: "ANY",
     active: true,
   }
 }
@@ -897,14 +955,27 @@ function Drawer({
   initial,
   onClose,
   onSave,
+  locationOptions,
+  onCreateLocation,
+  locationLoading,
+  locationError,
 }: {
   initial: WindowItem | null
   onClose: () => void
   onSave: (data: WindowItem) => void
+  locationOptions: LocationContextOption[]
+  onCreateLocation: (name: string) => Promise<CreateLocationResult>
+  locationLoading: boolean
+  locationError: string | null
 }) {
   const [form, setForm] = useState<WindowItem>(
     initial ? { ...initial } : createDefaultWindow(),
   )
+  const [customLocationName, setCustomLocationName] = useState("")
+  const [customLocationError, setCustomLocationError] = useState<string | null>(
+    null,
+  )
+  const [savingCustomLocation, setSavingCustomLocation] = useState(false)
 
   useEffect(() => {
     if (initial) setForm({ ...initial })
@@ -926,6 +997,32 @@ function Drawer({
         ? f.days.filter((x) => x !== d)
         : [...f.days, d],
     }))
+  }
+
+  async function handleAddCustomLocation() {
+    if (!customLocationName.trim()) {
+      setCustomLocationError("Enter a location name first.")
+      return
+    }
+
+    setSavingCustomLocation(true)
+    setCustomLocationError(null)
+
+    try {
+      const result = await onCreateLocation(customLocationName)
+      if (!result.success) {
+        setCustomLocationError(result.error)
+        return
+      }
+
+      setCustomLocationName("")
+      setForm((prev) => ({
+        ...prev,
+        location: result.option.value as WindowItem["location"],
+      }))
+    } finally {
+      setSavingCustomLocation(false)
+    }
   }
 
   return (
@@ -1026,11 +1123,54 @@ function Drawer({
             <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Location
             </label>
-            <input
-              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
-              value={form.location ?? ""}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
-            />
+            <select
+              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+              value={(form.location ?? "ANY").toUpperCase()}
+              onChange={(e) =>
+                setForm({ ...form, location: e.target.value.toUpperCase() })
+              }
+              disabled={locationLoading}
+            >
+              {locationOptions.map((option) => (
+                <option key={option.id} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {locationError ? (
+              <p className="mt-2 text-xs text-amber-300/90">{locationError}</p>
+            ) : null}
+            <div className="mt-3 space-y-2 rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-300">
+                Add a new location
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  className="h-10 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-0"
+                  placeholder="e.g. Gym or Studio"
+                  value={customLocationName}
+                  onChange={(e) => {
+                    setCustomLocationName(e.target.value)
+                    setCustomLocationError(null)
+                  }}
+                  type="text"
+                />
+                <button
+                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/80 px-4 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-indigo-500 disabled:opacity-60"
+                  onClick={handleAddCustomLocation}
+                  type="button"
+                  disabled={savingCustomLocation}
+                >
+                  {savingCustomLocation ? "Saving..." : "Save"}
+                </button>
+              </div>
+              {customLocationError ? (
+                <p className="text-xs text-red-300">{customLocationError}</p>
+              ) : null}
+              <p className="text-[0.65rem] text-slate-400">
+                Custom locations sync across all of your windows and habits.
+              </p>
+            </div>
           </div>
           <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <div>

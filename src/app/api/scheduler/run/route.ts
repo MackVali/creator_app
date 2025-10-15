@@ -46,8 +46,10 @@ export async function POST(request: Request) {
   }
 
   const userTimeZone = requestTimeZone ?? extractUserTimeZone(user)
+  const coordinates = extractUserCoordinates(user)
   const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
     timeZone: userTimeZone,
+    location: coordinates,
   })
   const status = scheduleResult.error ? 500 : 200
 
@@ -73,6 +75,40 @@ function extractUserTimeZone(user: { user_metadata?: Record<string, unknown> | n
   for (const value of candidates) {
     if (typeof value === 'string' && value.trim()) {
       return value
+    }
+  }
+  return null
+}
+
+function extractUserCoordinates(user: { user_metadata?: Record<string, unknown> | null }) {
+  const metadata = user.user_metadata ?? {}
+  const latCandidates: unknown[] = [
+    metadata?.latitude,
+    metadata?.lat,
+    metadata?.coords && (metadata.coords as { latitude?: unknown })?.latitude,
+    metadata?.coords && (metadata.coords as { lat?: unknown })?.lat,
+    metadata?.location && (metadata.location as { latitude?: unknown })?.latitude,
+  ]
+  const lonCandidates: unknown[] = [
+    metadata?.longitude,
+    metadata?.lng,
+    metadata?.lon,
+    metadata?.coords && (metadata.coords as { longitude?: unknown })?.longitude,
+    metadata?.coords && (metadata.coords as { lng?: unknown })?.lng,
+    metadata?.location && (metadata.location as { longitude?: unknown })?.longitude,
+  ]
+
+  const latitude = pickNumericValue(latCandidates)
+  const longitude = pickNumericValue(lonCandidates)
+  if (latitude === null || longitude === null) return null
+  return { latitude, longitude }
+}
+
+function pickNumericValue(values: unknown[]): number | null {
+  for (const value of values) {
+    const num = typeof value === 'string' ? Number.parseFloat(value) : value
+    if (typeof num === 'number' && Number.isFinite(num)) {
+      return num
     }
   }
   return null

@@ -65,6 +65,8 @@ export default function EditHabitPage() {
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
+  const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -328,7 +330,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -368,6 +370,14 @@ export default function EditHabitPage() {
           );
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
+          setLocationContext(
+            data.location_context ? String(data.location_context).toUpperCase() : null
+          );
+          setDaylightPreference(
+            data.daylight_preference
+              ? String(data.daylight_preference).toUpperCase()
+              : "ALL_DAY"
+          );
         }
       } catch (err) {
         console.error("Failed to load habit:", err);
@@ -418,6 +428,11 @@ export default function EditHabitPage() {
 
     if (recurrence.toLowerCase().trim() === "every x days" && recurrenceDays.length === 0) {
       setError("Please select at least one day for this recurrence.");
+      return;
+    }
+
+    if (habitType.toUpperCase() === "MEMO" && skillId === "none") {
+      setError("Memo habits need to stay connected to a skill so their notes are saved.");
       return;
     }
 
@@ -492,6 +507,11 @@ export default function EditHabitPage() {
           energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
+          location_context: locationContext,
+          daylight_preference:
+            daylightPreference && daylightPreference !== "ALL_DAY"
+              ? daylightPreference
+              : null,
         })
         .eq("id", habitId)
         .eq("user_id", user.id);
@@ -565,6 +585,8 @@ export default function EditHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
+                locationContext={locationContext}
+                daylightPreference={daylightPreference}
                 energyOptions={energySelectOptions}
                 skillsLoading={skillsLoading}
                 skillOptions={skillSelectOptions}
@@ -577,6 +599,12 @@ export default function EditHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
+                onLocationContextChange={(value) =>
+                  setLocationContext(value ? value.toUpperCase() : null)
+                }
+                onDaylightPreferenceChange={(value) =>
+                  setDaylightPreference(value.toUpperCase())
+                }
                 showDescriptionField={false}
                 footerSlot={
                     <div className="space-y-4">

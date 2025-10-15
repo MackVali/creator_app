@@ -56,6 +56,8 @@ export default function NewHabitPage() {
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [skillId, setSkillId] = useState("none");
+  const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -306,6 +308,11 @@ export default function NewHabitPage() {
       return;
     }
 
+    if (habitType.toUpperCase() === "MEMO" && skillId === "none") {
+      setError("Memo habits need to be linked to a skill so memos have a home.");
+      return;
+    }
+
     if (routineId === "__create__" && !newRoutineName.trim()) {
       setError("Please give your new routine a name.");
       return;
@@ -376,6 +383,11 @@ export default function NewHabitPage() {
         energy,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
+        location_context: locationContext,
+        daylight_preference:
+          daylightPreference && daylightPreference !== "ALL_DAY"
+            ? daylightPreference
+            : null,
       });
 
       if (insertError) {
@@ -424,6 +436,8 @@ export default function NewHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
+                locationContext={locationContext}
+                daylightPreference={daylightPreference}
                 energyOptions={energySelectOptions}
                 skillsLoading={skillsLoading}
                 skillOptions={skillSelectOptions}
@@ -436,6 +450,12 @@ export default function NewHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
+                onLocationContextChange={(value) =>
+                  setLocationContext(value ? value.toUpperCase() : null)
+                }
+                onDaylightPreferenceChange={(value) =>
+                  setDaylightPreference(value.toUpperCase())
+                }
                 footerSlot={
                   <div className="space-y-4">
                     <div className="space-y-3">
