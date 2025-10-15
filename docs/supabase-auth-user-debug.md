@@ -108,10 +108,19 @@ join pg_proc p on p.oid = t.tgfoid
 where t.tgrelid = 'auth.users'::regclass
   and t.tgenabled != 'D'
   and not t.tgisinternal
+  and p.proname not like 'RI_FKey%'
 order by t.tgname;
 ```
 
-Built-in foreign-key triggers (the ones prefixed with `RI_`) are filtered out so you can focus on custom logic like `trg_upsert_empty_profile`. If you need to inspect the full list, remove the `not t.tgisinternal` predicate temporarily.
+Built-in foreign-key triggers (the ones whose function names start with `RI_FKey`) are filtered out so you can focus on custom logic like `trg_upsert_empty_profile`. If you need to inspect the full list, remove the `p.proname not like 'RI_FKey%'` predicate temporarily.
+
+If you see a custom trigger in the results, grab its function definition to make sure it cannot raise errors while Supabase inserts a new user:
+
+```sql
+select pg_get_functiondef('upsert_empty_profile'::regproc);
+```
+
+Replace `upsert_empty_profile` with any other function name that appears in the previous query. Confirm each function is marked `SECURITY DEFINER` (so it can bypass row-level security) and handles missing related rows without throwing an exception. Any error inside these triggers will block new account creation.
 
 ## 5. Verify the email provider configuration
 
