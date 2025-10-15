@@ -12,6 +12,12 @@ Follow these steps in order. Everything is written in plain English so you can c
      * A single preview URL: `https://my-feature-123-yourteam.vercel.app`
      * All previews on your team: `https://*.vercel.app` (requires a paid plan that allows wildcards).
    * Press **Save**.
+   * Prefer using the dashboard controls, but if you would rather run SQL, copy
+     [`docs/supabase-site-url-update.sql`](./supabase-site-url-update.sql),
+     replace the placeholder domain with your preview URL, and execute it in
+     the Supabase SQL editor. The script updates both `auth.config.site_url`
+     (used for email confirmation links) and `auth.config.additional_redirect_urls`
+     so Supabase accepts the preview domain when your app passes `redirect_to`.
 
 3. **Optional safety net inside Vercel.**
    * In your project on [https://vercel.com](https://vercel.com) go to **Settings → Environment Variables**.
