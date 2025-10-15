@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, type ComponentType } from "react";
-import { CheckCircle2, NotebookPen, Sparkles, TriangleAlert } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
+import { CheckCircle2, NotebookPen, Pin, Sparkles, TriangleAlert } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
   type MonumentActivityEvent,
+  type MonumentActivityNote,
   useMonumentActivity,
 } from "@/lib/hooks/useMonumentActivity";
 
@@ -83,7 +84,98 @@ function formatTimeLabel(date: Date) {
 }
 
 export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
-  const { events, loading, error, summary } = useMonumentActivity(monumentId);
+  const { events, loading, error, summary, notes } = useMonumentActivity(monumentId);
+
+  const storageKey = useMemo(
+    () => `monument:${monumentId}:pinned-insights`,
+    [monumentId]
+  );
+
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        setPinnedIds([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setPinnedIds([]);
+        return;
+      }
+      const sanitized = parsed.filter((value): value is string => typeof value === "string");
+      setPinnedIds(sanitized);
+    } catch (readError) {
+      console.warn("Unable to read pinned insights from storage", readError);
+      setPinnedIds([]);
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (notes.length === 0) return;
+    setPinnedIds((current) => {
+      const valid = current.filter((id) => notes.some((note) => note.id === id));
+      if (valid.length === current.length) return current;
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(valid));
+        } catch (writeError) {
+          console.warn("Unable to persist pinned insights", writeError);
+        }
+      }
+      return valid;
+    });
+  }, [notes, storageKey]);
+
+  const togglePin = useCallback(
+    (noteId: string) => {
+      setPinnedIds((current) => {
+        const exists = current.includes(noteId);
+        const next = exists
+          ? current.filter((id) => id !== noteId)
+          : [noteId, ...current];
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(storageKey, JSON.stringify(next));
+          } catch (writeError) {
+            console.warn("Unable to persist pinned insights", writeError);
+          }
+        }
+        return next;
+      });
+    },
+    [storageKey]
+  );
+
+  const noteById = useMemo(() => {
+    const map = new Map<string, MonumentActivityNote>();
+    for (const note of notes) {
+      map.set(note.id, note);
+    }
+    return map;
+  }, [notes]);
+
+  const pinnedNotes = useMemo(() => {
+    if (pinnedIds.length === 0) return [] as MonumentActivityNote[];
+    return pinnedIds
+      .map((id) => noteById.get(id))
+      .filter((note): note is MonumentActivityNote => Boolean(note))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [noteById, pinnedIds]);
+
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+
+  const hasPinnedNotes = pinnedNotes.length > 0;
+
+  function summarizeNoteContent(note: MonumentActivityNote) {
+    const raw = note.content?.replace(/\s+/g, " ").trim();
+    if (!raw) return "Drop more detail in this note to keep the blueprint vivid.";
+    if (raw.length <= 180) return raw;
+    return `${raw.slice(0, 177)}…`;
+  }
 
   const groupedEvents = useMemo(() => {
     const groups = new Map<
@@ -115,6 +207,8 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
       }));
   }, [events]);
 
+  const hasEvents = groupedEvents.length > 0;
+
   const phases = useMemo(
     () => [
       {
@@ -143,7 +237,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
 
   const chargePercent = Math.min(Math.max(summary.chargePercent, 0), 100);
 
-  const thermometerHeight = Math.max(chargePercent, events.length > 0 ? 6 : 0);
+  const thermometerHeight = Math.max(chargePercent, hasEvents ? 6 : 0);
 
   return (
     <Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 text-white shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
@@ -188,50 +282,150 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                 <p className="text-xs text-red-100/70">{error}</p>
               </div>
             </div>
-          ) : groupedEvents.length > 0 ? (
-            <div className="relative">
-              <div className="absolute left-[22px] top-5 bottom-5 w-px bg-gradient-to-b from-white/0 via-white/20 to-white/0" aria-hidden="true" />
-              <div className="space-y-6">
-                {groupedEvents.map(({ label, items }) => (
-                  <section key={label} className="relative pl-12">
-                    <div className="mb-4 flex items-center gap-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
-                        {label}
-                      </span>
-                      <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+          ) : hasPinnedNotes || hasEvents ? (
+            <div className="space-y-6">
+              {hasPinnedNotes ? (
+                <section className="rounded-2xl border border-sky-400/40 bg-sky-500/10 px-4 py-4 text-sky-50 shadow-[0_10px_45px_-30px_rgba(14,165,233,0.8)]">
+                  <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-100/80">
+                        Pinned insights
+                      </p>
+                      <h4 className="text-sm font-semibold">Keep these blueprints within reach</h4>
                     </div>
-                    <ul className="space-y-4">
-                      {items.map((event) => {
-                        const style = EVENT_STYLES[event.type];
-                        const Icon = style.icon;
-                        return (
-                          <li key={event.id} className="relative">
-                            <span className="absolute -left-[30px] top-6 flex h-3 w-3 items-center justify-center">
-                              <span className="size-3 rounded-full bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
-                            </span>
-                            <article className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:border-white/20 hover:bg-white/10">
-                              <span className={cn("mt-0.5 flex h-10 w-10 items-center justify-center rounded-full", style.badge)}>
-                                <Icon className="size-4" aria-hidden="true" />
-                              </span>
-                              <div className="flex-1 space-y-2">
-                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                  <p className="text-sm font-semibold text-white">{event.title}</p>
-                                  <span className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">
-                                    {event.timeLabel}
-                                  </span>
-                                </div>
-                                {event.detail ? (
-                                  <p className="text-xs text-white/65">{event.detail}</p>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-sky-100/60">
+                      {pinnedNotes.length} saved
+                    </p>
+                  </header>
+                  <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {pinnedNotes.map((note) => {
+                      const updatedAt = new Date(note.updatedAt);
+                      const updatedLabel = Number.isNaN(updatedAt.getTime())
+                        ? null
+                        : formatTimeLabel(updatedAt);
+                      return (
+                        <li key={note.id} className="group relative">
+                          <article className="flex h-full flex-col gap-3 rounded-2xl border border-white/20 bg-black/30 px-4 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold text-white">
+                                  {note.title || "Pinned note"}
+                                </p>
+                                {updatedLabel ? (
+                                  <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/40">
+                                    Updated {updatedLabel}
+                                  </p>
                                 ) : null}
                               </div>
-                            </article>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                ))}
-              </div>
+                              <button
+                                type="button"
+                                onClick={() => togglePin(note.id)}
+                                className="rounded-full border border-sky-300/40 bg-sky-500/10 p-2 text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
+                                aria-label="Unpin insight"
+                              >
+                                <Pin className="size-4 -rotate-45" aria-hidden="true" />
+                              </button>
+                            </div>
+                            <p className="text-xs text-white/70">
+                              {summarizeNoteContent(note)}
+                            </p>
+                          </article>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ) : null}
+
+              {hasEvents ? (
+                <div className="relative">
+                  <div className="absolute left-[22px] top-5 bottom-5 w-px bg-gradient-to-b from-white/0 via-white/20 to-white/0" aria-hidden="true" />
+                  <div className="space-y-6">
+                    {groupedEvents.map(({ label, items }) => (
+                      <section key={label} className="relative pl-12">
+                        <div className="mb-4 flex items-center gap-3">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
+                            {label}
+                          </span>
+                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                        </div>
+                        <ul className="space-y-4">
+                          {items.map((event) => {
+                            const style = EVENT_STYLES[event.type];
+                            const Icon = style.icon;
+                            const isPinned = event.noteId ? pinnedSet.has(event.noteId) : false;
+                            const attributionLabel = event.attribution
+                              ? `Logged by ${event.attribution}`
+                              : "Logged by you";
+                            return (
+                              <li key={event.id} className="relative">
+                                <span className="absolute -left-[30px] top-6 flex h-3 w-3 items-center justify-center">
+                                  <span className="size-3 rounded-full bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
+                                </span>
+                                <article className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:border-white/20 hover:bg-white/10">
+                                  <span className={cn("mt-0.5 flex h-10 w-10 items-center justify-center rounded-full", style.badge)}>
+                                    <Icon className="size-4" aria-hidden="true" />
+                                  </span>
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-semibold text-white">{event.title}</p>
+                                        {event.detail ? (
+                                          <p className="text-xs text-white/65">{event.detail}</p>
+                                        ) : null}
+                                        <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/35">
+                                          {attributionLabel}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {event.noteId ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => togglePin(event.noteId!)}
+                                            className={cn(
+                                              "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] transition",
+                                              isPinned
+                                                ? "border-sky-300/70 bg-sky-500/20 text-sky-100 shadow-[0_10px_30px_-18px_rgba(56,189,248,0.75)]"
+                                                : "border-white/15 bg-white/0 text-white/50 hover:border-sky-200/60 hover:bg-sky-400/10 hover:text-sky-100"
+                                            )}
+                                            aria-label={isPinned ? "Unpin note" : "Pin note"}
+                                            aria-pressed={isPinned}
+                                          >
+                                            <span className="mr-2 inline-flex items-center justify-center">
+                                              <Pin
+                                                className={cn(
+                                                  "size-3.5 transition",
+                                                  isPinned ? "-rotate-45" : ""
+                                                )}
+                                                aria-hidden="true"
+                                              />
+                                            </span>
+                                            {isPinned ? "Pinned" : "Pin"}
+                                          </button>
+                                        ) : null}
+                                        <span className="text-[11px] font-medium uppercase tracking-[0.28em] text-white/40">
+                                          {event.timeLabel}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </article>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-5 py-6 text-sm text-white/70">
+                  <p className="text-sm font-semibold text-white">No activity yet</p>
+                  <p className="mt-2 text-xs text-white/60">
+                    Complete a goal, log a note, or earn XP linked to this monument to begin the construction log.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-5 py-6 text-sm text-white/70">

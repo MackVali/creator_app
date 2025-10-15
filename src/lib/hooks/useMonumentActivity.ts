@@ -37,6 +37,8 @@ export interface MonumentActivityEvent {
   title: string;
   detail: string | null;
   timestamp: string;
+  attribution: string | null;
+  noteId?: string;
 }
 
 export interface MonumentActivitySummary {
@@ -54,6 +56,7 @@ interface UseMonumentActivityState {
   summary: MonumentActivitySummary;
   loading: boolean;
   error: string | null;
+  notes: MonumentActivityNote[];
 }
 
 const DEFAULT_SUMMARY: MonumentActivitySummary = {
@@ -79,20 +82,30 @@ function isGoalCompleted(goal: GoalRow) {
   return false;
 }
 
+export interface MonumentActivityNote {
+  id: string;
+  title: string;
+  content: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 function truncate(value: string, limit = 140) {
   if (value.length <= limit) return value;
   return `${value.slice(0, limit - 1)}…`;
 }
 
 export function useMonumentActivity(monumentId: string) {
-  const [{ events, summary, loading, error }, setState] = useState<UseMonumentActivityState>(
-    {
-      events: [],
-      summary: DEFAULT_SUMMARY,
-      loading: true,
-      error: null,
-    }
-  );
+  const [{ events, summary, loading, error, notes }, setState] =
+    useState<UseMonumentActivityState>(
+      {
+        events: [],
+        summary: DEFAULT_SUMMARY,
+        loading: true,
+        error: null,
+        notes: [],
+      }
+    );
 
   const supabase = useMemo(() => getSupabaseBrowser(), []);
 
@@ -103,6 +116,7 @@ export function useMonumentActivity(monumentId: string) {
         summary: DEFAULT_SUMMARY,
         loading: false,
         error: "Missing monument identifier",
+        notes: [],
       });
       return;
     }
@@ -113,6 +127,7 @@ export function useMonumentActivity(monumentId: string) {
         summary: DEFAULT_SUMMARY,
         loading: false,
         error: "Supabase client not available",
+        notes: [],
       });
       return;
     }
@@ -170,18 +185,34 @@ export function useMonumentActivity(monumentId: string) {
       const goals = (goalsRes.data ?? []) as GoalRow[];
 
       const events: MonumentActivityEvent[] = [];
+      const activityNotes: MonumentActivityNote[] = [];
+
+      const actorName =
+        authData.user?.user_metadata?.full_name?.toString().trim() ||
+        authData.user?.user_metadata?.name?.toString().trim() ||
+        authData.user?.email ||
+        null;
 
       for (const note of notes) {
         const timestamp = note.updated_at ?? note.created_at;
         if (!timestamp) continue;
         const title = note.title?.trim() || "Note captured";
         const content = note.content?.trim();
+        activityNotes.push({
+          id: note.id,
+          title,
+          content: content ?? null,
+          createdAt: note.created_at ?? timestamp,
+          updatedAt: note.updated_at ?? note.created_at ?? timestamp,
+        });
         events.push({
           id: `note-${note.id}`,
           type: "note",
           title,
           detail: content ? truncate(content) : null,
           timestamp,
+          attribution: actorName,
+          noteId: note.id,
         });
       }
 
@@ -196,6 +227,7 @@ export function useMonumentActivity(monumentId: string) {
           title: `Goal completed: ${title}`,
           detail: null,
           timestamp,
+          attribution: actorName,
         });
       }
 
@@ -213,6 +245,7 @@ export function useMonumentActivity(monumentId: string) {
             : `Logged XP from ${kind}`,
           detail: source ? truncate(source, 100) : kind ? `Source: ${kind}` : null,
           timestamp,
+          attribution: actorName,
         });
       }
 
@@ -244,6 +277,7 @@ export function useMonumentActivity(monumentId: string) {
         summary,
         loading: false,
         error: null,
+        notes: activityNotes,
       });
     } catch (err) {
       console.error("Failed to load monument activity", {
@@ -256,6 +290,7 @@ export function useMonumentActivity(monumentId: string) {
         loading: false,
         error:
           err instanceof Error ? err.message : "Failed to load monument activity",
+        notes: [],
       });
     }
   }, [monumentId, supabase]);
@@ -274,6 +309,7 @@ export function useMonumentActivity(monumentId: string) {
     summary,
     loading,
     error,
+    notes,
     refresh: loadActivity,
   };
 }
