@@ -259,7 +259,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
         ) : null}
       </div>
 
-      <div className="relative mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
+      <div className="relative mt-6 grid gap-6 2xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
         <div className="relative rounded-3xl border border-white/10 bg-black/20 p-5 backdrop-blur">
           {loading ? (
             <div className="flex flex-col gap-4">
@@ -437,7 +437,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
           )}
         </div>
 
-        <aside className="space-y-4 xl:sticky xl:top-6">
+        <aside className="space-y-4 2xl:sticky 2xl:top-6">
           <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-5 backdrop-blur">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.25),_transparent_70%)]" />
             <div className="relative space-y-4">

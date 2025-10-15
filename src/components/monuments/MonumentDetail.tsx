@@ -127,63 +127,61 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
           </dl>
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <div className="space-y-6">
-            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
-              <header className="relative flex items-center justify-between">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
-                  GOALS
+        <div className="grid gap-6 xl:auto-rows-min xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
+            <header className="relative flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+                GOALS
+              </h2>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCreateGoal}
+                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
+              >
+                New goal
+              </Button>
+            </header>
+            <div className="relative mt-4">
+              <FilteredGoalsGrid
+                entity="monument"
+                id={id}
+                onCreateGoal={handleCreateGoal}
+                displayMode="minimal"
+              />
+            </div>
+          </section>
+
+          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
+            <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-white/60">
+                  Notes
+                </p>
+                <h2 className="text-lg font-semibold text-white sm:text-xl">
+                  Quick captures
                 </h2>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCreateGoal}
-                  className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
-                >
-                  New goal
-                </Button>
-              </header>
-              <div className="relative mt-4">
-                <FilteredGoalsGrid
-                  entity="monument"
-                  id={id}
-                  onCreateGoal={handleCreateGoal}
-                  displayMode="minimal"
-                />
+                <p className="text-xs text-white/70 sm:text-sm">
+                  Save ideas, links, and reminders while they&apos;re fresh.
+                </p>
               </div>
-            </section>
-          </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAddNote}
+                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
+              >
+                New note
+              </Button>
+            </header>
+            <div className="relative mt-5">
+              <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
+            </div>
+          </section>
 
-          <div className="space-y-6">
-            <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
-              <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-white/60">
-                    Notes
-                  </p>
-                  <h2 className="text-lg font-semibold text-white sm:text-xl">
-                    Quick captures
-                  </h2>
-                  <p className="text-xs text-white/70 sm:text-sm">
-                    Save ideas, links, and reminders while they&apos;re fresh.
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleAddNote}
-                  className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
-                >
-                  New note
-                </Button>
-              </header>
-              <div className="relative mt-5">
-                <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
-              </div>
-            </section>
-
+          <div className="xl:col-span-2">
             <ActivityPanel monumentId={id} />
           </div>
         </div>
