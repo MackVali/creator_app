@@ -692,6 +692,7 @@ async function scheduleHabitsForDay(params: {
         now: offset === 0 ? baseDate : undefined,
         locationContext,
         daylight: daylightConstraint,
+        matchEnergyLevel: true,
       }
     )
 
@@ -800,6 +801,7 @@ async function fetchCompatibleWindowsForItem(
     cache?: Map<string, WindowLite[]>
     locationContext?: string | null
     daylight?: DaylightConstraint | null
+    matchEnergyLevel?: boolean
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -839,7 +841,13 @@ async function fetchCompatibleWindowsForItem(
       ? energyIndex(energyLabel, { fallback: ENERGY.LIST.length })
       : ENERGY.LIST.length
     if (hasEnergyLabel && energyIdx >= ENERGY.LIST.length) continue
-    if (energyIdx < itemIdx) continue
+    const requireExactEnergy = options?.matchEnergyLevel ?? false
+    if (requireExactEnergy) {
+      if (!hasEnergyLabel) continue
+      if (energyIdx !== itemIdx) continue
+    } else if (energyIdx < itemIdx) {
+      continue
+    }
 
     const windowLocationRaw = win.location_context
       ? String(win.location_context).toUpperCase().trim()
