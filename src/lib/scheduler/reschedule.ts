@@ -774,7 +774,8 @@ async function scheduleHabitsForDay(params: {
     ) {
       constraintLowerBound = baseNowMs
     }
-    let startCandidate = constraintLowerBound
+
+    let startCandidate: number
     if (isSyncHabit) {
       const anchors = anchorStartsByWindowKey.get(target.key) ?? null
       const safeWindowStart = Number.isFinite(windowStartMs) ? windowStartMs : startMs
@@ -782,7 +783,8 @@ async function scheduleHabitsForDay(params: {
       let anchorStartMs: number | null = null
 
       if (anchors && anchors.length > 0) {
-        anchorStartMs = anchors.find(value => value >= constraintLowerBound && value < endLimit) ?? null
+        anchorStartMs =
+          anchors.find(value => value >= constraintLowerBound && value < endLimit) ?? null
         if (anchorStartMs === null) {
           anchorStartMs = anchors.find(value => value >= startMs && value < endLimit) ?? null
         }
@@ -796,19 +798,26 @@ async function scheduleHabitsForDay(params: {
       } else {
         startCandidate = Math.max(fallbackStart, constraintLowerBound)
       }
-    }
-    if (startCandidate >= endLimit) {
-      if (!isSyncHabit) {
-        availability.set(target.key, new Date(endLimit))
-    let startCandidate = startLimit
-    if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endLimit) {
-      if (anchorPreference === 'BACK') {
-        const latestStart = endLimit - durationMs
-        const desiredStart = Math.min(latestStart, baseNowMs)
-        startCandidate = Math.max(startLimit, desiredStart)
-      } else {
-        startCandidate = baseNowMs
+    } else {
+      startCandidate = Math.max(startLimit, constraintLowerBound)
+      if (
+        typeof baseNowMs === 'number' &&
+        baseNowMs > startCandidate &&
+        baseNowMs < endLimit
+      ) {
+        if (anchorPreference === 'BACK') {
+          const latestStart = endLimit - durationMs
+          const desiredStart = Math.min(latestStart, baseNowMs)
+          startCandidate = Math.max(startLimit, desiredStart)
+        } else {
+          startCandidate = baseNowMs
+        }
       }
+    }
+
+    if (startCandidate >= endLimit) {
+      setAvailabilityBoundsForKey(availability, target.key, endLimit, endLimit)
+      continue
     }
 
     const latestStartAllowed = endLimit - durationMs
@@ -826,6 +835,8 @@ async function scheduleHabitsForDay(params: {
             bounds.back = new Date(bounds.front)
           }
         }
+      } else {
+        setAvailabilityBoundsForKey(availability, target.key, endLimit, endLimit)
       }
       continue
     }
@@ -837,8 +848,7 @@ async function scheduleHabitsForDay(params: {
       clipped = true
     }
     if (endCandidate <= startCandidate) {
-      if (!isSyncHabit) {
-        availability.set(target.key, new Date(endCandidate))
+      setAvailabilityBoundsForKey(availability, target.key, endCandidate, endCandidate)
       if (bounds) {
         if (anchorPreference === 'BACK') {
           bounds.back = new Date(Math.max(bounds.front.getTime(), startCandidate))
@@ -857,9 +867,6 @@ async function scheduleHabitsForDay(params: {
 
     const startDate = new Date(startCandidate)
     const endDate = new Date(endCandidate)
-    if (!isSyncHabit) {
-      availability.set(target.key, endDate)
-    }
     addAnchorStart(anchorStartsByWindowKey, target.key, startCandidate)
     if (bounds) {
       if (anchorPreference === 'BACK') {
@@ -873,6 +880,10 @@ async function scheduleHabitsForDay(params: {
           bounds.back = new Date(bounds.front)
         }
       }
+    } else if (anchorPreference === 'BACK') {
+      setAvailabilityBoundsForKey(availability, target.key, startDate.getTime(), startDate.getTime())
+    } else {
+      setAvailabilityBoundsForKey(availability, target.key, endDate.getTime(), endDate.getTime())
     }
 
     const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
@@ -980,7 +991,6 @@ async function fetchCompatibleWindowsForItem(
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
-  const shouldTrackAvailability = !options?.ignoreAvailability && Boolean(options?.availability)
 
   const desiredLocation = options?.locationContext
     ? String(options.locationContext).toUpperCase().trim()
@@ -1085,20 +1095,14 @@ async function fetchCompatibleWindowsForItem(
       frontBoundMs = existingBounds.front.getTime()
       backBoundMs = existingBounds.back.getTime()
     } else if (availability) {
-      availability.set(key, {
-        front: new Date(frontBoundMs),
-        back: new Date(backBoundMs),
-      })
+      setAvailabilityBoundsForKey(availability, key, frontBoundMs, backBoundMs)
     }
 
     if (frontBoundMs >= backBoundMs) continue
 
-    const availableStartLocal = new Date(availableStartMs)
+    const endLimitMs = backBoundMs
     const endLimitLocal = new Date(endLimitMs)
-    if (shouldTrackAvailability && availability) {
-      const existing = availability.get(key)
-      if (!existing || existing.getTime() !== availableStartMs) {
-        availability.set(key, availableStartLocal)
+
     let candidateStartMs: number
     if (anchorPreference === 'BACK') {
       candidateStartMs = backBoundMs - durationMs
@@ -1117,7 +1121,6 @@ async function fetchCompatibleWindowsForItem(
     if (candidateEndMs > backBoundMs) continue
 
     const availableStartLocal = new Date(candidateStartMs)
-    const endLimitLocal = new Date(backBoundMs)
 
     compatible.push({
       id: win.id,
@@ -1146,6 +1149,27 @@ async function fetchCompatibleWindowsForItem(
     endLocal: win.endLocal,
     availableStartLocal: win.availableStartLocal,
   }))
+}
+
+function setAvailabilityBoundsForKey(
+  availability: Map<string, WindowAvailabilityBounds>,
+  key: string,
+  frontMs: number,
+  backMs: number,
+) {
+  const safeFront = Number.isFinite(frontMs) ? frontMs : backMs
+  const safeBack = Number.isFinite(backMs) ? backMs : frontMs
+  const normalizedFront = Math.min(safeFront, safeBack)
+  const normalizedBack = Math.max(safeFront, safeBack)
+  const front = new Date(normalizedFront)
+  const back = new Date(normalizedBack)
+  const existing = availability.get(key)
+  if (existing) {
+    existing.front = front
+    existing.back = back
+  } else {
+    availability.set(key, { front, back })
+  }
 }
 
 function findPlacementWindow(

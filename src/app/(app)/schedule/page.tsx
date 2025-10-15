@@ -1087,7 +1087,7 @@ const TIMELINE_RIGHT_OFFSET = '0.5rem'
 const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET}) / 2)`
 const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH})`
 
-function computeTimelineLayoutForAsyncHabits({
+function computeTimelineLayoutForSyncHabits({
   habitPlacements,
   projectInstances,
 }: {
@@ -1127,7 +1127,7 @@ function computeTimelineLayoutForAsyncHabits({
     return a.endMs - b.endMs
   })
 
-  const asyncHabits = habitPlacements
+  const syncHabits = habitPlacements
     .map((placement, index) => ({ placement, index }))
     .filter(({ placement }) => {
       const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
@@ -1146,8 +1146,8 @@ function computeTimelineLayoutForAsyncHabits({
 
   const usedCandidates = new Set<string>()
 
-  asyncHabits.forEach(asyncHabit => {
-    const { index: habitIndex, startMs, endMs } = asyncHabit
+  syncHabits.forEach(syncHabit => {
+    const { index: habitIndex, startMs, endMs } = syncHabit
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
 
     type Match = {
@@ -3659,7 +3659,7 @@ export default function SchedulePage() {
         ? 'pointer-events-none select-none'
         : ''
 
-      const { habitLayouts, projectLayouts } = computeTimelineLayoutForAsyncHabits({
+      const { habitLayouts, projectLayouts } = computeTimelineLayoutForSyncHabits({
         habitPlacements: modelHabitPlacements,
         projectInstances: modelProjectInstances,
       })
@@ -3741,12 +3741,12 @@ export default function SchedulePage() {
               const isHabitCompleted = habitStatus === 'completed'
               const rawHabitType = placement.habitType || 'HABIT'
               const normalizedHabitType =
-                rawHabitType === 'SYNC' ? 'ASYNC' : rawHabitType
+                rawHabitType === 'ASYNC' ? 'SYNC' : rawHabitType
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
                 'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
-              const asyncCardBackground =
+              const syncCardBackground =
                 'radial-gradient(circle at 12% -20%, rgba(250, 204, 21, 0.32), transparent 58%), linear-gradient(135deg, rgba(74, 60, 9, 0.9) 0%, rgba(202, 138, 4, 0.82) 45%, rgba(250, 204, 21, 0.7) 100%)'
               const memoCardBackground =
                 'radial-gradient(circle at 8% -18%, rgba(192, 132, 252, 0.34), transparent 60%), linear-gradient(138deg, rgba(59, 7, 100, 0.94) 0%, rgba(99, 37, 141, 0.88) 46%, rgba(168, 85, 247, 0.74) 100%)'
@@ -3764,7 +3764,7 @@ export default function SchedulePage() {
                 '0 8px 18px rgba(76, 20, 32, 0.26)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
-              const asyncShadow = [
+              const syncShadow = [
                 '0 18px 36px rgba(58, 44, 14, 0.32)',
                 '0 8px 18px rgba(82, 62, 18, 0.24)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
@@ -3811,9 +3811,9 @@ export default function SchedulePage() {
                 cardShadow = choreShadow
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-rose-200/45'
-              } else if (normalizedHabitType === 'ASYNC') {
-                cardBackground = asyncCardBackground
-                cardShadow = asyncShadow
+              } else if (normalizedHabitType === 'SYNC') {
+                cardBackground = syncCardBackground
+                cardShadow = syncShadow
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-amber-200/45'
               }
