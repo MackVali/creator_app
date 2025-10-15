@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { GoalItem } from "@/types/dashboard";
@@ -24,10 +24,21 @@ export function useFilteredGoals({
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const supabase = getSupabaseBrowser();
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
 
-  const fetchGoals = async () => {
-    if (!supabase || !id) return;
+  const fetchGoals = useCallback(async () => {
+    if (!id) {
+      setGoals([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    if (!supabase) {
+      setLoading(false);
+      setError("Supabase client unavailable");
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -179,11 +190,11 @@ export function useFilteredGoals({
     } finally {
       setLoading(false);
     }
-  };
+  }, [entity, id, limit, supabase]);
 
   useEffect(() => {
     fetchGoals();
-  }, [entity, id, limit]);
+  }, [fetchGoals]);
 
   return {
     goals,

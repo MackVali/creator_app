@@ -16,8 +16,9 @@ import {
   ProfileThemeSettings,
   PublicProfileReadModel,
 } from "../types";
+import type { Database } from "../../types/supabase";
 
-type PublicSupabaseClient = SupabaseClient<any, "public", any>;
+type PublicSupabaseClient = SupabaseClient<Database, "public", Database["public"]>;
 
 let cachedClient: PublicSupabaseClient | null = null;
 
