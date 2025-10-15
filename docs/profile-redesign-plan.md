@@ -20,7 +20,7 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 - Can run in parallel with module redesigns once shared spacing/typography tokens exist.
 
 **Deliverable**
-- [PRD — Hyper-Visual Profile Shell](prd/hyper-visual-profile-shell.md)
+- [Mini PRD Prompts — Hyper-Visual Profile Shell (Prompts A–C)](prd/hyper-visual-profile-shell.md)
 
 ---
 
