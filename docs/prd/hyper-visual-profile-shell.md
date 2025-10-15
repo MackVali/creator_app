@@ -15,6 +15,12 @@ The cinematic profile shell concept is broad, so break the work into the followi
 - Motion choreography that scales and fades hero media as users scroll.
 - Skeleton and fallback states that preserve LCP/CLS targets on 4G networks.
 
+**Implementation guardrails**
+- Keep gradient presets mapped to theme tokens so premium palettes inherit automatically.
+- Cap custom video uploads to short, muted loops (<=10s, <2.5 MB) and transcode to optimized mobile formats.
+- Provide explicit reduced-motion settings that swap parallax for subtle opacity shifts while honoring system preferences.
+- Ensure hero media lazy loads after critical profile metadata to protect first contentful paint.
+
 **Dependencies**
 - Requires theme tokens/media handling groundwork.
 - Can run alongside Prompt B once shared spacing tokens ship.
