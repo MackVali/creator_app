@@ -38,7 +38,7 @@ describe("parseSupabaseError", () => {
     });
 
     expect(error.code).toBe(ERROR_CODES.AUTH_INVALID_REDIRECT);
-    expect(error.userMessage).toMatch(/domain is not allowed/i);
+    expect(error.userMessage).toMatch(/redirect domain/i);
   });
 
   it("identifies when the Supabase email rate limit is hit", () => {
@@ -57,6 +57,17 @@ describe("parseSupabaseError", () => {
     });
 
     expect(error.code).toBe(ERROR_CODES.AUTH_INVALID_REDIRECT);
-    expect(error.userMessage).toMatch(/site_url/i);
+    expect(error.userMessage).toMatch(/supabase rejected the redirect domain/i);
+  });
+
+  it("points to the localhost site url when previews fail", () => {
+    const error = parseSupabaseError({
+      message:
+        "For security reasons, you can only use redirect URLs from the same domain as your SITE_URL (http://localhost:3000).",
+    });
+
+    expect(error.code).toBe(ERROR_CODES.AUTH_INVALID_REDIRECT);
+    expect(error.userMessage).toMatch(/http:\/\/localhost:3000/i);
+    expect(error.userMessage).toMatch(/authentication → url configuration/i);
   });
 });

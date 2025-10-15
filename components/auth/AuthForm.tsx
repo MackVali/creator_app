@@ -197,7 +197,7 @@ export default function AuthForm() {
       if (resultData.user && !resultData.user.email_confirmed_at) {
         setSuccess(
           usedFallback
-            ? "Account created! Please check your email to confirm your account. If you started from a preview link, open the confirmation email on the main site domain."
+            ? "Account created! Please check your email to confirm your account. Supabase is still pointing at your default SITE_URL, so update Authentication → URL Configuration (or set NEXT_PUBLIC_SUPABASE_REDIRECT_URL) to your preview domain after confirming."
             : "Account created! Please check your email to confirm your account."
         );
       } else {

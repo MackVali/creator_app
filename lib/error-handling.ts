@@ -52,7 +52,7 @@ const USER_FRIENDLY_MESSAGES = {
   [ERROR_CODES.AUTH_WEAK_PASSWORD]:
     "Password does not meet security requirements",
   [ERROR_CODES.AUTH_INVALID_REDIRECT]:
-    "Unable to send the confirmation email because this domain is not allowed. Please use the main site or contact support.",
+    "Supabase rejected the redirect domain. Update NEXT_PUBLIC_SUPABASE_REDIRECT_URL, NEXT_PUBLIC_SITE_URL, or the SITE_URL in Supabase Auth settings.",
   [ERROR_CODES.NETWORK_ERROR]:
     "Connection error. Please check your internet and try again",
   [ERROR_CODES.VALIDATION_ERROR]: "Please check your input and try again",
@@ -106,20 +106,6 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
-  if (
-    lowerCasedMessage.includes("site_url") ||
-    lowerCasedMessage.includes("url configuration") ||
-    lowerCasedMessage.includes("configure your project url")
-  ) {
-    return {
-      code: ERROR_CODES.AUTH_INVALID_REDIRECT,
-      message: errorMessage,
-      userMessage:
-        "Supabase needs a redirect domain configured. Set NEXT_PUBLIC_SUPABASE_REDIRECT_URL, NEXT_PUBLIC_SITE_URL, or configure the SITE_URL in your Supabase Auth settings.",
-      shouldLog: true,
-    };
-  }
-
   if (errorMessage.includes("Too many requests")) {
     return {
       code: ERROR_CODES.AUTH_TOO_MANY_REQUESTS,
@@ -156,17 +142,36 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
-  if (
+  const mentionsRedirectIssue =
     lowerCasedMessage.includes("redirect_to") ||
+    lowerCasedMessage.includes("site_url") ||
+    lowerCasedMessage.includes("url configuration") ||
+    lowerCasedMessage.includes("configure your project url") ||
     (lowerCasedMessage.includes("redirect") &&
       (lowerCasedMessage.includes("url") ||
         lowerCasedMessage.includes("domain") ||
-        lowerCasedMessage.includes("host")))
-  ) {
+        lowerCasedMessage.includes("host")));
+
+  if (mentionsRedirectIssue) {
+    const redirectUserMessage = (() => {
+      const isLocalHostConfig =
+        lowerCasedMessage.includes("localhost") ||
+        lowerCasedMessage.includes("127.0.0.1");
+
+      if (!isLocalHostConfig) {
+        return USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_INVALID_REDIRECT];
+      }
+
+      const siteUrlMatch = errorMessage.match(/https?:\/\/[^\s)]+/i);
+      const configuredSiteUrl = siteUrlMatch?.[0] ?? "http://localhost:3000";
+
+      return `Supabase is still configured to send auth emails to ${configuredSiteUrl}. Update Authentication → URL Configuration in Supabase (or set NEXT_PUBLIC_SUPABASE_REDIRECT_URL / NEXT_PUBLIC_SITE_URL) to your deployed domain so preview sign-ups work.`;
+    })();
+
     return {
       code: ERROR_CODES.AUTH_INVALID_REDIRECT,
       message: errorMessage,
-      userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_INVALID_REDIRECT],
+      userMessage: redirectUserMessage,
       shouldLog: true,
     };
   }
