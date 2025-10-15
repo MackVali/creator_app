@@ -174,7 +174,7 @@ const toIsoDateString = (value: string): string | null => {
   ) {
     return null;
   }
-  const date = new Date(Date.UTC(year, month - 1, day));
+  const date = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
   if (Number.isNaN(date.getTime())) {
     return null;
   }
