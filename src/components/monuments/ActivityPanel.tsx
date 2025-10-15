@@ -179,14 +179,18 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
 
   const groupedEvents = useMemo(() => {
     const groups = new Map<
-      string,
+      number,
       { label: string; items: Array<MonumentActivityEvent & { timeLabel: string }> }
     >();
 
     for (const event of events) {
       const date = new Date(event.timestamp);
       if (Number.isNaN(date.getTime())) continue;
-      const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      const dayKey = new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate()
+      ).getTime();
       const label = formatDayLabel(date);
       const timeLabel = formatTimeLabel(date);
 
@@ -198,7 +202,7 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
     }
 
     return Array.from(groups.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
+      .sort((a, b) => b[0] - a[0])
       .map(([, value]) => ({
         label: value.label,
         items: value.items.sort((a, b) =>
