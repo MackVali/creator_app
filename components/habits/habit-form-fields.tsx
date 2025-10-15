@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 
 export type HabitTypeOption = {
   label: string;
@@ -124,13 +125,6 @@ interface HabitFormFieldsProps {
   showDescriptionField?: boolean;
 }
 
-const LOCATION_OPTIONS = [
-  { value: "ANY", label: "Anywhere" },
-  { value: "HOME", label: "Home" },
-  { value: "WORK", label: "Work" },
-  { value: "OUTSIDE", label: "Outside" },
-];
-
 const DAYLIGHT_OPTIONS = [
   { value: "ALL_DAY", label: "All day" },
   { value: "DAY", label: "Daytime" },
@@ -177,6 +171,18 @@ export function HabitFormFields({
     const hasDaylight = daylightUpper === "DAY" || daylightUpper === "NIGHT";
     return hasLocation || hasDaylight;
   });
+  const [customLocationName, setCustomLocationName] = useState("");
+  const [customLocationError, setCustomLocationError] = useState<string | null>(
+    null,
+  );
+  const [savingCustomLocation, setSavingCustomLocation] = useState(false);
+
+  const {
+    options: locationOptions,
+    loading: locationOptionsLoading,
+    error: locationOptionsError,
+    createContext: createLocationContext,
+  } = useLocationContexts();
 
   useEffect(() => {
     setSkillSearchQuery("");
@@ -206,6 +212,31 @@ export function HabitFormFields({
 
   const locationValue = (locationContext ?? "").toUpperCase().trim() || "ANY";
   const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
+
+  const handleAddCustomLocation = async () => {
+    const name = customLocationName;
+    if (!name.trim()) {
+      setCustomLocationError("Enter a location name first.");
+      return;
+    }
+
+    setSavingCustomLocation(true);
+    setCustomLocationError(null);
+
+    try {
+      const result = await createLocationContext(name);
+      if (!result.success) {
+        setCustomLocationError(result.error);
+        return;
+      }
+
+      setCustomLocationName("");
+      onLocationContextChange?.(result.option.value);
+      setAdvancedOpen(true);
+    } finally {
+      setSavingCustomLocation(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -421,13 +452,14 @@ export function HabitFormFields({
                 onValueChange={(value) =>
                   onLocationContextChange?.(value === "ANY" ? null : value)
                 }
+                disabled={locationOptionsLoading}
               >
                 <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
                   <SelectValue placeholder="Where does this habit happen?" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
-                  {LOCATION_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
+                  {locationOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.value}>
                       {option.label}
                     </SelectItem>
                   ))}
@@ -436,6 +468,41 @@ export function HabitFormFields({
               <p className="text-xs text-white/60">
                 Choose a location to keep this habit aligned with compatible schedule windows.
               </p>
+              {locationOptionsError ? (
+                <p className="text-xs text-amber-300/90">
+                  {locationOptionsError}
+                </p>
+              ) : null}
+              <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/60">
+                  Add a new location
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={customLocationName}
+                    onChange={(event) => {
+                      setCustomLocationName(event.target.value)
+                      setCustomLocationError(null)
+                    }}
+                    placeholder="e.g. Gym or Studio"
+                    className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleAddCustomLocation}
+                    disabled={savingCustomLocation}
+                    className="h-10 shrink-0 rounded-lg bg-blue-500/80 text-xs font-semibold uppercase tracking-[0.2em] text-white hover:bg-blue-500"
+                  >
+                    {savingCustomLocation ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+                {customLocationError ? (
+                  <p className="text-xs text-red-300">{customLocationError}</p>
+                ) : null}
+                <p className="text-[0.65rem] text-white/50">
+                  Custom locations sync across your habits and windows.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-3">

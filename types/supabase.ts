@@ -97,6 +97,32 @@ export interface Database {
         daylight_preference?: string | null;
       };
       };
+      location_contexts: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+          value: string;
+          label: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+          value: string;
+          label: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+          value?: string;
+          label?: string;
+        };
+      };
       projects: {
         Row: {
           id: string;
