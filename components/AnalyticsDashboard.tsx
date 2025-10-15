@@ -399,11 +399,11 @@ export default function AnalyticsDashboard() {
 
   const longestStreak = habitSummary.longestStreak;
   const currentStreak = habitSummary.currentStreak;
-  const routineTrends = habitSummary.routines;
-  const streakHistory = habitSummary.streakHistory;
-  const bestTimes = habitSummary.bestTimes;
-  const bestDays = habitSummary.bestDays;
-  const weeklyReflections = habitSummary.weeklyReflections;
+  const routineTrends = habitSummary.routines ?? [];
+  const streakHistory = habitSummary.streakHistory ?? [];
+  const bestTimes = habitSummary.bestTimes ?? [];
+  const bestDays = habitSummary.bestDays ?? [];
+  const weeklyReflections = habitSummary.weeklyReflections ?? [];
 
   const focusInsights = [
     {

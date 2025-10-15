@@ -957,6 +957,11 @@ function buildHabitSummary(
     calendarCompleted: Array.from(new Set(calendarCompleted)).sort(
       (a, b) => a - b
     ),
+    routines: [],
+    streakHistory: [],
+    bestTimes: [],
+    bestDays: [],
+    weeklyReflections: [],
   } satisfies AnalyticsHabitSummary;
 }
 
