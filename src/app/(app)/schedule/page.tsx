@@ -1107,8 +1107,6 @@ function computeTimelineLayoutForSyncHabits({
   const candidates: Candidate[] = []
 
   habitPlacements.forEach((placement, index) => {
-    const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
-    if (habitType === 'SYNC' || habitType === 'ASYNC') return
     const startMs = placement.start.getTime()
     const endMs = placement.end.getTime()
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
@@ -1160,6 +1158,9 @@ function computeTimelineLayoutForSyncHabits({
     const matches: Match[] = []
 
     for (const candidate of sortedCandidates) {
+      if (candidate.kind === 'habit' && candidate.index === habitIndex) {
+        continue
+      }
       const candidateKey = `${candidate.kind}:${candidate.index}`
       if (usedCandidates.has(candidateKey)) continue
       if (candidate.startMs >= endMs) {
