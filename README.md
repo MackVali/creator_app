@@ -40,6 +40,12 @@ This app uses Supabase for authentication with magic link sign-in. After setting
 2. **Check email**: Click the magic link in your email
 3. **Access dashboard**: You'll be redirected to `/dashboard`
 
+## Deployment
+
+This branch includes a minor documentation tweak to confirm the deployment pipeline is functioning as expected.
+
+> Redeployment note: touching this README is our lightweight way to poke the pipeline.
+
 ## Seeding Sample Data
 
 To populate your app with sample data for testing and development:
@@ -134,3 +140,4 @@ npx supabase migration repair --status applied <version>   # or --status reverte
 ```
 
   - After baselining/repair, return to the local-first flow (`db diff` → `db push`).
+
