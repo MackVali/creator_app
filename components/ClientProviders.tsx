@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import TextOverrideProvider from "./TextOverrideProvider";
+import { XpBurstProvider } from "@/components/xp";
 
 export default function ClientProviders({
   children,
@@ -30,7 +31,9 @@ export default function ClientProviders({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TextOverrideProvider>{children}</TextOverrideProvider>
+      <TextOverrideProvider>
+        <XpBurstProvider>{children}</XpBurstProvider>
+      </TextOverrideProvider>
     </QueryClientProvider>
   );
 }

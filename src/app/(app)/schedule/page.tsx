@@ -29,6 +29,7 @@ import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import { RescheduleButton } from '@/components/schedule/RescheduleButton'
+import { useXpBurst } from '@/components/xp'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -1711,6 +1712,7 @@ export default function SchedulePage() {
   const { session } = useAuth()
   const userId = session?.user.id ?? null
   const userMetadata = session?.user?.user_metadata ?? null
+  const triggerXpBurst = useXpBurst()
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
     [userId]
@@ -2633,6 +2635,9 @@ export default function SchedulePage() {
         if (shouldAwardXp && instance) {
           const payload = buildXpAwardPayload(instance)
           if (payload) {
+            if (!isUndo) {
+              triggerXpBurst({ amount: payload.amount, kind: payload.kind })
+            }
             const baseAwardKey = `sched:${instance.id}:${payload.kind}`
             const body: Record<string, unknown> = {
               scheduleInstanceId: instance.id,
@@ -2685,7 +2690,13 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances, instances, buildXpAwardPayload]
+    [
+      userId,
+      setInstances,
+      instances,
+      buildXpAwardPayload,
+      triggerXpBurst,
+    ]
   )
 
   const getHabitCompletionStatus = useCallback(
@@ -2699,6 +2710,7 @@ export default function SchedulePage() {
 
   const updateHabitCompletionStatus = useCallback(
     (dateKey: string, habitId: string, status: HabitCompletionStatus | null) => {
+      let shouldTriggerBurst = false
       setHabitCompletionByDate(prev => {
         const prevDay = prev[dateKey]
         if (status === null || status === 'scheduled') {
@@ -2715,17 +2727,27 @@ export default function SchedulePage() {
           }
           return next
         }
-        if (prevDay?.[habitId] === status) {
-          return prev
+
+        if (status === 'completed') {
+          if (prevDay?.[habitId] === 'completed') {
+            return prev
+          }
+          shouldTriggerBurst = true
+          const next = { ...prev }
+          const nextDay = { ...(prevDay ?? {}) }
+          nextDay[habitId] = 'completed'
+          next[dateKey] = nextDay
+          return next
         }
-        const next = { ...prev }
-        const nextDay = { ...(prevDay ?? {}) }
-        nextDay[habitId] = status
-        next[dateKey] = nextDay
-        return next
+
+        return prev
       })
+
+      if (shouldTriggerBurst) {
+        triggerXpBurst({ amount: 1, kind: 'habit' })
+      }
     },
-    []
+    [triggerXpBurst]
   )
 
   const toggleHabitCompletionStatus = useCallback(
@@ -2877,6 +2899,9 @@ export default function SchedulePage() {
             amount: isUndo ? -1 : 1,
             awardKeyBase: isUndo ? `${baseAwardKey}:undo` : baseAwardKey,
           }
+          if (!isUndo) {
+            triggerXpBurst({ amount: 1, kind: 'task' })
+          }
           if (uniqueSkillIds.length > 0) {
             body.skillIds = uniqueSkillIds
           }
@@ -2922,6 +2947,7 @@ export default function SchedulePage() {
       setTasks,
       skillMonumentMap,
       userId,
+      triggerXpBurst,
     ]
   )
   function navigate(next: ScheduleView) {
