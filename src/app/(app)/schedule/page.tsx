@@ -992,9 +992,8 @@ function computeWindowReportsForDay({
 
 const TIMELINE_LEFT_OFFSET = '4rem'
 const TIMELINE_RIGHT_OFFSET = '0.5rem'
-const ASYNC_PAIR_GAP = '0.0625rem'
-const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET} - ${ASYNC_PAIR_GAP}) / 2)`
-const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH} + ${ASYNC_PAIR_GAP})`
+const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET}) / 2)`
+const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH})`
 
 function computeTimelineLayoutForAsyncHabits({
   habitPlacements,
