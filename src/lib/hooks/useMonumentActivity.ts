@@ -27,6 +27,14 @@ type XpEventRow = {
   amount: number | null;
   kind: string | null;
   source: string | null;
+  schedule_instance_id: string | null;
+};
+
+const XP_KIND_WEIGHTS: Record<"task" | "habit" | "project" | "goal", number> = {
+  task: 1,
+  habit: 1,
+  project: 3,
+  goal: 5,
 };
 
 export type MonumentActivityEventType = "note" | "goal" | "xp";
@@ -157,11 +165,11 @@ export function useMonumentActivity(monumentId: string) {
           .limit(30),
         supabase
           .from("xp_events")
-          .select("id,created_at,amount,kind,source")
+          .select("id,created_at,amount,kind,source,schedule_instance_id")
           .eq("user_id", userId)
           .eq("monument_id", monumentId)
           .order("created_at", { ascending: false })
-          .limit(30),
+          .limit(200),
         supabase
           .from("goals")
           .select("id,name,status,active,created_at,updated_at", { count: "exact" })
@@ -253,19 +261,40 @@ export function useMonumentActivity(monumentId: string) {
         b.timestamp.localeCompare(a.timestamp)
       );
 
-      const totalXp = xpEvents.reduce((sum, xp) => sum + (xp.amount ?? 0), 0);
+      const windowStart = new Date();
+      windowStart.setMonth(windowStart.getMonth() - 1);
+      const windowStartMs = windowStart.getTime();
+
+      const chargeEligibleXp = xpEvents.filter((xp) => {
+        if (!xp.schedule_instance_id) return false;
+        if (!xp.created_at) return false;
+        const createdTime = Date.parse(xp.created_at);
+        if (Number.isNaN(createdTime)) return false;
+        if (createdTime < windowStartMs) return false;
+        const kind = xp.kind?.toLowerCase().trim();
+        if (!kind) return false;
+        return kind === "task" || kind === "habit" || kind === "project" || kind === "goal";
+      });
+
+      const totalXp = chargeEligibleXp.reduce((sum, xp) => {
+        const kind = xp.kind?.toLowerCase().trim();
+        const defaultAmount =
+          kind && kind in XP_KIND_WEIGHTS
+            ? XP_KIND_WEIGHTS[kind as keyof typeof XP_KIND_WEIGHTS]
+            : 0;
+        const amount = xp.amount ?? defaultAmount;
+        return sum + (amount > 0 ? amount : defaultAmount);
+      }, 0);
       const totalGoals = goalsRes.count ?? goals.length;
       const completedGoals = goals.filter(isGoalCompleted).length;
       const notesLogged = notes.length;
 
-      const chargePercent = totalGoals > 0
-        ? Math.round((completedGoals / totalGoals) * 100)
-        : Math.min(Math.round((totalXp / 200) * 100), 100);
+      const chargePercent = Math.min(Math.round(totalXp), 100);
 
       const summary: MonumentActivitySummary = {
         chargePercent,
         totalXp,
-        xpEvents: xpEvents.length,
+        xpEvents: chargeEligibleXp.length,
         notesLogged,
         totalGoals,
         completedGoals,

@@ -445,9 +445,11 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
                   Charge Thermometer
                 </p>
-                <div className="flex items-baseline gap-2">
+                <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
                   <p className="text-3xl font-semibold text-white">{chargePercent}%</p>
-                  <p className="text-xs text-white/60">to a fully built monument</p>
+                  <p className="text-xs text-white/60">
+                    charged from the past month of linked completions
+                  </p>
                 </div>
               </header>
               <div className="relative h-40 rounded-[22px] border border-white/10 bg-black/30 p-3">
@@ -496,11 +498,11 @@ export default function ActivityPanel({ monumentId }: ActivityPanelProps) {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-white/60">
-                XP logged
+                XP logged (last 30 days)
               </p>
               <div className="mt-2 flex items-end gap-2">
                 <p className="text-2xl font-semibold text-white">{summary.totalXp}</p>
-                <span className="text-xs text-white/60">across {summary.xpEvents} events</span>
+                <span className="text-xs text-white/60">across {summary.xpEvents} completions</span>
               </div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
