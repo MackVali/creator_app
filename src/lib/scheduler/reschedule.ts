@@ -796,19 +796,28 @@ async function scheduleHabitsForDay(params: {
       } else {
         startCandidate = Math.max(fallbackStart, constraintLowerBound)
       }
+    } else {
+      startCandidate = startLimit
+      if (
+        typeof baseNowMs === 'number' &&
+        baseNowMs > startCandidate &&
+        baseNowMs < endLimit
+      ) {
+        if (anchorPreference === 'BACK') {
+          const latestStart = endLimit - durationMs
+          const desiredStart = Math.min(latestStart, baseNowMs)
+          startCandidate = Math.max(startLimit, desiredStart)
+        } else {
+          startCandidate = baseNowMs
+        }
+      }
     }
+
     if (startCandidate >= endLimit) {
       if (!isSyncHabit) {
         availability.set(target.key, new Date(endLimit))
-    let startCandidate = startLimit
-    if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endLimit) {
-      if (anchorPreference === 'BACK') {
-        const latestStart = endLimit - durationMs
-        const desiredStart = Math.min(latestStart, baseNowMs)
-        startCandidate = Math.max(startLimit, desiredStart)
-      } else {
-        startCandidate = baseNowMs
       }
+      continue
     }
 
     const latestStartAllowed = endLimit - durationMs
@@ -839,6 +848,7 @@ async function scheduleHabitsForDay(params: {
     if (endCandidate <= startCandidate) {
       if (!isSyncHabit) {
         availability.set(target.key, new Date(endCandidate))
+      }
       if (bounds) {
         if (anchorPreference === 'BACK') {
           bounds.back = new Date(Math.max(bounds.front.getTime(), startCandidate))
@@ -1093,12 +1103,13 @@ async function fetchCompatibleWindowsForItem(
 
     if (frontBoundMs >= backBoundMs) continue
 
-    const availableStartLocal = new Date(availableStartMs)
-    const endLimitLocal = new Date(endLimitMs)
     if (shouldTrackAvailability && availability) {
       const existing = availability.get(key)
       if (!existing || existing.getTime() !== availableStartMs) {
-        availability.set(key, availableStartLocal)
+        availability.set(key, new Date(availableStartMs))
+      }
+    }
+
     let candidateStartMs: number
     if (anchorPreference === 'BACK') {
       candidateStartMs = backBoundMs - durationMs
