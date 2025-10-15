@@ -19,6 +19,9 @@ The following prompts refine the vision for a premium, mobile-first profile expe
 - Needs theme tokens and media handling groundwork (from Prompt 2).
 - Can run in parallel with module redesigns once shared spacing/typography tokens exist.
 
+**Deliverable**
+- [PRD — Hyper-Visual Profile Shell](prd/hyper-visual-profile-shell.md)
+
 ---
 
 ## Prompt 2 — "Profile Themes & Visual System"
