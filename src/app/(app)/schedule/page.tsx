@@ -3643,7 +3643,9 @@ export default function SchedulePage() {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
-              const habitType = placement.habitType || 'HABIT'
+              const rawHabitType = placement.habitType || 'HABIT'
+              const normalizedHabitType =
+                rawHabitType === 'SYNC' ? 'ASYNC' : rawHabitType
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
@@ -3691,7 +3693,7 @@ export default function SchedulePage() {
               let cardOutline = '1px solid rgba(10, 10, 12, 0.85)'
               let habitBorderClass = 'border-black/70'
 
-              if (habitType === 'MEMO') {
+              if (normalizedHabitType === 'MEMO') {
                 if (isHabitCompleted) {
                   cardBackground = memoCompletedBackground
                   cardShadow = memoCompletedShadow
@@ -3708,12 +3710,12 @@ export default function SchedulePage() {
                 cardShadow = completedShadow
                 cardOutline = '1px solid rgba(16, 185, 129, 0.55)'
                 habitBorderClass = 'border-emerald-400/60'
-              } else if (habitType === 'CHORE') {
+              } else if (normalizedHabitType === 'CHORE') {
                 cardBackground = choreCardBackground
                 cardShadow = choreShadow
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-rose-200/45'
-              } else if (habitType === 'ASYNC') {
+              } else if (normalizedHabitType === 'ASYNC') {
                 cardBackground = asyncCardBackground
                 cardShadow = asyncShadow
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
