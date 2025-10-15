@@ -100,6 +100,23 @@ export interface SkillCategories {
 }
 
 // Enhanced Profile interface
+export interface ProfilePartnerBadge {
+  id: string;
+  label: string;
+  description?: string | null;
+  icon?: string | null;
+  url?: string | null;
+}
+
+export interface ProfileQuickActionBadge {
+  id: string;
+  label: string;
+  href?: string | null;
+  icon?: string | null;
+  aria_label?: string | null;
+  analytics_event?: string | null;
+}
+
 export interface Profile {
   id: number;
   user_id: string;
@@ -107,7 +124,9 @@ export interface Profile {
   name?: string | null;
   dob?: string | null;
   city?: string | null;
+  location_display?: string | null;
   bio?: string | null;
+  pronouns?: string | null;
   avatar_url?: string | null;
   banner_url?: string | null;
   hero_background_type?: "gradient" | "image" | "video" | null;
@@ -119,6 +138,9 @@ export interface Profile {
   hero_parallax_intensity?: number | null;
   hero_motion_enabled?: boolean | null;
   verified?: boolean;
+  avatar_frame_style?: "circle" | "rounded-square" | "halo" | null;
+  partner_badges?: ProfilePartnerBadge[] | null;
+  quick_action_badges?: ProfileQuickActionBadge[] | null;
   theme_color?: string;
   font_family?: string;
   accent_color?: string;

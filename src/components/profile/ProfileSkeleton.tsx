@@ -27,17 +27,48 @@ export function ProfileSkeleton() {
             </header>
 
             <div className="grid gap-8 text-white sm:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-start">
-              <div className="flex flex-col gap-8 sm:gap-10">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
-                  <div className="relative mx-auto aspect-square w-32 rounded-[26px] border border-white/15 bg-white/10 shadow-[0_40px_90px_rgba(2,6,23,0.65)] sm:w-36 sm:rounded-[32px] lg:mx-0" />
+            <div className="flex flex-col gap-8 sm:gap-10">
+              <div className="relative isolate -mt-12 flex flex-col gap-6 sm:-mt-16 sm:gap-8 lg:-mt-20">
+                <div
+                  className="pointer-events-none absolute inset-x-2 top-14 h-36 rounded-full bg-black/45 blur-[80px] sm:inset-x-6 sm:top-16 sm:h-40 lg:inset-x-10 lg:h-48"
+                  aria-hidden="true"
+                />
 
-                  <div className="flex-1 space-y-5 text-center lg:text-left">
-                    <div className="mx-auto h-8 w-48 rounded-full bg-white/10 sm:mx-0" />
-                    <div className="mx-auto h-4 w-40 rounded-full bg-white/10 sm:mx-0" />
-                    <div className="mx-auto h-20 w-full max-w-md rounded-[24px] bg-white/5 sm:mx-0" />
-                    <div className="mx-auto flex h-8 w-56 items-center justify-center rounded-full bg-white/5 sm:mx-0" />
+                <div className="relative flex flex-col items-center gap-6 overflow-hidden rounded-[30px] border border-white/12 bg-black/65 px-6 py-8 text-center shadow-[0_45px_120px_-45px_rgba(2,6,23,0.85)] backdrop-blur-2xl sm:rounded-[36px] sm:px-8 sm:py-9 lg:flex-row lg:items-start lg:gap-10 lg:px-10 lg:py-10 lg:text-left">
+                  <div className="relative mx-auto w-32 sm:w-36 lg:mx-0">
+                    <div className="pointer-events-none absolute inset-0 -z-10 scale-[1.18] rounded-full bg-[conic-gradient(from_140deg,_rgba(255,255,255,0.4)_0%,_rgba(99,102,241,0.25)_45%,_rgba(236,72,153,0.18)_75%,_transparent_100%)] blur-3xl" />
+                    <div className="relative aspect-square overflow-hidden rounded-[26px] border border-white/15 bg-white/10 shadow-[0_40px_90px_rgba(2,6,23,0.65)] sm:rounded-[32px]">
+                      <div className="h-full w-full animate-pulse bg-gradient-to-br from-white/10 via-white/5 to-white/0" />
+                      <div className="pointer-events-none absolute inset-0 rounded-[26px] ring-1 ring-white/10 sm:rounded-[32px]" />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 space-y-5 text-center text-white/80 lg:text-left">
+                    <div className="mx-auto h-8 w-48 rounded-full bg-white/12 sm:mx-0 sm:h-9" />
+                    <div className="mx-auto flex flex-wrap items-center justify-center gap-2 sm:mx-0">
+                      <div className="h-8 w-32 rounded-full bg-white/10" />
+                      <div className="h-8 w-28 rounded-full bg-white/10" />
+                      <div className="h-8 w-28 rounded-full bg-white/10" />
+                    </div>
+                    <div className="mx-auto h-20 w-full max-w-md rounded-[24px] bg-white/5 sm:mx-0 sm:h-24" />
+                    <div className="mx-auto flex w-full max-w-2xl flex-wrap justify-center gap-2 sm:mx-0 lg:justify-start">
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <div key={`bio-pill-${index}`} className="h-8 w-28 rounded-full bg-white/10" />
+                      ))}
+                    </div>
+                    <div className="mx-auto flex w-full max-w-2xl flex-wrap justify-center gap-2 sm:mx-0 lg:justify-start">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <div key={`badge-pill-${index}`} className="h-9 w-40 rounded-full bg-white/12" />
+                      ))}
+                    </div>
+                    <div className="mx-auto flex w-full max-w-2xl flex-wrap justify-center gap-3 sm:mx-0 lg:justify-start">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <div key={`quick-action-${index}`} className="h-10 w-40 rounded-full bg-white/15" />
+                      ))}
+                    </div>
                   </div>
                 </div>
+              </div>
 
                 <div className="flex flex-col gap-5 sm:gap-6">
                   <div className="mx-auto h-12 w-full max-w-sm rounded-full bg-white/5 lg:mx-0" />
