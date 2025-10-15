@@ -25,6 +25,7 @@ import {
   getProjectsForGoal,
   type Project,
 } from "@/lib/queries/projects";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import {
   DEFAULT_ENERGY,
   DEFAULT_PRIORITY,
@@ -35,6 +36,10 @@ import {
   type DraftTask,
   normalizeTask,
 } from "@/lib/drafts/projects";
+import {
+  SkillMultiPicker,
+  SkillSinglePicker,
+} from "@/components/skills/SkillPicker";
 
 const PROJECT_STAGE_OPTIONS = [
   { value: "RESEARCH", label: "Research" },
@@ -76,25 +81,25 @@ export default function PlanGoalPage() {
 
   const [goal, setGoal] = useState<Goal | null>(null);
   const [existingProjects, setExistingProjects] = useState<Project[]>([]);
-  const [projectTasks, setProjectTasks] = useState<
-    Record<
-      string,
-      {
-        id: string;
-        name: string;
-        stage: string;
-        priority: string;
-        energy: string;
-        notes: string | null;
-      }[]
-    >
-  >({});
+  const [projectTasks, setProjectTasks] = useState<Record<string, DraftTask[]>>({});
+  const [projectSkills, setProjectSkills] = useState<Record<string, string[]>>({});
   const [drafts, setDrafts] = useState<DraftProject[]>([createDraftProject()]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
 
   const router = useRouter();
   const toast = useToastHelpers();
+
+  const skillNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    skills.forEach((skill) => {
+      map.set(skill.id, skill.name);
+    });
+    return map;
+  }, [skills]);
 
   useEffect(() => {
     if (!goalId) {
@@ -117,12 +122,13 @@ export default function PlanGoalPage() {
 
         const projectIds = projectsData.map((project) => project.id);
         let tasksMap: typeof projectTasks = {};
+        let skillsMap: Record<string, string[]> = {};
 
         if (projectIds.length > 0) {
           const { data: tasksData, error: tasksError } = await supabase
             .from("tasks")
             .select(
-              "id, project_id, name, stage, priority, energy, notes"
+              "id, project_id, name, stage, priority, energy, notes, skill_id"
             )
             .eq("goal_id", goalId)
             .in("project_id", projectIds);
@@ -145,6 +151,31 @@ export default function PlanGoalPage() {
             },
             {}
           );
+
+          const { data: projectSkillsData, error: projectSkillsError } =
+            await supabase
+              .from("project_skills")
+              .select("project_id, skill_id")
+              .in("project_id", projectIds);
+
+          if (projectSkillsError) {
+            console.error("Error loading project skills:", projectSkillsError);
+            throw projectSkillsError;
+          }
+
+          skillsMap = (projectSkillsData || []).reduce<Record<string, string[]>>(
+            (acc, row) => {
+              if (!row.project_id || !row.skill_id) {
+                return acc;
+              }
+              const list = acc[row.project_id] || [];
+              if (!list.includes(row.skill_id)) {
+                acc[row.project_id] = [...list, row.skill_id];
+              }
+              return acc;
+            },
+            {}
+          );
         }
 
         if (!active) return;
@@ -152,6 +183,7 @@ export default function PlanGoalPage() {
         setGoal(goalData);
         setExistingProjects(projectsData);
         setProjectTasks(tasksMap);
+        setProjectSkills(skillsMap);
 
         if (!goalData) {
           toast.error(
@@ -178,6 +210,51 @@ export default function PlanGoalPage() {
       active = false;
     };
   }, [goalId, toast]);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      setSkillsLoading(true);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          throw new Error("Supabase client not available");
+        }
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          throw new Error("User not authenticated");
+        }
+
+        const skillsData = await getSkillsForUser(user.id);
+        if (!active) return;
+        setSkills(skillsData);
+        setSkillsError(null);
+      } catch (error) {
+        console.error("Error loading skills:", error);
+        if (active) {
+          setSkillsError("Unable to load skills right now.");
+        }
+      } finally {
+        if (active) {
+          setSkillsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const title = useMemo(() => {
     if (!goal) {
@@ -235,6 +312,47 @@ export default function PlanGoalPage() {
     );
   };
 
+  const handleProjectSkillsChange = (
+    projectId: string,
+    nextSkillIds: string[]
+  ) => {
+    const unique = Array.from(
+      new Set(
+        nextSkillIds
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      )
+    );
+    setDrafts((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId ? { ...draft, skillIds: unique } : draft
+      )
+    );
+  };
+
+  const handleTaskSkillChange = (
+    projectId: string,
+    taskId: string,
+    skillId: string | null
+  ) => {
+    const normalized =
+      typeof skillId === "string" && skillId.trim().length > 0
+        ? skillId.trim()
+        : "";
+    setDrafts((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: draft.tasks.map((task) =>
+                task.id === taskId ? { ...task, skillId: normalized } : task
+              ),
+            }
+          : draft
+      )
+    );
+  };
+
   const handleAddTask = (projectId: string) => {
     setDrafts((prev) =>
       prev.map((draft) =>
@@ -281,17 +399,28 @@ export default function PlanGoalPage() {
     }
 
     const projectsToSave = drafts
-      .map((draft) => ({
-        ...draft,
-        name: draft.name.trim(),
-        why: draft.why.trim(),
-        duration: draft.duration.trim(),
-        tasks: draft.tasks.map((task) => ({
-          ...task,
-          name: task.name.trim(),
-          notes: task.notes.trim(),
-        })),
-      }))
+      .map((draft) => {
+        const sanitizedSkillIds = Array.from(
+          new Set(
+            draft.skillIds
+              .map((id) => id.trim())
+              .filter((id) => id.length > 0)
+          )
+        );
+        return {
+          ...draft,
+          name: draft.name.trim(),
+          why: draft.why.trim(),
+          duration: draft.duration.trim(),
+          skillIds: sanitizedSkillIds,
+          tasks: draft.tasks.map((task) => ({
+            ...task,
+            name: task.name.trim(),
+            notes: task.notes.trim(),
+            skillId: task.skillId.trim(),
+          })),
+        };
+      })
       .filter((draft) => draft.name.length > 0);
 
     if (projectsToSave.length === 0) {
@@ -364,6 +493,32 @@ export default function PlanGoalPage() {
         );
       }
 
+      const projectSkillsPayload =
+        insertedProjects.length === projectsToSave.length
+          ? projectsToSave.flatMap((draft, index) => {
+              const project = insertedProjects[index];
+              if (!project) {
+                return [];
+              }
+              return draft.skillIds.map((skillId) => ({
+                project_id: project.id,
+                skill_id: skillId,
+              }));
+            })
+          : [];
+
+      let projectSkillsFailed = false;
+
+      if (projectSkillsPayload.length > 0) {
+        const { error: projectSkillsError } = await supabase
+          .from("project_skills")
+          .insert(projectSkillsPayload);
+        if (projectSkillsError) {
+          console.error("Error linking skills to projects:", projectSkillsError);
+          projectSkillsFailed = true;
+        }
+      }
+
       const tasksPayload =
         insertedProjects.length === projectsToSave.length
             ? projectsToSave.flatMap((draft, index) => {
@@ -382,6 +537,8 @@ export default function PlanGoalPage() {
                     priority: task.priority || DEFAULT_PRIORITY,
                     energy: task.energy || DEFAULT_ENERGY,
                     notes: task.notes.length > 0 ? task.notes : null,
+                    skill_id:
+                      task.skillId.length > 0 ? task.skillId : null,
                   }))
                   .filter((task) => task.name.length > 0);
               })
@@ -403,7 +560,7 @@ export default function PlanGoalPage() {
           .from("tasks")
           .insert(tasksPayload)
           .select(
-            "id, project_id, name, stage, priority, energy, notes"
+            "id, project_id, name, stage, priority, energy, notes, skill_id"
           );
 
         if (tasksError) {
@@ -418,10 +575,14 @@ export default function PlanGoalPage() {
         }
       }
 
-      if (tasksFailed) {
+      if (tasksFailed || projectSkillsFailed) {
         toast.warning(
           "Projects saved",
-          "Projects were saved, but we couldn't add their tasks."
+          tasksFailed && projectSkillsFailed
+            ? "Projects were saved, but we couldn't add their tasks or link skills."
+            : tasksFailed
+            ? "Projects were saved, but we couldn't add their tasks."
+            : "Projects were saved, but we couldn't link their skills."
         );
       } else {
         toast.success(
@@ -453,6 +614,14 @@ export default function PlanGoalPage() {
           next[projectId] = [normalizeTask(task), ...(next[projectId] || [])];
         });
 
+        return next;
+      });
+      setProjectSkills((prev) => {
+        const next = { ...prev };
+        insertedProjects.forEach((project, index) => {
+          const skillIds = projectsToSave[index]?.skillIds ?? [];
+          next[project.id] = skillIds;
+        });
         return next;
       });
     } catch (error) {
@@ -494,6 +663,12 @@ export default function PlanGoalPage() {
               </div>
 
               <div className="space-y-5">
+                {skillsError ? (
+                  <p className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                    {skillsError}
+                  </p>
+                ) : null}
+
                 {drafts.map((draft, index) => (
                   <div
                     key={draft.id}
@@ -566,7 +741,7 @@ export default function PlanGoalPage() {
                             />
                           </div>
                         </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid gap-4 sm:grid-cols-3">
                           <div className="space-y-2">
                             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
                               Priority
@@ -610,6 +785,21 @@ export default function PlanGoalPage() {
                                 ))}
                               </SelectContent>
                             </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Skills
+                            </Label>
+                            <SkillMultiPicker
+                              skills={skills}
+                              selectedIds={draft.skillIds}
+                              onChange={(next) =>
+                                handleProjectSkillsChange(draft.id, next)
+                              }
+                              loading={skillsLoading}
+                              buttonClassName="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white"
+                              contentClassName="bg-[#0b101b] text-sm text-white"
+                            />
                           </div>
                         </div>
 
@@ -662,7 +852,7 @@ export default function PlanGoalPage() {
                                         />
                                       </div>
 
-                                      <div className="grid gap-3 sm:grid-cols-3">
+                                      <div className="grid gap-3 sm:grid-cols-4">
                                         <div className="space-y-1">
                                           <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                                             Stage
@@ -682,7 +872,7 @@ export default function PlanGoalPage() {
                                               <SelectValue placeholder="Choose a stage" />
                                             </SelectTrigger>
                                             <SelectContent className="bg-[#0b101b] text-sm text-white">
-                                              {PROJECT_STAGE_OPTIONS.map((option) => (
+                                              {TASK_STAGE_OPTIONS.map((option) => (
                                                 <SelectItem
                                                   key={option.value}
                                                   value={option.value}
@@ -752,6 +942,27 @@ export default function PlanGoalPage() {
                                               ))}
                                             </SelectContent>
                                           </Select>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                            Skill
+                                          </Label>
+                                          <SkillSinglePicker
+                                            skills={skills}
+                                            value={task.skillId.length > 0 ? task.skillId : null}
+                                            onChange={(next) =>
+                                              handleTaskSkillChange(
+                                                draft.id,
+                                                task.id,
+                                                next
+                                              )
+                                            }
+                                            loading={skillsLoading}
+                                            triggerClassName="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                            contentClassName="bg-[#0b101b] text-sm text-white"
+                                            noneLabel="No skill focus"
+                                            placeholder="Select a skill"
+                                          />
                                         </div>
                                       </div>
 
@@ -899,6 +1110,20 @@ export default function PlanGoalPage() {
                           Duration: {Math.round(project.duration_min)}m
                         </Badge>
                       ) : null}
+                      {(projectSkills[project.id] || []).map((skillId) => {
+                        const skillName = skillNameById.get(skillId);
+                        if (!skillName) {
+                          return null;
+                        }
+                        return (
+                          <Badge
+                            key={skillId}
+                            className="border-white/10 bg-white/[0.08] text-white"
+                          >
+                            Skill: {skillName}
+                          </Badge>
+                        );
+                      })}
                       <Badge className="border-white/10 bg-white/[0.08] text-white">
                         {projectTasks[project.id]?.length || 0} task
                         {projectTasks[project.id] && projectTasks[project.id].length === 1
@@ -925,6 +1150,13 @@ export default function PlanGoalPage() {
                             <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-400">
                               <span>Priority: {getPriorityLabel(task.priority)}</span>
                               <span>Energy: {getEnergyLabel(task.energy)}</span>
+                              {task.skillId && task.skillId.trim().length > 0 ? (
+                                <span>
+                                  Skill:{" "}
+                                  {skillNameById.get(task.skillId.trim()) ||
+                                    "Unknown"}
+                                </span>
+                              ) : null}
                             </div>
                             {task.notes ? (
                               <p className="mt-1 text-[11px] text-zinc-400">

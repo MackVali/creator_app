@@ -18,6 +18,8 @@ export interface Project {
   energyCode?: string;
   priorityCode?: string;
   isNew?: boolean;
+  /** Associated skill IDs */
+  skillIds?: string[];
 }
 
 export interface Goal {

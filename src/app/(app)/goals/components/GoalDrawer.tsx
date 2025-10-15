@@ -17,6 +17,12 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { Goal, Project, Task } from "../types";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import {
+  SkillMultiPicker,
+  SkillSinglePicker,
+} from "@/components/skills/SkillPicker";
 
 export interface GoalUpdateContext {
   projects: (Project & { tasks: (Task & { isNew?: boolean })[] })[];
@@ -155,6 +161,7 @@ type EditableTask = Task & { isNew?: boolean };
 type EditableProject = Project & {
   tasks: EditableTask[];
   isNew?: boolean;
+  skillIds: string[];
 };
 
 export function GoalDrawer({
@@ -176,6 +183,10 @@ export function GoalDrawer({
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
 
   const editing = Boolean(initialGoal);
 
@@ -196,6 +207,15 @@ export function GoalDrawer({
             isNew: false,
           }));
           const progress = computeProjectProgress(tasks);
+          const skillIds = Array.isArray(project.skillIds)
+            ? Array.from(
+                new Set(
+                  project.skillIds.filter(
+                    (id): id is string => typeof id === "string" && id.length > 0
+                  )
+                )
+              )
+            : [];
           return {
             ...project,
             stage,
@@ -206,6 +226,7 @@ export function GoalDrawer({
             progress,
             tasks,
             isNew: false,
+            skillIds,
           } satisfies EditableProject;
         })
       );
@@ -222,6 +243,56 @@ export function GoalDrawer({
     setRemovedProjectIds([]);
     setRemovedTaskIds([]);
   }, [initialGoal, open]);
+
+  useEffect(() => {
+    if (!open || skillsLoaded) {
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      setSkillsLoading(true);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          throw new Error("Supabase client not available");
+        }
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          throw new Error("User not authenticated");
+        }
+
+        const skillsData = await getSkillsForUser(user.id);
+        if (!active) return;
+        setSkills(skillsData);
+        setSkillsError(null);
+        setSkillsLoaded(true);
+      } catch (error) {
+        console.error("Error loading skills:", error);
+        if (active) {
+          setSkillsError("Unable to load skills right now.");
+        }
+      } finally {
+        if (active) {
+          setSkillsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [open, skillsLoaded]);
 
   const monumentOptions = useMemo(() => {
     if (!monuments.length) return [] as { id: string; title: string }[];
@@ -256,6 +327,7 @@ export function GoalDrawer({
       stage,
       priorityCode: "NO",
       isNew: true,
+      skillIds: [],
     };
     setProjectsState((projects) => [...projects, nextProject]);
   };
@@ -299,6 +371,24 @@ export function GoalDrawer({
     );
   };
 
+  const handleProjectSkillsChange = (
+    projectId: string,
+    nextSkillIds: string[]
+  ) => {
+    const unique = Array.from(
+      new Set(
+        nextSkillIds
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      )
+    );
+    setProjectsState((projects) =>
+      projects.map((project) =>
+        project.id === projectId ? { ...project, skillIds: unique } : project
+      )
+    );
+  };
+
   const handleRemoveProject = (projectId: string) => {
     let removedProject: EditableProject | null = null;
     setProjectsState((projects) => {
@@ -328,6 +418,7 @@ export function GoalDrawer({
       name: "",
       stage: DEFAULT_TASK_STAGE,
       isNew: true,
+      skillId: null,
     };
     setProjectsState((projects) =>
       projects.map((project) => {
@@ -382,6 +473,26 @@ export function GoalDrawer({
     );
   };
 
+  const handleTaskSkillChange = (
+    projectId: string,
+    taskId: string,
+    skillId: string | null
+  ) => {
+    setProjectsState((projects) =>
+      projects.map((project) => {
+        if (project.id !== projectId) return project;
+        const nextTasks = project.tasks.map((task) =>
+          task.id === taskId ? { ...task, skillId } : task
+        );
+        return {
+          ...project,
+          tasks: nextTasks,
+          progress: computeProjectProgress(nextTasks),
+        };
+      })
+    );
+  };
+
   const handleRemoveTask = (projectId: string, taskId: string) => {
     let removedExisting = false;
     setProjectsState((projects) =>
@@ -420,12 +531,25 @@ export function GoalDrawer({
 
     const preparedProjects: Project[] = projectsState.map((project) => {
       const stage = project.stage ?? projectStatusToStage(project.status);
-      const sanitizedTasks = project.tasks.map((task) => ({
-        id: task.id,
-        name: task.name.trim(),
-        stage: task.stage,
-        skillId: task.skillId,
-      }));
+      const sanitizedTasks = project.tasks.map((task) => {
+        const trimmedSkillId =
+          typeof task.skillId === "string" ? task.skillId.trim() : null;
+        const normalizedSkillId =
+          trimmedSkillId && trimmedSkillId.length > 0 ? trimmedSkillId : null;
+        return {
+          id: task.id,
+          name: task.name.trim(),
+          stage: task.stage,
+          skillId: normalizedSkillId,
+        };
+      });
+      const sanitizedSkillIds = Array.from(
+        new Set(
+          (project.skillIds || [])
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        )
+      );
       const progress = computeProjectProgress(sanitizedTasks);
       return {
         id: project.id,
@@ -439,6 +563,7 @@ export function GoalDrawer({
         stage,
         priorityCode: project.priorityCode,
         isNew: project.isNew,
+        skillIds: sanitizedSkillIds,
       };
     });
 
@@ -447,7 +572,20 @@ export function GoalDrawer({
     const context: GoalUpdateContext = {
       projects: projectsState.map((project) => ({
         ...project,
-        tasks: project.tasks.map((task) => ({ ...task })),
+        skillIds: Array.from(
+          new Set(
+            (project.skillIds || [])
+              .map((id) => id.trim())
+              .filter((id) => id.length > 0)
+          )
+        ),
+        tasks: project.tasks.map((task) => ({
+          ...task,
+          skillId:
+            typeof task.skillId === "string" && task.skillId.trim().length > 0
+              ? task.skillId.trim()
+              : null,
+        })),
       })),
       removedProjectIds,
       removedTaskIds,
@@ -677,6 +815,12 @@ export function GoalDrawer({
                   </Button>
                 </div>
 
+                {skillsError ? (
+                  <p className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                    {skillsError}
+                  </p>
+                ) : null}
+
                 {projectsState.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-white/60">
                     No projects linked yet. Add one to keep your plan in sync with
@@ -726,7 +870,7 @@ export function GoalDrawer({
                             </Button>
                           </div>
 
-                          <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="grid gap-4 sm:grid-cols-3">
                             <div className="space-y-1">
                               <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
                                 Stage
@@ -769,6 +913,21 @@ export function GoalDrawer({
                                   ))}
                                 </SelectContent>
                               </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                                Skills
+                              </Label>
+                              <SkillMultiPicker
+                                skills={skills}
+                                selectedIds={project.skillIds}
+                                onChange={(next) =>
+                                  handleProjectSkillsChange(project.id, next)
+                                }
+                                loading={skillsLoading}
+                                buttonClassName="h-10 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm text-white"
+                                contentClassName="bg-[#0f172a] text-sm text-white"
+                              />
                             </div>
                           </div>
 
@@ -833,7 +992,7 @@ export function GoalDrawer({
                                       </Button>
                                     </div>
 
-                                    <div className="grid gap-3 sm:grid-cols-2">
+                                    <div className="grid gap-3 sm:grid-cols-3">
                                       <div className="space-y-1">
                                         <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
                                           Stage
@@ -860,6 +1019,27 @@ export function GoalDrawer({
                                             ))}
                                           </SelectContent>
                                         </Select>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                          Skill
+                                        </Label>
+                                        <SkillSinglePicker
+                                          skills={skills}
+                                          value={task.skillId ?? null}
+                                          onChange={(next) =>
+                                            handleTaskSkillChange(
+                                              project.id,
+                                              task.id,
+                                              next
+                                            )
+                                          }
+                                          loading={skillsLoading}
+                                          triggerClassName="h-9 rounded-lg border-white/10 bg-white/[0.05] text-left text-sm"
+                                          contentClassName="bg-[#0f172a] text-sm text-white"
+                                          noneLabel="No skill focus"
+                                          placeholder="Select a skill"
+                                        />
                                       </div>
                                       <div className="space-y-1">
                                         <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">

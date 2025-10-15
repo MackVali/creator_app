@@ -101,6 +101,16 @@ async function syncProjectsAndTasks(
 
   const uniqueRemovedProjectIds = Array.from(new Set(removedProjectIds));
   if (uniqueRemovedProjectIds.length > 0) {
+    const { error: deleteRemovedProjectSkillsError } = await supabase
+      .from("project_skills")
+      .delete()
+      .in("project_id", uniqueRemovedProjectIds);
+    if (deleteRemovedProjectSkillsError) {
+      console.error(
+        "Error deleting project skills:",
+        deleteRemovedProjectSkillsError
+      );
+    }
     const { error } = await supabase
       .from("projects")
       .delete()
@@ -159,23 +169,63 @@ async function syncProjectsAndTasks(
     );
   }
 
+  const projectIds = projects.map((project) => project.id);
+  if (projectIds.length > 0) {
+    const { error: clearProjectSkillsError } = await supabase
+      .from("project_skills")
+      .delete()
+      .in("project_id", projectIds);
+    if (clearProjectSkillsError) {
+      console.error("Error clearing project skills:", clearProjectSkillsError);
+    }
+  }
+
+  const projectSkillInserts = projects.flatMap((project) => {
+    const uniqueSkillIds = Array.from(
+      new Set(
+        (project.skillIds || [])
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      )
+    );
+    return uniqueSkillIds.map((skillId) => ({
+      project_id: project.id,
+      skill_id: skillId,
+    }));
+  });
+
+  if (projectSkillInserts.length > 0) {
+    const { error: insertProjectSkillsError } = await supabase
+      .from("project_skills")
+      .insert(projectSkillInserts);
+    if (insertProjectSkillsError) {
+      console.error("Error inserting project skills:", insertProjectSkillsError);
+    }
+  }
+
   const taskInserts: {
     id: string;
     name: string;
     stage: string;
     project_id: string;
     user_id: string;
+    skill_id: string | null;
   }[] = [];
   const taskUpdates: {
     id: string;
     name: string;
     stage: string;
     project_id: string;
+    skill_id: string | null;
   }[] = [];
 
   projects.forEach((project) => {
     project.tasks.forEach((task) => {
       const trimmedName = task.name.trim();
+      const trimmedSkillId =
+        typeof task.skillId === "string" ? task.skillId.trim() : null;
+      const normalizedSkillId =
+        trimmedSkillId && trimmedSkillId.length > 0 ? trimmedSkillId : null;
       if (task.isNew) {
         taskInserts.push({
           id: task.id,
@@ -183,6 +233,7 @@ async function syncProjectsAndTasks(
           stage: task.stage,
           project_id: project.id,
           user_id: userId,
+          skill_id: normalizedSkillId,
         });
       } else {
         taskUpdates.push({
@@ -190,6 +241,7 @@ async function syncProjectsAndTasks(
           name: trimmedName,
           stage: task.stage,
           project_id: project.id,
+          skill_id: normalizedSkillId,
         });
       }
     });
@@ -211,6 +263,7 @@ async function syncProjectsAndTasks(
             name: task.name,
             stage: task.stage,
             project_id: task.project_id,
+            skill_id: task.skill_id,
           })
           .eq("id", task.id);
         if (error) {
@@ -403,6 +456,7 @@ export default function GoalsPage() {
             ...task,
             isNew: false,
           }));
+          const projSkillIds = Array.from(skillsByProject[p.id] ?? []);
           const proj: Project = {
             id: p.id,
             name: p.name,
@@ -414,6 +468,7 @@ export default function GoalsPage() {
             priorityCode: p.priority ?? undefined,
             isNew: false,
             tasks: normalizedTasks,
+            skillIds: projSkillIds,
           };
           const list = projectsByGoal.get(p.goal_id) || [];
           list.push(proj);

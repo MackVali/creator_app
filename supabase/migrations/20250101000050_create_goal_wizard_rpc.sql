@@ -15,6 +15,7 @@ declare
   new_task public.tasks%rowtype;
   project_elem jsonb;
   task_elem jsonb;
+  project_skill_elem text;
   inserted_projects jsonb := '[]'::jsonb;
   inserted_tasks jsonb := '[]'::jsonb;
   goal_user_id uuid := coalesce((payload->>'user_id')::uuid, auth_id);
@@ -83,6 +84,18 @@ begin
       )
     );
 
+    for project_skill_elem in
+      select value from jsonb_array_elements_text(coalesce(project_elem->'skill_ids', '[]'::jsonb))
+    loop
+      continue when coalesce(btrim(project_skill_elem), '') = '';
+      begin
+        insert into public.project_skills (project_id, skill_id)
+        values (new_project.id, project_skill_elem::uuid);
+      exception when others then
+        null;
+      end;
+    end loop;
+
     for task_elem in
       select value from jsonb_array_elements(coalesce(project_elem->'tasks', '[]'::jsonb))
     loop
@@ -90,7 +103,7 @@ begin
         continue;
       end if;
 
-      insert into public.tasks (user_id, goal_id, project_id, name, stage, priority, energy, notes)
+      insert into public.tasks (user_id, goal_id, project_id, name, stage, priority, energy, notes, skill_id)
       values (
         goal_user_id,
         new_goal.id,
@@ -99,7 +112,8 @@ begin
         coalesce(task_elem->>'stage', 'PREPARE'),
         coalesce(task_elem->>'priority', 'NO'),
         coalesce(task_elem->>'energy', 'NO'),
-        nullif(task_elem->>'notes', '')
+        nullif(task_elem->>'notes', ''),
+        nullif(task_elem->>'skill_id', '')::uuid
       )
       returning * into new_task;
 
@@ -111,7 +125,8 @@ begin
           'stage', new_task.stage,
           'priority', new_task.priority,
           'energy', new_task.energy,
-          'notes', new_task.notes
+          'notes', new_task.notes,
+          'skill_id', new_task.skill_id
         )
       );
     end loop;

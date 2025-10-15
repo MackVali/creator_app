@@ -10,6 +10,7 @@ export interface DraftTask {
   priority: string;
   energy: string;
   notes: string;
+  skillId: string;
 }
 
 export interface DraftProject {
@@ -21,6 +22,7 @@ export interface DraftProject {
   priority: string;
   energy: string;
   tasks: DraftTask[];
+  skillIds: string[];
 }
 
 const generateId = () =>
@@ -38,9 +40,10 @@ export function createDraftTask(
     priority = DEFAULT_PRIORITY,
     energy = DEFAULT_ENERGY,
     notes = "",
+    skillId = "",
   } = overrides;
 
-  return { id, name, stage, priority, energy, notes };
+  return { id, name, stage, priority, energy, notes, skillId };
 }
 
 export function createDraftProject(
@@ -58,9 +61,10 @@ export function createDraftProject(
     priority = DEFAULT_PRIORITY,
     energy = DEFAULT_ENERGY,
     tasks = [createDraftTask()],
+    skillIds = [],
   } = overrides;
 
-  return { id, name, stage, why, duration, priority, energy, tasks };
+  return { id, name, stage, why, duration, priority, energy, tasks, skillIds };
 }
 
 export function normalizeTask<
@@ -71,6 +75,8 @@ export function normalizeTask<
     priority?: string | null;
     energy?: string | null;
     notes?: string | null;
+    skill_id?: string | null;
+    skillId?: string | null;
   }
 >(task: T): DraftTask {
   return createDraftTask({
@@ -80,5 +86,6 @@ export function normalizeTask<
     priority: task.priority ?? DEFAULT_PRIORITY,
     energy: task.energy ?? DEFAULT_ENERGY,
     notes: task.notes ?? "",
+    skillId: task.skill_id ?? task.skillId ?? "",
   });
 }

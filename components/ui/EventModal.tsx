@@ -116,6 +116,7 @@ type NormalizedTaskPayload = {
   priority: string;
   energy: string;
   notes: string | null;
+  skill_id: string | null;
 };
 
 type NormalizedProjectPayload = {
@@ -126,18 +127,44 @@ type NormalizedProjectPayload = {
   why: string | null;
   duration_min: number | null;
   tasks: NormalizedTaskPayload[];
+  skill_ids: string[];
 };
 
 async function cleanupGoalHierarchy(
   supabase: SupabaseClient,
   goalId: string
 ) {
+  const { data: projectRows, error: projectLookupError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("goal_id", goalId);
+  if (projectLookupError) {
+    console.error("Error loading projects for cleanup:", projectLookupError);
+  }
+
   const { error: taskCleanupError } = await supabase
     .from("tasks")
     .delete()
     .eq("goal_id", goalId);
   if (taskCleanupError) {
     console.error("Error cleaning up tasks for goal:", taskCleanupError);
+  }
+
+  const projectIds = (projectRows ?? [])
+    .map((row) => row.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  if (projectIds.length > 0) {
+    const { error: projectSkillsCleanupError } = await supabase
+      .from("project_skills")
+      .delete()
+      .in("project_id", projectIds);
+    if (projectSkillsCleanupError) {
+      console.error(
+        "Error cleaning up project skill links:",
+        projectSkillsCleanupError
+      );
+    }
   }
 
   const { error: projectCleanupError } = await supabase
@@ -206,6 +233,25 @@ async function createGoalFallback(
         throw projectError ?? new Error("Project insert failed");
       }
 
+      if (project.skill_ids.length > 0) {
+        const { error: projectSkillsError } = await supabase
+          .from("project_skills")
+          .insert(
+            project.skill_ids.map((skillId) => ({
+              project_id: projectRecord.id,
+              skill_id: skillId,
+            }))
+          );
+
+        if (projectSkillsError) {
+          console.error(
+            "Fallback project skill insert failed:",
+            projectSkillsError
+          );
+          throw projectSkillsError;
+        }
+      }
+
       if (project.tasks.length > 0) {
         const { error: taskError } = await supabase
           .from("tasks")
@@ -219,6 +265,7 @@ async function createGoalFallback(
               priority: task.priority,
               energy: task.energy,
               notes: task.notes,
+              skill_id: task.skill_id,
             }))
           );
 
@@ -721,7 +768,10 @@ function SkillSearchSelect({
     : "No skills available";
 
   const handleSelect = (skillId: string) => {
-    onSelect(skillId);
+    const normalizedId = skillId.trim();
+    const nextValue = normalizedId.length > 0 ? normalizedId : "";
+    const shouldClear = selectedId === nextValue && nextValue !== "";
+    onSelect(shouldClear ? "" : nextValue);
     setIsOpen(false);
     setSearchTerm("");
   };
@@ -759,6 +809,22 @@ function SkillSearchSelect({
             />
           </div>
           <div className="max-h-60 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => handleSelect("")}
+              className={cn(
+                "flex w-full items-center justify-between px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5",
+                selectedId === "" && "bg-blue-500/15 text-white"
+              )}
+            >
+              <span className="flex items-center gap-2 truncate">
+                <span className="text-base leading-none">{DEFAULT_SKILL_ICON}</span>
+                <span className="truncate">No skill focus</span>
+              </span>
+              {selectedId === "" ? (
+                <CheckSquare className="h-4 w-4 text-blue-400" />
+              ) : null}
+            </button>
             {filteredSkills.length > 0 ? (
               filteredSkills.map((skill) => {
                 const isSelected = skill.id === selectedId;
@@ -957,7 +1023,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       if (eventType === "GOAL") {
         const monumentsData = await getMonumentsForUser(user.id);
         setMonuments(monumentsData);
-        return;
       }
 
       if (eventType === "PROJECT" || eventType === "TASK") {
@@ -966,6 +1031,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
 
       if (
+        eventType === "GOAL" ||
         eventType === "PROJECT" ||
         eventType === "TASK" ||
         eventType === "HABIT"
@@ -1184,6 +1250,30 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       prev.map((draft) =>
         draft.id === projectId ? { ...draft, [field]: nextValue } : draft
       )
+    );
+  };
+
+  const handleDraftProjectSkillToggle = (projectId: string, skillId: string) => {
+    const normalizedSkillId = skillId.trim();
+    setDraftProjects((prev) =>
+      prev.map((draft) => {
+        if (draft.id !== projectId) {
+          return draft;
+        }
+
+        if (!normalizedSkillId) {
+          return draft.skillIds.length > 0
+            ? { ...draft, skillIds: [] }
+            : draft;
+        }
+
+        const exists = draft.skillIds.includes(normalizedSkillId);
+        const nextSkillIds = exists
+          ? draft.skillIds.filter((id) => id !== normalizedSkillId)
+          : [...draft.skillIds, normalizedSkillId];
+
+        return { ...draft, skillIds: nextSkillIds };
+      })
     );
   };
 
@@ -1553,6 +1643,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
             const trimmedWhy = draft.why.trim();
             const parsedDuration = Number.parseFloat(draft.duration.trim());
+            const normalizedProjectSkillIds = Array.from(
+              new Set(
+                draft.skillIds
+                  .map((skillId) => skillId.trim())
+                  .filter((skillId) => skillId.length > 0)
+              )
+            );
 
             const tasks = draft.tasks
               .map<NormalizedTaskPayload | null>((task) => {
@@ -1563,6 +1660,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 }
 
                 const trimmedNotes = task.notes.trim();
+                const trimmedSkillId = task.skillId.trim();
 
                 return {
                   name: formattedTaskName,
@@ -1570,6 +1668,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   priority: task.priority || DEFAULT_PRIORITY,
                   energy: task.energy || DEFAULT_ENERGY,
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+                  skill_id: trimmedSkillId.length > 0 ? trimmedSkillId : null,
                 } satisfies NormalizedTaskPayload;
               })
               .filter((task): task is NormalizedTaskPayload => task !== null);
@@ -1585,6 +1684,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   ? Math.max(1, Math.round(parsedDuration))
                   : null,
               tasks,
+              skill_ids: normalizedProjectSkillIds,
             } satisfies NormalizedProjectPayload;
           })
           .filter(
@@ -2149,6 +2249,28 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                 className="min-h-[88px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                               />
                             </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                Skills
+                              </Label>
+                              <SkillMultiSelect
+                                skills={sortedSkills}
+                                selectedIds={draft.skillIds}
+                                onToggle={(skillId) =>
+                                  handleDraftProjectSkillToggle(draft.id, skillId)
+                                }
+                              />
+                              {index === 0 && skillsLoading ? (
+                                <p className="text-[11px] text-zinc-500">
+                                  Loading skills…
+                                </p>
+                              ) : null}
+                              {index === 0 && skillError ? (
+                                <p className="text-[11px] text-rose-300">
+                                  {skillError}
+                                </p>
+                              ) : null}
+                            </div>
                           </div>
                           {draftProjects.length > 1 ? (
                             <Button
@@ -2179,7 +2301,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               {goalWizardStep === "TASKS" ? (
                 <FormSection title="Tasks">
                   <div className="space-y-4">
-                    {draftProjects.map((draft) => (
+                    {draftProjects.map((draft, projectIndex) => (
                       <div
                         key={draft.id}
                         className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5"
@@ -2204,7 +2326,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         </div>
                         {draft.tasks.length > 0 ? (
                           <div className="mt-4 space-y-3">
-                            {draft.tasks.map((task, index) => (
+                            {draft.tasks.map((task, taskIndex) => (
                               <div
                                 key={task.id}
                                 className="rounded-xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
@@ -2213,7 +2335,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   <div className="flex-1 space-y-3">
                                     <div className="space-y-2">
                                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                        Task {index + 1}
+                                        Task {taskIndex + 1}
                                       </Label>
                                       <Input
                                         value={task.name}
@@ -2232,7 +2354,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     <div className="grid gap-3 sm:grid-cols-3">
                                       <OptionDropdown
                                         value={task.stage}
-                                        options={PROJECT_STAGE_OPTIONS}
+                                        options={TASK_STAGE_OPTIONS}
                                         onChange={(value) =>
                                           handleTaskChange(
                                             draft.id,
@@ -2269,6 +2391,34 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         }
                                         placeholder="Energy"
                                       />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                        Skill focus
+                                      </Label>
+                                      <SkillSearchSelect
+                                        skills={sortedSkills}
+                                        selectedId={task.skillId}
+                                        onSelect={(value) =>
+                                          handleTaskChange(
+                                            draft.id,
+                                            task.id,
+                                            "skillId",
+                                            value
+                                          )
+                                        }
+                                        placeholder="No skill focus"
+                                      />
+                                      {projectIndex === 0 && taskIndex === 0 && skillsLoading ? (
+                                        <p className="text-[11px] text-zinc-500">
+                                          Loading skills…
+                                        </p>
+                                      ) : null}
+                                      {projectIndex === 0 && taskIndex === 0 && skillError ? (
+                                        <p className="text-[11px] text-rose-300">
+                                          {skillError}
+                                        </p>
+                                      ) : null}
                                     </div>
                                     <div className="space-y-1">
                                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
