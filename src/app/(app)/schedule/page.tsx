@@ -28,6 +28,7 @@ import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
+import { useXpBurst } from '@/components/XpBurstProvider'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
@@ -1805,6 +1806,7 @@ export default function SchedulePage() {
   const searchParams = useSearchParams()
   const prefersReducedMotion = useReducedMotion()
   const { session } = useAuth()
+  const triggerXpBurst = useXpBurst()
   const userId = session?.user.id ?? null
   const userMetadata = session?.user?.user_metadata ?? null
   const habitCompletionStorageKey = useMemo(
@@ -2724,11 +2726,15 @@ export default function SchedulePage() {
         const instance = instances.find(inst => inst.id === instanceId)
         const previousStatus = instance?.status ?? null
         const isUndo = nextStatus === 'scheduled' && previousStatus === 'completed'
+        const isCompletion = nextStatus === 'completed' && !isUndo
         const shouldAwardXp = nextStatus === 'completed' || isUndo
 
         if (shouldAwardXp && instance) {
           const payload = buildXpAwardPayload(instance)
           if (payload) {
+            if (isCompletion) {
+              triggerXpBurst({ kind: payload.kind, amount: payload.amount })
+            }
             const baseAwardKey = `sched:${instance.id}:${payload.kind}`
             const body: Record<string, unknown> = {
               scheduleInstanceId: instance.id,
@@ -2781,7 +2787,7 @@ export default function SchedulePage() {
         })
       }
     },
-    [userId, setInstances, instances, buildXpAwardPayload]
+    [userId, setInstances, instances, buildXpAwardPayload, triggerXpBurst]
   )
 
   const getHabitCompletionStatus = useCallback(
@@ -2827,11 +2833,15 @@ export default function SchedulePage() {
   const toggleHabitCompletionStatus = useCallback(
     (dateKey: string, habitId: string) => {
       const current = getHabitCompletionStatus(dateKey, habitId)
+      const isCurrentlyCompleted = current === 'completed'
       const nextStatus: HabitCompletionStatus | null =
-        current === 'completed' ? 'scheduled' : 'completed'
+        isCurrentlyCompleted ? 'scheduled' : 'completed'
+      if (!isCurrentlyCompleted && nextStatus === 'completed') {
+        triggerXpBurst({ kind: 'habit', amount: 1 })
+      }
       updateHabitCompletionStatus(dateKey, habitId, nextStatus)
     },
-    [getHabitCompletionStatus, updateHabitCompletionStatus]
+    [getHabitCompletionStatus, updateHabitCompletionStatus, triggerXpBurst]
   )
 
   const handleHabitCardActivation = useCallback(
@@ -2896,6 +2906,7 @@ export default function SchedulePage() {
           memoNoteState.habitId,
           'completed'
         )
+        triggerXpBurst({ kind: 'habit', amount: 1 })
         setMemoNoteState(null)
       } catch (error) {
         console.error('Failed to save memo note', error)
@@ -2904,7 +2915,7 @@ export default function SchedulePage() {
         setMemoNoteSaving(false)
       }
     },
-    [memoNoteState, updateHabitCompletionStatus]
+    [memoNoteState, updateHabitCompletionStatus, triggerXpBurst]
   )
 
   const handleToggleBacklogTaskCompletion = useCallback(
@@ -2953,6 +2964,7 @@ export default function SchedulePage() {
         }
 
         const shouldAwardXp = isCurrentlyCompleted || nextStage === 'PERFECT'
+        const isCompletion = !isCurrentlyCompleted && nextStage === 'PERFECT'
         if (shouldAwardXp && userId) {
           const isUndo = isCurrentlyCompleted
           const skillIdsRaw = task.skill_id ? [task.skill_id] : []
@@ -2966,6 +2978,10 @@ export default function SchedulePage() {
           const monumentIds = uniqueSkillIds
             .map(id => skillMonumentMap[id])
             .filter((id): id is string => typeof id === 'string' && id.length > 0)
+
+          if (isCompletion) {
+            triggerXpBurst({ kind: 'task', amount: 1 })
+          }
 
           const baseAwardKey = `backlog:${taskId}:task`
           const body: Record<string, unknown> = {
@@ -3018,6 +3034,7 @@ export default function SchedulePage() {
       setTasks,
       skillMonumentMap,
       userId,
+      triggerXpBurst,
     ]
   )
   function navigate(next: ScheduleView) {
