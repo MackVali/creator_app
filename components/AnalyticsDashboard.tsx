@@ -11,6 +11,10 @@ import {
   Clock,
   Flame,
   ArrowLeft,
+  Bookmark,
+  PenLine,
+  Share2,
+  Sparkles,
 } from "lucide-react";
 import type {
   AnalyticsResponse,
@@ -19,6 +23,7 @@ import type {
   AnalyticsHabitRoutine,
   AnalyticsHabitPerformance,
   AnalyticsHabitStreakPoint,
+  AnalyticsHabitWeeklyReflection,
 } from "@/types/analytics";
 
 const KPI_ICON_MAP: Record<
@@ -62,6 +67,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
     streakHistory: [],
     bestTimes: [],
     bestDays: [],
+    weeklyReflections: [],
   };
 
   if (!summary || typeof summary !== "object") {
@@ -181,6 +187,55 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
         )
     : base.streakHistory;
 
+  const weeklyReflections = Array.isArray(record.weeklyReflections)
+    ? record.weeklyReflections
+        .map((item, index) => {
+          if (!item || typeof item !== "object") {
+            return null;
+          }
+
+          const reflection = item as Record<string, unknown>;
+          const id =
+            typeof reflection.id === "string"
+              ? reflection.id
+              : `reflection-${index}`;
+          const weekLabel =
+            typeof reflection.weekLabel === "string"
+              ? reflection.weekLabel
+              : `Week ${index + 1}`;
+          const streak = isFiniteNumber(reflection.streak)
+            ? Math.max(0, Math.round(reflection.streak))
+            : 0;
+          const bestDay =
+            typeof reflection.bestDay === "string"
+              ? reflection.bestDay
+              : "—";
+          const lesson =
+            typeof reflection.lesson === "string"
+              ? reflection.lesson
+              : "Keep logging habits to uncover insights.";
+          const pinned =
+            typeof reflection.pinned === "boolean" ? reflection.pinned : false;
+          const recommendation =
+            typeof reflection.recommendation === "string"
+              ? reflection.recommendation
+              : undefined;
+
+          return {
+            id,
+            weekLabel,
+            streak,
+            bestDay,
+            lesson,
+            pinned,
+            recommendation,
+          } satisfies AnalyticsHabitWeeklyReflection;
+        })
+        .filter(
+          (entry): entry is AnalyticsHabitWeeklyReflection => entry !== null
+        )
+    : base.weeklyReflections;
+
   return {
     currentStreak: toNonNegativeInt(
       record.currentStreak,
@@ -196,6 +251,7 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
     streakHistory,
     bestTimes: toPerformanceList(record.bestTimes),
     bestDays: toPerformanceList(record.bestDays),
+    weeklyReflections,
   };
 }
 
@@ -347,6 +403,7 @@ export default function AnalyticsDashboard() {
   const streakHistory = habitSummary.streakHistory;
   const bestTimes = habitSummary.bestTimes;
   const bestDays = habitSummary.bestDays;
+  const weeklyReflections = habitSummary.weeklyReflections;
 
   const focusInsights = [
     {
@@ -545,6 +602,9 @@ export default function AnalyticsDashboard() {
                     emptyLabel="Add more entries to reveal pattern days."
                     data={bestDays}
                   />
+                </div>
+                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                  <WeeklyReflectionPanel reflections={weeklyReflections} />
                 </div>
                 <div className="flex justify-end">
                   <Link
@@ -1449,6 +1509,224 @@ function BestPerformanceList({
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+function WeeklyReflectionPanel({
+  reflections,
+}: {
+  reflections: AnalyticsHabitWeeklyReflection[];
+}) {
+  const [pinnedState, setPinnedState] = useState<Record<string, boolean>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [saveStatus, setSaveStatus] = useState<
+    Record<string, "idle" | "saved">
+  >({});
+  const [shareStatus, setShareStatus] = useState<
+    Record<string, "idle" | "copied" | "error">
+  >({});
+
+  useEffect(() => {
+    setPinnedState((prev) => {
+      const next: Record<string, boolean> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? reflection.pinned;
+      });
+      return next;
+    });
+    setNotes((prev) => {
+      const next: Record<string, string> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? "";
+      });
+      return next;
+    });
+    setSaveStatus((prev) => {
+      const next: Record<string, "idle" | "saved"> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? "idle";
+      });
+      return next;
+    });
+    setShareStatus((prev) => {
+      const next: Record<string, "idle" | "copied" | "error"> = {};
+      reflections.forEach((reflection) => {
+        next[reflection.id] = prev[reflection.id] ?? "idle";
+      });
+      return next;
+    });
+  }, [reflections]);
+
+  if (reflections.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#273041] bg-[#0D131E] p-6 text-center text-sm text-[#6E7A96]">
+        Weekly reflections will appear once you build a streak.
+        <span className="text-xs text-[#4E5A73]">
+          Capture highlights to train smarter recommendations.
+        </span>
+      </div>
+    );
+  }
+
+  const handleTogglePin = (id: string) => {
+    setPinnedState((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleSave = (id: string) => {
+    setSaveStatus((prev) => ({ ...prev, [id]: "saved" }));
+    window.setTimeout(() => {
+      setSaveStatus((prev) => ({ ...prev, [id]: "idle" }));
+    }, 3000);
+  };
+
+  const handleShare = async (id: string) => {
+    const reflection = reflections.find((entry) => entry.id === id);
+    if (!reflection) {
+      return;
+    }
+
+    const summary = `Week: ${reflection.weekLabel}\nStreak: ${reflection.streak} days\nBest day: ${reflection.bestDay}\nLesson: ${reflection.lesson}`;
+
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(summary);
+        setShareStatus((prev) => ({ ...prev, [id]: "copied" }));
+        window.setTimeout(() => {
+          setShareStatus((prev) => ({ ...prev, [id]: "idle" }));
+        }, 3000);
+      } else {
+        throw new Error("Clipboard unavailable");
+      }
+    } catch (error) {
+      console.error("Unable to copy weekly reflection", error);
+      setShareStatus((prev) => ({ ...prev, [id]: "error" }));
+      window.setTimeout(() => {
+        setShareStatus((prev) => ({ ...prev, [id]: "idle" }));
+      }, 4000);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-1 text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+        <span>Weekly reflection</span>
+        <span className="text-[11px] normal-case tracking-normal text-[#9DA6BB]">
+          Summaries feed your future habit recommendations.
+        </span>
+      </div>
+      <div className="space-y-5">
+        {reflections.map((reflection) => {
+          const pinned = pinnedState[reflection.id] ?? reflection.pinned;
+          const note = notes[reflection.id] ?? "";
+          const saved = saveStatus[reflection.id] ?? "idle";
+          const shared = shareStatus[reflection.id] ?? "idle";
+          return (
+            <div
+              key={reflection.id}
+              className="space-y-4 rounded-2xl border border-[#1F2736] bg-[#0D131E] p-5 shadow-[0_16px_36px_rgba(7,9,14,0.45)]"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-[#6E7A96]">
+                    <Sparkles className="h-4 w-4 text-[#B19CFF]" />
+                    {reflection.weekLabel}
+                  </div>
+                  <h3 className="mt-2 text-lg font-semibold text-white">
+                    {reflection.streak} day streak snapshot
+                  </h3>
+                  <dl className="mt-3 grid gap-3 text-sm text-[#9DA6BB] sm:grid-cols-2">
+                    <div className="rounded-xl border border-[#1F2736] bg-[#0B1018] p-3">
+                      <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
+                        Best day
+                      </dt>
+                      <dd className="mt-1 text-white">{reflection.bestDay}</dd>
+                    </div>
+                    <div className="rounded-xl border border-[#1F2736] bg-[#0B1018] p-3">
+                      <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
+                        Lesson learned
+                      </dt>
+                      <dd className="mt-1 text-white">{reflection.lesson}</dd>
+                    </div>
+                  </dl>
+                  {reflection.recommendation ? (
+                    <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#253149] bg-[#111725] p-3 text-sm text-[#9DA6BB]">
+                      <PenLine className="h-4 w-4 text-[#6DD3A8]" />
+                      <span>{reflection.recommendation}</span>
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleTogglePin(reflection.id)}
+                  className={classNames(
+                    "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80",
+                    pinned
+                      ? "border-[#7E6BFF] bg-[#7E6BFF]/10 text-[#B19CFF]"
+                      : "border-[#273041] text-[#9DA6BB] hover:text-white"
+                  )}
+                >
+                  <Bookmark className="h-4 w-4" />
+                  {pinned ? "Pinned for insights" : "Pin this week"}
+                </button>
+              </div>
+              <div className="space-y-3">
+                <label className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                  <span>Journal prompt</span>
+                  <span className="text-[11px] normal-case tracking-normal text-[#4E5A73]">
+                    What made this week so consistent?
+                  </span>
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(event) =>
+                    setNotes((prev) => ({
+                      ...prev,
+                      [reflection.id]: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-[#273041] bg-[#070A12] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#7E6BFF] focus:outline-none focus:ring-2 focus:ring-[#7E6BFF]/50"
+                  placeholder="Capture the habits, supports, or rituals that unlocked momentum."
+                />
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSave(reflection.id)}
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#7E6BFF] to-[#B19CFF] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(126,107,255,0.45)] transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80"
+                  >
+                    <PenLine className="h-4 w-4" />
+                    Save reflection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleShare(reflection.id)}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#273041] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80"
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Share snapshot
+                  </button>
+                  <div className="flex items-center text-xs text-[#6E7A96]">
+                    {saved === "saved" ? (
+                      <span className="text-[#6DD3A8]">Saved! We’ll tailor future nudges.</span>
+                    ) : shared === "copied" ? (
+                      <span className="text-[#B19CFF]">Copied summary to clipboard.</span>
+                    ) : shared === "error" ? (
+                      <span className="text-[#FFB4A2]">Clipboard unavailable—share manually.</span>
+                    ) : pinned ? (
+                      <span>Pinned weeks guide your habit recommendations.</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

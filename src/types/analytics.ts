@@ -61,6 +61,16 @@ export type AnalyticsHabitPerformance = {
   successRate: number;
 };
 
+export type AnalyticsHabitWeeklyReflection = {
+  id: string;
+  weekLabel: string;
+  streak: number;
+  bestDay: string;
+  lesson: string;
+  pinned: boolean;
+  recommendation?: string;
+};
+
 export type AnalyticsHabitSummary = {
   currentStreak: number;
   longestStreak: number;
@@ -70,6 +80,7 @@ export type AnalyticsHabitSummary = {
   streakHistory: AnalyticsHabitStreakPoint[];
   bestTimes: AnalyticsHabitPerformance[];
   bestDays: AnalyticsHabitPerformance[];
+  weeklyReflections: AnalyticsHabitWeeklyReflection[];
 };
 
 export type AnalyticsWindowsSummary = {
