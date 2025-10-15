@@ -115,6 +115,23 @@ describe("loadPublicProfile", () => {
     expect(result.isOwner).toBe(true);
   });
 
+  it("normalizes handles before resolving the read model", async () => {
+    const readModel = buildReadModel();
+    getPublicProfileReadModel.mockResolvedValue(readModel);
+    createSupabaseServerClient.mockResolvedValue(null);
+
+    const inputHandle = " @Creator ";
+    const normalizedHandle = inputHandle
+      .trim()
+      .replace(/^@+/, "")
+      .replace(/\s+/g, "");
+
+    const result = await loadPublicProfile(inputHandle);
+
+    expect(result.status).toBe("ok");
+    expect(getPublicProfileReadModel).toHaveBeenCalledWith(normalizedHandle);
+  });
+
   it("returns config_missing when Supabase env vars are absent", async () => {
     getPublicProfileReadModel.mockRejectedValue(
       new Error(

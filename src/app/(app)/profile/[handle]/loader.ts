@@ -29,10 +29,29 @@ function resolveStatusFromError(error: unknown): ProfileLoaderStatus {
   return "error";
 }
 
+function normalizeHandle(rawHandle: string): string {
+  return rawHandle
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/\s+/g, "");
+}
+
 export async function loadPublicProfile(
   handle: string,
 ): Promise<LoadPublicProfileResult> {
   if (!handle) {
+    return {
+      readModel: null,
+      viewerUserId: null,
+      isOwner: false,
+      status: "not_found",
+      error: "A profile handle is required.",
+    };
+  }
+
+  const normalizedHandle = normalizeHandle(handle);
+
+  if (!normalizedHandle) {
     return {
       readModel: null,
       viewerUserId: null,
@@ -47,12 +66,16 @@ export async function loadPublicProfile(
   let errorMessage: string | undefined;
 
   try {
-    readModel = await getPublicProfileReadModel(handle);
+    readModel = await getPublicProfileReadModel(normalizedHandle);
     if (!readModel) {
       status = "not_found";
     }
   } catch (error) {
-    console.error("Failed to load public profile read model", { handle, error });
+    console.error("Failed to load public profile read model", {
+      handle,
+      normalizedHandle,
+      error,
+    });
     status = resolveStatusFromError(error);
     errorMessage = error instanceof Error ? error.message : "Unknown error";
   }
