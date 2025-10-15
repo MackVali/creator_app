@@ -640,6 +640,7 @@ async function scheduleHabitsForDay(params: {
   const defaultDueMs = dayStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
   const placements: HabitDraftPlacement[] = []
+  const earliestStartByWindowKey = new Map<string, Date>()
 
   for (const habit of habits) {
     const windowDays = habit.window?.days ?? null
@@ -732,8 +733,20 @@ async function scheduleHabitsForDay(params: {
     const startMs = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
     let startCandidate = startMs
+    const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null
+    const dueStartMs = dueStart ? dueStart.getTime() : null
+    if (typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)) {
+      startCandidate = Math.max(startCandidate, dueStartMs)
+    }
     if (typeof baseNowMs === 'number' && baseNowMs > startCandidate && baseNowMs < endLimit) {
       startCandidate = baseNowMs
+    }
+    if (isSyncHabit) {
+      const anchorStart = earliestStartByWindowKey.get(target.key)
+      const anchorStartMs = anchorStart?.getTime()
+      if (typeof anchorStartMs === 'number' && Number.isFinite(anchorStartMs)) {
+        startCandidate = Math.max(startCandidate, anchorStartMs)
+      }
     }
     if (startCandidate >= endLimit) {
       if (!isSyncHabit) {
@@ -759,6 +772,12 @@ async function scheduleHabitsForDay(params: {
     const endDate = new Date(endCandidate)
     if (!isSyncHabit) {
       availability.set(target.key, endDate)
+      const existingAnchor = earliestStartByWindowKey.get(target.key)
+      if (!existingAnchor || existingAnchor.getTime() > startCandidate) {
+        earliestStartByWindowKey.set(target.key, startDate)
+      }
+    } else if (!earliestStartByWindowKey.has(target.key)) {
+      earliestStartByWindowKey.set(target.key, startDate)
     }
 
     const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
