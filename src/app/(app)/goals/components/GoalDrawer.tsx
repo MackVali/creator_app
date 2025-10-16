@@ -17,6 +17,12 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { Goal, Project, Task } from "../types";
+import { getSupabaseBrowser } from "@/lib/supabase";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import {
+  SkillMultiPicker,
+  SkillSinglePicker,
+} from "@/components/skills/SkillPicker";
 
 export interface GoalUpdateContext {
   projects: (Project & { tasks: (Task & { isNew?: boolean })[] })[];
@@ -96,6 +102,32 @@ const TASK_STAGE_OPTIONS = [
 const DEFAULT_PROJECT_STAGE = "RESEARCH";
 const DEFAULT_TASK_STAGE = "PREPARE";
 
+const formatDateInputValue = (value?: string | null): string => {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateInputValue = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const date = new Date(`${trimmed}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+};
+
 const projectStageToStatus = (stage: string): Project["status"] => {
   switch (stage) {
     case "RESEARCH":
@@ -155,6 +187,7 @@ type EditableTask = Task & { isNew?: boolean };
 type EditableProject = Project & {
   tasks: EditableTask[];
   isNew?: boolean;
+  skillIds: string[];
 };
 
 export function GoalDrawer({
@@ -176,6 +209,14 @@ export function GoalDrawer({
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
+  const [goalDueDate, setGoalDueDate] = useState<string | null>(null);
+  const [goalAdvancedOpen, setGoalAdvancedOpen] = useState(false);
+  const [projectAdvancedOpen, setProjectAdvancedOpen] = useState<Record<string, boolean>>({});
+  const [taskAdvancedOpen, setTaskAdvancedOpen] = useState<Record<string, boolean>>({});
 
   const editing = Boolean(initialGoal);
 
@@ -188,14 +229,38 @@ export function GoalDrawer({
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
       setMonumentId(initialGoal.monumentId || "");
+      const projectAdvanced: Record<string, boolean> = {};
+      const taskAdvanced: Record<string, boolean> = {};
+      setGoalDueDate(initialGoal.dueDate ?? null);
+      setGoalAdvancedOpen(Boolean(initialGoal.dueDate));
       setProjectsState(
         (initialGoal.projects || []).map((project) => {
           const stage = project.stage ?? projectStatusToStage(project.status);
-          const tasks = (project.tasks || []).map((task) => ({
-            ...task,
-            isNew: false,
-          }));
+          const projectDueDate = project.dueDate ?? null;
+          if (projectDueDate) {
+            projectAdvanced[project.id] = true;
+          }
+          const tasks = (project.tasks || []).map((task) => {
+            const taskDueDate = task.dueDate ?? null;
+            if (taskDueDate) {
+              taskAdvanced[task.id] = true;
+            }
+            return {
+              ...task,
+              dueDate: taskDueDate,
+              isNew: false,
+            } satisfies EditableTask;
+          });
           const progress = computeProjectProgress(tasks);
+          const skillIds = Array.isArray(project.skillIds)
+            ? Array.from(
+                new Set(
+                  project.skillIds.filter(
+                    (id): id is string => typeof id === "string" && id.length > 0
+                  )
+                )
+              )
+            : [];
           return {
             ...project,
             stage,
@@ -206,9 +271,13 @@ export function GoalDrawer({
             progress,
             tasks,
             isNew: false,
+            skillIds,
+            dueDate: projectDueDate,
           } satisfies EditableProject;
         })
       );
+      setProjectAdvancedOpen(projectAdvanced);
+      setTaskAdvancedOpen(taskAdvanced);
     } else {
       setTitle("");
       setEmoji("");
@@ -218,10 +287,64 @@ export function GoalDrawer({
       setWhy("");
       setMonumentId("");
       setProjectsState([]);
+      setGoalDueDate(null);
+      setGoalAdvancedOpen(false);
+      setProjectAdvancedOpen({});
+      setTaskAdvancedOpen({});
     }
     setRemovedProjectIds([]);
     setRemovedTaskIds([]);
   }, [initialGoal, open]);
+
+  useEffect(() => {
+    if (!open || skillsLoaded) {
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      setSkillsLoading(true);
+      try {
+        const supabase = getSupabaseBrowser();
+        if (!supabase) {
+          throw new Error("Supabase client not available");
+        }
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          throw new Error("User not authenticated");
+        }
+
+        const skillsData = await getSkillsForUser(user.id);
+        if (!active) return;
+        setSkills(skillsData);
+        setSkillsError(null);
+        setSkillsLoaded(true);
+      } catch (error) {
+        console.error("Error loading skills:", error);
+        if (active) {
+          setSkillsError("Unable to load skills right now.");
+        }
+      } finally {
+        if (active) {
+          setSkillsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [open, skillsLoaded]);
 
   const monumentOptions = useMemo(() => {
     if (!monuments.length) return [] as { id: string; title: string }[];
@@ -256,8 +379,11 @@ export function GoalDrawer({
       stage,
       priorityCode: "NO",
       isNew: true,
+      skillIds: [],
+      dueDate: null,
     };
     setProjectsState((projects) => [...projects, nextProject]);
+    setProjectAdvancedOpen((prev) => ({ ...prev, [nextProject.id]: false }));
   };
 
   const handleProjectNameChange = (projectId: string, value: string) => {
@@ -299,12 +425,67 @@ export function GoalDrawer({
     );
   };
 
+  const handleProjectSkillsChange = (
+    projectId: string,
+    nextSkillIds: string[]
+  ) => {
+    const unique = Array.from(
+      new Set(
+        nextSkillIds
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      )
+    );
+    setProjectsState((projects) =>
+      projects.map((project) =>
+        project.id === projectId ? { ...project, skillIds: unique } : project
+      )
+    );
+  };
+
+  const toggleProjectAdvanced = (projectId: string) => {
+    setProjectAdvancedOpen((prev) => ({
+      ...prev,
+      [projectId]: !prev[projectId],
+    }));
+  };
+
+  const handleProjectDueDateChange = (projectId: string, value: string) => {
+    const iso = parseDateInputValue(value);
+    setProjectsState((projects) =>
+      projects.map((project) =>
+        project.id === projectId ? { ...project, dueDate: iso } : project
+      )
+    );
+  };
+
   const handleRemoveProject = (projectId: string) => {
     let removedProject: EditableProject | null = null;
     setProjectsState((projects) => {
       removedProject = projects.find((project) => project.id === projectId) ?? null;
       return projects.filter((project) => project.id !== projectId);
     });
+    setProjectAdvancedOpen((prev) => {
+      if (!(projectId in prev)) {
+        return prev;
+      }
+      const { [projectId]: _removed, ...rest } = prev;
+      return rest;
+    });
+    if (removedProject) {
+      setTaskAdvancedOpen((prev) => {
+        if (removedProject && removedProject.tasks.length === 0) {
+          return prev;
+        }
+        const next = { ...prev };
+        removedProject.tasks.forEach((task) => {
+          if (task.id in next) {
+            delete next[task.id];
+          }
+        });
+        return next;
+      });
+    }
     if (removedProject && !removedProject.isNew) {
       setRemovedProjectIds((ids) =>
         ids.includes(projectId) ? ids : [...ids, projectId]
@@ -328,6 +509,8 @@ export function GoalDrawer({
       name: "",
       stage: DEFAULT_TASK_STAGE,
       isNew: true,
+      skillId: null,
+      dueDate: null,
     };
     setProjectsState((projects) =>
       projects.map((project) => {
@@ -340,6 +523,7 @@ export function GoalDrawer({
         };
       })
     );
+    setTaskAdvancedOpen((prev) => ({ ...prev, [newTask.id]: false }));
   };
 
   const handleTaskNameChange = (
@@ -382,6 +566,54 @@ export function GoalDrawer({
     );
   };
 
+  const handleTaskSkillChange = (
+    projectId: string,
+    taskId: string,
+    skillId: string | null
+  ) => {
+    setProjectsState((projects) =>
+      projects.map((project) => {
+        if (project.id !== projectId) return project;
+        const nextTasks = project.tasks.map((task) =>
+          task.id === taskId ? { ...task, skillId } : task
+        );
+        return {
+          ...project,
+          tasks: nextTasks,
+          progress: computeProjectProgress(nextTasks),
+        };
+      })
+    );
+  };
+
+  const toggleTaskAdvanced = (taskId: string) => {
+    setTaskAdvancedOpen((prev) => ({
+      ...prev,
+      [taskId]: !prev[taskId],
+    }));
+  };
+
+  const handleTaskDueDateChange = (
+    projectId: string,
+    taskId: string,
+    value: string
+  ) => {
+    const iso = parseDateInputValue(value);
+    setProjectsState((projects) =>
+      projects.map((project) => {
+        if (project.id !== projectId) return project;
+        const nextTasks = project.tasks.map((task) =>
+          task.id === taskId ? { ...task, dueDate: iso } : task
+        );
+        return {
+          ...project,
+          tasks: nextTasks,
+          progress: computeProjectProgress(nextTasks),
+        };
+      })
+    );
+  };
+
   const handleRemoveTask = (projectId: string, taskId: string) => {
     let removedExisting = false;
     setProjectsState((projects) =>
@@ -399,6 +631,13 @@ export function GoalDrawer({
         };
       })
     );
+    setTaskAdvancedOpen((prev) => {
+      if (!(taskId in prev)) {
+        return prev;
+      }
+      const { [taskId]: _removed, ...rest } = prev;
+      return rest;
+    });
     if (removedExisting) {
       setRemovedTaskIds((ids) =>
         ids.includes(taskId) ? ids : [...ids, taskId]
@@ -420,25 +659,40 @@ export function GoalDrawer({
 
     const preparedProjects: Project[] = projectsState.map((project) => {
       const stage = project.stage ?? projectStatusToStage(project.status);
-      const sanitizedTasks = project.tasks.map((task) => ({
-        id: task.id,
-        name: task.name.trim(),
-        stage: task.stage,
-        skillId: task.skillId,
-      }));
+      const sanitizedTasks = project.tasks.map((task) => {
+        const trimmedSkillId =
+          typeof task.skillId === "string" ? task.skillId.trim() : null;
+        const normalizedSkillId =
+          trimmedSkillId && trimmedSkillId.length > 0 ? trimmedSkillId : null;
+        return {
+          id: task.id,
+          name: task.name.trim(),
+          stage: task.stage,
+          skillId: normalizedSkillId,
+          dueDate: task.dueDate ?? null,
+        };
+      });
+      const sanitizedSkillIds = Array.from(
+        new Set(
+          (project.skillIds || [])
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        )
+      );
       const progress = computeProjectProgress(sanitizedTasks);
       return {
         id: project.id,
         name: project.name.trim(),
         status: projectStageToStatus(stage),
         progress,
-        dueDate: project.dueDate,
+        dueDate: project.dueDate ?? null,
         energy: project.energy,
         energyCode: project.energyCode ?? energyToDbValue(project.energy),
         tasks: sanitizedTasks,
         stage,
         priorityCode: project.priorityCode,
         isNew: project.isNew,
+        skillIds: sanitizedSkillIds,
       };
     });
 
@@ -447,7 +701,21 @@ export function GoalDrawer({
     const context: GoalUpdateContext = {
       projects: projectsState.map((project) => ({
         ...project,
-        tasks: project.tasks.map((task) => ({ ...task })),
+        skillIds: Array.from(
+          new Set(
+            (project.skillIds || [])
+              .map((id) => id.trim())
+              .filter((id) => id.length > 0)
+          )
+        ),
+        tasks: project.tasks.map((task) => ({
+          ...task,
+          skillId:
+            typeof task.skillId === "string" && task.skillId.trim().length > 0
+              ? task.skillId.trim()
+              : null,
+          dueDate: task.dueDate ?? null,
+        })),
       })),
       removedProjectIds,
       removedTaskIds,
@@ -457,7 +725,7 @@ export function GoalDrawer({
       id: initialGoal?.id || Date.now().toString(),
       title: title.trim(),
       emoji: emoji.trim() || undefined,
-      dueDate: initialGoal?.dueDate,
+      dueDate: goalDueDate ?? null,
       priority,
       energy,
       progress: goalProgress,
@@ -643,6 +911,42 @@ export function GoalDrawer({
                 </Button>
               </div>
 
+              <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">Advanced options</p>
+                    <p className="text-xs text-white/60">
+                      Schedule touchpoints like due dates when you need them.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-full border-white/20 bg-white/[0.04] text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-indigo-400/60 hover:text-white"
+                    onClick={() => setGoalAdvancedOpen((prev) => !prev)}
+                    aria-expanded={goalAdvancedOpen}
+                  >
+                    {goalAdvancedOpen ? "Hide" : "Show"}
+                  </Button>
+                </div>
+                {goalAdvancedOpen ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-white/70">Due date</Label>
+                      <Input
+                        type="date"
+                        value={formatDateInputValue(goalDueDate)}
+                        onChange={(event) =>
+                          setGoalDueDate(parseDateInputValue(event.target.value))
+                        }
+                        className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm text-white"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="goal-why" className="text-white/70">
                   Why?
@@ -677,6 +981,12 @@ export function GoalDrawer({
                   </Button>
                 </div>
 
+                {skillsError ? (
+                  <p className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                    {skillsError}
+                  </p>
+                ) : null}
+
                 {projectsState.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-white/60">
                     No projects linked yet. Add one to keep your plan in sync with
@@ -687,6 +997,8 @@ export function GoalDrawer({
                     {projectsState.map((project, index) => {
                       const stageValue =
                         project.stage ?? projectStatusToStage(project.status);
+                      const isProjectAdvancedOpen =
+                        projectAdvancedOpen[project.id] ?? false;
                       return (
                         <div
                           key={project.id}
@@ -726,7 +1038,7 @@ export function GoalDrawer({
                             </Button>
                           </div>
 
-                          <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="grid gap-4 sm:grid-cols-3">
                             <div className="space-y-1">
                               <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
                                 Stage
@@ -770,6 +1082,59 @@ export function GoalDrawer({
                                 </SelectContent>
                               </Select>
                             </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                                Skills
+                              </Label>
+                              <SkillMultiPicker
+                                skills={skills}
+                                selectedIds={project.skillIds}
+                                onChange={(next) =>
+                                  handleProjectSkillsChange(project.id, next)
+                                }
+                                loading={skillsLoading}
+                                buttonClassName="h-10 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm text-white"
+                                contentClassName="bg-[#0f172a] text-sm text-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                                Advanced
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 rounded-full border border-white/10 bg-white/[0.05] px-3 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-indigo-400/60 hover:text-white"
+                                onClick={() => toggleProjectAdvanced(project.id)}
+                                aria-expanded={isProjectAdvancedOpen}
+                              >
+                                {isProjectAdvancedOpen ? "Hide" : "Show"}
+                              </Button>
+                            </div>
+                            {isProjectAdvancedOpen ? (
+                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                                    Due date
+                                  </Label>
+                                  <Input
+                                    type="date"
+                                    value={formatDateInputValue(project.dueDate ?? null)}
+                                    onChange={(event) =>
+                                      handleProjectDueDateChange(
+                                        project.id,
+                                        event.target.value
+                                      )
+                                    }
+                                    className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm text-white"
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
 
                           <div className="space-y-3">
@@ -796,11 +1161,14 @@ export function GoalDrawer({
                               </p>
                             ) : (
                               <div className="space-y-3">
-                                {project.tasks.map((task, taskIndex) => (
-                                  <div
-                                    key={task.id}
-                                    className="space-y-3 rounded-xl border border-white/10 bg-white/[0.04] p-3"
-                                  >
+                                {project.tasks.map((task, taskIndex) => {
+                                  const isTaskAdvancedOpen =
+                                    taskAdvancedOpen[task.id] ?? false;
+                                  return (
+                                    <div
+                                      key={task.id}
+                                      className="space-y-3 rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                    >
                                     <div className="flex items-start gap-3">
                                       <div className="flex-1 space-y-1">
                                         <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
@@ -833,7 +1201,7 @@ export function GoalDrawer({
                                       </Button>
                                     </div>
 
-                                    <div className="grid gap-3 sm:grid-cols-2">
+                                    <div className="grid gap-3 sm:grid-cols-3">
                                       <div className="space-y-1">
                                         <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
                                           Stage
@@ -863,6 +1231,27 @@ export function GoalDrawer({
                                       </div>
                                       <div className="space-y-1">
                                         <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                          Skill
+                                        </Label>
+                                        <SkillSinglePicker
+                                          skills={skills}
+                                          value={task.skillId ?? null}
+                                          onChange={(next) =>
+                                            handleTaskSkillChange(
+                                              project.id,
+                                              task.id,
+                                              next
+                                            )
+                                          }
+                                          loading={skillsLoading}
+                                          triggerClassName="h-9 rounded-lg border-white/10 bg-white/[0.05] text-left text-sm"
+                                          contentClassName="bg-[#0f172a] text-sm text-white"
+                                          noneLabel="No skill focus"
+                                          placeholder="Select a skill"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
                                           Status
                                         </Label>
                                         <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/60">
@@ -874,8 +1263,47 @@ export function GoalDrawer({
                                         </div>
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
+                                      <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                            Advanced
+                                          </span>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 rounded-full border border-white/10 bg-white/[0.05] px-3 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-indigo-400/60 hover:text-white"
+                                            onClick={() => toggleTaskAdvanced(task.id)}
+                                            aria-expanded={isTaskAdvancedOpen}
+                                          >
+                                            {isTaskAdvancedOpen ? "Hide" : "Show"}
+                                          </Button>
+                                        </div>
+                                        {isTaskAdvancedOpen ? (
+                                          <div className="mt-3 space-y-2 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
+                                            <div className="space-y-1">
+                                              <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                                                Due date
+                                              </Label>
+                                              <Input
+                                                type="date"
+                                                value={formatDateInputValue(task.dueDate ?? null)}
+                                                onChange={(event) =>
+                                                  handleTaskDueDateChange(
+                                                    project.id,
+                                                    task.id,
+                                                    event.target.value
+                                                  )
+                                                }
+                                                className="h-9 rounded-lg border-white/10 bg-white/[0.05] text-sm text-white"
+                                              />
+                                            </div>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>

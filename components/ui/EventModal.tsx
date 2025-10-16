@@ -101,6 +101,32 @@ const formatNameValue = (value: string) => value.toUpperCase();
 const formatNameDisplay = (value?: string | null) =>
   value ? value.toUpperCase() : "";
 
+const formatDateInputValue = (value?: string | null): string => {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateInputValue = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const date = new Date(`${trimmed}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+};
+
 type GoalWizardRpcInput = {
   user_id: string;
   name: string;
@@ -108,6 +134,7 @@ type GoalWizardRpcInput = {
   energy: string;
   monument_id: string;
   why: string | null;
+  due_date: string | null;
 };
 
 type NormalizedTaskPayload = {
@@ -116,6 +143,8 @@ type NormalizedTaskPayload = {
   priority: string;
   energy: string;
   notes: string | null;
+  skill_id: string | null;
+  due_date: string | null;
 };
 
 type NormalizedProjectPayload = {
@@ -126,18 +155,45 @@ type NormalizedProjectPayload = {
   why: string | null;
   duration_min: number | null;
   tasks: NormalizedTaskPayload[];
+  skill_ids: string[];
+  due_date: string | null;
 };
 
 async function cleanupGoalHierarchy(
   supabase: SupabaseClient,
   goalId: string
 ) {
+  const { data: projectRows, error: projectLookupError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("goal_id", goalId);
+  if (projectLookupError) {
+    console.error("Error loading projects for cleanup:", projectLookupError);
+  }
+
   const { error: taskCleanupError } = await supabase
     .from("tasks")
     .delete()
     .eq("goal_id", goalId);
   if (taskCleanupError) {
     console.error("Error cleaning up tasks for goal:", taskCleanupError);
+  }
+
+  const projectIds = (projectRows ?? [])
+    .map((row) => row.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  if (projectIds.length > 0) {
+    const { error: projectSkillsCleanupError } = await supabase
+      .from("project_skills")
+      .delete()
+      .in("project_id", projectIds);
+    if (projectSkillsCleanupError) {
+      console.error(
+        "Error cleaning up project skill links:",
+        projectSkillsCleanupError
+      );
+    }
   }
 
   const { error: projectCleanupError } = await supabase
@@ -174,6 +230,7 @@ async function createGoalFallback(
         energy: goalInput.energy,
         monument_id: goalInput.monument_id,
         why: goalInput.why,
+        due_date: goalInput.due_date,
       })
       .select("id")
       .single();
@@ -197,6 +254,7 @@ async function createGoalFallback(
           energy: project.energy,
           why: project.why,
           duration_min: project.duration_min,
+          due_date: project.due_date,
         })
         .select("id")
         .single();
@@ -204,6 +262,25 @@ async function createGoalFallback(
       if (projectError || !projectRecord?.id) {
         console.error("Fallback project insert failed:", projectError);
         throw projectError ?? new Error("Project insert failed");
+      }
+
+      if (project.skill_ids.length > 0) {
+        const { error: projectSkillsError } = await supabase
+          .from("project_skills")
+          .insert(
+            project.skill_ids.map((skillId) => ({
+              project_id: projectRecord.id,
+              skill_id: skillId,
+            }))
+          );
+
+        if (projectSkillsError) {
+          console.error(
+            "Fallback project skill insert failed:",
+            projectSkillsError
+          );
+          throw projectSkillsError;
+        }
       }
 
       if (project.tasks.length > 0) {
@@ -219,6 +296,8 @@ async function createGoalFallback(
               priority: task.priority,
               energy: task.energy,
               notes: task.notes,
+              skill_id: task.skill_id,
+              due_date: task.due_date,
             }))
           );
 
@@ -334,6 +413,7 @@ interface GoalWizardFormState {
   energy: string;
   monument_id: string;
   why: string;
+  due_date: string;
 }
 
 const createInitialGoalWizardForm = (): GoalWizardFormState => ({
@@ -342,6 +422,7 @@ const createInitialGoalWizardForm = (): GoalWizardFormState => ({
   energy: DEFAULT_ENERGY,
   monument_id: "",
   why: "",
+  due_date: "",
 });
 
 const GOAL_WIZARD_STEPS: { key: GoalWizardStep; label: string }[] = [
@@ -721,7 +802,10 @@ function SkillSearchSelect({
     : "No skills available";
 
   const handleSelect = (skillId: string) => {
-    onSelect(skillId);
+    const normalizedId = skillId.trim();
+    const nextValue = normalizedId.length > 0 ? normalizedId : "";
+    const shouldClear = selectedId === nextValue && nextValue !== "";
+    onSelect(shouldClear ? "" : nextValue);
     setIsOpen(false);
     setSearchTerm("");
   };
@@ -759,6 +843,22 @@ function SkillSearchSelect({
             />
           </div>
           <div className="max-h-60 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => handleSelect("")}
+              className={cn(
+                "flex w-full items-center justify-between px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5",
+                selectedId === "" && "bg-blue-500/15 text-white"
+              )}
+            >
+              <span className="flex items-center gap-2 truncate">
+                <span className="text-base leading-none">{DEFAULT_SKILL_ICON}</span>
+                <span className="truncate">No skill focus</span>
+              </span>
+              {selectedId === "" ? (
+                <CheckSquare className="h-4 w-4 text-blue-400" />
+              ) : null}
+            </button>
             {filteredSkills.length > 0 ? (
               filteredSkills.map((skill) => {
                 const isSelected = skill.id === selectedId;
@@ -893,6 +993,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [draftProjects, setDraftProjects] = useState<DraftProject[]>(() => [
     createDraftProject(),
   ]);
+  const [goalAdvancedOpen, setGoalAdvancedOpen] = useState(false);
+  const [projectAdvancedOpen, setProjectAdvancedOpen] = useState<
+    Record<string, boolean>
+  >({});
+  const [taskAdvancedOpen, setTaskAdvancedOpen] = useState<Record<string, boolean>>({});
 
   // State for dropdown data
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -917,6 +1022,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     setGoalWizardStep("GOAL");
     setGoalForm(createInitialGoalWizardForm());
     setDraftProjects([createDraftProject()]);
+    setGoalAdvancedOpen(false);
+    setProjectAdvancedOpen({});
+    setTaskAdvancedOpen({});
   }, []);
 
   useEffect(() => {
@@ -941,6 +1049,50 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
   }, [isOpen, resetGoalWizard]);
 
+  useEffect(() => {
+    setProjectAdvancedOpen((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const projectIds = new Set<string>();
+      draftProjects.forEach((project) => {
+        projectIds.add(project.id);
+        if (!(project.id in next)) {
+          next[project.id] = Boolean(project.dueDate);
+          changed = true;
+        }
+      });
+      for (const key of Object.keys(next)) {
+        if (!projectIds.has(key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    setTaskAdvancedOpen((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const taskIds = new Set<string>();
+      draftProjects.forEach((project) => {
+        project.tasks.forEach((task) => {
+          taskIds.add(task.id);
+          if (!(task.id in next)) {
+            next[task.id] = Boolean(task.dueDate);
+            changed = true;
+          }
+        });
+      });
+      for (const key of Object.keys(next)) {
+        if (!taskIds.has(key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [draftProjects]);
+
   const loadFormData = useCallback(async () => {
     if (!eventType) return;
 
@@ -957,7 +1109,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       if (eventType === "GOAL") {
         const monumentsData = await getMonumentsForUser(user.id);
         setMonuments(monumentsData);
-        return;
       }
 
       if (eventType === "PROJECT" || eventType === "TASK") {
@@ -966,6 +1117,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
 
       if (
+        eventType === "GOAL" ||
         eventType === "PROJECT" ||
         eventType === "TASK" ||
         eventType === "HABIT"
@@ -1174,6 +1326,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }));
   }
 
+  const handleGoalDueDateChange = (value: string) => {
+    const iso = parseDateInputValue(value);
+    setGoalForm((prev) => ({
+      ...prev,
+      due_date: iso ?? "",
+    }));
+  };
+
   const handleDraftProjectChange = (
     projectId: string,
     field: keyof Omit<DraftProject, "id" | "tasks">,
@@ -1184,6 +1344,49 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       prev.map((draft) =>
         draft.id === projectId ? { ...draft, [field]: nextValue } : draft
       )
+    );
+  };
+
+  const toggleProjectAdvanced = (projectId: string) => {
+    setProjectAdvancedOpen((prev) => ({
+      ...prev,
+      [projectId]: !prev[projectId],
+    }));
+  };
+
+  const handleDraftProjectDueDateChange = (
+    projectId: string,
+    value: string
+  ) => {
+    const iso = parseDateInputValue(value);
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId ? { ...draft, dueDate: iso ?? null } : draft
+      )
+    );
+  };
+
+  const handleDraftProjectSkillToggle = (projectId: string, skillId: string) => {
+    const normalizedSkillId = skillId.trim();
+    setDraftProjects((prev) =>
+      prev.map((draft) => {
+        if (draft.id !== projectId) {
+          return draft;
+        }
+
+        if (!normalizedSkillId) {
+          return draft.skillIds.length > 0
+            ? { ...draft, skillIds: [] }
+            : draft;
+        }
+
+        const exists = draft.skillIds.includes(normalizedSkillId);
+        const nextSkillIds = exists
+          ? draft.skillIds.filter((id) => id !== normalizedSkillId)
+          : [...draft.skillIds, normalizedSkillId];
+
+        return { ...draft, skillIds: nextSkillIds };
+      })
     );
   };
 
@@ -1221,6 +1424,33 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               ...draft,
               tasks: draft.tasks.map((task) =>
                 task.id === taskId ? { ...task, [field]: nextValue } : task
+              ),
+            }
+          : draft
+      )
+    );
+  };
+
+  const toggleTaskAdvanced = (taskId: string) => {
+    setTaskAdvancedOpen((prev) => ({
+      ...prev,
+      [taskId]: !prev[taskId],
+    }));
+  };
+
+  const handleDraftTaskDueDateChange = (
+    projectId: string,
+    taskId: string,
+    value: string
+  ) => {
+    const iso = parseDateInputValue(value);
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: draft.tasks.map((task) =>
+                task.id === taskId ? { ...task, dueDate: iso ?? null } : task
               ),
             }
           : draft
@@ -1553,6 +1783,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
             const trimmedWhy = draft.why.trim();
             const parsedDuration = Number.parseFloat(draft.duration.trim());
+            const normalizedProjectSkillIds = Array.from(
+              new Set(
+                draft.skillIds
+                  .map((skillId) => skillId.trim())
+                  .filter((skillId) => skillId.length > 0)
+              )
+            );
 
             const tasks = draft.tasks
               .map<NormalizedTaskPayload | null>((task) => {
@@ -1563,6 +1800,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 }
 
                 const trimmedNotes = task.notes.trim();
+                const trimmedSkillId = task.skillId.trim();
 
                 return {
                   name: formattedTaskName,
@@ -1570,6 +1808,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   priority: task.priority || DEFAULT_PRIORITY,
                   energy: task.energy || DEFAULT_ENERGY,
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+                  skill_id: trimmedSkillId.length > 0 ? trimmedSkillId : null,
+                  due_date: task.dueDate ?? null,
                 } satisfies NormalizedTaskPayload;
               })
               .filter((task): task is NormalizedTaskPayload => task !== null);
@@ -1585,6 +1825,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   ? Math.max(1, Math.round(parsedDuration))
                   : null,
               tasks,
+              skill_ids: normalizedProjectSkillIds,
+              due_date: draft.dueDate ?? null,
             } satisfies NormalizedProjectPayload;
           })
           .filter(
@@ -1603,6 +1845,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           energy: goalForm.energy || DEFAULT_ENERGY,
           monument_id: selectedMonumentId,
           why: goalWhy ? goalWhy : null,
+          due_date: goalForm.due_date ? goalForm.due_date : null,
         };
 
         const { data, error: rpcError } = await supabase.rpc(
@@ -2013,6 +2256,48 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     </div>
                   </FormSection>
 
+                  <FormSection title="Advanced">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-white">
+                            Optional goal controls
+                          </p>
+                          <p className="text-xs text-zinc-400">
+                            Surface timing details like due dates when needed.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-full border-white/20 bg-white/[0.04] text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-blue-400/60 hover:text-white"
+                          onClick={() => setGoalAdvancedOpen((prev) => !prev)}
+                          aria-expanded={goalAdvancedOpen}
+                        >
+                          {goalAdvancedOpen ? "Hide" : "Show"}
+                        </Button>
+                      </div>
+                      {goalAdvancedOpen ? (
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Due date
+                            </Label>
+                            <Input
+                              type="date"
+                              value={formatDateInputValue(goalForm.due_date || null)}
+                              onChange={(event) =>
+                                handleGoalDueDateChange(event.target.value)
+                              }
+                              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </FormSection>
+
                   <FormSection>
                     <div className="space-y-2">
                       <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -2034,11 +2319,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               {goalWizardStep === "PROJECTS" ? (
                 <FormSection title="Projects">
                   <div className="space-y-4">
-                    {draftProjects.map((draft, index) => (
-                      <div
-                        key={draft.id}
-                        className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
-                      >
+                    {draftProjects.map((draft, index) => {
+                      const isProjectAdvancedOpen =
+                        projectAdvancedOpen[draft.id] ?? false;
+                      return (
+                        <div
+                          key={draft.id}
+                          className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
+                        >
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex-1 space-y-4">
                             <div className="space-y-2">
@@ -2149,6 +2437,66 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                 className="min-h-[88px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                               />
                             </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                Skills
+                              </Label>
+                              <SkillMultiSelect
+                                skills={sortedSkills}
+                                selectedIds={draft.skillIds}
+                                onToggle={(skillId) =>
+                                  handleDraftProjectSkillToggle(draft.id, skillId)
+                                }
+                              />
+                              {index === 0 && skillsLoading ? (
+                                <p className="text-[11px] text-zinc-500">
+                                  Loading skills…
+                                </p>
+                              ) : null}
+                              {index === 0 && skillError ? (
+                                <p className="text-[11px] text-rose-300">
+                                  {skillError}
+                                </p>
+                              ) : null}
+                            </div>
+
+                            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-400">
+                                  Advanced
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 rounded-full border border-white/10 bg-white/[0.05] px-3 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-blue-400/60 hover:text-white"
+                                  onClick={() => toggleProjectAdvanced(draft.id)}
+                                  aria-expanded={isProjectAdvancedOpen}
+                                >
+                                  {isProjectAdvancedOpen ? "Hide" : "Show"}
+                                </Button>
+                              </div>
+                              {isProjectAdvancedOpen ? (
+                                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                      Due date
+                                    </Label>
+                                    <Input
+                                      type="date"
+                                      value={formatDateInputValue(draft.dueDate)}
+                                      onChange={(event) =>
+                                        handleDraftProjectDueDateChange(
+                                          draft.id,
+                                          event.target.value
+                                        )
+                                      }
+                                      className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                    />
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                           {draftProjects.length > 1 ? (
                             <Button
@@ -2162,7 +2510,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           ) : null}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                     <Button
                       type="button"
                       onClick={handleAddDraftProject}
@@ -2179,7 +2528,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               {goalWizardStep === "TASKS" ? (
                 <FormSection title="Tasks">
                   <div className="space-y-4">
-                    {draftProjects.map((draft) => (
+                    {draftProjects.map((draft, projectIndex) => (
                       <div
                         key={draft.id}
                         className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 sm:p-5"
@@ -2204,16 +2553,19 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         </div>
                         {draft.tasks.length > 0 ? (
                           <div className="mt-4 space-y-3">
-                            {draft.tasks.map((task, index) => (
-                              <div
-                                key={task.id}
-                                className="rounded-xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
-                              >
+                            {draft.tasks.map((task, taskIndex) => {
+                              const isTaskAdvancedOpen =
+                                taskAdvancedOpen[task.id] ?? false;
+                              return (
+                                <div
+                                  key={task.id}
+                                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
+                                >
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                   <div className="flex-1 space-y-3">
                                     <div className="space-y-2">
                                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                        Task {index + 1}
+                                        Task {taskIndex + 1}
                                       </Label>
                                       <Input
                                         value={task.name}
@@ -2232,7 +2584,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     <div className="grid gap-3 sm:grid-cols-3">
                                       <OptionDropdown
                                         value={task.stage}
-                                        options={PROJECT_STAGE_OPTIONS}
+                                        options={TASK_STAGE_OPTIONS}
                                         onChange={(value) =>
                                           handleTaskChange(
                                             draft.id,
@@ -2272,6 +2624,34 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     </div>
                                     <div className="space-y-1">
                                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                        Skill focus
+                                      </Label>
+                                      <SkillSearchSelect
+                                        skills={sortedSkills}
+                                        selectedId={task.skillId}
+                                        onSelect={(value) =>
+                                          handleTaskChange(
+                                            draft.id,
+                                            task.id,
+                                            "skillId",
+                                            value
+                                          )
+                                        }
+                                        placeholder="No skill focus"
+                                      />
+                                      {projectIndex === 0 && taskIndex === 0 && skillsLoading ? (
+                                        <p className="text-[11px] text-zinc-500">
+                                          Loading skills…
+                                        </p>
+                                      ) : null}
+                                      {projectIndex === 0 && taskIndex === 0 && skillError ? (
+                                        <p className="text-[11px] text-rose-300">
+                                          {skillError}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                                         Notes (optional)
                                       </Label>
                                       <Textarea
@@ -2301,8 +2681,47 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </div>
-                              </div>
-                            ))}
+                                  <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                        Advanced
+                                      </span>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 rounded-full border border-white/10 bg-white/[0.05] px-3 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-blue-400/60 hover:text-white"
+                                        onClick={() => toggleTaskAdvanced(task.id)}
+                                        aria-expanded={isTaskAdvancedOpen}
+                                      >
+                                        {isTaskAdvancedOpen ? "Hide" : "Show"}
+                                      </Button>
+                                    </div>
+                                    {isTaskAdvancedOpen ? (
+                                      <div className="mt-3 space-y-2 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                            Due date
+                                          </Label>
+                                          <Input
+                                            type="date"
+                                            value={formatDateInputValue(task.dueDate)}
+                                            onChange={(event) =>
+                                              handleDraftTaskDueDateChange(
+                                                draft.id,
+                                                task.id,
+                                                event.target.value
+                                              )
+                                            }
+                                            className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
                           <p className="mt-4 text-xs text-zinc-500">
