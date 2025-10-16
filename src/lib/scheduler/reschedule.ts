@@ -90,7 +90,7 @@ type ScheduleDraftPlacement = ProjectDraftPlacement | HabitDraftPlacement
 type ScheduleBacklogResult = {
   placed: ScheduleInstance[]
   failures: ScheduleFailure[]
-  error?: PostgrestError | null
+  error: PostgrestError | null
   timeline: ScheduleDraftPlacement[]
 }
 
@@ -135,7 +135,12 @@ export async function scheduleBacklog(
   options?: { timeZone?: string | null; location?: GeoCoordinates | null }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
-  const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
+  const result: ScheduleBacklogResult = {
+    placed: [],
+    failures: [],
+    error: null,
+    timeline: [],
+  }
   const timeZone = normalizeTimeZone(options?.timeZone)
   const location = normalizeCoordinates(options?.location ?? null)
 

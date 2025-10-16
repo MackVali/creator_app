@@ -543,7 +543,7 @@ describe("scheduleBacklog", () => {
     const mockClient = {} as ScheduleBacklogClient;
     const result = await scheduleBacklog(userId, anchor, mockClient);
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.failures).toHaveLength(0);
     expect(result.placed).toHaveLength(4);
     expect(result.timeline).toHaveLength(4);
@@ -692,7 +692,7 @@ describe("scheduleBacklog", () => {
     const result = await scheduleBacklog(userId, baseDate, mockClient);
 
     expect(placement.placeItemInWindows).not.toHaveBeenCalled();
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.failures).toEqual([{ itemId: "proj-low", reason: "NO_WINDOW" }]);
     expect(result.placed).toHaveLength(0);
   });
@@ -796,7 +796,7 @@ describe("scheduleBacklog", () => {
     const mockClient = {} as ScheduleBacklogClient;
     const result = await scheduleBacklog(userId, anchor, mockClient);
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.failures).toHaveLength(0);
     expect(result.placed).toHaveLength(6);
     expect(result.timeline).toHaveLength(6);
@@ -923,7 +923,7 @@ describe("scheduleBacklog", () => {
     const mockClient = {} as ScheduleBacklogClient;
     const result = await scheduleBacklog(userId, anchor, mockClient);
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.failures).toHaveLength(0);
     expect(result.placed).toHaveLength(4);
 
@@ -1043,7 +1043,7 @@ describe("scheduleBacklog", () => {
     const mockClient = {} as ScheduleBacklogClient;
     const result = await scheduleBacklog(userId, anchor, mockClient);
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.failures).toHaveLength(0);
     expect(result.placed).toHaveLength(30);
 
@@ -1205,7 +1205,7 @@ describe("scheduleBacklog", () => {
       const mockClient = {} as ScheduleBacklogClient;
       const result = await scheduleBacklog(userId, anchor, mockClient);
 
-      expect(result.error).toBeUndefined();
+      expect(result.error).toBeNull();
       expect(result.failures).toHaveLength(0);
       expect(result.placed).toHaveLength(2);
       expect(result.timeline).toHaveLength(2);
@@ -1340,7 +1340,7 @@ describe("scheduleBacklog", () => {
     const result = await scheduleBacklog(userId, anchor, mockClient);
 
     expect(result.failures).toHaveLength(0);
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.placed).toHaveLength(1);
     expect(placements).toHaveLength(1);
     expect(placements[0]?.windowId).toBe("win-today-low");
@@ -1459,7 +1459,7 @@ describe("scheduleBacklog", () => {
     const result = await scheduleBacklog(userId, anchor, mockClient);
 
     expect(result.failures).toHaveLength(0);
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.placed).toHaveLength(1);
     expect(placements).toHaveLength(1);
     expect(placements[0]?.windowId).toBe("win-today-high");
@@ -1572,7 +1572,7 @@ describe("scheduleBacklog", () => {
     const result = await scheduleBacklog(userId, baseDate, mockClient);
 
     expect(result.failures).toHaveLength(0);
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.placed).toHaveLength(1);
     expect(placements).toHaveLength(1);
     expect(placements[0]?.windowId).toBe("win-today-early-high");
@@ -1649,7 +1649,7 @@ describe("scheduleBacklog", () => {
       timeZone: "Pacific/Auckland",
     });
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.placed).toHaveLength(1);
     expect(createSpy).toHaveBeenCalledOnce();
 
@@ -1729,7 +1729,7 @@ describe("scheduleBacklog", () => {
       timeZone: "America/Los_Angeles",
     });
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.placed).toHaveLength(1);
     expect(createSpy).toHaveBeenCalledOnce();
 
@@ -1817,7 +1817,7 @@ describe("scheduleBacklog", () => {
       timeZone: "America/Los_Angeles",
     });
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.placed).toHaveLength(1);
     expect(createSpy).toHaveBeenCalledOnce();
 
@@ -1907,7 +1907,7 @@ describe("scheduleBacklog", () => {
       timeZone: "America/Los_Angeles",
     });
 
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(result.placed).toHaveLength(1);
     expect(createSpy).toHaveBeenCalledOnce();
 
@@ -2009,7 +2009,7 @@ describe("scheduleBacklog", () => {
     const result = await scheduleBacklog(userId, baseDate, {} as ScheduleBacklogClient);
 
     expect(result.failures).toHaveLength(0);
-    expect(result.error).toBeUndefined();
+    expect(result.error).toBeNull();
     expect(ignoreSets.length).toBeGreaterThan(0);
     for (const ignoreSet of ignoreSets) {
       expect(ignoreSet).toBeDefined();

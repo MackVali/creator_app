@@ -2181,6 +2181,7 @@ export default function SchedulePage() {
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
   const isSchedulingRef = useRef(false)
   const autoScheduledForRef = useRef<string | null>(null)
+  const autoScheduleAttemptForRef = useRef<string | null>(null)
 
   const persistAutoRunDate = useCallback(
     (dateKey: string) => {
@@ -2269,6 +2270,7 @@ export default function SchedulePage() {
   useEffect(() => {
     setSchedulerDebug(null)
     autoScheduledForRef.current = null
+    autoScheduleAttemptForRef.current = null
     setHasAutoRunToday(null)
   }, [userId])
 
@@ -3116,16 +3118,17 @@ export default function SchedulePage() {
     }
   }, [userId, currentDate, localTimeZone])
 
-  const runScheduler = useCallback(async () => {
+  const runScheduler = useCallback(async (): Promise<boolean> => {
     if (!userId) {
       console.warn('No user session available for scheduler run')
-      return
+      return false
     }
     const localNow = new Date()
     const timeZone: string | null = localTimeZone ?? null
-    if (isSchedulingRef.current) return
+    if (isSchedulingRef.current) return false
     isSchedulingRef.current = true
     setIsScheduling(true)
+    let success = false
     try {
       const response = await fetch('/api/scheduler/run', {
         method: 'POST',
@@ -3144,10 +3147,6 @@ export default function SchedulePage() {
         payload = await response.json()
       } catch (err) {
         parseError = err
-      }
-
-      if (!response.ok) {
-        console.error('Scheduler run failed', response.status, payload ?? parseError)
       }
 
       const parsed = parseSchedulerDebugPayload(payload)
@@ -3169,6 +3168,13 @@ export default function SchedulePage() {
             return changed ? next : prev
           })
         }
+        if (!response.ok) {
+          console.error('Scheduler run failed', response.status, payload ?? parseError)
+        }
+        if (parsed.error) {
+          console.error('Scheduler reported an error', parsed.error)
+        }
+        success = response.ok && parsed.error == null
       } else {
         if (parseError) {
           console.error('Failed to parse scheduler response', parseError)
@@ -3186,6 +3192,9 @@ export default function SchedulePage() {
           timeline: [],
           error: fallbackError,
         })
+        if (!response.ok) {
+          console.error('Scheduler run failed', response.status, payload ?? parseError)
+        }
       }
     } catch (error) {
       console.error('Failed to run scheduler', error)
@@ -3211,12 +3220,13 @@ export default function SchedulePage() {
         console.error('Failed to refresh scheduled project history', error)
       }
     }
+    return success
   }, [userId, refreshScheduledProjectIds, localTimeZone])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const globalWithScheduler = window as typeof window & {
-      __runScheduler?: () => Promise<void>
+      __runScheduler?: () => Promise<boolean>
     }
     globalWithScheduler.__runScheduler = runScheduler
     return () => {
@@ -3229,18 +3239,21 @@ export default function SchedulePage() {
     if (metaStatus !== 'loaded' || instancesStatus !== 'loaded') return
     const todayKey = formatLocalDateKey(new Date())
     const stored = readLastAutoRunDate()
-    if (stored === todayKey) {
+    if (stored === todayKey || autoScheduledForRef.current === todayKey) {
       if (hasAutoRunToday !== true) setHasAutoRunToday(true)
       return
     }
     if (hasAutoRunToday !== false) setHasAutoRunToday(false)
     if (isSchedulingRef.current) return
-    if (autoScheduledForRef.current === todayKey) return
-    autoScheduledForRef.current = todayKey
+    if (autoScheduleAttemptForRef.current === todayKey) return
+    autoScheduleAttemptForRef.current = todayKey
     void (async () => {
-      await runScheduler()
-      persistAutoRunDate(todayKey)
-      setHasAutoRunToday(true)
+      const didRun = await runScheduler()
+      if (didRun) {
+        autoScheduledForRef.current = todayKey
+        persistAutoRunDate(todayKey)
+        setHasAutoRunToday(true)
+      }
     })()
   }, [
     userId,
@@ -3250,14 +3263,19 @@ export default function SchedulePage() {
     readLastAutoRunDate,
     persistAutoRunDate,
     hasAutoRunToday,
+    isScheduling,
   ])
 
   const handleRescheduleClick = useCallback(async () => {
     if (!userId) return
     const todayKey = formatLocalDateKey(new Date())
-    await runScheduler()
-    persistAutoRunDate(todayKey)
-    setHasAutoRunToday(true)
+    const didRun = await runScheduler()
+    if (didRun) {
+      persistAutoRunDate(todayKey)
+      setHasAutoRunToday(true)
+      autoScheduledForRef.current = todayKey
+      autoScheduleAttemptForRef.current = todayKey
+    }
   }, [userId, runScheduler, persistAutoRunDate])
 
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null)
