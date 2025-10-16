@@ -315,6 +315,14 @@ export interface ProfileModuleAnalyticsEvent {
   metadata?: Record<string, unknown>;
 }
 
+export interface ProfileHeroAnalyticsEvent {
+  profileId: string | number;
+  action: string;
+  label?: string;
+  value?: string | number;
+  metadata?: Record<string, unknown>;
+}
+
 // Profile Themes
 export interface ProfileTheme {
   id: string;
@@ -454,6 +462,8 @@ export interface PublicProfileReadModel {
   testimonials: ProfileTestimonial[];
   businessInfo: ProfileBusinessInfo | null;
   availability: ProfileAvailabilityWindow[];
+  contentCards: ContentCard[];
+  socialLinks: SocialLink[];
   generated_at: string;
 }
 

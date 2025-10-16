@@ -1,5 +1,7 @@
+import { ToastProvider } from "@/components/ui/toast";
+
 export default function RoutesLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <ToastProvider>{children}</ToastProvider>;
 }
 
 

@@ -27,6 +27,7 @@ import {
   useState,
 } from "react";
 
+import { emitProfileHeroEvent } from "@/lib/analytics";
 import { Profile } from "@/lib/types";
 
 import SocialPillsRow from "./SocialPillsRow";
@@ -193,6 +194,7 @@ export default function HeroHeader({
       );
   };
 
+  const heroProfileId = profile.id ?? profile.user_id;
   const initials = getInitials(profile.name || null, profile.username);
   const displayName = profile.name?.trim() || profile.username;
   const bioSegments = formatBioSegments(profile.bio);
@@ -616,13 +618,34 @@ export default function HeroHeader({
                           const Icon = getQuickActionIcon(action.icon);
                           const key = action.id ?? `${action.label}-${index}`;
                           const ariaLabel = action.aria_label?.trim() || `${action.label} quick action`;
+                          const normalizedLabel =
+                            action.label.toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") ||
+                            "quick-action";
+                          const analyticsLabel =
+                            action.analytics_event ?? `profile.hero.quick_action.${normalizedLabel}`;
+                          const handleQuickActionClick = () => {
+                            emitProfileHeroEvent({
+                              profileId: heroProfileId,
+                              action: "quick-action",
+                              label: analyticsLabel,
+                              metadata: {
+                                badgeId: action.id ?? normalizedLabel,
+                                href: action.href ?? undefined,
+                              },
+                            });
+                          };
                           const commonClasses =
                             "group inline-flex items-center gap-2 rounded-full border border-white/18 bg-white/12 px-4 py-2 text-xs font-semibold text-white/90 shadow-[0_14px_32px_rgba(15,23,42,0.35)] transition-all hover:border-white/40 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black";
 
                           return (
                             <li key={key} role="listitem">
                               {action.href ? (
-                                <a href={action.href ?? undefined} className={commonClasses} aria-label={ariaLabel}>
+                                <a
+                                  href={action.href ?? undefined}
+                                  onClick={handleQuickActionClick}
+                                  className={commonClasses}
+                                  aria-label={ariaLabel}
+                                >
                                   <Icon className="h-4 w-4 text-white/70" aria-hidden="true" />
                                   <span>{action.label}</span>
                                   <ArrowUpRight
@@ -631,7 +654,19 @@ export default function HeroHeader({
                                   />
                                 </a>
                               ) : (
-                                <span tabIndex={0} role="button" aria-label={ariaLabel} className={`${commonClasses} cursor-default`}>
+                                <span
+                                  tabIndex={0}
+                                  role="button"
+                                  aria-label={ariaLabel}
+                                  className={`${commonClasses} cursor-default`}
+                                  onClick={handleQuickActionClick}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      handleQuickActionClick();
+                                    }
+                                  }}
+                                >
                                   <Icon className="h-4 w-4 text-white/70" aria-hidden="true" />
                                   <span>{action.label}</span>
                                 </span>

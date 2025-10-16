@@ -6,6 +6,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { revalidateTag, unstable_cache } from "next/cache";
 
 import {
+  ContentCard,
   Profile,
   ProfileAvailabilityWindow,
   ProfileBusinessInfo,
@@ -15,6 +16,7 @@ import {
   ProfileTheme,
   ProfileThemeSettings,
   PublicProfileReadModel,
+  SocialLink,
 } from "../types";
 import type { Database } from "../../types/supabase";
 
@@ -200,6 +202,48 @@ async function resolveAvailability(
   return (data ?? []) as ProfileAvailabilityWindow[];
 }
 
+async function resolveContentCards(
+  client: PublicSupabaseClient,
+  userId: string,
+): Promise<ContentCard[]> {
+  const { data, error } = await client
+    .from("content_cards")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .order("position", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(120);
+
+  if (error) {
+    console.error("Failed to load profile content cards", { userId, error });
+    return [];
+  }
+
+  return (data ?? []) as ContentCard[];
+}
+
+async function resolveSocialLinks(
+  client: PublicSupabaseClient,
+  userId: string,
+): Promise<SocialLink[]> {
+  const { data, error } = await client
+    .from("social_links")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .order("position", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(120);
+
+  if (error) {
+    console.error("Failed to load profile social links", { userId, error });
+    return [];
+  }
+
+  return (data ?? []) as SocialLink[];
+}
+
 async function fetchPublicProfile(handle: string): Promise<PublicProfileReadModel | null> {
   const client = getSupabasePublicClient();
 
@@ -221,13 +265,24 @@ async function fetchPublicProfile(handle: string): Promise<PublicProfileReadMode
   const profile = data as Profile;
   const profileId = profile.id ?? profile.user_id;
 
-  const [theme, ctas, offers, testimonials, businessInfo, availability] = await Promise.all([
+  const [
+    theme,
+    ctas,
+    offers,
+    testimonials,
+    businessInfo,
+    availability,
+    contentCards,
+    socialLinks,
+  ] = await Promise.all([
     resolveThemeSettings(client, profileId),
     resolveCtas(client, profileId),
     resolveOffers(client, profileId),
     resolveTestimonials(client, profileId),
     resolveBusinessInfo(client, profileId),
     resolveAvailability(client, profileId),
+    resolveContentCards(client, profile.user_id),
+    resolveSocialLinks(client, profile.user_id),
   ]);
 
   const hydratedProfile: Profile = {
@@ -248,6 +303,8 @@ async function fetchPublicProfile(handle: string): Promise<PublicProfileReadMode
     testimonials,
     businessInfo,
     availability,
+    contentCards,
+    socialLinks,
     generated_at: new Date().toISOString(),
   };
 }

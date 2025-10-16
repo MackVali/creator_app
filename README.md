@@ -38,6 +38,10 @@ This app uses Supabase for authentication with magic link sign-in. After setting
 
 1. **Sign up**: Visit `/auth` and enter your email
 2. **Check email**: Click the magic link in your email
+
+## Deployment
+
+Trigger a redeploy by pushing any commit, including documentation-only updates like this note.
 3. **Access dashboard**: You'll be redirected to `/dashboard`
 
 ## Seeding Sample Data
