@@ -3,6 +3,7 @@ export interface Task {
   name: string;
   stage: string;
   skillId?: string | null;
+  dueDate?: string | null;
   isNew?: boolean;
 }
 
@@ -11,7 +12,7 @@ export interface Project {
   name: string;
   status: "Todo" | "In-Progress" | "Done" | "Active";
   progress: number; // 0-100
-  dueDate?: string;
+  dueDate?: string | null;
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   tasks: Task[];
   stage?: string;
@@ -26,7 +27,7 @@ export interface Goal {
   id: string;
   title: string;
   emoji?: string;
-  dueDate?: string;
+  dueDate?: string | null;
   priority: "Low" | "Medium" | "High";
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   progress: number; // 0-100

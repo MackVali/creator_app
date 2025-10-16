@@ -101,6 +101,32 @@ const formatNameValue = (value: string) => value.toUpperCase();
 const formatNameDisplay = (value?: string | null) =>
   value ? value.toUpperCase() : "";
 
+const formatDateInputValue = (value?: string | null): string => {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateInputValue = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const date = new Date(`${trimmed}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+};
+
 type GoalWizardRpcInput = {
   user_id: string;
   name: string;
@@ -108,6 +134,7 @@ type GoalWizardRpcInput = {
   energy: string;
   monument_id: string;
   why: string | null;
+  due_date: string | null;
 };
 
 type NormalizedTaskPayload = {
@@ -117,6 +144,7 @@ type NormalizedTaskPayload = {
   energy: string;
   notes: string | null;
   skill_id: string | null;
+  due_date: string | null;
 };
 
 type NormalizedProjectPayload = {
@@ -128,6 +156,7 @@ type NormalizedProjectPayload = {
   duration_min: number | null;
   tasks: NormalizedTaskPayload[];
   skill_ids: string[];
+  due_date: string | null;
 };
 
 async function cleanupGoalHierarchy(
@@ -201,6 +230,7 @@ async function createGoalFallback(
         energy: goalInput.energy,
         monument_id: goalInput.monument_id,
         why: goalInput.why,
+        due_date: goalInput.due_date,
       })
       .select("id")
       .single();
@@ -224,6 +254,7 @@ async function createGoalFallback(
           energy: project.energy,
           why: project.why,
           duration_min: project.duration_min,
+          due_date: project.due_date,
         })
         .select("id")
         .single();
@@ -266,6 +297,7 @@ async function createGoalFallback(
               energy: task.energy,
               notes: task.notes,
               skill_id: task.skill_id,
+              due_date: task.due_date,
             }))
           );
 
@@ -381,6 +413,7 @@ interface GoalWizardFormState {
   energy: string;
   monument_id: string;
   why: string;
+  due_date: string;
 }
 
 const createInitialGoalWizardForm = (): GoalWizardFormState => ({
@@ -389,6 +422,7 @@ const createInitialGoalWizardForm = (): GoalWizardFormState => ({
   energy: DEFAULT_ENERGY,
   monument_id: "",
   why: "",
+  due_date: "",
 });
 
 const GOAL_WIZARD_STEPS: { key: GoalWizardStep; label: string }[] = [
@@ -959,6 +993,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [draftProjects, setDraftProjects] = useState<DraftProject[]>(() => [
     createDraftProject(),
   ]);
+  const [goalAdvancedOpen, setGoalAdvancedOpen] = useState(false);
+  const [projectAdvancedOpen, setProjectAdvancedOpen] = useState<
+    Record<string, boolean>
+  >({});
+  const [taskAdvancedOpen, setTaskAdvancedOpen] = useState<Record<string, boolean>>({});
 
   // State for dropdown data
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -983,6 +1022,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     setGoalWizardStep("GOAL");
     setGoalForm(createInitialGoalWizardForm());
     setDraftProjects([createDraftProject()]);
+    setGoalAdvancedOpen(false);
+    setProjectAdvancedOpen({});
+    setTaskAdvancedOpen({});
   }, []);
 
   useEffect(() => {
@@ -1006,6 +1048,50 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       setNewRoutineDescription("");
     }
   }, [isOpen, resetGoalWizard]);
+
+  useEffect(() => {
+    setProjectAdvancedOpen((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const projectIds = new Set<string>();
+      draftProjects.forEach((project) => {
+        projectIds.add(project.id);
+        if (!(project.id in next)) {
+          next[project.id] = Boolean(project.dueDate);
+          changed = true;
+        }
+      });
+      for (const key of Object.keys(next)) {
+        if (!projectIds.has(key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    setTaskAdvancedOpen((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const taskIds = new Set<string>();
+      draftProjects.forEach((project) => {
+        project.tasks.forEach((task) => {
+          taskIds.add(task.id);
+          if (!(task.id in next)) {
+            next[task.id] = Boolean(task.dueDate);
+            changed = true;
+          }
+        });
+      });
+      for (const key of Object.keys(next)) {
+        if (!taskIds.has(key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [draftProjects]);
 
   const loadFormData = useCallback(async () => {
     if (!eventType) return;
@@ -1240,6 +1326,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }));
   }
 
+  const handleGoalDueDateChange = (value: string) => {
+    const iso = parseDateInputValue(value);
+    setGoalForm((prev) => ({
+      ...prev,
+      due_date: iso ?? "",
+    }));
+  };
+
   const handleDraftProjectChange = (
     projectId: string,
     field: keyof Omit<DraftProject, "id" | "tasks">,
@@ -1249,6 +1343,25 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     setDraftProjects((prev) =>
       prev.map((draft) =>
         draft.id === projectId ? { ...draft, [field]: nextValue } : draft
+      )
+    );
+  };
+
+  const toggleProjectAdvanced = (projectId: string) => {
+    setProjectAdvancedOpen((prev) => ({
+      ...prev,
+      [projectId]: !prev[projectId],
+    }));
+  };
+
+  const handleDraftProjectDueDateChange = (
+    projectId: string,
+    value: string
+  ) => {
+    const iso = parseDateInputValue(value);
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId ? { ...draft, dueDate: iso ?? null } : draft
       )
     );
   };
@@ -1311,6 +1424,33 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               ...draft,
               tasks: draft.tasks.map((task) =>
                 task.id === taskId ? { ...task, [field]: nextValue } : task
+              ),
+            }
+          : draft
+      )
+    );
+  };
+
+  const toggleTaskAdvanced = (taskId: string) => {
+    setTaskAdvancedOpen((prev) => ({
+      ...prev,
+      [taskId]: !prev[taskId],
+    }));
+  };
+
+  const handleDraftTaskDueDateChange = (
+    projectId: string,
+    taskId: string,
+    value: string
+  ) => {
+    const iso = parseDateInputValue(value);
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: draft.tasks.map((task) =>
+                task.id === taskId ? { ...task, dueDate: iso ?? null } : task
               ),
             }
           : draft
@@ -1669,6 +1809,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   energy: task.energy || DEFAULT_ENERGY,
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
                   skill_id: trimmedSkillId.length > 0 ? trimmedSkillId : null,
+                  due_date: task.dueDate ?? null,
                 } satisfies NormalizedTaskPayload;
               })
               .filter((task): task is NormalizedTaskPayload => task !== null);
@@ -1685,6 +1826,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   : null,
               tasks,
               skill_ids: normalizedProjectSkillIds,
+              due_date: draft.dueDate ?? null,
             } satisfies NormalizedProjectPayload;
           })
           .filter(
@@ -1703,6 +1845,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           energy: goalForm.energy || DEFAULT_ENERGY,
           monument_id: selectedMonumentId,
           why: goalWhy ? goalWhy : null,
+          due_date: goalForm.due_date ? goalForm.due_date : null,
         };
 
         const { data, error: rpcError } = await supabase.rpc(
@@ -2113,6 +2256,48 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     </div>
                   </FormSection>
 
+                  <FormSection title="Advanced">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-white">
+                            Optional goal controls
+                          </p>
+                          <p className="text-xs text-zinc-400">
+                            Surface timing details like due dates when needed.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-full border-white/20 bg-white/[0.04] text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-blue-400/60 hover:text-white"
+                          onClick={() => setGoalAdvancedOpen((prev) => !prev)}
+                          aria-expanded={goalAdvancedOpen}
+                        >
+                          {goalAdvancedOpen ? "Hide" : "Show"}
+                        </Button>
+                      </div>
+                      {goalAdvancedOpen ? (
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                              Due date
+                            </Label>
+                            <Input
+                              type="date"
+                              value={formatDateInputValue(goalForm.due_date || null)}
+                              onChange={(event) =>
+                                handleGoalDueDateChange(event.target.value)
+                              }
+                              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </FormSection>
+
                   <FormSection>
                     <div className="space-y-2">
                       <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -2134,11 +2319,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               {goalWizardStep === "PROJECTS" ? (
                 <FormSection title="Projects">
                   <div className="space-y-4">
-                    {draftProjects.map((draft, index) => (
-                      <div
-                        key={draft.id}
-                        className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
-                      >
+                    {draftProjects.map((draft, index) => {
+                      const isProjectAdvancedOpen =
+                        projectAdvancedOpen[draft.id] ?? false;
+                      return (
+                        <div
+                          key={draft.id}
+                          className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
+                        >
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex-1 space-y-4">
                             <div className="space-y-2">
@@ -2271,6 +2459,44 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                 </p>
                               ) : null}
                             </div>
+
+                            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-400">
+                                  Advanced
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 rounded-full border border-white/10 bg-white/[0.05] px-3 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-blue-400/60 hover:text-white"
+                                  onClick={() => toggleProjectAdvanced(draft.id)}
+                                  aria-expanded={isProjectAdvancedOpen}
+                                >
+                                  {isProjectAdvancedOpen ? "Hide" : "Show"}
+                                </Button>
+                              </div>
+                              {isProjectAdvancedOpen ? (
+                                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                      Due date
+                                    </Label>
+                                    <Input
+                                      type="date"
+                                      value={formatDateInputValue(draft.dueDate)}
+                                      onChange={(event) =>
+                                        handleDraftProjectDueDateChange(
+                                          draft.id,
+                                          event.target.value
+                                        )
+                                      }
+                                      className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                    />
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                           {draftProjects.length > 1 ? (
                             <Button
@@ -2284,7 +2510,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           ) : null}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                     <Button
                       type="button"
                       onClick={handleAddDraftProject}
@@ -2326,11 +2553,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         </div>
                         {draft.tasks.length > 0 ? (
                           <div className="mt-4 space-y-3">
-                            {draft.tasks.map((task, taskIndex) => (
-                              <div
-                                key={task.id}
-                                className="rounded-xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
-                              >
+                            {draft.tasks.map((task, taskIndex) => {
+                              const isTaskAdvancedOpen =
+                                taskAdvancedOpen[task.id] ?? false;
+                              return (
+                                <div
+                                  key={task.id}
+                                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3 sm:p-4"
+                                >
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                   <div className="flex-1 space-y-3">
                                     <div className="space-y-2">
@@ -2451,8 +2681,47 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </div>
-                              </div>
-                            ))}
+                                  <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                        Advanced
+                                      </span>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 rounded-full border border-white/10 bg-white/[0.05] px-3 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 hover:border-blue-400/60 hover:text-white"
+                                        onClick={() => toggleTaskAdvanced(task.id)}
+                                        aria-expanded={isTaskAdvancedOpen}
+                                      >
+                                        {isTaskAdvancedOpen ? "Hide" : "Show"}
+                                      </Button>
+                                    </div>
+                                    {isTaskAdvancedOpen ? (
+                                      <div className="mt-3 space-y-2 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
+                                        <div className="space-y-1">
+                                          <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                            Due date
+                                          </Label>
+                                          <Input
+                                            type="date"
+                                            value={formatDateInputValue(task.dueDate)}
+                                            onChange={(event) =>
+                                              handleDraftTaskDueDateChange(
+                                                draft.id,
+                                                task.id,
+                                                event.target.value
+                                              )
+                                            }
+                                            className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
                           <p className="mt-4 text-xs text-zinc-500">

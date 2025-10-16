@@ -32,14 +32,15 @@ begin
     raise exception 'Cannot create records for another user';
   end if;
 
-  insert into public.goals (user_id, name, priority, energy, monument_id, why)
+  insert into public.goals (user_id, name, priority, energy, monument_id, why, due_date)
   values (
     goal_user_id,
     coalesce(nullif(btrim(payload->>'name'), ''), 'Untitled Goal'),
     coalesce(nullif(payload->>'priority', ''), 'NO'),
     coalesce(nullif(payload->>'energy', ''), 'NO'),
     (payload->>'monument_id')::uuid,
-    nullif(payload->>'why', '')
+    nullif(payload->>'why', ''),
+    nullif(payload->>'due_date', '')::timestamptz
   )
   returning * into new_goal;
 
@@ -54,7 +55,7 @@ begin
       continue;
     end if;
 
-    insert into public.projects (user_id, goal_id, name, stage, priority, energy, why, duration_min)
+    insert into public.projects (user_id, goal_id, name, stage, priority, energy, why, duration_min, due_date)
     values (
       goal_user_id,
       new_goal.id,
@@ -67,7 +68,8 @@ begin
         when trim(coalesce(project_elem->>'duration_min', '')) ~ '^[0-9]+$'
           then greatest(1, (project_elem->>'duration_min')::integer)
         else null
-      end
+      end,
+      nullif(project_elem->>'due_date', '')::timestamptz
     )
     returning * into new_project;
 
@@ -80,7 +82,8 @@ begin
         'priority', new_project.priority,
         'energy', new_project.energy,
         'why', new_project.why,
-        'duration_min', new_project.duration_min
+        'duration_min', new_project.duration_min,
+        'due_date', new_project.due_date
       )
     );
 
@@ -103,7 +106,7 @@ begin
         continue;
       end if;
 
-      insert into public.tasks (user_id, goal_id, project_id, name, stage, priority, energy, notes, skill_id)
+      insert into public.tasks (user_id, goal_id, project_id, name, stage, priority, energy, notes, skill_id, due_date)
       values (
         goal_user_id,
         new_goal.id,
@@ -113,7 +116,8 @@ begin
         coalesce(task_elem->>'priority', 'NO'),
         coalesce(task_elem->>'energy', 'NO'),
         nullif(task_elem->>'notes', ''),
-        nullif(task_elem->>'skill_id', '')::uuid
+        nullif(task_elem->>'skill_id', '')::uuid,
+        nullif(task_elem->>'due_date', '')::timestamptz
       )
       returning * into new_task;
 
@@ -126,7 +130,8 @@ begin
           'priority', new_task.priority,
           'energy', new_task.energy,
           'notes', new_task.notes,
-          'skill_id', new_task.skill_id
+          'skill_id', new_task.skill_id,
+          'due_date', new_task.due_date
         )
       );
     end loop;
@@ -138,7 +143,8 @@ begin
       'name', new_goal.name,
       'priority', new_goal.priority,
       'energy', new_goal.energy,
-      'why', new_goal.why
+      'why', new_goal.why,
+      'due_date', new_goal.due_date
     ),
     'projects', inserted_projects,
     'tasks', inserted_tasks

@@ -413,11 +413,13 @@ export default function PlanGoalPage() {
           why: draft.why.trim(),
           duration: draft.duration.trim(),
           skillIds: sanitizedSkillIds,
+          dueDate: draft.dueDate,
           tasks: draft.tasks.map((task) => ({
             ...task,
             name: task.name.trim(),
             notes: task.notes.trim(),
             skillId: task.skillId.trim(),
+            dueDate: task.dueDate,
           })),
         };
       })
@@ -464,6 +466,7 @@ export default function PlanGoalPage() {
           priority: draft.priority || DEFAULT_PRIORITY,
           energy: draft.energy || DEFAULT_ENERGY,
           duration_min: hasValidDuration ? Math.round(durationMinutes) : null,
+          due_date: draft.dueDate ?? null,
         };
       });
 
@@ -471,7 +474,7 @@ export default function PlanGoalPage() {
         .from("projects")
         .insert(payload)
         .select(
-          "id, name, goal_id, priority, energy, stage, why, duration_min, created_at"
+          "id, name, goal_id, priority, energy, stage, why, duration_min, due_date, created_at"
         );
 
       if (error) {
@@ -539,6 +542,7 @@ export default function PlanGoalPage() {
                     notes: task.notes.length > 0 ? task.notes : null,
                     skill_id:
                       task.skillId.length > 0 ? task.skillId : null,
+                    due_date: task.dueDate ?? null,
                   }))
                   .filter((task) => task.name.length > 0);
               })
@@ -556,12 +560,12 @@ export default function PlanGoalPage() {
       let tasksFailed = false;
 
       if (tasksPayload.length > 0) {
-        const { data: tasksData, error: tasksError } = await supabase
-          .from("tasks")
-          .insert(tasksPayload)
-          .select(
-            "id, project_id, name, stage, priority, energy, notes, skill_id"
-          );
+      const { data: tasksData, error: tasksError } = await supabase
+        .from("tasks")
+        .insert(tasksPayload)
+        .select(
+            "id, project_id, name, stage, priority, energy, notes, skill_id, due_date"
+        );
 
         if (tasksError) {
           console.error("Error saving tasks:", tasksError);
