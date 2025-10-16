@@ -3,6 +3,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 export interface Monument {
   id: string;
   title: string;
+  emoji: string | null;
 }
 
 export async function getMonumentsForUser(
@@ -15,7 +16,7 @@ export async function getMonumentsForUser(
 
   const { data, error } = await supabase
     .from("monuments")
-    .select("id, title")
+    .select("id, title, emoji")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -24,5 +25,9 @@ export async function getMonumentsForUser(
     throw error;
   }
 
-  return data || [];
+  return (data ?? []).map(row => ({
+    id: row.id,
+    title: row.title,
+    emoji: row.emoji ?? null,
+  }));
 }

@@ -1,16 +1,21 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
+import {
+  normalizeSchedulerModePayload,
+  type SchedulerModePayload,
+} from '@/lib/scheduler/modes'
 
 export const runtime = 'nodejs'
 
 type SchedulerRunContext = {
   localNow: Date | null
   timeZone: string | null
+  mode: SchedulerModePayload
 }
 
 export async function POST(request: Request) {
-  const { localNow, timeZone: requestTimeZone } = await readRunRequestContext(request)
+  const { localNow, timeZone: requestTimeZone, mode } = await readRunRequestContext(request)
   const supabase = await createClient()
   if (!supabase) {
     return NextResponse.json(
@@ -50,6 +55,7 @@ export async function POST(request: Request) {
   const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
     timeZone: userTimeZone,
     location: coordinates,
+    mode,
   })
   const status = scheduleResult.error ? 500 : 200
 
@@ -116,18 +122,19 @@ function pickNumericValue(values: unknown[]): number | null {
 
 async function readRunRequestContext(request: Request): Promise<SchedulerRunContext> {
   if (!request) {
-    return { localNow: null, timeZone: null }
+    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' } }
   }
 
   const contentType = request.headers.get('content-type') ?? ''
   if (!contentType.toLowerCase().includes('application/json')) {
-    return { localNow: null, timeZone: null }
+    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' } }
   }
 
   try {
     const payload = (await request.json()) as {
       localTimeIso?: unknown
       timeZone?: unknown
+      mode?: unknown
     }
 
     let localNow: Date | null = null
@@ -143,10 +150,11 @@ async function readRunRequestContext(request: Request): Promise<SchedulerRunCont
       timeZone = payload.timeZone
     }
 
-    return { localNow, timeZone }
+    const mode = normalizeSchedulerModePayload(payload?.mode)
+    return { localNow, timeZone, mode }
   } catch (error) {
     console.warn('Failed to parse scheduler run payload', error)
-    return { localNow: null, timeZone: null }
+    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' } }
   }
 }
 

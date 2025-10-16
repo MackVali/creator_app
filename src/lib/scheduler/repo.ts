@@ -29,11 +29,23 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
 
   const { data, error } = await supabase
     .from('tasks')
-    .select('id, name, priority, stage, duration_min, energy, project_id, skill_id, skills(icon)');
+    .select(
+      'id, name, priority, stage, duration_min, energy, project_id, skill_id, skills(icon, monument_id)'
+    );
 
   if (error) throw error;
   return (data ?? []).map(
-    ({ id, name, priority, stage, duration_min, energy, project_id, skill_id, skills }) => ({
+    ({
+      id,
+      name,
+      priority,
+      stage,
+      duration_min,
+      energy,
+      project_id,
+      skill_id,
+      skills,
+    }) => ({
       id,
       name,
       priority,
@@ -43,6 +55,8 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
       project_id,
       skill_id,
       skill_icon: (skills as unknown as { icon?: string | null } | null)?.icon ?? null,
+      skill_monument_id:
+        (skills as unknown as { monument_id?: string | null } | null)?.monument_id ?? null,
     })
   );
 }
