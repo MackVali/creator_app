@@ -14,6 +14,12 @@ Fill `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 > configuration error banner and sign-in/sign-up actions are disabled. Set
 > both variables before attempting to log in during local testing.
 
+### Profile data model prerequisites
+
+- Apply the expanded profile migration (`supabase/migrations/20260311000000_profile_data_model_expansion.sql`) so the `profile_theme_settings`, `profile_cta_buttons`, `profile_offers`, `profile_testimonials`, `profile_business_info`, and `profile_availability_windows` tables exist for the public profile read model.
+- Seed optional showcase data by running `setup_profile_system.sql` against your Supabase project—this loads example themes, CTAs, offers, and testimonials for local previews.
+- Ensure anonymous API access is configured with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` so the server loader can fetch public-safe profile data without a signed-in session.
+
 2) Run the development server
 
 ```bash
