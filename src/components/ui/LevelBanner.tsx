@@ -6,7 +6,7 @@ import { Sparkles } from "lucide-react";
 
 import { useProfile } from "@/lib/hooks/useProfile";
 import { useUserProgress } from "@/lib/hooks/useUserProgress";
-import { calculateLevelProgress } from "@/lib/leveling";
+import { calculateDarkXpLevel } from "@/lib/leveling";
 import { cn } from "@/lib/utils";
 
 type LevelBannerProps = {
@@ -19,17 +19,25 @@ export function LevelBanner({ className }: LevelBannerProps) {
     subscribe: true,
   });
 
-  const { level, xpIntoLevel, xpForNextLevel, xpToNextLevel, progressPercent } = useMemo(() => {
-    const total = progress?.totalDarkXp ?? 0;
-    return calculateLevelProgress(total);
+  const { level, xpToNextLevel, progressPercent, totalDarkXpEarned } = useMemo(() => {
+    const totalDarkXp = progress?.totalDarkXp ?? 0;
+    const details = calculateDarkXpLevel(totalDarkXp);
+
+    return {
+      level: details.level,
+      xpToNextLevel: details.xpToNextLevel,
+      progressPercent: details.progressPercent,
+      totalDarkXpEarned: totalDarkXp,
+    };
   }, [progress?.totalDarkXp]);
 
   const levelLabel = loading && !progress ? "--" : level.toString();
-  const remainingLabel = loading && !progress ? "--" : formatNumber(xpToNextLevel);
+  const remainingLabel =
+    loading && !progress ? "--" : formatNumber(xpToNextLevel ?? 0);
   const progressLabel =
     loading && !progress
       ? "--"
-      : `${formatNumber(xpIntoLevel)} / ${formatNumber(xpForNextLevel)} XP`;
+      : `${formatNumber(totalDarkXpEarned)} Dark XP earned`;
 
   return (
     <div
