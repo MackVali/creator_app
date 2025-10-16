@@ -480,7 +480,7 @@ export function HabitFormFields({
                 </SelectContent>
               </Select>
               <p className="text-xs text-white/60">
-                Choose a location to keep this habit aligned with compatible schedule windows.
+                Choose a location—like Home, Work, Outside, or Sleep—to keep this habit aligned with compatible schedule windows.
               </p>
               {locationOptionsError ? (
                 <p className="text-xs text-amber-300/90">
@@ -514,7 +514,7 @@ export function HabitFormFields({
                   <p className="text-xs text-red-300">{customLocationError}</p>
                 ) : null}
                 <p className="text-[0.65rem] text-white/50">
-                  Custom locations sync across your habits and windows.
+                  Custom locations sync across your habits and windows, alongside the Home, Work, Outside, and Sleep defaults.
                 </p>
               </div>
             </div>
