@@ -23,7 +23,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
 import { FocusTimeline, FocusTimelineFab } from '@/components/schedule/FocusTimeline'
-import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
+import FlameEmber, { FlameLevel, type FlameEmberProps } from '@/components/FlameEmber'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
@@ -168,6 +168,33 @@ function ScheduleViewShell({ children }: { children: ReactNode }) {
     >
       {children}
     </motion.div>
+  )
+}
+
+function SkillEnergyBadge({
+  energyLevel,
+  skillIcon,
+  size = 'sm',
+  className = '',
+  iconClassName = 'text-lg leading-none',
+  flameClassName,
+}: {
+  energyLevel: FlameLevel
+  skillIcon?: string | null
+  size?: FlameEmberProps['size']
+  className?: string
+  iconClassName?: string
+  flameClassName?: string
+}) {
+  return (
+    <span className={`inline-flex items-center gap-1 ${className}`}>
+      {skillIcon ? (
+        <span className={iconClassName} aria-hidden>
+          {skillIcon}
+        </span>
+      ) : null}
+      <FlameEmber level={energyLevel} size={size} className={flameClassName} />
+    </span>
   )
 }
 
@@ -1107,8 +1134,6 @@ function computeTimelineLayoutForSyncHabits({
   const candidates: Candidate[] = []
 
   habitPlacements.forEach((placement, index) => {
-    const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
-    if (habitType === 'SYNC' || habitType === 'ASYNC') return
     const startMs = placement.start.getTime()
     const endMs = placement.end.getTime()
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
@@ -1149,6 +1174,7 @@ function computeTimelineLayoutForSyncHabits({
   syncHabits.forEach(syncHabit => {
     const { index: habitIndex, startMs, endMs } = syncHabit
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    if (habitLayouts[habitIndex] !== 'full') return
 
     type Match = {
       candidate: Candidate
@@ -1162,6 +1188,7 @@ function computeTimelineLayoutForSyncHabits({
     for (const candidate of sortedCandidates) {
       const candidateKey = `${candidate.kind}:${candidate.index}`
       if (usedCandidates.has(candidateKey)) continue
+      if (candidate.kind === 'habit' && candidate.index === habitIndex) continue
       if (candidate.startMs >= endMs) {
         break
       }
@@ -4080,21 +4107,16 @@ export default function SchedulePage() {
                             ) : null}
                           </div>
                         </div>
-                        <div className="flex flex-shrink-0 items-center gap-2">
-                          {project.skill_icon && (
-                            <span className="text-lg leading-none" aria-hidden>
-                              {project.skill_icon}
-                            </span>
-                          )}
-                          <FlameEmber
-                            level={
-                              (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                              'NO'
-                            }
-                            size="sm"
-                            className="flex-shrink-0"
-                          />
-                        </div>
+                        <SkillEnergyBadge
+                          energyLevel={
+                            (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                            'NO'
+                          }
+                          skillIcon={project.skill_icon}
+                          className="flex flex-shrink-0 items-center gap-2"
+                          iconClassName="text-lg leading-none"
+                          flameClassName="flex-shrink-0"
+                        />
                       </motion.div>
                     ) : (
                       <motion.div
@@ -4352,18 +4374,12 @@ export default function SchedulePage() {
                                     {task.name}
                                   </span>
                                 </div>
-                                {task.skill_icon && (
-                                  <span
-                                    className="ml-2 text-lg leading-none flex-shrink-0"
-                                    aria-hidden
-                                  >
-                                    {task.skill_icon}
-                                  </span>
-                                )}
-                                <FlameEmber
-                                  level={energyLevel}
-                                  size="sm"
-                                  className="absolute -top-1 -right-1"
+                                <SkillEnergyBadge
+                                  energyLevel={energyLevel}
+                                  skillIcon={task.skill_icon}
+                                  className="pointer-events-none absolute -top-1 -right-1 flex items-center gap-1 rounded-full bg-zinc-950/70 px-1.5 py-[1px]"
+                                  iconClassName="text-base leading-none"
+                                  flameClassName="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
                                 />
                                 {progressValue > 0 && (
                                   <div
@@ -4471,18 +4487,12 @@ export default function SchedulePage() {
                       {Math.round((end.getTime() - start.getTime()) / 60000)}m
                     </div>
                   </div>
-                  {task.skill_icon && (
-                    <span
-                      className="ml-2 text-lg leading-none flex-shrink-0"
-                      aria-hidden
-                    >
-                      {task.skill_icon}
-                    </span>
-                  )}
-                  <FlameEmber
-                    level={(task.energy as FlameLevel) || 'NO'}
-                    size="sm"
-                    className="absolute -top-1 -right-1"
+                  <SkillEnergyBadge
+                    energyLevel={(task.energy as FlameLevel) || 'NO'}
+                    skillIcon={task.skill_icon}
+                    className="pointer-events-none absolute -top-1 -right-1 flex items-center gap-1 rounded-full bg-zinc-950/70 px-1.5 py-[1px]"
+                    iconClassName="text-base leading-none"
+                    flameClassName="drop-shadow-[0_0_6px_rgba(0,0,0,0.45)]"
                   />
                   <div
                     className={

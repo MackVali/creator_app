@@ -20,7 +20,6 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { RescheduleButton } from "@/components/schedule/RescheduleButton";
 
 interface ScheduleTopBarProps {
   year: number;
@@ -50,6 +49,9 @@ export function ScheduleTopBar({
 
   const iconButtonClass =
     "inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-[var(--text-primary)] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/5";
+
+  const rescheduleButtonClass =
+    "group relative hidden sm:inline-flex items-center gap-2 rounded-full bg-[var(--accent-red)] px-5 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(190,18,60,0.45)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(190,18,60,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:pointer-events-none disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none";
 
   const actions = [
     { label: "Add Task", icon: CheckSquare, onClick: () => router.push("/tasks/new") },
@@ -90,12 +92,21 @@ export function ScheduleTopBar({
       <div className="flex items-center gap-2">
         {onReschedule ? (
           <>
-            <RescheduleButton
+            <button
+              type="button"
               onClick={onReschedule}
               disabled={!canReschedule || isRescheduling}
-              isRunning={isRescheduling}
-              className="hidden sm:inline-flex"
-            />
+              aria-label={isRescheduling ? "Rescheduling…" : "Reschedule"}
+              className={rescheduleButtonClass}
+            >
+              <RefreshCcw
+                strokeWidth={2.4}
+                className={`h-[18px] w-[18px] transition-transform duration-200 ease-out group-hover:rotate-6 ${
+                  isRescheduling ? "animate-spin" : ""
+                }`}
+              />
+              <span>{isRescheduling ? "Rescheduling…" : "Reschedule"}</span>
+            </button>
             <button
               type="button"
               onClick={onReschedule}
@@ -103,7 +114,11 @@ export function ScheduleTopBar({
               aria-label={isRescheduling ? "Rescheduling…" : "Reschedule"}
               className={`sm:hidden ${iconButtonClass}`}
             >
-              <RefreshCcw className="h-5 w-5 text-[var(--accent-red)]" />
+              <RefreshCcw
+                className={`h-5 w-5 text-[var(--accent-red)] ${
+                  isRescheduling ? "animate-spin" : ""
+                }`}
+              />
             </button>
           </>
         ) : null}
