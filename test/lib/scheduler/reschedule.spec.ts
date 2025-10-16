@@ -73,8 +73,17 @@ describe("scheduleBacklog", () => {
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
 
-  const createSupabaseMock = () => {
+  const createSupabaseMock = (
+    options?: { skills?: Array<{ id: string; monument_id: string | null }> }
+  ) => {
     let lastEqValue: string | null = null;
+    const skillsResponse = {
+      data: options?.skills ?? [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
     const single = vi.fn(async () => ({
       data: { id: lastEqValue },
       error: null,
@@ -88,7 +97,16 @@ describe("scheduleBacklog", () => {
       return { select };
     });
     const update = vi.fn(() => ({ eq }));
-    const from = vi.fn(() => ({ update }));
+    const from = vi.fn((table: string) => {
+      if (table === "skills") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(async () => skillsResponse),
+          })),
+        };
+      }
+      return { update };
+    });
     const client = { from } as unknown as ScheduleBacklogClient;
     return { client, update };
   };
@@ -142,6 +160,7 @@ describe("scheduleBacklog", () => {
         duration_min: 60,
       },
     });
+    vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
     vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
       {
         id: "win-1",
@@ -283,6 +302,150 @@ describe("scheduleBacklog", () => {
     await scheduleBacklog(userId, baseDate, mockClient);
 
     expect(attemptedProjectIds).toContain("proj-no");
+  });
+
+  it("reduces project durations when rush mode is enabled", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-rush": {
+        id: "proj-rush",
+        name: "Rush Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 50,
+      },
+    });
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-rush",
+        label: "Focus",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+      },
+    ]);
+
+    const durations: number[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementationOnce(
+      async ({ item }) => {
+        durations.push(item.duration_min);
+        const start = new Date("2024-01-02T09:00:00Z");
+        const end = new Date(start.getTime() + item.duration_min * 60000);
+        return {
+          data: createInstanceRecord({
+            id: "inst-rush",
+            source_id: item.id,
+            status: "scheduled",
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: item.duration_min,
+            window_id: "win-rush",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      }
+    );
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase, {
+      mode: { type: "RUSH" },
+    });
+
+    expect(durations).toEqual([40]);
+    expect(result.failures).toEqual([]);
+  });
+
+  it("filters projects that do not match the selected monument", async () => {
+    instances = [];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-focus": {
+        id: "proj-focus",
+        name: "Focus Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 45,
+      },
+      "proj-other": {
+        id: "proj-other",
+        name: "Other Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 45,
+      },
+    });
+
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({
+      "proj-focus": ["skill-focus"],
+      "proj-other": ["skill-other"],
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-focus",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "13:00",
+        days: [2],
+      },
+    ]);
+
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item }) => {
+        attemptedProjectIds.push(item.id);
+        if (item.id !== "proj-focus") {
+          return { error: "NO_FIT" as const };
+        }
+        const start = new Date("2024-01-02T08:00:00Z");
+        const end = new Date(start.getTime() + item.duration_min * 60000);
+        return {
+          data: createInstanceRecord({
+            id: "inst-focus",
+            source_id: item.id,
+            status: "scheduled",
+            start_utc: start.toISOString(),
+            end_utc: end.toISOString(),
+            duration_min: item.duration_min,
+            window_id: "win-focus",
+          }),
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } satisfies Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      }
+    );
+
+    const { client: supabase } = createSupabaseMock({
+      skills: [
+        { id: "skill-focus", monument_id: "monument-keep" },
+        { id: "skill-other", monument_id: "monument-ignore" },
+      ],
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, supabase, {
+      mode: { type: "MONUMENTAL", monumentId: "monument-keep" },
+    });
+
+    expect(result.failures).toEqual(
+      expect.arrayContaining([{ itemId: "proj-other", reason: "MODE_FILTERED" }])
+    );
+    expect(
+      result.failures.filter(failure => failure.reason === "MODE_FILTERED").length
+    ).toBe(1);
+    expect(result.failures.find(failure => failure.itemId === "proj-focus")).toBeUndefined();
   });
 
   it("prioritizes upcoming windows closest to now before later options", async () => {

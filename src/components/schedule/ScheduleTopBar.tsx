@@ -14,6 +14,7 @@ import {
   ListChecks,
   RefreshCcw,
   PanelsTopLeft,
+  Gauge,
 } from "lucide-react";
 import {
   Sheet,
@@ -32,6 +33,9 @@ interface ScheduleTopBarProps {
   onReschedule?: () => void;
   canReschedule?: boolean;
   isRescheduling?: boolean;
+  onOpenModes?: () => void;
+  modeLabel?: string;
+  modeIsActive?: boolean;
 }
 
 export function ScheduleTopBar({
@@ -44,6 +48,9 @@ export function ScheduleTopBar({
   onReschedule,
   canReschedule = true,
   isRescheduling = false,
+  onOpenModes,
+  modeLabel,
+  modeIsActive = false,
 }: ScheduleTopBarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -88,6 +95,23 @@ export function ScheduleTopBar({
         {year}
       </button>
       <div className="flex items-center gap-2">
+        {onOpenModes ? (
+          <button
+            type="button"
+            onClick={onOpenModes}
+            aria-label={modeLabel ? `Scheduler mode (${modeLabel})` : "Open scheduler modes"}
+            title={modeLabel ?? "Scheduler modes"}
+            className={`${iconButtonClass} ${
+              modeIsActive ? "bg-[var(--accent-red)]/20 ring-2 ring-[var(--accent-red)] ring-offset-2 ring-offset-[var(--surface-elevated)]" : ""
+            }`}
+          >
+            <Gauge
+              className={`h-5 w-5 ${
+                modeIsActive ? "text-amber-300" : "text-[var(--accent-red)]"
+              }`}
+            />
+          </button>
+        ) : null}
         {onReschedule ? (
           <>
             <RescheduleButton

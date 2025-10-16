@@ -16,6 +16,7 @@ export type TaskLite = {
   project_id?: string | null;
   skill_id?: string | null;
   skill_icon?: string | null;
+  skill_monument_id?: string | null;
 };
 
 export type ProjectLite = {

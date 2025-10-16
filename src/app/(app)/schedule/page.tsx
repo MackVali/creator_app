@@ -27,6 +27,7 @@ import FlameEmber, { FlameLevel } from '@/components/FlameEmber'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
+import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import {
   fetchReadyTasks,
@@ -68,6 +69,12 @@ import {
 } from '@/lib/scheduler/windowReports'
 import { getSkillsForUser } from '@/lib/data/skills'
 import type { SkillRow } from '@/lib/types/skill'
+import { getMonumentsForUser, type Monument } from '@/lib/queries/monuments'
+import {
+  selectionToSchedulerModePayload,
+  type SchedulerModeSelection,
+  type SchedulerModeType,
+} from '@/lib/scheduler/modes'
 import { createMemoNoteForHabit } from '@/lib/notesStorage'
 import { MemoNoteSheet } from '@/components/schedule/MemoNoteSheet'
 
@@ -1884,6 +1891,7 @@ export default function SchedulePage() {
   const [tasks, setTasks] = useState<TaskLite[]>([])
   const [projects, setProjects] = useState<ProjectLite[]>([])
   const [skills, setSkills] = useState<SkillRow[]>([])
+  const [monuments, setMonuments] = useState<Monument[]>([])
   const [projectSkillIds, setProjectSkillIds] = useState<Record<string, string[]>>({})
   const [habits, setHabits] = useState<HabitScheduleItem[]>([])
   const [habitCompletionByDate, setHabitCompletionByDate] = useState<
@@ -1915,6 +1923,89 @@ export default function SchedulePage() {
     previous?: DayTimelineModel | null
     next?: DayTimelineModel | null
   }>({})
+  const [modeType, setModeType] = useState<SchedulerModeType>('REGULAR')
+  const [modeMonumentId, setModeMonumentId] = useState<string | null>(null)
+  const [modeSkillIds, setModeSkillIds] = useState<string[]>([])
+  const [isModeSheetOpen, setIsModeSheetOpen] = useState(false)
+  const modeSelection = useMemo<SchedulerModeSelection>(() => {
+    switch (modeType) {
+      case 'MONUMENTAL':
+        return { type: 'MONUMENTAL', monumentId: modeMonumentId }
+      case 'SKILLED':
+        return { type: 'SKILLED', skillIds: modeSkillIds }
+      case 'RUSH':
+        return { type: 'RUSH' }
+      case 'REST':
+        return { type: 'REST' }
+      default:
+        return { type: 'REGULAR' }
+    }
+  }, [modeType, modeMonumentId, modeSkillIds])
+  const resolvedModePayload = useMemo(
+    () => selectionToSchedulerModePayload(modeSelection),
+    [modeSelection]
+  )
+  const modeIsActive = resolvedModePayload.type !== 'REGULAR'
+  const modeLabel = useMemo(() => {
+    switch (modeSelection.type) {
+      case 'RUSH':
+        return 'Rush mode'
+      case 'REST':
+        return 'Rest mode'
+      case 'MONUMENTAL': {
+        if (!modeSelection.monumentId) return 'Monumental mode'
+        const monument = monuments.find(m => m.id === modeSelection.monumentId)
+        if (!monument) return 'Monumental mode'
+        const detail = monument.emoji ? `${monument.emoji} ${monument.title}` : monument.title
+        return `Monumental – ${detail}`.trim()
+      }
+      case 'SKILLED': {
+        if (modeSelection.skillIds.length === 0) return 'Skilled mode'
+        const selected = skills.filter(skill => modeSelection.skillIds.includes(skill.id))
+        if (selected.length === 0) return 'Skilled mode'
+        if (selected.length === 1) {
+          return `Skilled – ${selected[0].name}`
+        }
+        if (selected.length === 2) {
+          return `Skilled – ${selected[0].name}, ${selected[1].name}`
+        }
+        return `Skilled – ${selected[0].name} +${selected.length - 1}`
+      }
+      default:
+        return 'Regular mode'
+    }
+  }, [modeSelection, monuments, skills])
+  const handleModeTypeChange = useCallback(
+    (type: SchedulerModeType) => {
+      setModeType(type)
+      if (type === 'MONUMENTAL') {
+        setModeMonumentId(prev => {
+          if (prev && monuments.some(monument => monument.id === prev)) {
+            return prev
+          }
+          return monuments[0]?.id ?? null
+        })
+      }
+    },
+    [monuments]
+  )
+  const handleMonumentChange = useCallback((id: string | null) => {
+    setModeMonumentId(id)
+  }, [])
+  const handleSkillToggle = useCallback((skillId: string) => {
+    setModeSkillIds(prev => {
+      const next = new Set(prev)
+      if (next.has(skillId)) {
+        next.delete(skillId)
+      } else {
+        next.add(skillId)
+      }
+      return Array.from(next)
+    })
+  }, [])
+  const handleClearSkills = useCallback(() => {
+    setModeSkillIds([])
+  }, [])
 
   const peekDataDepsRef = useRef<{
     projectMap: typeof projectMap
@@ -1951,6 +2042,36 @@ export default function SchedulePage() {
   const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(null)
   const [memoNoteSaving, setMemoNoteSaving] = useState(false)
   const [memoNoteError, setMemoNoteError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (modeType !== 'MONUMENTAL') return
+    if (monuments.length === 0) {
+      if (modeMonumentId !== null) setModeMonumentId(null)
+      return
+    }
+    const hasCurrent = modeMonumentId
+      ? monuments.some(monument => monument.id === modeMonumentId)
+      : false
+    if (!hasCurrent) {
+      setModeMonumentId(monuments[0]?.id ?? null)
+    }
+  }, [modeType, monuments, modeMonumentId])
+
+  useEffect(() => {
+    setModeSkillIds(prev => {
+      if (prev.length === 0) return prev
+      const valid = new Set(skills.map(skill => skill.id))
+      const filtered = prev.filter(id => valid.has(id))
+      return filtered.length === prev.length ? prev : filtered
+    })
+  }, [skills])
+
+  useEffect(() => {
+    if (userId) return
+    setModeType('REGULAR')
+    setModeMonumentId(null)
+    setModeSkillIds([])
+  }, [userId])
 
   useEffect(() => {
     if (!habitCompletionStorageKey) {
@@ -2271,13 +2392,14 @@ export default function SchedulePage() {
 
     async function load() {
       try {
-        const [ws, ts, pm, scheduledIds, hs, skillRows] = await Promise.all([
+        const [ws, ts, pm, scheduledIds, hs, skillRows, monumentRows] = await Promise.all([
           fetchWindowsForDate(currentDate, undefined, localTimeZone),
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
           fetchHabitsForSchedule(),
           getSkillsForUser(userId),
+          getMonumentsForUser(userId),
         ])
         let projectSkillsMap: Record<string, string[]> = {}
         try {
@@ -2295,6 +2417,7 @@ export default function SchedulePage() {
         backlogTaskPreviousStageRef.current = new Map()
         setProjects(Object.values(pm))
         setSkills(skillRows)
+        setMonuments(monumentRows)
         setProjectSkillIds(projectSkillsMap)
         setHabits(hs)
         setScheduledProjectIds(prev => {
@@ -2311,6 +2434,7 @@ export default function SchedulePage() {
         setTasks([])
         setProjects([])
         setSkills([])
+        setMonuments([])
         setProjectSkillIds({})
         setHabits([])
       } finally {
@@ -3109,6 +3233,7 @@ export default function SchedulePage() {
         body: JSON.stringify({
           localTimeIso: localNow.toISOString(),
           timeZone,
+          mode: resolvedModePayload,
         }),
       })
       let payload: unknown = null
@@ -3184,7 +3309,7 @@ export default function SchedulePage() {
         console.error('Failed to refresh scheduled project history', error)
       }
     }
-  }, [userId, refreshScheduledProjectIds, localTimeZone])
+  }, [userId, refreshScheduledProjectIds, localTimeZone, resolvedModePayload])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -4623,6 +4748,9 @@ export default function SchedulePage() {
           onReschedule={handleRescheduleClick}
           canReschedule={!isScheduling}
           isRescheduling={isScheduling}
+          onOpenModes={() => setIsModeSheetOpen(true)}
+          modeLabel={modeLabel}
+          modeIsActive={modeIsActive}
         />
         <div className="text-zinc-100 space-y-4 pt-[calc(4rem + env(safe-area-inset-top, 0px))]">
           <div
@@ -4715,6 +4843,19 @@ export default function SchedulePage() {
         taskMap={taskMap}
         projectMap={projectMap}
         onSelectResult={handleSearchResultSelect}
+      />
+      <SchedulerModeSheet
+        open={isModeSheetOpen}
+        onOpenChange={setIsModeSheetOpen}
+        modeType={modeType}
+        onModeTypeChange={handleModeTypeChange}
+        monumentId={modeMonumentId}
+        onMonumentChange={handleMonumentChange}
+        skillIds={modeSkillIds}
+        onSkillToggle={handleSkillToggle}
+        onClearSkills={handleClearSkills}
+        monuments={monuments}
+        skills={skills}
       />
     </>
   )
