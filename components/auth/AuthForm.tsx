@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { parseSupabaseError } from "@/lib/error-handling";
+import { isRedirectUrlError, parseSupabaseError } from "@/lib/error-handling";
+import { getSiteUrl } from "@/lib/utils";
 import RoleOption from "@/components/auth/RoleOption";
 
 // Password validation function - relaxed requirements
@@ -154,14 +155,28 @@ export default function AuthForm() {
     setSuccess(null);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const emailRedirectTo = `${getSiteUrl()}/auth/callback`;
+
+      let signUpResult = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { full_name: fullName, role },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo,
         },
       });
+
+      if (signUpResult.error && isRedirectUrlError(signUpResult.error)) {
+        signUpResult = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: fullName, role },
+          },
+        });
+      }
+
+      const { data, error } = signUpResult;
 
       if (error) {
         handleAuthError(error);
