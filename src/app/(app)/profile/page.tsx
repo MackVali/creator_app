@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { ensureProfileExists } from "@/lib/db";
@@ -8,6 +8,25 @@ import { ensureProfileExists } from "@/lib/db";
 export default function ProfilePage() {
   const router = useRouter();
   const { session, loading } = useAuth();
+
+  const metadataHandle = useMemo(() => {
+    const rawMetadata = (session?.user?.user_metadata ?? {}) as Record<
+      string,
+      unknown
+    >;
+
+    const getCandidate = (key: string) => {
+      const value = rawMetadata[key];
+      return typeof value === "string" ? value.trim() : "";
+    };
+
+    const candidate =
+      getCandidate("username") ||
+      getCandidate("handle") ||
+      getCandidate("preferred_username");
+
+    return candidate || undefined;
+  }, [session?.user?.user_metadata]);
 
   useEffect(() => {
     async function redirectToHandleProfile() {
@@ -20,24 +39,43 @@ export default function ProfilePage() {
         return;
       }
 
+      const redirect = (handle: string) => {
+        router.replace(`/profile/${encodeURIComponent(handle)}`);
+      };
+
+      const fallbackToDashboard = () => {
+        router.replace("/dashboard");
+      };
+
+      if (metadataHandle) {
+        redirect(metadataHandle);
+        return;
+      }
+
       try {
         // Ensure profile exists
         const profile = await ensureProfileExists(session.user.id);
-        if (profile?.username) {
+        if (profile?.username?.trim()) {
           // Redirect to handle-based profile route
-          router.push(`/profile/${profile.username}`);
-        } else {
-          // Fallback to dashboard if no username
-          router.push("/dashboard");
+          redirect(profile.username.trim());
+          return;
         }
+
+        // Attempt to synthesize a default handle if Supabase created one on the fly
+        if (profile?.user_id) {
+          redirect(`user_${profile.user_id.slice(0, 8)}`);
+          return;
+        }
+
+        fallbackToDashboard();
       } catch (err) {
         console.error("Error loading profile:", err);
-        router.push("/dashboard");
+        fallbackToDashboard();
       }
     }
 
     redirectToHandleProfile();
-  }, [session, router, loading]);
+  }, [session, router, loading, metadataHandle]);
 
   // Show loading while redirecting
   return (
