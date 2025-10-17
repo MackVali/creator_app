@@ -41,6 +41,13 @@ export type HabitSkillSelectOption = {
   disabled?: boolean;
 };
 
+export type HabitGoalSelectOption = {
+  value: string;
+  label: string;
+  description?: string | null;
+  disabled?: boolean;
+};
+
 export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
   {
     label: "Habit",
@@ -51,6 +58,11 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     label: "Chore",
     value: "CHORE",
     description: "Maintenance that keeps life running.",
+  },
+  {
+    label: "Temp",
+    value: "TEMP",
+    description: "Goal-tied bursts that retire after a streak.",
   },
   {
     label: "Sync",
@@ -125,6 +137,13 @@ interface HabitFormFieldsProps {
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
   showDescriptionField?: boolean;
+  goalId?: string;
+  goalsLoading?: boolean;
+  goalOptions?: HabitGoalSelectOption[];
+  goalError?: string | null;
+  onGoalChange?: (value: string) => void;
+  tempCompletionTarget?: string;
+  onTempCompletionTargetChange?: (value: string) => void;
 }
 
 const DAYLIGHT_OPTIONS = [
@@ -169,9 +188,19 @@ export function HabitFormFields({
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
   showDescriptionField = true,
+  goalId = "none",
+  goalsLoading = false,
+  goalOptions = [],
+  goalError,
+  onGoalChange,
+  tempCompletionTarget = "",
+  onTempCompletionTargetChange,
 }: HabitFormFieldsProps) {
   const normalizedRecurrence = recurrence.toLowerCase().trim();
   const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
+
+  const normalizedType = (habitType ?? "HABIT").toUpperCase();
+  const requiresGoal = normalizedType === "TEMP";
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(() => {
@@ -349,6 +378,82 @@ export function HabitFormFields({
             </div>
           ) : null}
         </div>
+
+        {requiresGoal ? (
+          <>
+            <div className="space-y-3 sm:col-span-2">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="space-y-3">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                    Linked goal
+                  </Label>
+                  <Select
+                    value={goalId}
+                    onValueChange={(value) => {
+                      onGoalChange?.(value);
+                    }}
+                    disabled={goalsLoading}
+                  >
+                    <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                      <SelectValue placeholder="Choose a goal" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#0b101b] text-sm text-white">
+                      {goalOptions.length === 0 ? (
+                        <SelectItem value="none" disabled>
+                          {goalsLoading ? "Loading goals…" : "No goals available"}
+                        </SelectItem>
+                      ) : (
+                        goalOptions.map((option) => (
+                          <SelectItem
+                            key={`${option.value}-${option.label}`}
+                            value={option.value}
+                            disabled={option.disabled}
+                          >
+                            <div className="flex flex-col">
+                              <span>{option.label}</span>
+                              {option.description ? (
+                                <span className="text-xs text-white/60">{option.description}</span>
+                              ) : null}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {goalError ? (
+                    <p className="text-xs text-red-300">{goalError}</p>
+                  ) : (
+                    <p className="text-xs text-white/60">
+                      Temp habits retire once the linked goal reaches the required completions.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                    Completions needed
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    value={tempCompletionTarget}
+                    onChange={(event) => {
+                      const next = event.target.value.replace(/[^0-9]/g, "");
+                      onTempCompletionTargetChange?.(next);
+                    }}
+                    placeholder="e.g. 10"
+                    className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                  />
+                  <p className="text-xs text-white/60">
+                    Track how many times you’ll repeat this habit before it ends.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
 
         <div className="space-y-3">
           <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">

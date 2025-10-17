@@ -37,6 +37,9 @@ interface HabitSummary {
   recurrence: string | null;
   recurrenceDays: number[] | null;
   habitType: string | null;
+  goalId?: string | null;
+  tempCompletionTarget?: number | null;
+  tempCompletionCount?: number | null;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -83,6 +86,9 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
     locationContext: null,
     daylightPreference: null,
     window: null,
+    goalId: habit.goalId ?? null,
+    tempCompletionTarget: habit.tempCompletionTarget ?? null,
+    tempCompletionCount: habit.tempCompletionCount ?? null,
   } satisfies HabitScheduleItem;
 }
 
@@ -179,7 +185,7 @@ export default function SkillDetailPage() {
         const { data: habitsData, error: habitsError } = await supabase
           .from("habits")
           .select(
-            "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type"
+            "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type, goal_id, temp_completion_target, temp_completion_count"
           )
           .eq("user_id", userId)
           .eq("skill_id", id)
@@ -202,6 +208,9 @@ export default function SkillDetailPage() {
                 recurrence?: unknown;
                 recurrence_days?: unknown;
                 habit_type?: unknown;
+                goal_id?: unknown;
+                temp_completion_target?: unknown;
+                temp_completion_count?: unknown;
               };
 
               const habitId =
@@ -234,6 +243,19 @@ export default function SkillDetailPage() {
                   : null;
               const lastCompletedAt = updatedAt ?? createdAt;
 
+              const goalId =
+                typeof habitRecord.goal_id === "string" && habitRecord.goal_id.trim().length > 0
+                  ? habitRecord.goal_id
+                  : null;
+              const tempCompletionTarget =
+                typeof habitRecord.temp_completion_target === "number"
+                  ? habitRecord.temp_completion_target
+                  : null;
+              const tempCompletionCount =
+                typeof habitRecord.temp_completion_count === "number"
+                  ? habitRecord.temp_completion_count
+                  : null;
+
               return {
                 id: habitId,
                 name: habitName,
@@ -243,6 +265,9 @@ export default function SkillDetailPage() {
                 recurrence,
                 recurrenceDays,
                 habitType,
+                goalId,
+                tempCompletionTarget,
+                tempCompletionCount,
               } satisfies HabitSummary;
             })
             .filter((habit): habit is HabitSummary => habit !== null);

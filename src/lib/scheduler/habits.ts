@@ -20,6 +20,9 @@ export type HabitScheduleItem = {
   locationContext: string | null
   daylightPreference: string | null
   windowEdgePreference: string | null
+  goalId: string | null
+  tempCompletionTarget: number | null
+  tempCompletionCount: number | null
   window: {
     id: string
     label: string | null
@@ -46,6 +49,9 @@ type HabitRecord = {
   location_context?: string | null
   daylight_preference?: string | null
   window_edge_preference?: string | null
+  goal_id?: string | null
+  temp_completion_target?: number | null
+  temp_completion_count?: number | null
   window?: {
     id?: string
     label?: string | null
@@ -96,7 +102,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   }
 
   const { data, error } = await query.select(
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)`
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, temp_completion_target, temp_completion_count, window:windows(id, label, energy, start_local, end_local, days, location_context)`
   )
 
   if (error) throw error
@@ -117,6 +123,15 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     locationContext: record.location_context ?? null,
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,
+    goalId: record.goal_id ?? null,
+    tempCompletionTarget:
+      typeof record.temp_completion_target === 'number'
+        ? record.temp_completion_target
+        : null,
+    tempCompletionCount:
+      typeof record.temp_completion_count === 'number'
+        ? record.temp_completion_count
+        : null,
     window: record.window
       ? {
           id: record.window.id ?? '',

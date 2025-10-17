@@ -30,6 +30,7 @@ import {
   HABIT_TYPE_OPTIONS,
   HABIT_ENERGY_OPTIONS,
   type HabitSkillSelectOption,
+  type HabitGoalSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { Button } from "./button";
 import { Input } from "./input";
@@ -342,6 +343,7 @@ interface FormState {
   skill_id: string;
   skill_ids: string[];
   duration_min: string;
+  temp_completion_target: string;
   stage: string;
   type: string;
   recurrence: string;
@@ -390,6 +392,7 @@ const createInitialFormState = (
   skill_id: "",
   skill_ids: [],
   duration_min: eventType === "HABIT" ? "15" : "",
+  temp_completion_target: eventType === "HABIT" ? "1" : "",
   stage:
     eventType === "PROJECT"
       ? PROJECT_STAGE_OPTIONS[0].value
@@ -1226,6 +1229,38 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     ];
   }, [skillsLoading, sortedSkills]);
 
+  const habitGoalSelectOptions = useMemo<HabitGoalSelectOption[]>(() => {
+    if (loading && resolvedType === "HABIT") {
+      return [
+        {
+          value: "none",
+          label: "Loading goals…",
+          disabled: true,
+        },
+      ];
+    }
+
+    if (goals.length === 0) {
+      return [
+        {
+          value: "none",
+          label: "No goal",
+        },
+      ];
+    }
+
+    return [
+      {
+        value: "none",
+        label: "No goal",
+      },
+      ...goals.map((goal) => ({
+        value: goal.id,
+        label: goal.name,
+      })),
+    ];
+  }, [goals, loading, resolvedType]);
+
   const handleTaskSkillSelect = (value: string) => {
     setFormData((prev) => ({ ...prev, skill_id: value }));
   };
@@ -1522,6 +1557,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         location_context?: string | null;
         daylight_preference?: string | null;
         window_edge_preference?: string | null;
+        temp_completion_target?: number | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1571,6 +1607,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       } else if (eventType === "HABIT") {
         insertData.type = formData.type;
         insertData.habit_type = formData.type;
+        const normalizedType = formData.type?.toUpperCase() ?? "HABIT";
         const normalizedRecurrence = formData.recurrence.toLowerCase().trim();
         if (
           normalizedRecurrence === "every x days" &&
@@ -1604,13 +1641,38 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.window_edge_preference =
           (formData.window_edge_preference || "FRONT").toUpperCase();
 
-        if (formData.type?.toUpperCase() === "MEMO" && !insertData.skill_id) {
+        insertData.goal_id = formData.goal_id ? formData.goal_id : null;
+        let tempCompletionTargetValue: number | null = null;
+
+        if (normalizedType === "MEMO" && !insertData.skill_id) {
           toast.error(
             "Skill required",
             "Memo habits need a skill so their notes have somewhere to land."
           );
           return;
         }
+
+        if (normalizedType === "TEMP") {
+          if (!insertData.goal_id) {
+            toast.error(
+              "Goal required",
+              "Temp habits need a goal to retire once the work is complete."
+            );
+            return;
+          }
+
+          const completionTarget = Number(formData.temp_completion_target);
+          if (!Number.isFinite(completionTarget) || completionTarget <= 0) {
+            toast.error(
+              "Completions required",
+              "Set how many completions this temp habit needs before it finishes."
+            );
+            return;
+          }
+          tempCompletionTargetValue = completionTarget;
+        }
+
+        insertData.temp_completion_target = tempCompletionTargetValue;
 
         let routineIdToUse: string | null = null;
         if (routineId === "__create__") {
@@ -2728,6 +2790,23 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
               skillError={skillError}
+              goalId={formData.goal_id ? formData.goal_id : "none"}
+              goalsLoading={loading && resolvedType === "HABIT"}
+              goalOptions={habitGoalSelectOptions}
+              goalError={null}
+              onGoalChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  goal_id: value === "none" ? "" : value,
+                }))
+              }
+              tempCompletionTarget={formData.temp_completion_target}
+              onTempCompletionTargetChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  temp_completion_target: value,
+                }))
+              }
               showDescriptionField={false}
               onNameChange={(value) =>
                 setFormData((prev) => ({
