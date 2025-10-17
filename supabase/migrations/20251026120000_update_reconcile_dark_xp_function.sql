@@ -30,7 +30,7 @@ BEGIN
   SELECT s.user_id, s.id
     FROM public.skills AS s
    WHERE s.user_id = p_user
-  ON CONFLICT ON CONSTRAINT skill_progress_user_id_skill_id_key DO NOTHING;
+  ON CONFLICT ON CONSTRAINT skill_progress_pkey DO NOTHING;
 
   UPDATE public.skill_progress AS sp
      SET level = GREATEST(sp.level, COALESCE(s.level, 1)),
