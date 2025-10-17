@@ -56,7 +56,7 @@ export default function AuthProvider({
         return;
       }
 
-      if (nextSession) {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
         markResolved();
         return;
       }
@@ -66,22 +66,19 @@ export default function AuthProvider({
       }
     });
 
-    supabase.auth.getSession().then(({ data }) => {
-      resolve(data.session ?? null);
-
-      if (data.session) {
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        resolve(data.session ?? null);
         markResolved();
-      }
-    });
-
-    const fallbackId = setTimeout(() => {
-      markResolved();
-    }, 1500);
+      })
+      .catch(() => {
+        markResolved();
+      });
 
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
-      clearTimeout(fallbackId);
     };
   }, []);
 
