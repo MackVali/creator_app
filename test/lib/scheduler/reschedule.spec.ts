@@ -71,6 +71,7 @@ describe("scheduleBacklog", () => {
 
   let instances: ScheduleInstance[];
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
+  let fetchWindowsForDateSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
 
   const createSupabaseMock = (
@@ -161,7 +162,7 @@ describe("scheduleBacklog", () => {
       },
     });
     vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
-    vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
+    fetchWindowsForDateSpy = vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
       {
         id: "win-1",
         label: "Any",
@@ -269,6 +270,26 @@ describe("scheduleBacklog", () => {
     expect(callOrder.length).toBeGreaterThanOrEqual(2);
     expect(callOrder[0]).toBe("proj-high");
     expect(callOrder[1]).toBe("proj-low");
+  });
+
+  it("skips windows with a location context when the item has none", async () => {
+    instances = [];
+    fetchWindowsForDateSpy.mockResolvedValue([
+      {
+        id: "win-loc",
+        label: "Gym",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+        location_context: "GYM",
+      },
+    ]);
+
+    const { client } = createSupabaseMock();
+    await scheduleBacklog(userId, baseDate, client);
+
+    expect(attemptedProjectIds).toEqual([]);
   });
 
   it("considers 'NO' energy windows for scheduling", async () => {

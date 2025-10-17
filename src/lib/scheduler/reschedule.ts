@@ -1187,9 +1187,11 @@ async function fetchCompatibleWindowsForItem(
     const windowLocationRaw = win.location_context
       ? String(win.location_context).toUpperCase().trim()
       : null
-    if (desiredLocation) {
-      if (!windowLocationRaw) continue
+    if (windowLocationRaw) {
+      if (!desiredLocation) continue
       if (windowLocationRaw !== desiredLocation) continue
+    } else if (desiredLocation) {
+      continue
     }
 
     const startLocal = resolveWindowStart(win, date, timeZone)
