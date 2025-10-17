@@ -33,33 +33,48 @@ BEGIN
   ON CONFLICT (user_id, skill_id) DO NOTHING;
 
   UPDATE public.skill_progress AS sp
-     SET level = GREATEST(sp.level, COALESCE(s.level, 1)),
+     SET level = COALESCE(s.level, sp.level),
          xp_into_level = CASE
-           WHEN COALESCE(s.level, 1) > sp.level THEN 0
+           WHEN COALESCE(s.level, sp.level) <> sp.level THEN 0
            ELSE sp.xp_into_level
          END,
+         total_xp = GREATEST(COALESCE(s.level, sp.level, 1), 1) - 1 + GREATEST(sp.prestige, 0) * 100,
          updated_at = now()
     FROM public.skills AS s
    WHERE sp.user_id = p_user
      AND s.user_id = p_user
      AND s.id = sp.skill_id
-     AND COALESCE(s.level, 1) > sp.level;
+     AND COALESCE(s.level, sp.level) IS NOT NULL
+     AND COALESCE(s.level, sp.level) <> sp.level;
 
   FOR rec IN
+    WITH skill_keys AS (
+      SELECT sp.skill_id
+        FROM public.skill_progress sp
+       WHERE sp.user_id = p_user
+      UNION
+      SELECT s.id AS skill_id
+        FROM public.skills s
+       WHERE s.user_id = p_user
+    )
     SELECT
-      sp.skill_id,
-      sp.level,
-      sp.prestige,
-      (GREATEST(sp.level, 1) - 1 + GREATEST(sp.prestige, 0) * 100) AS expected_levels,
+      sk.skill_id,
+      COALESCE(s.level, sp.level, 1) AS skill_level,
+      COALESCE(sp.prestige, 0) AS prestige,
       COALESCE(SUM(dxe.amount), 0) AS existing_levels
-    FROM public.skill_progress sp
+    FROM skill_keys sk
+    LEFT JOIN public.skill_progress sp
+      ON sp.user_id = p_user
+     AND sp.skill_id = sk.skill_id
+    LEFT JOIN public.skills s
+      ON s.user_id = p_user
+     AND s.id = sk.skill_id
     LEFT JOIN public.dark_xp_events dxe
-      ON dxe.user_id = sp.user_id
-     AND dxe.skill_id = sp.skill_id
-    WHERE sp.user_id = p_user
-    GROUP BY sp.skill_id, sp.level, sp.prestige
+      ON dxe.user_id = p_user
+     AND dxe.skill_id = sk.skill_id
+    GROUP BY sk.skill_id, COALESCE(s.level, sp.level, 1), COALESCE(sp.prestige, 0)
   LOOP
-    v_expected := COALESCE(rec.expected_levels, 0);
+    v_expected := GREATEST(rec.skill_level, 1) - 1 + GREATEST(rec.prestige, 0) * 100;
     v_actual := COALESCE(rec.existing_levels, 0);
     v_delta := v_expected - v_actual;
 
@@ -108,11 +123,24 @@ BEGIN
      AND COALESCE(s.level, 1) <> sp.level;
 
   SELECT COALESCE(SUM(
-           GREATEST(sp.level, 1) - 1 + GREATEST(sp.prestige, 0) * 100
+           GREATEST(COALESCE(s.level, sp.level, 1), 1) - 1 + GREATEST(COALESCE(sp.prestige, 0), 0) * 100
          ), 0)
     INTO v_total_dark_xp
-    FROM public.skill_progress sp
-   WHERE sp.user_id = p_user;
+    FROM (
+      SELECT sp.skill_id
+        FROM public.skill_progress sp
+       WHERE sp.user_id = p_user
+      UNION
+      SELECT s.id AS skill_id
+        FROM public.skills s
+       WHERE s.user_id = p_user
+    ) keys
+    LEFT JOIN public.skill_progress sp
+      ON sp.user_id = p_user
+     AND sp.skill_id = keys.skill_id
+    LEFT JOIN public.skills s
+      ON s.user_id = p_user
+     AND s.id = keys.skill_id;
 
   INSERT INTO public.user_progress(user_id, total_dark_xp, current_level, updated_at)
   VALUES (p_user, v_total_dark_xp, v_total_dark_xp, now())
