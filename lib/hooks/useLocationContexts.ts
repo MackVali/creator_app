@@ -25,6 +25,7 @@ const DEFAULT_CONTEXTS: Array<Pick<LocationContextOption, "value" | "label">> = 
   { value: "HOME", label: "Home" },
   { value: "WORK", label: "Work" },
   { value: "OUTSIDE", label: "Outside" },
+  { value: "SLEEP", label: "Sleep" },
 ];
 
 function normalizeValue(input: string | null | undefined) {
@@ -109,33 +110,46 @@ export function useLocationContexts() {
 
       let rows = data ?? [];
 
-      if (rows.length === 0) {
-        const defaults = DEFAULT_CONTEXTS.map((ctx) => ({
+      const ensureDefaults = async () => {
+        const existingValues = new Set(
+          rows.map((row) => normalizeValue(row.value)),
+        );
+        const missingDefaults = DEFAULT_CONTEXTS.filter(
+          (ctx) => !existingValues.has(ctx.value),
+        );
+
+        if (missingDefaults.length === 0) {
+          return;
+        }
+
+        const payload = missingDefaults.map((ctx) => ({
           user_id: user.id,
           value: ctx.value,
           label: ctx.label,
         }));
 
-        const { error: seedError } = await supabase
+        const { error: upsertError } = await supabase
           .from("location_contexts")
-          .upsert(defaults, { onConflict: "user_id,value" });
+          .upsert(payload, { onConflict: "user_id,value" });
 
-        if (seedError) {
-          throw seedError;
+        if (upsertError) {
+          throw upsertError;
         }
 
-        const { data: seeded, error: seededFetchError } = await supabase
+        const { data: refreshed, error: refreshError } = await supabase
           .from("location_contexts")
           .select("id, value, label")
           .eq("user_id", user.id)
           .order("created_at", { ascending: true });
 
-        if (seededFetchError) {
-          throw seededFetchError;
+        if (refreshError) {
+          throw refreshError;
         }
 
-        rows = seeded ?? [];
-      }
+        rows = refreshed ?? rows;
+      };
+
+      await ensureDefaults();
 
       const mapped = rows
         .map(mapRowToOption)

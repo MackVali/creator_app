@@ -1137,6 +1137,9 @@ function Drawer({
                 </option>
               ))}
             </select>
+            <p className="mt-2 text-xs text-slate-400">
+              Anchor this window to Home, Work, Outside, Sleep, or one of your custom locations.
+            </p>
             {locationError ? (
               <p className="mt-2 text-xs text-amber-300/90">{locationError}</p>
             ) : null}
@@ -1168,7 +1171,7 @@ function Drawer({
                 <p className="text-xs text-red-300">{customLocationError}</p>
               ) : null}
               <p className="text-[0.65rem] text-slate-400">
-                Custom locations sync across all of your windows and habits.
+                Custom locations sync across all of your windows and habits, alongside the default Home, Work, Outside, and Sleep options.
               </p>
             </div>
           </div>
