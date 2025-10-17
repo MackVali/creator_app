@@ -22,7 +22,7 @@ export async function POST() {
 
   const { data, error } = await supabase.rpc<ReconcileResult>(
     "reconcile_dark_xp_for_user",
-    {}
+    { p_user: authData.user.id }
   );
 
   if (error) {

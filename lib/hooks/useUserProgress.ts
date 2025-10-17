@@ -62,7 +62,9 @@ export function useUserProgress(
 
     try {
       try {
-        await supabase.rpc("reconcile_dark_xp_for_user", {});
+        await supabase.rpc("reconcile_dark_xp_for_user", {
+          p_user: userId,
+        });
       } catch (rpcError) {
         console.error("Failed to reconcile dark XP before loading progress", rpcError);
       }
