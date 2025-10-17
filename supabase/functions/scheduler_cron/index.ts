@@ -132,6 +132,7 @@ async function scheduleBacklog(
     duration_min: number
     energy: string
     weight: number
+    locationContext?: string | null
     instanceId?: string | null
   }
 
@@ -189,6 +190,7 @@ async function scheduleBacklog(
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      locationContext: def.location_context ?? null,
       instanceId: instance.id,
     })
   }
@@ -223,6 +225,9 @@ async function scheduleBacklog(
       existing.duration_min = duration
       existing.energy = energy
       existing.weight = weight
+      if (project.location_context) {
+        existing.locationContext = project.location_context
+      }
       if (!existing.instanceId && reuse) {
         existing.instanceId = reuse.id
       }
@@ -233,6 +238,7 @@ async function scheduleBacklog(
         duration_min: duration,
         energy,
         weight,
+        locationContext: project.location_context ?? null,
         instanceId: reuse?.id,
       }
       queue.push(entry)
@@ -254,6 +260,7 @@ async function scheduleBacklog(
       duration_min: duration,
       energy,
       weight: fallbackProject?.weight ?? weight,
+      locationContext: fallbackProject?.location_context ?? null,
       instanceId: inst.id,
     }
     queue.push(entry)
@@ -379,6 +386,7 @@ type ProjectLite = {
   stage: string
   energy?: string | null
   duration_min?: number | null
+  location_context?: string | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -418,7 +426,7 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
   const { data, error } = await client
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min')
+    .select('id, name, priority, stage, energy, duration_min, location_context')
     .eq('user_id', userId)
 
   if (error) {
@@ -435,6 +443,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       stage: project.stage ?? 'RESEARCH',
       energy: project.energy ?? 'NO',
       duration_min: project.duration_min ?? null,
+      location_context: project.location_context ?? null,
     }
   }
   return map
@@ -590,7 +599,7 @@ async function fetchCompatibleWindowsForItem(
   client: Client,
   userId: string,
   date: Date,
-  item: { energy: string; duration_min: number },
+  item: { energy: string; duration_min: number; locationContext?: string | null },
   timeZone: string,
   options?: {
     now?: Date
@@ -613,6 +622,11 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60_000
   const availability = options?.availability
 
+  const desiredLocation = item.locationContext
+    ? String(item.locationContext).toUpperCase().trim()
+    : null
+  const desiredLocationIsAnywhere = desiredLocation === 'ANYWHERE'
+
   const compatible: Array<{
     id: string
     key: string
@@ -631,6 +645,17 @@ async function fetchCompatibleWindowsForItem(
       : ENERGY_ORDER.length
     if (hasEnergyLabel && energyIdx >= ENERGY_ORDER.length) continue
     if (energyIdx < itemIdx) continue
+
+    const windowLocationRaw = window.location_context
+      ? String(window.location_context).toUpperCase().trim()
+      : null
+    if (windowLocationRaw) {
+      if (desiredLocationIsAnywhere) continue
+      if (!desiredLocation) continue
+      if (windowLocationRaw !== desiredLocation) continue
+    } else if (desiredLocation && !desiredLocationIsAnywhere) {
+      continue
+    }
 
     const startLocal = resolveWindowStart(window, date, timeZone)
     const endLocal = resolveWindowEnd(window, date, timeZone)
@@ -695,6 +720,7 @@ type WindowRecord = {
   end_local: string
   days: number[] | null
   fromPrevDay?: boolean
+  location_context?: string | null
 }
 
 async function fetchWindowsForDate(
@@ -706,7 +732,7 @@ async function fetchWindowsForDate(
   const weekday = weekdayInTimeZone(date, timeZone)
   const prevWeekday = (weekday + 6) % 7
 
-  const columns = 'id, label, energy, start_local, end_local, days'
+  const columns = 'id, label, energy, start_local, end_local, days, location_context'
 
   const [
     { data: today, error: errToday },
@@ -759,7 +785,14 @@ async function fetchWindowsForDate(
 async function placeItemInWindows(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  item: {
+    id: string
+    sourceType: 'PROJECT'
+    duration_min: number
+    energy: string
+    weight: number
+    locationContext?: string | null
+  },
   windows: Array<{
     id: string
     startLocal: Date
