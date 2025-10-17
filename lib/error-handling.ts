@@ -25,7 +25,11 @@ export const ERROR_CODES = {
   AUTH_USER_NOT_FOUND: "auth/user-not-found",
   AUTH_EMAIL_NOT_CONFIRMED: "auth/email-not-confirmed",
   AUTH_TOO_MANY_REQUESTS: "auth/too-many-requests",
+  AUTH_EMAIL_RATE_LIMIT: "auth/email-rate-limit",
+  AUTH_EMAIL_ALREADY_REGISTERED: "auth/email-already-registered",
+  AUTH_SIGNUPS_DISABLED: "auth/signups-disabled",
   AUTH_WEAK_PASSWORD: "auth/weak-password",
+  AUTH_INVALID_REDIRECT: "auth/invalid-redirect",
   NETWORK_ERROR: "network/error",
   VALIDATION_ERROR: "validation/error",
   UNKNOWN_ERROR: "unknown/error",
@@ -39,8 +43,16 @@ const USER_FRIENDLY_MESSAGES = {
     "Please check your email and confirm your account",
   [ERROR_CODES.AUTH_TOO_MANY_REQUESTS]:
     "Too many attempts. Please wait before trying again",
+  [ERROR_CODES.AUTH_EMAIL_RATE_LIMIT]:
+    "We have reached the hourly limit for sending Supabase emails. Please wait a bit or increase the email rate limit in Supabase Auth settings.",
+  [ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED]:
+    "An account already exists with this email",
+  [ERROR_CODES.AUTH_SIGNUPS_DISABLED]:
+    "New sign-ups are currently disabled. Contact support or your administrator",
   [ERROR_CODES.AUTH_WEAK_PASSWORD]:
     "Password does not meet security requirements",
+  [ERROR_CODES.AUTH_INVALID_REDIRECT]:
+    "Supabase rejected the redirect domain. Update NEXT_PUBLIC_SUPABASE_REDIRECT_URL, NEXT_PUBLIC_SITE_URL, or the SITE_URL in Supabase Auth settings.",
   [ERROR_CODES.NETWORK_ERROR]:
     "Connection error. Please check your internet and try again",
   [ERROR_CODES.VALIDATION_ERROR]: "Please check your input and try again",
@@ -50,6 +62,7 @@ const USER_FRIENDLY_MESSAGES = {
 // Parse Supabase auth errors
 export function parseSupabaseError(error: SupabaseError): AppError {
   const errorMessage = error?.message || "Unknown error occurred";
+  const lowerCasedMessage = errorMessage.toLowerCase();
 
   // Log the full error for debugging
   console.error("Supabase error:", error);
@@ -73,6 +86,26 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
+  if (lowerCasedMessage.includes("already registered")) {
+    return {
+      code: ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED,
+      message: errorMessage,
+      userMessage:
+        USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_EMAIL_ALREADY_REGISTERED],
+      shouldLog: false,
+    };
+  }
+
+  if (lowerCasedMessage.includes("signups not allowed")) {
+    return {
+      code: ERROR_CODES.AUTH_SIGNUPS_DISABLED,
+      message: errorMessage,
+      userMessage:
+        USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_SIGNUPS_DISABLED],
+      shouldLog: true,
+    };
+  }
+
   if (errorMessage.includes("Too many requests")) {
     return {
       code: ERROR_CODES.AUTH_TOO_MANY_REQUESTS,
@@ -82,11 +115,63 @@ export function parseSupabaseError(error: SupabaseError): AppError {
     };
   }
 
+  if (lowerCasedMessage.includes("rate limit")) {
+    return {
+      code: ERROR_CODES.AUTH_EMAIL_RATE_LIMIT,
+      message: errorMessage,
+      userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_EMAIL_RATE_LIMIT],
+      shouldLog: false,
+    };
+  }
+
   if (errorMessage.includes("Password should be at least")) {
     return {
       code: ERROR_CODES.AUTH_WEAK_PASSWORD,
       message: errorMessage,
       userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_WEAK_PASSWORD],
+      shouldLog: true,
+    };
+  }
+
+  if (lowerCasedMessage.includes("invalid email")) {
+    return {
+      code: ERROR_CODES.VALIDATION_ERROR,
+      message: errorMessage,
+      userMessage: USER_FRIENDLY_MESSAGES[ERROR_CODES.VALIDATION_ERROR],
+      shouldLog: false,
+    };
+  }
+
+  const mentionsRedirectIssue =
+    lowerCasedMessage.includes("redirect_to") ||
+    lowerCasedMessage.includes("site_url") ||
+    lowerCasedMessage.includes("url configuration") ||
+    lowerCasedMessage.includes("configure your project url") ||
+    (lowerCasedMessage.includes("redirect") &&
+      (lowerCasedMessage.includes("url") ||
+        lowerCasedMessage.includes("domain") ||
+        lowerCasedMessage.includes("host")));
+
+  if (mentionsRedirectIssue) {
+    const redirectUserMessage = (() => {
+      const isLocalHostConfig =
+        lowerCasedMessage.includes("localhost") ||
+        lowerCasedMessage.includes("127.0.0.1");
+
+      if (!isLocalHostConfig) {
+        return USER_FRIENDLY_MESSAGES[ERROR_CODES.AUTH_INVALID_REDIRECT];
+      }
+
+      const siteUrlMatch = errorMessage.match(/https?:\/\/[^\s)]+/i);
+      const configuredSiteUrl = siteUrlMatch?.[0] ?? "http://localhost:3000";
+
+      return `Supabase is still configured to send auth emails to ${configuredSiteUrl}. Update Authentication → URL Configuration in Supabase (or set NEXT_PUBLIC_SUPABASE_REDIRECT_URL / NEXT_PUBLIC_SITE_URL) to your deployed domain so preview sign-ups work.`;
+    })();
+
+    return {
+      code: ERROR_CODES.AUTH_INVALID_REDIRECT,
+      message: errorMessage,
+      userMessage: redirectUserMessage,
       shouldLog: true,
     };
   }

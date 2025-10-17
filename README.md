@@ -40,6 +40,18 @@ This app uses Supabase for authentication with magic link sign-in. After setting
 2. **Check email**: Click the magic link in your email
 3. **Access dashboard**: You'll be redirected to `/dashboard`
 
+### Avoiding Supabase email rate limits
+
+Each sign-up triggers an email from Supabase. If your project is still using the default rate limit from this repo (`auth.rate_limit.email_sent`), raise the "Emails sent per hour" value under **Supabase Dashboard → Authentication → Rate Limits** for preview and production environments. The sample configuration in `supabase/config.toml` now allows 60 messages per hour so preview builds on Vercel can create new accounts without immediately exhausting the quota.
+
+### Quick fix for preview sign-up errors (plain English checklist)
+
+Need to get Vercel previews signing up again? Follow the simple steps in [`docs/supabase-preview-signup-instructions.md`](./docs/supabase-preview-signup-instructions.md). It walks through the Supabase dashboard changes, the matching Vercel env variables, and what to double-check before trying again. When you need a "set it and forget it" remediation with SQL that enforces the correct redirect allow-list, sign-up toggles, and email rate limits, jump straight to [`docs/supabase-preview-signup-remediation.md`](./docs/supabase-preview-signup-remediation.md).
+
+### When Supabase refuses to create users
+
+If the Supabase dashboard itself cannot create a new user, grab the SQL snippets in [`docs/supabase-auth-user-debug.md`](./docs/supabase-auth-user-debug.md). They walk you through confirming sign-ups are enabled, inspecting the auth audit log, checking rate limits, and spotting trigger or email-provider issues that block inserts at the platform level.
+
 ## Seeding Sample Data
 
 To populate your app with sample data for testing and development:

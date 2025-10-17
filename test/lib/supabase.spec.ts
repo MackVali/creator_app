@@ -45,37 +45,72 @@ vi.mock("@supabase/ssr", () => {
   };
 });
 
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => ({})),
+}));
+
 describe("getSupabaseServer", () => {
   beforeEach(async () => {
+    vi.resetModules();
     vi.clearAllMocks();
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
   });
 
   afterEach(() => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = originalEnv.NEXT_PUBLIC_SUPABASE_URL;
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY =
       originalEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.VITE_SUPABASE_URL = originalEnv.VITE_SUPABASE_URL;
+    process.env.VITE_SUPABASE_ANON_KEY = originalEnv.VITE_SUPABASE_ANON_KEY;
   });
 
   it("no-ops cookie set when store is read-only", async () => {
-    const { getSupabaseServer } = await import("../../lib/supabase");
+    const { getSupabaseServer, supabaseEnvDebug } = await import(
+      "../../lib/supabase",
+    );
     const store: CookieStore = {
       get: vi.fn(() => ({ name: "sb", value: "token" })),
     };
 
     expect(() => getSupabaseServer(store)).not.toThrow();
     const { createServerClient } = await import("@supabase/ssr");
+    const { createClient } = await import("@supabase/supabase-js");
+    expect(createClient).toHaveBeenCalledWith(
+      "https://example.supabase.co",
+      "anon-key",
+      expect.objectContaining({
+        auth: expect.objectContaining({
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          persistSession: true,
+        }),
+      }),
+    );
     expect(createServerClient).toHaveBeenCalledWith(
       "https://example.supabase.co",
       "anon-key",
       expect.objectContaining({
+        auth: expect.objectContaining({
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          persistSession: true,
+        }),
         cookies: expect.objectContaining({
           get: expect.any(Function),
           set: expect.any(Function),
         }),
       }),
     );
+    expect(supabaseEnvDebug).toEqual({
+      url: "https://example.supabase.co",
+      keyPresent: true,
+      urlSource: "next_public",
+      keySource: "next_public",
+      usedFallback: false,
+    });
   });
 
   it("forwards to the underlying cookie store when set exists", async () => {
@@ -95,5 +130,47 @@ describe("getSupabaseServer", () => {
     }
     options.cookies.set("sb", "new-token", {});
     expect(set).toHaveBeenCalledWith("sb", "new-token", {});
+  });
+
+  it("falls back to legacy VITE env vars when NEXT_PUBLIC vars are absent", async () => {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    process.env.VITE_SUPABASE_URL = "https://legacy.supabase.co";
+    process.env.VITE_SUPABASE_ANON_KEY = "legacy-key";
+    const warn = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    const { getSupabaseBrowser, supabaseEnvDebug } = await import(
+      "../../lib/supabase",
+    );
+    expect(getSupabaseBrowser()).toEqual({});
+    expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe(
+      "https://legacy.supabase.co",
+    );
+    expect(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY).toBe("legacy-key");
+    const { createClient } = await import("@supabase/supabase-js");
+    expect(createClient).toHaveBeenCalledWith(
+      "https://legacy.supabase.co",
+      "legacy-key",
+      expect.objectContaining({
+        auth: expect.objectContaining({
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          persistSession: true,
+        }),
+      }),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      "Falling back to legacy VITE_SUPABASE_* environment variables. Update your configuration to NEXT_PUBLIC_SUPABASE_*.",
+    );
+    expect(supabaseEnvDebug).toEqual({
+      url: "https://legacy.supabase.co",
+      keyPresent: true,
+      urlSource: "vite",
+      keySource: "vite",
+      usedFallback: true,
+    });
+    warn.mockRestore();
   });
 });

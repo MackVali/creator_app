@@ -2,9 +2,28 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getSupabaseBrowser } from "@/lib/supabase";
-import { parseSupabaseError } from "@/lib/error-handling";
+import { getSupabaseBrowser, supabaseEnvDebug } from "@/lib/supabase";
+import {
+  ERROR_CODES,
+  parseSupabaseError,
+  type AppError,
+} from "@/lib/error-handling";
+import {
+  getAuthRedirectResolution,
+  type AuthRedirectResolution,
+} from "@/lib/auth-redirect";
 import RoleOption from "@/components/auth/RoleOption";
+
+// Email validation helper
+const validateEmail = (email: string): string | null => {
+  const trimmed = email.trim();
+  if (!trimmed) return "Email is required";
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmed)) {
+    return "Please enter a valid email address";
+  }
+  return null;
+};
 
 // Password validation function - relaxed requirements
 const validatePassword = (password: string): string | null => {
@@ -14,6 +33,19 @@ const validatePassword = (password: string): string | null => {
   if (!/\d/.test(password)) return "Password must contain at least 1 number";
   return null;
 };
+
+const REDIRECT_SOURCE_LABELS: Record<AuthRedirectResolution["source"], string> = {
+  supabaseRedirectEnv: "NEXT_PUBLIC_SUPABASE_REDIRECT_URL",
+  siteUrlEnv: "NEXT_PUBLIC_SITE_URL",
+  vercelProduction: "NEXT_PUBLIC_VERCEL_URL (production)",
+  browserPreview: "Browser origin (preview)",
+  browserDevelopment: "Browser origin (development)",
+  none: "Not configured",
+};
+
+function renderRedirectSource(resolution: AuthRedirectResolution) {
+  return REDIRECT_SOURCE_LABELS[resolution.source] ?? "Unknown";
+}
 
 export default function AuthForm() {
   const [tab, setTab] = useState<"signin" | "signup">("signin");
@@ -27,6 +59,10 @@ export default function AuthForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [lastAppError, setLastAppError] = useState<AppError | null>(null);
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [redirectResolution, setRedirectResolution] =
+    useState<AuthRedirectResolution>({ url: null, source: "none" });
 
   // Rate limiting state
   const [attempts, setAttempts] = useState(0);
@@ -36,6 +72,10 @@ export default function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = getSupabaseBrowser();
+
+  useEffect(() => {
+    setRedirectResolution(getAuthRedirectResolution());
+  }, []);
 
   // Reset lockout after duration - placed before any early returns to fix hooks rules
   useEffect(() => {
@@ -83,9 +123,11 @@ export default function AuthForm() {
     lockoutTime &&
     new Date().getTime() - lockoutTime.getTime() < lockoutDuration;
 
-  const handleAuthError = (error: { message?: string }) => {
+  const handleAuthError = (error: { message?: string; code?: string }) => {
     const appError = parseSupabaseError(error);
     setAttempts((prev: number) => prev + 1);
+    setLastAppError(appError);
+    setDebugPanelOpen(true);
 
     // Lock out after 5 failed attempts
     if (attempts >= 4) {
@@ -96,6 +138,7 @@ export default function AuthForm() {
     } else {
       setError(appError.userMessage);
     }
+    return appError;
   };
 
   async function handleSignIn(e: React.FormEvent) {
@@ -109,19 +152,28 @@ export default function AuthForm() {
       return;
     }
 
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+
+    const sanitizedEmail = email.trim().toLowerCase();
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: sanitizedEmail,
         password,
       });
       if (error) {
         handleAuthError(error);
       } else {
         setAttempts(0);
+        setLastAppError(null);
         const redirectTo = searchParams.get("redirect") || "/dashboard";
         router.replace(redirectTo);
       }
@@ -143,6 +195,19 @@ export default function AuthForm() {
       return;
     }
 
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setError(emailError);
+      return;
+    }
+
+    const sanitizedEmail = email.trim().toLowerCase();
+    const sanitizedFullName = fullName.trim();
+    if (!sanitizedFullName) {
+      setError("Please provide your full name");
+      return;
+    }
+
     const passwordError = validatePassword(password);
     if (passwordError) {
       setError(passwordError);
@@ -153,31 +218,71 @@ export default function AuthForm() {
     setError(null);
     setSuccess(null);
 
+    const resolution = getAuthRedirectResolution();
+    setRedirectResolution(resolution);
+    const emailRedirectTo = resolution.url;
+
+    const finalizeSignup = (
+      resultData: Awaited<ReturnType<typeof supabase.auth.signUp>>["data"],
+      usedFallback = false,
+    ) => {
+      setAttempts(0);
+      setLastAppError(null);
+      if (resultData.user && !resultData.user.email_confirmed_at) {
+        setSuccess(
+          usedFallback
+            ? "Account created! Please check your email to confirm your account. Supabase is still pointing at your default SITE_URL, so update Authentication → URL Configuration (or set NEXT_PUBLIC_SUPABASE_REDIRECT_URL) to your preview domain after confirming."
+            : "Account created! Please check your email to confirm your account."
+        );
+      } else {
+        const redirectTo = searchParams.get("redirect") || "/dashboard";
+        router.replace(redirectTo);
+      }
+    };
+
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
+      const metadata = { full_name: sanitizedFullName, role };
+      const signupOptions = {
+        data: metadata,
+        ...(emailRedirectTo ? { emailRedirectTo } : {}),
+      };
+
+      const initialResult = await supabase.auth.signUp({
+        email: sanitizedEmail,
         password,
-        options: {
-          data: { full_name: fullName, role },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+        options: signupOptions,
       });
 
-      if (error) {
-        handleAuthError(error);
-      } else {
-        setAttempts(0);
-        // Check if email confirmation is required
-        if (data.user && !data.user.email_confirmed_at) {
-          setSuccess(
-            "Account created! Please check your email to confirm your account."
-          );
-        } else {
-          // Email confirmation disabled, redirect to dashboard
-          const redirectTo = searchParams.get("redirect") || "/dashboard";
-          router.replace(redirectTo);
+      if (initialResult.error) {
+        const appError = handleAuthError(initialResult.error);
+
+        if (appError.code === ERROR_CODES.AUTH_SIGNUPS_DISABLED) {
+          setSuccess(null);
         }
+
+        if (
+          appError.code === ERROR_CODES.AUTH_INVALID_REDIRECT &&
+          emailRedirectTo
+        ) {
+          const fallbackResult = await supabase.auth.signUp({
+            email: sanitizedEmail,
+            password,
+            options: { data: metadata },
+          });
+
+          if (fallbackResult.error) {
+            handleAuthError(fallbackResult.error);
+            return;
+          }
+
+          setError(null);
+          finalizeSignup(fallbackResult.data, true);
+        }
+
+        return;
       }
+
+      finalizeSignup(initialResult.data);
     } catch (err) {
       handleAuthError(err as { message?: string });
     } finally {
@@ -427,6 +532,118 @@ export default function AuthForm() {
             </button>
           </form>
         )}
+        <div className="mt-8">
+          <button
+            type="button"
+            onClick={() => setDebugPanelOpen((prev) => !prev)}
+            className="w-full text-sm font-semibold text-zinc-200 bg-[#161616] border border-[#333] rounded-xl px-4 py-3 hover:border-zinc-500 transition-colors"
+          >
+            {debugPanelOpen
+              ? "Hide Supabase debugging details"
+              : "Show Supabase debugging details"}
+          </button>
+          {debugPanelOpen && (
+            <div className="mt-4 space-y-3 text-sm text-zinc-300 bg-[#161616] border border-[#333] rounded-xl p-5">
+              <p className="text-zinc-400">
+                Copy the information below when asking for help. It explains
+                which environment variables are loaded and what redirect the
+                preview is sending to Supabase.
+              </p>
+              <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 sm:gap-x-6">
+                <div className="space-y-1">
+                  <dt className="uppercase tracking-wide text-zinc-500">
+                    Supabase URL
+                  </dt>
+                  <dd className="font-mono text-zinc-200 break-all">
+                    {supabaseEnvDebug.url || "Not set"}
+                  </dd>
+                </div>
+                <div className="space-y-1">
+                  <dt className="uppercase tracking-wide text-zinc-500">
+                    Anon key
+                  </dt>
+                  <dd className="font-mono text-zinc-200">
+                    {supabaseEnvDebug.keyPresent
+                      ? "Loaded in browser"
+                      : "Missing"}
+                  </dd>
+                </div>
+                <div className="space-y-1">
+                  <dt className="uppercase tracking-wide text-zinc-500">
+                    Redirect being sent
+                  </dt>
+                  <dd className="font-mono text-zinc-200 break-all">
+                    {redirectResolution.url || "No redirect override"}
+                  </dd>
+                </div>
+                <div className="space-y-1">
+                  <dt className="uppercase tracking-wide text-zinc-500">
+                    Redirect source
+                  </dt>
+                  <dd className="font-mono text-zinc-200">
+                    {renderRedirectSource(redirectResolution)}
+                  </dd>
+                </div>
+                {redirectResolution.details?.envVar && (
+                  <div className="space-y-1">
+                    <dt className="uppercase tracking-wide text-zinc-500">
+                      Env var in use
+                    </dt>
+                    <dd className="font-mono text-zinc-200">
+                      {redirectResolution.details.envVar}
+                    </dd>
+                  </div>
+                )}
+                {redirectResolution.details?.note && (
+                  <div className="space-y-1 sm:col-span-2">
+                    <dt className="uppercase tracking-wide text-zinc-500">
+                      Notes
+                    </dt>
+                    <dd className="text-zinc-200">
+                      {redirectResolution.details.note}
+                    </dd>
+                  </div>
+                )}
+                {supabaseEnvDebug.usedFallback && (
+                  <div className="space-y-1 sm:col-span-2">
+                    <dt className="uppercase tracking-wide text-zinc-500">
+                      Legacy fallback
+                    </dt>
+                    <dd className="text-zinc-200">
+                      Using VITE_SUPABASE_* variables because NEXT_PUBLIC_*
+                      are missing.
+                    </dd>
+                  </div>
+                )}
+                {lastAppError && (
+                  <>
+                    <div className="space-y-1">
+                      <dt className="uppercase tracking-wide text-zinc-500">
+                        Last Supabase error code
+                      </dt>
+                      <dd className="font-mono text-zinc-200 break-all">
+                        {lastAppError.code || "unknown"}
+                      </dd>
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <dt className="uppercase tracking-wide text-zinc-500">
+                        Raw Supabase message
+                      </dt>
+                      <dd className="font-mono text-zinc-200 break-words">
+                        {lastAppError.message}
+                      </dd>
+                    </div>
+                  </>
+                )}
+              </dl>
+              <p className="text-xs text-zinc-500">
+                Need to update Supabase? Go to Authentication → URL
+                Configuration and make sure the domain above is allowed, or set
+                NEXT_PUBLIC_SUPABASE_REDIRECT_URL in Vercel.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
