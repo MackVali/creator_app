@@ -30,33 +30,60 @@ export default function AuthProvider({
       return;
     }
 
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
+    let mounted = true;
+    let initialResolved = false;
+
+    const resolve = (nextSession: Session | null) => {
+      if (!mounted) {
+        return;
+      }
+      setSession(nextSession);
+    };
+
+    const markResolved = () => {
+      if (!mounted || initialResolved) {
+        return;
+      }
+      initialResolved = true;
       setLoading(false);
-    }, 4000);
+    };
 
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        setSession(data.session ?? null);
-      })
-      .finally(() => {
-        if (!timedOut) {
-          setLoading(false);
-        }
-        clearTimeout(timeoutId);
-      });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      resolve(nextSession ?? null);
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession ?? null);
+      if (event === "INITIAL_SESSION") {
+        markResolved();
+        return;
+      }
+
+      if (nextSession) {
+        markResolved();
+        return;
+      }
+
+      if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+        markResolved();
+      }
     });
 
+    supabase.auth.getSession().then(({ data }) => {
+      resolve(data.session ?? null);
+
+      if (data.session) {
+        markResolved();
+      }
+    });
+
+    const fallbackId = setTimeout(() => {
+      markResolved();
+    }, 1500);
+
     return () => {
+      mounted = false;
       sub.subscription.unsubscribe();
-      clearTimeout(timeoutId);
+      clearTimeout(fallbackId);
     };
-  }, [])
+  }, []);
 
   return (
     <AuthCtx.Provider value={{ session, loading }}>
