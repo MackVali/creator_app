@@ -10,6 +10,8 @@ export interface DraftTask {
   priority: string;
   energy: string;
   notes: string;
+  skillId: string | null;
+  dueDate: string;
 }
 
 export interface DraftProject {
@@ -21,6 +23,8 @@ export interface DraftProject {
   priority: string;
   energy: string;
   tasks: DraftTask[];
+  skillId: string | null;
+  dueDate: string;
 }
 
 const generateId = () =>
@@ -38,9 +42,11 @@ export function createDraftTask(
     priority = DEFAULT_PRIORITY,
     energy = DEFAULT_ENERGY,
     notes = "",
+    skillId = null,
+    dueDate = "",
   } = overrides;
 
-  return { id, name, stage, priority, energy, notes };
+  return { id, name, stage, priority, energy, notes, skillId, dueDate };
 }
 
 export function createDraftProject(
@@ -58,9 +64,11 @@ export function createDraftProject(
     priority = DEFAULT_PRIORITY,
     energy = DEFAULT_ENERGY,
     tasks = [createDraftTask()],
+    skillId = null,
+    dueDate = "",
   } = overrides;
 
-  return { id, name, stage, why, duration, priority, energy, tasks };
+  return { id, name, stage, why, duration, priority, energy, tasks, skillId, dueDate };
 }
 
 export function normalizeTask<
@@ -71,6 +79,8 @@ export function normalizeTask<
     priority?: string | null;
     energy?: string | null;
     notes?: string | null;
+    skill_id?: string | null;
+    due_date?: string | null;
   }
 >(task: T): DraftTask {
   return createDraftTask({
@@ -80,5 +90,7 @@ export function normalizeTask<
     priority: task.priority ?? DEFAULT_PRIORITY,
     energy: task.energy ?? DEFAULT_ENERGY,
     notes: task.notes ?? "",
+    skillId: task.skill_id ?? null,
+    dueDate: task.due_date ?? "",
   });
 }
