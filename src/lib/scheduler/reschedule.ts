@@ -786,7 +786,13 @@ async function scheduleHabitsForDay(params: {
   const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
   const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
   const dayStart = startOfDayInTimeZone(day, zone)
-  const defaultDueMs = dayStart.getTime()
+  const morningStart = resolvePreferredMorningStart({
+    day,
+    timeZone: zone,
+    windows,
+  })
+  const earliestStart = morningStart ?? dayStart
+  const defaultDueMs = earliestStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
   const placements: HabitDraftPlacement[] = []
   const anchorStartsByWindowKey = new Map<string, number[]>()
@@ -800,7 +806,19 @@ async function scheduleHabitsForDay(params: {
       windowDays,
     })
     if (!dueInfo.isDue) continue
-    dueInfoByHabitId.set(habit.id, dueInfo)
+    const normalizedDueStartMs = (() => {
+      const rawDueMs = dueInfo.dueStart?.getTime()
+      const baseDueMs =
+        typeof rawDueMs === 'number' && Number.isFinite(rawDueMs)
+          ? rawDueMs
+          : defaultDueMs
+      return Math.max(baseDueMs, defaultDueMs)
+    })()
+    const normalizedDueStart = new Date(normalizedDueStartMs)
+    dueInfoByHabitId.set(habit.id, {
+      ...dueInfo,
+      dueStart: normalizedDueStart,
+    })
     dueHabits.push(habit)
   }
 
@@ -1310,6 +1328,54 @@ async function fetchCompatibleWindowsForItem(
     endLocal: win.endLocal,
     availableStartLocal: win.availableStartLocal,
   }))
+}
+
+function resolvePreferredMorningStart(params: {
+  day: Date
+  timeZone: string
+  windows: WindowLite[]
+}): Date | null {
+  const { day, timeZone, windows } = params
+  const dayStart = startOfDayInTimeZone(day, timeZone)
+  const dayStartMs = dayStart.getTime()
+  let latestSleepEnd: Date | null = null
+  let earliestActiveStart: Date | null = null
+
+  for (const win of windows) {
+    const label = win.label ? win.label.toUpperCase() : ''
+    const energy = win.energy ? win.energy.toUpperCase().trim() : ''
+    const windowEnd = resolveWindowEnd(win, day, timeZone)
+    const windowStart = resolveWindowStart(win, day, timeZone)
+    const endMs = windowEnd.getTime()
+    const startMs = windowStart.getTime()
+    const isSleepLabel = label.includes('SLEEP')
+    const crossesMidnight = Boolean(win.fromPrevDay) || endMs <= startMs
+    const isSleepWindow =
+      isSleepLabel || (crossesMidnight && energy === 'NO' && endMs >= dayStartMs)
+
+    if (isSleepWindow) {
+      if (!latestSleepEnd || endMs > latestSleepEnd.getTime()) {
+        latestSleepEnd = windowEnd
+      }
+      continue
+    }
+
+    if (startMs >= dayStartMs) {
+      if (!earliestActiveStart || startMs < earliestActiveStart.getTime()) {
+        earliestActiveStart = windowStart
+      }
+    }
+  }
+
+  if (latestSleepEnd && latestSleepEnd.getTime() > dayStartMs) {
+    return latestSleepEnd
+  }
+
+  if (earliestActiveStart && earliestActiveStart.getTime() > dayStartMs) {
+    return earliestActiveStart
+  }
+
+  return dayStart
 }
 
 function setAvailabilityBoundsForKey(
