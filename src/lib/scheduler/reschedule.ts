@@ -892,6 +892,7 @@ async function scheduleHabitsForDay(params: {
     const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
     const windowStartMs = target.startLocal.getTime()
+    const startMs = startLimit
     let constraintLowerBound = startMs
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null
     const dueStartMs = dueStart ? dueStart.getTime() : null
@@ -1151,6 +1152,7 @@ async function fetchCompatibleWindowsForItem(
   const desiredLocation = options?.locationContext
     ? String(options.locationContext).toUpperCase().trim()
     : null
+  const desiredLocationIsAnywhere = desiredLocation === 'ANYWHERE'
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
 
@@ -1188,9 +1190,10 @@ async function fetchCompatibleWindowsForItem(
       ? String(win.location_context).toUpperCase().trim()
       : null
     if (windowLocationRaw) {
+      if (desiredLocationIsAnywhere) continue
       if (!desiredLocation) continue
       if (windowLocationRaw !== desiredLocation) continue
-    } else if (desiredLocation) {
+    } else if (desiredLocation && !desiredLocationIsAnywhere) {
       continue
     }
 

@@ -3,6 +3,7 @@ import { scheduleBacklog } from "../../../src/lib/scheduler/reschedule";
 import * as instanceRepo from "../../../src/lib/scheduler/instanceRepo";
 import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
+import * as habits from "../../../src/lib/scheduler/habits";
 import { getDatePartsInTimeZone } from "../../../src/lib/scheduler/timezone";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 import type { ProjectLite } from "../../../src/lib/scheduler/weight";
@@ -73,6 +74,7 @@ describe("scheduleBacklog", () => {
   let fetchInstancesForRangeSpy: ReturnType<typeof vi.spyOn>;
   let fetchWindowsForDateSpy: ReturnType<typeof vi.spyOn>;
   let attemptedProjectIds: string[];
+  let fetchHabitsForScheduleSpy: ReturnType<typeof vi.spyOn>;
 
   const createSupabaseMock = (
     options?: { skills?: Array<{ id: string; monument_id: string | null }> }
@@ -162,6 +164,9 @@ describe("scheduleBacklog", () => {
       },
     });
     vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
+    fetchHabitsForScheduleSpy = vi
+      .spyOn(habits, "fetchHabitsForSchedule")
+      .mockResolvedValue([]);
     fetchWindowsForDateSpy = vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
       {
         id: "win-1",
@@ -290,6 +295,64 @@ describe("scheduleBacklog", () => {
     await scheduleBacklog(userId, baseDate, client);
 
     expect(attemptedProjectIds).toEqual([]);
+  });
+
+  it("only considers locationless windows for habits with an 'Anywhere' context", async () => {
+    instances = [];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    fetchWindowsForDateSpy.mockResolvedValue([
+      {
+        id: "win-location",
+        label: "Gym",
+        energy: "LOW",
+        start_local: "07:00",
+        end_local: "08:00",
+        days: [2],
+        location_context: "GYM",
+      },
+      {
+        id: "win-open",
+        label: "Anywhere",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [2],
+      },
+    ]);
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([
+      {
+        id: "habit-anywhere",
+        name: "Stretch",
+        durationMinutes: 30,
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: null,
+        lastCompletedAt: null,
+        habitType: "HABIT",
+        windowId: null,
+        energy: "LOW",
+        recurrence: null,
+        recurrenceDays: null,
+        skillId: null,
+        locationContext: "Anywhere",
+        daylightPreference: null,
+        windowEdgePreference: null,
+        window: null,
+      },
+    ]);
+
+    const { client } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    const habitPlacements = result.timeline.filter(
+      (entry): entry is (typeof result.timeline)[number] & { type: "HABIT" } =>
+        entry.type === "HABIT"
+    );
+
+    expect(habitPlacements.length).toBeGreaterThan(0);
+    expect(new Set(habitPlacements.map(entry => entry.habit.windowId))).toEqual(
+      new Set(["win-open"])
+    );
   });
 
   it("considers 'NO' energy windows for scheduling", async () => {
