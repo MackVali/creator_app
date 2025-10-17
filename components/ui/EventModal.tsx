@@ -108,6 +108,7 @@ type GoalWizardRpcInput = {
   energy: string;
   monument_id: string;
   why: string | null;
+  due_date: string | null;
 };
 
 type NormalizedTaskPayload = {
@@ -116,6 +117,8 @@ type NormalizedTaskPayload = {
   priority: string;
   energy: string;
   notes: string | null;
+  skill_id: string | null;
+  due_date: string | null;
 };
 
 type NormalizedProjectPayload = {
@@ -125,6 +128,8 @@ type NormalizedProjectPayload = {
   energy: string;
   why: string | null;
   duration_min: number | null;
+  skill_id: string | null;
+  due_date: string | null;
   tasks: NormalizedTaskPayload[];
 };
 
@@ -174,6 +179,7 @@ async function createGoalFallback(
         energy: goalInput.energy,
         monument_id: goalInput.monument_id,
         why: goalInput.why,
+        due_date: goalInput.due_date,
       })
       .select("id")
       .single();
@@ -197,6 +203,7 @@ async function createGoalFallback(
           energy: project.energy,
           why: project.why,
           duration_min: project.duration_min,
+          due_date: project.due_date,
         })
         .select("id")
         .single();
@@ -204,6 +211,22 @@ async function createGoalFallback(
       if (projectError || !projectRecord?.id) {
         console.error("Fallback project insert failed:", projectError);
         throw projectError ?? new Error("Project insert failed");
+      }
+
+      if (project.skill_id) {
+        const { error: projectSkillError } = await supabase
+          .from("project_skills")
+          .insert({
+            project_id: projectRecord.id,
+            skill_id: project.skill_id,
+          });
+
+        if (projectSkillError) {
+          console.error(
+            "Fallback project skill link failed:",
+            projectSkillError
+          );
+        }
       }
 
       if (project.tasks.length > 0) {
@@ -219,6 +242,8 @@ async function createGoalFallback(
               priority: task.priority,
               energy: task.energy,
               notes: task.notes,
+              skill_id: task.skill_id,
+              due_date: task.due_date,
             }))
           );
 
@@ -334,6 +359,7 @@ interface GoalWizardFormState {
   energy: string;
   monument_id: string;
   why: string;
+  dueDate: string;
 }
 
 const createInitialGoalWizardForm = (): GoalWizardFormState => ({
@@ -342,6 +368,7 @@ const createInitialGoalWizardForm = (): GoalWizardFormState => ({
   energy: DEFAULT_ENERGY,
   monument_id: "",
   why: "",
+  dueDate: "",
 });
 
 const GOAL_WIZARD_STEPS: { key: GoalWizardStep; label: string }[] = [
@@ -893,6 +920,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [draftProjects, setDraftProjects] = useState<DraftProject[]>(() => [
     createDraftProject(),
   ]);
+  const [showGoalAdvanced, setShowGoalAdvanced] = useState(false);
+  const [projectAdvanced, setProjectAdvanced] = useState<Record<string, boolean>>({});
+  const [taskAdvanced, setTaskAdvanced] = useState<Record<string, boolean>>({});
 
   // State for dropdown data
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -914,10 +944,76 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const router = useRouter();
 
   const resetGoalWizard = useCallback(() => {
+    const initialProject = createDraftProject();
     setGoalWizardStep("GOAL");
     setGoalForm(createInitialGoalWizardForm());
-    setDraftProjects([createDraftProject()]);
+    setDraftProjects([initialProject]);
+    setShowGoalAdvanced(false);
+    setProjectAdvanced({ [initialProject.id]: false });
+    const initialTaskState: Record<string, boolean> = {};
+    initialProject.tasks.forEach((task) => {
+      initialTaskState[task.id] = false;
+    });
+    setTaskAdvanced(initialTaskState);
   }, []);
+
+  useEffect(() => {
+    if (goalForm.dueDate && !showGoalAdvanced) {
+      setShowGoalAdvanced(true);
+    }
+  }, [goalForm.dueDate, showGoalAdvanced]);
+
+  useEffect(() => {
+    setProjectAdvanced((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const currentIds = new Set<string>();
+      draftProjects.forEach((draft) => {
+        currentIds.add(draft.id);
+        const hasAdvancedData = Boolean(draft.skillId || draft.dueDate);
+        if (!(draft.id in next)) {
+          next[draft.id] = hasAdvancedData;
+          changed = true;
+        } else if (hasAdvancedData && !next[draft.id]) {
+          next[draft.id] = true;
+          changed = true;
+        }
+      });
+      Object.keys(next).forEach((id) => {
+        if (!currentIds.has(id)) {
+          delete next[id];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    setTaskAdvanced((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const taskIds = new Set<string>();
+      draftProjects.forEach((draft) => {
+        draft.tasks.forEach((task) => {
+          taskIds.add(task.id);
+          const hasAdvancedData = Boolean(task.skillId || task.dueDate);
+          if (!(task.id in next)) {
+            next[task.id] = hasAdvancedData;
+            changed = true;
+          } else if (hasAdvancedData && !next[task.id]) {
+            next[task.id] = true;
+            changed = true;
+          }
+        });
+      });
+      Object.keys(next).forEach((id) => {
+        if (!taskIds.has(id)) {
+          delete next[id];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [draftProjects]);
 
   useEffect(() => {
     if (!eventType) return;
@@ -1188,23 +1284,55 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   };
 
   const handleAddDraftProject = () => {
-    setDraftProjects((prev) => [...prev, createDraftProject()]);
+    const nextProject = createDraftProject();
+    setDraftProjects((prev) => [...prev, nextProject]);
+    setProjectAdvanced((prev) => ({ ...prev, [nextProject.id]: false }));
+    setTaskAdvanced((prev) => {
+      const next = { ...prev };
+      nextProject.tasks.forEach((task) => {
+        next[task.id] = false;
+      });
+      return next;
+    });
   };
 
   const handleRemoveDraftProject = (projectId: string) => {
-    setDraftProjects((prev) =>
-      prev.length === 1 ? prev : prev.filter((draft) => draft.id !== projectId)
-    );
+    if (draftProjects.length === 1) {
+      return;
+    }
+
+    const projectToRemove = draftProjects.find((draft) => draft.id === projectId);
+    setDraftProjects((prev) => prev.filter((draft) => draft.id !== projectId));
+    setProjectAdvanced((prev) => {
+      if (!(projectId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[projectId];
+      return next;
+    });
+
+    if (projectToRemove) {
+      setTaskAdvanced((prev) => {
+        const next = { ...prev };
+        projectToRemove.tasks.forEach((task) => {
+          delete next[task.id];
+        });
+        return next;
+      });
+    }
   };
 
   const handleAddTaskToDraft = (projectId: string) => {
+    const newTask = createDraftTask();
     setDraftProjects((prev) =>
       prev.map((draft) =>
         draft.id === projectId
-          ? { ...draft, tasks: [...draft.tasks, createDraftTask()] }
+          ? { ...draft, tasks: [...draft.tasks, newTask] }
           : draft
       )
     );
+    setTaskAdvanced((prev) => ({ ...prev, [newTask.id]: false }));
   };
 
   const handleTaskChange = (
@@ -1228,6 +1356,66 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     );
   };
 
+  const handleDraftProjectSkillChange = (
+    projectId: string,
+    skillId: string | null
+  ) => {
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId ? { ...draft, skillId } : draft
+      )
+    );
+  };
+
+  const handleDraftProjectDueDateChange = (
+    projectId: string,
+    dueDate: string
+  ) => {
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId ? { ...draft, dueDate } : draft
+      )
+    );
+  };
+
+  const handleDraftTaskSkillChange = (
+    projectId: string,
+    taskId: string,
+    skillId: string | null
+  ) => {
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: draft.tasks.map((task) =>
+                task.id === taskId ? { ...task, skillId } : task
+              ),
+            }
+          : draft
+      )
+    );
+  };
+
+  const handleDraftTaskDueDateChange = (
+    projectId: string,
+    taskId: string,
+    dueDate: string
+  ) => {
+    setDraftProjects((prev) =>
+      prev.map((draft) =>
+        draft.id === projectId
+          ? {
+              ...draft,
+              tasks: draft.tasks.map((task) =>
+                task.id === taskId ? { ...task, dueDate } : task
+              ),
+            }
+          : draft
+      )
+    );
+  };
+
   const handleRemoveTaskFromDraft = (projectId: string, taskId: string) => {
     setDraftProjects((prev) =>
       prev.map((draft) =>
@@ -1239,6 +1427,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           : draft
       )
     );
+    setTaskAdvanced((prev) => {
+      if (!(taskId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
   };
 
   const getInsertErrorMessage = (error: unknown, fallback: string) => {
@@ -1553,6 +1749,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
             const trimmedWhy = draft.why.trim();
             const parsedDuration = Number.parseFloat(draft.duration.trim());
+            const trimmedProjectDueDate = draft.dueDate.trim();
+            const projectSkillId = draft.skillId ? draft.skillId : null;
 
             const tasks = draft.tasks
               .map<NormalizedTaskPayload | null>((task) => {
@@ -1563,6 +1761,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 }
 
                 const trimmedNotes = task.notes.trim();
+                const trimmedTaskDueDate = task.dueDate.trim();
+                const taskSkillId = task.skillId ? task.skillId : null;
 
                 return {
                   name: formattedTaskName,
@@ -1570,6 +1770,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   priority: task.priority || DEFAULT_PRIORITY,
                   energy: task.energy || DEFAULT_ENERGY,
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+                  skill_id: taskSkillId,
+                  due_date:
+                    trimmedTaskDueDate.length > 0 ? trimmedTaskDueDate : null,
                 } satisfies NormalizedTaskPayload;
               })
               .filter((task): task is NormalizedTaskPayload => task !== null);
@@ -1584,6 +1787,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 Number.isFinite(parsedDuration) && parsedDuration > 0
                   ? Math.max(1, Math.round(parsedDuration))
                   : null,
+              skill_id: projectSkillId,
+              due_date:
+                trimmedProjectDueDate.length > 0 ? trimmedProjectDueDate : null,
               tasks,
             } satisfies NormalizedProjectPayload;
           })
@@ -1595,6 +1801,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const goalWhy = goalForm.why.trim();
         const trimmedGoalName = goalForm.name.trim();
         const selectedMonumentId = goalForm.monument_id.trim();
+        const goalDueDate = goalForm.dueDate.trim();
 
         const goalInput: GoalWizardRpcInput = {
           user_id: user.id,
@@ -1603,6 +1810,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           energy: goalForm.energy || DEFAULT_ENERGY,
           monument_id: selectedMonumentId,
           why: goalWhy ? goalWhy : null,
+          due_date: goalDueDate ? goalDueDate : null,
         };
 
         const { data, error: rpcError } = await supabase.rpc(
@@ -2010,6 +2218,43 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           />
                         </div>
                       </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                            Advanced options
+                          </Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              setShowGoalAdvanced((prev) => !prev)
+                            }
+                            className="h-8 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                          >
+                            {showGoalAdvanced ? "Hide" : "Show"}
+                          </Button>
+                        </div>
+                        {showGoalAdvanced ? (
+                          <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                              Due date
+                            </Label>
+                            <Input
+                              type="date"
+                              value={goalForm.dueDate}
+                              onChange={(event) =>
+                                handleGoalFormChange(
+                                  "dueDate",
+                                  event.target.value
+                                )
+                              }
+                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </FormSection>
 
@@ -2149,6 +2394,76 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                 className="min-h-[88px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                               />
                             </div>
+
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                  Advanced options
+                                </Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    setProjectAdvanced((prev) => ({
+                                      ...prev,
+                                      [draft.id]: !prev[draft.id],
+                                    }))
+                                  }
+                                  className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                                >
+                                  {projectAdvanced[draft.id] ? "Hide" : "Show"}
+                                </Button>
+                              </div>
+                              {projectAdvanced[draft.id] ? (
+                                <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                      Skill link
+                                    </Label>
+                                    <Select
+                                      value={draft.skillId ?? ""}
+                                      onValueChange={(value) =>
+                                        handleDraftProjectSkillChange(
+                                          draft.id,
+                                          value ? value : null
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                        <SelectValue placeholder="Not linked" />
+                                      </SelectTrigger>
+                                      <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                        <SelectItem value="">
+                                          <span className="text-zinc-400">Not linked</span>
+                                        </SelectItem>
+                                        {sortedSkills.map((skill) => (
+                                          <SelectItem key={skill.id} value={skill.id}>
+                                            {skill.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                      Due date
+                                    </Label>
+                                    <Input
+                                      type="date"
+                                      value={draft.dueDate}
+                                      onChange={(event) =>
+                                        handleDraftProjectDueDateChange(
+                                          draft.id,
+                                          event.target.value
+                                        )
+                                      }
+                                      className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                    />
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                           {draftProjects.length > 1 ? (
                             <Button
@@ -2287,6 +2602,78 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         placeholder="Add context, links, or success criteria"
                                         className="min-h-[72px] rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                                       />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                          Advanced options
+                                        </Label>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            setTaskAdvanced((prev) => ({
+                                              ...prev,
+                                              [task.id]: !prev[task.id],
+                                            }))
+                                          }
+                                          className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                                        >
+                                          {taskAdvanced[task.id] ? "Hide" : "Show"}
+                                        </Button>
+                                      </div>
+                                      {taskAdvanced[task.id] ? (
+                                        <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                                          <div className="space-y-1">
+                                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                              Skill link
+                                            </Label>
+                                            <Select
+                                              value={task.skillId ?? ""}
+                                              onValueChange={(value) =>
+                                                handleDraftTaskSkillChange(
+                                                  draft.id,
+                                                  task.id,
+                                                  value ? value : null
+                                                )
+                                              }
+                                            >
+                                              <SelectTrigger className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                                                <SelectValue placeholder="Not linked" />
+                                              </SelectTrigger>
+                                              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                                                <SelectItem value="">
+                                                  <span className="text-zinc-400">Not linked</span>
+                                                </SelectItem>
+                                                {sortedSkills.map((skill) => (
+                                                  <SelectItem key={skill.id} value={skill.id}>
+                                                    {skill.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                          <div className="space-y-1">
+                                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                              Due date
+                                            </Label>
+                                            <Input
+                                              type="date"
+                                              value={task.dueDate}
+                                              onChange={(event) =>
+                                                handleDraftTaskDueDateChange(
+                                                  draft.id,
+                                                  task.id,
+                                                  event.target.value
+                                                )
+                                              }
+                                              className="h-9 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                            />
+                                          </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   </div>
                                   <Button
