@@ -42,6 +42,7 @@ const MAX_LOOKAHEAD_DAYS = 365
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
   HABIT: 1,
+  TEMP: 1,
   MEMO: 2,
   SYNC: 3,
 }

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft } from "lucide-react";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import {
@@ -37,6 +38,9 @@ interface HabitSummary {
   recurrence: string | null;
   recurrenceDays: number[] | null;
   habitType: string | null;
+  goalId?: string | null;
+  tempCompletionTarget?: number | null;
+  tempCompletionCount?: number | null;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -83,7 +87,20 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
     locationContext: null,
     daylightPreference: null,
     window: null,
+    goalId: habit.goalId ?? null,
+    tempCompletionTarget: habit.tempCompletionTarget ?? null,
+    tempCompletionCount: habit.tempCompletionCount ?? null,
   } satisfies HabitScheduleItem;
+}
+
+function isMissingTempCompletionColumns(error: PostgrestError | null) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    message.includes("temp_completion_target") ||
+    message.includes("temp_completion_count")
+  );
 }
 
 function computeHabitDueLabel(habit: HabitSummary, timeZone: string): string {
@@ -176,21 +193,33 @@ export default function SkillDetailPage() {
       }
 
       try {
-        const { data: habitsData, error: habitsError } = await supabase
+        const columnsWithTemp =
+          "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type, goal_id, temp_completion_target, temp_completion_count";
+        const columnsWithoutTemp =
+          "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type, goal_id";
+
+        let habitsResult = await supabase
           .from("habits")
-          .select(
-            "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type"
-          )
+          .select(columnsWithTemp)
           .eq("user_id", userId)
           .eq("skill_id", id)
           .order("name", { ascending: true });
 
-        if (habitsError) {
-          throw habitsError;
+        if (habitsResult.error && isMissingTempCompletionColumns(habitsResult.error)) {
+          habitsResult = await supabase
+            .from("habits")
+            .select(columnsWithoutTemp)
+            .eq("user_id", userId)
+            .eq("skill_id", id)
+            .order("name", { ascending: true });
+        }
+
+        if (habitsResult.error) {
+          throw habitsResult.error;
         }
 
         if (!cancelled) {
-          const formattedHabits = (habitsData ?? [])
+          const formattedHabits = (habitsResult.data ?? [])
             .map((habit) => {
               if (!habit) return null;
 
@@ -202,6 +231,9 @@ export default function SkillDetailPage() {
                 recurrence?: unknown;
                 recurrence_days?: unknown;
                 habit_type?: unknown;
+                goal_id?: unknown;
+                temp_completion_target?: unknown;
+                temp_completion_count?: unknown;
               };
 
               const habitId =
@@ -234,6 +266,19 @@ export default function SkillDetailPage() {
                   : null;
               const lastCompletedAt = updatedAt ?? createdAt;
 
+              const goalId =
+                typeof habitRecord.goal_id === "string" && habitRecord.goal_id.trim().length > 0
+                  ? habitRecord.goal_id
+                  : null;
+              const tempCompletionTarget =
+                typeof habitRecord.temp_completion_target === "number"
+                  ? habitRecord.temp_completion_target
+                  : null;
+              const tempCompletionCount =
+                typeof habitRecord.temp_completion_count === "number"
+                  ? habitRecord.temp_completion_count
+                  : null;
+
               return {
                 id: habitId,
                 name: habitName,
@@ -243,6 +288,9 @@ export default function SkillDetailPage() {
                 recurrence,
                 recurrenceDays,
                 habitType,
+                goalId,
+                tempCompletionTarget,
+                tempCompletionCount,
               } satisfies HabitSummary;
             })
             .filter((habit): habit is HabitSummary => habit !== null);
