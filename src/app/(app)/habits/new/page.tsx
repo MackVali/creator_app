@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { PostgrestError } from "@supabase/supabase-js";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import {
@@ -47,6 +48,16 @@ interface GoalOption {
   id: string;
   name: string;
   description: string | null;
+}
+
+function isMissingTempCompletionColumns(error: PostgrestError | null) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    message.includes("temp_completion_target") ||
+    message.includes("temp_completion_count")
+  );
 }
 
 export default function NewHabitPage() {
@@ -507,7 +518,7 @@ export default function NewHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const { error: insertError } = await supabase.from("habits").insert({
+      const insertPayload = {
         user_id: user.id,
         name: name.trim(),
         description: trimmedDescription || null,
@@ -526,10 +537,17 @@ export default function NewHabitPage() {
         window_edge_preference: windowEdgePreference,
         goal_id: goalId === "none" ? null : goalId,
         temp_completion_target: tempCompletionTargetValue,
-      });
+      };
 
-      if (insertError) {
-        throw insertError;
+      let insertResult = await supabase.from("habits").insert(insertPayload);
+
+      if (insertResult.error && isMissingTempCompletionColumns(insertResult.error)) {
+        const { temp_completion_target, ...fallbackPayload } = insertPayload;
+        insertResult = await supabase.from("habits").insert(fallbackPayload);
+      }
+
+      if (insertResult.error) {
+        throw insertResult.error;
       }
 
       router.push("/habits");

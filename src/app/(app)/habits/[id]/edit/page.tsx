@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
+import type { PostgrestError } from "@supabase/supabase-js";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import {
@@ -53,6 +54,16 @@ type RoutineSelectOption = {
 interface GoalOption {
   id: string;
   name: string;
+}
+
+function isMissingTempCompletionColumns(error: PostgrestError | null) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    message.includes("temp_completion_target") ||
+    message.includes("temp_completion_count")
+  );
 }
 
 export default function EditHabitPage() {
@@ -442,16 +453,30 @@ export default function EditHabitPage() {
           return;
         }
 
-        const { data, error: habitError } = await supabase
+        const columnsWithTemp =
+          "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, temp_completion_target";
+        const columnsWithoutTemp =
+          "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference, window_edge_preference, goal_id";
+
+        let habitResult = await supabase
           .from("habits")
-          .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, temp_completion_target"
-          )
+          .select(columnsWithTemp)
           .eq("id", habitId)
           .eq("user_id", user.id)
           .single();
 
-        if (habitError) throw habitError;
+        if (habitResult.error && isMissingTempCompletionColumns(habitResult.error)) {
+          habitResult = await supabase
+            .from("habits")
+            .select(columnsWithoutTemp)
+            .eq("id", habitId)
+            .eq("user_id", user.id)
+            .single();
+        }
+
+        if (habitResult.error) throw habitResult.error;
+
+        const data = habitResult.data;
 
         if (!data) {
           if (active) {
@@ -638,32 +663,43 @@ export default function EditHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const { error: updateError } = await supabase
+      const updatePayload = {
+        name: name.trim(),
+        description: trimmedDescription || null,
+        habit_type: habitType,
+        recurrence: recurrenceValue,
+        recurrence_days: recurrenceDaysValue,
+        duration_minutes: durationMinutes,
+        energy,
+        routine_id: routineIdToUse,
+        skill_id: skillId === "none" ? null : skillId,
+        location_context: locationContext,
+        daylight_preference:
+          daylightPreference && daylightPreference !== "ALL_DAY"
+            ? daylightPreference
+            : null,
+        window_edge_preference: windowEdgePreference,
+        goal_id: goalId === "none" ? null : goalId,
+        temp_completion_target: tempCompletionTargetValue,
+      };
+
+      let updateResult = await supabase
         .from("habits")
-        .update({
-          name: name.trim(),
-          description: trimmedDescription || null,
-          habit_type: habitType,
-          recurrence: recurrenceValue,
-          recurrence_days: recurrenceDaysValue,
-          duration_minutes: durationMinutes,
-          energy,
-          routine_id: routineIdToUse,
-          skill_id: skillId === "none" ? null : skillId,
-          location_context: locationContext,
-          daylight_preference:
-            daylightPreference && daylightPreference !== "ALL_DAY"
-              ? daylightPreference
-              : null,
-          window_edge_preference: windowEdgePreference,
-          goal_id: goalId === "none" ? null : goalId,
-          temp_completion_target: tempCompletionTargetValue,
-        })
+        .update(updatePayload)
         .eq("id", habitId)
         .eq("user_id", user.id);
 
-      if (updateError) {
-        throw updateError;
+      if (updateResult.error && isMissingTempCompletionColumns(updateResult.error)) {
+        const { temp_completion_target, ...fallbackPayload } = updatePayload;
+        updateResult = await supabase
+          .from("habits")
+          .update(fallbackPayload)
+          .eq("id", habitId)
+          .eq("user_id", user.id);
+      }
+
+      if (updateResult.error) {
+        throw updateResult.error;
       }
 
       router.push("/habits");

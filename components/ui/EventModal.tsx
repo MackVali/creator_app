@@ -67,7 +67,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
 interface EventModalProps {
@@ -133,6 +133,16 @@ type NormalizedProjectPayload = {
   due_date: string | null;
   tasks: NormalizedTaskPayload[];
 };
+
+function isMissingTempCompletionColumns(error: PostgrestError | null) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    message.includes("temp_completion_target") ||
+    message.includes("temp_completion_count")
+  );
+}
 
 async function cleanupGoalHierarchy(
   supabase: SupabaseClient,
@@ -1720,11 +1730,26 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
       }
 
-      const { data, error } = await supabase
+      let insertResponse = await supabase
         .from(eventType.toLowerCase() + "s")
         .insert(insertData)
         .select()
         .single();
+
+      if (
+        eventType === "HABIT" &&
+        insertResponse.error &&
+        isMissingTempCompletionColumns(insertResponse.error)
+      ) {
+        const { temp_completion_target, ...fallbackData } = insertData;
+        insertResponse = await supabase
+          .from("habits")
+          .insert(fallbackData)
+          .select()
+          .single();
+      }
+
+      const { data, error } = insertResponse;
 
       if (error) {
         const fallbackMessage = "Failed to create " + eventType.toLowerCase();

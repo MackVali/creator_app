@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft } from "lucide-react";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import {
@@ -90,6 +91,16 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
     tempCompletionTarget: habit.tempCompletionTarget ?? null,
     tempCompletionCount: habit.tempCompletionCount ?? null,
   } satisfies HabitScheduleItem;
+}
+
+function isMissingTempCompletionColumns(error: PostgrestError | null) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    message.includes("temp_completion_target") ||
+    message.includes("temp_completion_count")
+  );
 }
 
 function computeHabitDueLabel(habit: HabitSummary, timeZone: string): string {
@@ -182,21 +193,33 @@ export default function SkillDetailPage() {
       }
 
       try {
-        const { data: habitsData, error: habitsError } = await supabase
+        const columnsWithTemp =
+          "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type, goal_id, temp_completion_target, temp_completion_count";
+        const columnsWithoutTemp =
+          "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type, goal_id";
+
+        let habitsResult = await supabase
           .from("habits")
-          .select(
-            "id, name, created_at, updated_at, recurrence, recurrence_days, habit_type, goal_id, temp_completion_target, temp_completion_count"
-          )
+          .select(columnsWithTemp)
           .eq("user_id", userId)
           .eq("skill_id", id)
           .order("name", { ascending: true });
 
-        if (habitsError) {
-          throw habitsError;
+        if (habitsResult.error && isMissingTempCompletionColumns(habitsResult.error)) {
+          habitsResult = await supabase
+            .from("habits")
+            .select(columnsWithoutTemp)
+            .eq("user_id", userId)
+            .eq("skill_id", id)
+            .order("name", { ascending: true });
+        }
+
+        if (habitsResult.error) {
+          throw habitsResult.error;
         }
 
         if (!cancelled) {
-          const formattedHabits = (habitsData ?? [])
+          const formattedHabits = (habitsResult.data ?? [])
             .map((habit) => {
               if (!habit) return null;
 

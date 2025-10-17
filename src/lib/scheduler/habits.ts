@@ -65,6 +65,13 @@ type HabitRecord = {
 
 type Client = SupabaseClient<Database>
 
+function isMissingTempCompletionColumns(error: PostgrestError | null) {
+  if (!error) return false
+  if (error.code === '42703') return true
+  const message = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase()
+  return message.includes('temp_completion_target') || message.includes('temp_completion_count')
+}
+
 function ensureClient(client?: Client): Client | null {
   if (client && typeof (client as { from?: unknown }).from === 'function') {
     return client
@@ -101,13 +108,41 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     return []
   }
 
-  const { data, error } = await query.select(
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, temp_completion_target, temp_completion_count, window:windows(id, label, energy, start_local, end_local, days, location_context)`
-  )
+  const columnsWithTemp =
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, temp_completion_target, temp_completion_count, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+  const columnsWithoutTemp =
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, window:windows(id, label, energy, start_local, end_local, days, location_context)'
 
-  if (error) throw error
+  let records: HabitRecord[] | null = null
+  let error: PostgrestError | null = null
 
-  return (data ?? []).map((record: HabitRecord) => ({
+  const firstResult = await query.select(columnsWithTemp)
+  records = firstResult.data
+  error = firstResult.error
+
+  if (error) {
+    if (isMissingTempCompletionColumns(error)) {
+      const fallbackQuery = from.call(supabase, 'habits') as {
+        select?: (
+          columns: string
+        ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
+      }
+      if (fallbackQuery && typeof fallbackQuery.select === 'function') {
+        const fallbackResult = await fallbackQuery.select(columnsWithoutTemp)
+        if (fallbackResult.error) {
+          throw fallbackResult.error
+        }
+        records = fallbackResult.data
+        error = null
+      }
+    }
+
+    if (error) {
+      throw error
+    }
+  }
+
+  return (records ?? []).map((record: HabitRecord) => ({
     id: record.id,
     name: record.name ?? 'Untitled habit',
     durationMinutes: record.duration_minutes ?? null,
