@@ -872,7 +872,7 @@ export interface Database {
           p_user?: string | null;
         };
         Returns: {
-          skill_id: string | null;
+          out_skill_id: string | null;
           delta: number | null;
           expected_total: number | null;
           actual_total: number | null;

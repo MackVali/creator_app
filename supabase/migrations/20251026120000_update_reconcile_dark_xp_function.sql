@@ -3,7 +3,7 @@ CREATE OR REPLACE FUNCTION public.reconcile_dark_xp_for_user(
   p_user uuid DEFAULT auth.uid()
 )
 RETURNS TABLE(
-  skill_id uuid,
+  out_skill_id uuid,
   delta bigint,
   expected_total bigint,
   actual_total bigint
@@ -30,7 +30,7 @@ BEGIN
   SELECT s.user_id, s.id
     FROM public.skills AS s
    WHERE s.user_id = p_user
-  ON CONFLICT ON CONSTRAINT skill_progress_pkey DO NOTHING;
+  ON CONFLICT (user_id, skill_id) DO NOTHING;
 
   UPDATE public.skill_progress AS sp
      SET level = GREATEST(sp.level, COALESCE(s.level, 1)),
@@ -89,7 +89,7 @@ BEGIN
     END IF;
 
     IF v_delta <> 0 THEN
-      skill_id := rec.skill_id;
+      out_skill_id := rec.skill_id;
       delta := v_delta;
       expected_total := v_expected;
       actual_total := v_actual;
