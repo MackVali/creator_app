@@ -21,7 +21,8 @@ export async function POST() {
   }
 
   const { data, error } = await supabase.rpc<ReconcileResult>(
-    "reconcile_dark_xp_for_user"
+    "reconcile_dark_xp_for_user",
+    {}
   );
 
   if (error) {

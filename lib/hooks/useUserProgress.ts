@@ -61,6 +61,12 @@ export function useUserProgress(
     }
 
     try {
+      try {
+        await supabase.rpc("reconcile_dark_xp_for_user", {});
+      } catch (rpcError) {
+        console.error("Failed to reconcile dark XP before loading progress", rpcError);
+      }
+
       const { data, error: queryError } = await supabase
         .from("user_progress")
         .select("current_level,total_dark_xp,updated_at")
