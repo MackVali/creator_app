@@ -29,39 +29,35 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const router = useRouter();
   const { session } = useAuth();
 
-  const handleAvatarClick = async () => {
-    if (session && userId) {
-      // Get user's profile to redirect to handle-based route
-      try {
-        const profile = await getProfileByUserId(userId);
-        if (profile?.username) {
-          router.push(`/profile/${profile.username}`);
-        } else {
-          router.push("/profile");
-        }
-      } catch {
-        // Fallback to profile page if error
-        router.push("/profile");
-      }
-    } else if (!session) {
-      // If not signed in, go to auth page
-      router.push("/auth");
+  const resolveProfileRoute = async () => {
+    if (profile?.username?.trim()) {
+      return `/profile/${profile.username}`;
     }
+
+    if (session && userId) {
+      try {
+        const fetchedProfile = await getProfileByUserId(userId);
+        if (fetchedProfile?.username?.trim()) {
+          return `/profile/${fetchedProfile.username}`;
+        }
+      } catch (error) {
+        console.error("Failed to resolve profile handle:", error);
+      }
+
+      return "/profile";
+    }
+
+    return session ? "/profile" : "/auth";
+  };
+
+  const handleAvatarClick = async () => {
+    const target = await resolveProfileRoute();
+    router.push(target);
   };
 
   const handleProfileClick = async () => {
-    if (userId) {
-      try {
-        const profile = await getProfileByUserId(userId);
-        if (profile?.username) {
-          router.push(`/profile/${profile.username}`);
-        } else {
-          router.push("/profile");
-        }
-      } catch {
-        router.push("/profile");
-      }
-    }
+    const target = await resolveProfileRoute();
+    router.push(target);
   };
 
   const handleEditProfileClick = () => {
