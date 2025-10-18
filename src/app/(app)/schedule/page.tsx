@@ -92,6 +92,21 @@ const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
+const PX_PER_MIN_STOPS = [
+  0.9,
+  1.1,
+  1.25,
+  1.4,
+  1.6,
+  1.8,
+  2,
+  2.2,
+  2.4,
+  2.6,
+  2.8,
+  3,
+  3.2,
+] as const
 const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
@@ -132,6 +147,21 @@ const dayTimelineTransition = {
 function clampPxPerMin(value: number) {
   if (!Number.isFinite(value)) return MIN_PX_PER_MIN
   return Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, value))
+}
+
+function snapPxPerMin(value: number) {
+  const clamped = clampPxPerMin(value)
+  let closest = PX_PER_MIN_STOPS[0]
+  let minDelta = Math.abs(clamped - closest)
+  for (let index = 1; index < PX_PER_MIN_STOPS.length; index += 1) {
+    const stop = PX_PER_MIN_STOPS[index]
+    const delta = Math.abs(clamped - stop)
+    if (delta < minDelta) {
+      closest = stop
+      minDelta = delta
+    }
+  }
+  return closest
 }
 
 function getTouchDistance(a: Touch, b: Touch) {
@@ -2049,7 +2079,7 @@ export default function SchedulePage() {
     offset: 0,
   })
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
-  const [pxPerMin, setPxPerMin] = useState(2)
+  const [pxPerMin, setPxPerMin] = useState(() => snapPxPerMin(2))
   const [animatedPxPerMin, setAnimatedPxPerMin] = useState(pxPerMin)
   const basePxPerMinRef = useRef(pxPerMin)
   const pinchStateRef = useRef<{
@@ -2369,7 +2399,7 @@ export default function SchedulePage() {
         const prevBase = basePxPerMinRef.current
         const prevZoom = prevBase > 0 ? prev / prevBase : 1
         basePxPerMinRef.current = next
-        const nextValue = clampPxPerMin(next * prevZoom)
+        const nextValue = snapPxPerMin(next * prevZoom)
         return Math.abs(prev - nextValue) < 0.001 ? prev : nextValue
       })
     },
@@ -3536,13 +3566,13 @@ export default function SchedulePage() {
       if (!(distance > 0) || !(pinchState.initialDistance > 0)) return
       e.preventDefault()
       const scale = distance / pinchState.initialDistance
-      const next = clampPxPerMin(pinchState.initialPxPerMin * scale)
-      setPxPerMin(prev => (Math.abs(prev - next) < 0.001 ? prev : next))
+      const snapped = snapPxPerMin(pinchState.initialPxPerMin * scale)
+      setPxPerMin(prev => (Math.abs(prev - snapped) < 0.001 ? prev : snapped))
       if (typeof window !== 'undefined') {
         const base = pinchState.initialPxPerMin
         const baseHeight = pinchState.initialHeight
         if (base > 0 && baseHeight > 0) {
-          const heightScale = next / base
+          const heightScale = snapped / base
           if (Number.isFinite(heightScale)) {
             const newHeight = baseHeight * heightScale
             const deltaHeight = newHeight - baseHeight
