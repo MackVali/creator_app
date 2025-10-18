@@ -17,7 +17,7 @@ import Link from "next/link";
 
 export default function ProfileEditPage() {
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,6 +39,10 @@ export default function ProfileEditPage() {
 
   useEffect(() => {
     async function loadProfile() {
+      if (authLoading) {
+        return;
+      }
+
       if (!session?.user?.id) {
         router.push("/auth");
         return;
@@ -69,7 +73,7 @@ export default function ProfileEditPage() {
     }
 
     loadProfile();
-  }, [session, router]);
+  }, [session, router, authLoading]);
 
   const handleInputChange = (field: keyof ProfileFormData, value: string) => {
     setFormData(prev => ({

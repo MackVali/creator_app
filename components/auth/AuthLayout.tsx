@@ -9,7 +9,11 @@ interface AuthLayoutProps {
 }
 
 export function AuthLayout({ children }: AuthLayoutProps) {
-  const { session } = useAuth();
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return null;
+  }
 
   // If not authenticated, render children without sidebar/topbar
   if (!session?.user) {

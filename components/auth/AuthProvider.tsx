@@ -3,7 +3,16 @@ import { useEffect, useState, createContext, useContext } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 
-const AuthCtx = createContext<{ session: Session | null }>({ session: null });
+type AuthContextValue = {
+  session: Session | null;
+  loading: boolean;
+};
+
+const AuthCtx = createContext<AuthContextValue>({
+  session: null,
+  loading: true,
+});
+
 export const useAuth = () => useContext(AuthCtx);
 
 export default function AuthProvider({
@@ -12,23 +21,70 @@ export default function AuthProvider({
   children: React.ReactNode;
 }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const supabase = getSupabaseBrowser?.()
-    if (!supabase) { setReady(true); return }
+    const supabase = getSupabaseBrowser?.();
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
 
-    let timed = false
-    const t = setTimeout(() => { timed = true; setReady(true) }, 4000)
+    let mounted = true;
+    let initialResolved = false;
 
-    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null)).finally(() => {
-      if (!timed) setReady(true)
-      clearTimeout(t)
-    })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s ?? null))
-    return () => sub.subscription.unsubscribe()
-  }, [])
+    const resolve = (nextSession: Session | null) => {
+      if (!mounted) {
+        return;
+      }
+      setSession(nextSession);
+    };
 
-  if (!ready) return null;
-  return <AuthCtx.Provider value={{ session }}>{children}</AuthCtx.Provider>;
+    const markResolved = () => {
+      if (!mounted || initialResolved) {
+        return;
+      }
+      initialResolved = true;
+      setLoading(false);
+    };
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      resolve(nextSession ?? null);
+
+      if (event === "INITIAL_SESSION") {
+        markResolved();
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        markResolved();
+        return;
+      }
+
+      if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+        markResolved();
+      }
+    });
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        resolve(data.session ?? null);
+        markResolved();
+      })
+      .catch(() => {
+        markResolved();
+      });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  return (
+    <AuthCtx.Provider value={{ session, loading }}>
+      {children}
+    </AuthCtx.Provider>
+  );
 }
