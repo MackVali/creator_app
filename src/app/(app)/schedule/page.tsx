@@ -18,6 +18,7 @@ import {
   motion,
   useAnimationControls,
   useReducedMotion,
+  useSpring,
 } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
@@ -1252,31 +1253,30 @@ function computeTimelineLayoutForSyncHabits({
 
 function applyTimelineLayoutStyle(
   style: CSSProperties,
-  mode: TimelineCardLayoutMode
+  mode: TimelineCardLayoutMode,
+  options?: { animate?: boolean }
 ): CSSProperties {
+  const baseStyle: CSSProperties = { ...style }
   if (mode === 'paired-left') {
-    const next: CSSProperties = {
-      ...style,
-      left: TIMELINE_LEFT_OFFSET,
-      width: TIMELINE_PAIR_WIDTH,
-    }
-    next.right = undefined
-    return next
+    baseStyle.left = TIMELINE_LEFT_OFFSET
+    baseStyle.width = TIMELINE_PAIR_WIDTH
+    baseStyle.right = undefined
+  } else if (mode === 'paired-right') {
+    baseStyle.left = TIMELINE_PAIR_RIGHT_LEFT
+    baseStyle.width = TIMELINE_PAIR_WIDTH
+    baseStyle.right = undefined
+  } else {
+    baseStyle.left = TIMELINE_LEFT_OFFSET
+    baseStyle.right = TIMELINE_RIGHT_OFFSET
   }
-  if (mode === 'paired-right') {
-    const next: CSSProperties = {
-      ...style,
-      left: TIMELINE_PAIR_RIGHT_LEFT,
-      width: TIMELINE_PAIR_WIDTH,
-    }
-    next.right = undefined
-    return next
+
+  if (options?.animate) {
+    const duration = 280
+    const easing = 'cubic-bezier(0.33, 1, 0.68, 1)'
+    baseStyle.transition = `left ${duration}ms ${easing}, right ${duration}ms ${easing}, width ${duration}ms ${easing}`
   }
-  return {
-    ...style,
-    left: TIMELINE_LEFT_OFFSET,
-    right: TIMELINE_RIGHT_OFFSET,
-  }
+
+  return baseStyle
 }
 
 function getTimelineCardCornerClass(mode: TimelineCardLayoutMode) {
@@ -1402,6 +1402,7 @@ function DayPeekOverlays({
   scrollProgress,
   baseTimelineHeight,
   timelineChromeHeight,
+  pxPerMin,
 }: {
   peekState: PeekState
   previousLabel: string
@@ -1415,6 +1416,7 @@ function DayPeekOverlays({
   scrollProgress: number | null
   baseTimelineHeight: number
   timelineChromeHeight: number
+  pxPerMin: number
 }) {
   const container = containerRef.current
   const containerWidth = container?.offsetWidth ?? 0
@@ -1442,7 +1444,7 @@ function DayPeekOverlays({
   const isModelForDirection = previewModel?.dayViewDateKey === expectedKey
   const resolvedPreviewModel = isModelForDirection ? previewModel : null
   const previewTimelineHeight = resolvedPreviewModel
-    ? computeDayTimelineHeightPx(resolvedPreviewModel.startHour, resolvedPreviewModel.pxPerMin)
+    ? computeDayTimelineHeightPx(resolvedPreviewModel.startHour, pxPerMin)
     : baseTimelineHeight
   const previewContainerHeight = previewTimelineHeight + timelineChromeHeight
   const alignment = isNext ? 'items-end text-right' : 'items-start text-left'
@@ -2055,6 +2057,7 @@ export default function SchedulePage() {
   })
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
   const [pxPerMin, setPxPerMin] = useState(2)
+  const [animatedPxPerMin, setAnimatedPxPerMin] = useState(pxPerMin)
   const basePxPerMinRef = useRef(pxPerMin)
   const pinchStateRef = useRef<{
     initialDistance: number
@@ -2064,6 +2067,32 @@ export default function SchedulePage() {
     initialScrollY: number
   } | null>(null)
   const pinchActiveRef = useRef(false)
+  const pxPerMinSpring = useSpring(pxPerMin, {
+    stiffness: 140,
+    damping: 26,
+    mass: 0.9,
+    restDelta: 0.0005,
+    restSpeed: 0.0005,
+  })
+
+  useEffect(() => {
+    const unsubscribe = pxPerMinSpring.on('change', value => {
+      const clamped = clampPxPerMin(value)
+      setAnimatedPxPerMin(prev =>
+        Math.abs(prev - clamped) < 0.0005 ? prev : clamped
+      )
+    })
+    return () => unsubscribe()
+  }, [pxPerMinSpring])
+
+  useEffect(() => {
+    if (prefersReducedMotion || pinchActiveRef.current) {
+      pxPerMinSpring.jump(pxPerMin)
+      setAnimatedPxPerMin(pxPerMin)
+      return
+    }
+    pxPerMinSpring.set(pxPerMin)
+  }, [pxPerMin, pxPerMinSpring, prefersReducedMotion])
   const hasLoadedHabitCompletionState = useRef(false)
   const lastTimelineChromeHeightRef = useRef(0)
   const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(null)
@@ -2761,6 +2790,7 @@ export default function SchedulePage() {
     friendlyTimeZone,
     habitCompletionByDate,
     userCoordinates,
+    pxPerMin,
   ])
 
   useEffect(() => {
@@ -3419,7 +3449,7 @@ export default function SchedulePage() {
                 : 0.5
               pinchStateRef.current = {
                 initialDistance: distance,
-                initialPxPerMin: pxPerMin,
+                initialPxPerMin: animatedPxPerMin,
                 initialHeight: height,
                 anchorProgress,
                 initialScrollY: scrollY,
@@ -3764,9 +3794,9 @@ export default function SchedulePage() {
     () =>
       computeDayTimelineHeightPx(
         dayTimelineModel.startHour,
-        dayTimelineModel.pxPerMin
+        animatedPxPerMin
       ),
-    [dayTimelineModel.startHour, dayTimelineModel.pxPerMin]
+    [dayTimelineModel.startHour, animatedPxPerMin]
   )
 
   const measuredTimelineContainerHeight =
@@ -3797,7 +3827,6 @@ export default function SchedulePage() {
         dayViewDetails,
         date,
         startHour: modelStartHour,
-        pxPerMin: modelPxPerMin,
         windows: modelWindows,
         projectInstances: modelProjectInstances,
         taskInstancesByProject: modelTaskInstancesByProject,
@@ -3806,6 +3835,8 @@ export default function SchedulePage() {
         habitPlacements: modelHabitPlacements,
         windowReports: modelWindowReports,
       } = model
+
+      const modelPxPerMin = clampPxPerMin(animatedPxPerMin)
 
       const containerClass = options?.disableInteractions
         ? 'pointer-events-none select-none'
@@ -3842,7 +3873,10 @@ export default function SchedulePage() {
                   key={w.id}
                   aria-label={w.label}
                   className="absolute left-0 flex"
-                  style={{ top, height }}
+                  style={{
+                    top,
+                    height,
+                  }}
                 >
                   <div className="w-0.5 bg-zinc-700 opacity-50" />
                   <WindowLabel
@@ -3856,7 +3890,10 @@ export default function SchedulePage() {
               <div
                 key={report.key}
                 className="absolute left-16 right-2"
-                style={{ top: report.top, height: report.height }}
+                style={{
+                  top: report.top,
+                  height: report.height,
+                }}
               >
                 <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
@@ -3980,7 +4017,8 @@ export default function SchedulePage() {
                   outlineOffset: '-1px',
                   background: cardBackground,
                 },
-                layoutMode
+                layoutMode,
+                { animate: !prefersReducedMotion }
               )
               return (
                 <motion.div
@@ -4064,7 +4102,8 @@ export default function SchedulePage() {
                   top,
                   height,
                 },
-                layoutMode
+                layoutMode,
+                { animate: !prefersReducedMotion }
               )
               const sharedCardStyle: CSSProperties = {
                 boxShadow:
@@ -4292,7 +4331,6 @@ export default function SchedulePage() {
                               end: taskEnd,
                               kind,
                               instanceId,
-                              displayDurationMinutes,
                             } = taskCard
                             if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
                               return null
@@ -4635,6 +4673,7 @@ export default function SchedulePage() {
       )
     },
       [
+        animatedPxPerMin,
         prefersReducedMotion,
         hasInteractedWithProjects,
         setProjectExpansion,
@@ -4796,6 +4835,7 @@ export default function SchedulePage() {
                       scrollProgress={swipeScrollProgressRef.current}
                       baseTimelineHeight={baseTimelineHeight}
                       timelineChromeHeight={timelineChromeHeight}
+                      pxPerMin={animatedPxPerMin}
                     />
                   </div>
                 ) : skipNextDayAnimation ? (
