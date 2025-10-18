@@ -206,7 +206,7 @@ async function scheduleBacklog(
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
-      locationContext: def.location_context ?? null,
+      locationContext: normalizeLocationContext(def.location_context ?? null),
       instanceId: instance.id,
     })
   }
@@ -242,9 +242,9 @@ async function scheduleBacklog(
       existing.duration_min = duration
       existing.energy = energy
       existing.weight = weight
-      if (project.location_context) {
-        existing.locationContext = project.location_context
-      }
+      existing.locationContext = normalizeLocationContext(
+        project.location_context ?? null,
+      )
       if (!existing.instanceId && reuse) {
         existing.instanceId = reuse.id
       }
@@ -255,7 +255,7 @@ async function scheduleBacklog(
         duration_min: duration,
         energy,
         weight,
-        locationContext: project.location_context ?? null,
+        locationContext: normalizeLocationContext(project.location_context ?? null),
         instanceId: reuse?.id,
       }
       queue.push(entry)
@@ -277,7 +277,9 @@ async function scheduleBacklog(
       duration_min: duration,
       energy,
       weight: fallbackProject?.weight ?? weight,
-      locationContext: fallbackProject?.location_context ?? null,
+      locationContext: normalizeLocationContext(
+        fallbackProject?.location_context ?? null,
+      ),
       instanceId: inst.id,
     }
     queue.push(entry)
@@ -688,10 +690,7 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60_000
   const availability = options?.availability
 
-  const desiredLocation = item.locationContext
-    ? String(item.locationContext).toUpperCase().trim()
-    : null
-  const desiredLocationIsAnywhere = desiredLocation === 'ANYWHERE'
+  const desiredLocation = normalizeLocationContext(item.locationContext ?? null)
 
   const compatible: Array<{
     id: string
@@ -712,14 +711,11 @@ async function fetchCompatibleWindowsForItem(
     if (hasEnergyLabel && energyIdx >= ENERGY_ORDER.length) continue
     if (energyIdx < itemIdx) continue
 
-    const windowLocationRaw = window.location_context
-      ? String(window.location_context).toUpperCase().trim()
-      : null
-    if (windowLocationRaw) {
-      if (desiredLocationIsAnywhere) continue
+    const windowLocation = normalizeLocationContext(window.location_context ?? null)
+    if (windowLocation) {
       if (!desiredLocation) continue
-      if (windowLocationRaw !== desiredLocation) continue
-    } else if (desiredLocation && !desiredLocationIsAnywhere) {
+      if (windowLocation !== desiredLocation) continue
+    } else if (desiredLocation) {
       continue
     }
 
