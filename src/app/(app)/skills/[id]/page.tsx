@@ -80,6 +80,8 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
     recurrence: habit.recurrence,
     recurrenceDays: habit.recurrenceDays,
     skillId: null,
+    goalId: null,
+    completionTarget: null,
     locationContext: null,
     daylightPreference: null,
     window: null,

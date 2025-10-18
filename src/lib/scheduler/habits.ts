@@ -17,6 +17,8 @@ export type HabitScheduleItem = {
   recurrence: string | null
   recurrenceDays: number[] | null
   skillId: string | null
+  goalId: string | null
+  completionTarget: number | null
   locationContext: string | null
   daylightPreference: string | null
   windowEdgePreference: string | null
@@ -43,6 +45,8 @@ type HabitRecord = {
   recurrence?: string | null
   recurrence_days?: number[] | null
   skill_id?: string | null
+  goal_id?: string | null
+  completion_target?: number | null
   location_context?: string | null
   daylight_preference?: string | null
   window_edge_preference?: string | null
@@ -96,7 +100,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   }
 
   const { data, error } = await query.select(
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)`
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)`
   )
 
   if (error) throw error
@@ -114,6 +118,11 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
     skillId: record.skill_id ?? null,
+    goalId: record.goal_id ?? null,
+    completionTarget:
+      typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
+        ? record.completion_target
+        : null,
     locationContext: record.location_context ?? null,
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,

@@ -41,11 +41,23 @@ export type HabitSkillSelectOption = {
   disabled?: boolean;
 };
 
+export type HabitGoalSelectOption = {
+  value: string;
+  label: string;
+  description?: string | null;
+  disabled?: boolean;
+};
+
 export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
   {
     label: "Habit",
     value: "HABIT",
     description: "Momentum-building routines.",
+  },
+  {
+    label: "Temp",
+    value: "TEMP",
+    description: "Temporary pushes tied to a goal.",
   },
   {
     label: "Chore",
@@ -110,6 +122,12 @@ interface HabitFormFieldsProps {
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
   skillError?: string | null;
+  goalId?: string;
+  goalOptions?: HabitGoalSelectOption[];
+  goalError?: string | null;
+  onGoalChange?: (value: string) => void;
+  completionTarget?: string;
+  onCompletionTargetChange?: (value: string) => void;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onHabitTypeChange: (value: string) => void;
@@ -154,6 +172,12 @@ export function HabitFormFields({
   skillsLoading,
   skillOptions,
   skillError,
+  goalId = "none",
+  goalOptions,
+  goalError,
+  onGoalChange,
+  completionTarget = "",
+  onCompletionTargetChange,
   onNameChange,
   onDescriptionChange,
   onHabitTypeChange,
@@ -172,6 +196,16 @@ export function HabitFormFields({
 }: HabitFormFieldsProps) {
   const normalizedRecurrence = recurrence.toLowerCase().trim();
   const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
+  const normalizedHabitType = habitType.toUpperCase();
+  const isTempHabit = normalizedHabitType === "TEMP";
+
+  const goalSelectOptions = (goalOptions && goalOptions.length > 0
+    ? goalOptions
+    : [{ value: "none", label: "No goals available", disabled: true }]) as HabitGoalSelectOption[];
+  const goalSelectDisabled = goalSelectOptions.every((option) => option.disabled);
+  const resolvedGoalValue = goalSelectOptions.some((option) => option.value === goalId)
+    ? goalId
+    : goalSelectOptions[0]?.value ?? "none";
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(() => {
@@ -349,6 +383,62 @@ export function HabitFormFields({
             </div>
           ) : null}
         </div>
+
+        {isTempHabit ? (
+          <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Goal
+              </Label>
+              <Select
+                value={resolvedGoalValue}
+                onValueChange={(value) => onGoalChange?.(value)}
+                disabled={goalSelectDisabled}
+              >
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="Choose a goal" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {goalSelectOptions.map((option) => (
+                    <SelectItem
+                      key={`${option.value}-${option.label}`}
+                      value={option.value}
+                      disabled={option.disabled}
+                    >
+                      <div className="flex flex-col">
+                        <span>{option.label}</span>
+                        {option.description ? (
+                          <span className="text-xs text-white/60">{option.description}</span>
+                        ) : null}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {goalError ? (
+                <p className="text-xs text-red-300">{goalError}</p>
+              ) : null}
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Completions
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={completionTarget}
+                onChange={(event) => onCompletionTargetChange?.(event.target.value)}
+                placeholder="How many completions finish this habit?"
+                className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+              />
+              <p className="text-xs text-white/60">
+                Once you log this many completions, the temporary habit will wrap up.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="space-y-3">
           <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">

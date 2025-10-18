@@ -12,6 +12,7 @@ import {
   HABIT_ENERGY_OPTIONS,
   type HabitSkillSelectOption,
   type HabitEnergySelectOption,
+  type HabitGoalSelectOption,
 } from "@/components/habits/habit-form-fields";
 import { PageHeader } from "@/components/ui";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,12 @@ type RoutineSelectOption = {
   disabled?: boolean;
 };
 
+interface GoalOption {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
 export default function NewHabitPage() {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -70,6 +77,11 @@ export default function NewHabitPage() {
   const [skills, setSkills] = useState<SkillRow[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
+  const [goalOptions, setGoalOptions] = useState<GoalOption[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(true);
+  const [goalLoadError, setGoalLoadError] = useState<string | null>(null);
+  const [goalId, setGoalId] = useState<string>("none");
+  const [completionTarget, setCompletionTarget] = useState("10");
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -183,6 +195,126 @@ export default function NewHabitPage() {
         })),
     ];
   }, [skills, skillsLoading]);
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchGoals = async () => {
+      if (!supabase) {
+        if (active) {
+          setGoalsLoading(false);
+          setGoalLoadError("Supabase client not available.");
+        }
+        return;
+      }
+
+      setGoalsLoading(true);
+      setGoalLoadError(null);
+
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) throw userError;
+
+        if (!user) {
+          if (active) {
+            setGoalOptions([]);
+            setGoalId("none");
+          }
+          return;
+        }
+
+        const { data, error: goalsError } = await supabase
+          .from("goals")
+          .select("id, name")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (goalsError) throw goalsError;
+
+        if (active) {
+          const safeGoals = (data ?? []).map((goal) => {
+            const goalRecord = goal as { id?: unknown; name?: unknown };
+            const goalIdValue =
+              typeof goalRecord.id === "string" ? goalRecord.id : null;
+            const goalNameValue =
+              typeof goalRecord.name === "string" && goalRecord.name.trim().length > 0
+                ? goalRecord.name.trim()
+                : null;
+            return {
+              id: goalIdValue ?? "",
+              name: goalNameValue ?? "Untitled goal",
+            } satisfies GoalOption;
+          });
+
+          const normalizedGoals = safeGoals.filter((goal) => goal.id);
+
+          setGoalOptions(normalizedGoals);
+          setGoalLoadError(null);
+          setGoalId((current) => {
+            if (current === "none") return current;
+            return normalizedGoals.some((goal) => goal.id === current)
+              ? current
+              : "none";
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load goals:", err);
+        if (active) {
+          setGoalOptions([]);
+          setGoalLoadError("Unable to load your goals right now.");
+          setGoalId("none");
+        }
+      } finally {
+        if (active) {
+          setGoalsLoading(false);
+        }
+      }
+    };
+
+    fetchGoals();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const goalSelectOptions = useMemo<HabitGoalSelectOption[]>(() => {
+    if (goalsLoading) {
+      return [
+        {
+          value: "none",
+          label: "Loading goals…",
+          disabled: true,
+        },
+      ];
+    }
+
+    if (goalOptions.length === 0) {
+      return [
+        {
+          value: "none",
+          label: "Create a goal to link this temp habit",
+          disabled: true,
+        },
+      ];
+    }
+
+    return [
+      {
+        value: "none",
+        label: "Select a goal",
+      },
+      ...goalOptions.map((goal) => ({
+        value: goal.id,
+        label: goal.name,
+        description: goal.description ?? null,
+      })),
+    ];
+  }, [goalOptions, goalsLoading]);
 
   useEffect(() => {
     let active = true;
@@ -319,6 +451,31 @@ export default function NewHabitPage() {
       return;
     }
 
+    const normalizedHabitType = habitType.toUpperCase();
+    const isTempHabit = normalizedHabitType === "TEMP";
+
+    let parsedCompletionTarget: number | null = null;
+    if (isTempHabit) {
+      if (goalId === "none") {
+        setError("Temp habits need to be connected to a goal.");
+        return;
+      }
+
+      const completionValue = Number(completionTarget);
+      if (
+        !Number.isFinite(completionValue) ||
+        completionValue <= 0 ||
+        !Number.isInteger(completionValue)
+      ) {
+        setError(
+          "Set how many completions you need using a whole number greater than zero."
+        );
+        return;
+      }
+
+      parsedCompletionTarget = completionValue;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -344,6 +501,7 @@ export default function NewHabitPage() {
         normalizedRecurrence === "every x days" && recurrenceDays.length > 0
           ? recurrenceDays
           : null;
+      const goalIdValue = goalId === "none" ? null : goalId;
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -390,6 +548,8 @@ export default function NewHabitPage() {
             ? daylightPreference
             : null,
         window_edge_preference: windowEdgePreference,
+        goal_id: isTempHabit ? goalIdValue : null,
+        completion_target: parsedCompletionTarget,
       });
 
       if (insertError) {
@@ -445,6 +605,12 @@ export default function NewHabitPage() {
                 skillsLoading={skillsLoading}
                 skillOptions={skillSelectOptions}
                 skillError={skillLoadError}
+                goalId={goalId}
+                goalOptions={goalSelectOptions}
+                goalError={goalLoadError}
+                onGoalChange={setGoalId}
+                completionTarget={completionTarget}
+                onCompletionTargetChange={setCompletionTarget}
                 onNameChange={setName}
                 onDescriptionChange={setDescription}
                 onHabitTypeChange={setHabitType}
