@@ -28,7 +28,7 @@ function normalizeLocationContext(value?: string | null): string | null {
   const trimmed = value.trim()
   if (!trimmed) return null
   const upper = trimmed.toUpperCase()
-  if (upper === 'ANYWHERE') return null
+  if (upper === 'ANYWHERE' || upper === 'DEFAULT') return null
   return upper
 }
 

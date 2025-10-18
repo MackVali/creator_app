@@ -1149,10 +1149,15 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
 
-  const desiredLocation = options?.locationContext
+  const desiredLocationRaw = options?.locationContext
     ? String(options.locationContext).toUpperCase().trim()
     : null
-  const desiredLocationIsAnywhere = desiredLocation === 'ANYWHERE'
+  const desiredLocation =
+    desiredLocationRaw &&
+    desiredLocationRaw !== 'ANYWHERE' &&
+    desiredLocationRaw !== 'DEFAULT'
+      ? desiredLocationRaw
+      : null
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
 
@@ -1189,11 +1194,16 @@ async function fetchCompatibleWindowsForItem(
     const windowLocationRaw = win.location_context
       ? String(win.location_context).toUpperCase().trim()
       : null
-    if (windowLocationRaw) {
-      if (desiredLocationIsAnywhere) continue
+    const windowLocation =
+      windowLocationRaw &&
+      windowLocationRaw !== 'ANYWHERE' &&
+      windowLocationRaw !== 'DEFAULT'
+        ? windowLocationRaw
+        : null
+    if (windowLocation) {
       if (!desiredLocation) continue
-      if (windowLocationRaw !== desiredLocation) continue
-    } else if (desiredLocation && !desiredLocationIsAnywhere) {
+      if (windowLocation !== desiredLocation) continue
+    } else if (desiredLocation) {
       continue
     }
 
