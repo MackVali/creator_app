@@ -430,6 +430,14 @@ export default function HabitsPage() {
                               const skillName = habit.skill?.name ?? null;
                               const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
                               const skillDisplayLabel = skillName ?? "No skill linked yet";
+                              const isTempHabit =
+                                (habit.habit_type ?? "").toUpperCase() === "TEMP";
+                              const goalName = habit.goal?.name?.trim() ?? null;
+                              const completionTarget =
+                                typeof habit.completion_target === "number" &&
+                                Number.isFinite(habit.completion_target)
+                                  ? habit.completion_target
+                                  : null;
 
                               return (
                                 <li
@@ -487,6 +495,14 @@ export default function HabitsPage() {
                                         )}
                                       </span>
                                     </span>
+                                    {isTempHabit && goalName ? (
+                                      <span className="flex items-center gap-2">
+                                        <span className="text-base">🎯</span>
+                                        <span>
+                                          Goal · <span className="text-white/80">{goalName}</span>
+                                        </span>
+                                      </span>
+                                    ) : null}
                                     {durationLabel && (
                                       <span className="flex items-center gap-2">
                                         <span className="text-base">⏱️</span>
@@ -499,6 +515,12 @@ export default function HabitsPage() {
                                         <span>Energy • {energyLabel}</span>
                                       </span>
                                     )}
+                                    {isTempHabit && completionTarget ? (
+                                      <span className="flex items-center gap-2">
+                                        <span className="text-base">✅</span>
+                                        <span>{completionTarget} completions</span>
+                                      </span>
+                                    ) : null}
                                     <span className="flex items-center gap-2">
                                       <span className="text-base">📅</span>
                                       <span>Created {formatRelativeTime(habit.created_at)}</span>
@@ -546,6 +568,14 @@ export default function HabitsPage() {
                       const skillName = habit.skill?.name ?? null;
                       const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
                       const skillDisplayLabel = skillName ?? "No skill linked yet";
+                      const isTempHabit =
+                        (habit.habit_type ?? "").toUpperCase() === "TEMP";
+                      const goalName = habit.goal?.name?.trim() ?? null;
+                      const completionTarget =
+                        typeof habit.completion_target === "number" &&
+                        Number.isFinite(habit.completion_target)
+                          ? habit.completion_target
+                          : null;
 
                       return (
                         <article
@@ -614,6 +644,14 @@ export default function HabitsPage() {
                                 )}
                               </span>
                             </div>
+                            {isTempHabit && goalName ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">🎯</span>
+                                <span>
+                                  Goal · <span className="text-white/80">{goalName}</span>
+                                </span>
+                              </div>
+                            ) : null}
                             {durationLabel && (
                               <div className="flex items-center gap-2">
                                 <span className="text-base">⏱️</span>
@@ -626,6 +664,12 @@ export default function HabitsPage() {
                                 <span>Energy • {energyLabel}</span>
                               </div>
                             )}
+                            {isTempHabit && completionTarget ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">✅</span>
+                                <span>{completionTarget} completions</span>
+                              </div>
+                            ) : null}
                             <div className="flex items-center gap-2">
                               <span className="text-base">📅</span>
                               <span>Created {formatRelativeTime(habit.created_at)}</span>

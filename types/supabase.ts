@@ -62,6 +62,8 @@ export interface Database {
           location_context: string | null;
           daylight_preference: string | null;
           window_edge_preference: string | null;
+          goal_id: string | null;
+          completion_target: number | null;
         };
         Insert: {
           id?: string;
@@ -80,6 +82,8 @@ export interface Database {
           location_context?: string | null;
           daylight_preference?: string | null;
           window_edge_preference?: string | null;
+          goal_id?: string | null;
+          completion_target?: number | null;
         };
         Update: {
           id?: string;
@@ -98,6 +102,8 @@ export interface Database {
           location_context?: string | null;
           daylight_preference?: string | null;
           window_edge_preference?: string | null;
+          goal_id?: string | null;
+          completion_target?: number | null;
         };
       };
       location_contexts: {

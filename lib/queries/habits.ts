@@ -12,10 +12,16 @@ export interface Habit {
   updated_at: string;
   skill_id: string | null;
   energy: string | null;
+  goal_id: string | null;
+  completion_target: number | null;
   skill: {
     id: string;
     name: string;
     icon: string | null;
+  } | null;
+  goal?: {
+    id: string;
+    name: string | null;
   } | null;
   routine_id?: string | null;
   routine?: {
@@ -36,7 +42,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
   const { data, error } = await supabase
     .from("habits")
     .select(
-      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, skill:skills(id, name, icon), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target, skill:skills(id, name, icon), goal:goals(id, name), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -47,7 +53,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     const fallback = await supabase
       .from("habits")
       .select(
-        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy"
+        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target"
       )
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
@@ -63,6 +69,9 @@ export async function getHabits(userId: string): Promise<Habit[]> {
         skill_id: habit.skill_id ?? null,
         energy: habit.energy ?? null,
         skill: null,
+        goal_id: habit.goal_id ?? null,
+        completion_target: habit.completion_target ?? null,
+        goal: null,
         routine_id: null,
         routine: null,
       })) || []
@@ -79,6 +88,14 @@ export async function getHabits(userId: string): Promise<Habit[]> {
             id: habit.skill.id,
             name: habit.skill.name,
             icon: habit.skill.icon ?? null,
+          }
+        : null,
+      goal_id: habit.goal_id ?? null,
+      completion_target: habit.completion_target ?? null,
+      goal: habit.goal
+        ? {
+            id: habit.goal.id,
+            name: habit.goal.name ?? null,
           }
         : null,
     })) ?? []
