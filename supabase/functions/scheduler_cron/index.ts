@@ -23,6 +23,15 @@ const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
 
+function normalizeLocationContext(value?: string | null): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const upper = trimmed.toUpperCase()
+  if (upper === 'ANYWHERE' || upper === 'DEFAULT') return null
+  return upper
+}
+
 serve(async req => {
   try {
     const { searchParams } = new URL(req.url)
@@ -125,6 +134,13 @@ async function scheduleBacklog(
   const projectItems = buildProjectItems(Object.values(projects), tasks)
 
   const projectMap = new Map(projectItems.map(project => [project.id, project]))
+  const projectLocations = new Map<string, string | null>()
+  for (const project of Object.values(projects)) {
+    projectLocations.set(
+      project.id,
+      normalizeLocationContext(project.location_context ?? null),
+    )
+  }
 
   type QueueItem = {
     id: string
@@ -132,6 +148,7 @@ async function scheduleBacklog(
     duration_min: number
     energy: string
     weight: number
+    locationContext?: string | null
     instanceId?: string | null
   }
 
@@ -189,6 +206,7 @@ async function scheduleBacklog(
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      locationContext: normalizeLocationContext(def.location_context ?? null),
       instanceId: instance.id,
     })
   }
@@ -199,7 +217,8 @@ async function scheduleBacklog(
     userId,
     baseStart,
     rangeEnd,
-    queueProjectIds
+    queueProjectIds,
+    projectLocations
   )
 
   if (dedupe.error) {
@@ -223,6 +242,9 @@ async function scheduleBacklog(
       existing.duration_min = duration
       existing.energy = energy
       existing.weight = weight
+      existing.locationContext = normalizeLocationContext(
+        project.location_context ?? null,
+      )
       if (!existing.instanceId && reuse) {
         existing.instanceId = reuse.id
       }
@@ -233,6 +255,7 @@ async function scheduleBacklog(
         duration_min: duration,
         energy,
         weight,
+        locationContext: normalizeLocationContext(project.location_context ?? null),
         instanceId: reuse?.id,
       }
       queue.push(entry)
@@ -254,6 +277,9 @@ async function scheduleBacklog(
       duration_min: duration,
       energy,
       weight: fallbackProject?.weight ?? weight,
+      locationContext: normalizeLocationContext(
+        fallbackProject?.location_context ?? null,
+      ),
       instanceId: inst.id,
     }
     queue.push(entry)
@@ -379,6 +405,7 @@ type ProjectLite = {
   stage: string
   energy?: string | null
   duration_min?: number | null
+  location_context?: string | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -418,7 +445,7 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
   const { data, error } = await client
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min')
+    .select('id, name, priority, stage, energy, duration_min, location_context')
     .eq('user_id', userId)
 
   if (error) {
@@ -435,6 +462,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       stage: project.stage ?? 'RESEARCH',
       energy: project.energy ?? 'NO',
       duration_min: project.duration_min ?? null,
+      location_context: project.location_context ?? null,
     }
   }
   return map
@@ -512,7 +540,8 @@ async function dedupeScheduledProjects(
   userId: string,
   baseStart: Date,
   rangeEnd: Date,
-  projectsToReset: Set<string>
+  projectsToReset: Set<string>,
+  projectLocations: Map<string, string | null>,
 ): Promise<{
   scheduled: Set<string>
   keepers: Map<string, ScheduleInstance>
@@ -535,18 +564,41 @@ async function dedupeScheduledProjects(
     }
   }
 
+  const projectInstances: ScheduleInstance[] = []
+  const windowIds = new Set<string>()
+  for (const inst of response.data ?? []) {
+    if (inst.source_type !== 'PROJECT') continue
+    projectInstances.push(inst)
+    if (inst.window_id) {
+      windowIds.add(inst.window_id)
+    }
+  }
+
+  const windowLocations = await fetchWindowLocations(client, windowIds)
   const keepers = new Map<string, ScheduleInstance>()
   const extras: ScheduleInstance[] = []
 
-  for (const inst of response.data ?? []) {
-    if (inst.source_type !== 'PROJECT') continue
-
+  for (const inst of projectInstances) {
     if (projectsToReset.has(inst.source_id) && inst.status === 'scheduled') {
       extras.push(inst)
       continue
     }
 
     if (inst.status !== 'scheduled') continue
+
+    const projectLocation = projectLocations.get(inst.source_id) ?? null
+    const windowLocation = normalizeLocationContext(
+      inst.window_id ? windowLocations.get(inst.window_id) ?? null : null
+    )
+
+    const locationMismatch = projectLocation
+      ? windowLocation !== projectLocation
+      : windowLocation !== null
+
+    if (locationMismatch) {
+      extras.push(inst)
+      continue
+    }
 
     const existing = keepers.get(inst.source_id)
     if (!existing) {
@@ -586,11 +638,36 @@ async function dedupeScheduledProjects(
   return { scheduled, keepers, failures, error: null }
 }
 
+async function fetchWindowLocations(
+  client: Client,
+  windowIds: Set<string>,
+): Promise<Map<string, string | null>> {
+  const locations = new Map<string, string | null>()
+  if (windowIds.size === 0) return locations
+
+  const { data, error } = await client
+    .from('windows')
+    .select('id, location_context')
+    .in('id', Array.from(windowIds))
+
+  if (error) {
+    console.error('fetchWindowLocations error', error)
+    return locations
+  }
+
+  for (const record of data ?? []) {
+    if (!record || !record.id) continue
+    locations.set(record.id, record.location_context ?? null)
+  }
+
+  return locations
+}
+
 async function fetchCompatibleWindowsForItem(
   client: Client,
   userId: string,
   date: Date,
-  item: { energy: string; duration_min: number },
+  item: { energy: string; duration_min: number; locationContext?: string | null },
   timeZone: string,
   options?: {
     now?: Date
@@ -613,6 +690,8 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60_000
   const availability = options?.availability
 
+  const desiredLocation = normalizeLocationContext(item.locationContext ?? null)
+
   const compatible: Array<{
     id: string
     key: string
@@ -631,6 +710,14 @@ async function fetchCompatibleWindowsForItem(
       : ENERGY_ORDER.length
     if (hasEnergyLabel && energyIdx >= ENERGY_ORDER.length) continue
     if (energyIdx < itemIdx) continue
+
+    const windowLocation = normalizeLocationContext(window.location_context ?? null)
+    if (windowLocation) {
+      if (!desiredLocation) continue
+      if (windowLocation !== desiredLocation) continue
+    } else if (desiredLocation) {
+      continue
+    }
 
     const startLocal = resolveWindowStart(window, date, timeZone)
     const endLocal = resolveWindowEnd(window, date, timeZone)
@@ -695,6 +782,7 @@ type WindowRecord = {
   end_local: string
   days: number[] | null
   fromPrevDay?: boolean
+  location_context?: string | null
 }
 
 async function fetchWindowsForDate(
@@ -706,7 +794,7 @@ async function fetchWindowsForDate(
   const weekday = weekdayInTimeZone(date, timeZone)
   const prevWeekday = (weekday + 6) % 7
 
-  const columns = 'id, label, energy, start_local, end_local, days'
+  const columns = 'id, label, energy, start_local, end_local, days, location_context'
 
   const [
     { data: today, error: errToday },
@@ -759,7 +847,14 @@ async function fetchWindowsForDate(
 async function placeItemInWindows(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  item: {
+    id: string
+    sourceType: 'PROJECT'
+    duration_min: number
+    energy: string
+    weight: number
+    locationContext?: string | null
+  },
   windows: Array<{
     id: string
     startLocal: Date
