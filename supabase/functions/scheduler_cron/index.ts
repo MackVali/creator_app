@@ -23,6 +23,15 @@ const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
 
+function normalizeLocationContext(value?: string | null): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const upper = trimmed.toUpperCase()
+  if (upper === 'ANYWHERE') return null
+  return upper
+}
+
 serve(async req => {
   try {
     const { searchParams } = new URL(req.url)
@@ -125,6 +134,13 @@ async function scheduleBacklog(
   const projectItems = buildProjectItems(Object.values(projects), tasks)
 
   const projectMap = new Map(projectItems.map(project => [project.id, project]))
+  const projectLocations = new Map<string, string | null>()
+  for (const project of Object.values(projects)) {
+    projectLocations.set(
+      project.id,
+      normalizeLocationContext(project.location_context ?? null),
+    )
+  }
 
   type QueueItem = {
     id: string
@@ -201,7 +217,8 @@ async function scheduleBacklog(
     userId,
     baseStart,
     rangeEnd,
-    queueProjectIds
+    queueProjectIds,
+    projectLocations
   )
 
   if (dedupe.error) {
@@ -521,7 +538,8 @@ async function dedupeScheduledProjects(
   userId: string,
   baseStart: Date,
   rangeEnd: Date,
-  projectsToReset: Set<string>
+  projectsToReset: Set<string>,
+  projectLocations: Map<string, string | null>,
 ): Promise<{
   scheduled: Set<string>
   keepers: Map<string, ScheduleInstance>
@@ -544,18 +562,41 @@ async function dedupeScheduledProjects(
     }
   }
 
+  const projectInstances: ScheduleInstance[] = []
+  const windowIds = new Set<string>()
+  for (const inst of response.data ?? []) {
+    if (inst.source_type !== 'PROJECT') continue
+    projectInstances.push(inst)
+    if (inst.window_id) {
+      windowIds.add(inst.window_id)
+    }
+  }
+
+  const windowLocations = await fetchWindowLocations(client, windowIds)
   const keepers = new Map<string, ScheduleInstance>()
   const extras: ScheduleInstance[] = []
 
-  for (const inst of response.data ?? []) {
-    if (inst.source_type !== 'PROJECT') continue
-
+  for (const inst of projectInstances) {
     if (projectsToReset.has(inst.source_id) && inst.status === 'scheduled') {
       extras.push(inst)
       continue
     }
 
     if (inst.status !== 'scheduled') continue
+
+    const projectLocation = projectLocations.get(inst.source_id) ?? null
+    const windowLocation = normalizeLocationContext(
+      inst.window_id ? windowLocations.get(inst.window_id) ?? null : null
+    )
+
+    const locationMismatch = projectLocation
+      ? windowLocation !== projectLocation
+      : windowLocation !== null
+
+    if (locationMismatch) {
+      extras.push(inst)
+      continue
+    }
 
     const existing = keepers.get(inst.source_id)
     if (!existing) {
@@ -593,6 +634,31 @@ async function dedupeScheduledProjects(
   }
 
   return { scheduled, keepers, failures, error: null }
+}
+
+async function fetchWindowLocations(
+  client: Client,
+  windowIds: Set<string>,
+): Promise<Map<string, string | null>> {
+  const locations = new Map<string, string | null>()
+  if (windowIds.size === 0) return locations
+
+  const { data, error } = await client
+    .from('windows')
+    .select('id, location_context')
+    .in('id', Array.from(windowIds))
+
+  if (error) {
+    console.error('fetchWindowLocations error', error)
+    return locations
+  }
+
+  for (const record of data ?? []) {
+    if (!record || !record.id) continue
+    locations.set(record.id, record.location_context ?? null)
+  }
+
+  return locations
 }
 
 async function fetchCompatibleWindowsForItem(
