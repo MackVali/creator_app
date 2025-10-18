@@ -4,10 +4,8 @@ import {
   Fragment,
   useEffect,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from "react";
-import { useReducedMotion } from "framer-motion";
 import { Clock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -32,22 +30,6 @@ export function DayTimeline({
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
-  const prefersReducedMotion = useReducedMotion();
-
-  const transitionDurationMs = 360;
-  const transitionEasing = "cubic-bezier(0.33, 1, 0.68, 1)";
-  const containerTransitionStyle: CSSProperties | undefined =
-    prefersReducedMotion
-      ? undefined
-      : {
-          transition: `height ${transitionDurationMs}ms ${transitionEasing}`,
-        };
-  const positionTransitionStyle: CSSProperties | undefined =
-    prefersReducedMotion
-      ? undefined
-      : {
-          transition: `top ${transitionDurationMs}ms ${transitionEasing}`,
-        };
 
   const showQuarterHourMarkers = pxPerMin >= 1.4;
   const showQuarterHourLabels = pxPerMin >= 1.8;
@@ -94,7 +76,6 @@ export function DayTimeline({
       style={{
         height: timelineHeight,
         background: backgroundGradient,
-        ...(containerTransitionStyle ?? {}),
       }}
     >
       {hours.map(h => {
@@ -103,11 +84,11 @@ export function DayTimeline({
           <Fragment key={h}>
             <div
               className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
-              style={{ top, ...(positionTransitionStyle ?? {}) }}
+              style={{ top }}
             />
             <div
               className="pointer-events-none absolute left-0 w-20 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
-              style={{ top, ...(positionTransitionStyle ?? {}) }}
+              style={{ top }}
             >
               {formatHour(h)}
             </div>
@@ -126,7 +107,6 @@ export function DayTimeline({
                     )}
                     style={{
                       top: minuteTop,
-                      ...(positionTransitionStyle ?? {}),
                     }}
                   />
                   {showQuarterHourLabels && (
@@ -137,7 +117,6 @@ export function DayTimeline({
                       )}
                       style={{
                         top: minuteTop,
-                        ...(positionTransitionStyle ?? {}),
                       }}
                     >
                       {formatTime(h * 60 + minute)}
@@ -158,10 +137,7 @@ export function DayTimeline({
                     <div
                       key={`fivemin-${h}-${minute}`}
                       className="pointer-events-none absolute left-20 right-6 border-t border-white/10 opacity-25"
-                      style={{
-                        top: minuteTop,
-                        ...(positionTransitionStyle ?? {}),
-                      }}
+                      style={{ top: minuteTop }}
                     />
                   );
                 })}
@@ -175,18 +151,18 @@ export function DayTimeline({
         <>
             <div
               className="now-line pointer-events-none absolute left-20 right-6 z-50"
-              style={{ top: nowTop, ...(positionTransitionStyle ?? {}) }}
+              style={{ top: nowTop }}
             />
             <div
               className="pointer-events-none absolute left-6 z-50 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
-              style={{ top: nowTop, ...(positionTransitionStyle ?? {}) }}
+              style={{ top: nowTop }}
             >
             <Clock className="h-3 w-3 text-slate-700" />
             <span>Now</span>
           </div>
             <div
               className="pointer-events-none absolute right-6 z-50 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
-              style={{ top: nowTop, ...(positionTransitionStyle ?? {}) }}
+              style={{ top: nowTop }}
             >
             {formatTime((nowMinutes ?? 0) + startHour * 60)}
           </div>
