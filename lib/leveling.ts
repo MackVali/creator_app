@@ -57,3 +57,21 @@ export function calculateLevelProgress(totalXp: number): LevelProgress {
     progressPercent: Math.min(100, Math.max(0, progressPercent)),
   };
 }
+
+export function calculateDarkXpLevel(totalDarkXp: number): LevelProgress {
+  const safeTotal = Number.isFinite(totalDarkXp)
+    ? Math.max(0, Math.floor(totalDarkXp))
+    : 0;
+
+  const level = safeTotal + 1;
+
+  return {
+    level,
+    xpIntoLevel: 0,
+    xpForNextLevel: 1,
+    xpToNextLevel: 1,
+    totalXpConsumed: safeTotal,
+    totalXpForNextLevel: safeTotal + 1,
+    progressPercent: 0,
+  };
+}

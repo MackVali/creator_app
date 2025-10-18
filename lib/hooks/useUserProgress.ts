@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { calculateLevelProgress } from "@/lib/leveling";
+import { calculateDarkXpLevel } from "@/lib/leveling";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
 
@@ -61,6 +61,14 @@ export function useUserProgress(
     }
 
     try {
+      try {
+        await supabase.rpc("reconcile_dark_xp_for_user", {
+          p_user: userId,
+        });
+      } catch (rpcError) {
+        console.error("Failed to reconcile dark XP before loading progress", rpcError);
+      }
+
       const { data, error: queryError } = await supabase
         .from("user_progress")
         .select("current_level,total_dark_xp,updated_at")
@@ -84,7 +92,7 @@ export function useUserProgress(
       }
 
       const totalDarkXp = data?.total_dark_xp ?? 0;
-      const derived = calculateLevelProgress(totalDarkXp);
+      const derived = calculateDarkXpLevel(totalDarkXp);
 
       const resolved: UserProgress = {
         currentLevel: derived.level,
