@@ -89,21 +89,45 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   const from = (supabase as { from?: (table: string) => unknown }).from
   if (typeof from !== 'function') return []
 
-  const query = from.call(supabase, 'habits') as {
+  const selectColumns =
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+  const fallbackColumns =
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+
+  const select = from.call(supabase, 'habits') as {
     select?: (
       columns: string
     ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
   }
 
-  if (!query || typeof query.select !== 'function') {
+  if (!select || typeof select.select !== 'function') {
     return []
   }
 
-  const { data, error } = await query.select(
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)`
-  )
+  let supportsGoalMetadata = true
+  let data: HabitRecord[] | null = null
 
-  if (error) throw error
+  const primary = await select.select(selectColumns)
+
+  if (primary.error) {
+    console.warn('Failed to load habit schedule metadata with goal fields, falling back', primary.error)
+    supportsGoalMetadata = false
+    const fallbackQuery = from.call(supabase, 'habits') as {
+      select?: (
+        columns: string
+      ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
+    }
+    if (!fallbackQuery || typeof fallbackQuery.select !== 'function') {
+      throw primary.error
+    }
+    const fallback = await fallbackQuery.select(fallbackColumns)
+    if (fallback.error) {
+      throw fallback.error
+    }
+    data = fallback.data as HabitRecord[] | null
+  } else {
+    data = primary.data as HabitRecord[] | null
+  }
 
   return (data ?? []).map((record: HabitRecord) => ({
     id: record.id,
@@ -118,9 +142,9 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     recurrence: record.recurrence ?? null,
     recurrenceDays: record.recurrence_days ?? null,
     skillId: record.skill_id ?? null,
-    goalId: record.goal_id ?? null,
+    goalId: supportsGoalMetadata ? record.goal_id ?? null : null,
     completionTarget:
-      typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
+      supportsGoalMetadata && typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
         ? record.completion_target
         : null,
     locationContext: record.location_context ?? null,
