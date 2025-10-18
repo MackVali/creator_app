@@ -1252,31 +1252,30 @@ function computeTimelineLayoutForSyncHabits({
 
 function applyTimelineLayoutStyle(
   style: CSSProperties,
-  mode: TimelineCardLayoutMode
+  mode: TimelineCardLayoutMode,
+  options?: { animate?: boolean }
 ): CSSProperties {
+  const baseStyle: CSSProperties = { ...style }
   if (mode === 'paired-left') {
-    const next: CSSProperties = {
-      ...style,
-      left: TIMELINE_LEFT_OFFSET,
-      width: TIMELINE_PAIR_WIDTH,
-    }
-    next.right = undefined
-    return next
+    baseStyle.left = TIMELINE_LEFT_OFFSET
+    baseStyle.width = TIMELINE_PAIR_WIDTH
+    baseStyle.right = undefined
+  } else if (mode === 'paired-right') {
+    baseStyle.left = TIMELINE_PAIR_RIGHT_LEFT
+    baseStyle.width = TIMELINE_PAIR_WIDTH
+    baseStyle.right = undefined
+  } else {
+    baseStyle.left = TIMELINE_LEFT_OFFSET
+    baseStyle.right = TIMELINE_RIGHT_OFFSET
   }
-  if (mode === 'paired-right') {
-    const next: CSSProperties = {
-      ...style,
-      left: TIMELINE_PAIR_RIGHT_LEFT,
-      width: TIMELINE_PAIR_WIDTH,
-    }
-    next.right = undefined
-    return next
+
+  if (options?.animate) {
+    const duration = 360
+    const easing = 'cubic-bezier(0.33, 1, 0.68, 1)'
+    baseStyle.transition = `top ${duration}ms ${easing}, height ${duration}ms ${easing}`
   }
-  return {
-    ...style,
-    left: TIMELINE_LEFT_OFFSET,
-    right: TIMELINE_RIGHT_OFFSET,
-  }
+
+  return baseStyle
 }
 
 function getTimelineCardCornerClass(mode: TimelineCardLayoutMode) {
@@ -3807,6 +3806,14 @@ export default function SchedulePage() {
         windowReports: modelWindowReports,
       } = model
 
+      const timelineTransitionDuration = 360
+      const timelineTransitionEasing = 'cubic-bezier(0.33, 1, 0.68, 1)'
+      const timelinePositionTransition = prefersReducedMotion
+        ? undefined
+        : {
+            transition: `top ${timelineTransitionDuration}ms ${timelineTransitionEasing}, height ${timelineTransitionDuration}ms ${timelineTransitionEasing}`,
+          }
+
       const containerClass = options?.disableInteractions
         ? 'pointer-events-none select-none'
         : ''
@@ -3842,7 +3849,11 @@ export default function SchedulePage() {
                   key={w.id}
                   aria-label={w.label}
                   className="absolute left-0 flex"
-                  style={{ top, height }}
+                  style={{
+                    top,
+                    height,
+                    ...(timelinePositionTransition ?? {}),
+                  }}
                 >
                   <div className="w-0.5 bg-zinc-700 opacity-50" />
                   <WindowLabel
@@ -3856,7 +3867,11 @@ export default function SchedulePage() {
               <div
                 key={report.key}
                 className="absolute left-16 right-2"
-                style={{ top: report.top, height: report.height }}
+                style={{
+                  top: report.top,
+                  height: report.height,
+                  ...(timelinePositionTransition ?? {}),
+                }}
               >
                 <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
@@ -3980,7 +3995,8 @@ export default function SchedulePage() {
                   outlineOffset: '-1px',
                   background: cardBackground,
                 },
-                layoutMode
+                layoutMode,
+                { animate: !prefersReducedMotion }
               )
               return (
                 <motion.div
@@ -4064,7 +4080,8 @@ export default function SchedulePage() {
                   top,
                   height,
                 },
-                layoutMode
+                layoutMode,
+                { animate: !prefersReducedMotion }
               )
               const sharedCardStyle: CSSProperties = {
                 boxShadow:
@@ -4329,6 +4346,7 @@ export default function SchedulePage() {
                               top: `${topPercent}%`,
                               height: `${heightPercent}%`,
                               ...sharedCardStyle,
+                              ...(timelinePositionTransition ?? {}),
                             }
                             const baseTaskClasses =
                               'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
@@ -4541,6 +4559,7 @@ export default function SchedulePage() {
                 boxShadow: 'var(--elev-card)',
                 outline: '1px solid var(--event-border)',
                 outlineOffset: '-1px',
+                ...(timelinePositionTransition ?? {}),
               }
               const progress = (task as { progress?: number }).progress ?? 0
               const pendingStatus = pendingInstanceStatuses.get(instance.id)
