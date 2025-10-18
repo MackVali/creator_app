@@ -981,7 +981,6 @@ function computeWindowReportsForDay({
   windows,
   projectInstances,
   startHour,
-  pxPerMin,
   unscheduledProjects,
   schedulerFailureByProjectId,
   schedulerDebug,
@@ -992,7 +991,6 @@ function computeWindowReportsForDay({
   windows: RepoWindow[]
   projectInstances: ReturnType<typeof computeProjectInstances>
   startHour: number
-  pxPerMin: number
   unscheduledProjects: ProjectItem[]
   schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>
   schedulerDebug: SchedulerDebugState | null
@@ -1059,10 +1057,8 @@ function computeWindowReportsForDay({
     })
     if (windowHasScheduledProject) continue
 
-    const { top, height } = windowRect(win, startHour, pxPerMin)
-    if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) continue
-
     const durationMinutes = windowDurationForDay(win, startHour)
+    if (durationMinutes <= 0) continue
     const windowLabel = win.label?.trim() || 'Untitled window'
     const energyLabel = normalizeEnergyLabel(win.energy)
     const windowEnergyIndex = energyIndexFromLabel(energyLabel)
@@ -1103,8 +1099,7 @@ function computeWindowReportsForDay({
 
     reports.push({
       key: `${win.id}-${win.fromPrevDay ? 'prev' : 'curr'}-${win.start_local}-${win.end_local}`,
-      top,
-      height,
+      window: win,
       windowLabel,
       summary: description.summary,
       details: description.details,
@@ -1361,7 +1356,6 @@ function buildDayTimelineModel({
     windows,
     projectInstances,
     startHour,
-    pxPerMin,
     unscheduledProjects,
     schedulerFailureByProjectId,
     schedulerDebug,
@@ -1768,8 +1762,7 @@ function parseSchedulerDebugPayload(
 
 type WindowReportEntry = {
   key: string
-  top: number
-  height: number
+  window: RepoWindow
   windowLabel: string
   summary: string
   details: string[]
@@ -2806,7 +2799,6 @@ export default function SchedulePage() {
           windows: entry.windows,
           projectInstances: entry.projectInstances,
           startHour,
-          pxPerMin,
           unscheduledProjects,
           schedulerFailureByProjectId,
           schedulerDebug,
@@ -2816,7 +2808,6 @@ export default function SchedulePage() {
         })
         nextState[direction] = {
           ...entry,
-          pxPerMin,
           startHour,
           windowReports,
         }
@@ -3886,37 +3877,47 @@ export default function SchedulePage() {
                 </div>
               )
             })}
-            {modelWindowReports.map(report => (
-              <div
-                key={report.key}
-                className="absolute left-16 right-2"
-                style={{
-                  top: report.top,
-                  height: report.height,
-                }}
-              >
-                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
-                    Window report · {report.windowLabel}
+            {modelWindowReports.map(report => {
+              const { top, height } = windowRect(
+                report.window,
+                modelStartHour,
+                modelPxPerMin
+              )
+              if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) {
+                return null
+              }
+              return (
+                <div
+                  key={report.key}
+                  className="absolute left-16 right-2"
+                  style={{
+                    top,
+                    height,
+                  }}
+                >
+                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                      Window report · {report.windowLabel}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                      <span>{report.rangeLabel}</span>
+                      <span>Energy: {report.energyLabel}</span>
+                      <span>Duration: {report.durationLabel}</span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                      {report.summary}
+                    </p>
+                    {report.details.length > 0 && (
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                        {report.details.map((detail, index) => (
+                          <li key={`${report.key}-detail-${index}`}>{detail}</li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
-                    <span>{report.rangeLabel}</span>
-                    <span>Energy: {report.energyLabel}</span>
-                    <span>Duration: {report.durationLabel}</span>
-                  </div>
-                  <p className="mt-2 text-[11px] leading-snug text-sky-50">
-                    {report.summary}
-                  </p>
-                  {report.details.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
-                      {report.details.map((detail, index) => (
-                        <li key={`${report.key}-detail-${index}`}>{detail}</li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {modelHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end)) return null
               const startMin = placement.start.getHours() * 60 + placement.start.getMinutes()
