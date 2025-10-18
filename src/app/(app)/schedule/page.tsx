@@ -2098,6 +2098,13 @@ export default function SchedulePage() {
     restSpeed: 0.0005,
   })
 
+  const commitPinchToSnap = useCallback(() => {
+    setPxPerMin(prev => {
+      const snapped = snapPxPerMin(animatedPxPerMin)
+      return Math.abs(prev - snapped) < 0.001 ? prev : snapped
+    })
+  }, [animatedPxPerMin])
+
   useEffect(() => {
     const unsubscribe = pxPerMinSpring.on('change', value => {
       const clamped = clampPxPerMin(value)
@@ -2109,11 +2116,12 @@ export default function SchedulePage() {
   }, [pxPerMinSpring])
 
   useEffect(() => {
-    if (prefersReducedMotion || pinchActiveRef.current) {
+    if (prefersReducedMotion) {
       pxPerMinSpring.jump(pxPerMin)
       setAnimatedPxPerMin(pxPerMin)
       return
     }
+    if (pinchActiveRef.current) return
     pxPerMinSpring.set(pxPerMin)
   }, [pxPerMin, pxPerMinSpring, prefersReducedMotion])
   const hasLoadedHabitCompletionState = useRef(false)
@@ -3555,6 +3563,7 @@ export default function SchedulePage() {
         return
       }
       if (e.touches.length < 2) {
+        commitPinchToSnap()
         pinchStateRef.current = null
         pinchActiveRef.current = false
         return
@@ -3566,13 +3575,16 @@ export default function SchedulePage() {
       if (!(distance > 0) || !(pinchState.initialDistance > 0)) return
       e.preventDefault()
       const scale = distance / pinchState.initialDistance
-      const snapped = snapPxPerMin(pinchState.initialPxPerMin * scale)
-      setPxPerMin(prev => (Math.abs(prev - snapped) < 0.001 ? prev : snapped))
+      const target = clampPxPerMin(pinchState.initialPxPerMin * scale)
+      pxPerMinSpring.jump(target)
+      setAnimatedPxPerMin(prev =>
+        Math.abs(prev - target) < 0.0005 ? prev : target
+      )
       if (typeof window !== 'undefined') {
         const base = pinchState.initialPxPerMin
         const baseHeight = pinchState.initialHeight
         if (base > 0 && baseHeight > 0) {
-          const heightScale = snapped / base
+          const heightScale = target / base
           if (Number.isFinite(heightScale)) {
             const newHeight = baseHeight * heightScale
             const deltaHeight = newHeight - baseHeight
@@ -3674,6 +3686,7 @@ export default function SchedulePage() {
     if (pinchActiveRef.current) {
       pinchActiveRef.current = false
       pinchStateRef.current = null
+      commitPinchToSnap()
       sliderControls.set({ x: 0 })
       swipeDeltaRef.current = 0
       touchStartX.current = null
