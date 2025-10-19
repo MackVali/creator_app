@@ -48,7 +48,7 @@ import {
 } from '@/lib/scheduler/instanceRepo'
 import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
-import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
+import { windowRectMinutes, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import {
   fetchHabitsForSchedule,
@@ -2083,9 +2083,7 @@ export default function SchedulePage() {
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
   const [pxPerMin, setPxPerMin] = useState(() => snapPxPerMin(2))
   const animatedPxPerMin = useMotionValue(pxPerMin)
-  const timelineOriginY = useMotionValue(0.5)
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null)
-  const originAnimationRef = useRef<AnimationPlaybackControls | null>(null)
   const basePxPerMinRef = useRef(pxPerMin)
   const pinchStateRef = useRef<{
     initialDistance: number
@@ -2122,19 +2120,6 @@ export default function SchedulePage() {
     [animatedPxPerMin, prefersReducedMotion, stopZoomAnimation]
   )
 
-  const settleOrigin = useCallback(() => {
-    originAnimationRef.current?.stop()
-    if (prefersReducedMotion) {
-      timelineOriginY.set(0.5)
-      originAnimationRef.current = null
-      return
-    }
-    originAnimationRef.current = animate(timelineOriginY, 0.5, {
-      duration: 0.35,
-      ease: [0.2, 0.8, 0.2, 1],
-    })
-  }, [prefersReducedMotion, timelineOriginY])
-
   const commitPinchToSnap = useCallback(() => {
     const snapped = snapPxPerMin(animatedPxPerMin.get())
     setPxPerMin(prev => (Math.abs(prev - snapped) < 0.001 ? prev : snapped))
@@ -2146,14 +2131,8 @@ export default function SchedulePage() {
   }, [pxPerMin, animateZoomTo])
 
   useEffect(() => {
-    if (pinchActiveRef.current) return
-    settleOrigin()
-  }, [pxPerMin, settleOrigin])
-
-  useEffect(() => {
     return () => {
       stopZoomAnimation()
-      originAnimationRef.current?.stop()
     }
   }, [stopZoomAnimation])
 
@@ -3513,8 +3492,6 @@ export default function SchedulePage() {
                 ? Math.min(Math.max(progressRaw, 0), 1)
                 : 0.5
               stopZoomAnimation()
-              originAnimationRef.current?.stop()
-              timelineOriginY.set(anchorProgress)
               const currentZoom = clampPxPerMin(animatedPxPerMin.get())
               animatedPxPerMin.set(currentZoom)
               pinchStateRef.current = {
@@ -3725,7 +3702,6 @@ export default function SchedulePage() {
       pinchActiveRef.current = false
       pinchStateRef.current = null
       commitPinchToSnap()
-      settleOrigin()
       sliderControls.set({ x: 0 })
       swipeDeltaRef.current = 0
       touchStartX.current = null
@@ -3908,6 +3884,12 @@ export default function SchedulePage() {
 
       const modelPxPerMin = pxPerMin
 
+      const toTimelinePosition = (minutes: number) => {
+        if (!Number.isFinite(minutes)) return '0px'
+        if (minutes <= 0) return '0px'
+        return `calc(var(--timeline-minute-unit) * ${minutes})`
+      }
+
       const containerClass = options?.disableInteractions
         ? 'pointer-events-none select-none'
         : ''
@@ -3938,20 +3920,21 @@ export default function SchedulePage() {
             startHour={modelStartHour}
             pxPerMin={modelPxPerMin}
             zoomPxPerMin={animatedPxPerMin}
-            originY={timelineOriginY}
           >
             {modelWindows.map(w => {
-              const { top, height } = windowRect(w, modelStartHour, modelPxPerMin)
-              const windowHeightPx =
-                typeof height === 'number' ? Math.max(0, height) : 0
+              const { topMinutes, heightMinutes } = windowRectMinutes(
+                w,
+                modelStartHour
+              )
+              const windowHeightPx = Math.max(0, heightMinutes * modelPxPerMin)
               return (
                 <div
                   key={w.id}
                   aria-label={w.label}
                   className="absolute left-0 flex"
                   style={{
-                    top,
-                    height,
+                    top: toTimelinePosition(topMinutes),
+                    height: toTimelinePosition(heightMinutes),
                   }}
                 >
                   <div className="w-0.5 bg-zinc-700 opacity-50" />
@@ -3963,12 +3946,11 @@ export default function SchedulePage() {
               )
             })}
             {modelWindowReports.map(report => {
-              const { top, height } = windowRect(
+              const { topMinutes, heightMinutes } = windowRectMinutes(
                 report.window,
-                modelStartHour,
-                modelPxPerMin
+                modelStartHour
               )
-              if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) {
+              if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
                 return null
               }
               return (
@@ -3976,8 +3958,8 @@ export default function SchedulePage() {
                   key={report.key}
                   className="absolute left-16 right-2"
                   style={{
-                    top,
-                    height,
+                    top: toTimelinePosition(topMinutes),
+                    height: toTimelinePosition(heightMinutes),
                   }}
                 >
                   <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
@@ -4006,9 +3988,13 @@ export default function SchedulePage() {
             {modelHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end)) return null
               const startMin = placement.start.getHours() * 60 + placement.start.getMinutes()
-              const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((placement.end.getTime() - placement.start.getTime()) / 60000) * modelPxPerMin
+              const startOffsetMinutes = startMin - modelStartHour * 60
+              const durationMinutes = Math.max(
+                0,
+                (placement.end.getTime() - placement.start.getTime()) / 60000
+              )
+              const topStyle = toTimelinePosition(startOffsetMinutes)
+              const heightStyle = toTimelinePosition(durationMinutes)
               const habitStatus = getHabitCompletionStatus(
                 dayViewDateKey,
                 placement.habitId
@@ -4096,8 +4082,8 @@ export default function SchedulePage() {
               const habitCornerClass = getTimelineCardCornerClass(layoutMode)
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
-                  top,
-                  height,
+                  top: topStyle,
+                  height: heightStyle,
                   boxShadow: cardShadow,
                   outline: cardOutline,
                   outlineOffset: '-1px',
@@ -4143,9 +4129,13 @@ export default function SchedulePage() {
               if (!isValidDate(start) || !isValidDate(end)) return null
               const projectId = project.id
               const startMin = start.getHours() * 60 + start.getMinutes()
-              const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((end.getTime() - start.getTime()) / 60000) * modelPxPerMin
+              const startOffsetMinutes = startMin - modelStartHour * 60
+              const durationMinutes = Math.max(
+                0,
+                (end.getTime() - start.getTime()) / 60000
+              )
+              const topStyle = toTimelinePosition(startOffsetMinutes)
+              const heightStyle = toTimelinePosition(durationMinutes)
               const isExpanded = expandedProjects.has(projectId)
               const projectTaskCandidates =
                 modelTaskInstancesByProject[projectId] ?? []
@@ -4185,8 +4175,8 @@ export default function SchedulePage() {
               const projectCornerClass = getTimelineCardCornerClass(layoutMode)
               const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
-                  top,
-                  height,
+                  top: topStyle,
+                  height: heightStyle,
                 },
                 layoutMode,
                 { animate: !prefersReducedMotion }
@@ -4202,7 +4192,7 @@ export default function SchedulePage() {
                 1
               )
               const projectHeightPx = Math.max(
-                typeof height === 'number' ? height : 0,
+                durationMinutes * modelPxPerMin,
                 1
               )
               const minHeightRatio = Math.min(1, 4 / projectHeightPx)
@@ -4656,12 +4646,14 @@ export default function SchedulePage() {
             {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
               if (!isValidDate(start) || !isValidDate(end)) return null
               const startMin = start.getHours() * 60 + start.getMinutes()
-              const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((end.getTime() - start.getTime()) / 60000) * modelPxPerMin
+              const startOffsetMinutes = startMin - modelStartHour * 60
+              const durationMinutes = Math.max(
+                0,
+                (end.getTime() - start.getTime()) / 60000
+              )
               const style: CSSProperties = {
-                top,
-                height,
+                top: toTimelinePosition(startOffsetMinutes),
+                height: toTimelinePosition(durationMinutes),
                 boxShadow: 'var(--elev-card)',
                 outline: '1px solid var(--event-border)',
                 outlineOffset: '-1px',
@@ -4761,7 +4753,6 @@ export default function SchedulePage() {
       [
         pxPerMin,
         animatedPxPerMin,
-        timelineOriginY,
         prefersReducedMotion,
         hasInteractedWithProjects,
         setProjectExpansion,

@@ -25,7 +25,6 @@ interface DayTimelineProps {
   children?: ReactNode;
   className?: string;
   zoomPxPerMin?: MotionValue<number>;
-  originY?: MotionValue<number>;
 }
 
 export function DayTimeline({
@@ -36,10 +35,8 @@ export function DayTimeline({
   children,
   className,
   zoomPxPerMin,
-  originY,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
-  const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
   const fallbackZoom = useMotionValue(pxPerMin);
@@ -48,18 +45,8 @@ export function DayTimeline({
   }, [fallbackZoom, pxPerMin]);
   const zoomMotion = zoomPxPerMin ?? fallbackZoom;
 
-  const safeBase = pxPerMin > 0 ? pxPerMin : 0.01;
-  const scale = useTransform(zoomMotion, value => {
-    const ratio = value / safeBase;
-    if (!Number.isFinite(ratio)) return 1;
-    return Math.min(Math.max(ratio, 0.2), 6);
-  });
-
-  const fallbackOriginY = useMotionValue(0.5);
-  const originMotion = originY ?? fallbackOriginY;
-  useEffect(() => {
-    if (!originY) fallbackOriginY.set(0.5);
-  }, [fallbackOriginY, originY]);
+  const minuteUnit = useMotionTemplate`${zoomMotion}px`;
+  const heightExpression = useMotionTemplate`calc(${totalMinutes} * ${zoomMotion}px)`;
 
   const quarterIntensity = useTransform(zoomMotion, value =>
     interpolateRange(value, 1.2, 1.55)
@@ -74,11 +61,8 @@ export function DayTimeline({
     interpolateRange(value, 1.65, 2)
   );
 
-  const heightExpression = useMotionTemplate`calc(var(--timeline-height-base) * var(--timeline-scale))`;
-
   const timelineStyle = {
-    "--timeline-height-base": `${timelineHeight}px`,
-    "--timeline-scale": scale,
+    "--timeline-minute-unit": minuteUnit,
     "--quarter-intensity": quarterIntensity,
     "--quarter-label-intensity": quarterLabelIntensity,
     "--five-minute-intensity": fiveMinuteIntensity,
@@ -103,7 +87,7 @@ export function DayTimeline({
 
   const showNowLine =
     nowMinutes !== null && nowMinutes >= 0 && nowMinutes <= totalMinutes;
-  const nowTop = (nowMinutes ?? 0) * pxPerMin;
+  const nowTop = minutesToStyle(nowMinutes ?? 0);
 
   const hours: number[] = [];
   for (let h = Math.ceil(startHour); h < endHour; h++) {
@@ -132,13 +116,12 @@ export function DayTimeline({
       <motion.div
         className="timeline-content relative"
         style={{
-          height: timelineHeight,
-          scaleY: scale,
-          originY: originMotion,
+          height: heightExpression,
         }}
       >
       {hours.map(h => {
-        const top = (h - startHour) * 60 * pxPerMin;
+        const minutesFromStart = (h - startHour) * 60;
+        const top = minutesToStyle(minutesFromStart);
         return (
           <Fragment key={h}>
             <div
@@ -155,7 +138,7 @@ export function DayTimeline({
             {[15, 30, 45].map(minute => {
               const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
               if (minute >= minutesUntilHourEnd) return null;
-              const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
+              const minuteTop = minutesToStyle((h - startHour) * 60 + minute);
               const isHalfHour = minute === 30;
               const baseOpacity = isHalfHour ? 0.7 : 0.45;
               const labelBaseOpacity = isHalfHour ? 0.7 : 0.45;
@@ -192,7 +175,7 @@ export function DayTimeline({
               .map(minute => {
                 const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
                 if (minute >= minutesUntilHourEnd) return null;
-                const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
+                const minuteTop = minutesToStyle((h - startHour) * 60 + minute);
                 const fiveMinuteOpacity = `calc(0.25 * var(--five-minute-intensity))`;
                 return (
                   <div
@@ -245,6 +228,12 @@ function interpolateRange(value: number, start: number, end: number) {
   const raw = (value - start) / (end - start);
   const clamped = Math.min(Math.max(raw, 0), 1);
   return clamped * clamped * (3 - 2 * clamped);
+}
+
+function minutesToStyle(minutes: number) {
+  if (!Number.isFinite(minutes)) return "0px";
+  const safe = Math.max(0, minutes);
+  return `calc(var(--timeline-minute-unit) * ${safe})`;
 }
 
 function formatHour(h: number) {
