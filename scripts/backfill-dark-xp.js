@@ -14,10 +14,11 @@ const options = new Set(
 const userId = rawUserId && !rawUserId.startsWith("--") ? rawUserId : undefined;
 const isDryRun = options.has("--dry-run");
 const isVerbose = options.has("--verbose");
+const shouldSyncSkillProgress = options.has("--sync-skill-progress");
 
 if (!userId) {
   console.error(
-    "Usage: node scripts/backfill-dark-xp.js <user-id> [--dry-run] [--verbose]"
+    "Usage: node scripts/backfill-dark-xp.js <user-id> [--dry-run] [--verbose] [--sync-skill-progress]"
   );
   process.exit(1);
 }
@@ -43,14 +44,29 @@ function snapshotFromIncrements(count) {
   return { level, prestige };
 }
 
+function coerceInteger(value, fallback) {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+      ? Number(value)
+      : Number.NaN;
+
+  if (Number.isFinite(numeric)) {
+    return Math.trunc(numeric);
+  }
+
+  return fallback;
+}
+
 function normalizeProgressRow(row) {
-  const safeLevel = Number.isFinite(row.level) ? Math.max(1, row.level) : 1;
-  const safePrestige = Number.isFinite(row.prestige) ? Math.max(0, row.prestige) : 0;
+  const rawLevel = coerceInteger(row.level, 1);
+  const rawPrestige = coerceInteger(row.prestige, 0);
 
   return {
     skill_id: row.skill_id,
-    level: safeLevel,
-    prestige: safePrestige,
+    level: Math.max(1, rawLevel),
+    prestige: Math.max(0, rawPrestige),
   };
 }
 
@@ -69,6 +85,96 @@ async function fetchSkillProgress(userId) {
   }
 
   return (data ?? []).map(normalizeProgressRow);
+}
+
+async function fetchSkillMetadata(userId) {
+  const { data, error } = await supabase
+    .from("skills")
+    .select("id, name, level")
+    .eq("user_id", userId);
+
+  if (error) {
+    throw new Error(`Failed to fetch skills: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    skill_id: row.id,
+    name: typeof row.name === "string" && row.name.trim() ? row.name : null,
+    level: Math.max(1, Math.min(100, coerceInteger(row.level, 1))),
+  }));
+}
+
+function analyzeSkillAlignment({ skillProgress, skillMetadata }) {
+  const progressBySkill = new Map(skillProgress.map((row) => [row.skill_id, row]));
+  const skillsById = new Map(skillMetadata.map((row) => [row.skill_id, row]));
+
+  const needsSync = [];
+  const otherMismatches = [];
+
+  for (const skill of skillMetadata) {
+    const progress = progressBySkill.get(skill.skill_id);
+
+    if (!progress) {
+      if (skill.level > 1) {
+        needsSync.push({
+          type: "missing_progress",
+          skill_id: skill.skill_id,
+          skill_name: skill.name,
+          skills_table_level: skill.level,
+          progress_level: null,
+          progress_prestige: null,
+        });
+      }
+      continue;
+    }
+
+    if (skill.level !== progress.level) {
+      const mismatch = {
+        type: "level_mismatch",
+        skill_id: skill.skill_id,
+        skill_name: skill.name,
+        skills_table_level: skill.level,
+        progress_level: progress.level,
+        progress_prestige: progress.prestige,
+      };
+
+      if (skill.level > progress.level) {
+        needsSync.push(mismatch);
+      } else {
+        otherMismatches.push(mismatch);
+      }
+    }
+  }
+
+  return { needsSync, otherMismatches, skillsById };
+}
+
+async function syncSkillProgressWithSkills({ userId, mismatches }) {
+  if (mismatches.length === 0) {
+    return;
+  }
+
+  const upsertRows = mismatches.map((entry) => {
+    const increments = Math.max(0, entry.skills_table_level - 1);
+    const snapshot = snapshotFromIncrements(increments);
+
+    return {
+      user_id: userId,
+      skill_id: entry.skill_id,
+      level: snapshot.level,
+      prestige: snapshot.prestige,
+      xp_into_level: 0,
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  const { error } = await supabase
+    .from("skill_progress")
+    .upsert(upsertRows, { onConflict: "user_id,skill_id" });
+
+  if (error) {
+    throw new Error(`Failed to sync skill_progress: ${error.message}`);
+  }
 }
 
 async function fetchDarkXpTotals(userId) {
@@ -152,16 +258,20 @@ async function insertDarkXpEvents(events) {
   }
 }
 
-function summarizeDifferences({ skillProgress, totalsBySkill }) {
+function summarizeDifferences({ skillProgress, totalsBySkill, skillsById }) {
   return skillProgress
     .map((row) => {
       const expected = calculateExpectedFromProgress(row);
       const current = totalsBySkill.get(row.skill_id) ?? 0;
       const delta = expected - current;
+      const skillMeta = skillsById.get(row.skill_id);
+
       return {
         skill_id: row.skill_id,
-        level: row.level,
-        prestige: row.prestige,
+        skill_name: skillMeta?.name ?? null,
+        progress_level: row.level,
+        progress_prestige: row.prestige,
+        skills_table_level: skillMeta?.level ?? null,
         expected_total: expected,
         current_total: current,
         delta,
@@ -195,7 +305,75 @@ function describeUserLevel(totalDarkXp) {
 async function main() {
   console.log(`Backfilling dark XP for user ${userId}${isDryRun ? " (dry run)" : ""}`);
 
-  const skillProgress = await fetchSkillProgress(userId);
+  let skillProgress = await fetchSkillProgress(userId);
+  const skillMetadata = await fetchSkillMetadata(userId);
+
+  let alignment = analyzeSkillAlignment({
+    skillProgress,
+    skillMetadata,
+  });
+
+  if (alignment.needsSync.length > 0) {
+    console.warn(
+      "Found skills where skills.level exceeds skill_progress.level. The backfill relies on skill_progress,"
+    );
+    console.table(
+      alignment.needsSync.map((entry) => ({
+        skill_id: entry.skill_id,
+        skill_name: entry.skill_name,
+        skills_table_level: entry.skills_table_level,
+        progress_level: entry.progress_level,
+        progress_prestige: entry.progress_prestige,
+        issue: entry.type,
+      }))
+    );
+
+    if (!shouldSyncSkillProgress) {
+      console.warn(
+        "Run again with --sync-skill-progress to copy skills.level into skill_progress before computing dark XP."
+      );
+      return;
+    }
+
+    if (isDryRun) {
+      console.warn(
+        "--sync-skill-progress requires a non-dry run to update skill_progress. Remove --dry-run to proceed."
+      );
+      return;
+    }
+
+    await syncSkillProgressWithSkills({
+      userId,
+      mismatches: alignment.needsSync,
+    });
+    console.log(
+      `Synchronized ${alignment.needsSync.length} skill_progress row(s) using values from the skills table.`
+    );
+
+    skillProgress = await fetchSkillProgress(userId);
+    alignment = analyzeSkillAlignment({
+      skillProgress,
+      skillMetadata,
+    });
+  }
+
+  if (alignment.otherMismatches.length > 0) {
+    console.warn(
+      "Detected skills where skill_progress is ahead of the skills table. Proceeding with skill_progress as the canonical source."
+    );
+    if (isVerbose) {
+      console.table(
+        alignment.otherMismatches.map((entry) => ({
+          skill_id: entry.skill_id,
+          skill_name: entry.skill_name,
+          skills_table_level: entry.skills_table_level,
+          progress_level: entry.progress_level,
+          progress_prestige: entry.progress_prestige,
+          issue: entry.type,
+        }))
+      );
+    }
+  }
 
   if (skillProgress.length === 0) {
     console.log("No skill_progress rows found for this user. Nothing to do.");
@@ -207,7 +385,11 @@ async function main() {
   const { totals: totalsBySkill, overall: currentOverall } =
     await fetchDarkXpTotals(userId);
 
-  const diffs = summarizeDifferences({ skillProgress, totalsBySkill });
+  const diffs = summarizeDifferences({
+    skillProgress,
+    totalsBySkill,
+    skillsById: alignment.skillsById,
+  });
 
   if (diffs.length === 0) {
     console.log("Dark XP already matches skill progress. Nothing to do.");
@@ -232,8 +414,10 @@ async function main() {
   console.table(
     diffs.map((diff) => ({
       skill_id: diff.skill_id,
-      level: diff.level,
-      prestige: diff.prestige,
+      skill_name: diff.skill_name,
+      progress_level: diff.progress_level,
+      progress_prestige: diff.progress_prestige,
+      skills_table_level: diff.skills_table_level,
       current_total: diff.current_total,
       expected_total: diff.expected_total,
       delta: diff.delta,
