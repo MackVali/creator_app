@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { ensureProfileExists } from "@/lib/db";
 import { parseSupabaseError } from "@/lib/error-handling";
 import RoleOption from "@/components/auth/RoleOption";
 
@@ -13,6 +14,53 @@ const validatePassword = (password: string): string | null => {
     return "Password must contain at least 1 letter";
   if (!/\d/.test(password)) return "Password must contain at least 1 number";
   return null;
+};
+
+const sanitizeUsername = (candidate?: string | null) => {
+  if (!candidate) {
+    return null;
+  }
+
+  const sanitized = candidate
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 20);
+
+  return sanitized.length >= 3 ? sanitized : null;
+};
+
+const deriveInitialProfile = (
+  userId: string,
+  options: { nameInput?: string; metadataName?: string | null; email?: string | null }
+) => {
+  const trimmedInputName = options.nameInput?.trim();
+  const metadataName = options.metadataName?.trim();
+  const emailLocalPart = options.email ? options.email.split("@")[0]?.trim() : "";
+
+  const fallbackUsername = `user_${userId.slice(0, 8)}`;
+  const usernameCandidates = [
+    sanitizeUsername(trimmedInputName),
+    sanitizeUsername(metadataName),
+    sanitizeUsername(emailLocalPart),
+    fallbackUsername,
+  ];
+
+  const username = usernameCandidates.find((candidate) => candidate) || fallbackUsername;
+
+  const derivedName =
+    trimmedInputName && trimmedInputName.length > 0
+      ? trimmedInputName
+      : metadataName && metadataName.length > 0
+        ? metadataName
+        : emailLocalPart && emailLocalPart.length > 0
+          ? emailLocalPart
+          : "New User";
+
+  return {
+    name: derivedName,
+    username,
+  };
 };
 
 export default function AuthForm() {
@@ -167,6 +215,15 @@ export default function AuthForm() {
         handleAuthError(error);
       } else {
         setAttempts(0);
+        if (data.user) {
+          const initialProfile = deriveInitialProfile(data.user.id, {
+            nameInput: fullName,
+            metadataName: data.user.user_metadata?.full_name ?? null,
+            email: data.user.email ?? null,
+          });
+
+          await ensureProfileExists(data.user.id, initialProfile);
+        }
         // Check if email confirmation is required
         if (data.user && !data.user.email_confirmed_at) {
           setSuccess(
