@@ -318,6 +318,7 @@ export async function updateProfile(
       : supabase
           .from("profiles")
           .insert({
+            id: userId,
             user_id: userId,
             ...updateData,
             created_at: timestamp,
