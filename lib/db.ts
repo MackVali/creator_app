@@ -273,10 +273,17 @@ export async function updateProfile(
       dob: profileData.dob || null,
       city: profileData.city || null,
       bio: profileData.bio || null,
-      theme_color: profileData.theme_color,
-      font_family: profileData.font_family,
-      accent_color: profileData.accent_color,
     };
+
+    if (profileData.theme_color !== undefined) {
+      updateData.theme_color = profileData.theme_color;
+    }
+    if (profileData.font_family !== undefined) {
+      updateData.font_family = profileData.font_family;
+    }
+    if (profileData.accent_color !== undefined) {
+      updateData.accent_color = profileData.accent_color;
+    }
 
     // Add avatar and banner URLs if provided
     if (avatarUrl) {
@@ -288,14 +295,25 @@ export async function updateProfile(
 
     const { data, error } = await supabase
       .from("profiles")
-      .update(updateData)
-      .eq("user_id", userId)
+      .upsert(
+        {
+          user_id: userId,
+          ...updateData,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      )
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("❌ Failed to update profile:", error);
       return { success: false, error: error.message };
+    }
+
+    if (!data) {
+      console.error("❌ No profile returned after upsert for user", userId);
+      return { success: false, error: "Profile could not be saved" };
     }
 
     console.log("✅ Profile updated successfully:", data);
