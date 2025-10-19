@@ -24,7 +24,15 @@ import {
 import type { AnimationPlaybackControls } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
-import { DayTimeline } from '@/components/schedule/DayTimeline'
+import {
+  DayTimeline,
+  TIMELINE_CARD_LEFT_FALLBACK,
+  TIMELINE_CARD_RIGHT_FALLBACK,
+  TIMELINE_GRID_LEFT_FALLBACK,
+  TIMELINE_GRID_RIGHT_FALLBACK,
+  TIMELINE_LABEL_COLUMN_FALLBACK,
+  TIMELINE_RIGHT_GUTTER_FALLBACK,
+} from '@/components/schedule/DayTimeline'
 import { FocusTimeline, FocusTimelineFab } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel, type FlameEmberProps } from '@/components/FlameEmber'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
@@ -112,6 +120,25 @@ const PX_PER_MIN_STOPS = [
 const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
+
+const TIMELINE_CSS_VARIABLES: CSSProperties = {
+  '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
+  '--timeline-right-gutter': TIMELINE_RIGHT_GUTTER_FALLBACK,
+  '--timeline-grid-left': TIMELINE_GRID_LEFT_FALLBACK,
+  '--timeline-grid-right': TIMELINE_GRID_RIGHT_FALLBACK,
+  '--timeline-card-left': TIMELINE_CARD_LEFT_FALLBACK,
+  '--timeline-card-right': TIMELINE_CARD_RIGHT_FALLBACK,
+}
+
+const TIMELINE_HEADER_PADDING: CSSProperties = {
+  paddingLeft: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
+  paddingRight: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+}
+
+const TIMELINE_CARD_BOUNDS: CSSProperties = {
+  left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
+  right: `var(--timeline-card-right, ${TIMELINE_CARD_RIGHT_FALLBACK})`,
+}
 
 function computeDayTimelineHeightPx(
   startHour: number,
@@ -3903,8 +3930,9 @@ export default function SchedulePage() {
         <div
           className={containerClass}
           ref={options?.containerRef ?? undefined}
+          style={TIMELINE_CSS_VARIABLES}
         >
-          <div className="pl-16 pr-6 pb-3 text-white">
+          <div className="pb-3 text-white" style={TIMELINE_HEADER_PADDING}>
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
                 {isViewingToday ? 'Today' : 'Selected Day'}
@@ -3920,6 +3948,7 @@ export default function SchedulePage() {
             startHour={modelStartHour}
             pxPerMin={modelPxPerMin}
             zoomPxPerMin={animatedPxPerMin}
+            style={TIMELINE_CSS_VARIABLES}
           >
             {modelWindows.map(w => {
               const { topMinutes, heightMinutes } = windowRectMinutes(
@@ -3956,8 +3985,9 @@ export default function SchedulePage() {
               return (
                 <div
                   key={report.key}
-                  className="absolute left-16 right-2"
+                  className="absolute"
                   style={{
+                    ...TIMELINE_CARD_BOUNDS,
                     top: toTimelinePosition(topMinutes),
                     height: toTimelinePosition(heightMinutes),
                   }}
@@ -4082,6 +4112,7 @@ export default function SchedulePage() {
               const habitCornerClass = getTimelineCardCornerClass(layoutMode)
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
+                  ...TIMELINE_CARD_BOUNDS,
                   top: topStyle,
                   height: heightStyle,
                   boxShadow: cardShadow,
@@ -4175,6 +4206,7 @@ export default function SchedulePage() {
               const projectCornerClass = getTimelineCardCornerClass(layoutMode)
               const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
+                  ...TIMELINE_CARD_BOUNDS,
                   top: topStyle,
                   height: heightStyle,
                 },
@@ -4652,6 +4684,7 @@ export default function SchedulePage() {
                 (end.getTime() - start.getTime()) / 60000
               )
               const style: CSSProperties = {
+                ...TIMELINE_CARD_BOUNDS,
                 top: toTimelinePosition(startOffsetMinutes),
                 height: toTimelinePosition(durationMinutes),
                 boxShadow: 'var(--elev-card)',
@@ -4666,7 +4699,7 @@ export default function SchedulePage() {
                 status === 'completed' || status === 'scheduled'
               const isCompleted = status === 'completed'
               const standaloneBaseClass =
-                'absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                'absolute flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
               const standaloneScheduledClass =
                 `${standaloneBaseClass} text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]`
               const standaloneCompletedClass =

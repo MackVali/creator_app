@@ -17,6 +17,13 @@ import {
 
 import { cn } from "@/lib/utils";
 
+export const TIMELINE_LABEL_COLUMN_FALLBACK = "clamp(3.5rem, 16vw, 5rem)";
+export const TIMELINE_RIGHT_GUTTER_FALLBACK = "clamp(0.75rem, 5vw, 1.5rem)";
+export const TIMELINE_GRID_LEFT_FALLBACK = `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`;
+export const TIMELINE_GRID_RIGHT_FALLBACK = `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`;
+export const TIMELINE_CARD_LEFT_FALLBACK = `calc(var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK}) - 1rem)`;
+export const TIMELINE_CARD_RIGHT_FALLBACK = `max(calc(var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK}) - 1rem), 0px)`;
+
 interface DayTimelineProps {
   startHour?: number;
   endHour?: number;
@@ -25,6 +32,7 @@ interface DayTimelineProps {
   children?: ReactNode;
   className?: string;
   zoomPxPerMin?: MotionValue<number>;
+  style?: Record<string, string | number | MotionValue>;
 }
 
 export function DayTimeline({
@@ -35,6 +43,7 @@ export function DayTimeline({
   children,
   className,
   zoomPxPerMin,
+  style: externalStyle,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
@@ -61,13 +70,19 @@ export function DayTimeline({
     interpolateRange(value, 1.65, 2)
   );
 
-  const timelineStyle = {
+  const timelineVariables: Record<string, string | MotionValue> = {
     "--timeline-minute-unit": minuteUnit,
     "--quarter-intensity": quarterIntensity,
     "--quarter-label-intensity": quarterLabelIntensity,
     "--five-minute-intensity": fiveMinuteIntensity,
     "--half-hour-boost": halfHourBoost,
-  } as Record<string, string | MotionValue>;
+    "--timeline-label-column": TIMELINE_LABEL_COLUMN_FALLBACK,
+    "--timeline-right-gutter": TIMELINE_RIGHT_GUTTER_FALLBACK,
+    "--timeline-grid-left": TIMELINE_GRID_LEFT_FALLBACK,
+    "--timeline-grid-right": TIMELINE_GRID_RIGHT_FALLBACK,
+    "--timeline-card-left": TIMELINE_CARD_LEFT_FALLBACK,
+    "--timeline-card-right": TIMELINE_CARD_RIGHT_FALLBACK,
+  };
 
   useEffect(() => {
     if (!isSameDay(date, new Date())) {
@@ -100,18 +115,23 @@ export function DayTimeline({
     "linear-gradient(180deg, rgba(10, 10, 10, 0.95), rgba(24, 24, 27, 0.85))",
   ].join(", ");
 
+  const combinedStyle: Record<string, string | number | MotionValue> = {
+    ...timelineVariables,
+    paddingLeft: `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`,
+    paddingRight: `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`,
+    height: heightExpression,
+    background: backgroundGradient,
+    ...externalStyle,
+  };
+
   return (
     <motion.div
       className={cn(
-        "relative isolate w-full overflow-hidden rounded-[28px] border border-white/10 pl-20 pr-6",
+        "relative isolate w-full overflow-hidden rounded-[28px] border border-white/10",
         "shadow-[0_22px_48px_rgba(15,23,42,0.4)] backdrop-blur",
         className
       )}
-      style={{
-        ...timelineStyle,
-        height: heightExpression,
-        background: backgroundGradient,
-      }}
+      style={combinedStyle}
     >
       <motion.div
         className="timeline-content relative"
@@ -125,12 +145,19 @@ export function DayTimeline({
         return (
           <Fragment key={h}>
             <div
-              className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
-              style={{ top }}
+              className="pointer-events-none absolute border-t border-white/10"
+              style={{
+                top,
+                left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              }}
             />
             <div
-              className="pointer-events-none absolute left-0 w-20 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
-              style={{ top }}
+              className="pointer-events-none absolute left-0 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
+              style={{
+                top,
+                width: `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`,
+              }}
             >
               {formatHour(h)}
             </div>
@@ -151,16 +178,19 @@ export function DayTimeline({
               return (
                 <Fragment key={`quarter-${h}-${minute}`}>
                   <div
-                    className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
+                    className="pointer-events-none absolute border-t border-white/10"
                     style={{
                       top: minuteTop,
+                      left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
                       opacity: markerOpacity,
                     }}
                   />
                   <div
-                    className="pointer-events-none absolute right-6 -translate-y-1/2 text-[10px] font-medium tracking-[0.08em] text-white"
+                    className="pointer-events-none absolute -translate-y-1/2 text-[10px] font-medium tracking-[0.08em] text-white"
                     style={{
                       top: minuteTop,
+                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
                       opacity: labelOpacity,
                     }}
                   >
@@ -180,9 +210,11 @@ export function DayTimeline({
                 return (
                   <div
                     key={`fivemin-${h}-${minute}`}
-                    className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
+                    className="pointer-events-none absolute border-t border-white/10"
                     style={{
                       top: minuteTop,
+                      left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
                       opacity: fiveMinuteOpacity,
                     }}
                   />
@@ -197,22 +229,32 @@ export function DayTimeline({
       {showNowLine && (
         <>
             <div
-              className="now-line pointer-events-none absolute left-20 right-6 z-50"
-              style={{ top: nowTop }}
+              className="now-line pointer-events-none absolute z-50"
+              style={{
+                top: nowTop,
+                left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              }}
             />
             <div
-              className="pointer-events-none absolute left-6 z-50 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
-              style={{ top: nowTop }}
+              className="pointer-events-none absolute z-50 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
+              style={{
+                top: nowTop,
+                left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
+              }}
             >
-            <Clock className="h-3 w-3 text-slate-700" />
-            <span>Now</span>
-          </div>
+              <Clock className="h-3 w-3 text-slate-700" />
+              <span>Now</span>
+            </div>
             <div
-              className="pointer-events-none absolute right-6 z-50 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
-              style={{ top: nowTop }}
+              className="pointer-events-none absolute z-50 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
+              style={{
+                top: nowTop,
+                right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              }}
             >
-            {formatTime((nowMinutes ?? 0) + startHour * 60)}
-          </div>
+              {formatTime((nowMinutes ?? 0) + startHour * 60)}
+            </div>
         </>
       )}
       </motion.div>
