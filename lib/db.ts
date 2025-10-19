@@ -293,18 +293,40 @@ export async function updateProfile(
       updateData.banner_url = bannerUrl;
     }
 
-    const { data, error } = await supabase
+    const { data: existingProfile, error: fetchError } = await supabase
       .from("profiles")
-      .upsert(
-        {
-          user_id: userId,
-          ...updateData,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" }
-      )
-      .select()
+      .select("id")
+      .eq("user_id", userId)
       .maybeSingle();
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      console.error("❌ Failed to determine if profile exists:", fetchError);
+      return { success: false, error: fetchError.message };
+    }
+
+    const timestamp = new Date().toISOString();
+    const mutation = existingProfile
+      ? supabase
+          .from("profiles")
+          .update({
+            ...updateData,
+            updated_at: timestamp,
+          })
+          .eq("user_id", userId)
+          .select()
+          .maybeSingle()
+      : supabase
+          .from("profiles")
+          .insert({
+            user_id: userId,
+            ...updateData,
+            created_at: timestamp,
+            updated_at: timestamp,
+          })
+          .select()
+          .single();
+
+    const { data, error } = await mutation;
 
     if (error) {
       console.error("❌ Failed to update profile:", error);
@@ -312,7 +334,7 @@ export async function updateProfile(
     }
 
     if (!data) {
-      console.error("❌ No profile returned after upsert for user", userId);
+      console.error("❌ No profile returned after saving for user", userId);
       return { success: false, error: "Profile could not be saved" };
     }
 
