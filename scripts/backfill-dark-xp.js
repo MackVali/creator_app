@@ -43,6 +43,17 @@ function snapshotFromIncrements(count) {
   return { level, prestige };
 }
 
+function normalizeProgressRow(row) {
+  const safeLevel = Number.isFinite(row.level) ? Math.max(1, row.level) : 1;
+  const safePrestige = Number.isFinite(row.prestige) ? Math.max(0, row.prestige) : 0;
+
+  return {
+    skill_id: row.skill_id,
+    level: safeLevel,
+    prestige: safePrestige,
+  };
+}
+
 function calculateExpectedFromProgress({ level, prestige }) {
   return prestige * 100 + (level - 1);
 }
@@ -57,7 +68,7 @@ async function fetchSkillProgress(userId) {
     throw new Error(`Failed to fetch skill_progress: ${error.message}`);
   }
 
-  return data ?? [];
+  return (data ?? []).map(normalizeProgressRow);
 }
 
 async function fetchDarkXpTotals(userId) {
@@ -159,6 +170,28 @@ function summarizeDifferences({ skillProgress, totalsBySkill }) {
     .filter((entry) => entry.delta !== 0);
 }
 
+async function fetchUserProgress(userId) {
+  const { data, error } = await supabase
+    .from("user_progress")
+    .select("total_dark_xp, current_level")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch user_progress: ${error.message}`);
+  }
+
+  return data ?? { total_dark_xp: 0, current_level: 0 };
+}
+
+function describeUserLevel(totalDarkXp) {
+  return {
+    total_dark_xp: totalDarkXp,
+    // User level currently mirrors dark XP 1:1.
+    inferred_level: totalDarkXp,
+  };
+}
+
 async function main() {
   console.log(`Backfilling dark XP for user ${userId}${isDryRun ? " (dry run)" : ""}`);
 
@@ -168,6 +201,8 @@ async function main() {
     console.log("No skill_progress rows found for this user. Nothing to do.");
     return;
   }
+
+  const preUserProgress = await fetchUserProgress(userId);
 
   const { totals: totalsBySkill, overall: currentOverall } =
     await fetchDarkXpTotals(userId);
@@ -209,6 +244,15 @@ async function main() {
     `Will insert ${eventsToInsert.length} dark_xp_events (total delta: ${totalDelta}).`
   );
 
+  const expectedUserLevel = describeUserLevel(expectedOverall);
+
+  console.log(
+    `Current user_progress snapshot: total_dark_xp=${preUserProgress.total_dark_xp}, level=${preUserProgress.current_level}`
+  );
+  console.log(
+    `Expected snapshot after backfill: total_dark_xp=${expectedUserLevel.total_dark_xp}, level=${expectedUserLevel.inferred_level}`
+  );
+
   if (isVerbose) {
     console.log("Planned events:");
     console.dir(eventsToInsert, { depth: null });
@@ -221,7 +265,13 @@ async function main() {
 
   await insertDarkXpEvents(eventsToInsert);
 
-  console.log("Insertion complete. dark_xp_events trigger will update user_progress.");
+  const postUserProgress = await fetchUserProgress(userId);
+  console.log(
+    "Insertion complete. dark_xp_events trigger will update user_progress."
+  );
+  console.log(
+    `Updated user_progress snapshot: total_dark_xp=${postUserProgress.total_dark_xp}, level=${postUserProgress.current_level}`
+  );
 }
 
 main().catch((error) => {
