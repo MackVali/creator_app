@@ -258,37 +258,59 @@ export async function updateProfile(
   bannerUrl?: string
 ): Promise<ProfileUpdateResult> {
   try {
-    console.log("🔍 updateProfile called with userId:", userId);
-    console.log("🔍 Profile data:", profileData);
-
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       return { success: false, error: "Supabase client not initialized" };
     }
 
-    // Prepare update data
+    const ensuredProfile = await ensureProfileExists(userId);
+    if (!ensuredProfile) {
+      return { success: false, error: "Unable to initialize profile" };
+    }
+
+    const trimmedName = profileData.name?.trim();
+    const trimmedUsername = profileData.username?.trim();
+    const trimmedDob = profileData.dob?.trim();
+    const trimmedCity = profileData.city?.trim();
+    const trimmedBio = profileData.bio?.trim();
+
     const updateData: Partial<Profile> = {
-      name: profileData.name,
-      username: profileData.username,
-      dob: profileData.dob || null,
-      city: profileData.city || null,
-      bio: profileData.bio || null,
-      theme_color: profileData.theme_color,
-      font_family: profileData.font_family,
-      accent_color: profileData.accent_color,
+      name: trimmedName ? trimmedName : null,
+      username: trimmedUsername ? trimmedUsername : null,
+      dob: trimmedDob ? trimmedDob : null,
+      city: trimmedCity ? trimmedCity : null,
+      bio: trimmedBio ? trimmedBio : null,
+      updated_at: new Date().toISOString(),
     };
 
-    // Add avatar and banner URLs if provided
-    if (avatarUrl) {
+    if (profileData.theme_color !== undefined) {
+      updateData.theme_color = profileData.theme_color;
+    }
+
+    if (profileData.font_family !== undefined) {
+      updateData.font_family = profileData.font_family;
+    }
+
+    if (profileData.accent_color !== undefined) {
+      updateData.accent_color = profileData.accent_color;
+    }
+
+    if (avatarUrl !== undefined) {
       updateData.avatar_url = avatarUrl;
     }
-    if (bannerUrl) {
+
+    if (bannerUrl !== undefined) {
       updateData.banner_url = bannerUrl;
     }
 
+    const upsertPayload = {
+      user_id: userId,
+      ...updateData,
+    };
+
     const { data, error } = await supabase
       .from("profiles")
-      .update(updateData)
+      .upsert(upsertPayload, { onConflict: "user_id" })
       .eq("user_id", userId)
       .select()
       .single();
@@ -296,6 +318,10 @@ export async function updateProfile(
     if (error) {
       console.error("❌ Failed to update profile:", error);
       return { success: false, error: error.message };
+    }
+
+    if (!data) {
+      return { success: false, error: "Profile not found" };
     }
 
     console.log("✅ Profile updated successfully:", data);
@@ -344,6 +370,29 @@ export async function checkUsernameAvailability(
 }
 
 // Enhanced profile functions
+function sanitizeUsernameCandidate(candidate?: string | null): string | null {
+  if (!candidate) return null;
+
+  const sanitized = candidate
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 20);
+
+  return sanitized.length >= 3 ? sanitized : null;
+}
+
+async function attemptProfileInsert(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowser>>,
+  payload: Record<string, unknown>
+) {
+  return supabase
+    .from("profiles")
+    .insert(payload)
+    .select()
+    .single();
+}
+
 export async function createProfile(
   userId: string,
   profileData: Partial<ProfileFormData>
@@ -354,31 +403,51 @@ export async function createProfile(
       return { success: false, error: "Supabase client not initialized" };
     }
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .insert({
-        user_id: userId,
-        username: profileData.username || `user_${userId.slice(0, 8)}`,
-        name: profileData.name || "New User",
-        bio: profileData.bio || null,
-        dob: profileData.dob || null,
-        city: profileData.city || null,
-        avatar_url: null,
-        banner_url: null,
-        verified: false,
-        theme_color: "#3B82F6",
-        font_family: "Inter",
-        accent_color: "#8B5CF6",
-      })
-      .select()
-      .single();
+    const fallbackUsername = `user_${userId.slice(0, 8)}`;
+    const preferredUsername =
+      sanitizeUsernameCandidate(profileData.username) || fallbackUsername;
+
+    const trimmedName = profileData.name?.trim();
+    const trimmedBio = profileData.bio?.trim();
+    const trimmedDob = profileData.dob?.trim();
+    const trimmedCity = profileData.city?.trim();
+
+    const basePayload = {
+      user_id: userId,
+      name: trimmedName && trimmedName.length > 0 ? trimmedName : "New User",
+      bio: trimmedBio && trimmedBio.length > 0 ? trimmedBio : null,
+      dob: trimmedDob && trimmedDob.length > 0 ? trimmedDob : null,
+      city: trimmedCity && trimmedCity.length > 0 ? trimmedCity : null,
+      avatar_url: null,
+      banner_url: null,
+      verified: false,
+      theme_color: profileData.theme_color || "#3B82F6",
+      font_family: profileData.font_family || "Inter",
+      accent_color: profileData.accent_color || "#8B5CF6",
+    };
+
+    const firstAttemptPayload = {
+      ...basePayload,
+      username: preferredUsername,
+    };
+
+    let { data, error } = await attemptProfileInsert(supabase, firstAttemptPayload);
+
+    if (error && error.code === "23505" && preferredUsername !== fallbackUsername) {
+      const fallbackPayload = {
+        ...basePayload,
+        username: fallbackUsername,
+      };
+
+      ({ data, error } = await attemptProfileInsert(supabase, fallbackPayload));
+    }
 
     if (error) {
       console.error("Error creating profile:", error);
       return { success: false, error: error.message };
     }
 
-    return { success: true, profile: data };
+    return { success: true, profile: data as Profile };
   } catch (error) {
     console.error("Error in createProfile:", error);
     return { success: false, error: "Failed to create profile" };
@@ -386,7 +455,8 @@ export async function createProfile(
 }
 
 export async function ensureProfileExists(
-  userId: string
+  userId: string,
+  profileData: Partial<ProfileFormData> = {}
 ): Promise<Profile | null> {
   try {
     // Check if profile exists
@@ -394,9 +464,39 @@ export async function ensureProfileExists(
 
     if (!profile) {
       // Create profile if it doesn't exist
-      const result = await createProfile(userId, {});
+      const result = await createProfile(userId, profileData);
       if (result.success && result.profile) {
         profile = result.profile;
+      }
+    }
+
+    if (!profile && typeof window !== "undefined") {
+      try {
+        const response = await fetch("/api/profile/ensure", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: profileData.name ?? null,
+            username: profileData.username ?? null,
+            bio: profileData.bio ?? null,
+            dob: profileData.dob ?? null,
+            city: profileData.city ?? null,
+            theme_color: profileData.theme_color ?? null,
+            font_family: profileData.font_family ?? null,
+            accent_color: profileData.accent_color ?? null,
+          }),
+        });
+
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload?.profile) {
+            profile = payload.profile as Profile;
+          }
+        }
+      } catch (error) {
+        console.error("Failed to ensure profile via API route", error);
       }
     }
 
