@@ -26,6 +26,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import {
   DayTimeline,
+  TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK,
   TIMELINE_CARD_LEFT_FALLBACK,
   TIMELINE_CARD_RIGHT_FALLBACK,
   TIMELINE_GRID_LEFT_FALLBACK,
@@ -123,6 +124,7 @@ const VERTICAL_SCROLL_SLOPE = 1.35
 
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
+  '--timeline-container-padding-left': TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK,
   '--timeline-right-gutter': TIMELINE_RIGHT_GUTTER_FALLBACK,
   '--timeline-grid-left': TIMELINE_GRID_LEFT_FALLBACK,
   '--timeline-grid-right': TIMELINE_GRID_RIGHT_FALLBACK,
@@ -134,6 +136,9 @@ const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
   width: '100vw',
   marginLeft: 'calc(50% - 50vw)',
   marginRight: 'calc(50% - 50vw)',
+  '--timeline-container-padding-left': '0px',
+  '--timeline-grid-left': '0px',
+  '--timeline-card-left': 'clamp(0.75rem, 4vw, 1rem)',
 }
 
 const TIMELINE_HEADER_PADDING: CSSProperties = {
@@ -3933,8 +3938,8 @@ export default function SchedulePage() {
 
       const containerStyle: CSSProperties = options?.fullBleed
         ? {
-            ...TIMELINE_FULL_BLEED_STYLE,
             ...TIMELINE_CSS_VARIABLES,
+            ...TIMELINE_FULL_BLEED_STYLE,
           }
         : TIMELINE_CSS_VARIABLES
 
