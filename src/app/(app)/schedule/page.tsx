@@ -15,11 +15,13 @@ import {
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
   AnimatePresence,
+  animate,
   motion,
   useAnimationControls,
+  useMotionValue,
   useReducedMotion,
-  useSpring,
 } from 'framer-motion'
+import type { AnimationPlaybackControls } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { DayTimeline } from '@/components/schedule/DayTimeline'
@@ -2080,7 +2082,10 @@ export default function SchedulePage() {
   })
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
   const [pxPerMin, setPxPerMin] = useState(() => snapPxPerMin(2))
-  const [animatedPxPerMin, setAnimatedPxPerMin] = useState(pxPerMin)
+  const animatedPxPerMin = useMotionValue(pxPerMin)
+  const timelineOriginY = useMotionValue(0.5)
+  const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null)
+  const originAnimationRef = useRef<AnimationPlaybackControls | null>(null)
   const basePxPerMinRef = useRef(pxPerMin)
   const pinchStateRef = useRef<{
     initialDistance: number
@@ -2090,40 +2095,71 @@ export default function SchedulePage() {
     initialScrollY: number
   } | null>(null)
   const pinchActiveRef = useRef(false)
-  const pxPerMinSpring = useSpring(pxPerMin, {
-    stiffness: 140,
-    damping: 26,
-    mass: 0.9,
-    restDelta: 0.0005,
-    restSpeed: 0.0005,
-  })
+  const stopZoomAnimation = useCallback(() => {
+    zoomAnimationRef.current?.stop()
+    zoomAnimationRef.current = null
+  }, [])
+
+  const animateZoomTo = useCallback(
+    (target: number) => {
+      const clamped = clampPxPerMin(target)
+      if (prefersReducedMotion) {
+        stopZoomAnimation()
+        animatedPxPerMin.set(clamped)
+        return
+      }
+      if (Math.abs(animatedPxPerMin.get() - clamped) < 0.0005) {
+        return
+      }
+      stopZoomAnimation()
+      zoomAnimationRef.current = animate(animatedPxPerMin, clamped, {
+        type: 'spring',
+        stiffness: 140,
+        damping: 26,
+        mass: 0.9,
+      })
+    },
+    [animatedPxPerMin, prefersReducedMotion, stopZoomAnimation]
+  )
+
+  const settleOrigin = useCallback(() => {
+    originAnimationRef.current?.stop()
+    if (prefersReducedMotion) {
+      timelineOriginY.set(0.5)
+      originAnimationRef.current = null
+      return
+    }
+    originAnimationRef.current = animate(timelineOriginY, 0.5, {
+      duration: 0.35,
+      ease: [0.2, 0.8, 0.2, 1],
+    })
+  }, [prefersReducedMotion, timelineOriginY])
 
   const commitPinchToSnap = useCallback(() => {
-    setPxPerMin(prev => {
-      const snapped = snapPxPerMin(animatedPxPerMin)
-      return Math.abs(prev - snapped) < 0.001 ? prev : snapped
-    })
+    const snapped = snapPxPerMin(animatedPxPerMin.get())
+    setPxPerMin(prev => (Math.abs(prev - snapped) < 0.001 ? prev : snapped))
   }, [animatedPxPerMin])
 
   useEffect(() => {
-    const unsubscribe = pxPerMinSpring.on('change', value => {
-      const clamped = clampPxPerMin(value)
-      setAnimatedPxPerMin(prev =>
-        Math.abs(prev - clamped) < 0.0005 ? prev : clamped
-      )
-    })
-    return () => unsubscribe()
-  }, [pxPerMinSpring])
+    if (pinchActiveRef.current) return
+    animateZoomTo(pxPerMin)
+  }, [pxPerMin, animateZoomTo])
 
   useEffect(() => {
-    if (prefersReducedMotion) {
-      pxPerMinSpring.jump(pxPerMin)
-      setAnimatedPxPerMin(pxPerMin)
-      return
-    }
     if (pinchActiveRef.current) return
-    pxPerMinSpring.set(pxPerMin)
-  }, [pxPerMin, pxPerMinSpring, prefersReducedMotion])
+    settleOrigin()
+  }, [pxPerMin, settleOrigin])
+
+  useEffect(() => {
+    return () => {
+      stopZoomAnimation()
+      originAnimationRef.current?.stop()
+    }
+  }, [stopZoomAnimation])
+
+  useEffect(() => {
+    basePxPerMinRef.current = pxPerMin
+  }, [pxPerMin])
   const hasLoadedHabitCompletionState = useRef(false)
   const lastTimelineChromeHeightRef = useRef(0)
   const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(null)
@@ -3476,9 +3512,14 @@ export default function SchedulePage() {
               const anchorProgress = Number.isFinite(progressRaw)
                 ? Math.min(Math.max(progressRaw, 0), 1)
                 : 0.5
+              stopZoomAnimation()
+              originAnimationRef.current?.stop()
+              timelineOriginY.set(anchorProgress)
+              const currentZoom = clampPxPerMin(animatedPxPerMin.get())
+              animatedPxPerMin.set(currentZoom)
               pinchStateRef.current = {
                 initialDistance: distance,
-                initialPxPerMin: animatedPxPerMin,
+                initialPxPerMin: currentZoom,
                 initialHeight: height,
                 anchorProgress,
                 initialScrollY: scrollY,
@@ -3576,10 +3617,7 @@ export default function SchedulePage() {
       e.preventDefault()
       const scale = distance / pinchState.initialDistance
       const target = clampPxPerMin(pinchState.initialPxPerMin * scale)
-      pxPerMinSpring.jump(target)
-      setAnimatedPxPerMin(prev =>
-        Math.abs(prev - target) < 0.0005 ? prev : target
-      )
+      animatedPxPerMin.set(target)
       if (typeof window !== 'undefined') {
         const base = pinchState.initialPxPerMin
         const baseHeight = pinchState.initialHeight
@@ -3687,6 +3725,7 @@ export default function SchedulePage() {
       pinchActiveRef.current = false
       pinchStateRef.current = null
       commitPinchToSnap()
+      settleOrigin()
       sliderControls.set({ x: 0 })
       swipeDeltaRef.current = 0
       touchStartX.current = null
@@ -3826,11 +3865,8 @@ export default function SchedulePage() {
 
   const baseTimelineHeight = useMemo(
     () =>
-      computeDayTimelineHeightPx(
-        dayTimelineModel.startHour,
-        animatedPxPerMin
-      ),
-    [dayTimelineModel.startHour, animatedPxPerMin]
+      computeDayTimelineHeightPx(dayTimelineModel.startHour, pxPerMin),
+    [dayTimelineModel.startHour, pxPerMin]
   )
 
   const measuredTimelineContainerHeight =
@@ -3870,7 +3906,7 @@ export default function SchedulePage() {
         windowReports: modelWindowReports,
       } = model
 
-      const modelPxPerMin = clampPxPerMin(animatedPxPerMin)
+      const modelPxPerMin = pxPerMin
 
       const containerClass = options?.disableInteractions
         ? 'pointer-events-none select-none'
@@ -3897,7 +3933,13 @@ export default function SchedulePage() {
               <p className="text-xs text-white/60 sm:text-sm">{dayViewDetails.fullDate}</p>
             </div>
           </div>
-          <DayTimeline date={date} startHour={modelStartHour} pxPerMin={modelPxPerMin}>
+          <DayTimeline
+            date={date}
+            startHour={modelStartHour}
+            pxPerMin={modelPxPerMin}
+            zoomPxPerMin={animatedPxPerMin}
+            originY={timelineOriginY}
+          >
             {modelWindows.map(w => {
               const { top, height } = windowRect(w, modelStartHour, modelPxPerMin)
               const windowHeightPx =
@@ -4717,7 +4759,9 @@ export default function SchedulePage() {
       )
     },
       [
+        pxPerMin,
         animatedPxPerMin,
+        timelineOriginY,
         prefersReducedMotion,
         hasInteractedWithProjects,
         setProjectExpansion,
@@ -4879,7 +4923,7 @@ export default function SchedulePage() {
                       scrollProgress={swipeScrollProgressRef.current}
                       baseTimelineHeight={baseTimelineHeight}
                       timelineChromeHeight={timelineChromeHeight}
-                      pxPerMin={animatedPxPerMin}
+                      pxPerMin={pxPerMin}
                     />
                   </div>
                 ) : skipNextDayAnimation ? (

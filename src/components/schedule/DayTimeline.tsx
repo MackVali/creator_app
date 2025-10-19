@@ -7,6 +7,13 @@ import {
   type ReactNode,
 } from "react";
 import { Clock } from "lucide-react";
+import {
+  motion,
+  useMotionTemplate,
+  useMotionValue,
+  useTransform,
+  type MotionValue,
+} from "framer-motion";
 
 import { cn } from "@/lib/utils";
 
@@ -17,6 +24,8 @@ interface DayTimelineProps {
   date?: Date;
   children?: ReactNode;
   className?: string;
+  zoomPxPerMin?: MotionValue<number>;
+  originY?: MotionValue<number>;
 }
 
 export function DayTimeline({
@@ -26,14 +35,55 @@ export function DayTimeline({
   date = new Date(),
   children,
   className,
+  zoomPxPerMin,
+  originY,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
   const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
-  const showQuarterHourMarkers = pxPerMin >= 1.4;
-  const showQuarterHourLabels = pxPerMin >= 1.8;
-  const showFiveMinuteMarkers = pxPerMin >= 2.4;
+  const fallbackZoom = useMotionValue(pxPerMin);
+  useEffect(() => {
+    fallbackZoom.set(pxPerMin);
+  }, [fallbackZoom, pxPerMin]);
+  const zoomMotion = zoomPxPerMin ?? fallbackZoom;
+
+  const safeBase = pxPerMin > 0 ? pxPerMin : 0.01;
+  const scale = useTransform(zoomMotion, value => {
+    const ratio = value / safeBase;
+    if (!Number.isFinite(ratio)) return 1;
+    return Math.min(Math.max(ratio, 0.2), 6);
+  });
+
+  const fallbackOriginY = useMotionValue(0.5);
+  const originMotion = originY ?? fallbackOriginY;
+  useEffect(() => {
+    if (!originY) fallbackOriginY.set(0.5);
+  }, [fallbackOriginY, originY]);
+
+  const quarterIntensity = useTransform(zoomMotion, value =>
+    interpolateRange(value, 1.2, 1.55)
+  );
+  const quarterLabelIntensity = useTransform(zoomMotion, value =>
+    interpolateRange(value, 1.45, 1.85)
+  );
+  const fiveMinuteIntensity = useTransform(zoomMotion, value =>
+    interpolateRange(value, 2.2, 2.55)
+  );
+  const halfHourBoost = useTransform(zoomMotion, value =>
+    interpolateRange(value, 1.65, 2)
+  );
+
+  const heightExpression = useMotionTemplate`calc(var(--timeline-height-base) * var(--timeline-scale))`;
+
+  const timelineStyle = {
+    "--timeline-height-base": `${timelineHeight}px`,
+    "--timeline-scale": scale,
+    "--quarter-intensity": quarterIntensity,
+    "--quarter-label-intensity": quarterLabelIntensity,
+    "--five-minute-intensity": fiveMinuteIntensity,
+    "--half-hour-boost": halfHourBoost,
+  } as Record<string, string | MotionValue>;
 
   useEffect(() => {
     if (!isSameDay(date, new Date())) {
@@ -67,17 +117,26 @@ export function DayTimeline({
   ].join(", ");
 
   return (
-    <div
+    <motion.div
       className={cn(
         "relative isolate w-full overflow-hidden rounded-[28px] border border-white/10 pl-20 pr-6",
         "shadow-[0_22px_48px_rgba(15,23,42,0.4)] backdrop-blur",
         className
       )}
       style={{
-        height: timelineHeight,
+        ...timelineStyle,
+        height: heightExpression,
         background: backgroundGradient,
       }}
     >
+      <motion.div
+        className="timeline-content relative"
+        style={{
+          height: timelineHeight,
+          scaleY: scale,
+          originY: originMotion,
+        }}
+      >
       {hours.map(h => {
         const top = (h - startHour) * 60 * pxPerMin;
         return (
@@ -93,54 +152,59 @@ export function DayTimeline({
               {formatHour(h)}
             </div>
 
-            {showQuarterHourMarkers && [15, 30, 45].map(minute => {
+            {[15, 30, 45].map(minute => {
               const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
               if (minute >= minutesUntilHourEnd) return null;
               const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
               const isHalfHour = minute === 30;
+              const baseOpacity = isHalfHour ? 0.7 : 0.45;
+              const labelBaseOpacity = isHalfHour ? 0.7 : 0.45;
+              const markerOpacity = isHalfHour
+                ? `calc(${baseOpacity} * var(--quarter-intensity) + 0.35 * var(--half-hour-boost))`
+                : `calc(${baseOpacity} * var(--quarter-intensity))`;
+              const labelOpacity = isHalfHour
+                ? `calc(${labelBaseOpacity} * var(--quarter-label-intensity) + 0.35 * var(--half-hour-boost))`
+                : `calc(${labelBaseOpacity} * var(--quarter-label-intensity))`;
               return (
                 <Fragment key={`quarter-${h}-${minute}`}>
                   <div
-                    className={cn(
-                      "pointer-events-none absolute left-20 right-6 border-t border-white/10",
-                      isHalfHour ? "opacity-60" : "opacity-45"
-                    )}
+                    className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
                     style={{
                       top: minuteTop,
+                      opacity: markerOpacity,
                     }}
                   />
-                  {showQuarterHourLabels && (
-                    <div
-                      className={cn(
-                        "pointer-events-none absolute right-6 -translate-y-1/2 text-[10px] font-medium tracking-[0.08em]",
-                        isHalfHour ? "text-white/60" : "text-white/45"
-                      )}
-                      style={{
-                        top: minuteTop,
-                      }}
-                    >
-                      {formatTime(h * 60 + minute)}
-                    </div>
-                  )}
+                  <div
+                    className="pointer-events-none absolute right-6 -translate-y-1/2 text-[10px] font-medium tracking-[0.08em] text-white"
+                    style={{
+                      top: minuteTop,
+                      opacity: labelOpacity,
+                    }}
+                  >
+                    {formatTime(h * 60 + minute)}
+                  </div>
                 </Fragment>
               );
             })}
 
-            {showFiveMinuteMarkers &&
-              Array.from({ length: 11 }, (_, index) => (index + 1) * 5)
-                .filter(minute => minute % 15 !== 0)
-                .map(minute => {
-                  const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
-                  if (minute >= minutesUntilHourEnd) return null;
-                  const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
-                  return (
-                    <div
-                      key={`fivemin-${h}-${minute}`}
-                      className="pointer-events-none absolute left-20 right-6 border-t border-white/10 opacity-25"
-                      style={{ top: minuteTop }}
-                    />
-                  );
-                })}
+            {Array.from({ length: 11 }, (_, index) => (index + 1) * 5)
+              .filter(minute => minute % 15 !== 0)
+              .map(minute => {
+                const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
+                if (minute >= minutesUntilHourEnd) return null;
+                const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
+                const fiveMinuteOpacity = `calc(0.25 * var(--five-minute-intensity))`;
+                return (
+                  <div
+                    key={`fivemin-${h}-${minute}`}
+                    className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
+                    style={{
+                      top: minuteTop,
+                      opacity: fiveMinuteOpacity,
+                    }}
+                  />
+                );
+              })}
           </Fragment>
         );
       })}
@@ -168,8 +232,19 @@ export function DayTimeline({
           </div>
         </>
       )}
-    </div>
+      </motion.div>
+    </motion.div>
   );
+}
+
+function interpolateRange(value: number, start: number, end: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (Number.isNaN(start) || Number.isNaN(end) || start === end) {
+    return value >= end ? 1 : 0;
+  }
+  const raw = (value - start) / (end - start);
+  const clamped = Math.min(Math.max(raw, 0), 1);
+  return clamped * clamped * (3 - 2 * clamped);
 }
 
 function formatHour(h: number) {
