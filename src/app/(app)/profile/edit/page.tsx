@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
 import { Profile, ProfileFormData } from "@/lib/types";
@@ -17,6 +17,7 @@ import Link from "next/link";
 
 export default function ProfileEditPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { session } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +37,9 @@ export default function ProfileEditPage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+
+  const onboarding = searchParams.get("onboarding") === "1";
+  const redirectPath = searchParams.get("redirect");
 
   useEffect(() => {
     async function loadProfile() {
@@ -150,9 +154,14 @@ export default function ProfileEditPage() {
         setAvatarPreview(result.profile.avatar_url || null);
         setBannerPreview(result.profile.banner_url || null);
 
-        // Redirect to profile page after a short delay
+        const redirectTarget =
+          redirectPath && redirectPath.startsWith("/")
+            ? redirectPath
+            : "/profile";
+
+        // Redirect after a short delay
         setTimeout(() => {
-          router.push("/profile");
+          router.push(redirectTarget);
         }, 1500);
       } else {
         setError(result.error || "Failed to update profile");
@@ -215,6 +224,19 @@ export default function ProfileEditPage() {
 
       {/* Form */}
       <div className="max-w-2xl mx-auto px-4 py-8">
+        {onboarding && (
+          <div className="mb-6 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100">
+            <p className="font-medium">Complete your profile to continue.</p>
+            <p className="mt-1 text-blue-100/80">
+              Add your name, username, and details so we can personalize your experience.
+            </p>
+            {redirectPath && redirectPath.startsWith("/") && (
+              <p className="mt-2 text-xs text-blue-100/70">
+                You&apos;ll be redirected back to {redirectPath} once you&apos;re finished.
+              </p>
+            )}
+          </div>
+        )}
         <Card className="shadow-xl border border-white/5 bg-[#15161A]">
           <CardHeader>
             <CardTitle className="text-center text-2xl">Update Your Profile</CardTitle>

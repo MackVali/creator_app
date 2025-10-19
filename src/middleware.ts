@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
+  const isProfileSetupRoute = pathname.startsWith("/profile/edit");
 
   console.log(`[Middleware] Processing ${pathname}`);
 
@@ -72,7 +73,11 @@ export async function middleware(req: NextRequest) {
       const redirectUrl = new URL("/auth", req.url);
       redirectUrl.searchParams.set("redirect", pathname + req.nextUrl.search);
       console.log(`[Middleware] Redirecting to: ${redirectUrl.toString()}`);
-      return NextResponse.redirect(redirectUrl);
+      const redirectResponse = NextResponse.redirect(redirectUrl);
+      res.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie);
+      });
+      return redirectResponse;
     }
 
     // If session AND path starts with /auth: redirect → ?redirect or /dashboard
@@ -80,7 +85,49 @@ export async function middleware(req: NextRequest) {
       const redirectTo =
         req.nextUrl.searchParams.get("redirect") || "/dashboard";
       console.log(`[Middleware] Redirecting to: ${redirectTo}`);
-      return NextResponse.redirect(new URL(redirectTo, req.url));
+      const redirectResponse = NextResponse.redirect(
+        new URL(redirectTo, req.url)
+      );
+      res.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie);
+      });
+      return redirectResponse;
+    }
+
+    if (hasSession && !isProfileSetupRoute) {
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error(
+          `[Middleware] Error checking profile for user ${session.user.id}:`,
+          profileError
+        );
+      }
+
+      if (!profileData) {
+        const redirectUrl = new URL("/profile/edit", req.url);
+        redirectUrl.searchParams.set("onboarding", "1");
+        redirectUrl.searchParams.set(
+          "redirect",
+          pathname + req.nextUrl.search
+        );
+        console.log(
+          `[Middleware] Redirecting to profile setup: ${redirectUrl.toString()}`
+        );
+
+        const redirectResponse = NextResponse.redirect(redirectUrl);
+        res.cookies.getAll().forEach((cookie) => {
+          redirectResponse.cookies.set(cookie);
+        });
+        return redirectResponse;
+      }
     }
 
     console.log(`[Middleware] Allowing access to ${pathname}`);

@@ -273,10 +273,17 @@ export async function updateProfile(
       dob: profileData.dob || null,
       city: profileData.city || null,
       bio: profileData.bio || null,
-      theme_color: profileData.theme_color,
-      font_family: profileData.font_family,
-      accent_color: profileData.accent_color,
     };
+
+    if (profileData.theme_color !== undefined) {
+      updateData.theme_color = profileData.theme_color;
+    }
+    if (profileData.font_family !== undefined) {
+      updateData.font_family = profileData.font_family;
+    }
+    if (profileData.accent_color !== undefined) {
+      updateData.accent_color = profileData.accent_color;
+    }
 
     // Add avatar and banner URLs if provided
     if (avatarUrl) {
@@ -286,16 +293,50 @@ export async function updateProfile(
       updateData.banner_url = bannerUrl;
     }
 
-    const { data, error } = await supabase
+    const { data: existingProfile, error: fetchError } = await supabase
       .from("profiles")
-      .update(updateData)
+      .select("id")
       .eq("user_id", userId)
-      .select()
-      .single();
+      .maybeSingle();
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      console.error("❌ Failed to determine if profile exists:", fetchError);
+      return { success: false, error: fetchError.message };
+    }
+
+    const timestamp = new Date().toISOString();
+    const mutation = existingProfile
+      ? supabase
+          .from("profiles")
+          .update({
+            ...updateData,
+            updated_at: timestamp,
+          })
+          .eq("user_id", userId)
+          .select()
+          .maybeSingle()
+      : supabase
+          .from("profiles")
+          .insert({
+            id: userId,
+            user_id: userId,
+            ...updateData,
+            created_at: timestamp,
+            updated_at: timestamp,
+          })
+          .select()
+          .single();
+
+    const { data, error } = await mutation;
 
     if (error) {
       console.error("❌ Failed to update profile:", error);
       return { success: false, error: error.message };
+    }
+
+    if (!data) {
+      console.error("❌ No profile returned after saving for user", userId);
+      return { success: false, error: "Profile could not be saved" };
     }
 
     console.log("✅ Profile updated successfully:", data);
@@ -389,18 +430,8 @@ export async function ensureProfileExists(
   userId: string
 ): Promise<Profile | null> {
   try {
-    // Check if profile exists
-    let profile = await getProfileByUserId(userId);
-
-    if (!profile) {
-      // Create profile if it doesn't exist
-      const result = await createProfile(userId, {});
-      if (result.success && result.profile) {
-        profile = result.profile;
-      }
-    }
-
-    return profile;
+    // Simply check if the profile exists without creating a placeholder.
+    return await getProfileByUserId(userId);
   } catch (error) {
     console.error("Error ensuring profile exists:", error);
     return null;

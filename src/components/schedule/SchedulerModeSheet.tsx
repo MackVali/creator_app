@@ -159,7 +159,7 @@ export function SchedulerModeSheet({
                 <div>
                   <p className="text-sm font-semibold text-zinc-200">Focus skills</p>
                   <p className="text-xs text-zinc-400">
-                    Pick one or more skills to limit today's scheduling.
+                    Pick one or more skills to limit today&apos;s scheduling.
                   </p>
                 </div>
                 {skillIds.length > 0 ? (

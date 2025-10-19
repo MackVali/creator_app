@@ -114,7 +114,7 @@ export default function AuthForm() {
     setSuccess(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -123,7 +123,33 @@ export default function AuthForm() {
       } else {
         setAttempts(0);
         const redirectTo = searchParams.get("redirect") || "/dashboard";
-        router.replace(redirectTo);
+        let destination = redirectTo;
+
+        try {
+          const userId =
+            data.user?.id ||
+            (await supabase.auth.getUser()).data.user?.id ||
+            null;
+
+          if (userId) {
+            const { data: profileData, error: profileError } = await supabase
+              .from("profiles")
+              .select("id")
+              .eq("user_id", userId)
+              .maybeSingle();
+
+            const hasProfile = !!profileData && !profileError;
+            if (!hasProfile) {
+              const params = new URLSearchParams({ onboarding: "1" });
+              params.set("redirect", redirectTo);
+              destination = `/profile/edit?${params.toString()}`;
+            }
+          }
+        } catch (profileCheckError) {
+          console.error("Error verifying profile after sign-in:", profileCheckError);
+        }
+
+        router.replace(destination);
       }
     } catch (err) {
       handleAuthError(err as { message?: string });
