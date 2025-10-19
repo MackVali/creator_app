@@ -130,6 +130,12 @@ const TIMELINE_CSS_VARIABLES: CSSProperties = {
   '--timeline-card-right': TIMELINE_CARD_RIGHT_FALLBACK,
 }
 
+const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
+  width: '100vw',
+  marginLeft: 'calc(50% - 50vw)',
+  marginRight: 'calc(50% - 50vw)',
+}
+
 const TIMELINE_HEADER_PADDING: CSSProperties = {
   paddingLeft: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
   paddingRight: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
@@ -449,6 +455,7 @@ type DayTimelineModel = {
 type DayTimelineRenderOptions = {
   disableInteractions?: boolean
   containerRef?: RefObject<HTMLDivElement | null>
+  fullBleed?: boolean
 }
 
 
@@ -1465,7 +1472,10 @@ function DayPeekOverlays({
   containerRef: RefObject<HTMLDivElement | null>
   previousModel?: DayTimelineModel | null
   nextModel?: DayTimelineModel | null
-  renderPreview: (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => ReactNode
+  renderPreview: (
+    model: DayTimelineModel,
+    options?: DayTimelineRenderOptions
+  ) => ReactNode
   scrollProgress: number | null
   baseTimelineHeight: number
   timelineChromeHeight: number
@@ -3921,6 +3931,13 @@ export default function SchedulePage() {
         ? 'pointer-events-none select-none'
         : ''
 
+      const containerStyle: CSSProperties = options?.fullBleed
+        ? {
+            ...TIMELINE_FULL_BLEED_STYLE,
+            ...TIMELINE_CSS_VARIABLES,
+          }
+        : TIMELINE_CSS_VARIABLES
+
       const { habitLayouts, projectLayouts } = computeTimelineLayoutForSyncHabits({
         habitPlacements: modelHabitPlacements,
         projectInstances: modelProjectInstances,
@@ -3930,7 +3947,7 @@ export default function SchedulePage() {
         <div
           className={containerClass}
           ref={options?.containerRef ?? undefined}
-          style={TIMELINE_CSS_VARIABLES}
+          style={containerStyle}
         >
           <div className="pb-3 text-white" style={TIMELINE_HEADER_PADDING}>
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -4804,6 +4821,7 @@ export default function SchedulePage() {
     () =>
       renderDayTimeline(dayTimelineModel, {
         containerRef: dayTimelineContainerRef,
+        fullBleed: true,
       }),
     [renderDayTimeline, dayTimelineModel]
   )
