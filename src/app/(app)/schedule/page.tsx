@@ -136,6 +136,7 @@ const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
   width: '100vw',
   marginLeft: 'calc(50% - 50vw)',
   marginRight: 'calc(50% - 50vw)',
+  '--timeline-label-column': 'clamp(1.75rem, 5vw, 2.5rem)',
   '--timeline-container-padding-left': '0px',
   '--timeline-grid-left': '0px',
   '--timeline-card-left': 'clamp(0.75rem, 4vw, 1rem)',
