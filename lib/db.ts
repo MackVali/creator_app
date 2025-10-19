@@ -258,37 +258,59 @@ export async function updateProfile(
   bannerUrl?: string
 ): Promise<ProfileUpdateResult> {
   try {
-    console.log("🔍 updateProfile called with userId:", userId);
-    console.log("🔍 Profile data:", profileData);
-
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       return { success: false, error: "Supabase client not initialized" };
     }
 
-    // Prepare update data
+    const ensuredProfile = await ensureProfileExists(userId);
+    if (!ensuredProfile) {
+      return { success: false, error: "Unable to initialize profile" };
+    }
+
+    const trimmedName = profileData.name?.trim();
+    const trimmedUsername = profileData.username?.trim();
+    const trimmedDob = profileData.dob?.trim();
+    const trimmedCity = profileData.city?.trim();
+    const trimmedBio = profileData.bio?.trim();
+
     const updateData: Partial<Profile> = {
-      name: profileData.name,
-      username: profileData.username,
-      dob: profileData.dob || null,
-      city: profileData.city || null,
-      bio: profileData.bio || null,
-      theme_color: profileData.theme_color,
-      font_family: profileData.font_family,
-      accent_color: profileData.accent_color,
+      name: trimmedName ? trimmedName : null,
+      username: trimmedUsername ? trimmedUsername : null,
+      dob: trimmedDob ? trimmedDob : null,
+      city: trimmedCity ? trimmedCity : null,
+      bio: trimmedBio ? trimmedBio : null,
+      updated_at: new Date().toISOString(),
     };
 
-    // Add avatar and banner URLs if provided
-    if (avatarUrl) {
+    if (profileData.theme_color !== undefined) {
+      updateData.theme_color = profileData.theme_color;
+    }
+
+    if (profileData.font_family !== undefined) {
+      updateData.font_family = profileData.font_family;
+    }
+
+    if (profileData.accent_color !== undefined) {
+      updateData.accent_color = profileData.accent_color;
+    }
+
+    if (avatarUrl !== undefined) {
       updateData.avatar_url = avatarUrl;
     }
-    if (bannerUrl) {
+
+    if (bannerUrl !== undefined) {
       updateData.banner_url = bannerUrl;
     }
 
+    const upsertPayload = {
+      user_id: userId,
+      ...updateData,
+    };
+
     const { data, error } = await supabase
       .from("profiles")
-      .update(updateData)
+      .upsert(upsertPayload, { onConflict: "user_id" })
       .eq("user_id", userId)
       .select()
       .single();
@@ -296,6 +318,10 @@ export async function updateProfile(
     if (error) {
       console.error("❌ Failed to update profile:", error);
       return { success: false, error: error.message };
+    }
+
+    if (!data) {
+      return { success: false, error: "Profile not found" };
     }
 
     console.log("✅ Profile updated successfully:", data);
