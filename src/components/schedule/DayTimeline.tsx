@@ -1,9 +1,29 @@
 "use client";
 
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { Clock } from "lucide-react";
+import {
+  motion,
+  useMotionTemplate,
+  useMotionValue,
+  useTransform,
+  type MotionValue,
+} from "framer-motion";
 
 import { cn } from "@/lib/utils";
+
+export const TIMELINE_LABEL_COLUMN_FALLBACK = "clamp(3.5rem, 16vw, 5rem)";
+export const TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK = `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`;
+export const TIMELINE_RIGHT_GUTTER_FALLBACK = "clamp(0.75rem, 5vw, 1.5rem)";
+export const TIMELINE_GRID_LEFT_FALLBACK = `var(--timeline-container-padding-left, ${TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK})`;
+export const TIMELINE_GRID_RIGHT_FALLBACK = `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`;
+export const TIMELINE_CARD_LEFT_FALLBACK = `calc(var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK}) - 1rem)`;
+export const TIMELINE_CARD_RIGHT_FALLBACK = `max(calc(var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK}) - 1rem), 0px)`;
 
 interface DayTimelineProps {
   startHour?: number;
@@ -12,6 +32,8 @@ interface DayTimelineProps {
   date?: Date;
   children?: ReactNode;
   className?: string;
+  zoomPxPerMin?: MotionValue<number>;
+  style?: Record<string, string | number | MotionValue>;
 }
 
 export function DayTimeline({
@@ -21,14 +43,48 @@ export function DayTimeline({
   date = new Date(),
   children,
   className,
+  zoomPxPerMin,
+  style: externalStyle,
 }: DayTimelineProps) {
   const totalMinutes = (endHour - startHour) * 60;
-  const timelineHeight = totalMinutes * pxPerMin;
   const [nowMinutes, setNowMinutes] = useState<number | null>(null);
 
-  const showQuarterHourMarkers = pxPerMin >= 1.4;
-  const showQuarterHourLabels = pxPerMin >= 1.8;
-  const showFiveMinuteMarkers = pxPerMin >= 2.4;
+  const fallbackZoom = useMotionValue(pxPerMin);
+  useEffect(() => {
+    fallbackZoom.set(pxPerMin);
+  }, [fallbackZoom, pxPerMin]);
+  const zoomMotion = zoomPxPerMin ?? fallbackZoom;
+
+  const minuteUnit = useMotionTemplate`${zoomMotion}px`;
+  const heightExpression = useMotionTemplate`calc(${totalMinutes} * ${zoomMotion}px)`;
+
+  const quarterIntensity = useTransform(zoomMotion, value =>
+    interpolateRange(value, 1.2, 1.55)
+  );
+  const quarterLabelIntensity = useTransform(zoomMotion, value =>
+    interpolateRange(value, 1.45, 1.85)
+  );
+  const fiveMinuteIntensity = useTransform(zoomMotion, value =>
+    interpolateRange(value, 2.2, 2.55)
+  );
+  const halfHourBoost = useTransform(zoomMotion, value =>
+    interpolateRange(value, 1.65, 2)
+  );
+
+  const timelineVariables: Record<string, string | MotionValue> = {
+    "--timeline-minute-unit": minuteUnit,
+    "--quarter-intensity": quarterIntensity,
+    "--quarter-label-intensity": quarterLabelIntensity,
+    "--five-minute-intensity": fiveMinuteIntensity,
+    "--half-hour-boost": halfHourBoost,
+    "--timeline-label-column": TIMELINE_LABEL_COLUMN_FALLBACK,
+    "--timeline-container-padding-left": TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK,
+    "--timeline-right-gutter": TIMELINE_RIGHT_GUTTER_FALLBACK,
+    "--timeline-grid-left": TIMELINE_GRID_LEFT_FALLBACK,
+    "--timeline-grid-right": TIMELINE_GRID_RIGHT_FALLBACK,
+    "--timeline-card-left": TIMELINE_CARD_LEFT_FALLBACK,
+    "--timeline-card-right": TIMELINE_CARD_RIGHT_FALLBACK,
+  };
 
   useEffect(() => {
     if (!isSameDay(date, new Date())) {
@@ -48,7 +104,7 @@ export function DayTimeline({
 
   const showNowLine =
     nowMinutes !== null && nowMinutes >= 0 && nowMinutes <= totalMinutes;
-  const nowTop = (nowMinutes ?? 0) * pxPerMin;
+  const nowTop = minutesToStyle(nowMinutes ?? 0);
 
   const hours: number[] = [];
   for (let h = Math.ceil(startHour); h < endHour; h++) {
@@ -61,74 +117,111 @@ export function DayTimeline({
     "linear-gradient(180deg, rgba(10, 10, 10, 0.95), rgba(24, 24, 27, 0.85))",
   ].join(", ");
 
+  const combinedStyle: Record<string, string | number | MotionValue> = {
+    ...timelineVariables,
+    paddingLeft: `var(--timeline-container-padding-left, ${TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK})`,
+    paddingRight: `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`,
+    height: heightExpression,
+    background: backgroundGradient,
+    ...externalStyle,
+  };
+
   return (
-    <div
+    <motion.div
       className={cn(
-        "relative isolate w-full overflow-hidden rounded-[28px] border border-white/10 pl-20 pr-6",
+        "relative isolate w-full overflow-hidden rounded-[28px] border border-white/10",
         "shadow-[0_22px_48px_rgba(15,23,42,0.4)] backdrop-blur",
         className
       )}
-      style={{ height: timelineHeight, background: backgroundGradient }}
+      style={combinedStyle}
     >
+      <motion.div
+        className="timeline-content relative"
+        style={{
+          height: heightExpression,
+        }}
+      >
       {hours.map(h => {
-        const top = (h - startHour) * 60 * pxPerMin;
+        const minutesFromStart = (h - startHour) * 60;
+        const top = minutesToStyle(minutesFromStart);
         return (
           <Fragment key={h}>
             <div
-              className="pointer-events-none absolute left-20 right-6 border-t border-white/10"
-              style={{ top }}
+              className="pointer-events-none absolute border-t border-white/10"
+              style={{
+                top,
+                left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              }}
             />
             <div
-              className="pointer-events-none absolute left-0 w-20 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
-              style={{ top }}
+              className="pointer-events-none absolute left-0 -translate-y-1/2 pr-4 text-right text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50"
+              style={{
+                top,
+                width: `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`,
+              }}
             >
               {formatHour(h)}
             </div>
 
-            {showQuarterHourMarkers && [15, 30, 45].map(minute => {
+            {[15, 30, 45].map(minute => {
               const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
               if (minute >= minutesUntilHourEnd) return null;
-              const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
+              const minuteTop = minutesToStyle((h - startHour) * 60 + minute);
               const isHalfHour = minute === 30;
+              const baseOpacity = isHalfHour ? 0.7 : 0.45;
+              const labelBaseOpacity = isHalfHour ? 0.7 : 0.45;
+              const markerOpacity = isHalfHour
+                ? `calc(${baseOpacity} * var(--quarter-intensity) + 0.35 * var(--half-hour-boost))`
+                : `calc(${baseOpacity} * var(--quarter-intensity))`;
+              const labelOpacity = isHalfHour
+                ? `calc(${labelBaseOpacity} * var(--quarter-label-intensity) + 0.35 * var(--half-hour-boost))`
+                : `calc(${labelBaseOpacity} * var(--quarter-label-intensity))`;
               return (
                 <Fragment key={`quarter-${h}-${minute}`}>
                   <div
-                    className={cn(
-                      "pointer-events-none absolute left-20 right-6 border-t border-white/10",
-                      isHalfHour ? "opacity-60" : "opacity-45"
-                    )}
-                    style={{ top: minuteTop }}
+                    className="pointer-events-none absolute border-t border-white/10"
+                    style={{
+                      top: minuteTop,
+                      left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                      opacity: markerOpacity,
+                    }}
                   />
-                  {showQuarterHourLabels && (
-                    <div
-                      className={cn(
-                        "pointer-events-none absolute right-6 -translate-y-1/2 text-[10px] font-medium tracking-[0.08em]",
-                        isHalfHour ? "text-white/60" : "text-white/45"
-                      )}
-                      style={{ top: minuteTop }}
-                    >
-                      {formatTime(h * 60 + minute)}
-                    </div>
-                  )}
+                  <div
+                    className="pointer-events-none absolute -translate-y-1/2 text-[10px] font-medium tracking-[0.08em] text-white"
+                    style={{
+                      top: minuteTop,
+                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                      opacity: labelOpacity,
+                    }}
+                  >
+                    {formatTime(h * 60 + minute)}
+                  </div>
                 </Fragment>
               );
             })}
 
-            {showFiveMinuteMarkers &&
-              Array.from({ length: 11 }, (_, index) => (index + 1) * 5)
-                .filter(minute => minute % 15 !== 0)
-                .map(minute => {
-                  const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
-                  if (minute >= minutesUntilHourEnd) return null;
-                  const minuteTop = ((h - startHour) * 60 + minute) * pxPerMin;
-                  return (
-                    <div
-                      key={`fivemin-${h}-${minute}`}
-                      className="pointer-events-none absolute left-20 right-6 border-t border-white/10 opacity-25"
-                      style={{ top: minuteTop }}
-                    />
-                  );
-                })}
+            {Array.from({ length: 11 }, (_, index) => (index + 1) * 5)
+              .filter(minute => minute % 15 !== 0)
+              .map(minute => {
+                const minutesUntilHourEnd = (Math.min(endHour, h + 1) - h) * 60;
+                if (minute >= minutesUntilHourEnd) return null;
+                const minuteTop = minutesToStyle((h - startHour) * 60 + minute);
+                const fiveMinuteOpacity = `calc(0.25 * var(--five-minute-intensity))`;
+                return (
+                  <div
+                    key={`fivemin-${h}-${minute}`}
+                    className="pointer-events-none absolute border-t border-white/10"
+                    style={{
+                      top: minuteTop,
+                      left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                      right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                      opacity: fiveMinuteOpacity,
+                    }}
+                  />
+                );
+              })}
           </Fragment>
         );
       })}
@@ -137,27 +230,54 @@ export function DayTimeline({
 
       {showNowLine && (
         <>
-          <div
-            className="now-line pointer-events-none absolute left-20 right-6 z-50"
-            style={{ top: nowTop }}
-          />
-          <div
-            className="pointer-events-none absolute left-6 z-50 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
-            style={{ top: nowTop }}
-          >
-            <Clock className="h-3 w-3 text-slate-700" />
-            <span>Now</span>
-          </div>
-          <div
-            className="pointer-events-none absolute right-6 z-50 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
-            style={{ top: nowTop }}
-          >
-            {formatTime((nowMinutes ?? 0) + startHour * 60)}
-          </div>
+            <div
+              className="now-line pointer-events-none absolute z-50"
+              style={{
+                top: nowTop,
+                left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+                right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              }}
+            />
+            <div
+              className="pointer-events-none absolute z-50 flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
+              style={{
+                top: nowTop,
+                left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
+              }}
+            >
+              <Clock className="h-3 w-3 text-slate-700" />
+              <span>Now</span>
+            </div>
+            <div
+              className="pointer-events-none absolute z-50 -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
+              style={{
+                top: nowTop,
+                right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+              }}
+            >
+              {formatTime((nowMinutes ?? 0) + startHour * 60)}
+            </div>
         </>
       )}
-    </div>
+      </motion.div>
+    </motion.div>
   );
+}
+
+function interpolateRange(value: number, start: number, end: number) {
+  if (!Number.isFinite(value)) return 0;
+  if (Number.isNaN(start) || Number.isNaN(end) || start === end) {
+    return value >= end ? 1 : 0;
+  }
+  const raw = (value - start) / (end - start);
+  const clamped = Math.min(Math.max(raw, 0), 1);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function minutesToStyle(minutes: number) {
+  if (!Number.isFinite(minutes)) return "0px";
+  const safe = Math.max(0, minutes);
+  return `calc(var(--timeline-minute-unit) * ${safe})`;
 }
 
 function formatHour(h: number) {

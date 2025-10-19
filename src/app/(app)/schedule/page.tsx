@@ -15,13 +15,25 @@ import {
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
   AnimatePresence,
+  animate,
   motion,
   useAnimationControls,
+  useMotionValue,
   useReducedMotion,
 } from 'framer-motion'
+import type { AnimationPlaybackControls } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
-import { DayTimeline } from '@/components/schedule/DayTimeline'
+import {
+  DayTimeline,
+  TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK,
+  TIMELINE_CARD_LEFT_FALLBACK,
+  TIMELINE_CARD_RIGHT_FALLBACK,
+  TIMELINE_GRID_LEFT_FALLBACK,
+  TIMELINE_GRID_RIGHT_FALLBACK,
+  TIMELINE_LABEL_COLUMN_FALLBACK,
+  TIMELINE_RIGHT_GUTTER_FALLBACK,
+} from '@/components/schedule/DayTimeline'
 import { FocusTimeline, FocusTimelineFab } from '@/components/schedule/FocusTimeline'
 import FlameEmber, { FlameLevel, type FlameEmberProps } from '@/components/FlameEmber'
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
@@ -45,7 +57,7 @@ import {
 } from '@/lib/scheduler/instanceRepo'
 import { TaskLite, ProjectLite } from '@/lib/scheduler/weight'
 import { buildProjectItems } from '@/lib/scheduler/projects'
-import { windowRect, timeToMin } from '@/lib/scheduler/windowRect'
+import { windowRectMinutes, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import {
   fetchHabitsForSchedule,
@@ -91,9 +103,53 @@ const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
+const PX_PER_MIN_STOPS = [
+  0.9,
+  1.1,
+  1.25,
+  1.4,
+  1.6,
+  1.8,
+  2,
+  2.2,
+  2.4,
+  2.6,
+  2.8,
+  3,
+  3.2,
+] as const
 const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
+
+const TIMELINE_CSS_VARIABLES: CSSProperties = {
+  '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
+  '--timeline-container-padding-left': TIMELINE_CONTAINER_PADDING_LEFT_FALLBACK,
+  '--timeline-right-gutter': TIMELINE_RIGHT_GUTTER_FALLBACK,
+  '--timeline-grid-left': TIMELINE_GRID_LEFT_FALLBACK,
+  '--timeline-grid-right': TIMELINE_GRID_RIGHT_FALLBACK,
+  '--timeline-card-left': TIMELINE_CARD_LEFT_FALLBACK,
+  '--timeline-card-right': TIMELINE_CARD_RIGHT_FALLBACK,
+}
+
+const TIMELINE_FULL_BLEED_STYLE: CSSProperties = {
+  width: '100vw',
+  marginLeft: 'calc(50% - 50vw)',
+  marginRight: 'calc(50% - 50vw)',
+  '--timeline-container-padding-left': '0px',
+  '--timeline-grid-left': '0px',
+  '--timeline-card-left': 'clamp(0.75rem, 4vw, 1rem)',
+}
+
+const TIMELINE_HEADER_PADDING: CSSProperties = {
+  paddingLeft: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
+  paddingRight: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+}
+
+const TIMELINE_CARD_BOUNDS: CSSProperties = {
+  left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
+  right: `var(--timeline-card-right, ${TIMELINE_CARD_RIGHT_FALLBACK})`,
+}
 
 function computeDayTimelineHeightPx(
   startHour: number,
@@ -131,6 +187,21 @@ const dayTimelineTransition = {
 function clampPxPerMin(value: number) {
   if (!Number.isFinite(value)) return MIN_PX_PER_MIN
   return Math.min(MAX_PX_PER_MIN, Math.max(MIN_PX_PER_MIN, value))
+}
+
+function snapPxPerMin(value: number) {
+  const clamped = clampPxPerMin(value)
+  let closest = PX_PER_MIN_STOPS[0]
+  let minDelta = Math.abs(clamped - closest)
+  for (let index = 1; index < PX_PER_MIN_STOPS.length; index += 1) {
+    const stop = PX_PER_MIN_STOPS[index]
+    const delta = Math.abs(clamped - stop)
+    if (delta < minDelta) {
+      closest = stop
+      minDelta = delta
+    }
+  }
+  return closest
 }
 
 function getTouchDistance(a: Touch, b: Touch) {
@@ -389,6 +460,7 @@ type DayTimelineModel = {
 type DayTimelineRenderOptions = {
   disableInteractions?: boolean
   containerRef?: RefObject<HTMLDivElement | null>
+  fullBleed?: boolean
 }
 
 
@@ -980,7 +1052,6 @@ function computeWindowReportsForDay({
   windows,
   projectInstances,
   startHour,
-  pxPerMin,
   unscheduledProjects,
   schedulerFailureByProjectId,
   schedulerDebug,
@@ -991,7 +1062,6 @@ function computeWindowReportsForDay({
   windows: RepoWindow[]
   projectInstances: ReturnType<typeof computeProjectInstances>
   startHour: number
-  pxPerMin: number
   unscheduledProjects: ProjectItem[]
   schedulerFailureByProjectId: Record<string, SchedulerRunFailure[]>
   schedulerDebug: SchedulerDebugState | null
@@ -1058,10 +1128,8 @@ function computeWindowReportsForDay({
     })
     if (windowHasScheduledProject) continue
 
-    const { top, height } = windowRect(win, startHour, pxPerMin)
-    if (!Number.isFinite(top) || !Number.isFinite(height) || height <= 0) continue
-
     const durationMinutes = windowDurationForDay(win, startHour)
+    if (durationMinutes <= 0) continue
     const windowLabel = win.label?.trim() || 'Untitled window'
     const energyLabel = normalizeEnergyLabel(win.energy)
     const windowEnergyIndex = energyIndexFromLabel(energyLabel)
@@ -1102,8 +1170,7 @@ function computeWindowReportsForDay({
 
     reports.push({
       key: `${win.id}-${win.fromPrevDay ? 'prev' : 'curr'}-${win.start_local}-${win.end_local}`,
-      top,
-      height,
+      window: win,
       windowLabel,
       summary: description.summary,
       details: description.details,
@@ -1252,31 +1319,30 @@ function computeTimelineLayoutForSyncHabits({
 
 function applyTimelineLayoutStyle(
   style: CSSProperties,
-  mode: TimelineCardLayoutMode
+  mode: TimelineCardLayoutMode,
+  options?: { animate?: boolean }
 ): CSSProperties {
+  const baseStyle: CSSProperties = { ...style }
   if (mode === 'paired-left') {
-    const next: CSSProperties = {
-      ...style,
-      left: TIMELINE_LEFT_OFFSET,
-      width: TIMELINE_PAIR_WIDTH,
-    }
-    next.right = undefined
-    return next
+    baseStyle.left = TIMELINE_LEFT_OFFSET
+    baseStyle.width = TIMELINE_PAIR_WIDTH
+    baseStyle.right = undefined
+  } else if (mode === 'paired-right') {
+    baseStyle.left = TIMELINE_PAIR_RIGHT_LEFT
+    baseStyle.width = TIMELINE_PAIR_WIDTH
+    baseStyle.right = undefined
+  } else {
+    baseStyle.left = TIMELINE_LEFT_OFFSET
+    baseStyle.right = TIMELINE_RIGHT_OFFSET
   }
-  if (mode === 'paired-right') {
-    const next: CSSProperties = {
-      ...style,
-      left: TIMELINE_PAIR_RIGHT_LEFT,
-      width: TIMELINE_PAIR_WIDTH,
-    }
-    next.right = undefined
-    return next
+
+  if (options?.animate) {
+    const duration = 280
+    const easing = 'cubic-bezier(0.33, 1, 0.68, 1)'
+    baseStyle.transition = `left ${duration}ms ${easing}, right ${duration}ms ${easing}, width ${duration}ms ${easing}`
   }
-  return {
-    ...style,
-    left: TIMELINE_LEFT_OFFSET,
-    right: TIMELINE_RIGHT_OFFSET,
-  }
+
+  return baseStyle
 }
 
 function getTimelineCardCornerClass(mode: TimelineCardLayoutMode) {
@@ -1361,7 +1427,6 @@ function buildDayTimelineModel({
     windows,
     projectInstances,
     startHour,
-    pxPerMin,
     unscheduledProjects,
     schedulerFailureByProjectId,
     schedulerDebug,
@@ -1402,6 +1467,7 @@ function DayPeekOverlays({
   scrollProgress,
   baseTimelineHeight,
   timelineChromeHeight,
+  pxPerMin,
 }: {
   peekState: PeekState
   previousLabel: string
@@ -1411,10 +1477,14 @@ function DayPeekOverlays({
   containerRef: RefObject<HTMLDivElement | null>
   previousModel?: DayTimelineModel | null
   nextModel?: DayTimelineModel | null
-  renderPreview: (model: DayTimelineModel, options?: { disableInteractions?: boolean }) => ReactNode
+  renderPreview: (
+    model: DayTimelineModel,
+    options?: DayTimelineRenderOptions
+  ) => ReactNode
   scrollProgress: number | null
   baseTimelineHeight: number
   timelineChromeHeight: number
+  pxPerMin: number
 }) {
   const container = containerRef.current
   const containerWidth = container?.offsetWidth ?? 0
@@ -1442,7 +1512,7 @@ function DayPeekOverlays({
   const isModelForDirection = previewModel?.dayViewDateKey === expectedKey
   const resolvedPreviewModel = isModelForDirection ? previewModel : null
   const previewTimelineHeight = resolvedPreviewModel
-    ? computeDayTimelineHeightPx(resolvedPreviewModel.startHour, resolvedPreviewModel.pxPerMin)
+    ? computeDayTimelineHeightPx(resolvedPreviewModel.startHour, pxPerMin)
     : baseTimelineHeight
   const previewContainerHeight = previewTimelineHeight + timelineChromeHeight
   const alignment = isNext ? 'items-end text-right' : 'items-start text-left'
@@ -1766,8 +1836,7 @@ function parseSchedulerDebugPayload(
 
 type WindowReportEntry = {
   key: string
-  top: number
-  height: number
+  window: RepoWindow
   windowLabel: string
   summary: string
   details: string[]
@@ -2054,7 +2123,9 @@ export default function SchedulePage() {
     offset: 0,
   })
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
-  const [pxPerMin, setPxPerMin] = useState(2)
+  const [pxPerMin, setPxPerMin] = useState(() => snapPxPerMin(2))
+  const animatedPxPerMin = useMotionValue(pxPerMin)
+  const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null)
   const basePxPerMinRef = useRef(pxPerMin)
   const pinchStateRef = useRef<{
     initialDistance: number
@@ -2064,6 +2135,52 @@ export default function SchedulePage() {
     initialScrollY: number
   } | null>(null)
   const pinchActiveRef = useRef(false)
+  const stopZoomAnimation = useCallback(() => {
+    zoomAnimationRef.current?.stop()
+    zoomAnimationRef.current = null
+  }, [])
+
+  const animateZoomTo = useCallback(
+    (target: number) => {
+      const clamped = clampPxPerMin(target)
+      if (prefersReducedMotion) {
+        stopZoomAnimation()
+        animatedPxPerMin.set(clamped)
+        return
+      }
+      if (Math.abs(animatedPxPerMin.get() - clamped) < 0.0005) {
+        return
+      }
+      stopZoomAnimation()
+      zoomAnimationRef.current = animate(animatedPxPerMin, clamped, {
+        type: 'spring',
+        stiffness: 140,
+        damping: 26,
+        mass: 0.9,
+      })
+    },
+    [animatedPxPerMin, prefersReducedMotion, stopZoomAnimation]
+  )
+
+  const commitPinchToSnap = useCallback(() => {
+    const snapped = snapPxPerMin(animatedPxPerMin.get())
+    setPxPerMin(prev => (Math.abs(prev - snapped) < 0.001 ? prev : snapped))
+  }, [animatedPxPerMin])
+
+  useEffect(() => {
+    if (pinchActiveRef.current) return
+    animateZoomTo(pxPerMin)
+  }, [pxPerMin, animateZoomTo])
+
+  useEffect(() => {
+    return () => {
+      stopZoomAnimation()
+    }
+  }, [stopZoomAnimation])
+
+  useEffect(() => {
+    basePxPerMinRef.current = pxPerMin
+  }, [pxPerMin])
   const hasLoadedHabitCompletionState = useRef(false)
   const lastTimelineChromeHeightRef = useRef(0)
   const [memoNoteState, setMemoNoteState] = useState<MemoNoteDraftState | null>(null)
@@ -2347,7 +2464,7 @@ export default function SchedulePage() {
         const prevBase = basePxPerMinRef.current
         const prevZoom = prevBase > 0 ? prev / prevBase : 1
         basePxPerMinRef.current = next
-        const nextValue = clampPxPerMin(next * prevZoom)
+        const nextValue = snapPxPerMin(next * prevZoom)
         return Math.abs(prev - nextValue) < 0.001 ? prev : nextValue
       })
     },
@@ -2761,6 +2878,7 @@ export default function SchedulePage() {
     friendlyTimeZone,
     habitCompletionByDate,
     userCoordinates,
+    pxPerMin,
   ])
 
   useEffect(() => {
@@ -2776,7 +2894,6 @@ export default function SchedulePage() {
           windows: entry.windows,
           projectInstances: entry.projectInstances,
           startHour,
-          pxPerMin,
           unscheduledProjects,
           schedulerFailureByProjectId,
           schedulerDebug,
@@ -2786,7 +2903,6 @@ export default function SchedulePage() {
         })
         nextState[direction] = {
           ...entry,
-          pxPerMin,
           startHour,
           windowReports,
         }
@@ -3417,9 +3533,12 @@ export default function SchedulePage() {
               const anchorProgress = Number.isFinite(progressRaw)
                 ? Math.min(Math.max(progressRaw, 0), 1)
                 : 0.5
+              stopZoomAnimation()
+              const currentZoom = clampPxPerMin(animatedPxPerMin.get())
+              animatedPxPerMin.set(currentZoom)
               pinchStateRef.current = {
                 initialDistance: distance,
-                initialPxPerMin: pxPerMin,
+                initialPxPerMin: currentZoom,
                 initialHeight: height,
                 anchorProgress,
                 initialScrollY: scrollY,
@@ -3504,6 +3623,7 @@ export default function SchedulePage() {
         return
       }
       if (e.touches.length < 2) {
+        commitPinchToSnap()
         pinchStateRef.current = null
         pinchActiveRef.current = false
         return
@@ -3515,13 +3635,13 @@ export default function SchedulePage() {
       if (!(distance > 0) || !(pinchState.initialDistance > 0)) return
       e.preventDefault()
       const scale = distance / pinchState.initialDistance
-      const next = clampPxPerMin(pinchState.initialPxPerMin * scale)
-      setPxPerMin(prev => (Math.abs(prev - next) < 0.001 ? prev : next))
+      const target = clampPxPerMin(pinchState.initialPxPerMin * scale)
+      animatedPxPerMin.set(target)
       if (typeof window !== 'undefined') {
         const base = pinchState.initialPxPerMin
         const baseHeight = pinchState.initialHeight
         if (base > 0 && baseHeight > 0) {
-          const heightScale = next / base
+          const heightScale = target / base
           if (Number.isFinite(heightScale)) {
             const newHeight = baseHeight * heightScale
             const deltaHeight = newHeight - baseHeight
@@ -3623,6 +3743,7 @@ export default function SchedulePage() {
     if (pinchActiveRef.current) {
       pinchActiveRef.current = false
       pinchStateRef.current = null
+      commitPinchToSnap()
       sliderControls.set({ x: 0 })
       swipeDeltaRef.current = 0
       touchStartX.current = null
@@ -3762,11 +3883,8 @@ export default function SchedulePage() {
 
   const baseTimelineHeight = useMemo(
     () =>
-      computeDayTimelineHeightPx(
-        dayTimelineModel.startHour,
-        dayTimelineModel.pxPerMin
-      ),
-    [dayTimelineModel.startHour, dayTimelineModel.pxPerMin]
+      computeDayTimelineHeightPx(dayTimelineModel.startHour, pxPerMin),
+    [dayTimelineModel.startHour, pxPerMin]
   )
 
   const measuredTimelineContainerHeight =
@@ -3797,7 +3915,6 @@ export default function SchedulePage() {
         dayViewDetails,
         date,
         startHour: modelStartHour,
-        pxPerMin: modelPxPerMin,
         windows: modelWindows,
         projectInstances: modelProjectInstances,
         taskInstancesByProject: modelTaskInstancesByProject,
@@ -3807,9 +3924,24 @@ export default function SchedulePage() {
         windowReports: modelWindowReports,
       } = model
 
+      const modelPxPerMin = pxPerMin
+
+      const toTimelinePosition = (minutes: number) => {
+        if (!Number.isFinite(minutes)) return '0px'
+        if (minutes <= 0) return '0px'
+        return `calc(var(--timeline-minute-unit) * ${minutes})`
+      }
+
       const containerClass = options?.disableInteractions
         ? 'pointer-events-none select-none'
         : ''
+
+      const containerStyle: CSSProperties = options?.fullBleed
+        ? {
+            ...TIMELINE_CSS_VARIABLES,
+            ...TIMELINE_FULL_BLEED_STYLE,
+          }
+        : TIMELINE_CSS_VARIABLES
 
       const { habitLayouts, projectLayouts } = computeTimelineLayoutForSyncHabits({
         habitPlacements: modelHabitPlacements,
@@ -3820,8 +3952,9 @@ export default function SchedulePage() {
         <div
           className={containerClass}
           ref={options?.containerRef ?? undefined}
+          style={containerStyle}
         >
-          <div className="pl-16 pr-6 pb-3 text-white">
+          <div className="pb-3 text-white" style={TIMELINE_HEADER_PADDING}>
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/60">
                 {isViewingToday ? 'Today' : 'Selected Day'}
@@ -3832,17 +3965,28 @@ export default function SchedulePage() {
               <p className="text-xs text-white/60 sm:text-sm">{dayViewDetails.fullDate}</p>
             </div>
           </div>
-          <DayTimeline date={date} startHour={modelStartHour} pxPerMin={modelPxPerMin}>
+          <DayTimeline
+            date={date}
+            startHour={modelStartHour}
+            pxPerMin={modelPxPerMin}
+            zoomPxPerMin={animatedPxPerMin}
+            style={TIMELINE_CSS_VARIABLES}
+          >
             {modelWindows.map(w => {
-              const { top, height } = windowRect(w, modelStartHour, modelPxPerMin)
-              const windowHeightPx =
-                typeof height === 'number' ? Math.max(0, height) : 0
+              const { topMinutes, heightMinutes } = windowRectMinutes(
+                w,
+                modelStartHour
+              )
+              const windowHeightPx = Math.max(0, heightMinutes * modelPxPerMin)
               return (
                 <div
                   key={w.id}
                   aria-label={w.label}
                   className="absolute left-0 flex"
-                  style={{ top, height }}
+                  style={{
+                    top: toTimelinePosition(topMinutes),
+                    height: toTimelinePosition(heightMinutes),
+                  }}
                 >
                   <div className="w-0.5 bg-zinc-700 opacity-50" />
                   <WindowLabel
@@ -3852,40 +3996,57 @@ export default function SchedulePage() {
                 </div>
               )
             })}
-            {modelWindowReports.map(report => (
-              <div
-                key={report.key}
-                className="absolute left-16 right-2"
-                style={{ top: report.top, height: report.height }}
-              >
-                <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
-                  <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
-                    Window report · {report.windowLabel}
+            {modelWindowReports.map(report => {
+              const { topMinutes, heightMinutes } = windowRectMinutes(
+                report.window,
+                modelStartHour
+              )
+              if (!Number.isFinite(heightMinutes) || heightMinutes <= 0) {
+                return null
+              }
+              return (
+                <div
+                  key={report.key}
+                  className="absolute"
+                  style={{
+                    ...TIMELINE_CARD_BOUNDS,
+                    top: toTimelinePosition(topMinutes),
+                    height: toTimelinePosition(heightMinutes),
+                  }}
+                >
+                  <div className="flex h-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-sky-100 shadow-[0_18px_38px_rgba(8,12,28,0.55)] backdrop-blur-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-200/80">
+                      Window report · {report.windowLabel}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
+                      <span>{report.rangeLabel}</span>
+                      <span>Energy: {report.energyLabel}</span>
+                      <span>Duration: {report.durationLabel}</span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-snug text-sky-50">
+                      {report.summary}
+                    </p>
+                    {report.details.length > 0 && (
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
+                        {report.details.map((detail, index) => (
+                          <li key={`${report.key}-detail-${index}`}>{detail}</li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-sky-200/70">
-                    <span>{report.rangeLabel}</span>
-                    <span>Energy: {report.energyLabel}</span>
-                    <span>Duration: {report.durationLabel}</span>
-                  </div>
-                  <p className="mt-2 text-[11px] leading-snug text-sky-50">
-                    {report.summary}
-                  </p>
-                  {report.details.length > 0 && (
-                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-sky-100/85">
-                      {report.details.map((detail, index) => (
-                        <li key={`${report.key}-detail-${index}`}>{detail}</li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {modelHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end)) return null
               const startMin = placement.start.getHours() * 60 + placement.start.getMinutes()
-              const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((placement.end.getTime() - placement.start.getTime()) / 60000) * modelPxPerMin
+              const startOffsetMinutes = startMin - modelStartHour * 60
+              const durationMinutes = Math.max(
+                0,
+                (placement.end.getTime() - placement.start.getTime()) / 60000
+              )
+              const topStyle = toTimelinePosition(startOffsetMinutes)
+              const heightStyle = toTimelinePosition(durationMinutes)
               const habitStatus = getHabitCompletionStatus(
                 dayViewDateKey,
                 placement.habitId
@@ -3973,14 +4134,16 @@ export default function SchedulePage() {
               const habitCornerClass = getTimelineCardCornerClass(layoutMode)
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
-                  top,
-                  height,
+                  ...TIMELINE_CARD_BOUNDS,
+                  top: topStyle,
+                  height: heightStyle,
                   boxShadow: cardShadow,
                   outline: cardOutline,
                   outlineOffset: '-1px',
                   background: cardBackground,
                 },
-                layoutMode
+                layoutMode,
+                { animate: !prefersReducedMotion }
               )
               return (
                 <motion.div
@@ -4019,9 +4182,13 @@ export default function SchedulePage() {
               if (!isValidDate(start) || !isValidDate(end)) return null
               const projectId = project.id
               const startMin = start.getHours() * 60 + start.getMinutes()
-              const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((end.getTime() - start.getTime()) / 60000) * modelPxPerMin
+              const startOffsetMinutes = startMin - modelStartHour * 60
+              const durationMinutes = Math.max(
+                0,
+                (end.getTime() - start.getTime()) / 60000
+              )
+              const topStyle = toTimelinePosition(startOffsetMinutes)
+              const heightStyle = toTimelinePosition(durationMinutes)
               const isExpanded = expandedProjects.has(projectId)
               const projectTaskCandidates =
                 modelTaskInstancesByProject[projectId] ?? []
@@ -4061,10 +4228,12 @@ export default function SchedulePage() {
               const projectCornerClass = getTimelineCardCornerClass(layoutMode)
               const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
-                  top,
-                  height,
+                  ...TIMELINE_CARD_BOUNDS,
+                  top: topStyle,
+                  height: heightStyle,
                 },
-                layoutMode
+                layoutMode,
+                { animate: !prefersReducedMotion }
               )
               const sharedCardStyle: CSSProperties = {
                 boxShadow:
@@ -4077,7 +4246,7 @@ export default function SchedulePage() {
                 1
               )
               const projectHeightPx = Math.max(
-                typeof height === 'number' ? height : 0,
+                durationMinutes * modelPxPerMin,
                 1
               )
               const minHeightRatio = Math.min(1, 4 / projectHeightPx)
@@ -4292,7 +4461,6 @@ export default function SchedulePage() {
                               end: taskEnd,
                               kind,
                               instanceId,
-                              displayDurationMinutes,
                             } = taskCard
                             if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
                               return null
@@ -4532,12 +4700,15 @@ export default function SchedulePage() {
             {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
               if (!isValidDate(start) || !isValidDate(end)) return null
               const startMin = start.getHours() * 60 + start.getMinutes()
-              const top = (startMin - modelStartHour * 60) * modelPxPerMin
-              const height =
-                ((end.getTime() - start.getTime()) / 60000) * modelPxPerMin
+              const startOffsetMinutes = startMin - modelStartHour * 60
+              const durationMinutes = Math.max(
+                0,
+                (end.getTime() - start.getTime()) / 60000
+              )
               const style: CSSProperties = {
-                top,
-                height,
+                ...TIMELINE_CARD_BOUNDS,
+                top: toTimelinePosition(startOffsetMinutes),
+                height: toTimelinePosition(durationMinutes),
                 boxShadow: 'var(--elev-card)',
                 outline: '1px solid var(--event-border)',
                 outlineOffset: '-1px',
@@ -4550,7 +4721,7 @@ export default function SchedulePage() {
                 status === 'completed' || status === 'scheduled'
               const isCompleted = status === 'completed'
               const standaloneBaseClass =
-                'absolute left-16 right-2 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                'absolute flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
               const standaloneScheduledClass =
                 `${standaloneBaseClass} text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]`
               const standaloneCompletedClass =
@@ -4635,6 +4806,8 @@ export default function SchedulePage() {
       )
     },
       [
+        pxPerMin,
+        animatedPxPerMin,
         prefersReducedMotion,
         hasInteractedWithProjects,
         setProjectExpansion,
@@ -4653,6 +4826,7 @@ export default function SchedulePage() {
     () =>
       renderDayTimeline(dayTimelineModel, {
         containerRef: dayTimelineContainerRef,
+        fullBleed: true,
       }),
     [renderDayTimeline, dayTimelineModel]
   )
@@ -4796,6 +4970,7 @@ export default function SchedulePage() {
                       scrollProgress={swipeScrollProgressRef.current}
                       baseTimelineHeight={baseTimelineHeight}
                       timelineChromeHeight={timelineChromeHeight}
+                      pxPerMin={pxPerMin}
                     />
                   </div>
                 ) : skipNextDayAnimation ? (
