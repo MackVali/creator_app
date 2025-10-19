@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -29,35 +30,69 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const router = useRouter();
   const { session } = useAuth();
 
-  const resolveProfileRoute = async () => {
-    if (profile?.username?.trim()) {
-      return `/profile/${profile.username}`;
-    }
+  const defaultDestination = useMemo(
+    () => (session ? "/profile" : "/auth"),
+    [session]
+  );
+  const [profileHref, setProfileHref] = useState<string | null>(null);
 
-    if (session && userId) {
-      try {
-        const fetchedProfile = await getProfileByUserId(userId);
-        if (fetchedProfile?.username?.trim()) {
-          return `/profile/${fetchedProfile.username}`;
-        }
-      } catch (error) {
-        console.error("Failed to resolve profile handle:", error);
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveProfileHref = async () => {
+      if (!session) {
+        setProfileHref("/auth");
+        return;
       }
 
-      return "/profile";
-    }
+      if (profile?.username?.trim()) {
+        setProfileHref(`/profile/${profile.username}`);
+        return;
+      }
 
-    return session ? "/profile" : "/auth";
+      const sessionHandle = session.user.user_metadata?.username;
+      if (typeof sessionHandle === "string" && sessionHandle.trim()) {
+        setProfileHref(`/profile/${sessionHandle.trim()}`);
+        return;
+      }
+
+      setProfileHref("/profile");
+
+      if (!userId) {
+        return;
+      }
+
+      try {
+        const fetchedProfile = await getProfileByUserId(userId);
+        if (cancelled) return;
+
+        if (fetchedProfile?.username?.trim()) {
+          setProfileHref(`/profile/${fetchedProfile.username}`);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to resolve profile handle:", error);
+        }
+      }
+    };
+
+    resolveProfileHref();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.username, session, userId]);
+
+  const navigateToProfile = () => {
+    router.push(profileHref || defaultDestination);
   };
 
-  const handleAvatarClick = async () => {
-    const target = await resolveProfileRoute();
-    router.push(target);
+  const handleAvatarClick = () => {
+    navigateToProfile();
   };
 
-  const handleProfileClick = async () => {
-    const target = await resolveProfileRoute();
-    router.push(target);
+  const handleProfileClick = () => {
+    navigateToProfile();
   };
 
   const handleEditProfileClick = () => {
@@ -144,7 +179,10 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
 
             <div className="px-2 py-2 text-sm">
               <DropdownMenuItem
-                onClick={handleProfileClick}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  handleProfileClick();
+                }}
                 className="group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-white/70 transition-colors group-hover:bg-white/15 group-hover:text-white">
@@ -153,7 +191,10 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
                 View profile
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={handleEditProfileClick}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  handleEditProfileClick();
+                }}
                 className="group mt-1 flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5 text-white/70 transition-colors group-hover:bg-white/15 group-hover:text-white">
