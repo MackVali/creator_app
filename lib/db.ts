@@ -470,6 +470,36 @@ export async function ensureProfileExists(
       }
     }
 
+    if (!profile && typeof window !== "undefined") {
+      try {
+        const response = await fetch("/api/profile/ensure", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: profileData.name ?? null,
+            username: profileData.username ?? null,
+            bio: profileData.bio ?? null,
+            dob: profileData.dob ?? null,
+            city: profileData.city ?? null,
+            theme_color: profileData.theme_color ?? null,
+            font_family: profileData.font_family ?? null,
+            accent_color: profileData.accent_color ?? null,
+          }),
+        });
+
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload?.profile) {
+            profile = payload.profile as Profile;
+          }
+        }
+      } catch (error) {
+        console.error("Failed to ensure profile via API route", error);
+      }
+    }
+
     return profile;
   } catch (error) {
     console.error("Error ensuring profile exists:", error);
