@@ -389,18 +389,8 @@ export async function ensureProfileExists(
   userId: string
 ): Promise<Profile | null> {
   try {
-    // Check if profile exists
-    let profile = await getProfileByUserId(userId);
-
-    if (!profile) {
-      // Create profile if it doesn't exist
-      const result = await createProfile(userId, {});
-      if (result.success && result.profile) {
-        profile = result.profile;
-      }
-    }
-
-    return profile;
+    // Simply check if the profile exists without creating a placeholder.
+    return await getProfileByUserId(userId);
   } catch (error) {
     console.error("Error ensuring profile exists:", error);
     return null;

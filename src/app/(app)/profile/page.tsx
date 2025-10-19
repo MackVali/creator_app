@@ -23,8 +23,8 @@ export default function ProfilePage() {
           // Redirect to handle-based profile route
           router.push(`/profile/${profile.username}`);
         } else {
-          // Fallback to dashboard if no username
-          router.push("/dashboard");
+          const params = new URLSearchParams({ onboarding: "1", redirect: "/profile" });
+          router.push(`/profile/edit?${params.toString()}`);
         }
       } catch (err) {
         console.error("Error loading profile:", err);
