@@ -111,7 +111,6 @@ export interface Database {
           id: string;
           created_at: string;
           updated_at: string;
-          user_id: string;
           value: string;
           label: string;
         };
@@ -119,7 +118,6 @@ export interface Database {
           id?: string;
           created_at?: string;
           updated_at?: string;
-          user_id: string;
           value: string;
           label: string;
         };
@@ -127,7 +125,6 @@ export interface Database {
           id?: string;
           created_at?: string;
           updated_at?: string;
-          user_id?: string;
           value?: string;
           label?: string;
         };
