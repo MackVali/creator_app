@@ -53,6 +53,10 @@ function formatLocationLabel(value: string) {
     .join(" ")
 }
 
+function normalizeLocationValue(value?: string | null) {
+  return value ? String(value).toUpperCase().trim() : "";
+}
+
 export interface WindowItem {
   id: string
   name: string
@@ -242,7 +246,7 @@ export default function WindowsPolishedUI({
 
   async function handleSave(data: WindowItem) {
     try {
-      const normalizedLocation = (data.location ?? "ANY").toUpperCase()
+      const normalizedLocation = normalizeLocationValue(data.location) || "ANY"
       const nextData = { ...data, location: normalizedLocation as WindowItem["location"] }
       if (editing) {
         if (onEdit) {
@@ -978,8 +982,10 @@ function Drawer({
   const [savingCustomLocation, setSavingCustomLocation] = useState(false)
 
   useEffect(() => {
-    if (initial) setForm({ ...initial })
-    else setForm(createDefaultWindow())
+    if (initial) {
+      const normalizedLocation = normalizeLocationValue(initial.location) || "ANY"
+      setForm({ ...initial, location: normalizedLocation as WindowItem["location"] })
+    } else setForm(createDefaultWindow())
   }, [initial])
 
   useEffect(() => {
@@ -1125,9 +1131,13 @@ function Drawer({
             </label>
             <select
               className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
-              value={(form.location ?? "ANY").toUpperCase()}
+              value={normalizeLocationValue(form.location) || "ANY"}
               onChange={(e) =>
-                setForm({ ...form, location: e.target.value.toUpperCase() })
+                setForm({
+                  ...form,
+                  location:
+                    (normalizeLocationValue(e.target.value) || "ANY") as WindowItem["location"],
+                })
               }
               disabled={locationLoading}
             >

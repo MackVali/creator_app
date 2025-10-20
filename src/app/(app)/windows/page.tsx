@@ -7,6 +7,10 @@ import WindowsPolishedUI, { type WindowItem } from "@/components/WindowsPolished
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
+function normalizeLocationValue(value?: string | null) {
+  return value ? String(value).toUpperCase().trim() : "";
+}
+
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 export default function WindowsPage() {
@@ -28,18 +32,19 @@ export default function WindowsPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
-      const mapped: WindowItem[] = data.map((w) => ({
-        id: w.id,
-        name: w.label,
-        days: (w.days ?? []).map((d: number) => DAY_LABELS[d]),
-        start: w.start_local,
-        end: w.end_local,
-        energy: w.energy?.toLowerCase() as WindowItem["energy"],
-        location: w.location_context
-          ? String(w.location_context).toUpperCase()
-          : "ANY",
-        active: true,
-      }));
+      const mapped: WindowItem[] = data.map((w) => {
+        const locationValue = normalizeLocationValue(w.location_context);
+        return {
+          id: w.id,
+          name: w.label,
+          days: (w.days ?? []).map((d: number) => DAY_LABELS[d]),
+          start: w.start_local,
+          end: w.end_local,
+          energy: w.energy?.toLowerCase() as WindowItem["energy"],
+          location: locationValue || "ANY",
+          active: true,
+        };
+      });
       setWindows(mapped);
     }
   }, [supabase]);
@@ -56,6 +61,8 @@ export default function WindowsPage() {
     if (!user) return false;
 
     const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
+    const normalizedLocation = normalizeLocationValue(item.location);
+
     const payload = {
       user_id: user.id,
       label: item.name,
@@ -64,8 +71,8 @@ export default function WindowsPage() {
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
       location_context:
-        item.location && item.location.toUpperCase() !== "ANY"
-          ? item.location.toUpperCase()
+        normalizedLocation && normalizedLocation !== "ANY"
+          ? normalizedLocation
           : null,
     };
 
@@ -82,7 +89,10 @@ export default function WindowsPage() {
           .single();
         if (error) throw error;
         const id = inserted?.id ?? item.id;
-        setWindows((prev) => [...(prev ?? []), { ...item, id }]);
+        setWindows((prev) => [
+          ...(prev ?? []),
+          { ...item, id, location: normalizedLocation || "ANY" },
+        ]);
       } else {
         const nextDays = baseDays.map((d) => (d + 1) % 7);
         const firstPayload = { ...payload, end_local: "23:59" };
@@ -106,12 +116,18 @@ export default function WindowsPage() {
         if (err2) throw err2;
         setWindows((prev) => [
           ...(prev ?? []),
-          { ...item, id: first?.id ?? "", end: "23:59" },
+          {
+            ...item,
+            id: first?.id ?? "",
+            end: "23:59",
+            location: normalizedLocation || "ANY",
+          },
           {
             ...item,
             id: second?.id ?? "",
             start: "00:00",
             days: nextDays.map((d) => DAY_LABELS[d]),
+            location: normalizedLocation || "ANY",
           },
         ]);
       }
@@ -140,6 +156,8 @@ export default function WindowsPage() {
       return true;
     }
 
+    const normalizedLocation = normalizeLocationValue(item.location);
+
     const payload = {
       label: item.name,
       days: baseDays,
@@ -147,15 +165,17 @@ export default function WindowsPage() {
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
       location_context:
-        item.location && item.location.toUpperCase() !== "ANY"
-          ? item.location.toUpperCase()
+        normalizedLocation && normalizedLocation !== "ANY"
+          ? normalizedLocation
           : null,
     };
 
     const { error } = await supabase.from("windows").update(payload).eq("id", id);
     if (error) throw error;
     setWindows((prev) =>
-      prev?.map((w) => (w.id === id ? { ...item, id } : w))
+      prev?.map((w) =>
+        w.id === id ? { ...item, id, location: normalizedLocation || "ANY" } : w,
+      )
     );
     return true;
   }
