@@ -79,6 +79,7 @@ function formatLocationLabel(
 
 async function fetchLocationContextOptions(
   supabase: SupabaseClient<Database>,
+  userId: string,
   values: Array<string | null | undefined>
 ): Promise<Map<string, LocationContextRow>> {
   const uniqueValues = Array.from(
@@ -96,6 +97,7 @@ async function fetchLocationContextOptions(
   const { data, error } = await supabase
     .from("location_contexts")
     .select("id, value, label")
+    .eq("user_id", userId)
     .in("value", uniqueValues);
 
   if (error) {
@@ -148,6 +150,7 @@ export async function getHabits(
     const rows = fallback.data ?? [];
     const locationOptions = await fetchLocationContextOptions(
       supabase,
+      userId,
       rows.map((habit) => habit.location_context)
     );
 
@@ -195,6 +198,7 @@ export async function getHabits(
   const rows = (data ?? []) as HabitRow[];
   const locationOptions = await fetchLocationContextOptions(
     supabase,
+    userId,
     rows.map((habit) => habit.location_context)
   );
 
