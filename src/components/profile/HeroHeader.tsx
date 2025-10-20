@@ -650,22 +650,7 @@ export default function HeroHeader({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-5 sm:gap-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4 lg:justify-start">
-                  <button
-                    type="button"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:w-auto"
-                  >
-                    Follow
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 py-3 text-sm font-medium text-white/80 transition-all duration-200 hover:border-white/35 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-200 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:w-auto"
-                  >
-                    Message
-                  </button>
-                </div>
-
+              <div className="flex justify-center sm:justify-start">
                 <SocialPillsRow socials={socials || {}} />
               </div>
             </div>
