@@ -515,9 +515,12 @@ export default function EditHabitPage() {
               ? String(data.completion_target)
               : "10";
           setCompletionTarget(completionValue);
-          setLocationContext(
-            data.location_context ? String(data.location_context).toUpperCase() : null
-          );
+          if (data.location_context) {
+            const locationValue = String(data.location_context).trim();
+            setLocationContext(locationValue ? locationValue : null);
+          } else {
+            setLocationContext(null);
+          }
           setDaylightPreference(
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
@@ -786,7 +789,7 @@ export default function EditHabitPage() {
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
                   onLocationContextChange={(value) =>
-                    setLocationContext(value ? value.toUpperCase() : null)
+                    setLocationContext(value ?? null)
                   }
                   onDaylightPreferenceChange={(value) =>
                     setDaylightPreference(value.toUpperCase())

@@ -255,7 +255,7 @@ export function HabitFormFields({
     onRecurrenceDaysChange(next);
   };
 
-  const locationValue = (locationContext ?? "").toUpperCase().trim() || "ANY";
+  const locationValue = (locationContext ?? "").trim() || "ANY";
   const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
   const windowEdgeValue = (windowEdgePreference ?? "FRONT")
     .toUpperCase()

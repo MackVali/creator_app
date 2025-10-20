@@ -28,18 +28,21 @@ export default function WindowsPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
-      const mapped: WindowItem[] = data.map((w) => ({
-        id: w.id,
-        name: w.label,
-        days: (w.days ?? []).map((d: number) => DAY_LABELS[d]),
-        start: w.start_local,
-        end: w.end_local,
-        energy: w.energy?.toLowerCase() as WindowItem["energy"],
-        location: w.location_context
-          ? String(w.location_context).toUpperCase()
-          : "ANY",
-        active: true,
-      }));
+      const mapped: WindowItem[] = data.map((w) => {
+        const location = w.location_context
+          ? String(w.location_context).trim()
+          : ""
+        return {
+          id: w.id,
+          name: w.label,
+          days: (w.days ?? []).map((d: number) => DAY_LABELS[d]),
+          start: w.start_local,
+          end: w.end_local,
+          energy: w.energy?.toLowerCase() as WindowItem["energy"],
+          location: location || "ANY",
+          active: true,
+        }
+      })
       setWindows(mapped);
     }
   }, [supabase]);
@@ -56,6 +59,8 @@ export default function WindowsPage() {
     if (!user) return false;
 
     const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
+    const locationValue = item.location?.trim() ?? "";
+
     const payload = {
       user_id: user.id,
       label: item.name,
@@ -64,8 +69,8 @@ export default function WindowsPage() {
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
       location_context:
-        item.location && item.location.toUpperCase() !== "ANY"
-          ? item.location.toUpperCase()
+        locationValue && locationValue !== "ANY"
+          ? locationValue
           : null,
     };
 
@@ -140,6 +145,8 @@ export default function WindowsPage() {
       return true;
     }
 
+    const locationValue = item.location?.trim() ?? "";
+
     const payload = {
       label: item.name,
       days: baseDays,
@@ -147,8 +154,8 @@ export default function WindowsPage() {
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
       location_context:
-        item.location && item.location.toUpperCase() !== "ANY"
-          ? item.location.toUpperCase()
+        locationValue && locationValue !== "ANY"
+          ? locationValue
           : null,
     };
 

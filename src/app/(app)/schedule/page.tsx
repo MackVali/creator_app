@@ -234,6 +234,12 @@ function parseScheduleDateParam(value: string | null) {
   return { date: parsed, wasValid: true }
 }
 
+function coerceLocationContext(value?: string | null) {
+  if (value === null || value === undefined) return null
+  const trimmed = String(value).trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 function ScheduleViewShell({ children }: { children: ReactNode }) {
   const prefersReducedMotion = useReducedMotion()
   if (prefersReducedMotion) return <div>{children}</div>
@@ -858,9 +864,7 @@ function computeHabitPlacementsForDay({
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
-    const locationContext = habit.locationContext
-      ? String(habit.locationContext).toUpperCase().trim()
-      : null
+    const locationContext = coerceLocationContext(habit.locationContext)
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
       : 'ALL_DAY'
@@ -889,9 +893,7 @@ function computeHabitPlacementsForDay({
     for (const entry of windowEntries) {
       if (entry.energyIdx < requiredEnergyIdx) continue
 
-      const windowLocationRaw = entry.window.location_context
-        ? String(entry.window.location_context).toUpperCase().trim()
-        : null
+      const windowLocationRaw = coerceLocationContext(entry.window.location_context)
       if (locationContext) {
         if (!windowLocationRaw) continue
         if (windowLocationRaw !== locationContext) continue

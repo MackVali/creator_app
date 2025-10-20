@@ -53,6 +53,12 @@ function habitTypePriority(value?: string | null) {
   return HABIT_TYPE_PRIORITY[normalized] ?? Number.MAX_SAFE_INTEGER
 }
 
+function coerceLocationContext(value?: string | null) {
+  if (value === null || value === undefined) return null
+  const trimmed = String(value).trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 type ScheduleFailure = {
   itemId: string
   reason: string
@@ -833,9 +839,7 @@ async function scheduleHabitsForDay(params: {
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
-    const locationContext = habit.locationContext
-      ? String(habit.locationContext).toUpperCase().trim()
-      : null
+    const locationContext = coerceLocationContext(habit.locationContext)
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
       : 'ALL_DAY'
@@ -1149,9 +1153,7 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
 
-  const desiredLocation = options?.locationContext
-    ? String(options.locationContext).toUpperCase().trim()
-    : null
+  const desiredLocation = coerceLocationContext(options?.locationContext ?? null)
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
 
@@ -1185,9 +1187,7 @@ async function fetchCompatibleWindowsForItem(
       continue
     }
 
-    const windowLocationRaw = win.location_context
-      ? String(win.location_context).toUpperCase().trim()
-      : null
+    const windowLocationRaw = coerceLocationContext(win.location_context)
     if (desiredLocation) {
       if (!windowLocationRaw) continue
       if (windowLocationRaw !== desiredLocation) continue

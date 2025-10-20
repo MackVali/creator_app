@@ -620,7 +620,7 @@ export default function NewHabitPage() {
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
                 onLocationContextChange={(value) =>
-                  setLocationContext(value ? value.toUpperCase() : null)
+                  setLocationContext(value ?? null)
                 }
                 onDaylightPreferenceChange={(value) =>
                   setDaylightPreference(value.toUpperCase())
