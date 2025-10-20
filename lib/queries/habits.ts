@@ -39,65 +39,122 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     throw new Error("Supabase client not available");
   }
 
-  const { data, error } = await supabase
+  const {
+    data: habitRows,
+    error: habitError,
+  } = await supabase
     .from("habits")
     .select(
-      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target, skill:skills(id, name, icon), goal:goals(id, name), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target, routine_id"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
-  if (error) {
-    console.warn("Error fetching habits with routines, falling back:", error);
-
-    const fallback = await supabase
-      .from("habits")
-      .select(
-        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target"
-      )
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false });
-
-    if (fallback.error) {
-      console.error("Error fetching habits:", fallback.error);
-      throw fallback.error;
-    }
-
-    return (
-      fallback.data?.map((habit) => ({
-        ...habit,
-        skill_id: habit.skill_id ?? null,
-        energy: habit.energy ?? null,
-        skill: null,
-        goal_id: habit.goal_id ?? null,
-        completion_target: habit.completion_target ?? null,
-        goal: null,
-        routine_id: null,
-        routine: null,
-      })) || []
-    );
+  if (habitError) {
+    console.error("Error fetching habits:", habitError);
+    throw habitError;
   }
 
-  return (
-    data?.map((habit) => ({
-      ...habit,
-      skill_id: habit.skill_id ?? null,
-      energy: habit.energy ?? null,
-      skill: habit.skill
-        ? {
-            id: habit.skill.id,
-            name: habit.skill.name,
-            icon: habit.skill.icon ?? null,
-          }
-        : null,
-      goal_id: habit.goal_id ?? null,
-      completion_target: habit.completion_target ?? null,
-      goal: habit.goal
-        ? {
-            id: habit.goal.id,
-            name: habit.goal.name ?? null,
-          }
-        : null,
-    })) ?? []
+  const rows = habitRows ?? [];
+
+  const skillIds = Array.from(
+    new Set(rows.map((habit) => habit.skill_id).filter((id): id is string => Boolean(id)))
   );
+  const goalIds = Array.from(
+    new Set(rows.map((habit) => habit.goal_id).filter((id): id is string => Boolean(id)))
+  );
+  const routineIds = Array.from(
+    new Set(rows.map((habit) => habit.routine_id).filter((id): id is string => Boolean(id)))
+  );
+
+  let skillsData: Array<{ id: string; name: string; icon: string | null }> = [];
+  if (skillIds.length > 0) {
+    const { data, error } = await supabase
+      .from("skills")
+      .select("id, name, icon")
+      .in("id", skillIds);
+    if (error) {
+      console.warn("Failed to load skill metadata for habits:", error);
+    } else {
+      skillsData = data ?? [];
+    }
+  }
+
+  let goalsData: Array<{ id: string; name: string | null }> = [];
+  if (goalIds.length > 0) {
+    const { data, error } = await supabase
+      .from("goals")
+      .select("id, name")
+      .in("id", goalIds);
+    if (error) {
+      console.warn("Failed to load goal metadata for habits:", error);
+    } else {
+      goalsData = data ?? [];
+    }
+  }
+
+  let routinesData: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    created_at: string;
+    updated_at: string;
+  }> = [];
+  if (routineIds.length > 0) {
+    const { data, error } = await supabase
+      .from("habit_routines")
+      .select("id, name, description, created_at, updated_at")
+      .in("id", routineIds);
+    if (error) {
+      console.warn("Failed to load routine metadata for habits:", error);
+    } else {
+      routinesData = data ?? [];
+    }
+  }
+
+  const skillMap = new Map<string, { id: string; name: string; icon: string | null }>();
+  for (const skill of skillsData) {
+    if (!skill?.id) continue;
+    skillMap.set(skill.id, {
+      id: skill.id,
+      name: skill.name,
+      icon: skill.icon ?? null,
+    });
+  }
+
+  const goalMap = new Map<string, { id: string; name: string | null }>();
+  for (const goal of goalsData) {
+    if (!goal?.id) continue;
+    goalMap.set(goal.id, {
+      id: goal.id,
+      name: goal.name ?? null,
+    });
+  }
+
+  const routineMap = new Map<
+    string,
+    { id: string; name: string; description: string | null; created_at: string; updated_at: string }
+  >();
+  for (const routine of routinesData) {
+    if (!routine?.id) continue;
+    routineMap.set(routine.id, {
+      id: routine.id,
+      name: routine.name,
+      description: routine.description ?? null,
+      created_at: routine.created_at,
+      updated_at: routine.updated_at,
+    });
+  }
+
+  return rows.map((habit) => ({
+    ...habit,
+    skill_id: habit.skill_id ?? null,
+    energy: habit.energy ?? null,
+    skill: habit.skill_id ? skillMap.get(habit.skill_id) ?? null : null,
+    goal_id: habit.goal_id ?? null,
+    completion_target: habit.completion_target ?? null,
+    goal: habit.goal_id ? goalMap.get(habit.goal_id) ?? null : null,
+    routine_id: habit.routine_id ?? null,
+    routine: habit.routine_id ? routineMap.get(habit.routine_id) ?? null : null,
+  }));
 }
