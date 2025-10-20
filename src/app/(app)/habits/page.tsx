@@ -100,7 +100,6 @@ function formatTitleCase(value: string | null | undefined) {
 
 export default function HabitsPage() {
   const router = useRouter();
-  const supabase = getSupabaseBrowser();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +108,7 @@ export default function HabitsPage() {
     let isMounted = true;
 
     const fetchHabits = async () => {
+      const supabase = getSupabaseBrowser();
       if (!supabase) {
         if (isMounted) {
           setError("Supabase client not available");
@@ -156,7 +156,7 @@ export default function HabitsPage() {
     return () => {
       isMounted = false;
     };
-  }, [supabase]);
+  }, []);
 
   const { routines, standaloneHabits } = useMemo(() => {
     const routineMap = new Map<string, HabitRoutineGroup>();
