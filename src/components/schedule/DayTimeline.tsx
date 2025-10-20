@@ -21,7 +21,7 @@ export const TIMELINE_LABEL_COLUMN_FALLBACK = "clamp(3.5rem, 16vw, 5rem)";
 export const TIMELINE_RIGHT_GUTTER_FALLBACK = "clamp(0.75rem, 5vw, 1.5rem)";
 export const TIMELINE_GRID_LEFT_FALLBACK = `var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK})`;
 export const TIMELINE_GRID_RIGHT_FALLBACK = `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`;
-export const TIMELINE_CARD_LEFT_FALLBACK = `calc(var(--timeline-label-column, ${TIMELINE_LABEL_COLUMN_FALLBACK}) - 1rem)`;
+export const TIMELINE_CARD_LEFT_FALLBACK = `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`;
 export const TIMELINE_CARD_RIGHT_FALLBACK = `max(calc(var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK}) - 1rem), 0px)`;
 
 interface DayTimelineProps {
@@ -117,7 +117,7 @@ export function DayTimeline({
 
   const combinedStyle: Record<string, string | number | MotionValue> = {
     ...timelineVariables,
-    paddingLeft: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
+    paddingLeft: 0,
     paddingRight: `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`,
     height: heightExpression,
     background: backgroundGradient,
