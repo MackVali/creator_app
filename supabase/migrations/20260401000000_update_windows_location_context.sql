@@ -9,8 +9,7 @@ FROM public.location_contexts AS lc
 WHERE w.location_context_id IS NULL
   AND w.location_context IS NOT NULL
   AND length(trim(w.location_context)) > 0
-  AND upper(trim(w.location_context)) = lc.value
-  AND w.user_id = lc.user_id;
+  AND upper(trim(w.location_context)) = lc.value;
 
 -- Drop the legacy text column now that the relation is established.
 ALTER TABLE public.windows

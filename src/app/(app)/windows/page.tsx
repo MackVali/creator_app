@@ -79,7 +79,6 @@ export default function WindowsPage() {
   }, [load]);
 
   async function resolveLocationContextId(
-    userId: string,
     locationValue: string,
   ): Promise<string | null> {
     if (!supabase) return null;
@@ -89,7 +88,6 @@ export default function WindowsPage() {
     const { data: existing, error: fetchError } = await supabase
       .from("location_contexts")
       .select("id")
-      .eq("user_id", userId)
       .eq("value", normalized)
       .maybeSingle();
 
@@ -104,7 +102,7 @@ export default function WindowsPage() {
     const label = formatLocationLabel(normalized) || normalized;
     const { data: inserted, error: insertError } = await supabase
       .from("location_contexts")
-      .insert({ user_id: userId, value: normalized, label })
+      .insert({ value: normalized, label })
       .select("id")
       .single();
 
@@ -125,7 +123,7 @@ export default function WindowsPage() {
     const normalizedLocation = normalizeLocationValue(item.location);
     const locationId =
       normalizedLocation && normalizedLocation !== "ANY"
-        ? item.locationId ?? (await resolveLocationContextId(user.id, normalizedLocation))
+        ? item.locationId ?? (await resolveLocationContextId(normalizedLocation))
         : null;
 
     const payload = {
@@ -231,13 +229,7 @@ export default function WindowsPage() {
       if (item.locationId) {
         locationId = item.locationId;
       } else {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-        if (userError) throw userError;
-        if (!user) return false;
-        locationId = await resolveLocationContextId(user.id, normalizedLocation);
+        locationId = await resolveLocationContextId(normalizedLocation);
       }
     }
 

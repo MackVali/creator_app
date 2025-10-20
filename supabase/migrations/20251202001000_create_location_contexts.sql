@@ -1,10 +1,9 @@
--- Create a dedicated table for per-user location contexts so advanced scheduling
--- can reference custom locations beyond the defaults.
+-- Create a shared table for saved location contexts so scheduling features
+-- can reference consistent values across windows and habits.
 CREATE TABLE IF NOT EXISTS public.location_contexts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     value text NOT NULL,
     label text NOT NULL
 );
@@ -24,64 +23,58 @@ CREATE TRIGGER location_contexts_set_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION public.set_location_contexts_updated_at();
 
--- Ensure each user has unique context values.
+-- Ensure each saved context value is unique globally.
 ALTER TABLE public.location_contexts
-    DROP CONSTRAINT IF EXISTS location_contexts_user_value_key;
+    DROP CONSTRAINT IF EXISTS location_contexts_value_key;
 ALTER TABLE public.location_contexts
-    ADD CONSTRAINT location_contexts_user_value_key UNIQUE (user_id, value);
+    ADD CONSTRAINT location_contexts_value_key UNIQUE (value);
 
--- Index contexts by owner for fast lookups.
-CREATE INDEX IF NOT EXISTS location_contexts_user_id_idx
-    ON public.location_contexts (user_id);
-
--- Enable row level security and scope access to the owner.
+-- Enable row level security and allow authenticated users to manage contexts.
 ALTER TABLE public.location_contexts ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "location_contexts_select_own" ON public.location_contexts;
 DROP POLICY IF EXISTS "location_contexts_insert_own" ON public.location_contexts;
 DROP POLICY IF EXISTS "location_contexts_update_own" ON public.location_contexts;
 DROP POLICY IF EXISTS "location_contexts_delete_own" ON public.location_contexts;
+DROP POLICY IF EXISTS "location_contexts_select_authenticated" ON public.location_contexts;
+DROP POLICY IF EXISTS "location_contexts_insert_authenticated" ON public.location_contexts;
+DROP POLICY IF EXISTS "location_contexts_update_authenticated" ON public.location_contexts;
+DROP POLICY IF EXISTS "location_contexts_delete_authenticated" ON public.location_contexts;
 
-CREATE POLICY "location_contexts_select_own" ON public.location_contexts
+CREATE POLICY "location_contexts_select_authenticated" ON public.location_contexts
     FOR SELECT
     TO authenticated
-    USING (auth.uid() = user_id);
+    USING (true);
 
-CREATE POLICY "location_contexts_insert_own" ON public.location_contexts
+CREATE POLICY "location_contexts_insert_authenticated" ON public.location_contexts
     FOR INSERT
     TO authenticated
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (true);
 
-CREATE POLICY "location_contexts_update_own" ON public.location_contexts
+CREATE POLICY "location_contexts_update_authenticated" ON public.location_contexts
     FOR UPDATE
     TO authenticated
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    USING (true)
+    WITH CHECK (true);
 
-CREATE POLICY "location_contexts_delete_own" ON public.location_contexts
+CREATE POLICY "location_contexts_delete_authenticated" ON public.location_contexts
     FOR DELETE
     TO authenticated
-    USING (auth.uid() = user_id);
+    USING (true);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.location_contexts TO authenticated;
 
--- Seed default contexts for every existing user.
-INSERT INTO public.location_contexts (user_id, value, label)
-SELECT users.id,
-       defaults.value,
-       defaults.label
-FROM auth.users AS users
-CROSS JOIN (VALUES
+-- Seed default contexts so common values exist immediately.
+INSERT INTO public.location_contexts (value, label)
+VALUES
     ('HOME', 'Home'),
     ('WORK', 'Work'),
     ('OUTSIDE', 'Outside')
-) AS defaults(value, label)
-ON CONFLICT (user_id, value) DO NOTHING;
+ON CONFLICT (value) DO NOTHING;
 
 -- Backfill any contexts already referenced by habits or windows.
 WITH habit_contexts AS (
     SELECT DISTINCT
-        h.user_id,
         upper(trim(h.location_context)) AS value,
         initcap(lower(trim(h.location_context))) AS label
     FROM public.habits h
@@ -90,7 +83,6 @@ WITH habit_contexts AS (
 ),
 window_contexts AS (
     SELECT DISTINCT
-        w.user_id,
         upper(trim(w.location_context)) AS value,
         initcap(lower(trim(w.location_context))) AS label
     FROM public.windows w
@@ -98,15 +90,18 @@ window_contexts AS (
       AND length(trim(w.location_context)) > 0
 ),
 combined AS (
-    SELECT * FROM habit_contexts
+    SELECT value,
+           COALESCE(NULLIF(label, ''), value) AS label
+    FROM habit_contexts
     UNION
-    SELECT * FROM window_contexts
+    SELECT value,
+           COALESCE(NULLIF(label, ''), value) AS label
+    FROM window_contexts
 )
-INSERT INTO public.location_contexts (user_id, value, label)
-SELECT user_id,
-       value,
+INSERT INTO public.location_contexts (value, label)
+SELECT value,
        label
 FROM combined
 WHERE value IS NOT NULL
   AND value <> ''
-ON CONFLICT (user_id, value) DO NOTHING;
+ON CONFLICT (value) DO NOTHING;
