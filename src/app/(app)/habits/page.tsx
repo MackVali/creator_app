@@ -422,7 +422,15 @@ export default function HabitsPage() {
                                 ? `${habit.duration_minutes} min`
                                 : null;
                               const energyLabel = formatTitleCase(habit.energy);
-                              const tags = [habitType, recurrence, energyLabel]
+                              const locationLabel =
+                                habit.location_context_label ??
+                                formatTitleCase(habit.location_context);
+                              const tags = [
+                                habitType,
+                                recurrence,
+                                energyLabel,
+                                locationLabel ? `Location • ${locationLabel}` : null,
+                              ]
                                 .filter(Boolean) as string[];
                               const skillIcon = habit.skill?.icon?.trim();
                               const skillName = habit.skill?.name ?? null;
@@ -513,6 +521,12 @@ export default function HabitsPage() {
                                         <span>Energy • {energyLabel}</span>
                                       </span>
                                     )}
+                                    {locationLabel && (
+                                      <span className="flex items-center gap-2">
+                                        <span className="text-base">📍</span>
+                                        <span>Location • {locationLabel}</span>
+                                      </span>
+                                    )}
                                     {isTempHabit && completionTarget ? (
                                       <span className="flex items-center gap-2">
                                         <span className="text-base">✅</span>
@@ -562,6 +576,9 @@ export default function HabitsPage() {
                         ? `${habit.duration_minutes} min`
                         : null;
                       const energyLabel = formatTitleCase(habit.energy);
+                      const locationLabel =
+                        habit.location_context_label ??
+                        formatTitleCase(habit.location_context);
                       const skillIcon = habit.skill?.icon?.trim();
                       const skillName = habit.skill?.name ?? null;
                       const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
@@ -607,6 +624,11 @@ export default function HabitsPage() {
                                 {energyLabel && (
                                   <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
                                     Energy: {energyLabel}
+                                  </span>
+                                )}
+                                {locationLabel && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                                    Location: {locationLabel}
                                   </span>
                                 )}
                               </div>
@@ -660,6 +682,12 @@ export default function HabitsPage() {
                               <div className="flex items-center gap-2">
                                 <span className="text-base">🔥</span>
                                 <span>Energy • {energyLabel}</span>
+                              </div>
+                            )}
+                            {locationLabel && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">📍</span>
+                                <span>Location • {locationLabel}</span>
                               </div>
                             )}
                             {isTempHabit && completionTarget ? (
