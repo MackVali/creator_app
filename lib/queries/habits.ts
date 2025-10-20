@@ -1,4 +1,6 @@
-import { getSupabaseBrowser } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import type { Database } from "@/types/supabase";
 
 export interface Habit {
   id: string;
@@ -33,12 +35,10 @@ export interface Habit {
   } | null;
 }
 
-export async function getHabits(userId: string): Promise<Habit[]> {
-  const supabase = getSupabaseBrowser();
-  if (!supabase) {
-    throw new Error("Supabase client not available");
-  }
-
+export async function getHabits(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<Habit[]> {
   const { data, error } = await supabase
     .from("habits")
     .select(

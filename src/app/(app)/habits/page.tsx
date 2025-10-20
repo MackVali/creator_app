@@ -100,23 +100,21 @@ function formatTitleCase(value: string | null | undefined) {
 
 export default function HabitsPage() {
   const router = useRouter();
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!supabase) {
+      setError("Supabase client not available");
+      setLoading(false);
+      return;
+    }
+
     let isMounted = true;
 
     const fetchHabits = async () => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) {
-        if (isMounted) {
-          setError("Supabase client not available");
-          setLoading(false);
-        }
-        return;
-      }
-
       setLoading(true);
       try {
         const {
@@ -133,7 +131,7 @@ export default function HabitsPage() {
           return;
         }
 
-        const data = await getHabits(user.id);
+        const data = await getHabits(supabase, user.id);
         if (isMounted) {
           setHabits(data);
           setError(null);
@@ -156,7 +154,7 @@ export default function HabitsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [supabase]);
 
   const { routines, standaloneHabits } = useMemo(() => {
     const routineMap = new Map<string, HabitRoutineGroup>();
