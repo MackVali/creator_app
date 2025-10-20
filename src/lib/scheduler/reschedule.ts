@@ -893,6 +893,7 @@ async function scheduleHabitsForDay(params: {
     const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
     const windowStartMs = target.startLocal.getTime()
+    const startMs = startLimit
     let constraintLowerBound = startMs
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null
     const dueStartMs = dueStart ? dueStart.getTime() : null
@@ -1149,9 +1150,15 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
 
-  const desiredLocation = options?.locationContext
+  const desiredLocationRaw = options?.locationContext
     ? String(options.locationContext).toUpperCase().trim()
     : null
+  const desiredLocation =
+    desiredLocationRaw &&
+    desiredLocationRaw !== 'ANYWHERE' &&
+    desiredLocationRaw !== 'DEFAULT'
+      ? desiredLocationRaw
+      : null
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
 
@@ -1188,9 +1195,17 @@ async function fetchCompatibleWindowsForItem(
     const windowLocationRaw = win.location_context
       ? String(win.location_context).toUpperCase().trim()
       : null
-    if (desiredLocation) {
-      if (!windowLocationRaw) continue
-      if (windowLocationRaw !== desiredLocation) continue
+    const windowLocation =
+      windowLocationRaw &&
+      windowLocationRaw !== 'ANYWHERE' &&
+      windowLocationRaw !== 'DEFAULT'
+        ? windowLocationRaw
+        : null
+    if (windowLocation) {
+      if (!desiredLocation) continue
+      if (windowLocation !== desiredLocation) continue
+    } else if (desiredLocation) {
+      continue
     }
 
     const startLocal = resolveWindowStart(win, date, timeZone)
