@@ -3,9 +3,11 @@ import { scheduleBacklog } from "../../../src/lib/scheduler/reschedule";
 import * as instanceRepo from "../../../src/lib/scheduler/instanceRepo";
 import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
+import * as habits from "../../../src/lib/scheduler/habits";
 import { getDatePartsInTimeZone } from "../../../src/lib/scheduler/timezone";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 import type { ProjectLite } from "../../../src/lib/scheduler/weight";
+import type { HabitScheduleItem } from "../../../src/lib/scheduler/habits";
 
 const realPlaceItemInWindows = placement.placeItemInWindows;
 
@@ -169,8 +171,10 @@ describe("scheduleBacklog", () => {
         start_local: "09:00",
         end_local: "10:00",
         days: [2],
+        location_context: null,
       },
     ]);
+    vi.spyOn(habits, "fetchHabitsForSchedule").mockResolvedValue([]);
 
     attemptedProjectIds = [];
     vi.spyOn(placement, "placeItemInWindows").mockImplementation(async ({ item }) => {
@@ -656,6 +660,7 @@ describe("scheduleBacklog", () => {
           start_local: "10:00",
           end_local: "14:00",
           days: [date.getDay()],
+          location_context: null,
         },
       ],
     );
@@ -735,6 +740,114 @@ describe("scheduleBacklog", () => {
     }
 
     expect(createSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it("only schedules habits into windows that match their location context", async () => {
+    instances = [];
+
+    const habit: HabitScheduleItem = {
+      id: "habit-home",
+      name: "Home Practice",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: null,
+      energy: "NO",
+      recurrence: null,
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContext: "HOME",
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: null,
+    };
+
+    (habits.fetchHabitsForSchedule as unknown as vi.Mock).mockResolvedValue([habit]);
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-home",
+        label: "Home Window",
+        energy: "NO",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [2],
+        location_context: "HOME",
+      },
+      {
+        id: "win-work",
+        label: "Work Window",
+        energy: "NO",
+        start_local: "12:00",
+        end_local: "14:00",
+        days: [2],
+        location_context: "WORK",
+      },
+    ]);
+
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, baseDate, mockClient);
+
+    const habitPlacements = result.timeline.filter(
+      (
+        entry,
+      ): entry is {
+        type: "HABIT";
+        habit: { windowId: string | null; startUTC: string };
+      } => entry.type === "HABIT",
+    );
+
+    expect(habitPlacements.length).toBeGreaterThan(0);
+    const windowIds = new Set(habitPlacements.map(entry => entry.habit.windowId));
+    expect(windowIds).toEqual(new Set(["win-home"]));
+    expect(habitPlacements[0]?.habit.startUTC).toBeTruthy();
+  });
+
+  it("skips scheduling habits when no windows share their location context", async () => {
+    instances = [];
+
+    const habit: HabitScheduleItem = {
+      id: "habit-home",
+      name: "Home Practice",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: null,
+      energy: "NO",
+      recurrence: null,
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContext: "HOME",
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: null,
+    };
+
+    (habits.fetchHabitsForSchedule as unknown as vi.Mock).mockResolvedValue([habit]);
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-work",
+        label: "Work Window",
+        energy: "NO",
+        start_local: "12:00",
+        end_local: "14:00",
+        days: [2],
+        location_context: "WORK",
+      },
+    ]);
+
+    const mockClient = {} as ScheduleBacklogClient;
+    const result = await scheduleBacklog(userId, baseDate, mockClient);
+
+    const habitPlacements = result.timeline.filter(entry => entry.type === "HABIT");
+    expect(habitPlacements).toHaveLength(0);
   });
 
   it("considers windows without an energy designation for all projects", async () => {

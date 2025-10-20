@@ -64,12 +64,9 @@ export function useLocationContexts() {
   const [contexts, setContexts] = useState<LocationContextOption[]>(defaultOptions);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     if (!supabase) {
       setContexts(defaultOptions());
-      setUserId(null);
       setLoading(false);
       setError(null);
       return;
@@ -79,70 +76,27 @@ export function useLocationContexts() {
     setError(null);
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
-
-      if (!user) {
-        setUserId(null);
-        setContexts(defaultOptions());
-        setLoading(false);
-        return;
-      }
-
-      setUserId(user.id);
-
       const { data, error: fetchError } = await supabase
         .from("location_contexts")
         .select("id, value, label")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true });
+        .order("value", { ascending: true });
 
       if (fetchError) {
         throw fetchError;
       }
 
-      let rows = data ?? [];
-
-      if (rows.length === 0) {
-        const defaults = DEFAULT_CONTEXTS.map((ctx) => ({
-          user_id: user.id,
-          value: ctx.value,
-          label: ctx.label,
-        }));
-
-        const { error: seedError } = await supabase
-          .from("location_contexts")
-          .upsert(defaults, { onConflict: "user_id,value" });
-
-        if (seedError) {
-          throw seedError;
-        }
-
-        const { data: seeded, error: seededFetchError } = await supabase
-          .from("location_contexts")
-          .select("id, value, label")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: true });
-
-        if (seededFetchError) {
-          throw seededFetchError;
-        }
-
-        rows = seeded ?? [];
-      }
+      const rows = data ?? [];
 
       const mapped = rows
         .map(mapRowToOption)
         .filter((option): option is LocationContextOption => Boolean(option))
         .filter((option) => option.value !== ANY_OPTION.value);
 
-      setContexts(mapped);
+      if (mapped.length > 0) {
+        setContexts(mapped);
+      } else {
+        setContexts(defaultOptions());
+      }
     } catch (err) {
       console.error("Failed to load location contexts", err);
       setError("We couldn’t load your saved locations. Using defaults for now.");
@@ -185,35 +139,11 @@ export function useLocationContexts() {
         };
       }
 
-      let ownerId = userId;
-      if (!ownerId) {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-        if (userError) {
-          console.error("Failed to resolve user before creating location", userError);
-          return {
-            success: false,
-            error: "We couldn’t verify your account just yet.",
-          };
-        }
-        if (!user) {
-          return {
-            success: false,
-            error: "Sign in to create custom locations.",
-          };
-        }
-        ownerId = user.id;
-        setUserId(ownerId);
-      }
-
       const label = formatLabel(name) || value;
 
       const { data, error } = await supabase
         .from("location_contexts")
         .insert({
-          user_id: ownerId,
           value,
           label,
         })
@@ -245,7 +175,7 @@ export function useLocationContexts() {
         },
       };
     },
-    [contexts, load, supabase, userId],
+    [contexts, load, supabase],
   );
 
   const options = useMemo(() => [ANY_OPTION, ...contexts], [contexts]);
