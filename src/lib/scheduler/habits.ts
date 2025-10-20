@@ -30,6 +30,7 @@ export type HabitScheduleItem = {
     endLocal: string
     days: number[] | null
     locationContext: string | null
+    locationContextId: string | null
   } | null
 }
 
@@ -57,7 +58,8 @@ type HabitRecord = {
     start_local?: string | null
     end_local?: string | null
     days?: number[] | null
-    location_context?: string | null
+    location_context_id?: string | null
+    location_context?: { value?: string | null } | null
   } | null
 }
 
@@ -90,9 +92,9 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   if (typeof from !== 'function') return []
 
   const selectColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts(value))'
   const fallbackColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts(value))'
 
   const select = from.call(supabase, 'habits') as {
     select?: (
@@ -129,37 +131,45 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     data = primary.data as HabitRecord[] | null
   }
 
-  return (data ?? []).map((record: HabitRecord) => ({
-    id: record.id,
-    name: record.name ?? 'Untitled habit',
-    durationMinutes: record.duration_minutes ?? null,
-    createdAt: record.created_at ?? null,
-    updatedAt: record.updated_at ?? null,
-    lastCompletedAt: record.updated_at ?? record.created_at ?? null,
-    habitType: normalizeHabitType(record.habit_type),
-    windowId: record.window_id ?? null,
-    energy: record.energy ?? record.window?.energy ?? null,
-    recurrence: record.recurrence ?? null,
-    recurrenceDays: record.recurrence_days ?? null,
-    skillId: record.skill_id ?? null,
-    goalId: supportsGoalMetadata ? record.goal_id ?? null : null,
-    completionTarget:
-      supportsGoalMetadata && typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
-        ? record.completion_target
+  return (data ?? []).map((record: HabitRecord) => {
+    const windowLocationRaw = record.window?.location_context?.value ?? null
+    const windowLocation = windowLocationRaw
+      ? String(windowLocationRaw).toUpperCase().trim()
+      : null
+
+    return {
+      id: record.id,
+      name: record.name ?? 'Untitled habit',
+      durationMinutes: record.duration_minutes ?? null,
+      createdAt: record.created_at ?? null,
+      updatedAt: record.updated_at ?? null,
+      lastCompletedAt: record.updated_at ?? record.created_at ?? null,
+      habitType: normalizeHabitType(record.habit_type),
+      windowId: record.window_id ?? null,
+      energy: record.energy ?? record.window?.energy ?? null,
+      recurrence: record.recurrence ?? null,
+      recurrenceDays: record.recurrence_days ?? null,
+      skillId: record.skill_id ?? null,
+      goalId: supportsGoalMetadata ? record.goal_id ?? null : null,
+      completionTarget:
+        supportsGoalMetadata && typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
+          ? record.completion_target
+          : null,
+      locationContext: record.location_context ?? null,
+      daylightPreference: record.daylight_preference ?? null,
+      windowEdgePreference: record.window_edge_preference ?? null,
+      window: record.window
+        ? {
+            id: record.window.id ?? '',
+            label: record.window.label ?? null,
+            energy: record.window.energy ?? null,
+            startLocal: record.window.start_local ?? '00:00',
+            endLocal: record.window.end_local ?? '00:00',
+            days: record.window.days ?? null,
+            locationContext: windowLocation,
+            locationContextId: record.window.location_context_id ?? null,
+          }
         : null,
-    locationContext: record.location_context ?? null,
-    daylightPreference: record.daylight_preference ?? null,
-    windowEdgePreference: record.window_edge_preference ?? null,
-    window: record.window
-      ? {
-          id: record.window.id ?? '',
-          label: record.window.label ?? null,
-          energy: record.window.energy ?? null,
-          startLocal: record.window.start_local ?? '00:00',
-          endLocal: record.window.end_local ?? '00:00',
-          days: record.window.days ?? null,
-          locationContext: record.window.location_context ?? null,
-        }
-      : null,
-  }))
+    }
+  })
 }

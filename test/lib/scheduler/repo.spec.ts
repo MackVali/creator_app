@@ -16,6 +16,7 @@ describe("fetchWindowsForDate", () => {
         start_local: "10:00",
         end_local: "12:00",
         days: [weekday],
+        location_context: null,
       },
     ];
 
@@ -27,6 +28,7 @@ describe("fetchWindowsForDate", () => {
         start_local: "23:00",
         end_local: "01:00",
         days: [prevWeekday],
+        location_context: null,
       },
     ];
 
@@ -38,6 +40,7 @@ describe("fetchWindowsForDate", () => {
         start_local: "08:00",
         end_local: "09:00",
         days: null,
+        location_context: null,
       },
       {
         id: "win-recurring-cross",
@@ -46,6 +49,7 @@ describe("fetchWindowsForDate", () => {
         start_local: "22:00",
         end_local: "02:00",
         days: null,
+        location_context: null,
       },
     ];
 
