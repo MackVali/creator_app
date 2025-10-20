@@ -48,12 +48,12 @@ type HabitRow = Database["public"]["Tables"]["habits"]["Row"] & {
     created_at: string;
     updated_at: string;
   } | null;
-  location_context_option?: {
-    id: string;
-    value: string | null;
-    label: string | null;
-  } | null;
 };
+
+type LocationContextRow = Pick<
+  Database["public"]["Tables"]["location_contexts"]["Row"],
+  "id" | "value" | "label"
+>;
 
 function normalizeLocationValue(input: unknown): string | null {
   if (typeof input !== "string") return null;
@@ -77,6 +77,46 @@ function formatLocationLabel(
     .join(" ");
 }
 
+async function fetchLocationContextOptions(
+  supabase: SupabaseClient<Database>,
+  values: Array<string | null | undefined>
+): Promise<Map<string, LocationContextRow>> {
+  const uniqueValues = Array.from(
+    new Set(
+      values
+        .map((value) => normalizeLocationValue(value))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  if (uniqueValues.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await supabase
+    .from("location_contexts")
+    .select("id, value, label")
+    .in("value", uniqueValues);
+
+  if (error) {
+    console.warn(
+      "Error fetching location context options, falling back to raw values:",
+      error
+    );
+    return new Map();
+  }
+
+  const options = new Map<string, LocationContextRow>();
+
+  for (const option of data ?? []) {
+    const normalized = normalizeLocationValue(option.value);
+    if (!normalized) continue;
+    options.set(normalized, option);
+  }
+
+  return options;
+}
+
 export async function getHabits(
   supabase: SupabaseClient<Database>,
   userId: string
@@ -84,7 +124,7 @@ export async function getHabits(
   const { data, error } = await supabase
     .from("habits")
     .select(
-      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target, location_context, location_context_option:location_contexts(id, value, label), skill:skills(id, name, icon), goal:goals(id, name), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target, location_context, skill:skills(id, name, icon), goal:goals(id, name), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -105,45 +145,70 @@ export async function getHabits(
       throw fallback.error;
     }
 
-    return (
-      fallback.data?.map((habit) => {
-        const locationValue = normalizeLocationValue(habit.location_context);
-        return {
-          id: habit.id,
-          name: habit.name,
-          description: habit.description ?? null,
-          habit_type: habit.habit_type,
-          recurrence: habit.recurrence ?? null,
-          recurrence_days: habit.recurrence_days ?? null,
-          duration_minutes: habit.duration_minutes ?? null,
-          created_at: habit.created_at,
-          updated_at: habit.updated_at,
-          skill_id: habit.skill_id ?? null,
-          energy: habit.energy ?? null,
-          goal_id: habit.goal_id ?? null,
-          completion_target: habit.completion_target ?? null,
-          location_context: locationValue,
-          location_context_id: null,
-          location_context_label: formatLocationLabel(locationValue, null),
-          skill: null,
-          goal: null,
-          routine_id: null,
-          routine: null,
-        } satisfies Habit;
-      }) || []
+    const rows = fallback.data ?? [];
+    const locationOptions = await fetchLocationContextOptions(
+      supabase,
+      rows.map((habit) => habit.location_context)
     );
+
+    return rows.map((habit) => {
+      const normalizedLocation = normalizeLocationValue(
+        habit.location_context
+      );
+      const resolvedOption = normalizedLocation
+        ? locationOptions.get(normalizedLocation) ?? null
+        : null;
+
+      const locationValue = normalizeLocationValue(
+        resolvedOption?.value ?? habit.location_context
+      );
+      const locationLabel = formatLocationLabel(
+        locationValue,
+        resolvedOption?.label ?? null
+      );
+
+      return {
+        id: habit.id,
+        name: habit.name,
+        description: habit.description ?? null,
+        habit_type: habit.habit_type,
+        recurrence: habit.recurrence ?? null,
+        recurrence_days: habit.recurrence_days ?? null,
+        duration_minutes: habit.duration_minutes ?? null,
+        created_at: habit.created_at,
+        updated_at: habit.updated_at,
+        skill_id: habit.skill_id ?? null,
+        energy: habit.energy ?? null,
+        goal_id: habit.goal_id ?? null,
+        completion_target: habit.completion_target ?? null,
+        location_context: locationValue,
+        location_context_id: resolvedOption?.id ?? null,
+        location_context_label: locationLabel,
+        skill: null,
+        goal: null,
+        routine_id: null,
+        routine: null,
+      } satisfies Habit;
+    });
   }
 
   const rows = (data ?? []) as HabitRow[];
+  const locationOptions = await fetchLocationContextOptions(
+    supabase,
+    rows.map((habit) => habit.location_context)
+  );
 
   return rows.map((habit) => {
-    const locationOption = habit.location_context_option ?? null;
+    const normalizedLocation = normalizeLocationValue(habit.location_context);
+    const resolvedOption = normalizedLocation
+      ? locationOptions.get(normalizedLocation) ?? null
+      : null;
     const locationValue = normalizeLocationValue(
-      locationOption?.value ?? habit.location_context
+      resolvedOption?.value ?? habit.location_context
     );
     const locationLabel = formatLocationLabel(
       locationValue,
-      locationOption?.label ?? null
+      resolvedOption?.label ?? null
     );
 
     return {
@@ -161,7 +226,7 @@ export async function getHabits(
       goal_id: habit.goal_id ?? null,
       completion_target: habit.completion_target ?? null,
       location_context: locationValue,
-      location_context_id: locationOption?.id ?? null,
+      location_context_id: resolvedOption?.id ?? null,
       location_context_label: locationLabel,
       skill: habit.skill
         ? {
