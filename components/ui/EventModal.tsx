@@ -2787,7 +2787,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               skillId={formData.skill_id || "none"}
               locationContext={
                 formData.location_context
-                  ? formData.location_context.toUpperCase()
+                  ? formData.location_context
                   : null
               }
               daylightPreference={
@@ -2852,7 +2852,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               onLocationContextChange={(value) =>
                 setFormData((prev) => ({
                   ...prev,
-                  location_context: value ? value.toUpperCase() : "",
+                  location_context: value ?? "",
                 }))
               }
               onDaylightPreferenceChange={(value) =>
