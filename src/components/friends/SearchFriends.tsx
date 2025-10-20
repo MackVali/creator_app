@@ -1,15 +1,26 @@
 "use client";
 import Image from "next/image";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import FriendsList from "./FriendsList";
-import type { DiscoveryProfile, Friend } from "@/types/friends";
+import type {
+  DiscoveryProfile,
+  Friend,
+  FriendSearchResult,
+} from "@/types/friends";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 type SearchFriendsProps = {
   data: Friend[];
   discoveryProfiles?: DiscoveryProfile[];
   onRemoveFriend?: (friend: Friend) => void;
+  onAddFriend?: (friend: Friend) => void;
 };
 
 type DiscoveryProfileState = DiscoveryProfile & {
@@ -20,6 +31,7 @@ export default function SearchFriends({
   data,
   discoveryProfiles = [],
   onRemoveFriend,
+  onAddFriend,
 }: SearchFriendsProps) {
   const [q, setQ] = useState("");
   const [me, setMe] = useState<Friend | null>(null);
@@ -30,6 +42,14 @@ export default function SearchFriends({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [searchResults, setSearchResults] = useState<FriendSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [pendingAdd, setPendingAdd] = useState<string | null>(null);
+  const [addSuccess, setAddSuccess] = useState<Set<string>>(
+    () => new Set<string>()
+  );
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = getSupabaseBrowser();
@@ -85,6 +105,77 @@ export default function SearchFriends({
   const trimmedQuery = q.trim();
   const hasQuery = trimmedQuery.length > 0;
 
+  const existingFriends = useMemo(() => {
+    return new Set(
+      data
+        .map((friend) => friend.username.toLowerCase())
+        .concat(me ? [me.username.toLowerCase()] : [])
+    );
+  }, [data, me]);
+
+  useEffect(() => {
+    if (!hasQuery) {
+      setSearchResults([]);
+      setSearchError(null);
+      setIsSearching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      setIsSearching(true);
+      setSearchError(null);
+      setActionError(null);
+
+      void fetch(`/api/friends/search?q=${encodeURIComponent(trimmedQuery)}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => null)) as
+              | { error?: string }
+              | null;
+            throw new Error(payload?.error ?? "Unable to search right now.");
+          }
+
+          const payload = (await response.json()) as {
+            results: FriendSearchResult[];
+          };
+
+          setSearchResults(
+            (payload.results ?? []).filter((result) =>
+              (result.username ?? "").trim().length > 0
+            )
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          const message =
+            error instanceof Error ? error.message : "Unable to search.";
+          setSearchError(message);
+          setSearchResults([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsSearching(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timeout);
+    };
+  }, [hasQuery, trimmedQuery]);
+
   const handleConnect = (id: string) => {
     setDiscovery((prev) =>
       prev.map((profile) =>
@@ -112,6 +203,63 @@ export default function SearchFriends({
     setInviteSuccess(true);
     setInviteEmail("");
   };
+
+  const handleAddFriend = useCallback(
+    async (result: FriendSearchResult) => {
+      const username = result.username?.trim();
+
+      if (!username) {
+        return;
+      }
+
+      const lower = username.toLowerCase();
+      setPendingAdd(lower);
+      setActionError(null);
+
+      try {
+        const response = await fetch("/api/friends", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ username }),
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error ?? "Unable to add friend right now.");
+        }
+
+        const payload = (await response.json()) as { friend?: Friend };
+
+        if (payload.friend) {
+          onAddFriend?.(payload.friend);
+        }
+
+        setAddSuccess((prev) => {
+          const next = new Set(prev);
+          next.add(lower);
+          return next;
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to add friend.";
+        setActionError(message);
+      } finally {
+        setPendingAdd(null);
+      }
+    },
+    [onAddFriend]
+  );
+
+  useEffect(() => {
+    if (!hasQuery) {
+      setAddSuccess(new Set<string>());
+      setActionError(null);
+    }
+  }, [hasQuery]);
 
   const discoveryTitle = filtered.length
     ? "Looking for someone else?"
@@ -256,16 +404,125 @@ export default function SearchFriends({
         </label>
       </div>
 
-      {filtered.length ? (
-        <>
+      {!hasQuery ? (
+        filtered.length ? (
           <FriendsList data={filtered} onRemoveFriend={onRemoveFriend} />
-          {hasQuery ? discoveryPanel : null}
-        </>
-      ) : hasQuery ? (
-        discoveryPanel
+        ) : (
+          <div className="rounded-xl bg-white/5 ring-1 ring-white/10 p-6 text-center text-sm text-white/60">
+            Start typing to find a friend or discover someone new.
+          </div>
+        )
       ) : (
-        <div className="rounded-xl bg-white/5 ring-1 ring-white/10 p-6 text-center text-sm text-white/60">
-          Start typing to find a friend or discover someone new.
+        <div className="space-y-6">
+          {filtered.length ? (
+            <section className="space-y-3">
+              <header className="flex items-center justify-between">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                  Your friends
+                </h2>
+                <span className="text-[11px] uppercase tracking-wide text-white/40">
+                  {filtered.length} match{filtered.length === 1 ? "" : "es"}
+                </span>
+              </header>
+              <FriendsList data={filtered} onRemoveFriend={onRemoveFriend} />
+            </section>
+          ) : null}
+
+          <section className="space-y-3">
+            <header className="flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                Creators on Creator
+              </h2>
+              {isSearching ? (
+                <span className="text-[11px] uppercase tracking-wide text-white/40">
+                  Searching…
+                </span>
+              ) : null}
+            </header>
+
+            {searchError ? (
+              <div className="rounded-xl bg-rose-500/10 p-4 text-sm text-rose-200 ring-1 ring-rose-400/30">
+                {searchError}
+              </div>
+            ) : isSearching ? (
+              <div className="rounded-xl bg-white/5 p-4 text-sm text-white/60 ring-1 ring-white/10">
+                Searching for “{trimmedQuery}”…
+              </div>
+            ) : searchResults.length ? (
+              <ul
+                role="list"
+                className="divide-y divide-white/5 overflow-hidden rounded-2xl bg-white/5 ring-1 ring-white/10"
+              >
+                {searchResults.map((result) => {
+                  const username = result.username.trim();
+                  const lower = username.toLowerCase();
+                  const displayName = result.displayName || username;
+                  const isExistingFriend = existingFriends.has(lower);
+                  const isAdded = addSuccess.has(lower);
+                  const isPending = pendingAdd === lower;
+                  const disabled = isExistingFriend || isAdded || isPending;
+                  const buttonLabel = isExistingFriend
+                    ? "Friend"
+                    : isAdded
+                      ? "Added"
+                      : isPending
+                        ? "Adding…"
+                        : "Add";
+                  const avatarSrc =
+                    result.avatarUrl ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`;
+
+                  return (
+                    <li key={username} className="flex items-center gap-3 px-4 py-3">
+                      <Image
+                        src={avatarSrc}
+                        alt={`${displayName} avatar`}
+                        width={40}
+                        height={40}
+                        className="h-10 w-10 shrink-0 rounded-full object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-white">@{username}</p>
+                        <p className="truncate text-xs text-white/60">{displayName}</p>
+                        {typeof result.mutualFriends === "number" ? (
+                          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-white/40">
+                            {result.mutualFriends > 0
+                              ? `${result.mutualFriends} mutual`
+                              : "No mutual friends yet"}
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (disabled) return;
+                          void handleAddFriend(result);
+                        }}
+                        disabled={disabled}
+                        className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
+                          disabled
+                            ? "cursor-default bg-white/10 text-white/60"
+                            : "bg-white text-slate-900 hover:bg-white/90"
+                        }`}
+                      >
+                        {buttonLabel}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="rounded-xl bg-white/5 p-4 text-sm text-white/60 ring-1 ring-white/10">
+                No creators found for “{trimmedQuery}”.
+              </div>
+            )}
+
+            {actionError ? (
+              <p className="text-xs text-rose-300">{actionError}</p>
+            ) : null}
+          </section>
+
+          {discoveryPanel}
         </div>
       )}
     </div>

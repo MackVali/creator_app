@@ -1,5 +1,12 @@
 'use client';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import type {
   Friend,
   FriendRequest,
@@ -129,6 +136,26 @@ export default function FriendsPage() {
     targetRef.current?.focus();
   };
 
+  const handleFriendAdded = useCallback((friend: Friend) => {
+    setFriends((prev) => {
+      const friendUsername = friend.username.toLowerCase();
+      const exists = prev.some(
+        (item) =>
+          item.id === friend.id || item.username.toLowerCase() === friendUsername
+      );
+
+      if (exists) {
+        return prev.map((item) =>
+          item.id === friend.id || item.username.toLowerCase() === friendUsername
+            ? friend
+            : item
+        );
+      }
+
+      return [...prev, friend];
+    });
+  }, []);
+
   return (
     <main className="mx-auto max-w-screen-sm px-4 py-4 space-y-4">
       {/* Header */}
@@ -237,7 +264,11 @@ export default function FriendsPage() {
         aria-labelledby="search-tab"
         hidden={tab !== 'search'}
       >
-        <SearchFriends data={sortedFriends} discoveryProfiles={[]} />
+        <SearchFriends
+          data={sortedFriends}
+          discoveryProfiles={[]}
+          onAddFriend={handleFriendAdded}
+        />
       </section>
 
       {/* Bottom padding for safe-area / bottom nav */}

@@ -873,6 +873,20 @@ export interface Database {
         };
         Returns: string | null;
       };
+      search_friend_profiles: {
+        Args: {
+          p_query: string;
+          p_limit?: number;
+        };
+        Returns: Array<{
+          user_id: string | null;
+          username: string | null;
+          display_name: string | null;
+          avatar_url: string | null;
+          profile_url: string | null;
+          mutual_friend_count: number | null;
+        }>;
+      };
     };
     Enums: {
       schedule_instance_source_type: 'PROJECT' | 'TASK';
