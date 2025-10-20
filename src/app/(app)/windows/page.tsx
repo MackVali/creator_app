@@ -8,7 +8,9 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 function normalizeLocationValue(value?: string | null) {
-  return value ? String(value).toUpperCase().trim() : "";
+  if (!value) return null;
+  const normalized = String(value).toUpperCase().trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function formatLocationLabel(value: string) {
@@ -58,6 +60,8 @@ export default function WindowsPage() {
     if (!error && data) {
       const mapped: WindowItem[] = (data as WindowRow[]).map((w) => {
         const locationValue = normalizeLocationValue(w.location_context?.value);
+        const location =
+          locationValue && locationValue !== "ANY" ? locationValue : undefined;
         return {
           id: w.id,
           name: w.label,
@@ -65,8 +69,8 @@ export default function WindowsPage() {
           start: w.start_local,
           end: w.end_local,
           energy: w.energy?.toLowerCase() as WindowItem["energy"],
-          location: locationValue || "ANY",
-          locationId: w.location_context_id,
+          location,
+          locationId: location ? w.location_context_id ?? null : null,
           active: true,
         };
       });
@@ -121,10 +125,11 @@ export default function WindowsPage() {
 
     const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
     const normalizedLocation = normalizeLocationValue(item.location);
-    const locationId =
-      normalizedLocation && normalizedLocation !== "ANY"
-        ? item.locationId ?? (await resolveLocationContextId(normalizedLocation))
-        : null;
+    const isAnywhere = !normalizedLocation || normalizedLocation === "ANY";
+    const locationId = !isAnywhere
+      ? item.locationId ?? (await resolveLocationContextId(normalizedLocation!))
+      : null;
+    const nextLocation = !isAnywhere && normalizedLocation ? normalizedLocation : undefined;
 
     const payload = {
       user_id: user.id,
@@ -154,8 +159,8 @@ export default function WindowsPage() {
           {
             ...item,
             id,
-            location: normalizedLocation || "ANY",
-            locationId: locationId ?? null,
+            location: nextLocation,
+            locationId,
           },
         ]);
       } else {
@@ -185,16 +190,16 @@ export default function WindowsPage() {
             ...item,
             id: first?.id ?? "",
             end: "23:59",
-            location: normalizedLocation || "ANY",
-            locationId: locationId ?? null,
+            location: nextLocation,
+            locationId,
           },
           {
             ...item,
             id: second?.id ?? "",
             start: "00:00",
             days: nextDays.map((d) => DAY_LABELS[d]),
-            location: normalizedLocation || "ANY",
-            locationId: locationId ?? null,
+            location: nextLocation,
+            locationId,
           },
         ]);
       }
@@ -224,14 +229,17 @@ export default function WindowsPage() {
     }
 
     const normalizedLocation = normalizeLocationValue(item.location);
+    const isAnywhere = !normalizedLocation || normalizedLocation === "ANY";
     let locationId: string | null = null;
-    if (normalizedLocation && normalizedLocation !== "ANY") {
+    if (!isAnywhere) {
       if (item.locationId) {
         locationId = item.locationId;
-      } else {
+      } else if (normalizedLocation) {
         locationId = await resolveLocationContextId(normalizedLocation);
       }
     }
+    const nextLocation =
+      !isAnywhere && normalizedLocation ? normalizedLocation : undefined;
 
     const payload = {
       label: item.name,
@@ -250,8 +258,8 @@ export default function WindowsPage() {
           ? {
               ...item,
               id,
-              location: normalizedLocation || "ANY",
-              locationId: locationId ?? null,
+              location: nextLocation,
+              locationId,
             }
           : w,
       )
