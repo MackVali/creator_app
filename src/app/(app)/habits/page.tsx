@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   PageHeader,
   SectionHeader,
   HabitsEmptyState,
   Skeleton,
 } from "@/components/ui";
-import { getSupabaseBrowser } from "@/lib/supabase";
 import { getHabits, type Habit } from "@/lib/queries/habits";
 
 const SUMMARY_STYLES = [
@@ -100,7 +100,7 @@ function formatTitleCase(value: string | null | undefined) {
 
 export default function HabitsPage() {
   const router = useRouter();
-  const supabase = getSupabaseBrowser();
+  const { session } = useAuth();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,32 +108,23 @@ export default function HabitsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    const fetchHabits = async () => {
-      if (!supabase) {
-        if (isMounted) {
-          setError("Supabase client not available");
-          setLoading(false);
-        }
-        return;
+    if (!session?.user?.id) {
+      if (isMounted) {
+        setHabits([]);
+        setError("You need to be signed in to view habits.");
+        setLoading(false);
       }
 
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const userId = session.user.id;
+    const fetchHabits = async () => {
       setLoading(true);
       try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) throw userError;
-        if (!user) {
-          if (isMounted) {
-            setHabits([]);
-            setError("You need to be signed in to view habits.");
-          }
-          return;
-        }
-
-        const data = await getHabits(user.id);
+        const data = await getHabits(userId);
         if (isMounted) {
           setHabits(data);
           setError(null);
@@ -154,9 +145,9 @@ export default function HabitsPage() {
     fetchHabits();
 
     return () => {
-      isMounted = false;
-    };
-  }, [supabase]);
+        isMounted = false;
+      };
+  }, [session?.user?.id]);
 
   const { routines, standaloneHabits } = useMemo(() => {
     const routineMap = new Map<string, HabitRoutineGroup>();
