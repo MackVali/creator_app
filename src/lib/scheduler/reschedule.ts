@@ -1185,9 +1185,7 @@ async function fetchCompatibleWindowsForItem(
       continue
     }
 
-    const windowLocationRaw = win.location_context
-      ? String(win.location_context).toUpperCase().trim()
-      : null
+    const windowLocationRaw = win.location_context_value ?? null
     if (desiredLocation) {
       if (!windowLocationRaw) continue
       if (windowLocationRaw !== desiredLocation) continue

@@ -60,7 +60,8 @@ export interface WindowItem {
   start: string
   end: string
   energy?: Energy
-  location?: string
+  location?: string | null
+  locationContextId?: string | null
   active?: boolean
 }
 
@@ -92,6 +93,7 @@ const mockWindows: WindowItem[] = [
     end: "11:00",
     energy: "high",
     location: "Home Studio",
+    locationContextId: null,
     active: true,
   },
   {
@@ -102,6 +104,7 @@ const mockWindows: WindowItem[] = [
     end: "19:30",
     energy: "ultra",
     location: "Fitness Club",
+    locationContextId: null,
     active: false,
   },
   {
@@ -112,6 +115,7 @@ const mockWindows: WindowItem[] = [
     end: "15:00",
     energy: "medium",
     location: "Library",
+    locationContextId: null,
     active: true,
   },
 ]
@@ -132,21 +136,44 @@ export default function WindowsPolishedUI({
     createContext: createLocationContext,
   } = useLocationContexts()
 
-  const locationLabelMap = useMemo(() => {
-    const map = new Map<string, string>()
+  const locationOptionById = useMemo(() => {
+    const map = new Map<string, LocationContextOption>()
     locationOptions.forEach((option) => {
-      map.set(option.value, option.label)
+      map.set(option.id, option)
+    })
+    return map
+  }, [locationOptions])
+
+  const locationOptionByValue = useMemo(() => {
+    const map = new Map<string, LocationContextOption>()
+    locationOptions.forEach((option) => {
+      map.set(option.value, option)
     })
     return map
   }, [locationOptions])
 
   const resolveLocationLabel = useCallback(
-    (value?: string | null) => {
-      if (!value) return null
-      const normalized = value.toUpperCase()
-      return locationLabelMap.get(normalized) ?? formatLocationLabel(normalized)
+    (value?: string | null, id?: string | null) => {
+      if (id) {
+        const byId = locationOptionById.get(id)
+        if (byId) {
+          if (byId.value === "ANY") return byId.label
+          return byId.label
+        }
+      }
+
+      const normalized = value ? value.toUpperCase() : null
+      if (!normalized || normalized === "ANY") {
+        const anyOption = locationOptionByValue.get("ANY")
+        return anyOption?.label ?? "Anywhere"
+      }
+
+      const byValue = locationOptionByValue.get(normalized)
+      if (byValue) return byValue.label
+
+      return formatLocationLabel(normalized)
     },
-    [locationLabelMap],
+    [locationOptionById, locationOptionByValue],
   )
 
   useEffect(() => {
@@ -240,10 +267,44 @@ export default function WindowsPolishedUI({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<WindowItem | null>(null)
 
+  const normalizeLocationSelection = useCallback(
+    (item: WindowItem): Pick<WindowItem, "location" | "locationContextId"> => {
+      const normalizedValue = item.location ? item.location.toUpperCase() : null
+      const optionById = item.locationContextId
+        ? locationOptionById.get(item.locationContextId)
+        : undefined
+      const optionByValue = normalizedValue
+        ? locationOptionByValue.get(normalizedValue)
+        : undefined
+      const resolvedOption = optionById ?? optionByValue
+
+      if (!normalizedValue || normalizedValue === "ANY") {
+        return { location: null, locationContextId: null }
+      }
+
+      if (resolvedOption) {
+        if (resolvedOption.value === "ANY") {
+          return { location: null, locationContextId: null }
+        }
+        return { location: resolvedOption.value, locationContextId: resolvedOption.id }
+      }
+
+      return {
+        location: normalizedValue,
+        locationContextId: item.locationContextId ?? null,
+      }
+    },
+    [locationOptionById, locationOptionByValue],
+  )
+
   async function handleSave(data: WindowItem) {
     try {
-      const normalizedLocation = (data.location ?? "ANY").toUpperCase()
-      const nextData = { ...data, location: normalizedLocation as WindowItem["location"] }
+      const normalized = normalizeLocationSelection(data)
+      const nextData: WindowItem = {
+        ...data,
+        location: normalized.location ?? null,
+        locationContextId: normalized.locationContextId ?? null,
+      }
       if (editing) {
         if (onEdit) {
           const ok = await onEdit(editing.id, nextData)
@@ -742,7 +803,7 @@ function WindowCard({
   item: WindowItem
   onEdit: () => void
   onDelete: () => void
-  resolveLocationLabel: (value?: string | null) => string | null
+  resolveLocationLabel: (value?: string | null, id?: string | null) => string | null
 }) {
   const [menu, setMenu] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -766,7 +827,10 @@ function WindowCard({
   const endPct = (toMins(item.end) / 1440) * 100
   const daySummary =
     item.days.length === 7 ? "Every day" : item.days.join(" · ")
-  const displayLocation = resolveLocationLabel(item.location)
+  const displayLocation = resolveLocationLabel(
+    item.location,
+    item.locationContextId,
+  )
 
   return (
     <article
@@ -946,7 +1010,8 @@ function createDefaultWindow(): WindowItem {
     start: "08:00",
     end: "09:00",
     energy: "no",
-    location: "ANY",
+    location: null,
+    locationContextId: null,
     active: true,
   }
 }
@@ -977,9 +1042,41 @@ function Drawer({
   )
   const [savingCustomLocation, setSavingCustomLocation] = useState(false)
 
+  const optionById = useMemo(() => {
+    const map = new Map<string, LocationContextOption>()
+    locationOptions.forEach((option) => {
+      map.set(option.id, option)
+    })
+    return map
+  }, [locationOptions])
+
+  const optionByValue = useMemo(() => {
+    const map = new Map<string, LocationContextOption>()
+    locationOptions.forEach((option) => {
+      map.set(option.value, option)
+    })
+    return map
+  }, [locationOptions])
+
+  const selectedLocationId = useMemo(() => {
+    if (form.locationContextId) {
+      return form.locationContextId
+    }
+    if (form.location) {
+      const match = optionByValue.get(form.location.toUpperCase())
+      if (match) return match.id
+    }
+    return locationOptions[0]?.id ?? ""
+  }, [form.locationContextId, form.location, optionByValue, locationOptions])
+
   useEffect(() => {
-    if (initial) setForm({ ...initial })
-    else setForm(createDefaultWindow())
+    if (initial) {
+      setForm({
+        ...initial,
+        location: initial.location ?? null,
+        locationContextId: initial.locationContextId ?? null,
+      })
+    } else setForm(createDefaultWindow())
   }, [initial])
 
   useEffect(() => {
@@ -1019,6 +1116,7 @@ function Drawer({
       setForm((prev) => ({
         ...prev,
         location: result.option.value as WindowItem["location"],
+        locationContextId: result.option.id,
       }))
     } finally {
       setSavingCustomLocation(false)
@@ -1125,14 +1223,23 @@ function Drawer({
             </label>
             <select
               className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
-              value={(form.location ?? "ANY").toUpperCase()}
-              onChange={(e) =>
-                setForm({ ...form, location: e.target.value.toUpperCase() })
-              }
+              value={selectedLocationId}
+              onChange={(e) => {
+                const choice = optionById.get(e.target.value)
+                if (!choice || choice.value === "ANY") {
+                  setForm({ ...form, location: null, locationContextId: null })
+                } else {
+                  setForm({
+                    ...form,
+                    location: choice.value as WindowItem["location"],
+                    locationContextId: choice.id,
+                  })
+                }
+              }}
               disabled={locationLoading}
             >
               {locationOptions.map((option) => (
-                <option key={option.id} value={option.value}>
+                <option key={option.id} value={option.id}>
                   {option.label}
                 </option>
               ))}
