@@ -24,6 +24,7 @@ import {
 import type { AnimationPlaybackControls } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
+import { Check } from 'lucide-react'
 import {
   DayTimeline,
   TIMELINE_CARD_LEFT_FALLBACK,
@@ -4398,16 +4399,52 @@ export default function SchedulePage() {
                             ) : null}
                           </div>
                         </div>
-                        <SkillEnergyBadge
-                          energyLevel={
-                            (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                            'NO'
-                          }
-                          skillIcon={project.skill_icon}
-                          className="flex flex-shrink-0 items-center gap-2"
-                          iconClassName="text-lg leading-none"
-                          flameClassName="flex-shrink-0"
-                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white/80 transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50${
+                              canToggle && !isPending ? '' : ' pointer-events-none'
+                            }`}
+                            aria-label={
+                              isCompleted
+                                ? `Mark ${project.name} as scheduled`
+                                : `Mark ${project.name} as completed`
+                            }
+                            aria-pressed={isCompleted}
+                            disabled={!canToggle || isPending}
+                            onClick={event => {
+                              event.stopPropagation()
+                              if (!canToggle || isPending) return
+                              const nextStatus = isCompleted
+                                ? 'scheduled'
+                                : 'completed'
+                              void handleToggleInstanceCompletion(
+                                instance.id,
+                                nextStatus
+                              )
+                            }}
+                            onKeyDown={event => {
+                              event.stopPropagation()
+                            }}
+                          >
+                            <Check
+                              className={`h-4 w-4 ${
+                                isCompleted ? 'text-emerald-300' : 'text-white'
+                              }`}
+                              strokeWidth={2.4}
+                            />
+                          </button>
+                          <SkillEnergyBadge
+                            energyLevel={
+                              (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
+                              'NO'
+                            }
+                            skillIcon={project.skill_icon}
+                            className="flex flex-shrink-0 items-center gap-2"
+                            iconClassName="text-lg leading-none"
+                            flameClassName="flex-shrink-0"
+                          />
+                        </div>
                       </motion.div>
                     ) : (
                       <motion.div
