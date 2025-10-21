@@ -1,48 +1,52 @@
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 import { mapFriendConnection } from "@/lib/friends/mappers";
-import { getSupabaseServer } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
+
+const FRIEND_COLUMNS =
+  "id, friend_user_id, friend_username, friend_display_name, friend_avatar_url, friend_profile_url, has_ring, is_online";
 
 export async function GET() {
-  const cookieStore = cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: () => {},
-  });
+  try {
+    const supabase = await createSupabaseServerClient();
 
-  if (!supabase) {
-    return NextResponse.json({ friends: [] }, { status: 200 });
-  }
+    if (!supabase) {
+      return NextResponse.json({ friends: [] }, { status: 200 });
+    }
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-  if (authError || !user) {
-    return NextResponse.json({ friends: [] }, { status: 200 });
-  }
+    if (authError || !user) {
+      return NextResponse.json({ friends: [] }, { status: 200 });
+    }
 
-  const { data, error } = await supabase
-    .from("friend_connections")
-    .select(
-      "id, friend_user_id, friend_username, friend_display_name, friend_avatar_url, friend_profile_url, has_ring, is_online"
-    )
-    .eq("user_id", user.id)
-    .order("friend_display_name", { ascending: true });
+    const { data, error } = await supabase
+      .from("friend_connections")
+      .select(FRIEND_COLUMNS)
+      .eq("user_id", user.id)
+      .order("friend_display_name", { ascending: true });
 
-  if (error) {
-    console.error("Failed to load friend connections", error);
+    if (error) {
+      console.error("Failed to load friend connections", error);
+      return NextResponse.json(
+        { friends: [], error: "Unable to load friends." },
+        { status: 500 }
+      );
+    }
+
+    const friends = (data ?? []).map(mapFriendConnection);
+
+    return NextResponse.json({ friends }, { status: 200 });
+  } catch (error) {
+    console.error("Unhandled error loading friends", error);
     return NextResponse.json(
       { friends: [], error: "Unable to load friends." },
       { status: 500 }
     );
   }
-
-  const friends = (data ?? []).map(mapFriendConnection);
-
-  return NextResponse.json({ friends }, { status: 200 });
 }
 
 export async function POST(request: NextRequest) {
@@ -60,11 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedUsername = requestedUsername.toLowerCase();
-    const cookieStore = cookies();
-    const supabase = getSupabaseServer({
-      get: (name: string) => cookieStore.get(name),
-      set: () => {},
-    });
+    const supabase = await createSupabaseServerClient();
 
     if (!supabase) {
       return NextResponse.json(
@@ -82,18 +82,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
     }
 
-    const { data: existingFriend } = await supabase
+    const { data: existingFriendByUsername } = await supabase
       .from("friend_connections")
-      .select(
-        "id, friend_user_id, friend_username, friend_display_name, friend_avatar_url, friend_profile_url, has_ring, is_online"
-      )
+      .select(FRIEND_COLUMNS)
       .eq("user_id", user.id)
       .ilike("friend_username", normalizedUsername)
       .maybeSingle();
 
-    if (existingFriend && existingFriend.friend_username?.toLowerCase() === normalizedUsername) {
+    if (
+      existingFriendByUsername &&
+      existingFriendByUsername.friend_username?.toLowerCase() === normalizedUsername
+    ) {
       return NextResponse.json(
-        { friend: mapFriendConnection(existingFriend), alreadyFriend: true },
+        { friend: mapFriendConnection(existingFriendByUsername), alreadyFriend: true },
         { status: 200 }
       );
     }
@@ -132,11 +133,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (match.user_id) {
+      const { data: existingFriendByUserId } = await supabase
+        .from("friend_connections")
+        .select(FRIEND_COLUMNS)
+        .eq("user_id", user.id)
+        .eq("friend_user_id", match.user_id)
+        .maybeSingle();
+
+      if (existingFriendByUserId) {
+        return NextResponse.json(
+          { friend: mapFriendConnection(existingFriendByUserId), alreadyFriend: true },
+          { status: 200 }
+        );
+      }
+    }
+
     const payload = {
       user_id: user.id,
       friend_user_id: match.user_id,
       friend_username: match.username ?? requestedUsername,
-      friend_display_name: match.display_name ?? match.username ?? requestedUsername,
+      friend_display_name:
+        match.display_name ?? match.username ?? requestedUsername,
       friend_avatar_url: match.avatar_url,
       friend_profile_url: match.profile_url,
       has_ring: false,
@@ -146,18 +164,14 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from("friend_connections")
       .insert(payload)
-      .select(
-        "id, friend_user_id, friend_username, friend_display_name, friend_avatar_url, friend_profile_url, has_ring, is_online"
-      )
+      .select(FRIEND_COLUMNS)
       .single();
 
     if (error) {
       if (typeof error.code === "string" && error.code === "23505") {
         const { data: duplicate } = await supabase
           .from("friend_connections")
-          .select(
-            "id, friend_user_id, friend_username, friend_display_name, friend_avatar_url, friend_profile_url, has_ring, is_online"
-          )
+          .select(FRIEND_COLUMNS)
           .eq("user_id", user.id)
           .ilike("friend_username", normalizedUsername)
           .maybeSingle();

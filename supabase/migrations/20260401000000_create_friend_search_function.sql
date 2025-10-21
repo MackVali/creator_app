@@ -20,12 +20,22 @@ declare
   v_query text := coalesce(trim(p_query), '');
   v_uid uuid := auth.uid();
 begin
-  if v_query = '' then
+  if v_uid is null or v_query = '' then
     return;
   end if;
 
   return query
-    with candidates as (
+    with my_friend_keys as (
+      select distinct
+        coalesce(fc.friend_user_id::text, lower(fc.friend_username)) as friend_key
+      from public.friend_connections fc
+      where fc.user_id = v_uid
+        and (
+          fc.friend_user_id is not null
+          or coalesce(fc.friend_username, '') <> ''
+        )
+    ),
+    candidates as (
       select
         u.id as user_id,
         lower(coalesce((u.raw_user_meta_data ->> 'username')::text, u.email)) as normalized_username,
@@ -47,16 +57,23 @@ begin
     c.display_name,
     c.avatar_url,
     c.profile_url,
-    coalesce(
-      (
-        select count(*)
-        from public.friend_connections fc
-        where fc.user_id = v_uid
-          and fc.friend_user_id = c.user_id
-      ),
-      0
-    ) as mutual_friend_count
+    coalesce(mutual.shared_count, 0)::integer as mutual_friend_count
   from candidates c
+  left join lateral (
+    select count(*) as shared_count
+    from (
+      select distinct
+        coalesce(fc.friend_user_id::text, lower(fc.friend_username)) as friend_key
+      from public.friend_connections fc
+      where fc.user_id = c.user_id
+        and (
+          fc.friend_user_id is not null
+          or coalesce(fc.friend_username, '') <> ''
+        )
+    ) candidate_friend_keys
+    inner join my_friend_keys mfk
+      on candidate_friend_keys.friend_key = mfk.friend_key
+  ) as mutual on true
   where
     c.normalized_username ilike '%' || v_query || '%'
     or coalesce(c.display_name, '') ilike '%' || v_query || '%'

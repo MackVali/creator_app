@@ -133,6 +133,7 @@ export default function SearchFriends({
           "Content-Type": "application/json",
         },
         cache: "no-store",
+        credentials: "include",
         signal: controller.signal,
       })
         .then(async (response) => {
@@ -140,6 +141,9 @@ export default function SearchFriends({
             const payload = (await response.json().catch(() => null)) as
               | { error?: string }
               | null;
+            if (response.status === 401) {
+              throw new Error("Sign in to search for creators.");
+            }
             throw new Error(payload?.error ?? "Unable to search right now.");
           }
 
@@ -222,6 +226,7 @@ export default function SearchFriends({
           headers: {
             "Content-Type": "application/json",
           },
+          credentials: "include",
           body: JSON.stringify({ username }),
         });
 
@@ -229,6 +234,9 @@ export default function SearchFriends({
           const payload = (await response.json().catch(() => null)) as
             | { error?: string }
             | null;
+          if (response.status === 401) {
+            throw new Error("Sign in to add friends.");
+          }
           throw new Error(payload?.error ?? "Unable to add friend right now.");
         }
 
