@@ -3,6 +3,11 @@ import {
   createServerClient,
   type CookieOptions,
 } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import type { Database } from "@/types/supabase";
+
+let browserClient: SupabaseClient<Database> | null = null;
 
 function getEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,9 +25,15 @@ function getEnv() {
 }
 
 export function getSupabaseBrowser() {
+  if (browserClient) {
+    return browserClient;
+  }
+
   const { url, key } = getEnv();
   if (!url || !key) return null;
-  return createBrowserClient(url, key);
+
+  browserClient = createBrowserClient<Database>(url, key);
+  return browserClient;
 }
 
 type CookieStore = {

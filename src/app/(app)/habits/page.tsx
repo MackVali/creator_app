@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   PageHeader,
   SectionHeader,
@@ -100,7 +101,9 @@ function formatTitleCase(value: string | null | undefined) {
 
 export default function HabitsPage() {
   const router = useRouter();
-  const supabase = getSupabaseBrowser();
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
   const [habits, setHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,23 +120,18 @@ export default function HabitsPage() {
         return;
       }
 
+      if (!userId) {
+        if (isMounted) {
+          setHabits([]);
+          setError(null);
+          setLoading(false);
+        }
+        return;
+      }
+
       setLoading(true);
       try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) throw userError;
-        if (!user) {
-          if (isMounted) {
-            setHabits([]);
-            setError("You need to be signed in to view habits.");
-          }
-          return;
-        }
-
-        const data = await getHabits(user.id);
+        const data = await getHabits(supabase, userId);
         if (isMounted) {
           setHabits(data);
           setError(null);
@@ -156,7 +154,7 @@ export default function HabitsPage() {
     return () => {
       isMounted = false;
     };
-  }, [supabase]);
+  }, [supabase, userId]);
 
   const { routines, standaloneHabits } = useMemo(() => {
     const routineMap = new Map<string, HabitRoutineGroup>();
@@ -424,8 +422,14 @@ export default function HabitsPage() {
                                 ? `${habit.duration_minutes} min`
                                 : null;
                               const energyLabel = formatTitleCase(habit.energy);
-                              const tags = [habitType, recurrence, energyLabel]
-                                .filter(Boolean) as string[];
+                              const locationLabel =
+                                habit.location_context_label ?? null;
+                              const tags = [
+                                habitType,
+                                recurrence,
+                                energyLabel,
+                                locationLabel,
+                              ].filter(Boolean) as string[];
                               const skillIcon = habit.skill?.icon?.trim();
                               const skillName = habit.skill?.name ?? null;
                               const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
@@ -495,6 +499,14 @@ export default function HabitsPage() {
                                         )}
                                       </span>
                                     </span>
+                                    {locationLabel && (
+                                      <span className="flex items-center gap-2">
+                                        <span className="text-base">📍</span>
+                                        <span>
+                                          Location · <span className="text-white/80">{locationLabel}</span>
+                                        </span>
+                                      </span>
+                                    )}
                                     {isTempHabit && goalName ? (
                                       <span className="flex items-center gap-2">
                                         <span className="text-base">🎯</span>
@@ -564,6 +576,7 @@ export default function HabitsPage() {
                         ? `${habit.duration_minutes} min`
                         : null;
                       const energyLabel = formatTitleCase(habit.energy);
+                      const locationLabel = habit.location_context_label ?? null;
                       const skillIcon = habit.skill?.icon?.trim();
                       const skillName = habit.skill?.name ?? null;
                       const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
@@ -611,6 +624,11 @@ export default function HabitsPage() {
                                     Energy: {energyLabel}
                                   </span>
                                 )}
+                                {locationLabel && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                                    {locationLabel}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <Link
@@ -631,11 +649,11 @@ export default function HabitsPage() {
                             )}
                           </div>
 
-                          <div className="relative mt-6 space-y-3 text-xs text-white/60">
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">{skillDisplayIcon}</span>
-                              <span>
-                                {skillName ? (
+                            <div className="relative mt-6 space-y-3 text-xs text-white/60">
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">{skillDisplayIcon}</span>
+                                <span>
+                                  {skillName ? (
                                   <>
                                     Skill · <span className="text-white/80">{skillName}</span>
                                   </>
@@ -658,23 +676,31 @@ export default function HabitsPage() {
                                 <span>Planned for {durationLabel}</span>
                               </div>
                             )}
-                            {energyLabel && (
+                              {energyLabel && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">🔥</span>
+                                  <span>Energy • {energyLabel}</span>
+                                </div>
+                              )}
+                              {isTempHabit && completionTarget ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">✅</span>
+                                  <span>{completionTarget} completions</span>
+                                </div>
+                              ) : null}
+                              {locationLabel && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">📍</span>
+                                  <span>
+                                    Location · <span className="text-white/80">{locationLabel}</span>
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex items-center gap-2">
-                                <span className="text-base">🔥</span>
-                                <span>Energy • {energyLabel}</span>
+                                <span className="text-base">📅</span>
+                                <span>Created {formatRelativeTime(habit.created_at)}</span>
                               </div>
-                            )}
-                            {isTempHabit && completionTarget ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-base">✅</span>
-                                <span>{completionTarget} completions</span>
-                              </div>
-                            ) : null}
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">📅</span>
-                              <span>Created {formatRelativeTime(habit.created_at)}</span>
                             </div>
-                          </div>
 
                           <div className="relative mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-5 text-xs text-white/60">
                             <div className="flex items-center gap-2">
