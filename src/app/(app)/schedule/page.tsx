@@ -400,6 +400,7 @@ type SchedulerTimelinePlacement =
       type: 'PROJECT'
       projectId: string
       projectName: string
+      instanceId: string | null
       start: Date
       end: Date
       durationMinutes: number | null
@@ -1869,6 +1870,19 @@ function formatClockLabel(localTime: string): string {
   return TIME_FORMATTER.format(d)
 }
 
+function formatSchedulerDecisionLabel(
+  decision: SchedulerTimelineEntry['decision']
+) {
+  switch (decision) {
+    case 'new':
+      return 'New'
+    case 'rescheduled':
+      return 'Rescheduled'
+    default:
+      return 'Kept'
+  }
+}
+
 function formatWindowRange(window: RepoWindow): string {
   return `${formatClockLabel(window.start_local)} – ${formatClockLabel(window.end_local)}`
 }
@@ -2707,6 +2721,7 @@ export default function SchedulePage() {
           type: 'PROJECT',
           projectId: entry.projectId,
           projectName: project?.name || 'Untitled project',
+          instanceId: entry.instanceId ?? null,
           start,
           end,
           durationMinutes: durationMin,
@@ -3945,6 +3960,103 @@ export default function SchedulePage() {
         projectInstances: modelProjectInstances,
       })
 
+      const dayStartBoundary = new Date(date)
+      dayStartBoundary.setHours(0, 0, 0, 0)
+      const dayEndBoundary = new Date(dayStartBoundary)
+      dayEndBoundary.setDate(dayEndBoundary.getDate() + 1)
+      const dayStartMs = dayStartBoundary.getTime()
+      const dayEndMs = dayEndBoundary.getTime()
+
+      type HabitPreviewPlacement = {
+        key: string
+        placement: Extract<SchedulerTimelinePlacement, { type: 'HABIT' }>
+        start: Date
+        end: Date
+        durationMinutes: number
+      }
+
+      type ProjectPreviewPlacement = {
+        key: string
+        placement: Extract<SchedulerTimelinePlacement, { type: 'PROJECT' }>
+        start: Date
+        end: Date
+        durationMinutes: number
+      }
+
+      const previewHabitPlacements: HabitPreviewPlacement[] = []
+      const previewProjectPlacements: ProjectPreviewPlacement[] = []
+
+      if (schedulerTimelinePlacements.length > 0) {
+        for (const placement of schedulerTimelinePlacements) {
+          if (!isValidDate(placement.start) || !isValidDate(placement.end)) {
+            continue
+          }
+          if (placement.decision === 'kept') continue
+
+          const startMs = placement.start.getTime()
+          const endMs = placement.end.getTime()
+          if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
+          if (endMs <= dayStartMs || startMs >= dayEndMs) continue
+
+          const clampedStartMs = Math.max(startMs, dayStartMs)
+          const clampedEndMs = Math.min(endMs, dayEndMs)
+          if (clampedEndMs <= clampedStartMs) continue
+
+          const clampedStart = new Date(clampedStartMs)
+          const clampedEnd = new Date(clampedEndMs)
+          const displayDurationMinutes = Math.max(
+            1,
+            Math.round((clampedEndMs - clampedStartMs) / 60000)
+          )
+
+          if (placement.type === 'HABIT') {
+            const overlapsExisting = modelHabitPlacements.some(existing => {
+              if (existing.habitId !== placement.habitId) return false
+              const startDiff = Math.abs(
+                existing.start.getTime() - placement.start.getTime()
+              )
+              const endDiff = Math.abs(
+                existing.end.getTime() - placement.end.getTime()
+              )
+              return (
+                startDiff <= TASK_INSTANCE_MATCH_TOLERANCE_MS &&
+                endDiff <= TASK_INSTANCE_MATCH_TOLERANCE_MS
+              )
+            })
+            if (overlapsExisting) continue
+            previewHabitPlacements.push({
+              key: `scheduler-preview-habit-${placement.habitId}-${placement.start.toISOString()}`,
+              placement,
+              start: clampedStart,
+              end: clampedEnd,
+              durationMinutes: displayDurationMinutes,
+            })
+          } else if (placement.type === 'PROJECT') {
+            const overlapsExisting = modelProjectInstances.some(existing => {
+              if (existing.project.id !== placement.projectId) return false
+              const startDiff = Math.abs(
+                existing.start.getTime() - placement.start.getTime()
+              )
+              const endDiff = Math.abs(
+                existing.end.getTime() - placement.end.getTime()
+              )
+              return (
+                startDiff <= TASK_INSTANCE_MATCH_TOLERANCE_MS &&
+                endDiff <= TASK_INSTANCE_MATCH_TOLERANCE_MS
+              )
+            })
+            if (overlapsExisting) continue
+            previewProjectPlacements.push({
+              key: `scheduler-preview-project-${placement.projectId}-${placement.start.toISOString()}`,
+              placement,
+              start: clampedStart,
+              end: clampedEnd,
+              durationMinutes: displayDurationMinutes,
+            })
+          }
+        }
+      }
+
       return (
         <div
           className={containerClass}
@@ -4034,6 +4146,83 @@ export default function SchedulePage() {
                 </div>
               )
             })}
+            {previewHabitPlacements.map(
+              ({ key, placement, start, durationMinutes }) => {
+                const startMin = start.getHours() * 60 + start.getMinutes()
+                const startOffsetMinutes = startMin - modelStartHour * 60
+                const cardStyle: CSSProperties = applyTimelineLayoutStyle(
+                  {
+                    ...TIMELINE_CARD_BOUNDS,
+                    top: toTimelinePosition(startOffsetMinutes),
+                    height: toTimelinePosition(durationMinutes),
+                  },
+                  'full'
+                )
+                cardStyle.pointerEvents = 'none'
+                cardStyle.zIndex = 20
+                const decisionLabel = formatSchedulerDecisionLabel(
+                  placement.decision
+                )
+                const clippedLabel = placement.clipped ? ' · Clipped' : ''
+                return (
+                  <div
+                    key={key}
+                    className="absolute z-20 flex h-full flex-col justify-center gap-1 rounded-[var(--radius-lg)] border border-dashed border-white/35 bg-white/10 px-3 py-2 text-white/80 shadow-[0_18px_32px_rgba(8,12,32,0.38)] backdrop-blur-sm pointer-events-none select-none"
+                    style={cardStyle}
+                    aria-hidden
+                    data-scheduler-preview="habit"
+                  >
+                    <span className="truncate text-sm font-medium">
+                      {placement.habitName}
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-white/65">
+                      {decisionLabel} · Preview{clippedLabel}
+                    </span>
+                  </div>
+                )
+              }
+            )}
+            {previewProjectPlacements.map(
+              ({ key, placement, start, durationMinutes }) => {
+                const startMin = start.getHours() * 60 + start.getMinutes()
+                const startOffsetMinutes = startMin - modelStartHour * 60
+                const cardStyle: CSSProperties = applyTimelineLayoutStyle(
+                  {
+                    ...TIMELINE_CARD_BOUNDS,
+                    top: toTimelinePosition(startOffsetMinutes),
+                    height: toTimelinePosition(durationMinutes),
+                  },
+                  'full'
+                )
+                cardStyle.pointerEvents = 'none'
+                cardStyle.zIndex = 19
+                const decisionLabel = formatSchedulerDecisionLabel(
+                  placement.decision
+                )
+                const durationLabel = formatDurationLabel(durationMinutes)
+                return (
+                  <div
+                    key={key}
+                    className="absolute z-20 flex h-full flex-col justify-between rounded-[var(--radius-lg)] border border-dashed border-white/30 bg-white/8 px-3 py-2 text-white/85 shadow-[0_18px_38px_rgba(8,12,32,0.45)] backdrop-blur-sm pointer-events-none select-none"
+                    style={cardStyle}
+                    aria-hidden
+                    data-scheduler-preview="project"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate text-sm font-semibold">
+                        {placement.projectName}
+                      </span>
+                      <span className="rounded-full border border-white/35 px-2 py-[1px] text-[10px] font-semibold uppercase tracking-[0.24em] text-white/70">
+                        {decisionLabel}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-white/65">
+                      Preview · {durationLabel}
+                    </div>
+                  </div>
+                )
+              }
+            )}
             {modelHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end)) return null
               const startMin = placement.start.getHours() * 60 + placement.start.getMinutes()
@@ -4816,6 +5005,7 @@ export default function SchedulePage() {
         handleToggleBacklogTaskCompletion,
         instanceStatusById,
         handleHabitCardActivation,
+        schedulerTimelinePlacements,
       ]
     )
 
