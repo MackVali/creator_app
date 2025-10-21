@@ -53,6 +53,10 @@ function formatLocationLabel(value: string) {
     .join(" ")
 }
 
+function normalizeLocationValue(value?: string | null) {
+  return value ? String(value).toUpperCase().trim() : "";
+}
+
 export interface WindowItem {
   id: string
   name: string
@@ -61,6 +65,7 @@ export interface WindowItem {
   end: string
   energy?: Energy
   location?: string
+  locationId?: string | null
   active?: boolean
 }
 
@@ -92,6 +97,7 @@ const mockWindows: WindowItem[] = [
     end: "11:00",
     energy: "high",
     location: "Home Studio",
+    locationId: null,
     active: true,
   },
   {
@@ -102,6 +108,7 @@ const mockWindows: WindowItem[] = [
     end: "19:30",
     energy: "ultra",
     location: "Fitness Club",
+    locationId: null,
     active: false,
   },
   {
@@ -112,6 +119,7 @@ const mockWindows: WindowItem[] = [
     end: "15:00",
     energy: "medium",
     location: "Library",
+    locationId: null,
     active: true,
   },
 ]
@@ -242,8 +250,19 @@ export default function WindowsPolishedUI({
 
   async function handleSave(data: WindowItem) {
     try {
-      const normalizedLocation = (data.location ?? "ANY").toUpperCase()
-      const nextData = { ...data, location: normalizedLocation as WindowItem["location"] }
+      const normalizedLocation = normalizeLocationValue(data.location) || "ANY"
+      const resolvedLocationId =
+        normalizedLocation !== "ANY"
+          ?
+            locationOptions.find((option) => option.value === normalizedLocation)?.id ??
+              data.locationId ??
+              null
+          : null
+      const nextData = {
+        ...data,
+        location: normalizedLocation as WindowItem["location"],
+        locationId: resolvedLocationId,
+      }
       if (editing) {
         if (onEdit) {
           const ok = await onEdit(editing.id, nextData)
@@ -947,6 +966,7 @@ function createDefaultWindow(): WindowItem {
     end: "09:00",
     energy: "no",
     location: "ANY",
+    locationId: null,
     active: true,
   }
 }
@@ -978,8 +998,14 @@ function Drawer({
   const [savingCustomLocation, setSavingCustomLocation] = useState(false)
 
   useEffect(() => {
-    if (initial) setForm({ ...initial })
-    else setForm(createDefaultWindow())
+    if (initial) {
+      const normalizedLocation = normalizeLocationValue(initial.location) || "ANY"
+      setForm({
+        ...initial,
+        location: normalizedLocation as WindowItem["location"],
+        locationId: initial.locationId ?? null,
+      })
+    } else setForm(createDefaultWindow())
   }, [initial])
 
   useEffect(() => {
@@ -1019,6 +1045,7 @@ function Drawer({
       setForm((prev) => ({
         ...prev,
         location: result.option.value as WindowItem["location"],
+        locationId: result.option.id,
       }))
     } finally {
       setSavingCustomLocation(false)
@@ -1125,10 +1152,19 @@ function Drawer({
             </label>
             <select
               className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
-              value={(form.location ?? "ANY").toUpperCase()}
-              onChange={(e) =>
-                setForm({ ...form, location: e.target.value.toUpperCase() })
-              }
+              value={normalizeLocationValue(form.location) || "ANY"}
+              onChange={(e) => {
+                const nextValue = normalizeLocationValue(e.target.value) || "ANY"
+                const nextId =
+                  nextValue !== "ANY"
+                    ? locationOptions.find((option) => option.value === nextValue)?.id ?? null
+                    : null
+                setForm({
+                  ...form,
+                  location: nextValue as WindowItem["location"],
+                  locationId: nextId,
+                })
+              }}
               disabled={locationLoading}
             >
               {locationOptions.map((option) => (

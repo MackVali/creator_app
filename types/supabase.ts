@@ -111,7 +111,6 @@ export interface Database {
           id: string;
           created_at: string;
           updated_at: string;
-          user_id: string;
           value: string;
           label: string;
         };
@@ -119,7 +118,6 @@ export interface Database {
           id?: string;
           created_at?: string;
           updated_at?: string;
-          user_id: string;
           value: string;
           label: string;
         };
@@ -127,7 +125,6 @@ export interface Database {
           id?: string;
           created_at?: string;
           updated_at?: string;
-          user_id?: string;
           value?: string;
           label?: string;
         };
@@ -671,35 +668,35 @@ export interface Database {
           id: string;
           created_at: string;
           user_id: string;
-        label: string;
-        days: number[];
-        start_local: string;
-        end_local: string;
-        energy: string;
-        location_context: string | null;
-      };
-      Insert: {
-        id?: string;
-        created_at?: string;
-        user_id: string;
-        label: string;
-        days?: number[];
-        start_local?: string;
-        end_local?: string;
-        energy?: string;
-        location_context?: string | null;
-      };
-      Update: {
-        id?: string;
-        created_at?: string;
-        user_id?: string;
-        label?: string;
-        days?: number[];
-        start_local?: string;
-        end_local?: string;
-        energy?: string;
-        location_context?: string | null;
-      };
+          label: string;
+          days: number[];
+          start_local: string;
+          end_local: string;
+          energy: string;
+          location_context_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          user_id: string;
+          label: string;
+          days?: number[];
+          start_local?: string;
+          end_local?: string;
+          energy?: string;
+          location_context_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          user_id?: string;
+          label?: string;
+          days?: number[];
+          start_local?: string;
+          end_local?: string;
+          energy?: string;
+          location_context_id?: string | null;
+        };
       };
       schedule_instances: {
         Row: {

@@ -9,6 +9,7 @@ export const MOCK_WINDOWS: WindowLite[] = [
     start_local: '09:00',
     end_local: '11:00',
     days: null,
+    location_context: null,
   },
   {
     id: 'w2',
@@ -17,6 +18,7 @@ export const MOCK_WINDOWS: WindowLite[] = [
     start_local: '13:00',
     end_local: '15:00',
     days: null,
+    location_context: null,
   },
 ];
 
