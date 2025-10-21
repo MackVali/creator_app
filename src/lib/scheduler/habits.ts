@@ -4,6 +4,10 @@ import type { Database } from '../../../types/supabase'
 
 export const DEFAULT_HABIT_DURATION_MIN = 15
 
+function normalizeLocationValue(value?: string | null) {
+  return value ? value.replace(/\s+/g, ' ').trim().toUpperCase() : ''
+}
+
 export type HabitScheduleItem = {
   id: string
   name: string
@@ -20,6 +24,7 @@ export type HabitScheduleItem = {
   goalId: string | null
   completionTarget: number | null
   locationContext: string | null
+  locationContextId: string | null
   daylightPreference: string | null
   windowEdgePreference: string | null
   window: {
@@ -30,6 +35,7 @@ export type HabitScheduleItem = {
     endLocal: string
     days: number[] | null
     locationContext: string | null
+    locationContextId: string | null
   } | null
 }
 
@@ -57,7 +63,8 @@ type HabitRecord = {
     start_local?: string | null
     end_local?: string | null
     days?: number[] | null
-    location_context?: string | null
+    location_context_id?: string | null
+    location_context?: { id?: string | null; value?: string | null } | null
   } | null
 }
 
@@ -90,9 +97,9 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   if (typeof from !== 'function') return []
 
   const selectColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts(id,value))'
   const fallbackColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts(id,value))'
 
   const select = from.call(supabase, 'habits') as {
     select?: (
@@ -147,7 +154,11 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
       supportsGoalMetadata && typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
         ? record.completion_target
         : null,
-    locationContext: record.location_context ?? null,
+    locationContext: (() => {
+      const normalized = normalizeLocationValue(record.location_context ?? null)
+      return normalized && normalized !== 'ANY' ? normalized : null
+    })(),
+    locationContextId: null,
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,
     window: record.window
@@ -158,7 +169,15 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
           startLocal: record.window.start_local ?? '00:00',
           endLocal: record.window.end_local ?? '00:00',
           days: record.window.days ?? null,
-          locationContext: record.window.location_context ?? null,
+          locationContext: (() => {
+            const normalized = normalizeLocationValue(
+              (record.window?.location_context as { value?: string | null } | null)?.value ?? null,
+            )
+            return normalized && normalized !== 'ANY' ? normalized : null
+          })(),
+          locationContextId:
+            record.window?.location_context_id ??
+            ((record.window?.location_context as { id?: string | null } | null)?.id ?? null),
         }
       : null,
   }))

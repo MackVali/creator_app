@@ -886,8 +886,8 @@ function computeHabitPlacementsForDay({
     for (const entry of windowEntries) {
       if (entry.energyIdx < requiredEnergyIdx) continue
 
-      const windowLocationRaw = entry.window.location_context
-        ? String(entry.window.location_context).toUpperCase().trim()
+      const windowLocationRaw = entry.window.location_context_value
+        ? String(entry.window.location_context_value).toUpperCase().trim()
         : null
       if (locationContext) {
         if (!windowLocationRaw) continue

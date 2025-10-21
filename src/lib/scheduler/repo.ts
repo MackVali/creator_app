@@ -4,6 +4,10 @@ import type { Database } from '../../../types/supabase';
 import { normalizeTimeZone, weekdayInTimeZone } from './timezone';
 import type { TaskLite, ProjectLite } from './weight';
 
+function normalizeLocationValue(value?: string | null) {
+  return value ? value.replace(/\s+/g, ' ').trim().toUpperCase() : '';
+}
+
 export type WindowLite = {
   id: string;
   label: string;
@@ -11,9 +15,39 @@ export type WindowLite = {
   start_local: string;
   end_local: string;
   days: number[] | null;
-  location_context: string | null;
+  location_context_id: string | null;
+  location_context_value: string | null;
   fromPrevDay?: boolean;
 };
+
+type WindowRow = {
+  id: string;
+  label: string;
+  energy: string;
+  start_local: string;
+  end_local: string;
+  days: number[] | null;
+  location_context_id?: string | null;
+  location_context?: { id?: string | null; value?: string | null } | null;
+};
+
+function mapWindowRow(row: WindowRow): WindowLite {
+  const rawValue = row.location_context?.value ?? null;
+  const normalized = normalizeLocationValue(rawValue);
+  const value = normalized && normalized !== 'ANY' ? normalized : null;
+
+  return {
+    id: row.id,
+    label: row.label,
+    energy: row.energy,
+    start_local: row.start_local,
+    end_local: row.end_local,
+    days: row.days ?? null,
+    location_context_id:
+      row.location_context_id ?? row.location_context?.id ?? null,
+    location_context_value: value,
+  };
+}
 
 type Client = SupabaseClient<Database>;
 
@@ -83,7 +117,8 @@ export async function fetchWindowsForDate(
   const normalizedTimeZone = normalizeTimeZone(timeZone);
   const weekday = weekdayInTimeZone(date, normalizedTimeZone);
   const prevWeekday = (weekday + 6) % 7;
-  const columns = 'id, label, energy, start_local, end_local, days, location_context';
+  const columns =
+    'id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts(id,value)';
 
   const [
     { data: today, error: errToday },
@@ -105,7 +140,9 @@ export async function fetchWindowsForDate(
     throw errToday ?? errPrev ?? errRecurring;
   }
 
-  const always = recurring ?? [];
+  const todayWindows = (today ?? []).map((row) => mapWindowRow(row as WindowRow));
+  const prevWindows = (prev ?? []).map((row) => mapWindowRow(row as WindowRow));
+  const always = (recurring ?? []).map((row) => mapWindowRow(row as WindowRow));
 
   const crosses = (w: WindowLite) => {
     const [sh = 0, sm = 0] = w.start_local.split(':').map(Number);
@@ -114,13 +151,13 @@ export async function fetchWindowsForDate(
   };
 
   const base = new Map<string, WindowLite>();
-  for (const window of [...(today ?? []), ...always]) {
+  for (const window of [...todayWindows, ...always]) {
     if (!base.has(window.id)) {
-      base.set(window.id, window as WindowLite);
+      base.set(window.id, window);
     }
   }
 
-  const prevCross = [...(prev ?? []), ...always]
+  const prevCross = [...prevWindows, ...always]
     .filter(crosses)
     .map((w) => ({ ...w, fromPrevDay: true }));
 
@@ -132,11 +169,13 @@ export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
 
   const { data, error } = await supabase
     .from('windows')
-    .select('id, label, energy, start_local, end_local, days');
+    .select(
+      'id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts(id,value)',
+    );
 
   if (error) throw error;
 
-  return (data ?? []) as WindowLite[];
+  return (data ?? []).map((row) => mapWindowRow(row as WindowRow));
 }
 
 export async function fetchProjectsMap(

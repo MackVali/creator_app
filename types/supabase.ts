@@ -676,7 +676,7 @@ export interface Database {
         start_local: string;
         end_local: string;
         energy: string;
-        location_context: string | null;
+        location_context_id: string | null;
       };
       Insert: {
         id?: string;
@@ -687,7 +687,7 @@ export interface Database {
         start_local?: string;
         end_local?: string;
         energy?: string;
-        location_context?: string | null;
+        location_context_id?: string | null;
       };
       Update: {
         id?: string;
@@ -698,7 +698,7 @@ export interface Database {
         start_local?: string;
         end_local?: string;
         energy?: string;
-        location_context?: string | null;
+        location_context_id?: string | null;
       };
       };
       schedule_instances: {
