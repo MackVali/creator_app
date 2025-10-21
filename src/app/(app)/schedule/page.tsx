@@ -25,6 +25,7 @@ import type { AnimationPlaybackControls } from 'framer-motion'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import {
   DayTimeline,
   TIMELINE_CARD_LEFT_FALLBACK,
@@ -4402,9 +4403,12 @@ export default function SchedulePage() {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white/80 transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50${
-                              canToggle && !isPending ? '' : ' pointer-events-none'
-                            }`}
+                            className={cn(
+                              'inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white/80 transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50',
+                              {
+                                'pointer-events-none': !canToggle || isPending,
+                              }
+                            )}
                             aria-label={
                               isCompleted
                                 ? `Mark ${project.name} as scheduled`
@@ -4428,9 +4432,10 @@ export default function SchedulePage() {
                             }}
                           >
                             <Check
-                              className={`h-4 w-4 ${
-                                isCompleted ? 'text-emerald-300' : 'text-white'
-                              }`}
+                              className={cn('h-4 w-4', {
+                                'text-emerald-300': isCompleted,
+                                'text-white': !isCompleted,
+                              })}
                               strokeWidth={2.4}
                             />
                           </button>
