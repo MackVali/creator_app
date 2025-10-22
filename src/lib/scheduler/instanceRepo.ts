@@ -32,9 +32,8 @@ export async function fetchInstancesForRange(
   const endParam = endUTC
 
   return await base
-    .or(
-      `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
-    )
+    .lt('start_utc', endParam)
+    .gt('end_utc', startParam)
     .order('start_utc', { ascending: true })
 }
 
