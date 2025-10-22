@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   PageHeader,
   SectionHeader,
@@ -100,40 +101,30 @@ function formatTitleCase(value: string | null | undefined) {
 
 export default function HabitsPage() {
   const router = useRouter();
-  const supabase = getSupabaseBrowser();
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
   const [habits, setHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!supabase) {
+      setError("Supabase client not available");
+      setLoading(false);
+      return;
+    }
+
+    if (!userId) {
+      return;
+    }
+
     let isMounted = true;
 
     const fetchHabits = async () => {
-      if (!supabase) {
-        if (isMounted) {
-          setError("Supabase client not available");
-          setLoading(false);
-        }
-        return;
-      }
-
       setLoading(true);
       try {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) throw userError;
-        if (!user) {
-          if (isMounted) {
-            setHabits([]);
-            setError("You need to be signed in to view habits.");
-          }
-          return;
-        }
-
-        const data = await getHabits(user.id);
+        const data = await getHabits(supabase, userId);
         if (isMounted) {
           setHabits(data);
           setError(null);
@@ -151,12 +142,12 @@ export default function HabitsPage() {
       }
     };
 
-    fetchHabits();
+    void fetchHabits();
 
     return () => {
       isMounted = false;
     };
-  }, [supabase]);
+  }, [supabase, userId]);
 
   const { routines, standaloneHabits } = useMemo(() => {
     const routineMap = new Map<string, HabitRoutineGroup>();
@@ -424,7 +415,15 @@ export default function HabitsPage() {
                                 ? `${habit.duration_minutes} min`
                                 : null;
                               const energyLabel = formatTitleCase(habit.energy);
-                              const tags = [habitType, recurrence, energyLabel]
+                              const locationLabel =
+                                habit.location_context_label ??
+                                formatTitleCase(habit.location_context);
+                              const tags = [
+                                habitType,
+                                recurrence,
+                                energyLabel,
+                                locationLabel ? `Location • ${locationLabel}` : null,
+                              ]
                                 .filter(Boolean) as string[];
                               const skillIcon = habit.skill?.icon?.trim();
                               const skillName = habit.skill?.name ?? null;
@@ -515,6 +514,12 @@ export default function HabitsPage() {
                                         <span>Energy • {energyLabel}</span>
                                       </span>
                                     )}
+                                    {locationLabel && (
+                                      <span className="flex items-center gap-2">
+                                        <span className="text-base">📍</span>
+                                        <span>Location • {locationLabel}</span>
+                                      </span>
+                                    )}
                                     {isTempHabit && completionTarget ? (
                                       <span className="flex items-center gap-2">
                                         <span className="text-base">✅</span>
@@ -564,6 +569,9 @@ export default function HabitsPage() {
                         ? `${habit.duration_minutes} min`
                         : null;
                       const energyLabel = formatTitleCase(habit.energy);
+                      const locationLabel =
+                        habit.location_context_label ??
+                        formatTitleCase(habit.location_context);
                       const skillIcon = habit.skill?.icon?.trim();
                       const skillName = habit.skill?.name ?? null;
                       const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
@@ -609,6 +617,11 @@ export default function HabitsPage() {
                                 {energyLabel && (
                                   <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
                                     Energy: {energyLabel}
+                                  </span>
+                                )}
+                                {locationLabel && (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
+                                    Location: {locationLabel}
                                   </span>
                                 )}
                               </div>
@@ -662,6 +675,12 @@ export default function HabitsPage() {
                               <div className="flex items-center gap-2">
                                 <span className="text-base">🔥</span>
                                 <span>Energy • {energyLabel}</span>
+                              </div>
+                            )}
+                            {locationLabel && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">📍</span>
+                                <span>Location • {locationLabel}</span>
                               </div>
                             )}
                             {isTempHabit && completionTarget ? (
