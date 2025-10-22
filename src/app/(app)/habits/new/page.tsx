@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LocationMetadataMode, isLocationMetadataError, normalizeLocationValue } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -105,6 +106,8 @@ export default function NewHabitPage() {
   const [goalLoadError, setGoalLoadError] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
+  const [locationMetadataMode, setLocationMetadataMode] =
+    useState<LocationMetadataMode>("id");
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -554,13 +557,28 @@ export default function NewHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const locationContextId = await resolveLocationContextId(
-        supabase,
-        user.id,
-        locationContext,
-      );
+      const normalizedLocationValue = normalizeLocationValue(locationContext);
+      let locationModeForInsert = locationMetadataMode;
+      let locationContextId: string | null = null;
 
-      const { error: insertError } = await supabase.from("habits").insert({
+      if (locationModeForInsert === "id" && normalizedLocationValue) {
+        try {
+          locationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            normalizedLocationValue,
+          );
+        } catch (maybeError) {
+          if (isLocationMetadataError(maybeError)) {
+            locationModeForInsert = "legacy";
+            setLocationMetadataMode("legacy");
+          } else {
+            throw maybeError;
+          }
+        }
+      }
+
+      const insertPayload: Record<string, unknown> = {
         user_id: user.id,
         name: name.trim(),
         description: trimmedDescription || null,
@@ -571,7 +589,6 @@ export default function NewHabitPage() {
         energy,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
-        location_context_id: locationContextId,
         daylight_preference:
           daylightPreference && daylightPreference !== "ALL_DAY"
             ? daylightPreference
@@ -579,10 +596,40 @@ export default function NewHabitPage() {
         window_edge_preference: windowEdgePreference,
         goal_id: isTempHabit ? goalIdValue : null,
         completion_target: parsedCompletionTarget,
-      });
+      };
+
+      if (locationModeForInsert === "id") {
+        insertPayload.location_context_id = locationContextId;
+      } else {
+        insertPayload.location_context = normalizedLocationValue;
+      }
+
+      const { error: insertError } = await supabase
+        .from("habits")
+        .insert(insertPayload);
 
       if (insertError) {
-        throw insertError;
+        if (
+          locationModeForInsert === "id" &&
+          isLocationMetadataError(insertError)
+        ) {
+          const legacyPayload: Record<string, unknown> = { ...insertPayload };
+          delete legacyPayload.location_context_id;
+          legacyPayload.location_context = normalizedLocationValue;
+
+          const { error: legacyInsertError } = await supabase
+            .from("habits")
+            .insert(legacyPayload);
+
+          if (legacyInsertError) {
+            throw legacyInsertError;
+          }
+
+          locationModeForInsert = "legacy";
+          setLocationMetadataMode("legacy");
+        } else {
+          throw insertError;
+        }
       }
 
       router.push("/habits");

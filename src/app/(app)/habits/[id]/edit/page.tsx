@@ -29,7 +29,57 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { LocationMetadataMode, isLocationMetadataError, normalizeLocationValue } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
+
+function normalizeMessageTokens(maybeError?: unknown) {
+  if (!maybeError || typeof maybeError !== "object") {
+    return "";
+  }
+
+  const parts: string[] = [];
+
+  if ("message" in maybeError && typeof maybeError.message === "string") {
+    parts.push(maybeError.message.toLowerCase());
+  }
+
+  if ("details" in maybeError && typeof maybeError.details === "string") {
+    parts.push(maybeError.details.toLowerCase());
+  }
+
+  return parts.join(" ");
+}
+
+function isGoalMetadataError(maybeError?: unknown) {
+  const haystack = normalizeMessageTokens(maybeError);
+  if (!haystack) {
+    return false;
+  }
+  return (
+    haystack.includes("goal_id") || haystack.includes("completion_target")
+  );
+}
+
+function buildHabitSelectColumns(
+  includeGoalMetadata: boolean,
+  locationMode: LocationMetadataMode,
+) {
+  const baseColumns =
+    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference";
+
+  const locationColumns =
+    locationMode === "id"
+      ? "location_context_id, location_context:location_contexts(value,label)"
+      : "location_context";
+
+  const columns = [baseColumns, locationColumns];
+
+  if (includeGoalMetadata) {
+    columns.push("goal_id, completion_target");
+  }
+
+  return columns.filter(Boolean).join(", ");
+}
 
 async function resolveLocationContextId(
   supabase: ReturnType<typeof getSupabaseBrowser>,
@@ -118,6 +168,8 @@ export default function EditHabitPage() {
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
   const [goalMetadataSupported, setGoalMetadataSupported] = useState(true);
+  const [locationMetadataMode, setLocationMetadataMode] =
+    useState<LocationMetadataMode>("id");
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -504,45 +556,42 @@ export default function EditHabitPage() {
           return;
         }
 
-        const baseColumns =
-          "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context_id, location_context:location_contexts(value,label), daylight_preference, window_edge_preference";
-        const extendedColumns = `${baseColumns}, goal_id, completion_target`;
-
-        const shouldIncludeGoalMetadata = (maybeError?: unknown) => {
-          if (!maybeError || typeof maybeError !== "object") return true;
-          const message =
-            "message" in maybeError && typeof maybeError.message === "string"
-              ? maybeError.message.toLowerCase()
-              : "";
-          if (!message) return true;
-          return !(
-            message.includes("goal_id") ||
-            message.includes("completion_target")
-          );
-        };
-
         let includeGoalMetadata = true;
+        let locationMode: LocationMetadataMode = "id";
+        let habitResponse: { data: any; error: any } | null = null;
 
-        let habitResponse = await supabase
-          .from("habits")
-          .select(extendedColumns)
-          .eq("id", habitId)
-          .eq("user_id", user.id)
-          .single();
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          habitResponse = await supabase
+            .from("habits")
+            .select(buildHabitSelectColumns(includeGoalMetadata, locationMode))
+            .eq("id", habitId)
+            .eq("user_id", user.id)
+            .single();
 
-        if (habitResponse.error && includeGoalMetadata) {
-          includeGoalMetadata = shouldIncludeGoalMetadata(habitResponse.error);
-          if (!includeGoalMetadata) {
-            habitResponse = await supabase
-              .from("habits")
-              .select(baseColumns)
-              .eq("id", habitId)
-              .eq("user_id", user.id)
-              .single();
+          if (!habitResponse.error) {
+            break;
+          }
+
+          let adjusted = false;
+
+          if (includeGoalMetadata && isGoalMetadataError(habitResponse.error)) {
+            includeGoalMetadata = false;
+            adjusted = true;
+          }
+
+          if (locationMode === "id" && isLocationMetadataError(habitResponse.error)) {
+            locationMode = "legacy";
+            adjusted = true;
+          }
+
+          if (!adjusted) {
+            throw habitResponse.error;
           }
         }
 
-        if (habitResponse.error) throw habitResponse.error;
+        if (!habitResponse || habitResponse.error) {
+          throw habitResponse?.error ?? new Error("Failed to load habit.");
+        }
 
         const data = habitResponse.data;
 
@@ -555,6 +604,7 @@ export default function EditHabitPage() {
 
         if (active) {
           setGoalMetadataSupported(includeGoalMetadata);
+          setLocationMetadataMode(locationMode);
           if (!includeGoalMetadata) {
             setGoalsLoading(false);
             setGoalLoadError(null);
@@ -602,11 +652,16 @@ export default function EditHabitPage() {
             setGoalId("none");
             setCompletionTarget("10");
           }
-          setLocationContext(
-            data.location_context?.value
-              ? String(data.location_context.value).toUpperCase()
-              : null
-          );
+          const legacyLocationValue =
+            locationMode === "legacy" && typeof data.location_context === "string"
+              ? data.location_context
+              : null;
+          const relationalLocationValue =
+            locationMode === "id" && data.location_context?.value
+              ? String(data.location_context.value)
+              : null;
+          const resolvedLocationRaw = legacyLocationValue ?? relationalLocationValue;
+          setLocationContext(normalizeLocationValue(resolvedLocationRaw));
           setDaylightPreference(
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
@@ -760,11 +815,27 @@ export default function EditHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const locationContextId = await resolveLocationContextId(
-        supabase,
-        user.id,
-        locationContext,
-      );
+      const normalizedLocationValue = normalizeLocationValue(locationContext);
+
+      let locationModeForUpdate = locationMetadataMode;
+      let locationContextId: string | null = null;
+
+      if (locationModeForUpdate === "id" && normalizedLocationValue) {
+        try {
+          locationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            normalizedLocationValue,
+          );
+        } catch (maybeError) {
+          if (isLocationMetadataError(maybeError)) {
+            locationModeForUpdate = "legacy";
+            setLocationMetadataMode("legacy");
+          } else {
+            throw maybeError;
+          }
+        }
+      }
 
       const updatePayload: Record<string, unknown> = {
         name: name.trim(),
@@ -776,13 +847,18 @@ export default function EditHabitPage() {
         energy,
         routine_id: routineIdToUse,
         skill_id: skillId === "none" ? null : skillId,
-        location_context_id: locationContextId,
         daylight_preference:
           daylightPreference && daylightPreference !== "ALL_DAY"
             ? daylightPreference
             : null,
         window_edge_preference: windowEdgePreference,
       };
+
+      if (locationModeForUpdate === "id") {
+        updatePayload.location_context_id = locationContextId;
+      } else {
+        updatePayload.location_context = normalizedLocationValue;
+      }
 
       if (goalMetadataSupported) {
         updatePayload.goal_id =
@@ -799,7 +875,26 @@ export default function EditHabitPage() {
         .eq("user_id", user.id);
 
       if (updateError) {
-        throw updateError;
+        if (locationModeForUpdate === "id" && isLocationMetadataError(updateError)) {
+          const legacyPayload: Record<string, unknown> = { ...updatePayload };
+          delete legacyPayload.location_context_id;
+          legacyPayload.location_context = normalizedLocationValue;
+
+          const { error: legacyUpdateError } = await supabase
+            .from("habits")
+            .update(legacyPayload)
+            .eq("id", habitId)
+            .eq("user_id", user.id);
+
+          if (legacyUpdateError) {
+            throw legacyUpdateError;
+          }
+
+          locationModeForUpdate = "legacy";
+          setLocationMetadataMode("legacy");
+        } else {
+          throw updateError;
+        }
       }
 
       router.push("/habits");
