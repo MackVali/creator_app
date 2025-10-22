@@ -26,32 +26,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LocationMetadataMode, isLocationMetadataError, normalizeLocationValue } from "@/lib/location-metadata";
+import {
+  LocationMetadataMode,
+  isLocationMetadataError,
+  normalizeLocationValue,
+  resolveLocationContextId,
+} from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
-
-async function resolveLocationContextId(
-  supabase: ReturnType<typeof getSupabaseBrowser>,
-  userId: string,
-  value: string | null,
-) {
-  if (!supabase) return null;
-  const normalized = value ? value.trim().toUpperCase() : "";
-  if (!normalized || normalized === "ANY") return null;
-
-  const { data, error } = await supabase
-    .from("location_contexts")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("value", normalized)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw error;
-  }
-
-  return data?.id ?? null;
-}
 
 interface RoutineOption {
   id: string;

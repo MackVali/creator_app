@@ -29,7 +29,12 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { LocationMetadataMode, isLocationMetadataError, normalizeLocationValue } from "@/lib/location-metadata";
+import {
+  LocationMetadataMode,
+  isLocationMetadataError,
+  normalizeLocationValue,
+  resolveLocationContextId,
+} from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 function normalizeMessageTokens(maybeError?: unknown) {
@@ -79,29 +84,6 @@ function buildHabitSelectColumns(
   }
 
   return columns.filter(Boolean).join(", ");
-}
-
-async function resolveLocationContextId(
-  supabase: ReturnType<typeof getSupabaseBrowser>,
-  userId: string,
-  value: string | null,
-) {
-  if (!supabase) return null;
-  const normalized = value ? value.trim().toUpperCase() : "";
-  if (!normalized || normalized === "ANY") return null;
-
-  const { data, error } = await supabase
-    .from("location_contexts")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("value", normalized)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw error;
-  }
-
-  return data?.id ?? null;
 }
 
 interface RoutineOption {

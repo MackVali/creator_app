@@ -67,6 +67,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
+import { resolveLocationContextId } from "@/lib/location-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
@@ -101,29 +102,6 @@ type RoutineSelectOption = {
 const formatNameValue = (value: string) => value.toUpperCase();
 const formatNameDisplay = (value?: string | null) =>
   value ? value.toUpperCase() : "";
-
-async function resolveLocationContextId(
-  supabase: SupabaseClient,
-  userId: string,
-  value: string | null,
-) {
-  if (!value) return null;
-  const normalized = value.trim().toUpperCase();
-  if (!normalized || normalized === "ANY") return null;
-
-  const { data, error } = await supabase
-    .from("location_contexts")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("value", normalized)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw error;
-  }
-
-  return data?.id ?? null;
-}
 
 type GoalWizardRpcInput = {
   user_id: string;
