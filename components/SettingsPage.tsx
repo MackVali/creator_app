@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const { profile, userId, loading, error, refreshProfile } = useProfile();
-  const { session } = useAuth();
+  const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -39,10 +39,10 @@ export default function SettingsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const user = session?.user ?? null;
-    setEmail(user?.email ?? "");
+    const authUser = user ?? null;
+    setEmail(authUser?.email ?? "");
 
-    if (user) {
+    if (authUser) {
       const possibleRoles = new Set<string>();
       const addRole = (value: unknown) => {
         if (typeof value === "string") {
@@ -56,12 +56,12 @@ export default function SettingsPage() {
         }
       };
 
-      addRole(user.user_metadata?.role);
-      addRole(user.app_metadata?.role);
-      addRoles(user.user_metadata?.roles);
-      addRoles(user.app_metadata?.roles);
+      addRole(authUser.user_metadata?.role);
+      addRole(authUser.app_metadata?.role);
+      addRoles(authUser.user_metadata?.roles);
+      addRoles(authUser.app_metadata?.roles);
 
-      if (user.user_metadata?.is_admin === true || user.app_metadata?.is_admin === true) {
+      if (authUser.user_metadata?.is_admin === true || authUser.app_metadata?.is_admin === true) {
         possibleRoles.add("admin");
       }
 
@@ -69,7 +69,7 @@ export default function SettingsPage() {
     } else {
       setIsAdmin(false);
     }
-  }, [session]);
+  }, [user]);
 
   useEffect(() => {
     if (profile) {

@@ -1904,9 +1904,9 @@ export default function SchedulePage() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const prefersReducedMotion = useReducedMotion()
-  const { session } = useAuth()
-  const userId = session?.user.id ?? null
-  const userMetadata = session?.user?.user_metadata ?? null
+  const { user } = useAuth()
+  const userId = user?.id ?? null
+  const userMetadata = user?.user_metadata ?? null
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
     [userId]
@@ -2968,7 +2968,7 @@ export default function SchedulePage() {
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
-        console.warn('No user session available for status update')
+        console.warn('No authenticated user available for status update')
         return
       }
 
@@ -3355,7 +3355,7 @@ export default function SchedulePage() {
 
   const runScheduler = useCallback(async () => {
     if (!userId) {
-      console.warn('No user session available for scheduler run')
+      console.warn('No authenticated user available for scheduler run')
       return
     }
     const localNow = new Date()

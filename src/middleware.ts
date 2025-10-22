@@ -56,20 +56,28 @@ export async function middleware(req: NextRequest) {
       },
     });
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    await supabase.auth.getSession();
 
-    const hasSession = !!session;
+    const {
+      data: userResult,
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error(`[Middleware] Error fetching authenticated user:`, userError);
+    }
+
+    const user = userResult.user ?? null;
+    const isAuthenticated = Boolean(user);
     const isAuthRoute = pathname === "/auth";
 
     // Log middleware decisions for debugging
     console.log(
-      `[Middleware] ${pathname} - hasSession: ${hasSession}, isAuthRoute: ${isAuthRoute}`
+      `[Middleware] ${pathname} - isAuthenticated: ${isAuthenticated}, isAuthRoute: ${isAuthRoute}`
     );
 
     // If NO session and path !== /auth: redirect → /auth?redirect=<path+search>
-    if (!hasSession && !isAuthRoute) {
+    if (!isAuthenticated && !isAuthRoute) {
       const redirectUrl = new URL("/auth", req.url);
       redirectUrl.searchParams.set("redirect", pathname + req.nextUrl.search);
       console.log(`[Middleware] Redirecting to: ${redirectUrl.toString()}`);
@@ -81,7 +89,7 @@ export async function middleware(req: NextRequest) {
     }
 
     // If session AND path starts with /auth: redirect → ?redirect or /dashboard
-    if (hasSession && isAuthRoute) {
+    if (isAuthenticated && isAuthRoute) {
       const redirectTo =
         req.nextUrl.searchParams.get("redirect") || "/dashboard";
       console.log(`[Middleware] Redirecting to: ${redirectTo}`);
@@ -94,19 +102,19 @@ export async function middleware(req: NextRequest) {
       return redirectResponse;
     }
 
-    if (hasSession && !isProfileSetupRoute) {
+    if (isAuthenticated && user && !isProfileSetupRoute) {
       const {
         data: profileData,
         error: profileError,
       } = await supabase
         .from("profiles")
         .select("id")
-        .eq("user_id", session.user.id)
+        .eq("user_id", user.id)
         .maybeSingle();
 
       if (profileError) {
         console.error(
-          `[Middleware] Error checking profile for user ${session.user.id}:`,
+          `[Middleware] Error checking profile for user ${user.id}:`,
           profileError
         );
       }

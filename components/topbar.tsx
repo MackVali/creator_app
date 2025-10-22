@@ -14,7 +14,7 @@ import {
 import { MobileNav } from "./mobile-nav";
 
 export function Topbar() {
-  const { session } = useAuth();
+  const { user } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -55,7 +55,7 @@ export function Topbar() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <div className="px-2 py-1.5 text-sm text-muted-foreground border-b mb-1">
-              {session?.user?.email}
+              {user?.email}
             </div>
             <DropdownMenuItem
               onClick={handleSignOut}
