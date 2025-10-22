@@ -19,7 +19,9 @@ export type HabitScheduleItem = {
   skillId: string | null
   goalId: string | null
   completionTarget: number | null
-  locationContext: string | null
+  locationContextId: string | null
+  locationContextValue: string | null
+  locationContextName: string | null
   daylightPreference: string | null
   windowEdgePreference: string | null
   window: {
@@ -29,7 +31,9 @@ export type HabitScheduleItem = {
     startLocal: string
     endLocal: string
     days: number[] | null
-    locationContext: string | null
+    locationContextId: string | null
+    locationContextValue: string | null
+    locationContextName: string | null
   } | null
 }
 
@@ -47,7 +51,12 @@ type HabitRecord = {
   skill_id?: string | null
   goal_id?: string | null
   completion_target?: number | null
-  location_context?: string | null
+  location_context_id?: string | null
+  location_context?: {
+    id?: string | null
+    value?: string | null
+    label?: string | null
+  } | null
   daylight_preference?: string | null
   window_edge_preference?: string | null
   window?: {
@@ -57,7 +66,12 @@ type HabitRecord = {
     start_local?: string | null
     end_local?: string | null
     days?: number[] | null
-    location_context?: string | null
+    location_context_id?: string | null
+    location_context?: {
+      id?: string | null
+      value?: string | null
+      label?: string | null
+    } | null
   } | null
 }
 
@@ -89,10 +103,12 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   const from = (supabase as { from?: (table: string) => unknown }).from
   if (typeof from !== 'function') return []
 
+  const locationJoin = 'location_context:location_contexts(id, value, label)'
+  const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`
   const selectColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
   const fallbackColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
 
   const select = from.call(supabase, 'habits') as {
     select?: (
@@ -147,7 +163,15 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
       supportsGoalMetadata && typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
         ? record.completion_target
         : null,
-    locationContext: record.location_context ?? null,
+    locationContextId: record.location_context_id ?? null,
+    locationContextValue: record.location_context?.value
+      ? String(record.location_context.value).toUpperCase().trim()
+      : null,
+    locationContextName:
+      record.location_context?.label ??
+      (record.location_context?.value
+        ? String(record.location_context.value).toUpperCase()
+        : null),
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,
     window: record.window
@@ -158,7 +182,15 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
           startLocal: record.window.start_local ?? '00:00',
           endLocal: record.window.end_local ?? '00:00',
           days: record.window.days ?? null,
-          locationContext: record.window.location_context ?? null,
+          locationContextId: record.window.location_context_id ?? null,
+          locationContextValue: record.window.location_context?.value
+            ? String(record.window.location_context.value).toUpperCase().trim()
+            : null,
+          locationContextName:
+            record.window.location_context?.label ??
+            (record.window.location_context?.value
+              ? String(record.window.location_context.value).toUpperCase()
+              : null),
         }
       : null,
   }))

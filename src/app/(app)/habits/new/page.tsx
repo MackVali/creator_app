@@ -29,6 +29,29 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
 
+async function resolveLocationContextId(
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  userId: string,
+  value: string | null,
+) {
+  if (!supabase) return null;
+  const normalized = value ? value.trim().toUpperCase() : "";
+  if (!normalized || normalized === "ANY") return null;
+
+  const { data, error } = await supabase
+    .from("location_contexts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("value", normalized)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw error;
+  }
+
+  return data?.id ?? null;
+}
+
 interface RoutineOption {
   id: string;
   name: string;
@@ -531,6 +554,12 @@ export default function NewHabitPage() {
         routineIdToUse = routineId;
       }
 
+      const locationContextId = await resolveLocationContextId(
+        supabase,
+        user.id,
+        locationContext,
+      );
+
       const { error: insertError } = await supabase.from("habits").insert({
         user_id: user.id,
         name: name.trim(),
@@ -542,7 +571,7 @@ export default function NewHabitPage() {
         energy,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
-        location_context: locationContext,
+        location_context_id: locationContextId,
         daylight_preference:
           daylightPreference && daylightPreference !== "ALL_DAY"
             ? daylightPreference

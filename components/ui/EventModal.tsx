@@ -102,6 +102,29 @@ const formatNameValue = (value: string) => value.toUpperCase();
 const formatNameDisplay = (value?: string | null) =>
   value ? value.toUpperCase() : "";
 
+async function resolveLocationContextId(
+  supabase: SupabaseClient,
+  userId: string,
+  value: string | null,
+) {
+  if (!value) return null;
+  const normalized = value.trim().toUpperCase();
+  if (!normalized || normalized === "ANY") return null;
+
+  const { data, error } = await supabase
+    .from("location_contexts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("value", normalized)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw error;
+  }
+
+  return data?.id ?? null;
+}
+
 type GoalWizardRpcInput = {
   user_id: string;
   name: string;
@@ -1556,7 +1579,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         monument_id?: string;
         skill_id?: string | null;
         routine_id?: string | null;
-        location_context?: string | null;
+        location_context_id?: string | null;
         daylight_preference?: string | null;
         window_edge_preference?: string | null;
         completion_target?: number | null;
@@ -1665,9 +1688,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
-        insertData.location_context = formData.location_context
-          ? formData.location_context
-          : null;
+        insertData.location_context_id = await resolveLocationContextId(
+          supabase,
+          user.id,
+          formData.location_context ? formData.location_context : null,
+        );
         insertData.daylight_preference =
           formData.daylight_preference &&
           formData.daylight_preference !== "ALL_DAY"

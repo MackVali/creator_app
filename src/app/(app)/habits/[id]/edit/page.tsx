@@ -31,6 +31,29 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
+async function resolveLocationContextId(
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  userId: string,
+  value: string | null,
+) {
+  if (!supabase) return null;
+  const normalized = value ? value.trim().toUpperCase() : "";
+  if (!normalized || normalized === "ANY") return null;
+
+  const { data, error } = await supabase
+    .from("location_contexts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("value", normalized)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw error;
+  }
+
+  return data?.id ?? null;
+}
+
 interface RoutineOption {
   id: string;
   name: string;
@@ -463,7 +486,7 @@ export default function EditHabitPage() {
         const { data, error: habitError } = await supabase
           .from("habits")
           .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, completion_target"
+            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context_id, location_context:location_contexts(value,label), daylight_preference, window_edge_preference, goal_id, completion_target"
           )
           .eq("id", habitId)
           .eq("user_id", user.id)
@@ -516,7 +539,9 @@ export default function EditHabitPage() {
               : "10";
           setCompletionTarget(completionValue);
           setLocationContext(
-            data.location_context ? String(data.location_context).toUpperCase() : null
+            data.location_context?.value
+              ? String(data.location_context.value).toUpperCase()
+              : null
           );
           setDaylightPreference(
             data.daylight_preference
@@ -671,6 +696,12 @@ export default function EditHabitPage() {
         routineIdToUse = routineId;
       }
 
+      const locationContextId = await resolveLocationContextId(
+        supabase,
+        user.id,
+        locationContext,
+      );
+
       const { error: updateError } = await supabase
         .from("habits")
         .update({
@@ -683,7 +714,7 @@ export default function EditHabitPage() {
           energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
-          location_context: locationContext,
+          location_context_id: locationContextId,
           daylight_preference:
             daylightPreference && daylightPreference !== "ALL_DAY"
               ? daylightPreference
