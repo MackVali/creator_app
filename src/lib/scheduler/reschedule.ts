@@ -393,7 +393,12 @@ export async function scheduleBacklog(
   }
 
   const finalQueueProjectIds = new Set(queuedProjectIds)
-  const rangeEnd = addDaysInTimeZone(baseStart, 28, timeZone)
+  const lookaheadDays = Math.min(
+    MAX_LOOKAHEAD_DAYS,
+    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
+  )
+  const dedupeWindowDays = Math.max(lookaheadDays, 28)
+  const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
@@ -479,11 +484,6 @@ export async function scheduleBacklog(
     habitPlacementsByOffset.set(offset, placements)
     return placements
   }
-
-  const lookaheadDays = Math.min(
-    MAX_LOOKAHEAD_DAYS,
-    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
-  )
 
   if (habits.length > 0) {
     for (let offset = 0; offset < lookaheadDays; offset += 1) {
@@ -893,6 +893,11 @@ async function scheduleHabitsForDay(params: {
     const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
     const windowStartMs = target.startLocal.getTime()
+    const startMs = Number.isFinite(startLimit)
+      ? startLimit
+      : Number.isFinite(windowStartMs)
+        ? windowStartMs
+        : defaultDueMs
     let constraintLowerBound = startMs
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null
     const dueStartMs = dueStart ? dueStart.getTime() : null
