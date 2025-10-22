@@ -799,10 +799,10 @@ export default function EditHabitPage() {
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
 
-      let locationModeForUpdate = locationMetadataMode;
+      let initialLocationMode = locationMetadataMode;
       let locationContextId: string | null = null;
 
-      if (locationModeForUpdate === "id" && normalizedLocationValue) {
+      if (initialLocationMode === "id" && normalizedLocationValue) {
         try {
           locationContextId = await resolveLocationContextId(
             supabase,
@@ -811,7 +811,7 @@ export default function EditHabitPage() {
           );
         } catch (maybeError) {
           if (isLocationMetadataError(maybeError)) {
-            locationModeForUpdate = "legacy";
+            initialLocationMode = "legacy";
             setLocationMetadataMode("legacy");
           } else {
             throw maybeError;
@@ -819,7 +819,7 @@ export default function EditHabitPage() {
         }
       }
 
-      const updatePayload: Record<string, unknown> = {
+      const basePayload: Record<string, unknown> = {
         name: name.trim(),
         description: trimmedDescription || null,
         habit_type: habitType,
@@ -836,47 +836,83 @@ export default function EditHabitPage() {
         window_edge_preference: windowEdgePreference,
       };
 
-      if (locationModeForUpdate === "id") {
-        updatePayload.location_context_id = locationContextId;
-      } else {
-        updatePayload.location_context = normalizedLocationValue;
-      }
-
       if (goalMetadataSupported) {
-        updatePayload.goal_id =
+        basePayload.goal_id =
           isTempHabit && goalId !== "none" ? goalId : null;
-        updatePayload.completion_target = goalMetadataRequired
+        basePayload.completion_target = goalMetadataRequired
           ? parsedCompletionTarget
           : null;
       }
 
-      const { error: updateError } = await supabase
-        .from("habits")
-        .update(updatePayload)
-        .eq("id", habitId)
-        .eq("user_id", user.id);
-
-      if (updateError) {
-        if (locationModeForUpdate === "id" && isLocationMetadataError(updateError)) {
-          const legacyPayload: Record<string, unknown> = { ...updatePayload };
-          delete legacyPayload.location_context_id;
-          legacyPayload.location_context = normalizedLocationValue;
-
-          const { error: legacyUpdateError } = await supabase
-            .from("habits")
-            .update(legacyPayload)
-            .eq("id", habitId)
-            .eq("user_id", user.id);
-
-          if (legacyUpdateError) {
-            throw legacyUpdateError;
-          }
-
-          locationModeForUpdate = "legacy";
-          setLocationMetadataMode("legacy");
+      const buildPayloadForMode = (
+        mode: LocationMetadataMode,
+        contextId: string | null,
+      ) => {
+        const payload: Record<string, unknown> = { ...basePayload };
+        if (mode === "id") {
+          payload.location_context_id = contextId;
         } else {
+          payload.location_context = normalizedLocationValue;
+        }
+        return payload;
+      };
+
+      let updateMode: LocationMetadataMode = initialLocationMode;
+      let contextIdForUpdate: string | null = locationContextId;
+      let updateSucceeded = false;
+      let lastMetadataError: unknown = null;
+
+      for (let attempt = 0; attempt < 2 && !updateSucceeded; attempt += 1) {
+        const payload = buildPayloadForMode(updateMode, contextIdForUpdate);
+        const { error: updateError } = await supabase
+          .from("habits")
+          .update(payload)
+          .eq("id", habitId)
+          .eq("user_id", user.id);
+
+        if (!updateError) {
+          updateSucceeded = true;
+          if (locationMetadataMode !== updateMode) {
+            setLocationMetadataMode(updateMode);
+          }
+          break;
+        }
+
+        if (!isLocationMetadataError(updateError)) {
           throw updateError;
         }
+
+        lastMetadataError = updateError;
+
+        if (updateMode === "id") {
+          updateMode = "legacy";
+          contextIdForUpdate = null;
+        } else {
+          updateMode = "id";
+          if (normalizedLocationValue) {
+            try {
+              contextIdForUpdate = await resolveLocationContextId(
+                supabase,
+                user.id,
+                normalizedLocationValue,
+              );
+            } catch (maybeError) {
+              if (!isLocationMetadataError(maybeError)) {
+                throw maybeError;
+              }
+              contextIdForUpdate = null;
+            }
+          } else {
+            contextIdForUpdate = null;
+          }
+        }
+      }
+
+      if (!updateSucceeded) {
+        if (lastMetadataError) {
+          throw lastMetadataError;
+        }
+        throw new Error("Unable to update the habit right now.");
       }
 
       router.push("/habits");

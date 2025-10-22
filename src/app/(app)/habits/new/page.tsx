@@ -540,10 +540,10 @@ export default function NewHabitPage() {
       }
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let locationModeForInsert = locationMetadataMode;
+      let initialLocationMode = locationMetadataMode;
       let locationContextId: string | null = null;
 
-      if (locationModeForInsert === "id" && normalizedLocationValue) {
+      if (initialLocationMode === "id" && normalizedLocationValue) {
         try {
           locationContextId = await resolveLocationContextId(
             supabase,
@@ -552,7 +552,7 @@ export default function NewHabitPage() {
           );
         } catch (maybeError) {
           if (isLocationMetadataError(maybeError)) {
-            locationModeForInsert = "legacy";
+            initialLocationMode = "legacy";
             setLocationMetadataMode("legacy");
           } else {
             throw maybeError;
@@ -560,7 +560,7 @@ export default function NewHabitPage() {
         }
       }
 
-      const insertPayload: Record<string, unknown> = {
+      const basePayload: Record<string, unknown> = {
         user_id: user.id,
         name: name.trim(),
         description: trimmedDescription || null,
@@ -580,38 +580,73 @@ export default function NewHabitPage() {
         completion_target: parsedCompletionTarget,
       };
 
-      if (locationModeForInsert === "id") {
-        insertPayload.location_context_id = locationContextId;
-      } else {
-        insertPayload.location_context = normalizedLocationValue;
-      }
-
-      const { error: insertError } = await supabase
-        .from("habits")
-        .insert(insertPayload);
-
-      if (insertError) {
-        if (
-          locationModeForInsert === "id" &&
-          isLocationMetadataError(insertError)
-        ) {
-          const legacyPayload: Record<string, unknown> = { ...insertPayload };
-          delete legacyPayload.location_context_id;
-          legacyPayload.location_context = normalizedLocationValue;
-
-          const { error: legacyInsertError } = await supabase
-            .from("habits")
-            .insert(legacyPayload);
-
-          if (legacyInsertError) {
-            throw legacyInsertError;
-          }
-
-          locationModeForInsert = "legacy";
-          setLocationMetadataMode("legacy");
+      const buildPayloadForMode = (
+        mode: LocationMetadataMode,
+        contextId: string | null,
+      ) => {
+        const payload: Record<string, unknown> = { ...basePayload };
+        if (mode === "id") {
+          payload.location_context_id = contextId;
         } else {
+          payload.location_context = normalizedLocationValue;
+        }
+        return payload;
+      };
+
+      let insertMode: LocationMetadataMode = initialLocationMode;
+      let contextIdForInsert: string | null = locationContextId;
+      let insertSucceeded = false;
+      let lastMetadataError: unknown = null;
+
+      for (let attempt = 0; attempt < 2 && !insertSucceeded; attempt += 1) {
+        const payload = buildPayloadForMode(insertMode, contextIdForInsert);
+        const { error: insertError } = await supabase
+          .from("habits")
+          .insert(payload);
+
+        if (!insertError) {
+          insertSucceeded = true;
+          if (locationMetadataMode !== insertMode) {
+            setLocationMetadataMode(insertMode);
+          }
+          break;
+        }
+
+        if (!isLocationMetadataError(insertError)) {
           throw insertError;
         }
+
+        lastMetadataError = insertError;
+
+        if (insertMode === "id") {
+          insertMode = "legacy";
+          contextIdForInsert = null;
+        } else {
+          insertMode = "id";
+          if (normalizedLocationValue) {
+            try {
+              contextIdForInsert = await resolveLocationContextId(
+                supabase,
+                user.id,
+                normalizedLocationValue,
+              );
+            } catch (maybeError) {
+              if (!isLocationMetadataError(maybeError)) {
+                throw maybeError;
+              }
+              contextIdForInsert = null;
+            }
+          } else {
+            contextIdForInsert = null;
+          }
+        }
+      }
+
+      if (!insertSucceeded) {
+        if (lastMetadataError) {
+          throw lastMetadataError;
+        }
+        throw new Error("Unable to create the habit right now.");
       }
 
       router.push("/habits");

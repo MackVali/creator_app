@@ -30,7 +30,8 @@ export function isLocationMetadataError(maybeError?: unknown) {
 
   return (
     haystack.includes("location_context_id") ||
-    haystack.includes("location_contexts")
+    haystack.includes("location_contexts") ||
+    haystack.includes("location_context")
   );
 }
 
