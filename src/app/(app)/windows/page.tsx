@@ -5,30 +5,8 @@ export const runtime = "nodejs";
 import { useCallback, useEffect, useState } from "react";
 import WindowsPolishedUI, { type WindowItem } from "@/components/WindowsPolishedUI";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
-
-async function resolveLocationContextId(
-  supabase: ReturnType<typeof getSupabaseBrowser>,
-  userId: string,
-  value: string | null,
-) {
-  if (!supabase) return null;
-  const normalized = value ? value.trim().toUpperCase() : "";
-  if (!normalized || normalized === "ANY") return null;
-
-  const { data, error } = await supabase
-    .from("location_contexts")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("value", normalized)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw error;
-  }
-
-  return data?.id ?? null;
-}
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const CROSS_START = "00:00";

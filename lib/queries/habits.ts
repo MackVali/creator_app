@@ -50,13 +50,42 @@ export async function getHabits(userId: string): Promise<Habit[]> {
   if (error) {
     console.warn("Error fetching habits with routines, falling back:", error);
 
-    const fallback = await supabase
+    const baseColumns =
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy";
+    const extendedColumns = `${baseColumns}, goal_id, completion_target`;
+
+    const shouldIncludeGoalMetadata = (maybeError?: unknown) => {
+      if (!maybeError || typeof maybeError !== "object") return true;
+      const message =
+        "message" in maybeError && typeof maybeError.message === "string"
+          ? maybeError.message.toLowerCase()
+          : "";
+      if (!message) return true;
+      return !(
+        message.includes("goal_id") || message.includes("completion_target")
+      );
+    };
+
+    let includeGoalMetadata = shouldIncludeGoalMetadata(error);
+
+    const selectColumns = includeGoalMetadata ? extendedColumns : baseColumns;
+
+    let fallback = await supabase
       .from("habits")
-      .select(
-        "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target"
-      )
+      .select(selectColumns)
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
+
+    if (fallback.error && includeGoalMetadata) {
+      includeGoalMetadata = shouldIncludeGoalMetadata(fallback.error);
+      if (!includeGoalMetadata) {
+        fallback = await supabase
+          .from("habits")
+          .select(baseColumns)
+          .eq("user_id", userId)
+          .order("updated_at", { ascending: false });
+      }
+    }
 
     if (fallback.error) {
       console.error("Error fetching habits:", fallback.error);
@@ -69,8 +98,10 @@ export async function getHabits(userId: string): Promise<Habit[]> {
         skill_id: habit.skill_id ?? null,
         energy: habit.energy ?? null,
         skill: null,
-        goal_id: habit.goal_id ?? null,
-        completion_target: habit.completion_target ?? null,
+        goal_id: includeGoalMetadata ? habit.goal_id ?? null : null,
+        completion_target: includeGoalMetadata
+          ? habit.completion_target ?? null
+          : null,
         goal: null,
         routine_id: null,
         routine: null,

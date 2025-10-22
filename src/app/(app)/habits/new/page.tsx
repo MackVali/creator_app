@@ -26,31 +26,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  LocationMetadataMode,
+  isLocationMetadataError,
+  normalizeLocationValue,
+  resolveLocationContextId,
+} from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
-
-async function resolveLocationContextId(
-  supabase: ReturnType<typeof getSupabaseBrowser>,
-  userId: string,
-  value: string | null,
-) {
-  if (!supabase) return null;
-  const normalized = value ? value.trim().toUpperCase() : "";
-  if (!normalized || normalized === "ANY") return null;
-
-  const { data, error } = await supabase
-    .from("location_contexts")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("value", normalized)
-    .maybeSingle();
-
-  if (error && error.code !== "PGRST116") {
-    throw error;
-  }
-
-  return data?.id ?? null;
-}
 
 interface RoutineOption {
   id: string;
@@ -105,6 +88,8 @@ export default function NewHabitPage() {
   const [goalLoadError, setGoalLoadError] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
+  const [locationMetadataMode, setLocationMetadataMode] =
+    useState<LocationMetadataMode>("id");
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -554,13 +539,28 @@ export default function NewHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const locationContextId = await resolveLocationContextId(
-        supabase,
-        user.id,
-        locationContext,
-      );
+      const normalizedLocationValue = normalizeLocationValue(locationContext);
+      let initialLocationMode = locationMetadataMode;
+      let locationContextId: string | null = null;
 
-      const { error: insertError } = await supabase.from("habits").insert({
+      if (initialLocationMode === "id" && normalizedLocationValue) {
+        try {
+          locationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            normalizedLocationValue,
+          );
+        } catch (maybeError) {
+          if (isLocationMetadataError(maybeError)) {
+            initialLocationMode = "legacy";
+            setLocationMetadataMode("legacy");
+          } else {
+            throw maybeError;
+          }
+        }
+      }
+
+      const basePayload: Record<string, unknown> = {
         user_id: user.id,
         name: name.trim(),
         description: trimmedDescription || null,
@@ -571,7 +571,6 @@ export default function NewHabitPage() {
         energy,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
-        location_context_id: locationContextId,
         daylight_preference:
           daylightPreference && daylightPreference !== "ALL_DAY"
             ? daylightPreference
@@ -579,10 +578,75 @@ export default function NewHabitPage() {
         window_edge_preference: windowEdgePreference,
         goal_id: isTempHabit ? goalIdValue : null,
         completion_target: parsedCompletionTarget,
-      });
+      };
 
-      if (insertError) {
-        throw insertError;
+      const buildPayloadForMode = (
+        mode: LocationMetadataMode,
+        contextId: string | null,
+      ) => {
+        const payload: Record<string, unknown> = { ...basePayload };
+        if (mode === "id") {
+          payload.location_context_id = contextId;
+        } else {
+          payload.location_context = normalizedLocationValue;
+        }
+        return payload;
+      };
+
+      let insertMode: LocationMetadataMode = initialLocationMode;
+      let contextIdForInsert: string | null = locationContextId;
+      let insertSucceeded = false;
+      let lastMetadataError: unknown = null;
+
+      for (let attempt = 0; attempt < 2 && !insertSucceeded; attempt += 1) {
+        const payload = buildPayloadForMode(insertMode, contextIdForInsert);
+        const { error: insertError } = await supabase
+          .from("habits")
+          .insert(payload);
+
+        if (!insertError) {
+          insertSucceeded = true;
+          if (locationMetadataMode !== insertMode) {
+            setLocationMetadataMode(insertMode);
+          }
+          break;
+        }
+
+        if (!isLocationMetadataError(insertError)) {
+          throw insertError;
+        }
+
+        lastMetadataError = insertError;
+
+        if (insertMode === "id") {
+          insertMode = "legacy";
+          contextIdForInsert = null;
+        } else {
+          insertMode = "id";
+          if (normalizedLocationValue) {
+            try {
+              contextIdForInsert = await resolveLocationContextId(
+                supabase,
+                user.id,
+                normalizedLocationValue,
+              );
+            } catch (maybeError) {
+              if (!isLocationMetadataError(maybeError)) {
+                throw maybeError;
+              }
+              contextIdForInsert = null;
+            }
+          } else {
+            contextIdForInsert = null;
+          }
+        }
+      }
+
+      if (!insertSucceeded) {
+        if (lastMetadataError) {
+          throw lastMetadataError;
+        }
+        throw new Error("Unable to create the habit right now.");
       }
 
       router.push("/habits");
