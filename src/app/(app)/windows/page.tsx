@@ -168,6 +168,11 @@ export default function WindowsPage() {
       return true;
     }
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+
     const contextId = await resolveLocationContextId(
       supabase,
       user.id,
