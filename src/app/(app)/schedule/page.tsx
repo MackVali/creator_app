@@ -889,9 +889,11 @@ function computeHabitPlacementsForDay({
       const windowLocationRaw = entry.window.location_context_value
         ? String(entry.window.location_context_value).toUpperCase().trim()
         : null
-      if (locationContext) {
-        if (!windowLocationRaw) continue
+      if (windowLocationRaw) {
+        if (!locationContext) continue
         if (windowLocationRaw !== locationContext) continue
+      } else if (locationContext) {
+        continue
       }
 
       const existingAvailability = availability.get(entry.key) ?? entry.startMs
