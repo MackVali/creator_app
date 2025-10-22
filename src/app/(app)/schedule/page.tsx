@@ -855,8 +855,8 @@ function computeHabitPlacementsForDay({
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
-    const locationContext = habit.locationContext
-      ? String(habit.locationContext).toUpperCase().trim()
+    const locationContext = habit.locationContextValue
+      ? String(habit.locationContextValue).toUpperCase().trim()
       : null
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
@@ -886,8 +886,8 @@ function computeHabitPlacementsForDay({
     for (const entry of windowEntries) {
       if (entry.energyIdx < requiredEnergyIdx) continue
 
-      const windowLocationRaw = entry.window.location_context
-        ? String(entry.window.location_context).toUpperCase().trim()
+      const windowLocationRaw = entry.window.location_context_value
+        ? String(entry.window.location_context_value).toUpperCase().trim()
         : null
       if (locationContext) {
         if (!windowLocationRaw) continue

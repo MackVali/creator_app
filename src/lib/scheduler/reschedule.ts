@@ -833,8 +833,8 @@ async function scheduleHabitsForDay(params: {
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
-    const locationContext = habit.locationContext
-      ? String(habit.locationContext).toUpperCase().trim()
+    const locationContext = habit.locationContextValue
+      ? String(habit.locationContextValue).toUpperCase().trim()
       : null
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
@@ -870,7 +870,7 @@ async function scheduleHabitsForDay(params: {
         availability,
         cache: windowCache,
         now: offset === 0 ? baseDate : undefined,
-        locationContext,
+        locationContextValue: locationContext,
         daylight: daylightConstraint,
         matchEnergyLevel: true,
         ignoreAvailability: isSyncHabit,
@@ -1126,7 +1126,7 @@ async function fetchCompatibleWindowsForItem(
     now?: Date
     availability?: Map<string, WindowAvailabilityBounds>
     cache?: Map<string, WindowLite[]>
-    locationContext?: string | null
+    locationContextValue?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
     ignoreAvailability?: boolean
@@ -1149,8 +1149,8 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
 
-  const desiredLocation = options?.locationContext
-    ? String(options.locationContext).toUpperCase().trim()
+  const desiredLocation = options?.locationContextValue
+    ? String(options.locationContextValue).toUpperCase().trim()
     : null
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
@@ -1185,8 +1185,8 @@ async function fetchCompatibleWindowsForItem(
       continue
     }
 
-    const windowLocationRaw = win.location_context
-      ? String(win.location_context).toUpperCase().trim()
+    const windowLocationRaw = win.location_context_value
+      ? String(win.location_context_value).toUpperCase().trim()
       : null
     if (desiredLocation) {
       if (!windowLocationRaw) continue

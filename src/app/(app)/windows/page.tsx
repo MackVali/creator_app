@@ -7,6 +7,29 @@ import WindowsPolishedUI, { type WindowItem } from "@/components/WindowsPolished
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
+async function resolveLocationContextId(
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  userId: string,
+  value: string | null,
+) {
+  if (!supabase) return null;
+  const normalized = value ? value.trim().toUpperCase() : "";
+  if (!normalized || normalized === "ANY") return null;
+
+  const { data, error } = await supabase
+    .from("location_contexts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("value", normalized)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw error;
+  }
+
+  return data?.id ?? null;
+}
+
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 export default function WindowsPage() {
@@ -24,7 +47,9 @@ export default function WindowsPage() {
     }
     const { data, error } = await supabase
       .from("windows")
-      .select("id,label,days,start_local,end_local,energy,location_context")
+      .select(
+        "id,label,days,start_local,end_local,energy,location_context_id,location_context:location_contexts(value,label)"
+      )
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
@@ -35,8 +60,8 @@ export default function WindowsPage() {
         start: w.start_local,
         end: w.end_local,
         energy: w.energy?.toLowerCase() as WindowItem["energy"],
-        location: w.location_context
-          ? String(w.location_context).toUpperCase()
+        location: w.location_context?.value
+          ? String(w.location_context.value).toUpperCase()
           : "ANY",
         active: true,
       }));
@@ -56,6 +81,12 @@ export default function WindowsPage() {
     if (!user) return false;
 
     const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
+    const contextId = await resolveLocationContextId(
+      supabase,
+      user.id,
+      item.location ?? null,
+    );
+
     const payload = {
       user_id: user.id,
       label: item.name,
@@ -63,10 +94,7 @@ export default function WindowsPage() {
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
-      location_context:
-        item.location && item.location.toUpperCase() !== "ANY"
-          ? item.location.toUpperCase()
-          : null,
+      location_context_id: contextId,
     };
 
     const [sh, sm] = item.start.split(":").map(Number);
@@ -140,16 +168,19 @@ export default function WindowsPage() {
       return true;
     }
 
+    const contextId = await resolveLocationContextId(
+      supabase,
+      user.id,
+      item.location ?? null,
+    );
+
     const payload = {
       label: item.name,
       days: baseDays,
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
-      location_context:
-        item.location && item.location.toUpperCase() !== "ANY"
-          ? item.location.toUpperCase()
-          : null,
+      location_context_id: contextId,
     };
 
     const { error } = await supabase.from("windows").update(payload).eq("id", id);
