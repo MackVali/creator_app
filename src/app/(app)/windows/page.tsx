@@ -31,10 +31,112 @@ async function resolveLocationContextId(
 }
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const CROSS_START = "00:00";
+const CROSS_END = "23:59";
+
+type WindowsStateItem = WindowItem & { segmentIds: string[] };
+
+type SupabaseWindowRow = {
+  id: string;
+  label: string;
+  days: number[] | null;
+  start_local: string;
+  end_local: string;
+  energy: string | null;
+  location_context_id: string | null;
+  location_context?: { value: string | null } | null;
+};
+
+function normalizeLocation(value: string | null | undefined) {
+  if (!value) return "ANY";
+  return String(value).trim().toUpperCase();
+}
+
+function compactSegmentIds(...ids: Array<string | null | undefined>) {
+  return ids.filter((id): id is string => Boolean(id));
+}
+
+function shiftDaysBackward(days: number[]) {
+  return days.map((d) => (d + 6) % 7).sort((a, b) => a - b);
+}
+
+function sortDays(days: number[]) {
+  return [...days].sort((a, b) => a - b);
+}
+
+function arraysEqual(a: number[], b: number[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function mergeCrossMidnightWindows(rows: SupabaseWindowRow[]): WindowsStateItem[] {
+  const result: WindowsStateItem[] = [];
+  const consumed = new Set<string>();
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (consumed.has(row.id)) continue;
+
+    const baseDays = row.days ? sortDays(row.days) : [];
+    const location = normalizeLocation(row.location_context?.value ?? null);
+    const energy = row.energy?.toLowerCase() as WindowItem["energy"] | undefined;
+    const dayLabels = baseDays.map((d) => DAY_LABELS[d]);
+
+    if (row.end_local === CROSS_END && row.start_local !== CROSS_START) {
+      const matchIndex = rows.findIndex((candidate, idx) => {
+        if (idx <= i) return false;
+        if (consumed.has(candidate.id)) return false;
+        if (candidate.start_local !== CROSS_START) return false;
+        if (candidate.label !== row.label) return false;
+        if ((candidate.energy ?? null) !== (row.energy ?? null)) return false;
+        const candidateLocation = normalizeLocation(candidate.location_context?.value ?? null);
+        if (candidateLocation !== location) return false;
+        const candidateDays = candidate.days ? shiftDaysBackward(candidate.days) : [];
+        return arraysEqual(candidateDays, baseDays);
+      });
+
+      if (matchIndex !== -1) {
+        const match = rows[matchIndex];
+        consumed.add(row.id);
+        consumed.add(match.id);
+        result.push({
+          id: row.id,
+          name: row.label,
+          days: dayLabels,
+          start: row.start_local,
+          end: match.end_local,
+          energy,
+          location,
+          active: true,
+          segmentIds: [row.id, match.id],
+        });
+        continue;
+      }
+    }
+
+    consumed.add(row.id);
+    result.push({
+      id: row.id,
+      name: row.label,
+      days: dayLabels,
+      start: row.start_local,
+      end: row.end_local,
+      energy,
+      location,
+      active: true,
+      segmentIds: [row.id],
+    });
+  }
+
+  return result;
+}
 
 export default function WindowsPage() {
   const supabase = getSupabaseBrowser();
-  const [windows, setWindows] = useState<WindowItem[]>();
+  const [windows, setWindows] = useState<WindowsStateItem[]>();
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -53,19 +155,8 @@ export default function WindowsPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
     if (!error && data) {
-      const mapped: WindowItem[] = data.map((w) => ({
-        id: w.id,
-        name: w.label,
-        days: (w.days ?? []).map((d: number) => DAY_LABELS[d]),
-        start: w.start_local,
-        end: w.end_local,
-        energy: w.energy?.toLowerCase() as WindowItem["energy"],
-        location: w.location_context?.value
-          ? String(w.location_context.value).toUpperCase()
-          : "ANY",
-        active: true,
-      }));
-      setWindows(mapped);
+      const merged = mergeCrossMidnightWindows(data as SupabaseWindowRow[]);
+      setWindows(merged);
     }
   }, [supabase]);
 
@@ -97,6 +188,8 @@ export default function WindowsPage() {
       location_context_id: contextId,
     };
 
+    const normalizedLocation = normalizeLocation(item.location ?? null);
+
     const [sh, sm] = item.start.split(":").map(Number);
     const [eh, em] = item.end.split(":").map(Number);
     const crosses = eh < sh || (eh === sh && em < sm);
@@ -109,15 +202,29 @@ export default function WindowsPage() {
           .select("id")
           .single();
         if (error) throw error;
-        const id = inserted?.id ?? item.id;
-        setWindows((prev) => [...(prev ?? []), { ...item, id }]);
+        const id =
+          inserted?.id ??
+          item.id ??
+          (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2));
+        setWindows((prev) => [
+          ...(prev ?? []),
+          {
+            ...item,
+            id,
+            location: normalizedLocation,
+            segmentIds: [id],
+            active: true,
+          },
+        ]);
       } else {
         const nextDays = baseDays.map((d) => (d + 1) % 7);
-        const firstPayload = { ...payload, end_local: "23:59" };
+        const firstPayload = { ...payload, end_local: CROSS_END };
         const secondPayload = {
           ...payload,
           days: nextDays,
-          start_local: "00:00",
+          start_local: CROSS_START,
           end_local: item.end,
         };
         const { data: first, error: err1 } = await supabase
@@ -132,14 +239,22 @@ export default function WindowsPage() {
           .select("id")
           .single();
         if (err2) throw err2;
+        const firstId =
+          first?.id ??
+          item.id ??
+          (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2));
+        const secondId = second?.id ?? null;
         setWindows((prev) => [
           ...(prev ?? []),
-          { ...item, id: first?.id ?? "", end: "23:59" },
           {
             ...item,
-            id: second?.id ?? "",
-            start: "00:00",
-            days: nextDays.map((d) => DAY_LABELS[d]),
+            id: firstId,
+            end: item.end,
+            location: normalizedLocation,
+            segmentIds: compactSegmentIds(firstId, secondId),
+            active: true,
           },
         ]);
       }
@@ -152,16 +267,20 @@ export default function WindowsPage() {
   async function handleEdit(id: string, item: WindowItem): Promise<boolean> {
     if (!supabase) return false;
 
+    const existing = windows?.find((w) => w.id === id);
+    const existingSegments = existing?.segmentIds ?? [id];
+    const normalizedLocation = normalizeLocation(item.location ?? null);
     const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
     const [sh, sm] = item.start.split(":").map(Number);
     const [eh, em] = item.end.split(":").map(Number);
     const crosses = eh < sh || (eh === sh && em < sm);
 
     if (crosses) {
-      const { error: delErr } = await supabase
-        .from("windows")
-        .delete()
-        .eq("id", id);
+      const deleteQuery = supabase.from("windows").delete();
+      const { error: delErr } =
+        existingSegments.length > 1
+          ? deleteQuery.in("id", existingSegments)
+          : deleteQuery.eq("id", id);
       if (delErr) throw delErr;
       setWindows((prev) => prev?.filter((w) => w.id !== id));
       await handleCreate(item);
@@ -188,17 +307,40 @@ export default function WindowsPage() {
       location_context_id: contextId,
     };
 
+    const extraSegments = existingSegments.filter((segmentId) => segmentId !== id);
+    if (extraSegments.length) {
+      const { error: cleanupError } = await supabase
+        .from("windows")
+        .delete()
+        .in("id", extraSegments);
+      if (cleanupError) throw cleanupError;
+    }
+
     const { error } = await supabase.from("windows").update(payload).eq("id", id);
     if (error) throw error;
     setWindows((prev) =>
-      prev?.map((w) => (w.id === id ? { ...item, id } : w))
+      prev?.map((w) =>
+        w.id === id
+          ? {
+              ...item,
+              id,
+              location: normalizedLocation,
+              segmentIds: [id],
+              active: w.active,
+            }
+          : w,
+      )
     );
     return true;
   }
 
   async function handleDelete(id: string) {
     if (!supabase) return;
-    const { error } = await supabase.from("windows").delete().eq("id", id);
+    const target = windows?.find((w) => w.id === id);
+    const segments = target?.segmentIds ?? [id];
+    const deleteQuery = supabase.from("windows").delete();
+    const { error } =
+      segments.length > 1 ? deleteQuery.in("id", segments) : deleteQuery.eq("id", id);
     if (!error) {
       setWindows((prev) => prev?.filter((w) => w.id !== id));
     }
