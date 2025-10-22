@@ -18,7 +18,7 @@ import Link from "next/link";
 export default function ProfileEditPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { session } = useAuth();
+  const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,14 +43,14 @@ export default function ProfileEditPage() {
 
   useEffect(() => {
     async function loadProfile() {
-      if (!session?.user?.id) {
+      if (!user?.id) {
         router.push("/auth");
         return;
       }
 
       try {
         setLoading(true);
-        const userProfile = await getProfileByUserId(session.user.id);
+        const userProfile = await getProfileByUserId(user.id);
         
         if (userProfile) {
           setProfile(userProfile);
@@ -73,7 +73,7 @@ export default function ProfileEditPage() {
     }
 
     loadProfile();
-  }, [session, router]);
+  }, [user, router]);
 
   const handleInputChange = (field: keyof ProfileFormData, value: string) => {
     setFormData(prev => ({
@@ -109,7 +109,7 @@ export default function ProfileEditPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!session?.user?.id) {
+    if (!user?.id) {
       setError("Not authenticated");
       return;
     }
@@ -122,7 +122,7 @@ export default function ProfileEditPage() {
       let bannerUrl: string | undefined;
 
       if (avatarFile) {
-        const uploadRes = await uploadAvatar(avatarFile, session.user.id);
+        const uploadRes = await uploadAvatar(avatarFile, user.id);
         if (!uploadRes.success || !uploadRes.url) {
           setError(uploadRes.error || "Failed to upload profile picture");
           setSaving(false);
@@ -132,7 +132,7 @@ export default function ProfileEditPage() {
       }
 
       if (bannerFile) {
-        const uploadRes = await uploadBanner(bannerFile, session.user.id);
+        const uploadRes = await uploadBanner(bannerFile, user.id);
         if (!uploadRes.success || !uploadRes.url) {
           setError(uploadRes.error || "Failed to upload cover photo");
           setSaving(false);
@@ -142,7 +142,7 @@ export default function ProfileEditPage() {
       }
 
       const result = await updateProfile(
-        session.user.id,
+        user.id,
         formData,
         avatarUrl,
         bannerUrl

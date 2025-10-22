@@ -7,18 +7,18 @@ import { ensureProfileExists } from "@/lib/db";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { session } = useAuth();
+  const { user } = useAuth();
 
   useEffect(() => {
     async function redirectToHandleProfile() {
-      if (!session?.user?.id) {
+      if (!user?.id) {
         router.push("/auth");
         return;
       }
 
       try {
         // Ensure profile exists
-        const profile = await ensureProfileExists(session.user.id);
+        const profile = await ensureProfileExists(user.id);
         if (profile?.username) {
           // Redirect to handle-based profile route
           router.push(`/profile/${profile.username}`);
@@ -33,7 +33,7 @@ export default function ProfilePage() {
     }
 
     redirectToHandleProfile();
-  }, [session, router]);
+  }, [user, router]);
 
   // Show loading while redirecting
   return (

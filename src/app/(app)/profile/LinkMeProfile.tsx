@@ -37,7 +37,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [loading, setLoading] = useState(true);
-  const { session } = useAuth();
+  const { user } = useAuth();
   const toast = useToastHelpers();
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
     loadProfileData();
   }, [profile?.user_id]);
 
-  const isOwner = session?.user?.id === profile.user_id;
+  const isOwner = user?.id === profile.user_id;
   const activeCards = contentCards
     .filter((card) => card.is_active)
     .sort((a, b) => a.position - b.position);

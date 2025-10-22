@@ -1,9 +1,12 @@
 "use client";
 import { useEffect, useState, createContext, useContext } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import type { Session } from "@supabase/supabase-js";
+import type { Session, User } from "@supabase/supabase-js";
 
-const AuthCtx = createContext<{ session: Session | null }>({ session: null });
+const AuthCtx = createContext<{ session: Session | null; user: User | null }>({
+  session: null,
+  user: null,
+});
 export const useAuth = () => useContext(AuthCtx);
 
 export default function AuthProvider({
@@ -12,6 +15,7 @@ export default function AuthProvider({
   children: React.ReactNode;
 }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -20,15 +24,48 @@ export default function AuthProvider({
 
     let timed = false
     const t = setTimeout(() => { timed = true; setReady(true) }, 4000)
+    let active = true
 
-    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null)).finally(() => {
-      if (!timed) setReady(true)
-      clearTimeout(t)
+    const updateAuthState = async () => {
+      try {
+        const [sessionResult, userResult] = await Promise.all([
+          supabase.auth.getSession(),
+          supabase.auth.getUser(),
+        ])
+
+        if (!active) return
+
+        setSession(sessionResult.data.session ?? null)
+        setUser(userResult.data.user ?? null)
+      } catch {
+        if (!active) return
+
+        setSession(null)
+        setUser(null)
+      } finally {
+        if (!active) return
+
+        if (!timed) {
+          setReady(true)
+          clearTimeout(t)
+          timed = true
+        }
+      }
+    }
+
+    void updateAuthState()
+
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      void updateAuthState()
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s ?? null))
-    return () => sub.subscription.unsubscribe()
+
+    return () => {
+      active = false
+      clearTimeout(t)
+      sub?.subscription.unsubscribe()
+    }
   }, [])
 
   if (!ready) return null;
-  return <AuthCtx.Provider value={{ session }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ session, user }}>{children}</AuthCtx.Provider>;
 }

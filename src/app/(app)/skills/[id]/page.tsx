@@ -277,16 +277,13 @@ export default function SkillDetailPage() {
       setHabitsLoading(true);
 
       try {
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+        const { data: authData, error: authError } = await supabase.auth.getUser();
 
-        if (sessionError) {
-          throw sessionError;
+        if (authError) {
+          throw authError;
         }
 
-        const userId = session?.user?.id ?? null;
+        const userId = authData.user?.id ?? null;
 
         let skillQuery = supabase
           .from("skills")

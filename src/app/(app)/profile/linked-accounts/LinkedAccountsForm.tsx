@@ -59,8 +59,8 @@ const pillStyles =
   "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground";
 
 export default function LinkedAccountsForm() {
-  const { session } = useAuth();
-  const userId = session?.user?.id;
+  const { user } = useAuth();
+  const userId = user?.id;
   const [accounts, setAccounts] = useState<Record<SupportedPlatform, AccountState>>({
     instagram: { url: "" },
     tiktok: { url: "" },

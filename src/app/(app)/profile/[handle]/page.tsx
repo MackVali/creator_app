@@ -14,7 +14,7 @@ import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
 export default function ProfileByHandlePage() {
   const params = useParams();
   const router = useRouter();
-  const { session } = useAuth();
+  const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
@@ -87,7 +87,7 @@ export default function ProfileByHandlePage() {
 
   // Handle back navigation
   const handleBack = () => {
-    if (session?.user?.id === profile?.user_id) {
+    if (user?.id === profile?.user_id) {
       // If viewing own profile, go to dashboard
       router.push("/dashboard");
     } else {
@@ -160,7 +160,7 @@ export default function ProfileByHandlePage() {
     (link) => link.is_active && !!link.url,
   ).length;
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
-  const isOwner = session?.user?.id === profile.user_id;
+  const isOwner = user?.id === profile.user_id;
 
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
