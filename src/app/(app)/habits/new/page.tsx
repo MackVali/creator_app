@@ -650,6 +650,13 @@ export default function NewHabitPage() {
           }
         }
 
+        if (mode === "id" && normalizedLocationValue && !effectiveContextId) {
+          if (!lastMetadataError && resolveMetadataError) {
+            lastMetadataError = resolveMetadataError;
+          }
+          continue;
+        }
+
         const payload = buildPayloadForMode(mode, effectiveContextId);
         const { error: insertError } = await supabase
           .from("habits")

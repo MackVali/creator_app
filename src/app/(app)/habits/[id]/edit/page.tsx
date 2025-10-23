@@ -913,6 +913,13 @@ export default function EditHabitPage() {
           }
         }
 
+        if (mode === "id" && normalizedLocationValue && !effectiveContextId) {
+          if (!lastMetadataError && resolveMetadataError) {
+            lastMetadataError = resolveMetadataError;
+          }
+          continue;
+        }
+
         const payload = buildPayloadForMode(mode, effectiveContextId);
         const { error: updateError } = await supabase
           .from("habits")
