@@ -20,6 +20,11 @@ function escapeForILike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
 }
 
+function buildAvatarFromSeed(seedSource: string) {
+  const seed = seedSource.trim().length ? seedSource : "Creator";
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const parseResult = QuerySchema.safeParse({
@@ -59,6 +64,14 @@ export async function GET(request: Request) {
     );
   }
 
+  const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const viewerUsername =
+    typeof metadata.username === "string" && metadata.username.trim().length
+      ? metadata.username.trim().toLowerCase()
+      : user.email
+        ? user.email.split("@")[0]?.toLowerCase() ?? null
+        : null;
+
   const friendsQuery = supabase
     .from("friend_connections")
     .select(
@@ -89,6 +102,9 @@ export async function GET(request: Request) {
   const friendUsernames = new Set(
     friendResults.map((friend) => friend.username.toLowerCase())
   );
+  if (viewerUsername) {
+    friendUsernames.add(viewerUsername);
+  }
 
   const discoveryQuery = supabase
     .from("friend_discovery_profiles")
@@ -111,11 +127,64 @@ export async function GET(request: Request) {
     console.error("Failed to load friend discovery profiles", discoveryError);
   }
 
-  const discoveryProfiles = (discoveryRows ?? [])
-    .filter(
-      (row) => !friendUsernames.has((row.username ?? "").toLowerCase())
-    )
-    .map(mapDiscoveryProfile);
+  let profileRows: Array<{ id: string; user_id: string | null; username: string }> = [];
+  if (trimmed) {
+    const escapedProfiles = escapeForILike(trimmed);
+    const { data: profileData, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, user_id, username")
+      .ilike("username", `%${escapedProfiles}%`)
+      .limit(12);
+
+    if (profilesError) {
+      console.error("Failed to search profiles for discovery", profilesError);
+    } else if (profileData) {
+      profileRows = profileData;
+    }
+  }
+
+  const seenUsernames = friendUsernames;
+  const aggregated: ReturnType<typeof mapDiscoveryProfile>[] = [];
+
+  if (trimmed && profileRows.length) {
+    for (const row of profileRows) {
+      const rawUsername = row.username ?? "";
+      const username = rawUsername.trim();
+      if (!username) {
+        continue;
+      }
+      const normalized = username.toLowerCase();
+      if (seenUsernames.has(normalized)) {
+        continue;
+      }
+      if (row.user_id && row.user_id === user.id) {
+        continue;
+      }
+
+      aggregated.push({
+        id: row.id,
+        username,
+        displayName: username,
+        avatarUrl: buildAvatarFromSeed(username),
+        mutualFriends: 0,
+        highlight: `Search match for “${trimmed}”`,
+        role: "Creator",
+      });
+      seenUsernames.add(normalized);
+    }
+  }
+
+  for (const row of discoveryRows ?? []) {
+    const profile = mapDiscoveryProfile(row);
+    const normalized = profile.username.toLowerCase();
+    if (seenUsernames.has(normalized)) {
+      continue;
+    }
+    aggregated.push(profile);
+    seenUsernames.add(normalized);
+  }
+
+  const discoveryProfiles = aggregated;
 
   return NextResponse.json(
     { results: friendResults, discoveryProfiles },

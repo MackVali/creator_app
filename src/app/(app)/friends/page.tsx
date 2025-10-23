@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type {
+  DiscoveryProfile,
   Friend,
   FriendRequest,
   SentInvite,
@@ -18,9 +19,12 @@ export default function FriendsPage() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [requests] = useState<FriendRequest[]>([]);
+  const [requests, setRequests] = useState<FriendRequest[]>([]);
+  const [requestsError, setRequestsError] = useState<string | null>(null);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const [invites, setInvites] = useState<SentInvite[]>([]);
   const [suggested, setSuggested] = useState<SuggestedFriend[]>([]);
+  const [discoveryProfiles, setDiscoveryProfiles] = useState<DiscoveryProfile[]>([]);
   const [isLoadingDiscovery, setIsLoadingDiscovery] = useState(true);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const friendsTabRef = useRef<HTMLButtonElement>(null);
@@ -76,6 +80,52 @@ export default function FriendsPage() {
   useEffect(() => {
     let isMounted = true;
 
+    async function loadRequests() {
+      try {
+        setIsLoadingRequests(true);
+        setRequestsError(null);
+
+        const response = await fetch('/api/friends/requests', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? 'Unable to load requests.');
+        }
+
+        const data = (await response.json()) as { requests: FriendRequest[] };
+        if (!isMounted) return;
+        setRequests(data.requests ?? []);
+      } catch (err) {
+        if (!isMounted) return;
+        const message =
+          err instanceof Error ? err.message : 'Unable to load requests.';
+        setRequestsError(message);
+        setRequests([]);
+      } finally {
+        if (isMounted) {
+          setIsLoadingRequests(false);
+        }
+      }
+    }
+
+    void loadRequests();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
     async function loadDiscovery() {
       try {
         setIsLoadingDiscovery(true);
@@ -99,12 +149,14 @@ export default function FriendsPage() {
         const data = (await response.json()) as {
           invites?: SentInvite[];
           suggestions?: SuggestedFriend[];
+          discoveryProfiles?: DiscoveryProfile[];
         };
 
         if (!isMounted) return;
 
         setInvites(data.invites ?? []);
         setSuggested(data.suggestions ?? []);
+        setDiscoveryProfiles(data.discoveryProfiles ?? []);
       } catch (err) {
         if (!isMounted) return;
         const message =
@@ -112,6 +164,7 @@ export default function FriendsPage() {
         setDiscoveryError(message);
         setInvites([]);
         setSuggested([]);
+        setDiscoveryProfiles([]);
       } finally {
         if (isMounted) {
           setIsLoadingDiscovery(false);
@@ -280,6 +333,11 @@ export default function FriendsPage() {
         aria-labelledby="requests-tab"
         hidden={tab !== 'requests'}
       >
+        {requestsError ? (
+          <div className="mb-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
+            {requestsError}
+          </div>
+        ) : null}
         {discoveryError ? (
           <div className="mb-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
             {discoveryError}
@@ -290,8 +348,11 @@ export default function FriendsPage() {
           invites={invites}
           suggestions={suggested}
         />
+        {isLoadingRequests ? (
+          <p className="mt-3 text-xs text-white/50">Loading requests…</p>
+        ) : null}
         {isLoadingDiscovery ? (
-          <p className="mt-3 text-xs text-white/50">Loading invites…</p>
+          <p className="mt-1 text-xs text-white/50">Loading invites…</p>
         ) : null}
       </section>
       <section
@@ -300,7 +361,7 @@ export default function FriendsPage() {
         aria-labelledby="search-tab"
         hidden={tab !== 'search'}
       >
-        <SearchFriends data={sortedFriends} discoveryProfiles={[]} />
+        <SearchFriends data={sortedFriends} discoveryProfiles={discoveryProfiles} />
       </section>
 
       {/* Bottom padding for safe-area / bottom nav */}

@@ -3,6 +3,7 @@ import type {
   ContactImportStatus,
   DiscoveryProfile,
   Friend,
+  FriendRequest,
   SentInvite,
   SuggestedFriend,
 } from "@/types/friends";
@@ -10,10 +11,16 @@ import type {
 type FriendConnectionRow =
   Database["public"]["Tables"]["friend_connections"]["Row"];
 type FriendInviteRow = Database["public"]["Tables"]["friend_invites"]["Row"];
+type FriendRequestRow = Database["public"]["Tables"]["friend_requests"]["Row"];
 type FriendDiscoveryProfileRow =
   Database["public"]["Tables"]["friend_discovery_profiles"]["Row"];
 type FriendContactImportRow =
   Database["public"]["Tables"]["friend_contact_imports"]["Row"];
+
+function fallbackAvatar(seedSource: string | null | undefined) {
+  const seed = seedSource && seedSource.trim().length ? seedSource : "Creator";
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed)}`;
+}
 
 function formatRelativeTimeFromNow(value: string | null): string | null {
   if (!value) {
@@ -93,9 +100,8 @@ export function mapDiscoveryProfile(
     id: row.id,
     username: row.username,
     displayName: row.display_name,
-    avatarUrl:
-      row.avatar_url ??
-      `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(row.display_name)}`,
+    avatarUrl: row.avatar_url ?? fallbackAvatar(row.display_name),
+
     mutualFriends: row.mutual_friends ?? 0,
     highlight:
       row.highlight ??
@@ -111,14 +117,34 @@ export function mapSuggestedFriend(
     id: row.id,
     username: row.username,
     displayName: row.display_name,
-    avatarUrl:
-      row.avatar_url ??
-      `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(row.display_name)}`,
+    avatarUrl: row.avatar_url ?? fallbackAvatar(row.display_name),
+
     mutualFriends: row.mutual_friends ?? 0,
     reason:
       row.reason ??
       row.highlight ??
       "Showing momentum with people you follow",
+  };
+}
+
+export function mapFriendRequest(
+  row: FriendRequestRow,
+  viewerId: string
+): FriendRequest {
+  const isIncoming = row.target_id === viewerId;
+  const displayName = isIncoming
+    ? row.requester_display_name ?? row.requester_username
+    : row.target_display_name ?? row.target_username;
+  const avatarUrl = isIncoming
+    ? row.requester_avatar_url ?? fallbackAvatar(row.requester_display_name ?? row.requester_username)
+    : row.target_avatar_url ?? fallbackAvatar(row.target_display_name ?? row.target_username);
+  return {
+    id: row.id,
+    username: isIncoming ? row.requester_username : row.target_username,
+    displayName,
+    avatarUrl,
+    mutualFriends: row.mutual_friends ?? 0,
+    note: row.note ?? undefined,
   };
 }
 

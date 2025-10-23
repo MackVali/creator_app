@@ -13,7 +13,7 @@ type SearchFriendsProps = {
 };
 
 type DiscoveryProfileState = DiscoveryProfile & {
-  status: "idle" | "requested";
+  status: "idle" | "sending" | "requested";
 };
 
 export default function SearchFriends({
@@ -32,7 +32,7 @@ export default function SearchFriends({
   const [isImporting, setIsImporting] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const syncDiscoveryProfiles = useCallback(
     (profiles: DiscoveryProfile[]) => {
@@ -91,6 +91,10 @@ export default function SearchFriends({
   useEffect(() => {
     setMatches(data);
   }, [data]);
+
+  useEffect(() => {
+    setConnectError(null);
+  }, [q]);
 
   useEffect(() => {
     let ignore = false;
@@ -200,15 +204,83 @@ export default function SearchFriends({
   const trimmedQuery = q.trim();
   const hasQuery = trimmedQuery.length > 0;
 
-  const handleConnect = (id: string) => {
-    setDiscovery((prev) =>
-      prev.map((profile) =>
-        profile.id === id && profile.status !== "requested"
-          ? { ...profile, status: "requested" }
-          : profile
-      )
-    );
-  };
+  const handleConnect = useCallback(
+    (profile: DiscoveryProfileState) => {
+      if (profile.status === "requested" || profile.status === "sending") {
+        return;
+      }
+
+      setDiscovery((prev) =>
+        prev.map((item) =>
+          item.id === profile.id ? { ...item, status: "sending" } : item
+        )
+      );
+      setConnectError(null);
+
+      void (async () => {
+        try {
+          const response = await fetch("/api/friends/requests", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ username: profile.username }),
+          });
+
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | { request?: unknown }
+            | null;
+
+          if (!response.ok) {
+            const message =
+              (payload as { error?: string } | null)?.error ??
+              "Unable to send request.";
+            if (
+              response.status === 409 &&
+              message?.toLowerCase().includes("already sent")
+            ) {
+              setDiscovery((prev) =>
+                prev.map((item) =>
+                  item.id === profile.id
+                    ? { ...item, status: "requested" }
+                    : item
+                )
+              );
+            } else {
+              setDiscovery((prev) =>
+                prev.map((item) =>
+                  item.id === profile.id ? { ...item, status: "idle" } : item
+                )
+              );
+            }
+            setConnectError(message);
+            return;
+          }
+
+          setDiscovery((prev) =>
+            prev.map((item) =>
+              item.id === profile.id ? { ...item, status: "requested" } : item
+            )
+          );
+          setConnectError(null);
+        } catch (error) {
+          console.error("Failed to send friend request", error);
+          setDiscovery((prev) =>
+            prev.map((item) =>
+              item.id === profile.id ? { ...item, status: "idle" } : item
+            )
+          );
+          setConnectError(
+            error instanceof Error
+              ? error.message
+              : "Unable to send request."
+          );
+        }
+      })();
+    },
+    [setConnectError, setDiscovery]
+  );
 
   const handleImportContacts = () => {
     if (isImporting) return;
@@ -373,6 +445,9 @@ export default function SearchFriends({
             Recommended creators
           </h3>
         </div>
+        {connectError ? (
+          <p className="text-xs text-rose-300">{connectError}</p>
+        ) : null}
         <div className="space-y-2">
           {discovery.map((profile) => (
             <article
@@ -400,15 +475,21 @@ export default function SearchFriends({
               </div>
               <button
                 type="button"
-                onClick={() => handleConnect(profile.id)}
-                disabled={profile.status === "requested"}
+                onClick={() => handleConnect(profile)}
+                disabled={profile.status !== "idle"}
                 className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 ${
                   profile.status === "requested"
                     ? "cursor-default bg-white/10 text-white/70"
-                    : "bg-white text-slate-900 hover:bg-white/90"
-                }`}
+                    : profile.status === "sending"
+                      ? "bg-white text-slate-900 opacity-80"
+                      : "bg-white text-slate-900 hover:bg-white/90"
+                } disabled:cursor-not-allowed disabled:opacity-70`}
               >
-                {profile.status === "requested" ? "Invite sent" : "Connect"}
+                {profile.status === "requested"
+                  ? "Invite sent"
+                  : profile.status === "sending"
+                    ? "Sending…"
+                    : "Connect"}
               </button>
             </article>
           ))}
