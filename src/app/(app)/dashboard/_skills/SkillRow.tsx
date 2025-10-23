@@ -55,9 +55,6 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
         )}
         {showPrestige && (
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px]" style={{ color: onColor }}>
-            <span className="rounded-md border border-white/15 bg-white/10 px-1.5 py-[1px] font-semibold uppercase tracking-[0.18em]">
-              Prestige {prestige}
-            </span>
             <div className="flex items-center gap-1 text-sm leading-none">
               {badges.length > 0 ? (
                 badges.map((badge) => (

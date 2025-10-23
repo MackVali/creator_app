@@ -30,8 +30,6 @@ export function LevelBanner({ className }: LevelBannerProps) {
     loading && !progress
       ? "--"
       : `${formatNumber(xpIntoLevel)} / ${formatNumber(xpForNextLevel)} XP`;
-  const prestigeTier = progress?.prestige ?? 0;
-  const prestigeLabel = loading && !progress ? "--" : prestigeTier.toString();
   const prestigeBadges = progress?.badges ?? [];
   const hasBadges = prestigeBadges.length > 0;
 
@@ -55,12 +53,6 @@ export function LevelBanner({ className }: LevelBannerProps) {
         </div>
       </div>
       <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.32em] text-white/50">
-          Prestige
-        </span>
-        <span className="rounded-full border border-white/10 bg-white/10 px-2 py-[2px] text-xs font-semibold text-white/80">
-          Tier {prestigeLabel}
-        </span>
         <div className="flex items-center gap-1 text-lg leading-none">
           {loading && !progress ? (
             <span className="text-xs font-medium uppercase tracking-[0.2em] text-white/50">Syncing…</span>

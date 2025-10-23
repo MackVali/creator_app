@@ -465,6 +465,9 @@ export default function SkillDetailPage() {
       : `Added ${daysTracked} day${daysTracked === 1 ? "" : "s"} ago.`
     : "Creation date unavailable.";
 
+  const prestigeBadges = progress?.badges ?? [];
+  const prestigeBadgeCount = prestigeBadges.length;
+
   const stats = [
     {
       label: "Skill level",
@@ -473,12 +476,15 @@ export default function SkillDetailPage() {
       icon: Target,
     },
     {
-      label: "Prestige tier",
-      value: `Tier ${progress?.prestige ?? 0}`,
+      label: "Prestige badges",
+      value:
+        prestigeBadgeCount > 0
+          ? `${prestigeBadgeCount} badge${prestigeBadgeCount === 1 ? "" : "s"}`
+          : "No badges yet",
       description:
-        progress?.badges && progress.badges.length > 0
-          ? `Unlocked ${progress.badges.length} badge${
-              progress.badges.length === 1 ? "" : "s"
+        prestigeBadgeCount > 0
+          ? `Unlocked ${prestigeBadgeCount} badge${
+              prestigeBadgeCount === 1 ? "" : "s"
             } for ${skill.name}.`
           : "Prestige resets unlock unique skill badges for this skill.",
       icon: Award,
@@ -504,8 +510,7 @@ export default function SkillDetailPage() {
   ];
 
   const icon = skill.icon || "💡";
-  const prestigeTier = progress?.prestige ?? 0;
-  const prestigeBadges = progress?.badges ?? [];
+  
 
   const handleCreateGoal = () => {
     router.push("/goals/new");
@@ -551,12 +556,6 @@ export default function SkillDetailPage() {
                   Everything connected to {skill.name} lives here — goals, notes, and the progress you&apos;re making along the way.
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.32em] text-white/50">
-                    Prestige
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/10 px-2 py-[2px] text-xs font-semibold text-white/80">
-                    Tier {prestigeTier}
-                  </span>
                   <div className="flex items-center gap-1 text-lg leading-none">
                     {prestigeBadges.length > 0 ? (
                       prestigeBadges.map((badge) => (
