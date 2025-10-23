@@ -30,6 +30,22 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
     progress.xpRequired > 0;
   const showPrestige = prestige !== undefined && prestige !== null;
 
+  const badgeContent = badges.length > 0 ? (
+    badges.map((badge) => (
+      <span
+        key={badge.id}
+        role="img"
+        aria-label={badge.label}
+        title={badge.label}
+        className="drop-shadow-[0_0_4px_rgba(255,255,255,0.25)]"
+      >
+        {badge.emoji}
+      </span>
+    ))
+  ) : (
+    <span className="text-[9px] font-medium uppercase tracking-[0.2em] opacity-60">No badges</span>
+  );
+
   return (
     <Link
       href={`/skills/${skill.id}`}
@@ -46,33 +62,10 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
           {skill.name}
         </div>
         {showLevel && (
-          <div
-            className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-lg border border-white/15 bg-white/8"
-            style={{ color: onColor }}
-          >
-            Lv {level}
-          </div>
-        )}
-        {showPrestige && (
-          <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px]" style={{ color: onColor }}>
-            <div className="flex items-center gap-1 text-sm leading-none">
-              {badges.length > 0 ? (
-                badges.map((badge) => (
-                  <span
-                    key={badge.id}
-                    role="img"
-                    aria-label={badge.label}
-                    title={badge.label}
-                    className="drop-shadow-[0_0_4px_rgba(255,255,255,0.25)]"
-                  >
-                    {badge.emoji}
-                  </span>
-                ))
-              ) : (
-                <span className="text-[9px] font-medium uppercase tracking-[0.2em] opacity-60">
-                  No badges
-                </span>
-              )}
+          <div className="mt-1 flex flex-wrap items-center gap-2" style={{ color: onColor }}>
+            {showPrestige && <div className="flex items-center gap-1 text-sm leading-none">{badgeContent}</div>}
+            <div className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/8 px-1.5 py-0.5 text-[10px]">
+              Lv {level}
             </div>
           </div>
         )}

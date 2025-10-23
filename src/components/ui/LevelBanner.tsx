@@ -33,6 +33,24 @@ export function LevelBanner({ className }: LevelBannerProps) {
   const prestigeBadges = progress?.badges ?? [];
   const hasBadges = prestigeBadges.length > 0;
 
+  const renderedBadges = loading && !progress ? (
+    <span className="text-xs font-medium uppercase tracking-[0.2em] text-white/50">Syncing…</span>
+  ) : hasBadges ? (
+    prestigeBadges.map((badge) => (
+      <span
+        key={badge.id}
+        role="img"
+        aria-label={badge.label}
+        title={badge.label}
+        className="drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
+      >
+        {badge.emoji}
+      </span>
+    ))
+  ) : (
+    <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">No badges yet</span>
+  );
+
   return (
     <div
       className={cn(
@@ -43,37 +61,15 @@ export function LevelBanner({ className }: LevelBannerProps) {
       aria-live="polite"
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-zinc-500/20 via-zinc-400/10 to-zinc-500/20 blur-2xl" />
-      <div className="relative z-[1] mb-3 flex items-center gap-2">
+      <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-3 text-white">
         <Sparkles className="h-5 w-5 text-zinc-200" />
-        <div className="flex items-baseline gap-2">
-          <span className="font-extrabold text-[18px] tracking-wide">LEVEL {levelLabel}</span>
-          <span className="text-xs font-medium text-white/60">
-            {remainingLabel === "--" ? "Loading" : `${remainingLabel} XP to next level`}
-          </span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 text-lg leading-none">{renderedBadges}</div>
+          <span className="font-extrabold text-[18px] tracking-wide text-white">LEVEL {levelLabel}</span>
         </div>
-      </div>
-      <div className="relative z-[1] mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 text-lg leading-none">
-          {loading && !progress ? (
-            <span className="text-xs font-medium uppercase tracking-[0.2em] text-white/50">Syncing…</span>
-          ) : hasBadges ? (
-            prestigeBadges.map((badge) => (
-              <span
-                key={badge.id}
-                role="img"
-                aria-label={badge.label}
-                title={badge.label}
-                className="drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
-              >
-                {badge.emoji}
-              </span>
-            ))
-          ) : (
-            <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">
-              No badges yet
-            </span>
-          )}
-        </div>
+        <span className="text-xs font-medium text-white/60">
+          {remainingLabel === "--" ? "Loading" : `${remainingLabel} XP to next level`}
+        </span>
       </div>
       <div className="relative z-[1]">
         <div className="h-[12px] w-full rounded-full bg-[#0c0f14] inner-hair" />
