@@ -51,6 +51,11 @@ function habitTypePriority(value?: string | null) {
   return HABIT_TYPE_PRIORITY[normalized] ?? Number.MAX_SAFE_INTEGER
 }
 
+function isSyncHabitType(value?: string | null) {
+  const normalized = (value ?? '').toUpperCase()
+  return normalized === 'SYNC' || normalized === 'ASYNC'
+}
+
 type ScheduleFailure = {
   itemId: string
   reason: string
@@ -172,6 +177,15 @@ export async function scheduleBacklog(
     fetchProjectsMap(supabase),
     fetchHabitsForSchedule(supabase),
   ])
+  const syncHabits: HabitScheduleItem[] = []
+  const regularHabits: HabitScheduleItem[] = []
+  for (const habit of habits) {
+    if (isSyncHabitType(habit.habitType)) {
+      syncHabits.push(habit)
+    } else {
+      regularHabits.push(habit)
+    }
+  }
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
@@ -412,11 +426,40 @@ export async function scheduleBacklog(
   }
   collectPrimaryReuseIds(dedupe.reusableByProject)
   collectReuseIds(dedupe.canceledByProject)
+  const windowAvailabilityByDay = new Map<
+    number,
+    Map<string, WindowAvailabilityBounds>
+  >()
+  const windowCache = new Map<string, WindowLite[]>()
+  const regularHabitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
+  const syncHabitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
+  const existingWindowBlocksByOffset = new Map<
+    number,
+    Array<{ startUTC: string; endUTC: string; windowId: string | null }>
+  >()
+
+  const registerExistingWindowBlock = (
+    offset: number | undefined,
+    inst: ScheduleInstance
+  ) => {
+    if (typeof offset !== 'number') return
+    if (!Number.isFinite(offset)) return
+    if (offset < 0 || offset >= SCHEDULER_MAX_HORIZON_DAYS) return
+    const blocks = existingWindowBlocksByOffset.get(offset) ?? []
+    blocks.push({
+      startUTC: inst.start_utc,
+      endUTC: inst.end_utc,
+      windowId: inst.window_id ?? null,
+    })
+    existingWindowBlocksByOffset.set(offset, blocks)
+  }
+
   const keptInstances = [...dedupe.keepers]
 
   for (const inst of keptInstances) {
     const projectId = inst.source_id ?? ''
     if (!projectId) continue
+    registerExistingWindowBlock(dayOffsetFor(inst.start_utc), inst)
     result.timeline.push({
       type: 'PROJECT',
       instance: inst,
@@ -444,24 +487,28 @@ export async function scheduleBacklog(
     return a.id.localeCompare(b.id)
   })
 
-  const windowAvailabilityByDay = new Map<
-    number,
-    Map<string, WindowAvailabilityBounds>
-  >()
-  const windowCache = new Map<string, WindowLite[]>()
-  const habitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
-
   const ensureHabitPlacementsForDay = async (
     offset: number,
     day: Date,
-    availability: Map<string, WindowAvailabilityBounds>
+    availability: Map<string, WindowAvailabilityBounds>,
+    options: {
+      habits: HabitScheduleItem[]
+      cache: Map<number, HabitDraftPlacement[]>
+      allowOverlap?: boolean
+    }
   ) => {
-    if (habitPlacementsByOffset.has(offset)) {
-      return habitPlacementsByOffset.get(offset) ?? []
+    const cache = options.cache
+    if (cache.has(offset)) {
+      return cache.get(offset) ?? []
+    }
+
+    if (options.habits.length === 0) {
+      cache.set(offset, [])
+      return []
     }
 
     const placements = await scheduleHabitsForDay({
-      habits,
+      habits: options.habits,
       day,
       offset,
       timeZone,
@@ -472,17 +519,22 @@ export async function scheduleBacklog(
       sunlightLocation: location,
       durationMultiplier,
       restMode: isRestMode,
+      allowOverlap: options.allowOverlap,
+      existingBlocks:
+        options.allowOverlap === true
+          ? []
+          : existingWindowBlocksByOffset.get(offset) ?? [],
     })
 
     if (placements.length > 0) {
       result.timeline.push(...placements)
     }
 
-    habitPlacementsByOffset.set(offset, placements)
+    cache.set(offset, placements)
     return placements
   }
 
-  if (habits.length > 0) {
+  if (regularHabits.length > 0) {
     for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
       let availability = windowAvailabilityByDay.get(offset)
       if (!availability) {
@@ -490,7 +542,11 @@ export async function scheduleBacklog(
         windowAvailabilityByDay.set(offset, availability)
       }
       const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, availability)
+      await ensureHabitPlacementsForDay(offset, day, availability, {
+        habits: regularHabits,
+        cache: regularHabitPlacementsByOffset,
+        allowOverlap: false,
+      })
     }
   }
 
@@ -504,7 +560,11 @@ export async function scheduleBacklog(
         windowAvailabilityByDay.set(offset, windowAvailability)
       }
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+      await ensureHabitPlacementsForDay(offset, day, windowAvailability, {
+        habits: regularHabits,
+        cache: regularHabitPlacementsByOffset,
+        allowOverlap: false,
+      })
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
@@ -590,6 +650,22 @@ export async function scheduleBacklog(
 
     if (!scheduled) {
       result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
+    }
+  }
+
+  if (syncHabits.length > 0) {
+    for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
+      let availability = windowAvailabilityByDay.get(offset)
+      if (!availability) {
+        availability = new Map<string, WindowAvailabilityBounds>()
+        windowAvailabilityByDay.set(offset, availability)
+      }
+      const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
+      await ensureHabitPlacementsForDay(offset, day, availability, {
+        habits: syncHabits,
+        cache: syncHabitPlacementsByOffset,
+        allowOverlap: true,
+      })
     }
   }
 
@@ -745,6 +821,8 @@ async function scheduleHabitsForDay(params: {
   sunlightLocation?: GeoCoordinates | null
   durationMultiplier?: number
   restMode?: boolean
+  existingBlocks?: Array<{ startUTC: string; endUTC: string; windowId: string | null }>
+  allowOverlap?: boolean
 }): Promise<HabitDraftPlacement[]> {
   const {
     habits,
@@ -758,6 +836,8 @@ async function scheduleHabitsForDay(params: {
     sunlightLocation,
     durationMultiplier = 1,
     restMode = false,
+    existingBlocks = [],
+    allowOverlap = false,
   } = params
   if (!habits.length) return []
 
@@ -775,9 +855,40 @@ async function scheduleHabitsForDay(params: {
     windowsById.set(win.id, win)
   }
 
+  const zone = timeZone || 'UTC'
+
+  if (!allowOverlap && existingBlocks.length > 0) {
+    for (const block of existingBlocks) {
+      if (!block.windowId) continue
+      const win = windowsById.get(block.windowId)
+      if (!win) continue
+      const windowStart = resolveWindowStart(win, day, zone)
+      const windowEnd = resolveWindowEnd(win, day, zone)
+      const blockStart = new Date(block.startUTC)
+      const blockEnd = new Date(block.endUTC)
+      const blockStartMs = blockStart.getTime()
+      const blockEndMs = blockEnd.getTime()
+      if (!Number.isFinite(blockStartMs) || !Number.isFinite(blockEndMs)) continue
+      const clampedStart = Math.min(Math.max(blockStartMs, windowStart.getTime()), windowEnd.getTime())
+      const clampedEnd = Math.min(Math.max(blockEndMs, clampedStart), windowEnd.getTime())
+      if (clampedEnd <= clampedStart) continue
+      const key = windowKey(win.id, windowStart)
+      const existing = availability.get(key)
+      if (existing) {
+        if (existing.front.getTime() < clampedEnd) {
+          existing.front = new Date(clampedEnd)
+        }
+        if (existing.back.getTime() < existing.front.getTime()) {
+          existing.back = new Date(existing.front)
+        }
+      } else {
+        setAvailabilityBoundsForKey(availability, key, clampedEnd, clampedEnd)
+      }
+    }
+  }
+
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const dueHabits: HabitScheduleItem[] = []
-  const zone = timeZone || 'UTC'
   const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
   const previousDay = addDaysInTimeZone(day, -1, zone)
   const nextDay = addDaysInTimeZone(day, 1, zone)
