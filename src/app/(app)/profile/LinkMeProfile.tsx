@@ -64,15 +64,93 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   }, [profile?.user_id]);
 
   useEffect(() => {
-    if (typeof document === "undefined") {
+    if (typeof window === "undefined") {
       return undefined;
     }
 
-    const previousBehavior = document.documentElement.style.scrollBehavior;
-    document.documentElement.style.scrollBehavior = "smooth";
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (motionQuery.matches) {
+      return undefined;
+    }
+
+    const root = document.documentElement;
+    const body = document.body;
+    const previousRootBehavior = root.style.scrollBehavior;
+    const previousBodyBehavior = body.style.scrollBehavior;
+    const previousScrollPaddingTop = root.style.scrollPaddingTop;
+
+    const enableSmoothScroll = () => {
+      root.style.scrollBehavior = "smooth";
+      body.style.scrollBehavior = "smooth";
+    };
+
+    enableSmoothScroll();
+
+    const stickyHeader = document.querySelector<HTMLElement>(
+      "[data-profile-sticky-header]",
+    );
+
+    const updateScrollPadding = () => {
+      if (!stickyHeader) {
+        return;
+      }
+
+      const offset = stickyHeader.offsetHeight;
+      root.style.scrollPaddingTop = offset > 0 ? `${offset}px` : previousScrollPaddingTop;
+    };
+
+    updateScrollPadding();
+
+    let resizeObserver: ResizeObserver | undefined;
+    let resizeFallbackHandler: (() => void) | undefined;
+
+    if (stickyHeader) {
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(() => updateScrollPadding());
+        resizeObserver.observe(stickyHeader);
+      } else {
+        const handleResize = () => updateScrollPadding();
+        resizeFallbackHandler = handleResize;
+        window.addEventListener("resize", handleResize);
+      }
+    }
+
+    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
+      if (event.matches) {
+        root.style.scrollBehavior = previousRootBehavior;
+        body.style.scrollBehavior = previousBodyBehavior;
+      } else {
+        enableSmoothScroll();
+      }
+    };
+
+    let removeMotionListener: (() => void) | undefined;
+
+    if (typeof motionQuery.addEventListener === "function") {
+      motionQuery.addEventListener("change", handleMotionPreferenceChange);
+      removeMotionListener = () =>
+        motionQuery.removeEventListener("change", handleMotionPreferenceChange);
+    } else if (typeof motionQuery.addListener === "function") {
+      motionQuery.addListener(handleMotionPreferenceChange);
+      removeMotionListener = () => motionQuery.removeListener(handleMotionPreferenceChange);
+    }
 
     return () => {
-      document.documentElement.style.scrollBehavior = previousBehavior;
+      if (resizeObserver && stickyHeader) {
+        resizeObserver.disconnect();
+      }
+
+      if (resizeFallbackHandler) {
+        window.removeEventListener("resize", resizeFallbackHandler);
+      }
+
+      if (removeMotionListener) {
+        removeMotionListener();
+      }
+
+      root.style.scrollBehavior = previousRootBehavior;
+      body.style.scrollBehavior = previousBodyBehavior;
+      root.style.scrollPaddingTop = previousScrollPaddingTop;
     };
   }, []);
 
@@ -165,7 +243,10 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   return (
     <div className="min-h-screen scroll-smooth bg-gradient-to-br from-blue-50 to-purple-50">
       {/* Top Navigation Bar */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
+      <div
+        data-profile-sticky-header
+        className="sticky top-0 z-50 border-b border-gray-200 bg-white/80 backdrop-blur-md"
+      >
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center space-x-3">
             <Link href="/dashboard">
