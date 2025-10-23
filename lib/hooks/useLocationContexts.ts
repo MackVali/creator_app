@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { isLocationMetadataError } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -52,6 +54,77 @@ function mapRowToOption(row: LocationContextRow): LocationContextOption | null {
   };
 }
 
+function mapValueToOption(value: string | null | undefined): LocationContextOption | null {
+  const normalized = normalizeValue(value);
+  if (!normalized || normalized === ANY_OPTION.value) {
+    return null;
+  }
+  return {
+    id: normalized,
+    value: normalized,
+    label: formatLabel(normalized) || normalized,
+  };
+}
+
+function mergeOptions(
+  ...groups: LocationContextOption[][]
+): LocationContextOption[] {
+  const seen = new Set<string>();
+  const merged: LocationContextOption[] = [];
+
+  for (const group of groups) {
+    for (const option of group) {
+      if (!seen.has(option.value)) {
+        seen.add(option.value);
+        merged.push(option);
+      }
+    }
+  }
+
+  return merged;
+}
+
+async function loadLegacyLocationOptions(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+): Promise<LocationContextOption[]> {
+  const values = new Set<string>();
+
+  const addValue = (input: string | null | undefined) => {
+    const option = mapValueToOption(input);
+    if (option) {
+      values.add(option.value);
+    }
+  };
+
+  const { data: windowRows } = await supabase
+    .from("windows")
+    .select("location_context")
+    .eq("user_id", userId);
+
+  if (Array.isArray(windowRows)) {
+    for (const row of windowRows as Array<{ location_context: string | null }>) {
+      addValue(row.location_context);
+    }
+  }
+
+  const { data: habitRows } = await supabase
+    .from("habits")
+    .select("location_context")
+    .eq("user_id", userId);
+
+  if (Array.isArray(habitRows)) {
+    for (const row of habitRows as Array<{ location_context: string | null }>) {
+      addValue(row.location_context);
+    }
+  }
+
+  return Array.from(values)
+    .map((value) => mapValueToOption(value))
+    .filter((option): option is LocationContextOption => Boolean(option))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 function defaultOptions(): LocationContextOption[] {
   return DEFAULT_CONTEXTS.map((ctx) => ({
     id: ctx.value,
@@ -66,6 +139,8 @@ export function useLocationContexts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [metadataUnavailable, setMetadataUnavailable] = useState(false);
+  const metadataUnavailableRef = useRef(metadataUnavailable);
 
   const load = useCallback(async () => {
     if (!supabase) {
@@ -73,31 +148,39 @@ export function useLocationContexts() {
       setUserId(null);
       setLoading(false);
       setError(null);
+      setMetadataUnavailable(false);
       return;
     }
 
     setLoading(true);
     setError(null);
 
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error("Failed to resolve user before loading locations", userError);
+      setError("We couldn’t load your saved locations. Using defaults for now.");
+      setContexts(defaultOptions());
+      setUserId(null);
+      setMetadataUnavailable(false);
+      setLoading(false);
+      return;
+    }
+
+    if (!user) {
+      setUserId(null);
+      setContexts(defaultOptions());
+      setMetadataUnavailable(false);
+      setLoading(false);
+      return;
+    }
+
+    setUserId(user.id);
+
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
-
-      if (!user) {
-        setUserId(null);
-        setContexts(defaultOptions());
-        setLoading(false);
-        return;
-      }
-
-      setUserId(user.id);
-
       const { data, error: fetchError } = await supabase
         .from("location_contexts")
         .select("id, value, label")
@@ -144,15 +227,26 @@ export function useLocationContexts() {
         .filter((option) => option.value !== ANY_OPTION.value);
 
       setContexts(mapped);
+      setMetadataUnavailable(false);
     } catch (err) {
       if (isLocationMetadataError(err)) {
-        console.warn("Location metadata not available; using default contexts.");
+        console.warn("Location metadata not available; using legacy contexts.");
+        setMetadataUnavailable(true);
+        try {
+          const legacy = await loadLegacyLocationOptions(supabase, user.id);
+          const merged = mergeOptions(defaultOptions(), legacy);
+          setContexts(merged);
+        } catch (legacyError) {
+          console.error("Failed to load legacy location contexts", legacyError);
+          setContexts(defaultOptions());
+        }
         setError(null);
       } else {
         console.error("Failed to load location contexts", err);
         setError("We couldn’t load your saved locations. Using defaults for now.");
+        setContexts(defaultOptions());
+        setMetadataUnavailable(false);
       }
-      setContexts(defaultOptions());
     } finally {
       setLoading(false);
     }
@@ -161,6 +255,10 @@ export function useLocationContexts() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    metadataUnavailableRef.current = metadataUnavailable;
+  }, [metadataUnavailable]);
 
   const createContext = useCallback(
     async (input: string): Promise<CreateLocationResult> => {
@@ -189,6 +287,16 @@ export function useLocationContexts() {
           success: false,
           error: "Connect to Supabase to save custom locations.",
         };
+      }
+
+      if (metadataUnavailableRef.current) {
+        const option = {
+          id: value,
+          value,
+          label: formatLabel(name) || value,
+        } satisfies LocationContextOption;
+        setContexts((prev) => mergeOptions(prev, [option]));
+        return { success: true, option };
       }
 
       let ownerId = userId;
