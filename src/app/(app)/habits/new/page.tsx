@@ -26,12 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  normalizeLocationValue,
-  resolveLocationContextId,
-  isLocationMetadataError,
-  isValidUuid,
-} from "@/lib/location-metadata";
+import { isValidUuid } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -69,7 +64,6 @@ export default function NewHabitPage() {
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [skillId, setSkillId] = useState("none");
-  const [locationContext, setLocationContext] = useState<string | null>(null);
   const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
@@ -558,64 +552,14 @@ export default function NewHabitPage() {
         completion_target: parsedCompletionTarget,
       };
 
-      const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let resolvedLocationContextId: string | null = isValidUuid(
-        locationContextId,
-      )
+      const resolvedLocationContextId = isValidUuid(locationContextId)
         ? locationContextId
         : null;
-      let fallbackLocationContext: string | null = null;
-
-      if (normalizedLocationValue && !resolvedLocationContextId) {
-        try {
-          resolvedLocationContextId = await resolveLocationContextId(
-            supabase,
-            user.id,
-            normalizedLocationValue,
-          );
-          if (resolvedLocationContextId) {
-            setLocationContextId(resolvedLocationContextId);
-          }
-        } catch (maybeError) {
-          if (isLocationMetadataError(maybeError)) {
-            console.warn(
-              "Falling back to legacy location context value:",
-              maybeError,
-            );
-            fallbackLocationContext = normalizedLocationValue;
-            setLocationContextId(null);
-          } else {
-            console.error("Failed to resolve location context:", maybeError);
-            setError(
-              "We couldn't save that location right now. Please try again later.",
-            );
-            return;
-          }
-        }
-      }
-
-      if (normalizedLocationValue && !resolvedLocationContextId && !fallbackLocationContext) {
-        fallbackLocationContext = normalizedLocationValue;
-      }
-
-      if (fallbackLocationContext && !resolvedLocationContextId) {
-        setLocationContextId(null);
-      }
-
-      if (!normalizedLocationValue) {
-        resolvedLocationContextId = null;
-        fallbackLocationContext = null;
-      }
 
       const payload: Record<string, unknown> = {
         ...basePayload,
-        location_context_id: resolvedLocationContextId ?? null,
-        location_context: fallbackLocationContext,
+        location_context_id: resolvedLocationContextId,
       };
-
-      if (resolvedLocationContextId) {
-        payload.location_context = null;
-      }
 
       const { error: insertError } = await supabase
         .from("habits")
@@ -667,7 +611,6 @@ export default function NewHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
-                locationContext={locationContext}
                 locationContextId={locationContextId}
                 daylightPreference={daylightPreference}
                 windowEdgePreference={windowEdgePreference}
@@ -689,9 +632,6 @@ export default function NewHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
-                onLocationContextChange={(value) =>
-                  setLocationContext(value ? value.toUpperCase() : null)
-                }
                 onLocationContextIdChange={setLocationContextId}
                 onDaylightPreferenceChange={(value) =>
                   setDaylightPreference(value.toUpperCase())

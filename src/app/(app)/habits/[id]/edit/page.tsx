@@ -29,13 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  LocationMetadataMode,
-  isLocationMetadataError,
-  isValidUuid,
-  normalizeLocationValue,
-  resolveLocationContextId,
-} from "@/lib/location-metadata";
+import { isValidUuid } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 function normalizeMessageTokens(maybeError?: unknown) {
@@ -66,19 +60,14 @@ function isGoalMetadataError(maybeError?: unknown) {
   );
 }
 
-function buildHabitSelectColumns(
-  includeGoalMetadata: boolean,
-  locationMode: LocationMetadataMode,
-) {
+function buildHabitSelectColumns(includeGoalMetadata: boolean) {
   const baseColumns =
     "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference";
 
-  const locationColumns =
-    locationMode === "id"
-      ? "location_context_id, location_context:location_contexts(value,label)"
-      : "location_context";
-
-  const columns = [baseColumns, locationColumns];
+  const columns = [
+    baseColumns,
+    "location_context_id, location_context:location_contexts(value,label)",
+  ];
 
   if (includeGoalMetadata) {
     columns.push("goal_id, completion_target");
@@ -128,7 +117,6 @@ export default function EditHabitPage() {
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
-  const [locationContext, setLocationContext] = useState<string | null>(null);
   const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
@@ -539,13 +527,12 @@ export default function EditHabitPage() {
         }
 
         let includeGoalMetadata = true;
-        let locationMode: LocationMetadataMode = "id";
         let habitResponse: { data: any; error: any } | null = null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
           habitResponse = await supabase
             .from("habits")
-            .select(buildHabitSelectColumns(includeGoalMetadata, locationMode))
+            .select(buildHabitSelectColumns(includeGoalMetadata))
             .eq("id", habitId)
             .eq("user_id", user.id)
             .single();
@@ -558,11 +545,6 @@ export default function EditHabitPage() {
 
           if (includeGoalMetadata && isGoalMetadataError(habitResponse.error)) {
             includeGoalMetadata = false;
-            adjusted = true;
-          }
-
-          if (locationMode === "id" && isLocationMetadataError(habitResponse.error)) {
-            locationMode = "legacy";
             adjusted = true;
           }
 
@@ -633,21 +615,11 @@ export default function EditHabitPage() {
             setGoalId("none");
             setCompletionTarget("10");
           }
-          const legacyLocationValue =
-            locationMode === "legacy" && typeof data.location_context === "string"
-              ? data.location_context
-              : null;
-          const relationalLocationValue =
-            locationMode === "id" && data.location_context?.value
-              ? String(data.location_context.value)
-              : null;
-          const resolvedLocationRaw = legacyLocationValue ?? relationalLocationValue;
           setLocationContextId(
             isValidUuid(data.location_context_id)
               ? data.location_context_id
               : null,
           );
-          setLocationContext(normalizeLocationValue(resolvedLocationRaw));
           setDaylightPreference(
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
@@ -826,64 +798,14 @@ export default function EditHabitPage() {
           : null;
       }
 
-      const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let resolvedLocationContextId: string | null = isValidUuid(
-        locationContextId,
-      )
+      const resolvedLocationContextId = isValidUuid(locationContextId)
         ? locationContextId
         : null;
-      let fallbackLocationContext: string | null = null;
-
-      if (normalizedLocationValue && !resolvedLocationContextId) {
-        try {
-          resolvedLocationContextId = await resolveLocationContextId(
-            supabase,
-            user.id,
-            normalizedLocationValue,
-          );
-          if (resolvedLocationContextId) {
-            setLocationContextId(resolvedLocationContextId);
-          }
-        } catch (maybeError) {
-          if (isLocationMetadataError(maybeError)) {
-            console.warn(
-              "Falling back to legacy location context value:",
-              maybeError,
-            );
-            fallbackLocationContext = normalizedLocationValue;
-            setLocationContextId(null);
-          } else {
-            console.error("Failed to resolve location context:", maybeError);
-            setError(
-              "We couldn't save that location right now. Please try again later.",
-            );
-            return;
-          }
-        }
-      }
-
-      if (normalizedLocationValue && !resolvedLocationContextId && !fallbackLocationContext) {
-        fallbackLocationContext = normalizedLocationValue;
-      }
-
-      if (fallbackLocationContext && !resolvedLocationContextId) {
-        setLocationContextId(null);
-      }
-
-      if (!normalizedLocationValue) {
-        resolvedLocationContextId = null;
-        fallbackLocationContext = null;
-      }
 
       const payload: Record<string, unknown> = {
         ...basePayload,
-        location_context_id: resolvedLocationContextId ?? null,
-        location_context: fallbackLocationContext,
+        location_context_id: resolvedLocationContextId,
       };
-
-      if (resolvedLocationContextId) {
-        payload.location_context = null;
-      }
 
       const { error: updateError } = await supabase
         .from("habits")
@@ -957,11 +879,10 @@ export default function EditHabitPage() {
                   habitType={habitType}
                   recurrence={recurrence}
                   recurrenceDays={recurrenceDays}
-                  duration={duration}
-                  energy={energy}
-                  skillId={skillId}
-                  locationContext={locationContext}
-                  locationContextId={locationContextId}
+                duration={duration}
+                energy={energy}
+                skillId={skillId}
+                locationContextId={locationContextId}
                   daylightPreference={daylightPreference}
                   windowEdgePreference={windowEdgePreference}
                   energyOptions={energySelectOptions}
@@ -982,9 +903,6 @@ export default function EditHabitPage() {
                   onEnergyChange={setEnergy}
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
-                  onLocationContextChange={(value) =>
-                    setLocationContext(value ? value.toUpperCase() : null)
-                  }
                   onLocationContextIdChange={setLocationContextId}
                   onDaylightPreferenceChange={(value) =>
                     setDaylightPreference(value.toUpperCase())

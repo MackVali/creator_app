@@ -67,12 +67,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
-import {
-  resolveLocationContextId,
-  isLocationMetadataError,
-  normalizeLocationValue,
-  isValidUuid,
-} from "@/lib/location-metadata";
+import { isValidUuid } from "@/lib/location-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
@@ -353,7 +348,6 @@ interface FormState {
   type: string;
   recurrence: string;
   recurrence_days: number[];
-  location_context: string;
   location_context_id: string;
   daylight_preference: string;
   window_edge_preference: string;
@@ -409,7 +403,6 @@ const createInitialFormState = (
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
-  location_context: "",
   location_context_id: "",
   daylight_preference: "ALL_DAY",
   window_edge_preference: "FRONT",
@@ -1568,7 +1561,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         daylight_preference?: string | null;
         window_edge_preference?: string | null;
         completion_target?: number | null;
-        location_context?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1674,55 +1666,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
-        const normalizedLocationValue = normalizeLocationValue(
-          formData.location_context,
-        );
-        let resolvedLocationContextId = isValidUuid(
+        const resolvedLocationContextId = isValidUuid(
           formData.location_context_id,
         )
           ? formData.location_context_id
           : null;
-        let fallbackLocationContext: string | null = null;
-        if (normalizedLocationValue && !resolvedLocationContextId) {
-          try {
-            resolvedLocationContextId = await resolveLocationContextId(
-              supabase,
-              user.id,
-              normalizedLocationValue,
-            );
-          } catch (maybeError) {
-            if (isLocationMetadataError(maybeError)) {
-              console.warn(
-                "Falling back to legacy location context value:",
-                maybeError,
-              );
-              fallbackLocationContext = normalizedLocationValue;
-            } else {
-              console.error("Failed to resolve location context:", maybeError);
-              toast.error(
-                "Location error",
-                "We couldn't save that location right now. Please try again later.",
-              );
-              return;
-            }
-          }
-        }
-        if (
-          normalizedLocationValue &&
-          !resolvedLocationContextId &&
-          !fallbackLocationContext
-        ) {
-          fallbackLocationContext = normalizedLocationValue;
-        }
-        if (!normalizedLocationValue) {
-          resolvedLocationContextId = null;
-          fallbackLocationContext = null;
-        }
-        insertData.location_context_id = resolvedLocationContextId ?? null;
-        insertData.location_context = fallbackLocationContext;
-        if (resolvedLocationContextId) {
-          insertData.location_context = null;
-        }
+        insertData.location_context_id = resolvedLocationContextId;
         insertData.daylight_preference =
           formData.daylight_preference &&
           formData.daylight_preference !== "ALL_DAY"
@@ -2840,11 +2789,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               duration={formData.duration_min}
               energy={formData.energy}
               skillId={formData.skill_id || "none"}
-              locationContext={
-                formData.location_context
-                  ? formData.location_context.toUpperCase()
-                  : null
-              }
               locationContextId={
                 formData.location_context_id
                   ? formData.location_context_id
@@ -2907,12 +2851,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 setFormData((prev) => ({
                   ...prev,
                   skill_id: value === "none" ? "" : value,
-                }))
-              }
-              onLocationContextChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  location_context: value ? value.toUpperCase() : "",
                 }))
               }
               onLocationContextIdChange={(id) =>

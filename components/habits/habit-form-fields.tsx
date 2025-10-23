@@ -115,7 +115,6 @@ interface HabitFormFieldsProps {
   duration: string;
   energy: string;
   skillId: string;
-  locationContext?: string | null;
   locationContextId?: string | null;
   daylightPreference?: string | null;
   windowEdgePreference?: string | null;
@@ -137,7 +136,6 @@ interface HabitFormFieldsProps {
   onEnergyChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
-  onLocationContextChange?: (value: string | null) => void;
   onLocationContextIdChange?: (id: string | null) => void;
   onDaylightPreferenceChange?: (value: string) => void;
   onWindowEdgePreferenceChange?: (value: string) => void;
@@ -169,7 +167,6 @@ export function HabitFormFields({
   duration,
   energy,
   skillId,
-  locationContext = null,
   locationContextId = null,
   daylightPreference = "ALL_DAY",
   windowEdgePreference = "FRONT",
@@ -191,7 +188,6 @@ export function HabitFormFields({
   onEnergyChange,
   onDurationChange,
   onSkillChange,
-  onLocationContextChange,
   onLocationContextIdChange,
   onDaylightPreferenceChange,
   onWindowEdgePreferenceChange,
@@ -215,7 +211,7 @@ export function HabitFormFields({
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(() => {
-    const hasLocation = Boolean(locationContext && locationContext.trim());
+    const hasLocation = Boolean(locationContextId);
     const daylightUpper = (daylightPreference ?? "ALL_DAY").toUpperCase();
     const hasDaylight = daylightUpper === "DAY" || daylightUpper === "NIGHT";
     const edgeUpper = (windowEdgePreference ?? "FRONT").toUpperCase();
@@ -261,20 +257,12 @@ export function HabitFormFields({
     onRecurrenceDaysChange(next);
   };
 
-  const normalizedLocationValue = (locationContext ?? "")
-    .toUpperCase()
-    .trim();
   const locationOptionsById = useMemo(() => {
     return new Map(locationOptions.map((option) => [option.id, option]));
   }, [locationOptions]);
-  const locationOptionsByValue = useMemo(() => {
-    return new Map(locationOptions.map((option) => [option.value, option]));
-  }, [locationOptions]);
-  const selectedOption =
-    (locationContextId ? locationOptionsById.get(locationContextId) : null) ??
-    (normalizedLocationValue
-      ? locationOptionsByValue.get(normalizedLocationValue)
-      : null);
+  const selectedOption = locationContextId
+    ? locationOptionsById.get(locationContextId) ?? null
+    : null;
   const locationValue = selectedOption?.id ?? ANY_OPTION_ID;
   const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
   const windowEdgeValue = (windowEdgePreference ?? "FRONT")
@@ -299,7 +287,6 @@ export function HabitFormFields({
       }
 
       setCustomLocationName("");
-      onLocationContextChange?.(result.option.value);
       onLocationContextIdChange?.(result.option.id);
       setAdvancedOpen(true);
     } finally {
@@ -577,19 +564,16 @@ export function HabitFormFields({
                 onValueChange={(value) =>
                   {
                     if (value === ANY_OPTION_ID) {
-                      onLocationContextChange?.(null);
                       onLocationContextIdChange?.(null);
                       return;
                     }
 
                     const option = locationOptionsById.get(value);
                     if (!option) {
-                      onLocationContextChange?.(null);
                       onLocationContextIdChange?.(null);
                       return;
                     }
 
-                    onLocationContextChange?.(option.value);
                     onLocationContextIdChange?.(option.id);
                   }
                 }
