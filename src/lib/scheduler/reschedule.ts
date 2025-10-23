@@ -105,6 +105,62 @@ type WindowAvailabilityBounds = {
   back: Date
 }
 
+type OccupiedBlock = {
+  startMs: number
+  endMs: number
+}
+
+function insertOccupiedBlock(blocks: OccupiedBlock[], startMs: number, endMs: number) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+  if (endMs <= startMs) return
+  const normalized: OccupiedBlock[] = [...blocks, { startMs, endMs }]
+    .sort((a, b) => a.startMs - b.startMs)
+  blocks.length = 0
+  let current: OccupiedBlock | null = null
+  for (const block of normalized) {
+    if (!current) {
+      current = { startMs: block.startMs, endMs: block.endMs }
+      blocks.push(current)
+      continue
+    }
+    if (block.startMs <= current.endMs) {
+      current.endMs = Math.max(current.endMs, block.endMs)
+    } else {
+      current = { startMs: block.startMs, endMs: block.endMs }
+      blocks.push(current)
+    }
+  }
+}
+
+function findFirstAvailableStart(
+  blocks: OccupiedBlock[],
+  candidateStartMs: number,
+  windowEndMs: number,
+  durationMs: number
+): number | null {
+  if (!Number.isFinite(candidateStartMs) || !Number.isFinite(windowEndMs)) return null
+  if (durationMs <= 0) return candidateStartMs
+  const latestStartAllowed = windowEndMs - durationMs
+  if (candidateStartMs > latestStartAllowed) return null
+  let startMs = candidateStartMs
+  for (const block of blocks) {
+    if (block.endMs <= startMs) {
+      continue
+    }
+    if (block.startMs >= windowEndMs) {
+      break
+    }
+    if (startMs + durationMs <= block.startMs) {
+      return startMs
+    }
+    startMs = Math.max(startMs, block.endMs)
+    if (startMs > latestStartAllowed) {
+      return null
+    }
+  }
+  return startMs + durationMs <= windowEndMs ? startMs : null
+}
+
 async function ensureClient(client?: Client): Promise<Client> {
   if (client) return client
 
@@ -437,6 +493,31 @@ export async function scheduleBacklog(
     number,
     Array<{ startUTC: string; endUTC: string; windowId: string | null }>
   >()
+  const occupiedBlocksByOffset = new Map<number, OccupiedBlock[]>()
+
+  const getOccupiedBlocksForOffset = (offset: number): OccupiedBlock[] => {
+    let blocks = occupiedBlocksByOffset.get(offset)
+    if (!blocks) {
+      blocks = []
+      occupiedBlocksByOffset.set(offset, blocks)
+    }
+    return blocks
+  }
+
+  const registerOccupiedRange = (
+    offset: number | undefined,
+    startUTC: string,
+    endUTC: string
+  ) => {
+    if (typeof offset !== 'number' || !Number.isFinite(offset)) return
+    if (offset < 0 || offset >= SCHEDULER_MAX_HORIZON_DAYS) return
+    const startMs = new Date(startUTC).getTime()
+    const endMs = new Date(endUTC).getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    if (endMs <= startMs) return
+    const blocks = getOccupiedBlocksForOffset(offset)
+    insertOccupiedBlock(blocks, startMs, endMs)
+  }
 
   const registerExistingWindowBlock = (
     offset: number | undefined,
@@ -452,6 +533,7 @@ export async function scheduleBacklog(
       windowId: inst.window_id ?? null,
     })
     existingWindowBlocksByOffset.set(offset, blocks)
+    registerOccupiedRange(offset, inst.start_utc, inst.end_utc)
   }
 
   const keptInstances = [...dedupe.keepers]
@@ -488,6 +570,34 @@ export async function scheduleBacklog(
     return availability
   }
 
+  const adjustWindowsForOccupancy = (
+    windows: Array<{
+      id: string
+      startLocal: Date
+      endLocal: Date
+      availableStartLocal: Date
+      key?: string
+    }>,
+    occupiedBlocks: OccupiedBlock[],
+    durationMin: number
+  ) => {
+    const durationMs = Math.max(0, durationMin) * 60000
+    if (durationMs <= 0) return windows
+    const adjusted: typeof windows = []
+    for (const win of windows) {
+      const startMs = win.availableStartLocal.getTime()
+      const endMs = win.endLocal.getTime()
+      const nextStart = findFirstAvailableStart(occupiedBlocks, startMs, endMs, durationMs)
+      if (nextStart === null) continue
+      if (nextStart !== startMs) {
+        adjusted.push({ ...win, availableStartLocal: new Date(nextStart) })
+      } else {
+        adjusted.push(win)
+      }
+    }
+    return adjusted
+  }
+
   const scheduleHabitsAcrossHorizon = async (
     habits: HabitScheduleItem[],
     cache: Map<number, HabitDraftPlacement[]>,
@@ -498,10 +608,17 @@ export async function scheduleBacklog(
     for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
       const availability = getAvailabilityForOffset(offset)
       const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
+      const occupiedBlocks = getOccupiedBlocksForOffset(offset)
       await ensureHabitPlacementsForDay(offset, day, availability, {
         habits,
         cache,
         allowOverlap: options.allowOverlap,
+        occupiedBlocks,
+        registerOccupiedBlock: options.allowOverlap
+          ? undefined
+          : (startMs: number, endMs: number) => {
+              insertOccupiedBlock(occupiedBlocks, startMs, endMs)
+            },
       })
     }
   }
@@ -522,6 +639,8 @@ export async function scheduleBacklog(
       habits: HabitScheduleItem[]
       cache: Map<number, HabitDraftPlacement[]>
       allowOverlap?: boolean
+      occupiedBlocks: OccupiedBlock[]
+      registerOccupiedBlock?: (startMs: number, endMs: number) => void
     }
   ) => {
     const cache = options.cache
@@ -551,6 +670,8 @@ export async function scheduleBacklog(
         options.allowOverlap === true
           ? []
           : existingWindowBlocksByOffset.get(offset) ?? [],
+      occupiedBlocks: options.occupiedBlocks,
+      registerOccupiedBlock: options.registerOccupiedBlock,
     })
 
     if (placements.length > 0) {
@@ -571,6 +692,7 @@ export async function scheduleBacklog(
     for (let offset = 0; offset < maxOffset && !scheduled; offset += 1) {
       const windowAvailability = getAvailabilityForOffset(offset)
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
+      const occupiedBlocks = getOccupiedBlocksForOffset(offset)
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
@@ -585,10 +707,17 @@ export async function scheduleBacklog(
       )
       if (windows.length === 0) continue
 
+      const adjustedWindows = adjustWindowsForOccupancy(
+        windows,
+        occupiedBlocks,
+        item.duration_min
+      )
+      if (adjustedWindows.length === 0) continue
+
       const placed = await placeItemInWindows({
         userId,
         item,
-        windows,
+        windows: adjustedWindows,
         date: day,
         client: supabase,
         reuseInstanceId: item.instanceId,
@@ -610,10 +739,7 @@ export async function scheduleBacklog(
 
       if (placed.data) {
         result.placed.push(placed.data)
-        const placementWindow = findPlacementWindow(
-          windows,
-          placed.data
-        )
+        const placementWindow = findPlacementWindow(adjustedWindows, placed.data)
         if (placementWindow?.key) {
           const placementEnd = new Date(placed.data.end_utc)
           const existingBounds = windowAvailability.get(placementWindow.key)
@@ -637,6 +763,12 @@ export async function scheduleBacklog(
         const decision: ScheduleDraftPlacement['decision'] = item.instanceId
           ? 'rescheduled'
           : 'new'
+        const placementOffset = dayOffsetFor(placed.data.start_utc)
+        registerOccupiedRange(
+          placementOffset ?? offset,
+          placed.data.start_utc,
+          placed.data.end_utc
+        )
         result.timeline.push({
           type: 'PROJECT',
           instance: placed.data,
@@ -817,6 +949,8 @@ async function scheduleHabitsForDay(params: {
   restMode?: boolean
   existingBlocks?: Array<{ startUTC: string; endUTC: string; windowId: string | null }>
   allowOverlap?: boolean
+  occupiedBlocks?: OccupiedBlock[]
+  registerOccupiedBlock?: (startMs: number, endMs: number) => void
 }): Promise<HabitDraftPlacement[]> {
   const {
     habits,
@@ -832,6 +966,8 @@ async function scheduleHabitsForDay(params: {
     restMode = false,
     existingBlocks = [],
     allowOverlap = false,
+    occupiedBlocks = [],
+    registerOccupiedBlock,
   } = params
   if (!habits.length) return []
 
@@ -1080,6 +1216,35 @@ async function scheduleHabitsForDay(params: {
       continue
     }
 
+    if (!allowOverlap) {
+      const nextStart = findFirstAvailableStart(
+        occupiedBlocks,
+        startCandidate,
+        endLimit,
+        durationMs
+      )
+      if (nextStart === null) {
+        if (bounds) {
+          if (anchorPreference === 'BACK') {
+            const clamped = Math.max(bounds.front.getTime(), latestStartAllowed)
+            bounds.back = new Date(clamped)
+            if (bounds.back.getTime() < bounds.front.getTime()) {
+              bounds.front = new Date(bounds.back)
+            }
+          } else {
+            bounds.front = new Date(endLimit)
+            if (bounds.back.getTime() < bounds.front.getTime()) {
+              bounds.back = new Date(bounds.front)
+            }
+          }
+        } else {
+          setAvailabilityBoundsForKey(availability, target.key, endLimit, endLimit)
+        }
+        continue
+      }
+      startCandidate = nextStart
+    }
+
     let endCandidate = startCandidate + durationMs
     let clipped = false
     if (endCandidate > endLimit) {
@@ -1123,6 +1288,10 @@ async function scheduleHabitsForDay(params: {
       setAvailabilityBoundsForKey(availability, target.key, startDate.getTime(), startDate.getTime())
     } else {
       setAvailabilityBoundsForKey(availability, target.key, endDate.getTime(), endDate.getTime())
+    }
+
+    if (!allowOverlap && registerOccupiedBlock) {
+      registerOccupiedBlock(startCandidate, endCandidate)
     }
 
     const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
