@@ -67,7 +67,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
-import { isValidUuid } from "@/lib/location-metadata";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
@@ -1666,11 +1666,28 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
-        const resolvedLocationContextId = isValidUuid(
-          formData.location_context_id,
-        )
-          ? formData.location_context_id
-          : null;
+
+        let resolvedLocationContextId: string | null = null;
+        if (formData.location_context_id) {
+          if (isValidUuid(formData.location_context_id)) {
+            resolvedLocationContextId = formData.location_context_id;
+          } else {
+            resolvedLocationContextId = await resolveLocationContextId(
+              supabase,
+              user.id,
+              formData.location_context_id,
+            );
+
+            if (!resolvedLocationContextId) {
+              toast.error(
+                "Location unavailable",
+                "We couldn’t save that location right now. Please try again.",
+              );
+              return;
+            }
+          }
+        }
+
         insertData.location_context_id = resolvedLocationContextId;
         insertData.daylight_preference =
           formData.daylight_preference &&

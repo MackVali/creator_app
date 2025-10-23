@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isValidUuid } from "@/lib/location-metadata";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -532,6 +532,27 @@ export default function NewHabitPage() {
         routineIdToUse = routineId;
       }
 
+      let resolvedLocationContextId: string | null = null;
+      if (locationContextId) {
+        if (isValidUuid(locationContextId)) {
+          resolvedLocationContextId = locationContextId;
+        } else {
+          resolvedLocationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            locationContextId,
+          );
+
+          if (!resolvedLocationContextId) {
+            setError(
+              "We couldn’t save that location just yet. Please try again.",
+            );
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       const basePayload: Record<string, unknown> = {
         user_id: user.id,
         name: name.trim(),
@@ -551,10 +572,6 @@ export default function NewHabitPage() {
         goal_id: isTempHabit ? goalIdValue : null,
         completion_target: parsedCompletionTarget,
       };
-
-      const resolvedLocationContextId = isValidUuid(locationContextId)
-        ? locationContextId
-        : null;
 
       const payload: Record<string, unknown> = {
         ...basePayload,

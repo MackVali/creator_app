@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { isValidUuid } from "@/lib/location-metadata";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 function normalizeMessageTokens(maybeError?: unknown) {
@@ -773,6 +773,27 @@ export default function EditHabitPage() {
         routineIdToUse = routineId;
       }
 
+      let resolvedLocationContextId: string | null = null;
+      if (locationContextId) {
+        if (isValidUuid(locationContextId)) {
+          resolvedLocationContextId = locationContextId;
+        } else {
+          resolvedLocationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            locationContextId,
+          );
+
+          if (!resolvedLocationContextId) {
+            setError(
+              "We couldn’t save that location just yet. Please try again.",
+            );
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       const basePayload: Record<string, unknown> = {
         name: name.trim(),
         description: trimmedDescription || null,
@@ -797,10 +818,6 @@ export default function EditHabitPage() {
           ? parsedCompletionTarget
           : null;
       }
-
-      const resolvedLocationContextId = isValidUuid(locationContextId)
-        ? locationContextId
-        : null;
 
       const payload: Record<string, unknown> = {
         ...basePayload,
