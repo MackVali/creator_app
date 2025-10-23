@@ -540,25 +540,47 @@ export default function NewHabitPage() {
       }
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let initialLocationMode = locationMetadataMode;
-      let locationContextId: string | null = null;
+      let resolvedLocationContextId: string | null = null;
+      let resolveMetadataError: unknown = null;
 
-      if (initialLocationMode === "id" && normalizedLocationValue) {
+      if (normalizedLocationValue) {
         try {
-          locationContextId = await resolveLocationContextId(
+          resolvedLocationContextId = await resolveLocationContextId(
             supabase,
             user.id,
             normalizedLocationValue,
           );
         } catch (maybeError) {
           if (isLocationMetadataError(maybeError)) {
-            initialLocationMode = "legacy";
-            setLocationMetadataMode("legacy");
+            resolveMetadataError = maybeError;
           } else {
             throw maybeError;
           }
         }
       }
+
+      if (resolveMetadataError && locationMetadataMode === "id") {
+        setLocationMetadataMode("legacy");
+      }
+
+      const insertModes: LocationMetadataMode[] = [];
+      const addMode = (mode: LocationMetadataMode) => {
+        if (!insertModes.includes(mode)) {
+          insertModes.push(mode);
+        }
+      };
+
+      if (resolvedLocationContextId && locationMetadataMode !== "id") {
+        addMode("id");
+      }
+
+      addMode(locationMetadataMode);
+
+      if (!resolveMetadataError) {
+        addMode("id");
+      }
+
+      addMode("legacy");
 
       const basePayload: Record<string, unknown> = {
         user_id: user.id,
@@ -595,21 +617,48 @@ export default function NewHabitPage() {
         return payload;
       };
 
-      let insertMode: LocationMetadataMode = initialLocationMode;
-      let contextIdForInsert: string | null = locationContextId;
       let insertSucceeded = false;
-      let lastMetadataError: unknown = null;
+      let lastMetadataError: unknown = resolveMetadataError;
+      let contextIdForInsert: string | null = resolvedLocationContextId;
 
-      for (let attempt = 0; attempt < 2 && !insertSucceeded; attempt += 1) {
-        const payload = buildPayloadForMode(insertMode, contextIdForInsert);
+      for (const mode of insertModes) {
+        if (insertSucceeded) {
+          break;
+        }
+
+        let effectiveContextId = mode === "id" ? contextIdForInsert : null;
+
+        if (
+          mode === "id" &&
+          !effectiveContextId &&
+          normalizedLocationValue &&
+          !resolveMetadataError
+        ) {
+          try {
+            effectiveContextId = await resolveLocationContextId(
+              supabase,
+              user.id,
+              normalizedLocationValue,
+            );
+            contextIdForInsert = effectiveContextId;
+          } catch (maybeError) {
+            if (!isLocationMetadataError(maybeError)) {
+              throw maybeError;
+            }
+            lastMetadataError = maybeError;
+            continue;
+          }
+        }
+
+        const payload = buildPayloadForMode(mode, effectiveContextId);
         const { error: insertError } = await supabase
           .from("habits")
           .insert(payload);
 
         if (!insertError) {
           insertSucceeded = true;
-          if (locationMetadataMode !== insertMode) {
-            setLocationMetadataMode(insertMode);
+          if (locationMetadataMode !== mode) {
+            setLocationMetadataMode(mode);
           }
           break;
         }
@@ -619,29 +668,6 @@ export default function NewHabitPage() {
         }
 
         lastMetadataError = insertError;
-
-        if (insertMode === "id") {
-          insertMode = "legacy";
-          contextIdForInsert = null;
-        } else {
-          insertMode = "id";
-          if (normalizedLocationValue) {
-            try {
-              contextIdForInsert = await resolveLocationContextId(
-                supabase,
-                user.id,
-                normalizedLocationValue,
-              );
-            } catch (maybeError) {
-              if (!isLocationMetadataError(maybeError)) {
-                throw maybeError;
-              }
-              contextIdForInsert = null;
-            }
-          } else {
-            contextIdForInsert = null;
-          }
-        }
       }
 
       if (!insertSucceeded) {

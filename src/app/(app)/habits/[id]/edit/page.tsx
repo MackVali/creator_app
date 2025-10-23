@@ -798,26 +798,47 @@ export default function EditHabitPage() {
       }
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
+      let resolvedLocationContextId: string | null = null;
+      let resolveMetadataError: unknown = null;
 
-      let initialLocationMode = locationMetadataMode;
-      let locationContextId: string | null = null;
-
-      if (initialLocationMode === "id" && normalizedLocationValue) {
+      if (normalizedLocationValue) {
         try {
-          locationContextId = await resolveLocationContextId(
+          resolvedLocationContextId = await resolveLocationContextId(
             supabase,
             user.id,
             normalizedLocationValue,
           );
         } catch (maybeError) {
           if (isLocationMetadataError(maybeError)) {
-            initialLocationMode = "legacy";
-            setLocationMetadataMode("legacy");
+            resolveMetadataError = maybeError;
           } else {
             throw maybeError;
           }
         }
       }
+
+      if (resolveMetadataError && locationMetadataMode === "id") {
+        setLocationMetadataMode("legacy");
+      }
+
+      const updateModes: LocationMetadataMode[] = [];
+      const addMode = (mode: LocationMetadataMode) => {
+        if (!updateModes.includes(mode)) {
+          updateModes.push(mode);
+        }
+      };
+
+      if (resolvedLocationContextId && locationMetadataMode !== "id") {
+        addMode("id");
+      }
+
+      addMode(locationMetadataMode);
+
+      if (!resolveMetadataError) {
+        addMode("id");
+      }
+
+      addMode("legacy");
 
       const basePayload: Record<string, unknown> = {
         name: name.trim(),
@@ -859,13 +880,40 @@ export default function EditHabitPage() {
         return payload;
       };
 
-      let updateMode: LocationMetadataMode = initialLocationMode;
-      let contextIdForUpdate: string | null = locationContextId;
       let updateSucceeded = false;
-      let lastMetadataError: unknown = null;
+      let lastMetadataError: unknown = resolveMetadataError;
+      let contextIdForUpdate: string | null = resolvedLocationContextId;
 
-      for (let attempt = 0; attempt < 2 && !updateSucceeded; attempt += 1) {
-        const payload = buildPayloadForMode(updateMode, contextIdForUpdate);
+      for (const mode of updateModes) {
+        if (updateSucceeded) {
+          break;
+        }
+
+        let effectiveContextId = mode === "id" ? contextIdForUpdate : null;
+
+        if (
+          mode === "id" &&
+          !effectiveContextId &&
+          normalizedLocationValue &&
+          !resolveMetadataError
+        ) {
+          try {
+            effectiveContextId = await resolveLocationContextId(
+              supabase,
+              user.id,
+              normalizedLocationValue,
+            );
+            contextIdForUpdate = effectiveContextId;
+          } catch (maybeError) {
+            if (!isLocationMetadataError(maybeError)) {
+              throw maybeError;
+            }
+            lastMetadataError = maybeError;
+            continue;
+          }
+        }
+
+        const payload = buildPayloadForMode(mode, effectiveContextId);
         const { error: updateError } = await supabase
           .from("habits")
           .update(payload)
@@ -874,8 +922,8 @@ export default function EditHabitPage() {
 
         if (!updateError) {
           updateSucceeded = true;
-          if (locationMetadataMode !== updateMode) {
-            setLocationMetadataMode(updateMode);
+          if (locationMetadataMode !== mode) {
+            setLocationMetadataMode(mode);
           }
           break;
         }
@@ -885,29 +933,6 @@ export default function EditHabitPage() {
         }
 
         lastMetadataError = updateError;
-
-        if (updateMode === "id") {
-          updateMode = "legacy";
-          contextIdForUpdate = null;
-        } else {
-          updateMode = "id";
-          if (normalizedLocationValue) {
-            try {
-              contextIdForUpdate = await resolveLocationContextId(
-                supabase,
-                user.id,
-                normalizedLocationValue,
-              );
-            } catch (maybeError) {
-              if (!isLocationMetadataError(maybeError)) {
-                throw maybeError;
-              }
-              contextIdForUpdate = null;
-            }
-          } else {
-            contextIdForUpdate = null;
-          }
-        }
       }
 
       if (!updateSucceeded) {
