@@ -479,6 +479,33 @@ export async function scheduleBacklog(
 
   const ignoreProjectIds = new Set(finalQueueProjectIds)
 
+  const getAvailabilityForOffset = (offset: number) => {
+    let availability = windowAvailabilityByDay.get(offset)
+    if (!availability) {
+      availability = new Map<string, WindowAvailabilityBounds>()
+      windowAvailabilityByDay.set(offset, availability)
+    }
+    return availability
+  }
+
+  const scheduleHabitsAcrossHorizon = async (
+    habits: HabitScheduleItem[],
+    cache: Map<number, HabitDraftPlacement[]>,
+    options: { allowOverlap: boolean }
+  ) => {
+    if (habits.length === 0) return
+
+    for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
+      const availability = getAvailabilityForOffset(offset)
+      const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
+      await ensureHabitPlacementsForDay(offset, day, availability, {
+        habits,
+        cache,
+        allowOverlap: options.allowOverlap,
+      })
+    }
+  }
+
   queue.sort((a, b) => {
     const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
     if (energyDiff !== 0) return energyDiff
@@ -534,37 +561,16 @@ export async function scheduleBacklog(
     return placements
   }
 
-  if (regularHabits.length > 0) {
-    for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
-      let availability = windowAvailabilityByDay.get(offset)
-      if (!availability) {
-        availability = new Map<string, WindowAvailabilityBounds>()
-        windowAvailabilityByDay.set(offset, availability)
-      }
-      const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, availability, {
-        habits: regularHabits,
-        cache: regularHabitPlacementsByOffset,
-        allowOverlap: false,
-      })
-    }
-  }
+  await scheduleHabitsAcrossHorizon(regularHabits, regularHabitPlacementsByOffset, {
+    allowOverlap: false,
+  })
 
   for (const item of queue) {
     let scheduled = false
     const maxOffset = restrictProjectsToToday ? 1 : scheduleHorizonDays
     for (let offset = 0; offset < maxOffset && !scheduled; offset += 1) {
-      let windowAvailability = windowAvailabilityByDay.get(offset)
-      if (!windowAvailability) {
-        windowAvailability = new Map<string, WindowAvailabilityBounds>()
-        windowAvailabilityByDay.set(offset, windowAvailability)
-      }
+      const windowAvailability = getAvailabilityForOffset(offset)
       const day = addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, windowAvailability, {
-        habits: regularHabits,
-        cache: regularHabitPlacementsByOffset,
-        allowOverlap: false,
-      })
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
@@ -653,21 +659,9 @@ export async function scheduleBacklog(
     }
   }
 
-  if (syncHabits.length > 0) {
-    for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
-      let availability = windowAvailabilityByDay.get(offset)
-      if (!availability) {
-        availability = new Map<string, WindowAvailabilityBounds>()
-        windowAvailabilityByDay.set(offset, availability)
-      }
-      const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, availability, {
-        habits: syncHabits,
-        cache: syncHabitPlacementsByOffset,
-        allowOverlap: true,
-      })
-    }
-  }
+  await scheduleHabitsAcrossHorizon(syncHabits, syncHabitPlacementsByOffset, {
+    allowOverlap: true,
+  })
 
   result.timeline.sort((a, b) => {
     const aTime = placementStartMs(a)
