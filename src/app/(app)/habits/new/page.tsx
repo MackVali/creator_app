@@ -26,12 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  LocationMetadataMode,
-  isLocationMetadataError,
-  normalizeLocationValue,
-  resolveLocationContextId,
-} from "@/lib/location-metadata";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -69,7 +64,7 @@ export default function NewHabitPage() {
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [skillId, setSkillId] = useState("none");
-  const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
@@ -88,8 +83,6 @@ export default function NewHabitPage() {
   const [goalLoadError, setGoalLoadError] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
-  const [locationMetadataMode, setLocationMetadataMode] =
-    useState<LocationMetadataMode>("id");
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -539,23 +532,23 @@ export default function NewHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let initialLocationMode = locationMetadataMode;
-      let locationContextId: string | null = null;
-
-      if (initialLocationMode === "id" && normalizedLocationValue) {
-        try {
-          locationContextId = await resolveLocationContextId(
+      let resolvedLocationContextId: string | null = null;
+      if (locationContextId) {
+        if (isValidUuid(locationContextId)) {
+          resolvedLocationContextId = locationContextId;
+        } else {
+          resolvedLocationContextId = await resolveLocationContextId(
             supabase,
             user.id,
-            normalizedLocationValue,
+            locationContextId,
           );
-        } catch (maybeError) {
-          if (isLocationMetadataError(maybeError)) {
-            initialLocationMode = "legacy";
-            setLocationMetadataMode("legacy");
-          } else {
-            throw maybeError;
+
+          if (!resolvedLocationContextId) {
+            setError(
+              "We couldn’t save that location just yet. Please try again.",
+            );
+            setLoading(false);
+            return;
           }
         }
       }
@@ -580,73 +573,17 @@ export default function NewHabitPage() {
         completion_target: parsedCompletionTarget,
       };
 
-      const buildPayloadForMode = (
-        mode: LocationMetadataMode,
-        contextId: string | null,
-      ) => {
-        const payload: Record<string, unknown> = { ...basePayload };
-        if (mode === "id") {
-          payload.location_context_id = contextId;
-        } else {
-          payload.location_context = normalizedLocationValue;
-        }
-        return payload;
+      const payload: Record<string, unknown> = {
+        ...basePayload,
+        location_context_id: resolvedLocationContextId,
       };
 
-      let insertMode: LocationMetadataMode = initialLocationMode;
-      let contextIdForInsert: string | null = locationContextId;
-      let insertSucceeded = false;
-      let lastMetadataError: unknown = null;
+      const { error: insertError } = await supabase
+        .from("habits")
+        .insert(payload);
 
-      for (let attempt = 0; attempt < 2 && !insertSucceeded; attempt += 1) {
-        const payload = buildPayloadForMode(insertMode, contextIdForInsert);
-        const { error: insertError } = await supabase
-          .from("habits")
-          .insert(payload);
-
-        if (!insertError) {
-          insertSucceeded = true;
-          if (locationMetadataMode !== insertMode) {
-            setLocationMetadataMode(insertMode);
-          }
-          break;
-        }
-
-        if (!isLocationMetadataError(insertError)) {
-          throw insertError;
-        }
-
-        lastMetadataError = insertError;
-
-        if (insertMode === "id") {
-          insertMode = "legacy";
-          contextIdForInsert = null;
-        } else {
-          insertMode = "id";
-          if (normalizedLocationValue) {
-            try {
-              contextIdForInsert = await resolveLocationContextId(
-                supabase,
-                user.id,
-                normalizedLocationValue,
-              );
-            } catch (maybeError) {
-              if (!isLocationMetadataError(maybeError)) {
-                throw maybeError;
-              }
-              contextIdForInsert = null;
-            }
-          } else {
-            contextIdForInsert = null;
-          }
-        }
-      }
-
-      if (!insertSucceeded) {
-        if (lastMetadataError) {
-          throw lastMetadataError;
-        }
-        throw new Error("Unable to create the habit right now.");
+      if (insertError) {
+        throw insertError;
       }
 
       router.push("/habits");
@@ -691,7 +628,7 @@ export default function NewHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
-                locationContext={locationContext}
+                locationContextId={locationContextId}
                 daylightPreference={daylightPreference}
                 windowEdgePreference={windowEdgePreference}
                 energyOptions={energySelectOptions}
@@ -712,9 +649,7 @@ export default function NewHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
-                onLocationContextChange={(value) =>
-                  setLocationContext(value ? value.toUpperCase() : null)
-                }
+                onLocationContextIdChange={setLocationContextId}
                 onDaylightPreferenceChange={(value) =>
                   setDaylightPreference(value.toUpperCase())
                 }

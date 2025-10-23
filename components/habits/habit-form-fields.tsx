@@ -115,7 +115,7 @@ interface HabitFormFieldsProps {
   duration: string;
   energy: string;
   skillId: string;
-  locationContext?: string | null;
+  locationContextId?: string | null;
   daylightPreference?: string | null;
   windowEdgePreference?: string | null;
   energyOptions: HabitEnergySelectOption[];
@@ -136,7 +136,7 @@ interface HabitFormFieldsProps {
   onEnergyChange: (value: string) => void;
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
-  onLocationContextChange?: (value: string | null) => void;
+  onLocationContextIdChange?: (id: string | null) => void;
   onDaylightPreferenceChange?: (value: string) => void;
   onWindowEdgePreferenceChange?: (value: string) => void;
   typeOptions?: HabitTypeOption[];
@@ -156,6 +156,8 @@ const WINDOW_EDGE_OPTIONS = [
   { value: "BACK", label: "Back" },
 ];
 
+const ANY_OPTION_ID = "__any__";
+
 export function HabitFormFields({
   name,
   description,
@@ -165,7 +167,7 @@ export function HabitFormFields({
   duration,
   energy,
   skillId,
-  locationContext = null,
+  locationContextId = null,
   daylightPreference = "ALL_DAY",
   windowEdgePreference = "FRONT",
   energyOptions,
@@ -186,7 +188,7 @@ export function HabitFormFields({
   onEnergyChange,
   onDurationChange,
   onSkillChange,
-  onLocationContextChange,
+  onLocationContextIdChange,
   onDaylightPreferenceChange,
   onWindowEdgePreferenceChange,
   typeOptions = HABIT_TYPE_OPTIONS,
@@ -209,7 +211,7 @@ export function HabitFormFields({
 
   const [skillSearchQuery, setSkillSearchQuery] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(() => {
-    const hasLocation = Boolean(locationContext && locationContext.trim());
+    const hasLocation = Boolean(locationContextId);
     const daylightUpper = (daylightPreference ?? "ALL_DAY").toUpperCase();
     const hasDaylight = daylightUpper === "DAY" || daylightUpper === "NIGHT";
     const edgeUpper = (windowEdgePreference ?? "FRONT").toUpperCase();
@@ -255,7 +257,13 @@ export function HabitFormFields({
     onRecurrenceDaysChange(next);
   };
 
-  const locationValue = (locationContext ?? "").toUpperCase().trim() || "ANY";
+  const locationOptionsById = useMemo(() => {
+    return new Map(locationOptions.map((option) => [option.id, option]));
+  }, [locationOptions]);
+  const selectedOption = locationContextId
+    ? locationOptionsById.get(locationContextId) ?? null
+    : null;
+  const locationValue = selectedOption?.id ?? ANY_OPTION_ID;
   const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
   const windowEdgeValue = (windowEdgePreference ?? "FRONT")
     .toUpperCase()
@@ -279,7 +287,7 @@ export function HabitFormFields({
       }
 
       setCustomLocationName("");
-      onLocationContextChange?.(result.option.value);
+      onLocationContextIdChange?.(result.option.id);
       setAdvancedOpen(true);
     } finally {
       setSavingCustomLocation(false);
@@ -554,7 +562,20 @@ export function HabitFormFields({
               <Select
                 value={locationValue}
                 onValueChange={(value) =>
-                  onLocationContextChange?.(value === "ANY" ? null : value)
+                  {
+                    if (value === ANY_OPTION_ID) {
+                      onLocationContextIdChange?.(null);
+                      return;
+                    }
+
+                    const option = locationOptionsById.get(value);
+                    if (!option) {
+                      onLocationContextIdChange?.(null);
+                      return;
+                    }
+
+                    onLocationContextIdChange?.(option.id);
+                  }
                 }
                 disabled={locationOptionsLoading}
               >
@@ -562,8 +583,11 @@ export function HabitFormFields({
                   <SelectValue placeholder="Where does this habit happen?" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  <SelectItem value={ANY_OPTION_ID}>
+                    <span className="text-zinc-400">Anywhere</span>
+                  </SelectItem>
                   {locationOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.value}>
+                    <SelectItem key={option.id} value={option.id}>
                       {option.label}
                     </SelectItem>
                   ))}

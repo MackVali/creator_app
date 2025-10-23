@@ -14,6 +14,12 @@ export interface Habit {
   energy: string | null;
   goal_id: string | null;
   completion_target: number | null;
+  location_context_id: string | null;
+  location_context?: {
+    id: string;
+    value: string | null;
+    label: string | null;
+  } | null;
   skill: {
     id: string;
     name: string;
@@ -42,7 +48,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
   const { data, error } = await supabase
     .from("habits")
     .select(
-      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target, skill:skills(id, name, icon), goal:goals(id, name), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, goal_id, completion_target, location_context_id, location_context:location_contexts(id, value, label), skill:skills(id, name, icon), goal:goals(id, name), routine_id, routine:habit_routines(id, name, description, created_at, updated_at)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -51,7 +57,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
     console.warn("Error fetching habits with routines, falling back:", error);
 
     const baseColumns =
-      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy";
+      "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, created_at, updated_at, skill_id, energy, location_context_id";
     const extendedColumns = `${baseColumns}, goal_id, completion_target`;
 
     const shouldIncludeGoalMetadata = (maybeError?: unknown) => {
@@ -97,6 +103,8 @@ export async function getHabits(userId: string): Promise<Habit[]> {
         ...habit,
         skill_id: habit.skill_id ?? null,
         energy: habit.energy ?? null,
+        location_context_id: habit.location_context_id ?? null,
+        location_context: null,
         skill: null,
         goal_id: includeGoalMetadata ? habit.goal_id ?? null : null,
         completion_target: includeGoalMetadata
@@ -114,6 +122,14 @@ export async function getHabits(userId: string): Promise<Habit[]> {
       ...habit,
       skill_id: habit.skill_id ?? null,
       energy: habit.energy ?? null,
+      location_context_id: habit.location_context_id ?? null,
+      location_context: habit.location_context
+        ? {
+            id: habit.location_context.id,
+            value: habit.location_context.value ?? null,
+            label: habit.location_context.label ?? null,
+          }
+        : null,
       skill: habit.skill
         ? {
             id: habit.skill.id,

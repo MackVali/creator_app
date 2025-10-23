@@ -67,7 +67,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
-import { resolveLocationContextId } from "@/lib/location-metadata";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
@@ -348,7 +348,7 @@ interface FormState {
   type: string;
   recurrence: string;
   recurrence_days: number[];
-  location_context: string;
+  location_context_id: string;
   daylight_preference: string;
   window_edge_preference: string;
   completion_target: string;
@@ -403,7 +403,7 @@ const createInitialFormState = (
   recurrence:
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
-  location_context: "",
+  location_context_id: "",
   daylight_preference: "ALL_DAY",
   window_edge_preference: "FRONT",
   completion_target: eventType === "HABIT" ? "10" : "",
@@ -1666,11 +1666,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
-        insertData.location_context_id = await resolveLocationContextId(
-          supabase,
-          user.id,
-          formData.location_context ? formData.location_context : null,
-        );
+
+        let resolvedLocationContextId: string | null = null;
+        if (formData.location_context_id) {
+          if (isValidUuid(formData.location_context_id)) {
+            resolvedLocationContextId = formData.location_context_id;
+          } else {
+            resolvedLocationContextId = await resolveLocationContextId(
+              supabase,
+              user.id,
+              formData.location_context_id,
+            );
+
+            if (!resolvedLocationContextId) {
+              toast.error(
+                "Location unavailable",
+                "We couldn’t save that location right now. Please try again.",
+              );
+              return;
+            }
+          }
+        }
+
+        insertData.location_context_id = resolvedLocationContextId;
         insertData.daylight_preference =
           formData.daylight_preference &&
           formData.daylight_preference !== "ALL_DAY"
@@ -2788,9 +2806,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               duration={formData.duration_min}
               energy={formData.energy}
               skillId={formData.skill_id || "none"}
-              locationContext={
-                formData.location_context
-                  ? formData.location_context.toUpperCase()
+              locationContextId={
+                formData.location_context_id
+                  ? formData.location_context_id
                   : null
               }
               daylightPreference={
@@ -2852,10 +2870,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   skill_id: value === "none" ? "" : value,
                 }))
               }
-              onLocationContextChange={(value) =>
+              onLocationContextIdChange={(id) =>
                 setFormData((prev) => ({
                   ...prev,
-                  location_context: value ? value.toUpperCase() : "",
+                  location_context_id: id ?? "",
                 }))
               }
               onDaylightPreferenceChange={(value) =>

@@ -29,12 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  LocationMetadataMode,
-  isLocationMetadataError,
-  normalizeLocationValue,
-  resolveLocationContextId,
-} from "@/lib/location-metadata";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 function normalizeMessageTokens(maybeError?: unknown) {
@@ -65,19 +60,14 @@ function isGoalMetadataError(maybeError?: unknown) {
   );
 }
 
-function buildHabitSelectColumns(
-  includeGoalMetadata: boolean,
-  locationMode: LocationMetadataMode,
-) {
+function buildHabitSelectColumns(includeGoalMetadata: boolean) {
   const baseColumns =
     "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference";
 
-  const locationColumns =
-    locationMode === "id"
-      ? "location_context_id, location_context:location_contexts(value,label)"
-      : "location_context";
-
-  const columns = [baseColumns, locationColumns];
+  const columns = [
+    baseColumns,
+    "location_context_id, location_context:location_contexts(value,label)",
+  ];
 
   if (includeGoalMetadata) {
     columns.push("goal_id, completion_target");
@@ -127,7 +117,7 @@ export default function EditHabitPage() {
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
-  const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
@@ -150,8 +140,6 @@ export default function EditHabitPage() {
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
   const [goalMetadataSupported, setGoalMetadataSupported] = useState(true);
-  const [locationMetadataMode, setLocationMetadataMode] =
-    useState<LocationMetadataMode>("id");
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -539,13 +527,12 @@ export default function EditHabitPage() {
         }
 
         let includeGoalMetadata = true;
-        let locationMode: LocationMetadataMode = "id";
         let habitResponse: { data: any; error: any } | null = null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
           habitResponse = await supabase
             .from("habits")
-            .select(buildHabitSelectColumns(includeGoalMetadata, locationMode))
+            .select(buildHabitSelectColumns(includeGoalMetadata))
             .eq("id", habitId)
             .eq("user_id", user.id)
             .single();
@@ -558,11 +545,6 @@ export default function EditHabitPage() {
 
           if (includeGoalMetadata && isGoalMetadataError(habitResponse.error)) {
             includeGoalMetadata = false;
-            adjusted = true;
-          }
-
-          if (locationMode === "id" && isLocationMetadataError(habitResponse.error)) {
-            locationMode = "legacy";
             adjusted = true;
           }
 
@@ -586,7 +568,6 @@ export default function EditHabitPage() {
 
         if (active) {
           setGoalMetadataSupported(includeGoalMetadata);
-          setLocationMetadataMode(locationMode);
           if (!includeGoalMetadata) {
             setGoalsLoading(false);
             setGoalLoadError(null);
@@ -634,16 +615,11 @@ export default function EditHabitPage() {
             setGoalId("none");
             setCompletionTarget("10");
           }
-          const legacyLocationValue =
-            locationMode === "legacy" && typeof data.location_context === "string"
-              ? data.location_context
-              : null;
-          const relationalLocationValue =
-            locationMode === "id" && data.location_context?.value
-              ? String(data.location_context.value)
-              : null;
-          const resolvedLocationRaw = legacyLocationValue ?? relationalLocationValue;
-          setLocationContext(normalizeLocationValue(resolvedLocationRaw));
+          setLocationContextId(
+            isValidUuid(data.location_context_id)
+              ? data.location_context_id
+              : null,
+          );
           setDaylightPreference(
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
@@ -797,24 +773,23 @@ export default function EditHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const normalizedLocationValue = normalizeLocationValue(locationContext);
-
-      let initialLocationMode = locationMetadataMode;
-      let locationContextId: string | null = null;
-
-      if (initialLocationMode === "id" && normalizedLocationValue) {
-        try {
-          locationContextId = await resolveLocationContextId(
+      let resolvedLocationContextId: string | null = null;
+      if (locationContextId) {
+        if (isValidUuid(locationContextId)) {
+          resolvedLocationContextId = locationContextId;
+        } else {
+          resolvedLocationContextId = await resolveLocationContextId(
             supabase,
             user.id,
-            normalizedLocationValue,
+            locationContextId,
           );
-        } catch (maybeError) {
-          if (isLocationMetadataError(maybeError)) {
-            initialLocationMode = "legacy";
-            setLocationMetadataMode("legacy");
-          } else {
-            throw maybeError;
+
+          if (!resolvedLocationContextId) {
+            setError(
+              "We couldn’t save that location just yet. Please try again.",
+            );
+            setLoading(false);
+            return;
           }
         }
       }
@@ -844,75 +819,19 @@ export default function EditHabitPage() {
           : null;
       }
 
-      const buildPayloadForMode = (
-        mode: LocationMetadataMode,
-        contextId: string | null,
-      ) => {
-        const payload: Record<string, unknown> = { ...basePayload };
-        if (mode === "id") {
-          payload.location_context_id = contextId;
-        } else {
-          payload.location_context = normalizedLocationValue;
-        }
-        return payload;
+      const payload: Record<string, unknown> = {
+        ...basePayload,
+        location_context_id: resolvedLocationContextId,
       };
 
-      let updateMode: LocationMetadataMode = initialLocationMode;
-      let contextIdForUpdate: string | null = locationContextId;
-      let updateSucceeded = false;
-      let lastMetadataError: unknown = null;
+      const { error: updateError } = await supabase
+        .from("habits")
+        .update(payload)
+        .eq("id", habitId)
+        .eq("user_id", user.id);
 
-      for (let attempt = 0; attempt < 2 && !updateSucceeded; attempt += 1) {
-        const payload = buildPayloadForMode(updateMode, contextIdForUpdate);
-        const { error: updateError } = await supabase
-          .from("habits")
-          .update(payload)
-          .eq("id", habitId)
-          .eq("user_id", user.id);
-
-        if (!updateError) {
-          updateSucceeded = true;
-          if (locationMetadataMode !== updateMode) {
-            setLocationMetadataMode(updateMode);
-          }
-          break;
-        }
-
-        if (!isLocationMetadataError(updateError)) {
-          throw updateError;
-        }
-
-        lastMetadataError = updateError;
-
-        if (updateMode === "id") {
-          updateMode = "legacy";
-          contextIdForUpdate = null;
-        } else {
-          updateMode = "id";
-          if (normalizedLocationValue) {
-            try {
-              contextIdForUpdate = await resolveLocationContextId(
-                supabase,
-                user.id,
-                normalizedLocationValue,
-              );
-            } catch (maybeError) {
-              if (!isLocationMetadataError(maybeError)) {
-                throw maybeError;
-              }
-              contextIdForUpdate = null;
-            }
-          } else {
-            contextIdForUpdate = null;
-          }
-        }
-      }
-
-      if (!updateSucceeded) {
-        if (lastMetadataError) {
-          throw lastMetadataError;
-        }
-        throw new Error("Unable to update the habit right now.");
+      if (updateError) {
+        throw updateError;
       }
 
       router.push("/habits");
@@ -977,33 +896,31 @@ export default function EditHabitPage() {
                   habitType={habitType}
                   recurrence={recurrence}
                   recurrenceDays={recurrenceDays}
-                  duration={duration}
-                  energy={energy}
-                  skillId={skillId}
-                  locationContext={locationContext}
+                duration={duration}
+                energy={energy}
+                skillId={skillId}
+                locationContextId={locationContextId}
                   daylightPreference={daylightPreference}
                   windowEdgePreference={windowEdgePreference}
-                energyOptions={energySelectOptions}
-                skillsLoading={skillsLoading}
-                skillOptions={skillSelectOptions}
-                skillError={skillLoadError}
-                goalId={goalId}
-                goalOptions={goalSelectOptions}
-                goalError={goalMetadataSupported ? goalLoadError : null}
-                onGoalChange={setGoalId}
-                completionTarget={completionTarget}
-                onCompletionTargetChange={setCompletionTarget}
-                onNameChange={setName}
-                onDescriptionChange={setDescription}
-                onHabitTypeChange={setHabitType}
-                onRecurrenceChange={setRecurrence}
-                onRecurrenceDaysChange={setRecurrenceDays}
+                  energyOptions={energySelectOptions}
+                  skillsLoading={skillsLoading}
+                  skillOptions={skillSelectOptions}
+                  skillError={skillLoadError}
+                  goalId={goalId}
+                  goalOptions={goalSelectOptions}
+                  goalError={goalMetadataSupported ? goalLoadError : null}
+                  onGoalChange={setGoalId}
+                  completionTarget={completionTarget}
+                  onCompletionTargetChange={setCompletionTarget}
+                  onNameChange={setName}
+                  onDescriptionChange={setDescription}
+                  onHabitTypeChange={setHabitType}
+                  onRecurrenceChange={setRecurrence}
+                  onRecurrenceDaysChange={setRecurrenceDays}
                   onEnergyChange={setEnergy}
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
-                  onLocationContextChange={(value) =>
-                    setLocationContext(value ? value.toUpperCase() : null)
-                  }
+                  onLocationContextIdChange={setLocationContextId}
                   onDaylightPreferenceChange={(value) =>
                     setDaylightPreference(value.toUpperCase())
                   }
