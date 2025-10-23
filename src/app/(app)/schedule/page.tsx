@@ -489,6 +489,8 @@ type HabitTimelinePlacement = {
 
 type TimelineCardLayoutMode = 'full' | 'paired-left' | 'paired-right'
 
+type BusySpan = { start: number; end: number }
+
 type MemoNoteDraftState = {
   habitId: string
   habitName: string
@@ -778,9 +780,11 @@ function computeHabitPlacementsForDay({
     .sort((a, b) => a.startMs - b.startMs)
 
   const anchorStartsByWindowKey = new Map<string, number[]>()
+  const busySpansByWindowKey = new Map<string, BusySpan[]>()
 
   for (const entry of windowEntries) {
     addAnchorStart(anchorStartsByWindowKey, entry.key, entry.startMs)
+    busySpansByWindowKey.set(entry.key, [])
   }
 
   if (projectInstances && projectInstances.length > 0) {
@@ -794,6 +798,11 @@ function computeHabitPlacementsForDay({
         if (!overlaps) continue
         const anchor = Math.max(entry.startMs, instanceStart)
         addAnchorStart(anchorStartsByWindowKey, entry.key, anchor)
+        const busyStart = Math.max(entry.startMs, instanceStart)
+        const busyEnd = Math.min(entry.endMs, instanceEnd)
+        if (busyEnd > busyStart) {
+          recordBusySpan(busySpansByWindowKey, entry.key, busyStart, busyEnd)
+        }
       }
     }
   }
@@ -809,6 +818,11 @@ function computeHabitPlacementsForDay({
         if (!overlaps) continue
         const anchor = Math.max(entry.startMs, startMs)
         addAnchorStart(anchorStartsByWindowKey, entry.key, anchor)
+        const busyStart = Math.max(entry.startMs, startMs)
+        const busyEnd = Math.min(entry.endMs, endMs)
+        if (busyEnd > busyStart) {
+          recordBusySpan(busySpansByWindowKey, entry.key, busyStart, busyEnd)
+        }
       }
     }
   }
@@ -880,7 +894,7 @@ function computeHabitPlacementsForDay({
     const dueStartMs = dueStart ? dueStart.getTime() : null
     const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
-    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
+    const isSyncHabit = normalizedType === 'SYNC'
 
     let placed = false
     for (const entry of windowEntries) {
@@ -911,6 +925,7 @@ function computeHabitPlacementsForDay({
 
       let startMs = earliestStart
       let endLimitMs = entry.endMs
+      let truncated = false
       if (daylightConstraint) {
         if (daylightConstraint.preference === 'DAY') {
           const sunriseMs = daylightConstraint.sunrise?.getTime()
@@ -979,21 +994,38 @@ function computeHabitPlacementsForDay({
         }
       }
 
-      let endMs = startMs + durationMs
-      let truncated = false
-      if (endMs > endLimitMs) {
-        endMs = endLimitMs
-        truncated = true
-      }
-      if (endMs <= startMs) {
-        if (!isSyncHabit) {
-          availability.set(entry.key, endMs)
+      let endMs: number
+
+      if (isSyncHabit) {
+        endMs = startMs + durationMs
+        if (endMs > endLimitMs) {
+          endMs = endLimitMs
+          truncated = true
         }
-        continue
+        if (endMs <= startMs) {
+          continue
+        }
+      } else {
+        const busySpans = busySpansByWindowKey.get(entry.key) ?? []
+        const slot = findAvailableSlot({
+          busySpans,
+          desiredStart: startMs,
+          durationMs,
+          windowStartMs: entry.startMs,
+          windowEndMs: endLimitMs,
+        })
+        if (!slot) {
+          availability.set(entry.key, endLimitMs)
+          continue
+        }
+        startMs = slot.startMs
+        endMs = slot.endMs
+        truncated = slot.truncated
       }
 
       const start = new Date(startMs)
       const end = new Date(endMs)
+      recordBusySpan(busySpansByWindowKey, entry.key, startMs, endMs)
       if (!isSyncHabit) {
         availability.set(entry.key, endMs)
       }
@@ -1043,6 +1075,96 @@ function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number
   if (!inserted) {
     existing.push(startMs)
   }
+}
+
+function recordBusySpan(map: Map<string, BusySpan[]>, key: string, startMs: number, endMs: number) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+  if (endMs <= startMs) return
+  const existing = map.get(key) ?? []
+  let spanStart = startMs
+  let spanEnd = endMs
+  const merged: BusySpan[] = []
+  let inserted = false
+  for (const span of existing) {
+    if (span.end <= spanStart) {
+      merged.push(span)
+      continue
+    }
+    if (span.start >= spanEnd) {
+      if (!inserted) {
+        merged.push({ start: spanStart, end: spanEnd })
+        inserted = true
+      }
+      merged.push(span)
+      continue
+    }
+    spanStart = Math.min(spanStart, span.start)
+    spanEnd = Math.max(spanEnd, span.end)
+  }
+  if (!inserted) {
+    merged.push({ start: spanStart, end: spanEnd })
+  }
+  map.set(key, merged)
+}
+
+function findAvailableSlot({
+  busySpans,
+  desiredStart,
+  durationMs,
+  windowStartMs,
+  windowEndMs,
+}: {
+  busySpans: BusySpan[]
+  desiredStart: number
+  durationMs: number
+  windowStartMs: number
+  windowEndMs: number
+}): { startMs: number; endMs: number; truncated: boolean } | null {
+  if (!(windowEndMs > windowStartMs)) return null
+  const duration = Math.max(0, durationMs)
+  let candidate = Math.max(desiredStart, windowStartMs)
+  while (candidate < windowEndMs) {
+    let advanced = false
+    for (const span of busySpans) {
+      if (span.end <= candidate) {
+        continue
+      }
+      if (span.start >= windowEndMs) {
+        break
+      }
+      if (candidate >= span.start && candidate < span.end) {
+        candidate = span.end
+        advanced = true
+        break
+      }
+      const gapEnd = Math.min(span.start, windowEndMs)
+      if (candidate < gapEnd) {
+        const fullEnd = candidate + duration
+        if (fullEnd <= gapEnd) {
+          return { startMs: candidate, endMs: fullEnd, truncated: false }
+        }
+        if (gapEnd > candidate) {
+          return { startMs: candidate, endMs: gapEnd, truncated: true }
+        }
+        candidate = span.end
+        advanced = true
+        break
+      }
+    }
+    if (advanced) {
+      continue
+    }
+    const fullEnd = candidate + duration
+    if (fullEnd <= windowEndMs) {
+      return { startMs: candidate, endMs: fullEnd, truncated: false }
+    }
+    const limitedEnd = Math.min(windowEndMs, fullEnd)
+    if (limitedEnd > candidate) {
+      return { startMs: candidate, endMs: limitedEnd, truncated: true }
+    }
+    break
+  }
+  return null
 }
 
 function computeWindowReportsForDay({
