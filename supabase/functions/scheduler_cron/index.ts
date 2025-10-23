@@ -19,9 +19,7 @@ type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row'
 const START_GRACE_MIN = 1
 const DEFAULT_PROJECT_DURATION_MIN = 60
 const ENERGY_ORDER = ['NO', 'LOW', 'MEDIUM', 'HIGH', 'ULTRA', 'EXTREME'] as const
-const BASE_LOOKAHEAD_DAYS = 28
-const LOOKAHEAD_PER_ITEM_DAYS = 7
-const MAX_LOOKAHEAD_DAYS = 365
+const SCHEDULE_HORIZON_DAYS = 365
 
 serve(async req => {
   try {
@@ -120,8 +118,10 @@ async function scheduleBacklog(
   const missed = await fetchMissedInstances(client, userId)
   if (missed.error) return { placed: [], failures: [], error: missed.error }
 
-  const tasks = await fetchReadyTasks(client, userId)
-  const projects = await fetchProjectsMap(client, userId)
+  const [tasks, projects] = await Promise.all([
+    fetchReadyTasks(client, userId),
+    fetchProjectsMap(client, userId),
+  ])
   const projectItems = buildProjectItems(Object.values(projects), tasks)
 
   const projectMap = new Map(projectItems.map(project => [project.id, project]))
@@ -193,7 +193,7 @@ async function scheduleBacklog(
     })
   }
 
-  const rangeEnd = addDaysInTimeZone(baseStart, 28, timeZone)
+  const rangeEnd = addDaysInTimeZone(baseStart, SCHEDULE_HORIZON_DAYS, timeZone)
   const dedupe = await dedupeScheduledProjects(
     client,
     userId,
@@ -299,10 +299,7 @@ async function scheduleBacklog(
   const placed: ScheduleInstance[] = []
   const windowAvailability = new Map<string, Date>()
   const windowCache = new Map<string, WindowRecord[]>()
-  const lookaheadDays = Math.min(
-    MAX_LOOKAHEAD_DAYS,
-    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
-  )
+  const lookaheadDays = SCHEDULE_HORIZON_DAYS
 
   for (const item of queue) {
     let scheduled = false

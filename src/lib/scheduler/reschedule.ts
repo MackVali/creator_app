@@ -35,9 +35,7 @@ import { normalizeSchedulerModePayload, type SchedulerModePayload } from './mode
 type Client = SupabaseClient<Database>
 
 const START_GRACE_MIN = 1
-const BASE_LOOKAHEAD_DAYS = 28
-const LOOKAHEAD_PER_ITEM_DAYS = 7
-const MAX_LOOKAHEAD_DAYS = 365
+const SCHEDULER_MAX_HORIZON_DAYS = 365
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
@@ -169,9 +167,11 @@ export async function scheduleBacklog(
     return result
   }
 
-  const tasks = await fetchReadyTasks(supabase)
-  const projectsMap = await fetchProjectsMap(supabase)
-  const habits = await fetchHabitsForSchedule(supabase)
+  const [tasks, projectsMap, habits] = await Promise.all([
+    fetchReadyTasks(supabase),
+    fetchProjectsMap(supabase),
+    fetchHabitsForSchedule(supabase),
+  ])
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
@@ -393,11 +393,8 @@ export async function scheduleBacklog(
   }
 
   const finalQueueProjectIds = new Set(queuedProjectIds)
-  const lookaheadDays = Math.min(
-    MAX_LOOKAHEAD_DAYS,
-    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
-  )
-  const dedupeWindowDays = Math.max(lookaheadDays, 28)
+  const scheduleHorizonDays = SCHEDULER_MAX_HORIZON_DAYS
+  const dedupeWindowDays = Math.max(scheduleHorizonDays, 28)
   const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
   const dedupe = await dedupeScheduledProjects(
     supabase,
@@ -486,7 +483,7 @@ export async function scheduleBacklog(
   }
 
   if (habits.length > 0) {
-    for (let offset = 0; offset < lookaheadDays; offset += 1) {
+    for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
       let availability = windowAvailabilityByDay.get(offset)
       if (!availability) {
         availability = new Map<string, WindowAvailabilityBounds>()
@@ -499,7 +496,7 @@ export async function scheduleBacklog(
 
   for (const item of queue) {
     let scheduled = false
-    const maxOffset = restrictProjectsToToday ? 1 : lookaheadDays
+    const maxOffset = restrictProjectsToToday ? 1 : scheduleHorizonDays
     for (let offset = 0; offset < maxOffset && !scheduled; offset += 1) {
       let windowAvailability = windowAvailabilityByDay.get(offset)
       if (!windowAvailability) {
