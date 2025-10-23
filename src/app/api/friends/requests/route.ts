@@ -172,9 +172,8 @@ export async function POST(request: Request) {
     .select(
       "id, requester_id, target_id, status, requester_username, requester_display_name, requester_avatar_url, target_username, target_display_name, target_avatar_url, note, mutual_friends, responded_at, created_at, updated_at"
     )
-    .or(
-      `and(requester_id.eq.${user.id},target_id.eq.${targetId}),and(requester_id.eq.${targetId},target_id.eq.${user.id})`
-    );
+    .in("requester_id", [user.id, targetId])
+    .in("target_id", [user.id, targetId]);
 
   if (existingError) {
     console.error("Failed to check existing friend requests", existingError);
