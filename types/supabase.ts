@@ -1032,6 +1032,17 @@ export interface Database {
         };
         Returns: string | null;
       };
+      reconcile_dark_xp_for_user: {
+        Args: {
+          p_user?: string | null;
+        };
+        Returns: {
+          out_skill_id: string | null;
+          delta: number | null;
+          expected_total: number | null;
+          actual_total: number | null;
+        }[];
+      };
     };
     Enums: {
       schedule_instance_source_type: 'PROJECT' | 'TASK';

@@ -27,6 +27,37 @@ export default function LevelUpListener() {
   }, [userId]);
 
   useEffect(() => {
+    if (!userId) return;
+
+    const controller = new AbortController();
+
+    const reconcile = async () => {
+      try {
+        const response = await fetch("/api/xp/reconcile", {
+          method: "POST",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          console.error(
+            "Failed to reconcile dark XP",
+            await response.text()
+          );
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Failed to reconcile dark XP", error);
+      }
+    };
+
+    reconcile();
+
+    return () => {
+      controller.abort();
+    };
+  }, [userId]);
+
+  useEffect(() => {
     const supabase = getSupabaseBrowser();
     if (!supabase || !userId) {
       return;
