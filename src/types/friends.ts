@@ -21,8 +21,11 @@ export type FriendRequest = {
 export type SentInvite = {
   id: string;
   email: string;
+  status: "pending" | "accepted" | "expired" | "cancelled";
+  sentAt: string;
+  lastSentAt: string | null;
   sentAgo: string;
-  status: "pending" | "accepted" | "expired";
+  lastSentAgo: string | null;
 };
 
 export type SuggestedFriend = {
@@ -42,4 +45,10 @@ export type DiscoveryProfile = {
   mutualFriends: number;
   highlight: string;
   role: string;
+};
+
+export type ContactImportStatus = {
+  imported: boolean;
+  importedAt: string | null;
+  totalContacts: number | null;
 };

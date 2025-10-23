@@ -324,6 +324,159 @@ export interface Database {
           is_online?: boolean;
         };
       };
+      friend_contact_imports: {
+        Row: {
+          id: string;
+          user_id: string;
+          total_contacts: number;
+          imported_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          total_contacts?: number;
+          imported_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          total_contacts?: number;
+          imported_at?: string;
+          updated_at?: string;
+        };
+      };
+      friend_discovery_profiles: {
+        Row: {
+          id: string;
+          username: string;
+          display_name: string;
+          avatar_url: string | null;
+          role: string | null;
+          highlight: string | null;
+          reason: string | null;
+          mutual_friends: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          username: string;
+          display_name: string;
+          avatar_url?: string | null;
+          role?: string | null;
+          highlight?: string | null;
+          reason?: string | null;
+          mutual_friends?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          username?: string;
+          display_name?: string;
+          avatar_url?: string | null;
+          role?: string | null;
+          highlight?: string | null;
+          reason?: string | null;
+          mutual_friends?: number;
+          created_at?: string;
+        };
+      };
+      friend_invites: {
+        Row: {
+          id: string;
+          user_id: string;
+          email: string;
+          status: string;
+          sent_at: string;
+          last_sent_at: string;
+          sent_count: number;
+          responded_at: string | null;
+          cancelled_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          email: string;
+          status?: string;
+          sent_at?: string;
+          last_sent_at?: string;
+          sent_count?: number;
+          responded_at?: string | null;
+          cancelled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          email?: string;
+          status?: string;
+          sent_at?: string;
+          last_sent_at?: string;
+          sent_count?: number;
+          responded_at?: string | null;
+          cancelled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      friend_requests: {
+        Row: {
+          id: string;
+          requester_id: string;
+          requester_username: string;
+          requester_display_name: string | null;
+          requester_avatar_url: string | null;
+          target_id: string;
+          target_username: string;
+          target_display_name: string | null;
+          target_avatar_url: string | null;
+          note: string | null;
+          status: string;
+          mutual_friends: number;
+          responded_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          requester_id: string;
+          requester_username: string;
+          requester_display_name?: string | null;
+          requester_avatar_url?: string | null;
+          target_id: string;
+          target_username: string;
+          target_display_name?: string | null;
+          target_avatar_url?: string | null;
+          note?: string | null;
+          status?: string;
+          mutual_friends?: number;
+          responded_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          requester_id?: string;
+          requester_username?: string;
+          requester_display_name?: string | null;
+          requester_avatar_url?: string | null;
+          target_id?: string;
+          target_username?: string;
+          target_display_name?: string | null;
+          target_avatar_url?: string | null;
+          note?: string | null;
+          status?: string;
+          mutual_friends?: number;
+          responded_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+
       friend_messages: {
         Row: {
           id: string;
