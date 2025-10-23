@@ -63,6 +63,19 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
     loadProfileData();
   }, [profile?.user_id]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    const previousBehavior = document.documentElement.style.scrollBehavior;
+    document.documentElement.style.scrollBehavior = "smooth";
+
+    return () => {
+      document.documentElement.style.scrollBehavior = previousBehavior;
+    };
+  }, []);
+
   const isOwner = user?.id === profile.user_id;
   const activeCards = contentCards
     .filter((card) => card.is_active)
@@ -150,7 +163,7 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+    <div className="min-h-screen scroll-smooth bg-gradient-to-br from-blue-50 to-purple-50">
       {/* Top Navigation Bar */}
       <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="flex items-center justify-between px-4 py-3">
@@ -249,209 +262,207 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
             className="absolute inset-0 -z-10 rounded-[28px] bg-gradient-to-br from-blue-500/40 via-purple-500/30 to-pink-500/40 blur-2xl opacity-70"
           />
           <Card className="overflow-hidden rounded-[24px] border border-white/40 bg-white/70 shadow-2xl backdrop-blur-xl">
-          {/* Background Image Section */}
-          <div 
-            className="relative h-48 bg-gradient-to-br from-blue-600 to-purple-700"
-            style={{
-              background: profile.banner_url 
-                ? `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url(${profile.banner_url})`
-                : `linear-gradient(135deg, ${profile.theme_color || '#3B82F6'} 0%, ${profile.accent_color || '#8B5CF6'} 100%)`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center'
-            }}
-          >
-            {/* Background Pattern */}
-            <div className="absolute inset-0 bg-black/20" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-            
-            {/* Profile Info Overlay */}
-            <div className="absolute bottom-4 left-4 right-4 text-white">
-              <div className="flex items-center space-x-2 mb-2">
-                <h1 className="text-2xl font-bold">{profile.name || "Your Name"}</h1>
-                {profile.verified && (
-                  <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-white">✓</span>
-                  </div>
+            {/* Background Image Section */}
+            <div
+              className="relative h-48 bg-gradient-to-br from-blue-600 to-purple-700"
+              style={{
+                background: profile.banner_url
+                  ? `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url(${profile.banner_url})`
+                  : `linear-gradient(135deg, ${profile.theme_color || '#3B82F6'} 0%, ${profile.accent_color || '#8B5CF6'} 100%)`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
+            >
+              {/* Background Pattern */}
+              <div className="absolute inset-0 bg-black/20" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+
+              {/* Profile Info Overlay */}
+              <div className="absolute bottom-4 left-4 right-4 text-white">
+                <div className="mb-2 flex items-center space-x-2">
+                  <h1 className="text-2xl font-bold">{profile.name || "Your Name"}</h1>
+                  {profile.verified && (
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500">
+                      <span className="text-xs font-bold text-white">✓</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-lg opacity-90">@{profile.username}</p>
+              </div>
+
+              {/* Floating "me" Button */}
+              <div className="absolute left-4 top-4">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="border-white/30 bg-white/20 text-white backdrop-blur-sm hover:bg-white/30"
+                >
+                  me
+                </Button>
+              </div>
+            </div>
+
+            {/* Profile Content */}
+            <CardContent className="bg-white/80 p-6">
+              {/* Bio */}
+              <div className="mb-6 flex flex-wrap justify-center gap-2">
+                {bioSegments.map((segment, index) => (
+                  <span
+                    key={`${segment}-${index}`}
+                    className="rounded-full bg-gradient-to-r from-blue-100 via-purple-100 to-pink-100 px-3 py-1 text-sm font-medium text-slate-700 shadow-sm"
+                  >
+                    {segment}
+                  </span>
+                ))}
+              </div>
+
+              {/* Location */}
+              {profile.city && (
+                <div className="mb-6 flex items-center justify-center space-x-2 text-gray-600">
+                  <MapPin className="h-4 w-4 text-red-500" />
+                  <span>{profile.city}</span>
+                </div>
+              )}
+
+              {/* Social Media Links */}
+              <div className="mb-8 flex flex-wrap justify-center gap-3">
+                {socialLinks.length > 0 ? (
+                  socialLinks.map((link) => {
+                    const definition = getSocialIconDefinition(link.platform);
+
+                    return (
+                      <a
+                        key={link.id}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        aria-label={`Visit ${profile.name || profile.username} on ${definition.label}`}
+                      >
+                        <SocialIcon
+                          platform={link.platform}
+                          className={cn(
+                            "group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:-translate-y-1",
+                            link.color
+                          )}
+                        />
+                      </a>
+                    );
+                  })
+                ) : (
+                  ["instagram", "facebook", "twitter", "linkedin", "youtube", "tiktok", "email"].map((platform) => {
+                    const definition = getSocialIconDefinition(platform);
+
+                    return (
+                      <div
+                        key={platform}
+                        className="inline-flex flex-col items-center"
+                        title={`Add ${definition.label}`}
+                      >
+                        <SocialIcon platform={platform} className="opacity-40 shadow-none" />
+                        <span className="sr-only">Add {definition.label}</span>
+                      </div>
+                    );
+                  })
                 )}
               </div>
-              <p className="text-lg opacity-90">@{profile.username}</p>
-            </div>
 
-            {/* Floating "me" Button */}
-            <div className="absolute top-4 left-4">
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                className="bg-white/20 text-white border-white/30 hover:bg-white/30 backdrop-blur-sm"
-              >
-                me
-              </Button>
-            </div>
-          </div>
-
-          {/* Profile Content */}
-          <CardContent className="p-6 bg-white/80">
-            {/* Bio */}
-            <div className="mb-6 flex flex-wrap justify-center gap-2">
-              {bioSegments.map((segment, index) => (
-                <span
-                  key={`${segment}-${index}`}
-                  className="rounded-full bg-gradient-to-r from-blue-100 via-purple-100 to-pink-100 px-3 py-1 text-sm font-medium text-slate-700 shadow-sm"
-                >
-                  {segment}
-                </span>
-              ))}
-            </div>
-
-            {/* Location */}
-            {profile.city && (
-              <div className="flex items-center justify-center space-x-2 mb-6 text-gray-600">
-                <MapPin className="h-4 w-4 text-red-500" />
-                <span>{profile.city}</span>
-              </div>
-            )}
-
-            {/* Social Media Links */}
-            <div className="mb-8 flex flex-wrap justify-center gap-3">
-              {socialLinks.length > 0 ? (
-                socialLinks.map((link) => {
-                  const definition = getSocialIconDefinition(link.platform);
-
-                  return (
+              {/* Content Links Grid */}
+              <div className="space-y-4">
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, index) => (
+                    <div
+                      key={`content-skeleton-${index}`}
+                      className="h-36 animate-pulse rounded-lg border border-gray-200 bg-gray-100"
+                    />
+                  ))
+                ) : showEmptyState ? (
+                  <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-gray-500 shadow-sm">
+                      <Plus className="h-5 w-5" />
+                    </div>
+                    <h3 className="mt-4 text-lg font-semibold text-gray-900">
+                      {isOwner ? "Your link collection is empty" : "No links yet"}
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-600">
+                      {isOwner
+                        ? "Add your first link to start sharing the highlights that matter most."
+                        : "This creator hasn’t shared any links yet. Check back soon!"}
+                    </p>
+                    {isOwner ? (
+                      <div className="mt-4">
+                        <Link href="/profile/edit">
+                          <Button className="inline-flex items-center">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add your first link
+                          </Button>
+                        </Link>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  activeCards.map((item) => (
                     <a
-                      key={link.id}
-                      href={link.url}
+                      key={item.id}
+                      href={item.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group inline-flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                      aria-label={`Visit ${profile.name || profile.username} on ${definition.label}`}
+                      className="group block"
                     >
-                      <SocialIcon
-                        platform={link.platform}
-                        className={cn(
-                          "group-hover:-translate-y-1 group-hover:shadow-xl group-focus-visible:-translate-y-1",
-                          link.color
-                        )}
-                      />
-                    </a>
-                  );
-                })
-              ) : (
-                ["instagram", "facebook", "twitter", "linkedin", "youtube", "tiktok", "email"].map((platform) => {
-                  const definition = getSocialIconDefinition(platform);
-
-                  return (
-                    <div
-                      key={platform}
-                      className="inline-flex flex-col items-center"
-                      title={`Add ${definition.label}`}
-                    >
-                      <SocialIcon platform={platform} className="opacity-40 shadow-none" />
-                      <span className="sr-only">Add {definition.label}</span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Content Links Grid */}
-            <div className="space-y-4">
-              {loading ? (
-                Array.from({ length: 3 }).map((_, index) => (
-                  <div
-                    key={`content-skeleton-${index}`}
-                    className="h-36 animate-pulse rounded-lg border border-gray-200 bg-gray-100"
-                  />
-                ))
-              ) : showEmptyState ? (
-                <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-gray-500 shadow-sm">
-                    <Plus className="h-5 w-5" />
-                  </div>
-                  <h3 className="mt-4 text-lg font-semibold text-gray-900">
-                    {isOwner ? "Your link collection is empty" : "No links yet"}
-                  </h3>
-                  <p className="mt-2 text-sm text-gray-600">
-                    {isOwner
-                      ? "Add your first link to start sharing the highlights that matter most."
-                      : "This creator hasn’t shared any links yet. Check back soon!"}
-                  </p>
-                  {isOwner ? (
-                    <div className="mt-4">
-                      <Link href="/profile/edit">
-                        <Button className="inline-flex items-center">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add your first link
-                        </Button>
-                      </Link>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                activeCards.map((item) => (
-                  <a
-                    key={item.id}
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block group"
-                  >
-                    <div className="relative overflow-hidden rounded-lg border border-gray-200 transition-all duration-200 hover:border-blue-300 hover:shadow-lg">
-                      {item.thumbnail_url ? (
-                        <div
-                          className="aspect-video bg-cover bg-center"
-                          style={{ backgroundImage: `url(${item.thumbnail_url})` }}
-                        />
-                      ) : (
-                        <div className="aspect-video flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                          <div className="text-center">
-                            <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
-                              <ExternalLink className="h-8 w-8 text-blue-600" />
+                      <div className="relative overflow-hidden rounded-lg border border-gray-200 transition-all duration-200 hover:border-blue-300 hover:shadow-lg">
+                        {item.thumbnail_url ? (
+                          <div
+                            className="aspect-video bg-cover bg-center"
+                            style={{ backgroundImage: `url(${item.thumbnail_url})` }}
+                          />
+                        ) : (
+                          <div className="aspect-video flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                            <div className="text-center">
+                              <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
+                                <ExternalLink className="h-8 w-8 text-blue-600" />
+                              </div>
+                              <p className="text-sm text-gray-500">{item.category || "Link"}</p>
                             </div>
-                            <p className="text-sm text-gray-500">{item.category || "Link"}</p>
                           </div>
-                        </div>
-                      )}
-                      <div className="p-4">
-                        <h3 className="font-semibold text-gray-900 transition-colors group-hover:text-blue-600">
-                          {item.title}
-                        </h3>
-                        {item.description && (
-                          <p className="mt-1 text-sm text-gray-600">
-                            {item.description}
-                          </p>
                         )}
+                        <div className="p-4">
+                          <h3 className="font-semibold text-gray-900 transition-colors group-hover:text-blue-600">
+                            {item.title}
+                          </h3>
+                          {item.description && (
+                            <p className="mt-1 text-sm text-gray-600">{item.description}</p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </a>
-                ))
-              )}
-            </div>
-
-            {/* Add Content Button */}
-            {isOwner && !showEmptyState ? (
-              <div className="mt-6 text-center">
-                <Link href="/profile/edit">
-                  <Button variant="outline" className="w-full border-dashed border-2 border-gray-300 hover:border-blue-400 hover:bg-blue-50">
-                    <Plus className="mr-2 h-5 w-5" />
-                    Add More Content
-                  </Button>
-                </Link>
+                    </a>
+                  ))
+                )}
               </div>
-            ) : null}
 
-            {/* Edit Profile Button */}
-            {isOwner ? (
-              <div className="mt-8 text-center">
-                <Link href="/profile/edit">
-                  <Button className="rounded-full bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-3 text-white shadow-lg transition-all duration-200 hover:from-blue-700 hover:to-purple-700 hover:shadow-xl">
-                    <Edit3 className="mr-2 h-5 w-5" />
-                    Edit Profile
-                  </Button>
-                </Link>
-              </div>
-            ) : null}
-          </CardContent>
+              {/* Add Content Button */}
+              {isOwner && !showEmptyState ? (
+                <div className="mt-6 text-center">
+                  <Link href="/profile/edit">
+                    <Button variant="outline" className="w-full border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50">
+                      <Plus className="mr-2 h-5 w-5" />
+                      Add More Content
+                    </Button>
+                  </Link>
+                </div>
+              ) : null}
+
+              {/* Edit Profile Button */}
+              {isOwner ? (
+                <div className="mt-8 text-center">
+                  <Link href="/profile/edit">
+                    <Button className="rounded-full bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-3 text-white shadow-lg transition-all duration-200 hover:from-blue-700 hover:to-purple-700 hover:shadow-xl">
+                      <Edit3 className="mr-2 h-5 w-5" />
+                      Edit Profile
+                    </Button>
+                  </Link>
+                </div>
+              ) : null}
+            </CardContent>
           </Card>
         </div>
 
