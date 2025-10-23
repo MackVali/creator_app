@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,6 +68,17 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
     .filter((card) => card.is_active)
     .sort((a, b) => a.position - b.position);
   const showEmptyState = !loading && activeCards.length === 0;
+
+  const bioSegments = useMemo(() => {
+    const sourceBio = profile.bio?.trim();
+    const rawSegments = sourceBio
+      ? sourceBio.split(/[•\n,|]+/)
+      : "Dad • Creator • Entrepreneur • Philanthropist".split("•");
+
+    return rawSegments
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+  }, [profile.bio]);
 
   const getProfileShareUrl = () => {
     if (typeof window === "undefined") {
@@ -232,7 +243,12 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
 
       {/* Main Profile Section */}
       <div className="max-w-md mx-auto px-4 py-6">
-        <Card className="overflow-hidden shadow-xl border-0">
+        <div className="relative">
+          <div
+            aria-hidden
+            className="absolute inset-0 -z-10 rounded-[28px] bg-gradient-to-br from-blue-500/40 via-purple-500/30 to-pink-500/40 blur-2xl opacity-70"
+          />
+          <Card className="overflow-hidden rounded-[24px] border border-white/40 bg-white/70 shadow-2xl backdrop-blur-xl">
           {/* Background Image Section */}
           <div 
             className="relative h-48 bg-gradient-to-br from-blue-600 to-purple-700"
@@ -274,12 +290,17 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
           </div>
 
           {/* Profile Content */}
-          <CardContent className="p-6">
+          <CardContent className="p-6 bg-white/80">
             {/* Bio */}
-            <div className="text-center mb-6">
-              <p className="text-gray-700 text-lg leading-relaxed">
-                {profile.bio || "Dad • Creator • Entrepreneur • Philanthropist"}
-              </p>
+            <div className="mb-6 flex flex-wrap justify-center gap-2">
+              {bioSegments.map((segment, index) => (
+                <span
+                  key={`${segment}-${index}`}
+                  className="rounded-full bg-gradient-to-r from-blue-100 via-purple-100 to-pink-100 px-3 py-1 text-sm font-medium text-slate-700 shadow-sm"
+                >
+                  {segment}
+                </span>
+              ))}
             </div>
 
             {/* Location */}
@@ -431,7 +452,8 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
               </div>
             ) : null}
           </CardContent>
-        </Card>
+          </Card>
+        </div>
 
         {/* Footer */}
         <div className="text-center mt-8 text-sm text-gray-500">
