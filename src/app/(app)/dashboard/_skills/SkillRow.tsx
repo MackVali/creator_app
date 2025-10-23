@@ -19,6 +19,8 @@ interface Props {
 
 export default function SkillRow({ skill, progress, onColor, trackColor, fillColor }: Props) {
   const level = progress?.level ?? skill.level;
+  const prestige = progress?.prestige;
+  const badges = progress?.badges ?? [];
   const showLevel = level !== null && level !== undefined;
   const showProgress =
     progress?.xpIntoLevel !== undefined &&
@@ -26,6 +28,7 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
     progress?.xpRequired !== undefined &&
     progress?.xpRequired !== null &&
     progress.xpRequired > 0;
+  const showPrestige = prestige !== undefined && prestige !== null;
 
   return (
     <Link
@@ -48,6 +51,32 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
             style={{ color: onColor }}
           >
             Lv {level}
+          </div>
+        )}
+        {showPrestige && (
+          <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px]" style={{ color: onColor }}>
+            <span className="rounded-md border border-white/15 bg-white/10 px-1.5 py-[1px] font-semibold uppercase tracking-[0.18em]">
+              Prestige {prestige}
+            </span>
+            <div className="flex items-center gap-1 text-sm leading-none">
+              {badges.length > 0 ? (
+                badges.map((badge) => (
+                  <span
+                    key={badge.id}
+                    role="img"
+                    aria-label={badge.label}
+                    title={badge.label}
+                    className="drop-shadow-[0_0_4px_rgba(255,255,255,0.25)]"
+                  >
+                    {badge.emoji}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[9px] font-medium uppercase tracking-[0.2em] opacity-60">
+                  No badges
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useProfileContext } from "@/components/ProfileProvider";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
+  mapPrestigeBadgeRows,
   mapRowToProgress,
+  type SkillBadgeRow,
   type SkillProgressData,
   type SkillProgressRow,
-} from "../../../../../lib/skills/skillProgress";
+} from "@/lib/skills/skillProgress";
 
 export type { SkillProgressData } from "../../../../../lib/skills/skillProgress";
 
@@ -28,11 +30,41 @@ export default function useSkillProgress() {
     }
 
     let isActive = true;
+
     const handleRealtimeRow = (row: SkillProgressRow | null) => {
-      if (!isActive) return;
-      const mapped = mapRowToProgress(row);
-      if (!mapped || !row?.skill_id) return;
-      setProgress((prev) => ({ ...prev, [row.skill_id]: mapped }));
+      if (!isActive || !row?.skill_id) return;
+      setProgress((prev) => {
+        const existing = prev[row.skill_id];
+        const mapped = mapRowToProgress(row, existing?.badges ?? []);
+        if (!mapped) {
+          return prev;
+        }
+        return { ...prev, [row.skill_id]: mapped };
+      });
+    };
+
+    const refreshBadgesForSkill = async (skillId: string | null | undefined) => {
+      if (!skillId) return;
+      const { data: badgeRows, error: badgeError } = await supabase
+        .from("skill_badges")
+        .select("id,badge_id,skill_id,badges(level,emoji,label,description)")
+        .eq("user_id", userId)
+        .eq("skill_id", skillId)
+        .order("level", { ascending: true, foreignTable: "badges" });
+
+      if (badgeError) {
+        console.error("Failed to refresh skill badges", badgeError);
+        return;
+      }
+
+      const mapped = mapPrestigeBadgeRows((badgeRows ?? []) as SkillBadgeRow[]);
+      setProgress((prev) => {
+        const existing = prev[skillId];
+        if (!existing) {
+          return prev;
+        }
+        return { ...prev, [skillId]: { ...existing, badges: mapped } };
+      });
     };
 
     const channel = supabase
@@ -45,7 +77,7 @@ export default function useSkillProgress() {
           table: "skill_progress",
           filter: `user_id=eq.${userId}`,
         },
-        (payload) => handleRealtimeRow(payload.new as SkillProgressRow | null)
+        (payload) => handleRealtimeRow(payload.new as SkillProgressRow | null),
       )
       .on(
         "postgres_changes",
@@ -55,7 +87,25 @@ export default function useSkillProgress() {
           table: "skill_progress",
           filter: `user_id=eq.${userId}`,
         },
-        (payload) => handleRealtimeRow(payload.new as SkillProgressRow | null)
+        (payload) => handleRealtimeRow(payload.new as SkillProgressRow | null),
+      );
+
+    const badgeChannel = supabase
+      .channel(`skill_badges_user_${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "skill_badges",
+          filter: `user_id=eq.${userId}`,
+        },
+        async (payload) => {
+          const nextSkillId =
+            ((payload.new as { skill_id?: string | null })?.skill_id ?? null) ||
+            ((payload.old as { skill_id?: string | null })?.skill_id ?? null);
+          await refreshBadgesForSkill(nextSkillId ?? null);
+        },
       );
 
     channel.subscribe((status) => {
@@ -64,12 +114,35 @@ export default function useSkillProgress() {
       }
     });
 
+    badgeChannel.subscribe((status) => {
+      if (status === "CHANNEL_ERROR") {
+        console.error("Failed to subscribe to skill_badges updates");
+      }
+    });
+
     const load = async () => {
       setIsLoading(true);
       setError(null);
       const { data, error: fetchError } = await supabase
         .from("skill_progress")
-        .select("skill_id,level,prestige,xp_into_level")
+        .select(
+          `
+            skill_id,
+            level,
+            prestige,
+            xp_into_level,
+            skill_badges (
+              id,
+              badge_id,
+              badges (
+                level,
+                emoji,
+                label,
+                description
+              )
+            )
+          `,
+        )
         .eq("user_id", userId);
 
       if (!isActive) return;
@@ -98,6 +171,7 @@ export default function useSkillProgress() {
     return () => {
       isActive = false;
       supabase.removeChannel(channel);
+      supabase.removeChannel(badgeChannel);
     };
   }, [userId]);
 

@@ -5,11 +5,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { calculateLevelProgress } from "@/lib/leveling";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import {
+  mapPrestigeBadgeRows,
+  type PrestigeBadgeData,
+  type SkillBadgeRow,
+} from "@/lib/skills/skillProgress";
 import type { Database } from "@/types/supabase";
 
 export type UserProgress = {
   currentLevel: number;
   totalDarkXp: number;
+  prestige: number;
+  badges: PrestigeBadgeData[];
   updatedAt: string | null;
 };
 
@@ -22,6 +29,8 @@ export type UseUserProgressOptions = {
 const DEFAULT_PROGRESS: UserProgress = {
   currentLevel: 1,
   totalDarkXp: 0,
+  prestige: 0,
+  badges: [],
   updatedAt: null,
 };
 
@@ -61,11 +70,21 @@ export function useUserProgress(
     }
 
     try {
-      const { data, error: queryError } = await supabase
-        .from("user_progress")
-        .select("current_level,total_dark_xp,updated_at")
-        .eq("user_id", userId)
-        .single();
+      const [progressResult, badgeResult] = await Promise.all([
+        supabase
+          .from("user_progress")
+          .select("current_level,total_dark_xp,prestige,updated_at")
+          .eq("user_id", userId)
+          .single(),
+        supabase
+          .from("user_badges")
+          .select("id,badge_id,badges(level,emoji,label,description)")
+          .eq("user_id", userId)
+          .order("level", { ascending: true, foreignTable: "badges" }),
+      ]);
+
+      const { data, error: queryError } = progressResult;
+      const { data: badgeRows, error: badgeError } = badgeResult;
 
       if (!isMountedRef.current) {
         return data ?? null;
@@ -83,12 +102,22 @@ export function useUserProgress(
         return null;
       }
 
+      if (badgeError) {
+        console.error("Failed to load user badges", badgeError);
+      }
+
       const totalDarkXp = data?.total_dark_xp ?? 0;
       const derived = calculateLevelProgress(totalDarkXp);
+      const prestigeValue = typeof data?.prestige === "number" ? data.prestige : 0;
+      const mappedBadges = mapPrestigeBadgeRows(
+        (badgeRows ?? []) as SkillBadgeRow[],
+      );
 
       const resolved: UserProgress = {
         currentLevel: derived.level,
         totalDarkXp,
+        prestige: prestigeValue,
+        badges: mappedBadges,
         updatedAt: data?.updated_at ?? null,
       };
 
@@ -129,6 +158,19 @@ export function useUserProgress(
           event: "INSERT",
           schema: "public",
           table: "dark_xp_events",
+          filter: `user_id=eq.${userId}`,
+        },
+        async () => {
+          setLastEventAt(Date.now());
+          await fetchProgress();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_badges",
           filter: `user_id=eq.${userId}`,
         },
         async () => {

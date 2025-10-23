@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { CalendarDays, Clock3, Target, ArrowLeft } from "lucide-react";
+import { CalendarDays, Clock3, Target, ArrowLeft, Award } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import {
@@ -19,6 +19,11 @@ import { Button } from "@/components/ui/button";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import { normalizeTimeZone } from "@/lib/scheduler/timezone";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import {
+  mapRowToProgress,
+  type SkillProgressData,
+  type SkillProgressRow,
+} from "@/lib/skills/skillProgress";
 
 interface Skill {
   id: string;
@@ -144,6 +149,7 @@ export default function SkillDetailPage() {
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<SkillProgressData | null>(null);
   const [relatedHabits, setRelatedHabits] = useState<HabitSummary[]>([]);
   const [habitsLoading, setHabitsLoading] = useState(true);
   const [habitsError, setHabitsError] = useState<string | null>(null);
@@ -267,6 +273,55 @@ export default function SkillDetailPage() {
       }
     };
 
+    const fetchSkillProgress = async (userId: string | null) => {
+      if (!supabase || !userId) {
+        if (!cancelled) {
+          setProgress(null);
+        }
+        return;
+      }
+
+      try {
+        const { data: progressRow, error: progressError } = await supabase
+          .from("skill_progress")
+          .select(
+            `
+              skill_id,
+              level,
+              prestige,
+              xp_into_level,
+              skill_badges (
+                id,
+                badge_id,
+                badges (
+                  level,
+                  emoji,
+                  label,
+                  description
+                )
+              )
+            `,
+          )
+          .eq("user_id", userId)
+          .eq("skill_id", id)
+          .maybeSingle();
+
+        if (!cancelled) {
+          if (progressError && progressError.code !== "PGRST116") {
+            console.error("Error fetching skill progress:", progressError);
+          }
+
+          const mapped = mapRowToProgress((progressRow ?? null) as SkillProgressRow | null);
+          setProgress(mapped);
+        }
+      } catch (progressErr) {
+        if (!cancelled) {
+          console.error("Unexpected error fetching skill progress:", progressErr);
+          setProgress(null);
+        }
+      }
+    };
+
     async function load() {
       if (!supabase || !id) return;
 
@@ -275,6 +330,7 @@ export default function SkillDetailPage() {
       setHabitsError(null);
       setRelatedHabits([]);
       setHabitsLoading(true);
+      setProgress(null);
 
       try {
         const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -303,7 +359,10 @@ export default function SkillDetailPage() {
             setHabitsLoading(false);
           } else {
             setSkill(data);
-            await fetchRelatedHabits(userId);
+            await Promise.all([
+              fetchRelatedHabits(userId),
+              fetchSkillProgress(userId),
+            ]);
           }
         }
       } catch (err) {
@@ -414,6 +473,17 @@ export default function SkillDetailPage() {
       icon: Target,
     },
     {
+      label: "Prestige tier",
+      value: `Tier ${progress?.prestige ?? 0}`,
+      description:
+        progress?.badges && progress.badges.length > 0
+          ? `Unlocked ${progress.badges.length} badge${
+              progress.badges.length === 1 ? "" : "s"
+            } for ${skill.name}.`
+          : "Prestige resets unlock unique skill badges for this skill.",
+      icon: Award,
+    },
+    {
       label: "Added to timeline",
       value: formattedCreatedAt ?? "Not available",
       description: createdRelativeText,
@@ -434,6 +504,8 @@ export default function SkillDetailPage() {
   ];
 
   const icon = skill.icon || "💡";
+  const prestigeTier = progress?.prestige ?? 0;
+  const prestigeBadges = progress?.badges ?? [];
 
   const handleCreateGoal = () => {
     router.push("/goals/new");
@@ -478,6 +550,33 @@ export default function SkillDetailPage() {
                 <p className="max-w-xl text-sm text-white/70 sm:text-base">
                   Everything connected to {skill.name} lives here — goals, notes, and the progress you&apos;re making along the way.
                 </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.32em] text-white/50">
+                    Prestige
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/10 px-2 py-[2px] text-xs font-semibold text-white/80">
+                    Tier {prestigeTier}
+                  </span>
+                  <div className="flex items-center gap-1 text-lg leading-none">
+                    {prestigeBadges.length > 0 ? (
+                      prestigeBadges.map((badge) => (
+                        <span
+                          key={badge.id}
+                          role="img"
+                          aria-label={badge.label}
+                          title={badge.label}
+                          className="drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]"
+                        >
+                          {badge.emoji}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">
+                        No badges yet
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
