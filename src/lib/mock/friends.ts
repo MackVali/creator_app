@@ -155,20 +155,29 @@ export const MOCK_SENT_INVITES: SentInvite[] = [
   {
     id: 'i1',
     email: 'sza@ctrl.world',
-    sentAgo: '3d ago',
     status: 'pending',
+    sentAt: '2024-09-10T12:00:00.000Z',
+    lastSentAt: '2024-09-10T12:00:00.000Z',
+    sentAgo: '3d ago',
+    lastSentAgo: '3d ago',
   },
   {
     id: 'i2',
     email: 'beyonce@renaissance.tour',
-    sentAgo: '5d ago',
     status: 'accepted',
+    sentAt: '2024-09-08T15:00:00.000Z',
+    lastSentAt: '2024-09-08T15:00:00.000Z',
+    sentAgo: '5d ago',
+    lastSentAgo: '5d ago',
   },
   {
     id: 'i3',
     email: 'frank.ocean@blonded.co',
-    sentAgo: '1w ago',
     status: 'expired',
+    sentAt: '2024-09-03T19:30:00.000Z',
+    lastSentAt: '2024-09-03T19:30:00.000Z',
+    sentAgo: '1w ago',
+    lastSentAgo: '1w ago',
   },
 ];
 

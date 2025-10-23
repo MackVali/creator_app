@@ -19,8 +19,10 @@ export default function FriendsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [requests] = useState<FriendRequest[]>([]);
-  const [invites] = useState<SentInvite[]>([]);
-  const [suggested] = useState<SuggestedFriend[]>([]);
+  const [invites, setInvites] = useState<SentInvite[]>([]);
+  const [suggested, setSuggested] = useState<SuggestedFriend[]>([]);
+  const [isLoadingDiscovery, setIsLoadingDiscovery] = useState(true);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const friendsTabRef = useRef<HTMLButtonElement>(null);
   const requestsTabRef = useRef<HTMLButtonElement>(null);
   const searchTabRef = useRef<HTMLButtonElement>(null);
@@ -65,6 +67,59 @@ export default function FriendsPage() {
     }
 
     void loadFriends();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDiscovery() {
+      try {
+        setIsLoadingDiscovery(true);
+        setDiscoveryError(null);
+
+        const response = await fetch('/api/friends/discovery', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          const data = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(data?.error ?? 'Unable to load invites.');
+        }
+
+        const data = (await response.json()) as {
+          invites?: SentInvite[];
+          suggestions?: SuggestedFriend[];
+        };
+
+        if (!isMounted) return;
+
+        setInvites(data.invites ?? []);
+        setSuggested(data.suggestions ?? []);
+      } catch (err) {
+        if (!isMounted) return;
+        const message =
+          err instanceof Error ? err.message : 'Unable to load invites.';
+        setDiscoveryError(message);
+        setInvites([]);
+        setSuggested([]);
+      } finally {
+        if (isMounted) {
+          setIsLoadingDiscovery(false);
+        }
+      }
+    }
+
+    void loadDiscovery();
 
     return () => {
       isMounted = false;
@@ -225,11 +280,19 @@ export default function FriendsPage() {
         aria-labelledby="requests-tab"
         hidden={tab !== 'requests'}
       >
+        {discoveryError ? (
+          <div className="mb-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200 ring-1 ring-rose-400/20">
+            {discoveryError}
+          </div>
+        ) : null}
         <RequestsInvites
           requests={requests}
           invites={invites}
           suggestions={suggested}
         />
+        {isLoadingDiscovery ? (
+          <p className="mt-3 text-xs text-white/50">Loading invites…</p>
+        ) : null}
       </section>
       <section
         id="search-panel"

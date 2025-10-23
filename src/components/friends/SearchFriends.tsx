@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import FriendsList from "./FriendsList";
 import type { DiscoveryProfile, Friend } from "@/types/friends";
@@ -23,13 +23,33 @@ export default function SearchFriends({
 }: SearchFriendsProps) {
   const [q, setQ] = useState("");
   const [me, setMe] = useState<Friend | null>(null);
-  const [discovery, setDiscovery] = useState<DiscoveryProfileState[]>(() =>
-    discoveryProfiles.map((profile) => ({ ...profile, status: "idle" }))
-  );
+  const [matches, setMatches] = useState<Friend[]>(data);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [discovery, setDiscovery] = useState<DiscoveryProfileState[]>([]);
   const [contactsImported, setContactsImported] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState(false);
+
+  const syncDiscoveryProfiles = useCallback(
+    (profiles: DiscoveryProfile[]) => {
+      setDiscovery((prev) => {
+        if (!profiles.length) {
+          return [];
+        }
+
+        const statusMap = new Map(prev.map((item) => [item.id, item.status]));
+        return profiles.map((profile) => ({
+          ...profile,
+          status: statusMap.get(profile.id) ?? "idle",
+        }));
+      });
+    },
+    []
+  );
 
   useEffect(() => {
     const supabase = getSupabaseBrowser();
@@ -63,24 +83,119 @@ export default function SearchFriends({
   }, []);
 
   useEffect(() => {
-    setDiscovery((prev) => {
-      const next = discoveryProfiles.map((profile) => {
-        const existing = prev.find((item) => item.id === profile.id);
-        return { ...profile, status: existing?.status ?? "idle" } as DiscoveryProfileState;
-      });
-      return next;
-    });
-  }, [discoveryProfiles]);
+    if (discoveryProfiles.length) {
+      syncDiscoveryProfiles(discoveryProfiles);
+    }
+  }, [discoveryProfiles, syncDiscoveryProfiles]);
 
-  const dataset = useMemo(() => (me ? [me, ...data] : data), [me, data]);
-  const filtered = useMemo(() => {
-    const v = q.trim().toLowerCase();
-    if (!v) return dataset;
-    return dataset.filter((f) =>
-      f.username.toLowerCase().includes(v) ||
-      (f.displayName || f.username).toLowerCase().includes(v)
-    );
-  }, [q, dataset]);
+  useEffect(() => {
+    setMatches(data);
+  }, [data]);
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadDiscoveryMeta() {
+      try {
+        const response = await fetch("/api/friends/discovery", {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Unable to load discovery info.");
+        }
+
+        const payload = (await response.json()) as {
+          contactImport?: { imported?: boolean };
+          discoveryProfiles?: DiscoveryProfile[];
+        };
+
+        if (ignore) return;
+
+        if (payload.contactImport) {
+          setContactsImported(Boolean(payload.contactImport.imported));
+        }
+
+        if (payload.discoveryProfiles?.length) {
+          syncDiscoveryProfiles(payload.discoveryProfiles);
+        }
+      } catch (error) {
+        console.error("Failed to load discovery metadata", error);
+      }
+    }
+
+    void loadDiscoveryMeta();
+
+    return () => {
+      ignore = true;
+    };
+  }, [syncDiscoveryProfiles]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let ignore = false;
+    const trimmed = q.trim();
+
+    async function runSearch() {
+      try {
+        setIsSearching(true);
+        setSearchError(null);
+
+        const params = trimmed ? `?q=${encodeURIComponent(trimmed)}` : "";
+        const response = await fetch(`/api/friends/search${params}`, {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error ?? "Unable to search friends.");
+        }
+
+        const payload = (await response.json()) as {
+          results: Friend[];
+          discoveryProfiles: DiscoveryProfile[];
+        };
+
+        if (ignore) return;
+
+        setMatches(payload.results ?? []);
+        if (payload.discoveryProfiles) {
+          syncDiscoveryProfiles(payload.discoveryProfiles);
+        }
+      } catch (error) {
+        if (
+          ignore ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
+          return;
+        }
+        console.error("Friend search failed", error);
+        setSearchError(
+          error instanceof Error ? error.message : "Unable to search friends."
+        );
+      } finally {
+        if (!ignore) {
+          setIsSearching(false);
+        }
+      }
+    }
+
+    void runSearch();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [q, syncDiscoveryProfiles]);
+
+  const dataset = useMemo(
+    () => (me ? [me, ...matches] : matches),
+    [me, matches]
+  );
 
   const trimmedQuery = q.trim();
   const hasQuery = trimmedQuery.length > 0;
@@ -96,7 +211,36 @@ export default function SearchFriends({
   };
 
   const handleImportContacts = () => {
-    setContactsImported(true);
+    if (isImporting) return;
+
+    setIsImporting(true);
+    setImportError(null);
+
+    void fetch("/api/friends/discovery/import", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error ?? "Unable to import contacts.");
+        }
+        setContactsImported(true);
+      })
+      .catch((error) => {
+        console.error("Contact import failed", error);
+        setImportError(
+          error instanceof Error ? error.message : "Unable to import contacts."
+        );
+      })
+      .finally(() => {
+        setIsImporting(false);
+      });
   };
 
   const handleSendInvite = (event: FormEvent<HTMLFormElement>) => {
@@ -109,15 +253,40 @@ export default function SearchFriends({
     }
 
     setInviteError(null);
-    setInviteSuccess(true);
-    setInviteEmail("");
+    setInviteSuccess(false);
+
+    void fetch("/api/friends/invites", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email: value }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error ?? "Unable to send invite.");
+        }
+
+        setInviteSuccess(true);
+        setInviteEmail("");
+      })
+      .catch((error) => {
+        console.error("Failed to send invite", error);
+        setInviteError(
+          error instanceof Error ? error.message : "Unable to send invite."
+        );
+        setInviteSuccess(false);
+      });
   };
 
-  const discoveryTitle = filtered.length
+  const discoveryTitle = dataset.length
     ? "Looking for someone else?"
     : `No matches for “${trimmedQuery}”`;
 
-  const discoveryDescription = filtered.length
+  const discoveryDescription = dataset.length
     ? "Invite collaborators directly or explore a few creators we think you’ll click with."
     : "Invite them straight from here or explore creators we handpicked for your scene.";
 
@@ -132,10 +301,15 @@ export default function SearchFriends({
         <button
           type="button"
           onClick={handleImportContacts}
-          className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-left transition hover:border-white/25 hover:bg-white/10"
+          disabled={isImporting}
+          className="flex flex-col items-start gap-2 rounded-xl border border-dashed border-white/15 bg-white/5 p-4 text-left transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
-            {contactsImported ? "Imported" : "Import contacts"}
+            {contactsImported
+              ? "Imported"
+              : isImporting
+                ? "Importing…"
+                : "Import contacts"}
           </span>
           <p className="text-sm font-semibold text-white">
             {contactsImported ? "Your contacts were added" : "Pull in your address book"}
@@ -146,6 +320,9 @@ export default function SearchFriends({
               : "Discover existing fans and collaborators from your email list."}
           </p>
         </button>
+        {importError ? (
+          <p className="text-xs text-rose-300">{importError}</p>
+        ) : null}
 
         <form
           onSubmit={handleSendInvite}
@@ -256,9 +433,14 @@ export default function SearchFriends({
         </label>
       </div>
 
-      {filtered.length ? (
+      {dataset.length ? (
         <>
-          <FriendsList data={filtered} onRemoveFriend={onRemoveFriend} />
+          <FriendsList
+            data={dataset}
+            onRemoveFriend={onRemoveFriend}
+            isLoading={isSearching}
+            error={searchError}
+          />
           {hasQuery ? discoveryPanel : null}
         </>
       ) : hasQuery ? (
