@@ -32,6 +32,7 @@ export default function SearchFriends({
   const [isImporting, setIsImporting] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
   const syncDiscoveryProfiles = useCallback(
