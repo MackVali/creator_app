@@ -98,6 +98,23 @@ function formatTitleCase(value: string | null | undefined) {
     .join(" ");
 }
 
+function getHabitLocationLabel(habit: Habit) {
+  const label = habit.location_context?.label?.trim();
+  if (label) return label;
+
+  const rawValue = habit.location_context?.value?.trim();
+  if (rawValue) {
+    const formatted = formatTitleCase(rawValue);
+    return formatted ?? rawValue;
+  }
+
+  if (habit.location_context_id) {
+    return "Custom location";
+  }
+
+  return "Anywhere";
+}
+
 export default function HabitsPage() {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -438,6 +455,7 @@ export default function HabitsPage() {
                                 Number.isFinite(habit.completion_target)
                                   ? habit.completion_target
                                   : null;
+                              const locationLabel = getHabitLocationLabel(habit);
 
                               return (
                                 <li
@@ -522,8 +540,11 @@ export default function HabitsPage() {
                                       </span>
                                     ) : null}
                                     <span className="flex items-center gap-2">
-                                      <span className="text-base">📅</span>
-                                      <span>Created {formatRelativeTime(habit.created_at)}</span>
+                                      <span className="text-base">📍</span>
+                                      <span>
+                                        Location ·{" "}
+                                        <span className="text-white/80">{locationLabel}</span>
+                                      </span>
                                     </span>
                                   </div>
                                 </li>
@@ -576,6 +597,7 @@ export default function HabitsPage() {
                         Number.isFinite(habit.completion_target)
                           ? habit.completion_target
                           : null;
+                      const locationLabel = getHabitLocationLabel(habit);
 
                       return (
                         <article
@@ -671,8 +693,10 @@ export default function HabitsPage() {
                               </div>
                             ) : null}
                             <div className="flex items-center gap-2">
-                              <span className="text-base">📅</span>
-                              <span>Created {formatRelativeTime(habit.created_at)}</span>
+                              <span className="text-base">📍</span>
+                              <span>
+                                Location · <span className="text-white/80">{locationLabel}</span>
+                              </span>
                             </div>
                           </div>
 
