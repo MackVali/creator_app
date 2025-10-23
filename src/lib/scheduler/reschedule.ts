@@ -4,6 +4,7 @@ import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
   fetchInstancesForRange,
+  createInstance,
   type ScheduleInstance,
 } from './instanceRepo'
 import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
@@ -482,6 +483,35 @@ export async function scheduleBacklog(
   }
   collectPrimaryReuseIds(dedupe.reusableByProject)
   collectReuseIds(dedupe.canceledByProject)
+
+  const previouslyScheduledHabitIds = new Set<string>()
+  const habitInstancesToCancel = dedupe.rangeInstances.filter(
+    inst => inst.source_type === 'HABIT' && inst.status === 'scheduled'
+  )
+
+  if (habitInstancesToCancel.length > 0) {
+    const cancelIds = habitInstancesToCancel.map(inst => inst.id)
+    const cancel = await supabase
+      .from('schedule_instances')
+      .update({ status: 'canceled' })
+      .in('id', cancelIds)
+
+    if (cancel.error) {
+      for (const inst of habitInstancesToCancel) {
+        result.failures.push({
+          itemId: inst.source_id || inst.id,
+          reason: 'error',
+          detail: cancel.error,
+        })
+      }
+    } else {
+      for (const inst of habitInstancesToCancel) {
+        if (inst.source_id) {
+          previouslyScheduledHabitIds.add(inst.source_id)
+        }
+      }
+    }
+  }
   const windowAvailabilityByDay = new Map<
     number,
     Map<string, WindowAvailabilityBounds>
@@ -795,6 +825,43 @@ export async function scheduleBacklog(
     allowOverlap: true,
   })
 
+  const habitPlacements: HabitDraftPlacement[] = []
+  for (const entries of regularHabitPlacementsByOffset.values()) {
+    habitPlacements.push(...entries)
+  }
+  for (const entries of syncHabitPlacementsByOffset.values()) {
+    habitPlacements.push(...entries)
+  }
+
+  if (habitPlacements.length > 0) {
+    const persistence = await persistHabitPlacements({
+      supabase,
+      userId,
+      placements: habitPlacements,
+    })
+
+    if (persistence.failures.length > 0) {
+      result.failures.push(...persistence.failures)
+    }
+
+    if (persistence.inserted.length > 0) {
+      result.placed.push(...persistence.inserted)
+      for (const inst of persistence.inserted) {
+        registerOccupiedRange(
+          dayOffsetFor(inst.start_utc),
+          inst.start_utc,
+          inst.end_utc
+        )
+      }
+    }
+
+    for (const placement of habitPlacements) {
+      placement.decision = previouslyScheduledHabitIds.has(placement.habit.id)
+        ? 'rescheduled'
+        : 'new'
+    }
+  }
+
   result.timeline.sort((a, b) => {
     const aTime = placementStartMs(a)
     const bTime = placementStartMs(b)
@@ -815,6 +882,7 @@ type DedupeResult = {
   error: PostgrestError | null
   canceledByProject: Map<string, string[]>
   reusableByProject: Map<string, string>
+  rangeInstances: ScheduleInstance[]
 }
 
 async function dedupeScheduledProjects(
@@ -839,14 +907,16 @@ async function dedupeScheduledProjects(
       error: response.error,
       canceledByProject: new Map(),
       reusableByProject: new Map(),
+      rangeInstances: [],
     }
   }
 
+  const rangeInstances = (response.data ?? []) as ScheduleInstance[]
   const keepers = new Map<string, ScheduleInstance>()
   const reusableCandidates = new Map<string, ScheduleInstance>()
   const extras: ScheduleInstance[] = []
 
-  for (const inst of response.data ?? []) {
+  for (const inst of rangeInstances) {
     if (inst.source_type !== 'PROJECT') continue
     if (inst.status !== 'scheduled') continue
 
@@ -932,7 +1002,51 @@ async function dedupeScheduledProjects(
     error: null,
     canceledByProject,
     reusableByProject,
+    rangeInstances,
   }
+}
+
+async function persistHabitPlacements(params: {
+  supabase: Client
+  userId: string
+  placements: HabitDraftPlacement[]
+}): Promise<{ inserted: ScheduleInstance[]; failures: ScheduleFailure[] }> {
+  const { supabase, userId, placements } = params
+  const inserted: ScheduleInstance[] = []
+  const failures: ScheduleFailure[] = []
+
+  for (const placement of placements) {
+    const habit = placement.habit
+    const response = await createInstance(
+      {
+        userId,
+        sourceId: habit.id,
+        sourceType: 'HABIT',
+        windowId: habit.windowId,
+        startUTC: habit.startUTC,
+        endUTC: habit.endUTC,
+        durationMin: habit.durationMin,
+        weightSnapshot: 0,
+        energyResolved: habit.energyResolved?.toUpperCase() ?? 'NO',
+      },
+      supabase
+    )
+
+    if (response.error) {
+      failures.push({
+        itemId: habit.id,
+        reason: 'error',
+        detail: response.error,
+      })
+      continue
+    }
+
+    if (response.data) {
+      inserted.push(response.data)
+    }
+  }
+
+  return { inserted, failures }
 }
 
 async function scheduleHabitsForDay(params: {

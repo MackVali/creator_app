@@ -4,6 +4,8 @@ import type { Database } from '../../../types/supabase'
 
 export type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 export type ScheduleInstanceStatus = Database['public']['Enums']['schedule_instance_status']
+type ScheduleInstanceSourceType =
+  Database['public']['Enums']['schedule_instance_source_type']
 
 type Client = SupabaseClient<Database>
 
@@ -63,6 +65,7 @@ export async function createInstance(
   input: {
     userId: string
     sourceId: string
+    sourceType?: ScheduleInstanceSourceType
     windowId?: string | null
     startUTC: string
     endUTC: string
@@ -73,11 +76,12 @@ export async function createInstance(
   client?: Client
 ) {
   const supabase = await ensureClient(client)
+  const sourceType = input.sourceType ?? 'PROJECT'
   return await supabase
     .from('schedule_instances')
     .insert({
       user_id: input.userId,
-      source_type: 'PROJECT',
+      source_type: sourceType,
       source_id: input.sourceId,
       window_id: input.windowId ?? null,
       start_utc: input.startUTC,
