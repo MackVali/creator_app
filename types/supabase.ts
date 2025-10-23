@@ -253,35 +253,41 @@ export interface Database {
           id: string;
           created_at: string;
           updated_at: string | null;
-        user_id: string;
-        title: string | null;
-        content: string | null;
-        monument_id: string | null;
-        skill_id: string | null;
-        metadata: Json | null;
-      };
-      Insert: {
-        id?: string;
-        created_at?: string;
-        updated_at?: string | null;
-        user_id: string;
-        title?: string | null;
-        content?: string | null;
-        monument_id?: string | null;
-        skill_id?: string | null;
-        metadata?: Json | null;
-      };
-      Update: {
-        id?: string;
-        created_at?: string;
-        updated_at?: string | null;
-        user_id?: string;
-        title?: string | null;
-        content?: string | null;
-        monument_id?: string | null;
-        skill_id?: string | null;
-        metadata?: Json | null;
-      };
+          user_id: string;
+          title: string | null;
+          content: string | null;
+          monument_id: string | null;
+          skill_id: string | null;
+          metadata: Json | null;
+          parent_note_id: string | null;
+          sibling_order: number | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string | null;
+          user_id: string;
+          title?: string | null;
+          content?: string | null;
+          monument_id?: string | null;
+          skill_id?: string | null;
+          metadata?: Json | null;
+          parent_note_id?: string | null;
+          sibling_order?: number | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string | null;
+          user_id?: string;
+          title?: string | null;
+          content?: string | null;
+          monument_id?: string | null;
+          skill_id?: string | null;
+          metadata?: Json | null;
+          parent_note_id?: string | null;
+          sibling_order?: number | null;
+        };
       };
       friend_connections: {
         Row: {
