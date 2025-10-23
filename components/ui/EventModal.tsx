@@ -67,7 +67,12 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
-import { resolveLocationContextId, isValidUuid } from "@/lib/location-metadata";
+import {
+  resolveLocationContextId,
+  isLocationMetadataError,
+  normalizeLocationValue,
+  isValidUuid,
+} from "@/lib/location-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
@@ -1563,6 +1568,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         daylight_preference?: string | null;
         window_edge_preference?: string | null;
         completion_target?: number | null;
+        location_context?: string | null;
       } = {
         user_id: user.id,
         name: formatNameValue(formData.name.trim()),
@@ -1668,33 +1674,55 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
-        let resolvedLocationContextId = isValidUuid(formData.location_context_id)
+        const normalizedLocationValue = normalizeLocationValue(
+          formData.location_context,
+        );
+        let resolvedLocationContextId = isValidUuid(
+          formData.location_context_id,
+        )
           ? formData.location_context_id
           : null;
-        if (!resolvedLocationContextId && formData.location_context) {
+        let fallbackLocationContext: string | null = null;
+        if (normalizedLocationValue && !resolvedLocationContextId) {
           try {
             resolvedLocationContextId = await resolveLocationContextId(
               supabase,
               user.id,
-              formData.location_context,
+              normalizedLocationValue,
             );
           } catch (maybeError) {
-            console.error("Failed to resolve location context:", maybeError);
-            toast.error(
-              "Location error",
-              "We couldn't save that location right now. Please try again later.",
-            );
-            return;
+            if (isLocationMetadataError(maybeError)) {
+              console.warn(
+                "Falling back to legacy location context value:",
+                maybeError,
+              );
+              fallbackLocationContext = normalizedLocationValue;
+            } else {
+              console.error("Failed to resolve location context:", maybeError);
+              toast.error(
+                "Location error",
+                "We couldn't save that location right now. Please try again later.",
+              );
+              return;
+            }
           }
         }
-        if (formData.location_context && !resolvedLocationContextId) {
-          toast.error(
-            "Location error",
-            "We couldn't save that location right now. Please try again later.",
-          );
-          return;
+        if (
+          normalizedLocationValue &&
+          !resolvedLocationContextId &&
+          !fallbackLocationContext
+        ) {
+          fallbackLocationContext = normalizedLocationValue;
         }
-        insertData.location_context_id = resolvedLocationContextId;
+        if (!normalizedLocationValue) {
+          resolvedLocationContextId = null;
+          fallbackLocationContext = null;
+        }
+        insertData.location_context_id = resolvedLocationContextId ?? null;
+        insertData.location_context = fallbackLocationContext;
+        if (resolvedLocationContextId) {
+          insertData.location_context = null;
+        }
         insertData.daylight_preference =
           formData.daylight_preference &&
           formData.daylight_preference !== "ALL_DAY"

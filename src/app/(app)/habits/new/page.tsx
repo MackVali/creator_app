@@ -29,6 +29,7 @@ import {
 import {
   normalizeLocationValue,
   resolveLocationContextId,
+  isLocationMetadataError,
   isValidUuid,
 } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
@@ -563,6 +564,7 @@ export default function NewHabitPage() {
       )
         ? locationContextId
         : null;
+      let fallbackLocationContext: string | null = null;
 
       if (normalizedLocationValue && !resolvedLocationContextId) {
         try {
@@ -571,31 +573,49 @@ export default function NewHabitPage() {
             user.id,
             normalizedLocationValue,
           );
-          setLocationContextId(resolvedLocationContextId);
+          if (resolvedLocationContextId) {
+            setLocationContextId(resolvedLocationContextId);
+          }
         } catch (maybeError) {
-          console.error("Failed to resolve location context:", maybeError);
-          setError(
-            "We couldn't save that location right now. Please try again later.",
-          );
-          return;
+          if (isLocationMetadataError(maybeError)) {
+            console.warn(
+              "Falling back to legacy location context value:",
+              maybeError,
+            );
+            fallbackLocationContext = normalizedLocationValue;
+            setLocationContextId(null);
+          } else {
+            console.error("Failed to resolve location context:", maybeError);
+            setError(
+              "We couldn't save that location right now. Please try again later.",
+            );
+            return;
+          }
         }
       }
 
-      if (normalizedLocationValue && !resolvedLocationContextId) {
-        setError(
-          "We couldn't save that location right now. Please try again later.",
-        );
-        return;
+      if (normalizedLocationValue && !resolvedLocationContextId && !fallbackLocationContext) {
+        fallbackLocationContext = normalizedLocationValue;
+      }
+
+      if (fallbackLocationContext && !resolvedLocationContextId) {
+        setLocationContextId(null);
       }
 
       if (!normalizedLocationValue) {
         resolvedLocationContextId = null;
+        fallbackLocationContext = null;
       }
 
       const payload: Record<string, unknown> = {
         ...basePayload,
-        location_context_id: resolvedLocationContextId,
+        location_context_id: resolvedLocationContextId ?? null,
+        location_context: fallbackLocationContext,
       };
+
+      if (resolvedLocationContextId) {
+        payload.location_context = null;
+      }
 
       const { error: insertError } = await supabase
         .from("habits")
