@@ -128,6 +128,7 @@ export default function EditHabitPage() {
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
@@ -643,6 +644,11 @@ export default function EditHabitPage() {
               ? String(data.location_context.value)
               : null;
           const resolvedLocationRaw = legacyLocationValue ?? relationalLocationValue;
+          setLocationContextId(
+            typeof data.location_context_id === "string"
+              ? data.location_context_id
+              : null,
+          );
           setLocationContext(normalizeLocationValue(resolvedLocationRaw));
           setDaylightPreference(
             data.daylight_preference
@@ -798,10 +804,10 @@ export default function EditHabitPage() {
       }
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let resolvedLocationContextId: string | null = null;
+      let resolvedLocationContextId: string | null = locationContextId;
       let resolveMetadataError: unknown = null;
 
-      if (normalizedLocationValue) {
+      if (!resolvedLocationContextId && normalizedLocationValue) {
         try {
           resolvedLocationContextId = await resolveLocationContextId(
             supabase,
@@ -819,6 +825,7 @@ export default function EditHabitPage() {
 
       if (resolveMetadataError && locationMetadataMode === "id") {
         setLocationMetadataMode("legacy");
+        setLocationContextId(null);
       }
 
       const updateModes: LocationMetadataMode[] = [];
@@ -932,6 +939,11 @@ export default function EditHabitPage() {
           if (locationMetadataMode !== mode) {
             setLocationMetadataMode(mode);
           }
+          if (mode === "id") {
+            setLocationContextId(effectiveContextId ?? contextIdForUpdate ?? null);
+          } else {
+            setLocationContextId(null);
+          }
           break;
         }
 
@@ -1015,29 +1027,31 @@ export default function EditHabitPage() {
                   energy={energy}
                   skillId={skillId}
                   locationContext={locationContext}
+                  locationContextId={locationContextId}
                   daylightPreference={daylightPreference}
                   windowEdgePreference={windowEdgePreference}
-                energyOptions={energySelectOptions}
-                skillsLoading={skillsLoading}
-                skillOptions={skillSelectOptions}
-                skillError={skillLoadError}
-                goalId={goalId}
-                goalOptions={goalSelectOptions}
-                goalError={goalMetadataSupported ? goalLoadError : null}
-                onGoalChange={setGoalId}
-                completionTarget={completionTarget}
-                onCompletionTargetChange={setCompletionTarget}
-                onNameChange={setName}
-                onDescriptionChange={setDescription}
-                onHabitTypeChange={setHabitType}
-                onRecurrenceChange={setRecurrence}
-                onRecurrenceDaysChange={setRecurrenceDays}
+                  energyOptions={energySelectOptions}
+                  skillsLoading={skillsLoading}
+                  skillOptions={skillSelectOptions}
+                  skillError={skillLoadError}
+                  goalId={goalId}
+                  goalOptions={goalSelectOptions}
+                  goalError={goalMetadataSupported ? goalLoadError : null}
+                  onGoalChange={setGoalId}
+                  completionTarget={completionTarget}
+                  onCompletionTargetChange={setCompletionTarget}
+                  onNameChange={setName}
+                  onDescriptionChange={setDescription}
+                  onHabitTypeChange={setHabitType}
+                  onRecurrenceChange={setRecurrence}
+                  onRecurrenceDaysChange={setRecurrenceDays}
                   onEnergyChange={setEnergy}
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
                   onLocationContextChange={(value) =>
                     setLocationContext(value ? value.toUpperCase() : null)
                   }
+                  onLocationContextIdChange={setLocationContextId}
                   onDaylightPreferenceChange={(value) =>
                     setDaylightPreference(value.toUpperCase())
                   }

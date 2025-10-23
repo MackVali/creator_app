@@ -70,6 +70,7 @@ export default function NewHabitPage() {
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [skillId, setSkillId] = useState("none");
   const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
@@ -540,10 +541,10 @@ export default function NewHabitPage() {
       }
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let resolvedLocationContextId: string | null = null;
+      let resolvedLocationContextId: string | null = locationContextId;
       let resolveMetadataError: unknown = null;
 
-      if (normalizedLocationValue) {
+      if (!resolvedLocationContextId && normalizedLocationValue) {
         try {
           resolvedLocationContextId = await resolveLocationContextId(
             supabase,
@@ -561,6 +562,7 @@ export default function NewHabitPage() {
 
       if (resolveMetadataError && locationMetadataMode === "id") {
         setLocationMetadataMode("legacy");
+        setLocationContextId(null);
       }
 
       const insertModes: LocationMetadataMode[] = [];
@@ -667,6 +669,11 @@ export default function NewHabitPage() {
           if (locationMetadataMode !== mode) {
             setLocationMetadataMode(mode);
           }
+          if (mode === "id") {
+            setLocationContextId(effectiveContextId ?? contextIdForInsert ?? null);
+          } else {
+            setLocationContextId(null);
+          }
           break;
         }
 
@@ -727,6 +734,7 @@ export default function NewHabitPage() {
                 energy={energy}
                 skillId={skillId}
                 locationContext={locationContext}
+                locationContextId={locationContextId}
                 daylightPreference={daylightPreference}
                 windowEdgePreference={windowEdgePreference}
                 energyOptions={energySelectOptions}
@@ -750,6 +758,7 @@ export default function NewHabitPage() {
                 onLocationContextChange={(value) =>
                   setLocationContext(value ? value.toUpperCase() : null)
                 }
+                onLocationContextIdChange={setLocationContextId}
                 onDaylightPreferenceChange={(value) =>
                   setDaylightPreference(value.toUpperCase())
                 }

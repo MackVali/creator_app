@@ -349,6 +349,7 @@ interface FormState {
   recurrence: string;
   recurrence_days: number[];
   location_context: string;
+  location_context_id: string;
   daylight_preference: string;
   window_edge_preference: string;
   completion_target: string;
@@ -404,6 +405,7 @@ const createInitialFormState = (
     eventType === "HABIT" ? HABIT_RECURRENCE_OPTIONS[0].value : "",
   recurrence_days: [],
   location_context: "",
+  location_context_id: "",
   daylight_preference: "ALL_DAY",
   window_edge_preference: "FRONT",
   completion_target: eventType === "HABIT" ? "10" : "",
@@ -1666,11 +1668,18 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
-        insertData.location_context_id = await resolveLocationContextId(
-          supabase,
-          user.id,
-          formData.location_context ? formData.location_context : null,
-        );
+        let resolvedLocationContextId =
+          formData.location_context_id && formData.location_context_id.trim().length > 0
+            ? formData.location_context_id
+            : null;
+        if (!resolvedLocationContextId) {
+          resolvedLocationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            formData.location_context ? formData.location_context : null,
+          );
+        }
+        insertData.location_context_id = resolvedLocationContextId;
         insertData.daylight_preference =
           formData.daylight_preference &&
           formData.daylight_preference !== "ALL_DAY"
@@ -2793,6 +2802,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   ? formData.location_context.toUpperCase()
                   : null
               }
+              locationContextId={
+                formData.location_context_id
+                  ? formData.location_context_id
+                  : null
+              }
               daylightPreference={
                 formData.daylight_preference || "ALL_DAY"
               }
@@ -2856,6 +2870,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 setFormData((prev) => ({
                   ...prev,
                   location_context: value ? value.toUpperCase() : "",
+                }))
+              }
+              onLocationContextIdChange={(id) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  location_context_id: id ?? "",
                 }))
               }
               onDaylightPreferenceChange={(value) =>

@@ -116,6 +116,7 @@ interface HabitFormFieldsProps {
   energy: string;
   skillId: string;
   locationContext?: string | null;
+  locationContextId?: string | null;
   daylightPreference?: string | null;
   windowEdgePreference?: string | null;
   energyOptions: HabitEnergySelectOption[];
@@ -137,6 +138,7 @@ interface HabitFormFieldsProps {
   onDurationChange: (value: string) => void;
   onSkillChange: (value: string) => void;
   onLocationContextChange?: (value: string | null) => void;
+  onLocationContextIdChange?: (id: string | null) => void;
   onDaylightPreferenceChange?: (value: string) => void;
   onWindowEdgePreferenceChange?: (value: string) => void;
   typeOptions?: HabitTypeOption[];
@@ -156,6 +158,8 @@ const WINDOW_EDGE_OPTIONS = [
   { value: "BACK", label: "Back" },
 ];
 
+const ANY_OPTION_ID = "__any__";
+
 export function HabitFormFields({
   name,
   description,
@@ -166,6 +170,7 @@ export function HabitFormFields({
   energy,
   skillId,
   locationContext = null,
+  locationContextId = null,
   daylightPreference = "ALL_DAY",
   windowEdgePreference = "FRONT",
   energyOptions,
@@ -187,6 +192,7 @@ export function HabitFormFields({
   onDurationChange,
   onSkillChange,
   onLocationContextChange,
+  onLocationContextIdChange,
   onDaylightPreferenceChange,
   onWindowEdgePreferenceChange,
   typeOptions = HABIT_TYPE_OPTIONS,
@@ -255,7 +261,21 @@ export function HabitFormFields({
     onRecurrenceDaysChange(next);
   };
 
-  const locationValue = (locationContext ?? "").toUpperCase().trim() || "ANY";
+  const normalizedLocationValue = (locationContext ?? "")
+    .toUpperCase()
+    .trim();
+  const locationOptionsById = useMemo(() => {
+    return new Map(locationOptions.map((option) => [option.id, option]));
+  }, [locationOptions]);
+  const locationOptionsByValue = useMemo(() => {
+    return new Map(locationOptions.map((option) => [option.value, option]));
+  }, [locationOptions]);
+  const selectedOption =
+    (locationContextId ? locationOptionsById.get(locationContextId) : null) ??
+    (normalizedLocationValue
+      ? locationOptionsByValue.get(normalizedLocationValue)
+      : null);
+  const locationValue = selectedOption?.id ?? ANY_OPTION_ID;
   const daylightValue = (daylightPreference ?? "ALL_DAY").toUpperCase().trim();
   const windowEdgeValue = (windowEdgePreference ?? "FRONT")
     .toUpperCase()
@@ -280,6 +300,7 @@ export function HabitFormFields({
 
       setCustomLocationName("");
       onLocationContextChange?.(result.option.value);
+      onLocationContextIdChange?.(result.option.id);
       setAdvancedOpen(true);
     } finally {
       setSavingCustomLocation(false);
@@ -554,7 +575,23 @@ export function HabitFormFields({
               <Select
                 value={locationValue}
                 onValueChange={(value) =>
-                  onLocationContextChange?.(value === "ANY" ? null : value)
+                  {
+                    if (value === ANY_OPTION_ID) {
+                      onLocationContextChange?.(null);
+                      onLocationContextIdChange?.(null);
+                      return;
+                    }
+
+                    const option = locationOptionsById.get(value);
+                    if (!option) {
+                      onLocationContextChange?.(null);
+                      onLocationContextIdChange?.(null);
+                      return;
+                    }
+
+                    onLocationContextChange?.(option.value);
+                    onLocationContextIdChange?.(option.id);
+                  }
                 }
                 disabled={locationOptionsLoading}
               >
@@ -562,8 +599,11 @@ export function HabitFormFields({
                   <SelectValue placeholder="Where does this habit happen?" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  <SelectItem value={ANY_OPTION_ID}>
+                    <span className="text-zinc-400">Anywhere</span>
+                  </SelectItem>
                   {locationOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.value}>
+                    <SelectItem key={option.id} value={option.id}>
                       {option.label}
                     </SelectItem>
                   ))}
