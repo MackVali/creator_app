@@ -587,8 +587,10 @@ export default function NewHabitPage() {
         const payload: Record<string, unknown> = { ...basePayload };
         if (mode === "id") {
           payload.location_context_id = contextId;
+          payload.location_context = null;
         } else {
           payload.location_context = normalizedLocationValue;
+          payload.location_context_id = null;
         }
         return payload;
       };
