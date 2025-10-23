@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import type Lenis from "lenis";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,7 +34,176 @@ interface LinkMeProfileProps {
   profile: Profile;
 }
 
+function useLenisSmoothScroll() {
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    let lenis: Lenis | undefined;
+    let rafId: number | null = null;
+    let disposed = false;
+
+    const cancelAnimation = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    };
+
+    const teardownLenis = () => {
+      cancelAnimation();
+      if (lenis) {
+        lenis.destroy();
+        lenis = undefined;
+      }
+    };
+
+    const startLenis = async () => {
+      try {
+        const { default: LenisCtor } = await import("lenis");
+
+        if (disposed || motionQuery.matches) {
+          return;
+        }
+
+        teardownLenis();
+
+        lenis = new LenisCtor({
+          duration: 1.05,
+          smoothWheel: true,
+          smoothTouch: false,
+          touchMultiplier: 1,
+          syncTouch: true,
+        });
+
+        lenis.scrollTo(window.scrollY, { immediate: true });
+
+        const animate = (time: number) => {
+          lenis?.raf(time);
+          rafId = requestAnimationFrame(animate);
+        };
+
+        rafId = requestAnimationFrame(animate);
+      } catch (error) {
+        if (!disposed) {
+          console.error("Failed to initialize smooth scrolling", error);
+        }
+      }
+    };
+
+    if (!motionQuery.matches) {
+      startLenis();
+    }
+
+    const handleMotionChange = (event: MediaQueryListEvent) => {
+      if (event.matches) {
+        teardownLenis();
+      } else {
+        startLenis();
+      }
+    };
+
+    if (typeof motionQuery.addEventListener === "function") {
+      motionQuery.addEventListener("change", handleMotionChange);
+    } else if (typeof motionQuery.addListener === "function") {
+      motionQuery.addListener(handleMotionChange);
+    }
+
+    return () => {
+      disposed = true;
+      if (typeof motionQuery.removeEventListener === "function") {
+        motionQuery.removeEventListener("change", handleMotionChange);
+      } else if (typeof motionQuery.removeListener === "function") {
+        motionQuery.removeListener(handleMotionChange);
+      }
+
+      teardownLenis();
+    };
+  }, []);
+}
+
+function useStickyHeaderScrollPadding() {
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const root = document.documentElement;
+    const stickyHeader = document.querySelector<HTMLElement>(
+      "[data-profile-sticky-header]",
+    );
+
+    if (!stickyHeader) {
+      return undefined;
+    }
+
+    const previousScrollPaddingTop = root.style.scrollPaddingTop;
+    let lastOffset: number | undefined;
+    let rafId: number | null = null;
+
+    const applyOffset = (offset: number) => {
+      if (offset <= 0) {
+        if (typeof lastOffset === "number") {
+          root.style.scrollPaddingTop = previousScrollPaddingTop;
+          lastOffset = undefined;
+        }
+        return;
+      }
+
+      if (lastOffset === offset) {
+        return;
+      }
+
+      root.style.scrollPaddingTop = `${offset}px`;
+      lastOffset = offset;
+    };
+
+    const scheduleMeasurement = () => {
+      if (rafId !== null) {
+        return;
+      }
+
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const offset = Math.round(stickyHeader.getBoundingClientRect().height);
+        applyOffset(offset);
+      });
+    };
+
+    scheduleMeasurement();
+
+    let resizeObserver: ResizeObserver | undefined;
+    const fallbackResizeHandler = () => scheduleMeasurement();
+
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => scheduleMeasurement());
+      resizeObserver.observe(stickyHeader);
+    } else {
+      window.addEventListener("resize", fallbackResizeHandler);
+    }
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      } else {
+        window.removeEventListener("resize", fallbackResizeHandler);
+      }
+
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+
+      root.style.scrollPaddingTop = previousScrollPaddingTop;
+    };
+  }, []);
+}
+
 export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
+  useLenisSmoothScroll();
+  useStickyHeaderScrollPadding();
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [contentCards, setContentCards] = useState<ContentCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,97 +232,6 @@ export default function LinkMeProfile({ profile }: LinkMeProfileProps) {
 
     loadProfileData();
   }, [profile?.user_id]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-
-    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (motionQuery.matches) {
-      return undefined;
-    }
-
-    const root = document.documentElement;
-    const body = document.body;
-    const previousRootBehavior = root.style.scrollBehavior;
-    const previousBodyBehavior = body.style.scrollBehavior;
-    const previousScrollPaddingTop = root.style.scrollPaddingTop;
-
-    const enableSmoothScroll = () => {
-      root.style.scrollBehavior = "smooth";
-      body.style.scrollBehavior = "smooth";
-    };
-
-    enableSmoothScroll();
-
-    const stickyHeader = document.querySelector<HTMLElement>(
-      "[data-profile-sticky-header]",
-    );
-
-    const updateScrollPadding = () => {
-      if (!stickyHeader) {
-        return;
-      }
-
-      const offset = stickyHeader.offsetHeight;
-      root.style.scrollPaddingTop = offset > 0 ? `${offset}px` : previousScrollPaddingTop;
-    };
-
-    updateScrollPadding();
-
-    let resizeObserver: ResizeObserver | undefined;
-    let resizeFallbackHandler: (() => void) | undefined;
-
-    if (stickyHeader) {
-      if (typeof ResizeObserver !== "undefined") {
-        resizeObserver = new ResizeObserver(() => updateScrollPadding());
-        resizeObserver.observe(stickyHeader);
-      } else {
-        const handleResize = () => updateScrollPadding();
-        resizeFallbackHandler = handleResize;
-        window.addEventListener("resize", handleResize);
-      }
-    }
-
-    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
-      if (event.matches) {
-        root.style.scrollBehavior = previousRootBehavior;
-        body.style.scrollBehavior = previousBodyBehavior;
-      } else {
-        enableSmoothScroll();
-      }
-    };
-
-    let removeMotionListener: (() => void) | undefined;
-
-    if (typeof motionQuery.addEventListener === "function") {
-      motionQuery.addEventListener("change", handleMotionPreferenceChange);
-      removeMotionListener = () =>
-        motionQuery.removeEventListener("change", handleMotionPreferenceChange);
-    } else if (typeof motionQuery.addListener === "function") {
-      motionQuery.addListener(handleMotionPreferenceChange);
-      removeMotionListener = () => motionQuery.removeListener(handleMotionPreferenceChange);
-    }
-
-    return () => {
-      if (resizeObserver && stickyHeader) {
-        resizeObserver.disconnect();
-      }
-
-      if (resizeFallbackHandler) {
-        window.removeEventListener("resize", resizeFallbackHandler);
-      }
-
-      if (removeMotionListener) {
-        removeMotionListener();
-      }
-
-      root.style.scrollBehavior = previousRootBehavior;
-      body.style.scrollBehavior = previousBodyBehavior;
-      root.style.scrollPaddingTop = previousScrollPaddingTop;
-    };
-  }, []);
 
   const isOwner = user?.id === profile.user_id;
   const activeCards = contentCards
