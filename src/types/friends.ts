@@ -43,3 +43,12 @@ export type DiscoveryProfile = {
   highlight: string;
   role: string;
 };
+
+export type FriendSearchResult = {
+  userId: string | null;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  profileUrl: string | null;
+  mutualFriends: number | null;
+};
