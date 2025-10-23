@@ -109,10 +109,6 @@ export async function GET(request: Request) {
 
   if (discoveryError) {
     console.error("Failed to load friend discovery profiles", discoveryError);
-    return NextResponse.json(
-      { error: "Unable to load discovery profiles." },
-      { status: 500 }
-    );
   }
 
   const discoveryProfiles = (discoveryRows ?? [])
