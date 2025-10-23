@@ -1672,12 +1672,28 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           formData.location_context_id && formData.location_context_id.trim().length > 0
             ? formData.location_context_id
             : null;
-        if (!resolvedLocationContextId) {
-          resolvedLocationContextId = await resolveLocationContextId(
-            supabase,
-            user.id,
-            formData.location_context ? formData.location_context : null,
+        if (!resolvedLocationContextId && formData.location_context) {
+          try {
+            resolvedLocationContextId = await resolveLocationContextId(
+              supabase,
+              user.id,
+              formData.location_context,
+            );
+          } catch (maybeError) {
+            console.error("Failed to resolve location context:", maybeError);
+            toast.error(
+              "Location error",
+              "We couldn't save that location right now. Please try again later.",
+            );
+            return;
+          }
+        }
+        if (formData.location_context && !resolvedLocationContextId) {
+          toast.error(
+            "Location error",
+            "We couldn't save that location right now. Please try again later.",
           );
+          return;
         }
         insertData.location_context_id = resolvedLocationContextId;
         insertData.daylight_preference =
