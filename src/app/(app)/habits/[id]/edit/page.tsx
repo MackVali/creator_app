@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   LocationMetadataMode,
   isLocationMetadataError,
+  isValidUuid,
   normalizeLocationValue,
   resolveLocationContextId,
 } from "@/lib/location-metadata";
@@ -642,7 +643,7 @@ export default function EditHabitPage() {
               : null;
           const resolvedLocationRaw = legacyLocationValue ?? relationalLocationValue;
           setLocationContextId(
-            typeof data.location_context_id === "string"
+            isValidUuid(data.location_context_id)
               ? data.location_context_id
               : null,
           );
@@ -826,7 +827,11 @@ export default function EditHabitPage() {
       }
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let resolvedLocationContextId: string | null = locationContextId;
+      let resolvedLocationContextId: string | null = isValidUuid(
+        locationContextId,
+      )
+        ? locationContextId
+        : null;
 
       if (normalizedLocationValue && !resolvedLocationContextId) {
         try {

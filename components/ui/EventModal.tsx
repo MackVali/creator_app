@@ -67,7 +67,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
-import { resolveLocationContextId } from "@/lib/location-metadata";
+import { resolveLocationContextId, isValidUuid } from "@/lib/location-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
@@ -1668,10 +1668,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           normalizedRecurrence === "none" ? null : formData.recurrence;
         insertData.recurrence_days = recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
-        let resolvedLocationContextId =
-          formData.location_context_id && formData.location_context_id.trim().length > 0
-            ? formData.location_context_id
-            : null;
+        let resolvedLocationContextId = isValidUuid(formData.location_context_id)
+          ? formData.location_context_id
+          : null;
         if (!resolvedLocationContextId && formData.location_context) {
           try {
             resolvedLocationContextId = await resolveLocationContextId(

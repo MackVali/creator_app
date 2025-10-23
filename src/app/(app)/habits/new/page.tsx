@@ -29,6 +29,7 @@ import {
 import {
   normalizeLocationValue,
   resolveLocationContextId,
+  isValidUuid,
 } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
@@ -557,7 +558,11 @@ export default function NewHabitPage() {
       };
 
       const normalizedLocationValue = normalizeLocationValue(locationContext);
-      let resolvedLocationContextId: string | null = locationContextId;
+      let resolvedLocationContextId: string | null = isValidUuid(
+        locationContextId,
+      )
+        ? locationContextId
+        : null;
 
       if (normalizedLocationValue && !resolvedLocationContextId) {
         try {
