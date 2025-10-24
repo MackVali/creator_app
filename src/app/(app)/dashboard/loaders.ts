@@ -1,6 +1,5 @@
 // src/app/dashboard/loaders.ts
-import { cookies as nextCookies } from "next/headers";
-import { getSupabaseServer } from "@/lib/supabase";
+import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   UserStats,
   MonumentCounts,
@@ -8,25 +7,8 @@ import type {
   GoalItem,
 } from "@/types/dashboard";
 
-export async function getUserStats(
-  cookieStore?: Awaited<ReturnType<typeof nextCookies>>
-): Promise<UserStats> {
-  const cookieStoreResolved = cookieStore || (await nextCookies());
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStoreResolved.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+export async function getUserStats(): Promise<UserStats> {
+  const supabase = await createSupabaseServerClient();
   if (!supabase) {
     return { level: 1, xp_current: 0, xp_max: 4000 };
   }
@@ -37,25 +19,8 @@ export async function getUserStats(
   return data ?? { level: 1, xp_current: 0, xp_max: 4000 };
 }
 
-export async function getMonumentsSummary(
-  cookieStore?: Awaited<ReturnType<typeof nextCookies>>
-): Promise<MonumentCounts> {
-  const cookieStoreResolved = cookieStore || (await nextCookies());
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStoreResolved.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+export async function getMonumentsSummary(): Promise<MonumentCounts> {
+  const supabase = await createSupabaseServerClient();
   if (!supabase) {
     return {
       Achievement: 0,
@@ -83,25 +48,11 @@ export async function getMonumentsSummary(
   return base;
 }
 
-export async function getSkillsAndGoals(
-  cookieStore?: Awaited<ReturnType<typeof nextCookies>>
-): Promise<{ cats: CatItem[]; goals: GoalItem[] }> {
-  const cookieStoreResolved = cookieStore || (await nextCookies());
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStoreResolved.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+export async function getSkillsAndGoals(): Promise<{
+  cats: CatItem[];
+  goals: GoalItem[];
+}> {
+  const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
     return { cats: [], goals: [] };
