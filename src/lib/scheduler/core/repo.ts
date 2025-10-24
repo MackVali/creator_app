@@ -1,8 +1,8 @@
 // @ts-nocheck
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../../../../types/supabase'
-import { normalizeTimeZone, weekdayInTimeZone } from '../timezone.js'
-import type { TaskLite, ProjectLite } from '../weight.js'
+import { normalizeTimeZone, weekdayInTimeZone } from '../timezone'
+import type { TaskLite, ProjectLite } from '../weight'
 
 export type WindowLite = {
   id: string

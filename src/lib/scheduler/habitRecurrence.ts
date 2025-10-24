@@ -1,4 +1,4 @@
-import type { HabitScheduleItem } from './habits.js'
+import type { HabitScheduleItem } from './habits'
 import {
   addDaysInTimeZone,
   addMonthsInTimeZone,
@@ -7,7 +7,7 @@ import {
   getDatePartsInTimeZone,
   startOfDayInTimeZone,
   weekdayInTimeZone,
-} from './timezone.js'
+} from './timezone'
 
 export type HabitDueEvaluation = {
   isDue: boolean

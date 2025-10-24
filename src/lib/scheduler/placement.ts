@@ -4,7 +4,7 @@ import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
 import {
   placeItemInWindows as placeItemInWindowsCore,
-} from './core/placement.js'
+} from './core/placement'
 import type { ScheduleInstance } from './core/instanceRepo'
 
 type Client = SupabaseClient<Database>

@@ -1,4 +1,4 @@
-import { addDaysInTimeZone, addMonthsInTimeZone, differenceInCalendarDaysInTimeZone, differenceInCalendarMonthsInTimeZone, getDatePartsInTimeZone, startOfDayInTimeZone, weekdayInTimeZone, } from './timezone.js';
+import { addDaysInTimeZone, addMonthsInTimeZone, differenceInCalendarDaysInTimeZone, differenceInCalendarMonthsInTimeZone, getDatePartsInTimeZone, startOfDayInTimeZone, weekdayInTimeZone, } from './timezone';
 const DAILY_RECURRENCES = new Set(['daily', 'none', 'everyday', '']);
 const DAY_INTERVALS = {
     weekly: 7,

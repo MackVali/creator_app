@@ -1,13 +1,13 @@
-import { fetchBacklogNeedingSchedule, fetchInstancesForRange, createInstance, } from './instanceRepo.js';
-import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from '../projects.js';
-import { fetchReadyTasks, fetchWindowsForDate, fetchProjectsMap, fetchProjectSkillsForProjects, } from './repo.js';
-import { placeItemInWindows } from './placement.js';
-import { ENERGY } from '../config.js';
-import { fetchHabitsForSchedule, DEFAULT_HABIT_DURATION_MIN, } from './habits.js';
-import { evaluateHabitDueOnDate } from '../habitRecurrence.js';
-import { addDaysInTimeZone, differenceInCalendarDaysInTimeZone, normalizeTimeZone, setTimeInTimeZone, startOfDayInTimeZone, } from '../timezone.js';
-import { normalizeCoordinates, resolveSunlightBounds } from '../sunlight.js';
-import { normalizeSchedulerModePayload } from '../modes.js';
+import { fetchBacklogNeedingSchedule, fetchInstancesForRange, createInstance, } from './instanceRepo';
+import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from '../projects';
+import { fetchReadyTasks, fetchWindowsForDate, fetchProjectsMap, fetchProjectSkillsForProjects, } from './repo';
+import { placeItemInWindows } from './placement';
+import { ENERGY } from '../config';
+import { fetchHabitsForSchedule, DEFAULT_HABIT_DURATION_MIN, } from './habits';
+import { evaluateHabitDueOnDate } from '../habitRecurrence';
+import { addDaysInTimeZone, differenceInCalendarDaysInTimeZone, normalizeTimeZone, setTimeInTimeZone, startOfDayInTimeZone, } from '../timezone';
+import { normalizeCoordinates, resolveSunlightBounds } from '../sunlight';
+import { normalizeSchedulerModePayload } from '../modes';
 const START_GRACE_MIN = 1;
 const SCHEDULER_MAX_HORIZON_DAYS = 365;
 const HABIT_TYPE_PRIORITY = {

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import SunCalc from 'suncalc';
-import { addDaysInTimeZone, setTimeInTimeZone } from './timezone.js';
+import { addDaysInTimeZone, setTimeInTimeZone } from './timezone';
 function isFiniteNumber(value) {
     return typeof value === 'number' && Number.isFinite(value);
 }

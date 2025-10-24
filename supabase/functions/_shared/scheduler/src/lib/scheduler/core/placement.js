@@ -1,5 +1,5 @@
-import { fetchInstancesForRange, createInstance, rescheduleInstance, } from './instanceRepo.js';
-import { addMin } from '../placer.js';
+import { fetchInstancesForRange, createInstance, rescheduleInstance, } from './instanceRepo';
+import { addMin } from '../placer';
 export async function placeItemInWindows(params) {
     const { userId, item, windows, client, reuseInstanceId, ignoreProjectIds, notBefore } = params;
     let best = null;

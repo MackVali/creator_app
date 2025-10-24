@@ -7,8 +7,8 @@ import {
   createInstance,
   rescheduleInstance,
   type ScheduleInstance,
-} from './instanceRepo.js'
-import { addMin } from '../placer.js'
+} from './instanceRepo'
+import { addMin } from '../placer'
 
 type Client = SupabaseClient<Database>
 

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import SunCalc from 'suncalc'
 
-import { addDaysInTimeZone, setTimeInTimeZone } from './timezone.js'
+import { addDaysInTimeZone, setTimeInTimeZone } from './timezone'
 
 export type GeoCoordinates = {
   latitude: number

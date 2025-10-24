@@ -1,5 +1,5 @@
-import { ENERGY } from './config.js';
-import { taskWeight, projectWeight } from './weight.js';
+import { ENERGY } from './config';
+import { taskWeight, projectWeight } from './weight';
 export const DEFAULT_PROJECT_DURATION_MIN = 60;
 export const DEFAULT_PROJECT_ENERGY = 'NO';
 const normEnergy = (e) => {

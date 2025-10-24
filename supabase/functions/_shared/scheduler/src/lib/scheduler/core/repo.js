@@ -1,4 +1,4 @@
-import { normalizeTimeZone, weekdayInTimeZone } from '../timezone.js';
+import { normalizeTimeZone, weekdayInTimeZone } from '../timezone';
 function mapWindowRecord(record) {
     const value = record.location_context?.value
         ? String(record.location_context.value).toUpperCase().trim()

@@ -1,4 +1,4 @@
-import { TASK_PRIORITY_WEIGHT, TASK_STAGE_WEIGHT, PROJECT_PRIORITY_WEIGHT, PROJECT_STAGE_WEIGHT, GOAL_PRIORITY_WEIGHT, } from './config.js';
+import { TASK_PRIORITY_WEIGHT, TASK_STAGE_WEIGHT, PROJECT_PRIORITY_WEIGHT, PROJECT_STAGE_WEIGHT, GOAL_PRIORITY_WEIGHT, } from './config';
 function hasKey(obj, key) {
     return Object.prototype.hasOwnProperty.call(obj, key);
 }

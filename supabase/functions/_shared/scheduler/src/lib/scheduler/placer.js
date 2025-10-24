@@ -1,4 +1,4 @@
-import { ENERGY } from './config.js';
+import { ENERGY } from './config';
 export function addMin(date, n) {
     return new Date(date.getTime() + n * 60000);
 }

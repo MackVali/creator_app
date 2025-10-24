@@ -1,5 +1,5 @@
-import type { TaskLite } from './weight.js'
-import { ENERGY, type Energy } from './config.js'
+import type { TaskLite } from './weight'
+import { ENERGY, type Energy } from './config'
 
 export type WindowLite = {
   id: string;

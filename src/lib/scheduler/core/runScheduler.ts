@@ -6,32 +6,32 @@ import {
   fetchInstancesForRange,
   createInstance,
   type ScheduleInstance,
-} from './instanceRepo.js'
-import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from '../projects.js'
+} from './instanceRepo'
+import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from '../projects'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
   fetchProjectsMap,
   fetchProjectSkillsForProjects,
   type WindowLite,
-} from './repo.js'
-import { placeItemInWindows } from './placement.js'
-import { ENERGY } from '../config.js'
+} from './repo'
+import { placeItemInWindows } from './placement'
+import { ENERGY } from '../config'
 import {
   fetchHabitsForSchedule,
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
-} from './habits.js'
-import { evaluateHabitDueOnDate, type HabitDueEvaluation } from '../habitRecurrence.js'
+} from './habits'
+import { evaluateHabitDueOnDate, type HabitDueEvaluation } from '../habitRecurrence'
 import {
   addDaysInTimeZone,
   differenceInCalendarDaysInTimeZone,
   normalizeTimeZone,
   setTimeInTimeZone,
   startOfDayInTimeZone,
-} from '../timezone.js'
-import { normalizeCoordinates, resolveSunlightBounds, type GeoCoordinates } from '../sunlight.js'
-import { normalizeSchedulerModePayload, type SchedulerModePayload } from '../modes.js'
+} from '../timezone'
+import { normalizeCoordinates, resolveSunlightBounds, type GeoCoordinates } from '../sunlight'
+import { normalizeSchedulerModePayload, type SchedulerModePayload } from '../modes'
 
 type Client = SupabaseClient<Database>
 
