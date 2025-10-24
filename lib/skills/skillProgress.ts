@@ -95,7 +95,7 @@ export function mapPrestigeBadgeRows(
     return [];
   }
 
-  return rows
+  const mapped = rows
     .map((entry) => {
       const badgeId = typeof entry.badge_id === "string" ? entry.badge_id : null;
       const id = typeof entry.id === "string" ? entry.id : badgeId;
@@ -134,8 +134,31 @@ export function mapPrestigeBadgeRows(
       if (a.level === b.level) {
         return a.label.localeCompare(b.label);
       }
-      return a.level - b.level;
+      return b.level - a.level;
     });
+
+  if (mapped.length === 0) {
+    return [];
+  }
+
+  const bestByType = new Map<BadgeType, BadgeData>();
+
+  for (const badge of mapped) {
+    if (!bestByType.has(badge.badgeType)) {
+      bestByType.set(badge.badgeType, badge);
+    }
+  }
+
+  return Array.from(bestByType.values()).sort((a, b) => {
+    const typeWeightDelta = badgeSortWeight(a.badgeType) - badgeSortWeight(b.badgeType);
+    if (typeWeightDelta !== 0) {
+      return typeWeightDelta;
+    }
+    if (a.level === b.level) {
+      return a.label.localeCompare(b.label);
+    }
+    return b.level - a.level;
+  });
 }
 
 export function mapRowToProgress(
