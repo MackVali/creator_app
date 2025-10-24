@@ -410,7 +410,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                           <div
                             key={skill.skill_id}
                             style={{
-                              display: "flex",
+                                display: "flex",
                               alignItems: "center",
                               gap: "12px",
                               padding: "12px",
@@ -487,7 +487,8 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                               {skill.progress}%
                             </div>
                           </div>
-                        ))
+                          ))
+                        )
                       ) : (
                         <div
                           style={{

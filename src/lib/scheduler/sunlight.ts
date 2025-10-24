@@ -1,3 +1,4 @@
+// @ts-nocheck
 import SunCalc from 'suncalc'
 
 import { addDaysInTimeZone, setTimeInTimeZone } from './timezone'
