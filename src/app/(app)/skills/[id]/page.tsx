@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
 import { normalizeTimeZone } from "@/lib/scheduler/timezone";
 import type { HabitScheduleItem } from "@/lib/scheduler/habits";
-import { getSkillLevelBadge } from "@/lib/skills/levelBadges";
 
 interface Skill {
   id: string;
@@ -407,12 +406,10 @@ export default function SkillDetailPage() {
       : `Added ${daysTracked} day${daysTracked === 1 ? "" : "s"} ago.`
     : "Creation date unavailable.";
 
-  const levelBadge = getSkillLevelBadge(skill.level);
-
   const stats = [
     {
       label: "Skill level",
-      value: `${levelBadge} Lv ${skill.level}`,
+      value: `Lv ${skill.level}`,
       description: describeLevel(skill.level),
       icon: Target,
     },

@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import type { DashboardData } from "@/types/dashboard";
-import { getSkillLevelBadge } from "@/lib/skills/levelBadges";
 
 interface ClientDashboardProps {
   data: DashboardData;
@@ -407,12 +406,10 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                       }}
                     >
                       {cat.skills && cat.skills.length > 0 ? (
-                        cat.skills.map((skill) => {
-                          const levelBadge = getSkillLevelBadge(skill.level ?? undefined);
-                          return (
-                            <div
-                              key={skill.skill_id}
-                              style={{
+                        cat.skills.map((skill) => (
+                          <div
+                            key={skill.skill_id}
+                            style={{
                                 display: "flex",
                               alignItems: "center",
                               gap: "12px",
@@ -451,7 +448,7 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                                 flexShrink: "0",
                               }}
                             >
-                              {levelBadge} Lv {skill.level}
+                              Lv {skill.level}
                             </div>
 
                             {/* Progress Bar */}
@@ -490,8 +487,8 @@ export function ClientDashboard({ data }: ClientDashboardProps) {
                               {skill.progress}%
                             </div>
                           </div>
-                          );
-                        })
+                          ))
+                        )
                       ) : (
                         <div
                           style={{

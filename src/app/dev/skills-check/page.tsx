@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { getSkillsByCat } from "../../../lib/data/skills";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "../../../lib/types/skill";
-import { getSkillLevelBadge } from "@/lib/skills/levelBadges";
 
 export default function SkillsCheckPage() {
   const [skills, setSkills] = useState<SkillRow[]>([]);
@@ -90,7 +89,6 @@ export default function SkillsCheckPage() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {skills.map((skill) => {
-              const levelBadge = getSkillLevelBadge(skill.level ?? undefined);
               return (
                 <tr key={skill.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
@@ -106,7 +104,7 @@ export default function SkillsCheckPage() {
                   {skill.cat_id ? skill.cat_id.slice(0, 8) + "..." : "null"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {levelBadge} {skill.level ?? "null"}
+                  Lv {skill.level ?? "null"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {skill.created_at
