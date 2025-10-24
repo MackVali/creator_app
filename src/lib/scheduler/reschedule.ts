@@ -1015,38 +1015,91 @@ async function persistHabitPlacements(params: {
   const inserted: ScheduleInstance[] = []
   const failures: ScheduleFailure[] = []
 
+  await ensureHabitSourceTypeReady(supabase)
+
   for (const placement of placements) {
     const habit = placement.habit
-    const response = await createInstance(
-      {
-        userId,
-        sourceId: habit.id,
-        sourceType: 'HABIT',
-        windowId: habit.windowId,
-        startUTC: habit.startUTC,
-        endUTC: habit.endUTC,
-        durationMin: habit.durationMin,
-        weightSnapshot: 0,
-        energyResolved: habit.energyResolved?.toUpperCase() ?? 'NO',
-      },
-      supabase
-    )
+    let attempts = 0
+    let done = false
 
-    if (response.error) {
-      failures.push({
-        itemId: habit.id,
-        reason: 'error',
-        detail: response.error,
-      })
-      continue
-    }
+    while (!done && attempts < 2) {
+      attempts += 1
+      const response = await createInstance(
+        {
+          userId,
+          sourceId: habit.id,
+          sourceType: 'HABIT',
+          windowId: habit.windowId,
+          startUTC: habit.startUTC,
+          endUTC: habit.endUTC,
+          durationMin: habit.durationMin,
+          weightSnapshot: 0,
+          energyResolved: habit.energyResolved?.toUpperCase() ?? 'NO',
+        },
+        supabase
+      )
 
-    if (response.data) {
-      inserted.push(response.data)
+      if (!response.error && response.data) {
+        inserted.push(response.data)
+        done = true
+        break
+      }
+
+      if (isHabitSourceTypeError(response.error) && attempts === 1) {
+        habitSourceTypeSupport = 'unknown'
+        await ensureHabitSourceTypeReady(supabase)
+        continue
+      }
+
+      if (response.error) {
+        failures.push({
+          itemId: habit.id,
+          reason: 'error',
+          detail: response.error,
+        })
+      }
+      done = true
     }
   }
 
   return { inserted, failures }
+}
+
+let habitSourceTypeSupport: 'unknown' | 'ready' | 'failed' = 'unknown'
+
+function isHabitSourceTypeError(error?: PostgrestError | null): boolean {
+  if (!error) return false
+  if (error.code === '22P02' || error.code === '23514') {
+    const message = `${error.message ?? ''} ${error.details ?? ''}`
+    return message.includes('schedule_instance_source_type')
+  }
+  const combined = `${error.message ?? ''} ${error.details ?? ''}`
+  return combined.includes('schedule_instance_source_type')
+}
+
+async function ensureHabitSourceTypeReady(client: Client) {
+  if (habitSourceTypeSupport === 'ready') return
+  if (habitSourceTypeSupport === 'failed') return
+
+  const probe = await client
+    .from('schedule_instances')
+    .select('id')
+    .eq('source_type', 'HABIT')
+    .limit(1)
+
+  if (!probe.error || !isHabitSourceTypeError(probe.error)) {
+    habitSourceTypeSupport = 'ready'
+    return
+  }
+
+  const ensure = await client.rpc('ensure_schedule_instance_habit_type')
+  if (ensure.error) {
+    console.error('Failed to ensure HABIT schedule source type', ensure.error)
+    habitSourceTypeSupport = 'failed'
+    return
+  }
+
+  habitSourceTypeSupport = 'ready'
 }
 
 async function scheduleHabitsForDay(params: {
