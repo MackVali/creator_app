@@ -977,6 +977,81 @@ export interface Database {
           updated_at?: string;
         };
       };
+      badges: {
+        Row: {
+          id: string;
+          created_at: string;
+          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          level: number;
+          emoji: string;
+          label: string;
+          description: string | null;
+          metadata: Json | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          level: number;
+          emoji: string;
+          label: string;
+          description?: string | null;
+          metadata?: Json | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          badge_type?: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          level?: number;
+          emoji?: string;
+          label?: string;
+          description?: string | null;
+          metadata?: Json | null;
+        };
+      };
+      skill_badges: {
+        Row: {
+          id: string;
+          user_id: string;
+          skill_id: string;
+          badge_id: string;
+          awarded_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          skill_id: string;
+          badge_id: string;
+          awarded_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          skill_id?: string;
+          badge_id?: string;
+          awarded_at?: string;
+        };
+      };
+      user_badges: {
+        Row: {
+          id: string;
+          user_id: string;
+          badge_id: string;
+          awarded_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          badge_id: string;
+          awarded_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          badge_id?: string;
+          awarded_at?: string;
+        };
+      };
       dark_xp_events: {
         Row: {
           id: string;
@@ -1008,18 +1083,21 @@ export interface Database {
           user_id: string;
           total_dark_xp: number;
           current_level: number;
+          prestige: number;
           updated_at: string;
         };
         Insert: {
           user_id: string;
           total_dark_xp?: number;
           current_level?: number;
+          prestige?: number;
           updated_at?: string;
         };
         Update: {
           user_id?: string;
           total_dark_xp?: number;
           current_level?: number;
+          prestige?: number;
           updated_at?: string;
         };
       };
