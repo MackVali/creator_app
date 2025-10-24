@@ -66,7 +66,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
   const { data, error } = await supabase
     .from('tasks')
     .select(
-      'id, name, priority, stage, duration_min, energy, project_id, skill_id, skills(icon, monument_id)'
+      'id, name, priority, stage, duration_min, energy, project_id, skill_id, due_date, skills(icon, monument_id)'
     );
 
   if (error) throw error;
@@ -81,6 +81,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
       project_id,
       skill_id,
       skills,
+      due_date,
     }) => ({
       id,
       name,
@@ -93,6 +94,7 @@ export async function fetchReadyTasks(client?: Client): Promise<TaskLite[]> {
       skill_icon: (skills as unknown as { icon?: string | null } | null)?.icon ?? null,
       skill_monument_id:
         (skills as unknown as { monument_id?: string | null } | null)?.monument_id ?? null,
+      due_date: due_date ?? null,
     })
   );
 }
@@ -189,7 +191,7 @@ export async function fetchProjectsMap(
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min');
+    .select('id, name, priority, stage, energy, duration_min, due_date');
 
   if (error) throw error;
   const map: Record<string, ProjectLite> = {};
@@ -210,6 +212,7 @@ export async function fetchProjectsMap(
       stage: p.stage,
       energy: p.energy ?? null,
       duration_min: p.duration_min ?? null,
+      due_date: (p as { due_date?: string | null }).due_date ?? null,
     };
   }
   return map;

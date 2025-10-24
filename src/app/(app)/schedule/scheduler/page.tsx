@@ -21,23 +21,57 @@ type SchedulerFailure = {
   detail?: unknown;
 };
 
+type SchedulerHorizon = {
+  startUTC: string;
+  endUTC: string;
+  days: number;
+  dueDateUTC: string | null;
+  pinnedInstanceStartUTC: string | null;
+};
+
 type ScheduleDraft = {
   placed: ScheduleInstance[];
   failures: SchedulerFailure[];
   error?: unknown;
   timeline: PreparedPlacementEntry[];
+  horizon: SchedulerHorizon | null;
 };
 
-type DraftPlacementEntry = {
+type PlacementDecision = "kept" | "new" | "rescheduled";
+
+type DraftProjectPlacementEntry = {
+  type?: "PROJECT";
   instance: ScheduleInstance;
   projectId: string;
-  decision: "kept" | "new" | "rescheduled";
+  decision: PlacementDecision;
   availableStartLocal?: string | null;
   windowStartLocal?: string | null;
   scheduledDayOffset?: number | null;
 };
 
-type PreparedPlacementEntry = DraftPlacementEntry & {
+type DraftHabitPlacementEntry = {
+  type: "HABIT";
+  habit: {
+    id: string;
+    name?: string | null;
+    windowId?: string | null;
+    windowLabel?: string | null;
+    startUTC: string;
+    endUTC: string;
+    durationMin?: number | null;
+    energyResolved?: string | null;
+    clipped?: boolean | null;
+  };
+  decision: PlacementDecision;
+  availableStartLocal?: string | null;
+  windowStartLocal?: string | null;
+  scheduledDayOffset?: number | null;
+};
+
+type DraftPlacementEntry = DraftProjectPlacementEntry | DraftHabitPlacementEntry;
+
+type PreparedProjectPlacementEntry = DraftProjectPlacementEntry & {
+  type: "PROJECT";
   start: Date;
   end: Date;
   durationMin: number;
@@ -45,16 +79,52 @@ type PreparedPlacementEntry = DraftPlacementEntry & {
   windowStartLocalDate: Date | null;
 };
 
-type PlacementView = {
+type PreparedHabitPlacementEntry = DraftHabitPlacementEntry & {
+  type: "HABIT";
+  start: Date;
+  end: Date;
+  durationMin: number;
+  availableStartLocalDate: Date | null;
+  windowStartLocalDate: Date | null;
+};
+
+type PreparedPlacementEntry =
+  | PreparedProjectPlacementEntry
+  | PreparedHabitPlacementEntry;
+
+type ProjectPlacementView = {
+  kind: "PROJECT";
   instance: ScheduleInstance;
   project?: ProjectItem;
   window?: WindowLite;
   start: Date;
   end: Date;
   durationMin: number;
-  decision: DraftPlacementEntry["decision"];
+  decision: PlacementDecision;
   reason: string;
+  energy: string | null;
+  availableStartLocalDate: Date | null;
+  windowStartLocalDate: Date | null;
 };
+
+type HabitPlacementView = {
+  kind: "HABIT";
+  habitId: string;
+  habitName: string;
+  window?: WindowLite;
+  windowLabel: string | null;
+  start: Date;
+  end: Date;
+  durationMin: number;
+  decision: PlacementDecision;
+  reason: string;
+  energy: string | null;
+  clipped: boolean;
+  availableStartLocalDate: Date | null;
+  windowStartLocalDate: Date | null;
+};
+
+type PlacementView = ProjectPlacementView | HabitPlacementView;
 
 type GapEntry = {
   type: "gap";
@@ -112,6 +182,43 @@ export default function SchedulerPage() {
   const placements = useMemo<PlacementView[]>(() => {
     if (!scheduleDraft) return [];
     return scheduleDraft.timeline.map(entry => {
+      if (entry.type === "HABIT") {
+        const window =
+          entry.habit.windowId && windowMap[entry.habit.windowId]
+            ? windowMap[entry.habit.windowId]
+            : undefined;
+        const habitName = entry.habit.name?.trim() ? entry.habit.name : "Habit";
+        const energySource =
+          entry.habit.energyResolved?.trim() || window?.energy || null;
+        const reason = describeHabitPlacementReason({
+          decision: entry.decision,
+          habitName,
+          window,
+          start: entry.start,
+          availableStartLocal: entry.availableStartLocalDate,
+          windowStartLocal: entry.windowStartLocalDate,
+          clipped: entry.habit.clipped === true,
+          energyResolved: energySource,
+        });
+
+        return {
+          kind: "HABIT",
+          habitId: entry.habit.id,
+          habitName,
+          window,
+          windowLabel: entry.habit.windowLabel ?? null,
+          start: entry.start,
+          end: entry.end,
+          durationMin: entry.durationMin,
+          decision: entry.decision,
+          reason,
+          energy: energySource,
+          clipped: entry.habit.clipped === true,
+          availableStartLocalDate: entry.availableStartLocalDate,
+          windowStartLocalDate: entry.windowStartLocalDate,
+        } satisfies PlacementView;
+      }
+
       const { instance, decision, start, end, durationMin } = entry;
       const projectId =
         typeof instance.source_id === "string" && instance.source_id
@@ -122,7 +229,7 @@ export default function SchedulerPage() {
         typeof instance.window_id === "string"
           ? windowMap[instance.window_id]
           : undefined;
-      const reason = describePlacementReason({
+      const reason = describeProjectPlacementReason({
         decision,
         project,
         window,
@@ -131,7 +238,12 @@ export default function SchedulerPage() {
         availableStartLocal: entry.availableStartLocalDate,
         windowStartLocal: entry.windowStartLocalDate,
       });
+      const energy =
+        (project?.energy?.trim() || instance.energy_resolved?.trim() || null) ??
+        null;
+
       return {
+        kind: "PROJECT",
         instance,
         project,
         window,
@@ -140,9 +252,20 @@ export default function SchedulerPage() {
         durationMin,
         decision,
         reason,
-      };
+        energy,
+        availableStartLocalDate: entry.availableStartLocalDate,
+        windowStartLocalDate: entry.windowStartLocalDate,
+      } satisfies PlacementView;
     });
   }, [scheduleDraft, projectMap, windowMap]);
+
+  const horizonLabel = useMemo(() => {
+    if (!scheduleDraft?.horizon) return null;
+    const start = toLocal(scheduleDraft.horizon.startUTC);
+    const end = toLocal(scheduleDraft.horizon.endUTC);
+    if (!isValidDate(start) || !isValidDate(end)) return null;
+    return formatDateRange(start, end);
+  }, [scheduleDraft?.horizon]);
 
   const failureDetails = useMemo(() => {
     if (!scheduleDraft) return [] as Array<{
@@ -153,7 +276,7 @@ export default function SchedulerPage() {
     }>;
     return scheduleDraft.failures.map(failure => {
       const project = projectMap[failure.itemId];
-      const description = describeFailure(failure, project);
+      const description = describeFailure(failure, project, horizonLabel);
       return {
         failure,
         project,
@@ -161,7 +284,7 @@ export default function SchedulerPage() {
         detail: description.detail,
       };
     });
-  }, [scheduleDraft, projectMap]);
+  }, [scheduleDraft, projectMap, horizonLabel]);
 
   const failureSummary = useMemo(() => {
     if (failureDetails.length === 0) return null;
@@ -183,9 +306,10 @@ export default function SchedulerPage() {
       const gapMs = next.start.getTime() - placement.end.getTime();
       const gapMinutes = Math.round(gapMs / 60000);
       if (gapMinutes <= GAP_THRESHOLD_MINUTES) continue;
+      const gapId = `${describePlacementKey(placement)}-gap-${describePlacementKey(next)}`;
       entries.push({
         type: "gap",
-        id: `${placement.instance.id}-gap-${next.instance.id}`,
+        id: gapId,
         start: placement.end,
         end: next.start,
         durationMin: gapMinutes,
@@ -204,9 +328,11 @@ export default function SchedulerPage() {
     overscan: 6,
     getItemKey: index => {
       const entry = timelineEntries[index];
-      return entry.type === "placement"
-        ? `placement-${entry.placement.instance.id}`
-        : `gap-${entry.id}`;
+      if (entry.type === "placement") {
+        const key = describePlacementKey(entry.placement);
+        return `placement-${key}`;
+      }
+      return `gap-${entry.id}`;
     },
     measureElement:
       typeof window !== "undefined"
@@ -249,7 +375,7 @@ export default function SchedulerPage() {
           (payload as { schedule?: unknown }).schedule,
         );
         setScheduleDraft(
-          parsed ?? { placed: [], failures: [], timeline: [] },
+          parsed ?? { placed: [], failures: [], timeline: [], horizon: null },
         );
       } else {
         setScheduleDraft(null);
@@ -327,6 +453,11 @@ export default function SchedulerPage() {
 
           {scheduleDraft ? (
             <div className="mt-4 space-y-3">
+              {horizonLabel && (
+                <p className="text-xs text-zinc-400">
+                  Scheduling horizon: {horizonLabel}
+                </p>
+              )}
               {scheduleDraft.error && (
                 <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
                   Scheduler reported an error while saving placements:{" "}
@@ -352,9 +483,82 @@ export default function SchedulerPage() {
 
                       if (entry.type === "placement") {
                         const { placement } = entry;
-                        const projectName = placement.project?.name?.trim()
-                          ? placement.project.name
-                          : placement.instance.source_id || "Untitled project";
+
+                        if (placement.kind === "PROJECT") {
+                          const projectName = placement.project?.name?.trim()
+                            ? placement.project.name
+                            : placement.instance.source_id || "Untitled project";
+
+                          return (
+                            <div
+                              key={virtualRow.key}
+                              ref={timelineVirtualizer.measureElement}
+                              className="absolute left-0 right-0"
+                              style={{
+                                transform: `translateY(${virtualRow.start}px)`,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  paddingBottom: isLast ? 0 : "0.75rem",
+                                }}
+                              >
+                                <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <div className="text-sm font-medium text-zinc-100">
+                                        {projectName}
+                                      </div>
+                                      <div className="text-xs text-zinc-400">
+                                        {(placement.project?.stage || "") && (
+                                          <span>{placement.project?.stage}</span>
+                                        )}
+                                        {placement.project?.priority && (
+                                          <span>
+                                            {placement.project?.stage ? " · " : ""}
+                                            {placement.project.priority}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
+                                        <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
+                                          {formatDecisionLabel(placement.decision)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="text-right text-xs text-zinc-400">
+                                      <div>{formatDateTime(placement.start)}</div>
+                                      <div className="text-zinc-500">
+                                        → {formatDateTime(placement.end)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
+                                    <span>
+                                      Window:{" "}
+                                      {placement.window?.label ||
+                                        placement.instance.window_id ||
+                                        "Unassigned"}
+                                    </span>
+                                    <span>
+                                      Duration: {formatDurationMinutes(placement.durationMin)}
+                                    </span>
+                                    <span>
+                                      Energy:{" "}
+                                      {placement.energy || "NO"}
+                                    </span>
+                                  </div>
+                                  <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                                    {placement.reason}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const windowLabel = placement.window?.label || placement.windowLabel || "Unassigned";
+                        const energyLabel = placement.energy || "NO";
 
                         return (
                           <div
@@ -370,54 +574,41 @@ export default function SchedulerPage() {
                                 paddingBottom: isLast ? 0 : "0.75rem",
                               }}
                             >
-                              <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
+                              <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-blue-50">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
-                                    <div className="text-sm font-medium text-zinc-100">
-                                      {projectName}
+                                    <div className="text-sm font-medium text-blue-50">
+                                      {placement.habitName}
                                     </div>
-                                    <div className="text-xs text-zinc-400">
-                                      {(placement.project?.stage || "") && (
-                                        <span>{placement.project?.stage}</span>
-                                      )}
-                                      {placement.project?.priority && (
-                                        <span>
-                                          {placement.project?.stage ? " · " : ""}
-                                          {placement.project.priority}
-                                        </span>
-                                      )}
+                                    <div className="text-xs text-blue-200/80">
+                                      {windowLabel}
                                     </div>
-                                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
-                                      <span className="inline-flex items-center rounded-full bg-zinc-800/80 px-2 py-0.5">
+                                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-blue-100">
+                                      <span className="inline-flex items-center rounded-full bg-blue-500/30 px-2 py-0.5">
                                         {formatDecisionLabel(placement.decision)}
                                       </span>
                                     </div>
                                   </div>
-                                  <div className="text-right text-xs text-zinc-400">
+                                  <div className="text-right text-xs text-blue-100/90">
                                     <div>{formatDateTime(placement.start)}</div>
-                                    <div className="text-zinc-500">
+                                    <div className="text-blue-200/70">
                                       → {formatDateTime(placement.end)}
                                     </div>
                                   </div>
                                 </div>
-                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-zinc-400">
-                                  <span>
-                                    Window:{" "}
-                                    {placement.window?.label ||
-                                      placement.instance.window_id ||
-                                      "Unassigned"}
-                                  </span>
+                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-blue-100/80">
+                                  <span>Window: {windowLabel}</span>
                                   <span>
                                     Duration: {formatDurationMinutes(placement.durationMin)}
                                   </span>
-                                  <span>
-                                    Energy:{" "}
-                                    {placement.project?.energy ||
-                                      placement.instance.energy_resolved ||
-                                      "NO"}
-                                  </span>
+                                  <span>Energy: {energyLabel}</span>
+                                  {placement.clipped && (
+                                    <span className="text-amber-200">
+                                      Clipped to fit window
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                                <p className="mt-2 text-xs leading-relaxed text-blue-50">
                                   {placement.reason}
                                 </p>
                               </div>
@@ -600,6 +791,7 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
     failures?: unknown;
     error?: unknown;
     timeline?: unknown;
+    horizon?: unknown;
   };
 
   const placed: ScheduleInstance[] = Array.isArray(payload.placed)
@@ -627,11 +819,39 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
         .sort((a, b) => a.start.getTime() - b.start.getTime())
     : [];
 
+  const horizon = parseSchedulerHorizon(payload.horizon);
+
   if (placed.length === 0 && failures.length === 0 && !error && timeline.length === 0) {
-    return { placed: [], failures: [], timeline: [] };
+    return { placed: [], failures: [], timeline: [], horizon };
   }
 
-  return { placed, failures, error, timeline };
+  return { placed, failures, error, timeline, horizon };
+}
+
+function parseSchedulerHorizon(input: unknown): SchedulerHorizon | null {
+  if (!input || typeof input !== "object") return null;
+  const record = input as {
+    startUTC?: unknown;
+    endUTC?: unknown;
+    days?: unknown;
+    dueDateUTC?: unknown;
+    pinnedInstanceStartUTC?: unknown;
+  };
+  const startUTC = typeof record.startUTC === "string" ? record.startUTC : null;
+  const endUTC = typeof record.endUTC === "string" ? record.endUTC : null;
+  const days =
+    typeof record.days === "number" && Number.isFinite(record.days) ? record.days : null;
+  if (!startUTC || !endUTC || days === null) return null;
+  return {
+    startUTC,
+    endUTC,
+    days,
+    dueDateUTC: typeof record.dueDateUTC === "string" ? record.dueDateUTC : null,
+    pinnedInstanceStartUTC:
+      typeof record.pinnedInstanceStartUTC === "string"
+        ? record.pinnedInstanceStartUTC
+        : null,
+  };
 }
 
 function toScheduleInstance(input: unknown): ScheduleInstance | null {
@@ -658,62 +878,106 @@ function toSchedulerFailure(input: unknown): SchedulerFailure | null {
 function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
   if (!input || typeof input !== "object") return null;
   const record = input as {
+    type?: unknown;
     instance?: unknown;
     decision?: unknown;
     projectId?: unknown;
     availableStartLocal?: unknown;
     windowStartLocal?: unknown;
     scheduledDayOffset?: unknown;
+    habit?: unknown;
   };
-  const instance = toScheduleInstance(record.instance);
-  if (!instance) return null;
+
   const decision = record.decision;
   if (decision !== "kept" && decision !== "new" && decision !== "rescheduled") {
     return null;
   }
+
+  const availableStartLocal =
+    typeof record.availableStartLocal === "string"
+      ? record.availableStartLocal
+      : null;
+  const windowStartLocal =
+    typeof record.windowStartLocal === "string"
+      ? record.windowStartLocal
+      : null;
+  const scheduledDayOffset =
+    typeof record.scheduledDayOffset === "number"
+      ? record.scheduledDayOffset
+      : null;
+
+  const typeRaw = typeof record.type === "string" ? record.type.toUpperCase() : "PROJECT";
+  if (typeRaw === "HABIT") {
+    const habitValue = record.habit;
+    if (!habitValue || typeof habitValue !== "object") return null;
+    const habitRecord = habitValue as {
+      id?: unknown;
+      name?: unknown;
+      windowId?: unknown;
+      windowLabel?: unknown;
+      startUTC?: unknown;
+      endUTC?: unknown;
+      durationMin?: unknown;
+      energyResolved?: unknown;
+      clipped?: unknown;
+    };
+    const habitId = typeof habitRecord.id === "string" ? habitRecord.id : null;
+    const startUTC = typeof habitRecord.startUTC === "string" ? habitRecord.startUTC : null;
+    const endUTC = typeof habitRecord.endUTC === "string" ? habitRecord.endUTC : null;
+    if (!habitId || !startUTC || !endUTC) return null;
+
+    return {
+      type: "HABIT",
+      decision,
+      availableStartLocal,
+      windowStartLocal,
+      scheduledDayOffset,
+      habit: {
+        id: habitId,
+        name: typeof habitRecord.name === "string" ? habitRecord.name : null,
+        windowId: typeof habitRecord.windowId === "string" ? habitRecord.windowId : null,
+        windowLabel:
+          typeof habitRecord.windowLabel === "string" ? habitRecord.windowLabel : null,
+        startUTC,
+        endUTC,
+        durationMin:
+          typeof habitRecord.durationMin === "number" &&
+          Number.isFinite(habitRecord.durationMin)
+            ? habitRecord.durationMin
+            : null,
+        energyResolved:
+          typeof habitRecord.energyResolved === "string" &&
+          habitRecord.energyResolved.trim().length > 0
+            ? habitRecord.energyResolved
+            : null,
+        clipped: habitRecord.clipped === true,
+      },
+    };
+  }
+
+  const instance = toScheduleInstance(record.instance);
+  if (!instance) return null;
   const projectId =
-    typeof record.projectId === "string"
+    typeof record.projectId === "string" && record.projectId
       ? record.projectId
-      : typeof instance.source_id === "string"
+      : typeof instance.source_id === "string" && instance.source_id
         ? instance.source_id
         : "";
+
   return {
+    type: "PROJECT",
     instance,
     projectId,
     decision,
-    availableStartLocal:
-      typeof record.availableStartLocal === "string"
-        ? record.availableStartLocal
-        : null,
-    windowStartLocal:
-      typeof record.windowStartLocal === "string"
-        ? record.windowStartLocal
-        : null,
-    scheduledDayOffset:
-      typeof record.scheduledDayOffset === "number"
-        ? record.scheduledDayOffset
-        : null,
+    availableStartLocal,
+    windowStartLocal,
+    scheduledDayOffset,
   };
 }
 
 function prepareDraftPlacementEntry(
   entry: DraftPlacementEntry,
 ): PreparedPlacementEntry | null {
-  const { instance } = entry;
-  if (typeof instance.start_utc !== "string") return null;
-  if (typeof instance.end_utc !== "string") return null;
-
-  const start = toLocal(instance.start_utc);
-  const end = toLocal(instance.end_utc);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return null;
-  }
-
-  const durationMin = Math.max(
-    0,
-    Math.round((end.getTime() - start.getTime()) / 60000),
-  );
-
   const availableStartLocalDate = entry.availableStartLocal
     ? new Date(entry.availableStartLocal)
     : null;
@@ -731,8 +995,45 @@ function prepareDraftPlacementEntry(
       ? windowStartLocalDate
       : null;
 
+  if (entry.type === "HABIT") {
+    const start = toLocal(entry.habit.startUTC);
+    const end = toLocal(entry.habit.endUTC);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return null;
+    }
+
+    const durationSource =
+      typeof entry.habit.durationMin === "number" && Number.isFinite(entry.habit.durationMin)
+        ? Math.max(0, Math.round(entry.habit.durationMin))
+        : Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+
+    return {
+      ...entry,
+      start,
+      end,
+      durationMin: durationSource,
+      availableStartLocalDate: validAvailable,
+      windowStartLocalDate: validWindowStart,
+    };
+  }
+
+  if (typeof entry.instance.start_utc !== "string") return null;
+  if (typeof entry.instance.end_utc !== "string") return null;
+
+  const start = toLocal(entry.instance.start_utc);
+  const end = toLocal(entry.instance.end_utc);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
+  const durationMin = Math.max(
+    0,
+    Math.round((end.getTime() - start.getTime()) / 60000),
+  );
+
   return {
     ...entry,
+    type: "PROJECT",
     start,
     end,
     durationMin,
@@ -741,7 +1042,7 @@ function prepareDraftPlacementEntry(
   };
 }
 
-function formatDecisionLabel(decision: DraftPlacementEntry["decision"]): string {
+function formatDecisionLabel(decision: PlacementDecision): string {
   switch (decision) {
     case "kept":
       return "Kept from previous run";
@@ -753,7 +1054,7 @@ function formatDecisionLabel(decision: DraftPlacementEntry["decision"]): string 
   }
 }
 
-function describePlacementReason({
+function describeProjectPlacementReason({
   decision,
   project,
   window,
@@ -762,7 +1063,7 @@ function describePlacementReason({
   availableStartLocal,
   windowStartLocal,
 }: {
-  decision: DraftPlacementEntry["decision"];
+  decision: PlacementDecision;
   project?: ProjectItem;
   window?: WindowLite;
   instance: ScheduleInstance;
@@ -847,9 +1148,101 @@ function describePlacementReason({
   return parts.join(" ");
 }
 
+function describeHabitPlacementReason({
+  decision,
+  habitName,
+  window,
+  start,
+  availableStartLocal,
+  windowStartLocal,
+  clipped,
+  energyResolved,
+}: {
+  decision: PlacementDecision;
+  habitName: string;
+  window?: WindowLite;
+  start: Date;
+  availableStartLocal: Date | null;
+  windowStartLocal: Date | null;
+  clipped: boolean;
+  energyResolved: string | null;
+}): string {
+  const windowName = window?.label?.trim()
+    ? window.label
+    : window?.id
+      ? `window ${window.id}`
+      : "an available window";
+  const parts: string[] = [];
+  const startLabel = formatDateTime(start);
+
+  switch (decision) {
+    case "kept":
+      parts.push(
+        `${habitName} was already scheduled in ${windowName} starting ${startLabel}, so the scheduler kept the habit placement unchanged.`,
+      );
+      break;
+    case "rescheduled":
+      parts.push(
+        `${habitName} was moved within ${windowName} starting ${startLabel} to reuse its existing slot as soon as possible.`,
+      );
+      break;
+    case "new":
+    default:
+      parts.push(
+        `${habitName} was scheduled into ${windowName} starting ${startLabel}, the earliest opening that satisfied its rules.`,
+      );
+      break;
+  }
+
+  const windowEnergy = window?.energy?.toString().trim().toUpperCase() || null;
+  const habitEnergy = energyResolved?.toString().trim().toUpperCase() || null;
+
+  if (habitEnergy && windowEnergy) {
+    if (habitEnergy === windowEnergy) {
+      parts.push(`Both the habit and window target ${habitEnergy} energy.`);
+    } else {
+      parts.push(
+        `The habit targets ${habitEnergy} energy while the window provides ${windowEnergy}, which satisfies the requirement.`,
+      );
+    }
+  } else if (habitEnergy) {
+    parts.push(`The habit targets ${habitEnergy} energy.`);
+  } else if (windowEnergy) {
+    parts.push(`The window supplies ${windowEnergy} energy.`);
+  }
+
+  const validAvailable =
+    availableStartLocal instanceof Date && !Number.isNaN(availableStartLocal.getTime());
+  const validWindowStart =
+    windowStartLocal instanceof Date && !Number.isNaN(windowStartLocal.getTime());
+
+  if (decision !== "kept" && validAvailable && validWindowStart) {
+    const diffMinutes = Math.max(
+      0,
+      Math.round(
+        (availableStartLocal.getTime() - windowStartLocal.getTime()) / 60000,
+      ),
+    );
+    if (diffMinutes > 0) {
+      parts.push(
+        `Earlier slots in the window were occupied, so the habit begins ${formatDurationMinutes(diffMinutes)} after the window opened.`,
+      );
+    } else {
+      parts.push(`The window was open immediately, so the habit starts right at the window's beginning.`);
+    }
+  }
+
+  if (clipped) {
+    parts.push(`The duration was clipped to fit within the available window.`);
+  }
+
+  return parts.join(" ");
+}
+
 function describeFailure(
   failure: SchedulerFailure,
   project?: ProjectItem,
+  horizonRange?: string | null,
 ): { message: string; detail?: string | null } {
   const projectName = project?.name?.trim()
     ? project.name
@@ -858,7 +1251,9 @@ function describeFailure(
   switch (failure.reason) {
     case "NO_WINDOW":
       return {
-        message: `${projectName} could not be placed in an available window within the scheduling horizon.`,
+        message: `${projectName} could not be placed in an available window within the scheduling horizon${
+          horizonRange ? ` (${horizonRange})` : ""
+        }.`,
         detail,
       };
     case "error":
@@ -874,6 +1269,23 @@ function describeFailure(
   }
 }
 
+function describePlacementKey(entry: PlacementView): string {
+  if (entry.kind === "PROJECT") {
+    return entry.instance.id;
+  }
+  return `${entry.habitId}-${entry.start.toISOString()}`;
+}
+
+function describePlacementLabel(entry: PlacementView): string {
+  if (entry.kind === "PROJECT") {
+    const name = entry.project?.name?.trim()
+      ? entry.project.name
+      : entry.instance.source_id || "project";
+    return `project "${name}"`;
+  }
+  return `habit "${entry.habitName}"`;
+}
+
 function buildGapMessage({
   previous,
   next,
@@ -883,10 +1295,10 @@ function buildGapMessage({
   next: PlacementView;
   failureSummary: string | null;
 }): string {
-  const base = `No project scheduled from ${formatDateTime(previous.end)} to ${formatDateTime(next.start)}.`;
+  const base = `No placement scheduled from ${formatDateTime(previous.end)} to ${formatDateTime(next.start)}.`;
   const windowNote = next.window
     ? ` Next available window "${next.window.label}" begins at ${formatDateTime(next.start)}.`
-    : ` Next scheduled project "${next.project?.name ?? next.instance.source_id ?? "project"}" begins at ${formatDateTime(next.start)}.`;
+    : ` Next scheduled ${describePlacementLabel(next)} begins at ${formatDateTime(next.start)}.`;
   const failureNote = failureSummary
     ? ` Scheduler also reported: ${failureSummary}`
     : "";
@@ -910,6 +1322,16 @@ function formatDateTime(date: Date): string {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime());
+}
+
+function formatDateRange(start: Date, end: Date): string {
+  const startLabel = start.toLocaleDateString(undefined, { dateStyle: "medium" });
+  const endLabel = end.toLocaleDateString(undefined, { dateStyle: "medium" });
+  return `${startLabel} → ${endLabel}`;
 }
 
 function formatFailureDetail(detail: unknown): string | null {
