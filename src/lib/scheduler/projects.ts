@@ -1,6 +1,6 @@
-import { ENERGY, type Energy } from './config'
-import type { TaskLite, ProjectLite } from './weight'
-import { taskWeight, projectWeight } from './weight'
+import { ENERGY, type Energy } from './config.js'
+import type { TaskLite, ProjectLite } from './weight.js'
+import { taskWeight, projectWeight } from './weight.js'
 
 export const DEFAULT_PROJECT_DURATION_MIN = 60
 export const DEFAULT_PROJECT_ENERGY: Energy = 'NO'

@@ -1,11 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
-
-export type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
-export type ScheduleInstanceStatus = Database['public']['Enums']['schedule_instance_status']
-type ScheduleInstanceSourceType =
-  Database['public']['Enums']['schedule_instance_source_type']
+import type {
+  ScheduleInstance,
+  ScheduleInstanceStatus,
+  ScheduleInstanceSourceType,
+} from './core/instanceRepo'
+import {
+  fetchInstancesForRange as fetchInstancesForRangeCore,
+  fetchScheduledProjectIds as fetchScheduledProjectIdsCore,
+  createInstance as createInstanceCore,
+  rescheduleInstance as rescheduleInstanceCore,
+  updateInstanceStatus as updateInstanceStatusCore,
+  fetchBacklogNeedingSchedule as fetchBacklogNeedingScheduleCore,
+} from './core/instanceRepo'
 
 type Client = SupabaseClient<Database>
 
@@ -17,48 +25,24 @@ async function ensureClient(client?: Client): Promise<Client> {
   return supabase as Client
 }
 
+export type { ScheduleInstance, ScheduleInstanceStatus, ScheduleInstanceSourceType }
+
 export async function fetchInstancesForRange(
   userId: string,
   startUTC: string,
   endUTC: string,
-  client?: Client
+  client?: Client,
 ) {
   const supabase = await ensureClient(client)
-  const base = supabase
-    .from('schedule_instances')
-    .select('*')
-    .eq('user_id', userId)
-    .neq('status', 'canceled')
-
-  const startParam = startUTC
-  const endParam = endUTC
-
-  return await base
-    .or(
-      `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
-    )
-    .order('start_utc', { ascending: true })
+  return await fetchInstancesForRangeCore(supabase, userId, startUTC, endUTC)
 }
 
 export async function fetchScheduledProjectIds(
   userId: string,
-  client?: Client
+  client?: Client,
 ): Promise<string[]> {
   const supabase = await ensureClient(client)
-  const { data, error } = await supabase
-    .from('schedule_instances')
-    .select('source_id')
-    .eq('user_id', userId)
-    .eq('source_type', 'PROJECT')
-    .in('status', ['scheduled', 'completed', 'missed'])
-
-  if (error) throw error
-
-  const ids = new Set<string>()
-  for (const record of (data ?? []) as Array<Pick<ScheduleInstance, 'source_id'>>) {
-    if (record.source_id) ids.add(record.source_id)
-  }
-  return Array.from(ids)
+  return await fetchScheduledProjectIdsCore(supabase, userId)
 }
 
 export async function createInstance(
@@ -73,26 +57,10 @@ export async function createInstance(
     weightSnapshot: number
     energyResolved: string
   },
-  client?: Client
+  client?: Client,
 ) {
   const supabase = await ensureClient(client)
-  const sourceType = input.sourceType ?? 'PROJECT'
-  return await supabase
-    .from('schedule_instances')
-    .insert({
-      user_id: input.userId,
-      source_type: sourceType,
-      source_id: input.sourceId,
-      window_id: input.windowId ?? null,
-      start_utc: input.startUTC,
-      end_utc: input.endUTC,
-      duration_min: input.durationMin,
-      status: 'scheduled',
-      weight_snapshot: input.weightSnapshot,
-      energy_resolved: input.energyResolved,
-    })
-    .select('*')
-    .single()
+  return await createInstanceCore(supabase, input)
 }
 
 export async function rescheduleInstance(
@@ -105,53 +73,26 @@ export async function rescheduleInstance(
     weightSnapshot: number
     energyResolved: string
   },
-  client?: Client
+  client?: Client,
 ) {
   const supabase = await ensureClient(client)
-  return await supabase
-    .from('schedule_instances')
-    .update({
-      window_id: input.windowId ?? null,
-      start_utc: input.startUTC,
-      end_utc: input.endUTC,
-      duration_min: input.durationMin,
-      status: 'scheduled',
-      weight_snapshot: input.weightSnapshot,
-      energy_resolved: input.energyResolved,
-      completed_at: null,
-    })
-    .eq('id', id)
-    .select('*')
-    .single()
+  return await rescheduleInstanceCore(supabase, id, input)
 }
 
 export async function updateInstanceStatus(
   id: string,
   status: 'completed' | 'canceled' | 'scheduled',
   completedAtUTC?: string,
-  client?: Client
+  client?: Client,
 ) {
   const supabase = await ensureClient(client)
-  const completedAt =
-    status === 'completed' ? completedAtUTC ?? new Date().toISOString() : null
-  return await supabase
-    .from('schedule_instances')
-    .update({
-      status,
-      completed_at: completedAt,
-    })
-    .eq('id', id)
+  return await updateInstanceStatusCore(supabase, id, status, completedAtUTC)
 }
 
 export async function fetchBacklogNeedingSchedule(
   userId: string,
-  client?: Client
+  client?: Client,
 ) {
   const supabase = await ensureClient(client)
-  return await supabase
-    .from('schedule_instances')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('status', 'missed')
-    .order('weight_snapshot', { ascending: false })
+  return await fetchBacklogNeedingScheduleCore(supabase, userId)
 }

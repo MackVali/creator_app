@@ -4,7 +4,7 @@ import {
   PROJECT_PRIORITY_WEIGHT,
   PROJECT_STAGE_WEIGHT,
   GOAL_PRIORITY_WEIGHT,
-} from "./config";
+} from './config.js'
 
 export type TaskLite = {
   id: string;
