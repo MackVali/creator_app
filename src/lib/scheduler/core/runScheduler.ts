@@ -1009,20 +1009,17 @@ async function persistHabitPlacements(params: {
 
     while (!done && attempts < 2) {
       attempts += 1
-      const response = await createInstance(
-        {
-          userId,
-          sourceId: habit.id,
-          sourceType: 'HABIT',
-          windowId: habit.windowId,
-          startUTC: habit.startUTC,
-          endUTC: habit.endUTC,
-          durationMin: habit.durationMin,
-          weightSnapshot: 0,
-          energyResolved: habit.energyResolved?.toUpperCase() ?? 'NO',
-        },
-        supabase
-      )
+      const response = await createInstance(supabase, {
+        userId,
+        sourceId: habit.id,
+        sourceType: 'HABIT',
+        windowId: habit.windowId,
+        startUTC: habit.startUTC,
+        endUTC: habit.endUTC,
+        durationMin: habit.durationMin,
+        weightSnapshot: 0,
+        energyResolved: habit.energyResolved?.toUpperCase() ?? 'NO',
+      })
 
       if (!response.error && response.data) {
         inserted.push(response.data)
