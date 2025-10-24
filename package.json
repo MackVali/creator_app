@@ -19,6 +19,7 @@
     "test:env": "vitest run test/env.spec.ts",
     "test:ui": "vitest -c vitest.jsdom.config.ts",
     "test:ci": "vitest run --coverage",
+    "build:scheduler": "tsc -p tsconfig.scheduler.json",
     "prepare": "husky"
   },
   "dependencies": {

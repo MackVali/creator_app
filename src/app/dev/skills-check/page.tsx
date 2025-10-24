@@ -88,11 +88,12 @@ export default function SkillsCheckPage() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {skills.map((skill) => (
-              <tr key={skill.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                  {skill.id.slice(0, 8)}...
-                </td>
+            {skills.map((skill) => {
+              return (
+                <tr key={skill.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                    {skill.id.slice(0, 8)}...
+                  </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {skill.name}
                 </td>
@@ -103,15 +104,16 @@ export default function SkillsCheckPage() {
                   {skill.cat_id ? skill.cat_id.slice(0, 8) + "..." : "null"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {skill.level ?? "null"}
+                  Lv {skill.level ?? "null"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {skill.created_at
                     ? new Date(skill.created_at).toLocaleDateString()
                     : "null"}
                 </td>
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
