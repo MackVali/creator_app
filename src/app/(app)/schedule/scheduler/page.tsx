@@ -21,11 +21,20 @@ type SchedulerFailure = {
   detail?: unknown;
 };
 
+type SchedulerHorizon = {
+  startUTC: string;
+  endUTC: string;
+  days: number;
+  dueDateUTC: string | null;
+  pinnedInstanceStartUTC: string | null;
+};
+
 type ScheduleDraft = {
   placed: ScheduleInstance[];
   failures: SchedulerFailure[];
   error?: unknown;
   timeline: PreparedPlacementEntry[];
+  horizon: SchedulerHorizon | null;
 };
 
 type DraftPlacementEntry = {
@@ -144,6 +153,14 @@ export default function SchedulerPage() {
     });
   }, [scheduleDraft, projectMap, windowMap]);
 
+  const horizonLabel = useMemo(() => {
+    if (!scheduleDraft?.horizon) return null;
+    const start = toLocal(scheduleDraft.horizon.startUTC);
+    const end = toLocal(scheduleDraft.horizon.endUTC);
+    if (!isValidDate(start) || !isValidDate(end)) return null;
+    return formatDateRange(start, end);
+  }, [scheduleDraft?.horizon]);
+
   const failureDetails = useMemo(() => {
     if (!scheduleDraft) return [] as Array<{
       failure: SchedulerFailure;
@@ -153,7 +170,7 @@ export default function SchedulerPage() {
     }>;
     return scheduleDraft.failures.map(failure => {
       const project = projectMap[failure.itemId];
-      const description = describeFailure(failure, project);
+      const description = describeFailure(failure, project, horizonLabel);
       return {
         failure,
         project,
@@ -161,7 +178,7 @@ export default function SchedulerPage() {
         detail: description.detail,
       };
     });
-  }, [scheduleDraft, projectMap]);
+  }, [scheduleDraft, projectMap, horizonLabel]);
 
   const failureSummary = useMemo(() => {
     if (failureDetails.length === 0) return null;
@@ -249,7 +266,7 @@ export default function SchedulerPage() {
           (payload as { schedule?: unknown }).schedule,
         );
         setScheduleDraft(
-          parsed ?? { placed: [], failures: [], timeline: [] },
+          parsed ?? { placed: [], failures: [], timeline: [], horizon: null },
         );
       } else {
         setScheduleDraft(null);
@@ -327,6 +344,11 @@ export default function SchedulerPage() {
 
           {scheduleDraft ? (
             <div className="mt-4 space-y-3">
+              {horizonLabel && (
+                <p className="text-xs text-zinc-400">
+                  Scheduling horizon: {horizonLabel}
+                </p>
+              )}
               {scheduleDraft.error && (
                 <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
                   Scheduler reported an error while saving placements:{" "}
@@ -600,6 +622,7 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
     failures?: unknown;
     error?: unknown;
     timeline?: unknown;
+    horizon?: unknown;
   };
 
   const placed: ScheduleInstance[] = Array.isArray(payload.placed)
@@ -627,11 +650,39 @@ function parseScheduleDraft(input: unknown): ScheduleDraft | null {
         .sort((a, b) => a.start.getTime() - b.start.getTime())
     : [];
 
+  const horizon = parseSchedulerHorizon(payload.horizon);
+
   if (placed.length === 0 && failures.length === 0 && !error && timeline.length === 0) {
-    return { placed: [], failures: [], timeline: [] };
+    return { placed: [], failures: [], timeline: [], horizon };
   }
 
-  return { placed, failures, error, timeline };
+  return { placed, failures, error, timeline, horizon };
+}
+
+function parseSchedulerHorizon(input: unknown): SchedulerHorizon | null {
+  if (!input || typeof input !== "object") return null;
+  const record = input as {
+    startUTC?: unknown;
+    endUTC?: unknown;
+    days?: unknown;
+    dueDateUTC?: unknown;
+    pinnedInstanceStartUTC?: unknown;
+  };
+  const startUTC = typeof record.startUTC === "string" ? record.startUTC : null;
+  const endUTC = typeof record.endUTC === "string" ? record.endUTC : null;
+  const days =
+    typeof record.days === "number" && Number.isFinite(record.days) ? record.days : null;
+  if (!startUTC || !endUTC || days === null) return null;
+  return {
+    startUTC,
+    endUTC,
+    days,
+    dueDateUTC: typeof record.dueDateUTC === "string" ? record.dueDateUTC : null,
+    pinnedInstanceStartUTC:
+      typeof record.pinnedInstanceStartUTC === "string"
+        ? record.pinnedInstanceStartUTC
+        : null,
+  };
 }
 
 function toScheduleInstance(input: unknown): ScheduleInstance | null {
@@ -850,6 +901,7 @@ function describePlacementReason({
 function describeFailure(
   failure: SchedulerFailure,
   project?: ProjectItem,
+  horizonRange?: string | null,
 ): { message: string; detail?: string | null } {
   const projectName = project?.name?.trim()
     ? project.name
@@ -858,7 +910,9 @@ function describeFailure(
   switch (failure.reason) {
     case "NO_WINDOW":
       return {
-        message: `${projectName} could not be placed in an available window within the scheduling horizon.`,
+        message: `${projectName} could not be placed in an available window within the scheduling horizon${
+          horizonRange ? ` (${horizonRange})` : ""
+        }.`,
         detail,
       };
     case "error":
@@ -910,6 +964,16 @@ function formatDateTime(date: Date): string {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function isValidDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime());
+}
+
+function formatDateRange(start: Date, end: Date): string {
+  const startLabel = start.toLocaleDateString(undefined, { dateStyle: "medium" });
+  const endLabel = end.toLocaleDateString(undefined, { dateStyle: "medium" });
+  return `${startLabel} → ${endLabel}`;
 }
 
 function formatFailureDetail(detail: unknown): string | null {

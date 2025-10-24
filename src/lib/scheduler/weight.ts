@@ -17,6 +17,7 @@ export type TaskLite = {
   skill_id?: string | null;
   skill_icon?: string | null;
   skill_monument_id?: string | null;
+  due_date?: string | null;
 };
 
 export type ProjectLite = {
@@ -26,6 +27,7 @@ export type ProjectLite = {
   stage: string;
   energy?: string | null;
   duration_min?: number | null;
+  due_date?: string | null;
 };
 
 export type GoalLite = {

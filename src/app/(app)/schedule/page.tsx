@@ -418,6 +418,14 @@ type SchedulerTimelinePlacement =
       clipped: boolean
     }
 
+type SchedulerHorizon = {
+  startUTC: string
+  endUTC: string
+  days: number
+  dueDateUTC: string | null
+  pinnedInstanceStartUTC: string | null
+}
+
 type SchedulerDebugState = {
   runAt: string
   failures: SchedulerRunFailure[]
@@ -425,6 +433,7 @@ type SchedulerDebugState = {
   placedProjectIds: string[]
   timeline: SchedulerTimelineEntry[]
   error: unknown
+  horizon: SchedulerHorizon | null
 }
 
 type TaskInstanceInfo = {
@@ -498,6 +507,12 @@ type MemoNoteDraftState = {
 
 function isValidDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime())
+}
+
+function formatDateRange(start: Date, end: Date): string {
+  const startLabel = start.toLocaleDateString(undefined, { dateStyle: 'medium' })
+  const endLabel = end.toLocaleDateString(undefined, { dateStyle: 'medium' })
+  return `${startLabel} → ${endLabel}`
 }
 
 function taskMatchesProjectInstance(
@@ -1793,6 +1808,32 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
   return results
 }
 
+function parseSchedulerHorizon(input: unknown): SchedulerHorizon | null {
+  if (!input || typeof input !== 'object') return null
+  const record = input as {
+    startUTC?: unknown
+    endUTC?: unknown
+    days?: unknown
+    dueDateUTC?: unknown
+    pinnedInstanceStartUTC?: unknown
+  }
+  const startUTC = typeof record.startUTC === 'string' ? record.startUTC : null
+  const endUTC = typeof record.endUTC === 'string' ? record.endUTC : null
+  const days =
+    typeof record.days === 'number' && Number.isFinite(record.days) ? record.days : null
+  if (!startUTC || !endUTC || days === null) return null
+  return {
+    startUTC,
+    endUTC,
+    days,
+    dueDateUTC: typeof record.dueDateUTC === 'string' ? record.dueDateUTC : null,
+    pinnedInstanceStartUTC:
+      typeof record.pinnedInstanceStartUTC === 'string'
+        ? record.pinnedInstanceStartUTC
+        : null,
+  }
+}
+
 function parseSchedulerDebugPayload(
   payload: unknown
 ): Omit<SchedulerDebugState, 'runAt'> | null {
@@ -1804,6 +1845,7 @@ function parseSchedulerDebugPayload(
     failures?: unknown
     error?: unknown
     timeline?: unknown
+    horizon?: unknown
   }
   const placedCount = Array.isArray(scheduleValue.placed)
     ? scheduleValue.placed.length
@@ -1828,6 +1870,7 @@ function parseSchedulerDebugPayload(
     placedProjectIds,
     timeline: parseSchedulerTimeline(scheduleValue.timeline),
     error: scheduleValue.error ?? null,
+    horizon: parseSchedulerHorizon(scheduleValue.horizon),
   }
 }
 
@@ -2745,6 +2788,14 @@ export default function SchedulePage() {
     return placements
   }, [schedulerDebug, projectMap, habitMap])
 
+  const schedulerHorizonLabel = useMemo(() => {
+    if (!schedulerDebug?.horizon) return null
+    const start = toLocal(schedulerDebug.horizon.startUTC)
+    const end = toLocal(schedulerDebug.horizon.endUTC)
+    if (!isValidDate(start) || !isValidDate(end)) return null
+    return formatDateRange(start, end)
+  }, [schedulerDebug?.horizon])
+
   useEffect(() => {
     if (!userId || view !== 'day') {
       setPeekModels({})
@@ -3423,6 +3474,7 @@ export default function SchedulePage() {
           placedProjectIds: [],
           timeline: [],
           error: fallbackError,
+          horizon: null,
         })
       }
     } catch (error) {
@@ -3434,6 +3486,7 @@ export default function SchedulePage() {
         placedProjectIds: [],
         timeline: [],
         error,
+        horizon: null,
       })
     } finally {
       isSchedulingRef.current = false
@@ -4934,6 +4987,11 @@ export default function SchedulePage() {
           modeIsActive={modeIsActive}
         />
         <div className="text-zinc-100 space-y-4 pt-[calc(4rem + env(safe-area-inset-top, 0px))]">
+          {schedulerHorizonLabel && (
+            <p className="px-4 text-xs text-zinc-400">
+              Scheduling horizon: {schedulerHorizonLabel}
+            </p>
+          )}
           <div
             className="relative bg-[var(--surface)]"
             ref={swipeContainerRef}

@@ -4,6 +4,7 @@ import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
   fetchInstancesForRange,
+  fetchLatestPinnedInstanceStart,
   type ScheduleInstance,
 } from './instanceRepo'
 import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
@@ -35,8 +36,7 @@ import { normalizeSchedulerModePayload, type SchedulerModePayload } from './mode
 type Client = SupabaseClient<Database>
 
 const START_GRACE_MIN = 1
-const BASE_LOOKAHEAD_DAYS = 28
-const LOOKAHEAD_PER_ITEM_DAYS = 7
+const DEFAULT_HORIZON_DAYS = 21
 const MAX_LOOKAHEAD_DAYS = 365
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
@@ -95,11 +95,91 @@ type ScheduleBacklogResult = {
   failures: ScheduleFailure[]
   error?: PostgrestError | null
   timeline: ScheduleDraftPlacement[]
+  horizon: {
+    startUTC: string
+    endUTC: string
+    days: number
+    dueDateUTC: string | null
+    pinnedInstanceStartUTC: string | null
+  }
 }
 
 type WindowAvailabilityBounds = {
   front: Date
   back: Date
+}
+
+type HorizonComputation = {
+  days: number
+  end: Date
+  latestDueDate: Date | null
+  latestPinnedStart: Date | null
+}
+
+function parseOptionalDate(value?: string | null): Date | null {
+  if (!value) return null
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed
+}
+
+async function resolveSchedulingHorizon(params: {
+  baseStart: Date
+  timeZone: string
+  userId: string
+  client: Client
+  projects: Array<{ due_date?: string | null }>
+  tasks: Array<{ due_date?: string | null }>
+}): Promise<HorizonComputation> {
+  const { baseStart, timeZone, userId, client, projects, tasks } = params
+  let days = DEFAULT_HORIZON_DAYS
+  let latestDueDate: Date | null = null
+
+  const considerDueDate = (value?: string | null) => {
+    const parsed = parseOptionalDate(value)
+    if (!parsed) return
+    if (parsed.getTime() < baseStart.getTime()) return
+    if (!latestDueDate || parsed.getTime() > latestDueDate.getTime()) {
+      latestDueDate = parsed
+    }
+  }
+
+  for (const project of projects) {
+    considerDueDate(project.due_date)
+  }
+  for (const task of tasks) {
+    considerDueDate(task.due_date)
+  }
+
+  if (latestDueDate) {
+    const dueOffset = differenceInCalendarDaysInTimeZone(baseStart, latestDueDate, timeZone)
+    if (Number.isFinite(dueOffset) && dueOffset >= 0) {
+      days = Math.max(days, Math.min(MAX_LOOKAHEAD_DAYS, dueOffset + 1))
+    }
+  }
+
+  let latestPinnedStart: Date | null = null
+  try {
+    const pinned = await fetchLatestPinnedInstanceStart(userId, baseStart.toISOString(), client)
+    if (!pinned.error) {
+      const parsed = parseOptionalDate(pinned.data)
+      if (parsed && parsed.getTime() >= baseStart.getTime()) {
+        latestPinnedStart = parsed
+        const pinnedOffset = differenceInCalendarDaysInTimeZone(baseStart, parsed, timeZone)
+        if (Number.isFinite(pinnedOffset) && pinnedOffset >= 0) {
+          days = Math.max(days, Math.min(MAX_LOOKAHEAD_DAYS, pinnedOffset + 1))
+        }
+      }
+    } else {
+      console.warn('Failed to determine scheduler horizon pinned bounds', pinned.error)
+    }
+  } catch (error) {
+    console.warn('Failed to determine scheduler horizon pinned bounds', error)
+  }
+
+  const boundedDays = Math.max(DEFAULT_HORIZON_DAYS, Math.min(days, MAX_LOOKAHEAD_DAYS))
+  const end = addDaysInTimeZone(baseStart, boundedDays, timeZone)
+  return { days: boundedDays, end, latestDueDate, latestPinnedStart }
 }
 
 async function ensureClient(client?: Client): Promise<Client> {
@@ -142,8 +222,20 @@ export async function scheduleBacklog(
   }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
-  const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
   const timeZone = normalizeTimeZone(options?.timeZone)
+  const baseStart = startOfDayInTimeZone(baseDate, timeZone)
+  const result: ScheduleBacklogResult = {
+    placed: [],
+    failures: [],
+    timeline: [],
+    horizon: {
+      startUTC: baseStart.toISOString(),
+      endUTC: addDaysInTimeZone(baseStart, DEFAULT_HORIZON_DAYS, timeZone).toISOString(),
+      days: DEFAULT_HORIZON_DAYS,
+      dueDateUTC: null,
+      pinnedInstanceStartUTC: null,
+    },
+  }
   const location = normalizeCoordinates(options?.location ?? null)
   const mode = normalizeSchedulerModePayload(options?.mode ?? { type: 'REGULAR' })
   const isRushMode = mode.type === 'RUSH'
@@ -273,7 +365,6 @@ export async function scheduleBacklog(
   }
 
   const queue: QueueItem[] = []
-  const baseStart = startOfDayInTimeZone(baseDate, timeZone)
   const dayOffsetFor = (startUTC: string): number | undefined => {
     const start = new Date(startUTC)
     if (Number.isNaN(start.getTime())) return undefined
@@ -392,12 +483,30 @@ export async function scheduleBacklog(
     enqueue(project)
   }
 
+  const horizonComputation = await resolveSchedulingHorizon({
+    baseStart,
+    timeZone,
+    userId,
+    client: supabase,
+    projects: projectItems,
+    tasks,
+  })
+
+  const lookaheadDays = horizonComputation.days
+  result.horizon = {
+    startUTC: baseStart.toISOString(),
+    endUTC: horizonComputation.end.toISOString(),
+    days: horizonComputation.days,
+    dueDateUTC: horizonComputation.latestDueDate
+      ? horizonComputation.latestDueDate.toISOString()
+      : null,
+    pinnedInstanceStartUTC: horizonComputation.latestPinnedStart
+      ? horizonComputation.latestPinnedStart.toISOString()
+      : null,
+  }
+
   const finalQueueProjectIds = new Set(queuedProjectIds)
-  const lookaheadDays = Math.min(
-    MAX_LOOKAHEAD_DAYS,
-    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
-  )
-  const dedupeWindowDays = Math.max(lookaheadDays, 28)
+  const dedupeWindowDays = Math.max(lookaheadDays, DEFAULT_HORIZON_DAYS)
   const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
   const dedupe = await dedupeScheduledProjects(
     supabase,

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
 
@@ -150,4 +150,28 @@ export async function fetchBacklogNeedingSchedule(
     .eq('user_id', userId)
     .eq('status', 'missed')
     .order('weight_snapshot', { ascending: false })
+}
+
+export async function fetchLatestPinnedInstanceStart(
+  userId: string,
+  startUTC: string,
+  client?: Client
+): Promise<{ data: string | null; error: PostgrestError | null }> {
+  const supabase = await ensureClient(client)
+  const { data, error } = await supabase
+    .from('schedule_instances')
+    .select('start_utc')
+    .eq('user_id', userId)
+    .eq('status', 'scheduled')
+    .neq('source_type', 'PROJECT')
+    .gte('start_utc', startUTC)
+    .order('start_utc', { ascending: false })
+    .limit(1)
+
+  if (error) {
+    return { data: null, error }
+  }
+
+  const latest = Array.isArray(data) && data.length > 0 ? data[0]?.start_utc ?? null : null
+  return { data: latest, error: null }
 }
