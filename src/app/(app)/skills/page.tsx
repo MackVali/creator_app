@@ -18,6 +18,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "../../../lib/data/skills";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
 import type { SkillRow } from "@/lib/types/skill";
+import { getSkillLevelBadge } from "@/lib/skills/levelBadges";
 import {
   Plus,
   MoreVertical,
@@ -450,6 +451,7 @@ function SkillsPageContent() {
             <div className="space-y-4">
               {filtered.map((skill) => {
                 const categoryName = categoryLookup.get(skill.cat_id || "uncategorized");
+                const levelBadge = getSkillLevelBadge(skill.level ?? undefined);
                 const linkedMonument = skill.monument_id
                   ? monumentLookup.get(skill.monument_id)
                   : null;
@@ -474,7 +476,7 @@ function SkillsPageContent() {
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-lg font-semibold text-white">{skill.name}</h3>
                           <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                            Lv {skill.level}
+                            {levelBadge} Lv {skill.level}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">

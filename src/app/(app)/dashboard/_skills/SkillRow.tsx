@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Skill } from "./useSkillsData";
 import type { SkillProgressData } from "./useSkillProgress";
+import { getSkillLevelBadge } from "@/lib/skills/levelBadges";
 
 export function computeWidth(percent: number) {
   const clamped = Math.max(0, Math.min(100, percent));
@@ -20,6 +21,7 @@ interface Props {
 export default function SkillRow({ skill, progress, onColor, trackColor, fillColor }: Props) {
   const level = progress?.level ?? skill.level;
   const showLevel = level !== null && level !== undefined;
+  const levelBadge = getSkillLevelBadge(level ?? undefined);
   const showProgress =
     progress?.xpIntoLevel !== undefined &&
     progress?.xpIntoLevel !== null &&
@@ -47,7 +49,7 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
             className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-lg border border-white/15 bg-white/8"
             style={{ color: onColor }}
           >
-            Lv {level}
+            {levelBadge} Lv {level}
           </div>
         )}
       </div>

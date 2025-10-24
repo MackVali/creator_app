@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import ProgressBarGradient from "@/components/skills/ProgressBarGradient";
+import { getSkillLevelBadge } from "@/lib/skills/levelBadges";
 
 interface SkillCardProps {
   icon: string | React.ReactNode;
@@ -18,6 +19,7 @@ export function SkillCard({
   skillId,
 }: SkillCardProps) {
   const value = percent ?? 0;
+  const badge = getSkillLevelBadge(level);
 
   // Render icon based on type
   const renderIcon = () => {
@@ -48,7 +50,7 @@ export function SkillCard({
       </div>
       <div className="flex flex-col items-end gap-1">
         <span className="text-[11px] rounded-full bg-white/8 ring-1 ring-white/10 px-2 py-[2px]">
-          Lv {level}
+          {badge} Lv {level}
         </span>
         <span className="text-[11px] opacity-70">{Math.round(value)}%</span>
       </div>
