@@ -728,6 +728,8 @@ function computeHabitPlacementsForDay({
   sunlightCoordinates,
   projectInstances,
   schedulerTimelinePlacements,
+  scheduledInstances,
+  allowFallbackComputation,
 }: {
   habits: HabitScheduleItem[]
   windows: RepoWindow[]
@@ -738,10 +740,73 @@ function computeHabitPlacementsForDay({
   sunlightCoordinates?: GeoCoordinates | null
   projectInstances?: ReturnType<typeof computeProjectInstances>
   schedulerTimelinePlacements?: SchedulerTimelinePlacement[]
+  scheduledInstances?: ScheduleInstance[]
+  allowFallbackComputation?: boolean
 }): HabitTimelinePlacement[] {
   if (habits.length === 0 || windows.length === 0) return []
 
+  const allowFallback = allowFallbackComputation ?? true
   const zone = timeZone || 'UTC'
+  const scheduledHabitInstances = (scheduledInstances ?? []).filter(
+    instance => instance.source_type === 'HABIT'
+  )
+
+  if (scheduledHabitInstances.length > 0) {
+    const windowMap = new Map<string, RepoWindow>()
+    for (const win of windows) {
+      windowMap.set(win.id, win)
+    }
+    const habitMap = new Map<string, HabitScheduleItem>()
+    for (const habit of habits) {
+      habitMap.set(habit.id, habit)
+    }
+
+    const placements: HabitTimelinePlacement[] = []
+
+    for (const instance of scheduledHabitInstances) {
+      if (!instance.source_id) continue
+      const start = toLocal(instance.start_utc)
+      const end = toLocal(instance.end_utc)
+      if (!isValidDate(start) || !isValidDate(end)) continue
+
+      const window = instance.window_id
+        ? windowMap.get(instance.window_id) ?? null
+        : null
+      const resolvedWindow = window ?? fallbackWindowForHabitInstance(instance, start, end)
+      if (!resolvedWindow) continue
+
+      const habit = habitMap.get(instance.source_id) ?? null
+      const durationMinutes =
+        typeof instance.duration_min === 'number' &&
+        Number.isFinite(instance.duration_min) &&
+        instance.duration_min > 0
+          ? instance.duration_min
+          : Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000))
+      const truncated =
+        window !== null &&
+        isHabitPlacementTruncated(window, date, start, end)
+
+      placements.push({
+        habitId: instance.source_id,
+        habitName: habit?.name ?? 'Habit',
+        habitType: habit?.habitType ?? 'HABIT',
+        skillId: habit?.skillId ?? null,
+        start,
+        end,
+        durationMinutes,
+        window: resolvedWindow,
+        truncated,
+      })
+    }
+
+    placements.sort((a, b) => a.start.getTime() - b.start.getTime())
+    return placements
+  }
+
+  if (!allowFallback) {
+    return []
+  }
+
   const dayStart = startOfDayInTimeZone(date, zone)
   const defaultDueMs = dayStart.getTime()
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
@@ -1021,6 +1086,52 @@ function computeHabitPlacementsForDay({
 
   placements.sort((a, b) => a.start.getTime() - b.start.getTime())
   return placements
+}
+
+function formatTimeForWindowLabel(date: Date) {
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+function fallbackWindowForHabitInstance(
+  instance: ScheduleInstance,
+  start: Date,
+  end: Date
+): RepoWindow | null {
+  if (!isValidDate(start) || !isValidDate(end)) return null
+  const energy = instance.energy_resolved
+    ? String(instance.energy_resolved).toUpperCase()
+    : 'NO'
+  return {
+    id: instance.window_id ?? `habit-${instance.id}`,
+    label: 'Habit window',
+    energy,
+    start_local: formatTimeForWindowLabel(start),
+    end_local: formatTimeForWindowLabel(end),
+    days: null,
+    location_context_id: null,
+    location_context_value: null,
+    location_context_name: null,
+    fromPrevDay: false,
+  }
+}
+
+function isHabitPlacementTruncated(
+  window: RepoWindow,
+  date: Date,
+  start: Date,
+  end: Date
+) {
+  const bounds = resolveWindowBoundsForDate(window, date)
+  if (!isValidDate(bounds.start) || !isValidDate(bounds.end)) return false
+  const startMs = start.getTime()
+  const endMs = end.getTime()
+  const windowStartMs = bounds.start.getTime()
+  const windowEndMs = bounds.end.getTime()
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false
+  if (!Number.isFinite(windowStartMs) || !Number.isFinite(windowEndMs)) return false
+  return startMs > windowStartMs || endMs < windowEndMs
 }
 
 function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number) {
@@ -1419,6 +1530,8 @@ function buildDayTimelineModel({
     sunlightCoordinates,
     projectInstances,
     schedulerTimelinePlacements,
+    scheduledInstances: instances,
+    allowFallbackComputation: false,
   })
   const windowReports = computeWindowReportsForDay({
     windows,

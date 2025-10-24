@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./supabase/functions/_shared/scheduler",
+    "rootDir": "./",
+    "module": "esnext",
+    "target": "ES2020",
+    "moduleResolution": "bundler",
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "allowJs": false,
+    "isolatedModules": false,
+    "noEmitOnError": true
+  },
+  "include": [
+    "src/lib/scheduler/core/**/*.ts",
+    "src/lib/scheduler/config.ts",
+    "src/lib/scheduler/projects.ts",
+    "src/lib/scheduler/weight.ts",
+    "src/lib/scheduler/habitRecurrence.ts",
+    "src/lib/scheduler/timezone.ts",
+    "src/lib/scheduler/sunlight.ts",
+    "src/lib/scheduler/modes.ts",
+    "src/lib/scheduler/placer.ts"
+  ],
+  "exclude": ["node_modules"]
+}
