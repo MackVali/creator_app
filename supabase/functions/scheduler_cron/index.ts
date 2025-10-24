@@ -8,6 +8,7 @@ import {
   markMissedAndQueue,
   scheduleBacklog,
   type ScheduleBacklogResult,
+  type SchedulerProgressEvent,
 } from '../_shared/scheduler/src/lib/scheduler/core/runScheduler.js'
 
 type Client = SupabaseClient<Database>
@@ -60,10 +61,12 @@ serve(async req => {
     const timeZone = extractUserTimeZone(user)
     const location = extractUserCoordinates(user)
 
+    const progressLogger = createScheduleProgressLogger('cron')
     const scheduleResult = await scheduleBacklog(supabase, userId, now, {
       timeZone,
       location,
       mode: { type: 'REGULAR' },
+      progressLogger,
     })
 
     const status = scheduleResult.error ? 500 : 200
@@ -78,6 +81,17 @@ serve(async req => {
     return new Response('internal error', { status: 500 })
   }
 })
+
+function createScheduleProgressLogger(context: string) {
+  return (event: SchedulerProgressEvent) => {
+    const { type, ...detail } = event
+    if (Object.keys(detail).length === 0) {
+      console.log(`[scheduler][${context}] ${type}`)
+    } else {
+      console.log(`[scheduler][${context}] ${type}`, detail)
+    }
+  }
+}
 
 function serializeSchedulerResponse(
   markResult: { count: number | null; error: unknown },

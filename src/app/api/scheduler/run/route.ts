@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
+import {
+  markMissedAndQueue,
+  scheduleBacklog,
+  type SchedulerProgressEvent,
+} from '@/lib/scheduler/reschedule'
 import {
   normalizeSchedulerModePayload,
   type SchedulerModePayload,
@@ -52,10 +56,12 @@ export async function POST(request: Request) {
 
   const userTimeZone = requestTimeZone ?? extractUserTimeZone(user)
   const coordinates = extractUserCoordinates(user)
+  const progressLogger = createScheduleProgressLogger('api')
   const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
     timeZone: userTimeZone,
     location: coordinates,
     mode,
+    progressLogger,
   })
   const status = scheduleResult.error ? 500 : 200
 
@@ -69,6 +75,17 @@ export async function POST(request: Request) {
     },
     { status }
   )
+}
+
+function createScheduleProgressLogger(context: string) {
+  return (event: SchedulerProgressEvent) => {
+    const { type, ...detail } = event
+    if (Object.keys(detail).length === 0) {
+      console.info(`[scheduler][${context}] ${type}`)
+    } else {
+      console.info(`[scheduler][${context}] ${type}`, detail)
+    }
+  }
 }
 
 function extractUserTimeZone(user: { user_metadata?: Record<string, unknown> | null }) {

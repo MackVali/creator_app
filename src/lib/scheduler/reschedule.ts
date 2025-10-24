@@ -6,6 +6,7 @@ import type { SchedulerModePayload } from './modes'
 import {
   markMissedAndQueue as markMissedAndQueueCore,
   scheduleBacklog as scheduleBacklogCore,
+  type SchedulerProgressLogger,
 } from './core/runScheduler'
 
 export type {
@@ -19,6 +20,8 @@ export type {
   ProjectDraftPlacement,
   HabitDraftPlacement,
   ScheduleFailure,
+  SchedulerProgressEvent,
+  SchedulerProgressLogger,
 } from './core/runScheduler'
 
 type Client = SupabaseClient<Database>
@@ -50,6 +53,7 @@ export async function scheduleBacklog(
     timeZone?: string | null
     location?: GeoCoordinates | null
     mode?: SchedulerModePayload | null
+    progressLogger?: SchedulerProgressLogger
   },
 ) {
   const supabase = await ensureClient(client)

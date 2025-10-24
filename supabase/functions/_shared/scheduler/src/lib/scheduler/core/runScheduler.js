@@ -27,6 +27,18 @@ function isSyncHabitType(value) {
     const normalized = (value ?? '').toUpperCase();
     return normalized === 'SYNC' || normalized === 'ASYNC';
 }
+function createProgressEmitter(logger) {
+    if (!logger)
+        return () => { };
+    return (event) => {
+        try {
+            logger(event);
+        }
+        catch (error) {
+            console.warn('Scheduler progress logger failure', error);
+        }
+    };
+}
 function insertOccupiedBlock(blocks, startMs, endMs) {
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs))
         return;
@@ -89,576 +101,691 @@ export async function markMissedAndQueue(client, userId, now = new Date()) {
 export async function scheduleBacklog(client, userId, baseDate = new Date(), options) {
     const supabase = client;
     const result = { placed: [], failures: [], timeline: [] };
-    const timeZone = normalizeTimeZone(options?.timeZone);
-    const location = normalizeCoordinates(options?.location ?? null);
-    const mode = normalizeSchedulerModePayload(options?.mode ?? { type: 'REGULAR' });
-    const isRushMode = mode.type === 'RUSH';
-    const isRestMode = mode.type === 'REST';
-    const restrictProjectsToToday = mode.type === 'MONUMENTAL' || mode.type === 'SKILLED';
-    const durationMultiplier = isRushMode ? 0.8 : 1;
-    const filteredProjectIds = new Set();
-    const noteModeFiltered = (projectId) => {
-        if (!projectId || filteredProjectIds.has(projectId))
+    const emitProgress = createProgressEmitter(options?.progressLogger);
+    let finalized = false;
+    const finalize = () => {
+        if (finalized)
             return;
-        filteredProjectIds.add(projectId);
-        result.failures.push({ itemId: projectId, reason: 'MODE_FILTERED' });
+        finalized = true;
+        const errorPayload = result.error
+            ? { message: result.error.message ?? null, code: result.error.code ?? null }
+            : null;
+        emitProgress({
+            type: 'complete',
+            placed: result.placed.length,
+            failures: result.failures.length,
+            error: errorPayload,
+        });
     };
-    const adjustDuration = (value) => {
-        if (!Number.isFinite(value) || value <= 0)
-            return value;
-        if (durationMultiplier === 1)
-            return value;
-        return Math.max(1, Math.round(value * durationMultiplier));
-    };
-    const missed = await fetchBacklogNeedingSchedule(supabase, userId);
-    if (missed.error) {
-        result.error = missed.error;
-        return result;
-    }
-    const [tasks, projectsMap, habits] = await Promise.all([
-        fetchReadyTasks(supabase),
-        fetchProjectsMap(supabase),
-        fetchHabitsForSchedule(supabase),
-    ]);
-    const syncHabits = [];
-    const regularHabits = [];
-    for (const habit of habits) {
-        if (isSyncHabitType(habit.habitType)) {
-            syncHabits.push(habit);
+    try {
+        const timeZone = normalizeTimeZone(options?.timeZone);
+        const location = normalizeCoordinates(options?.location ?? null);
+        const mode = normalizeSchedulerModePayload(options?.mode ?? { type: 'REGULAR' });
+        const isRushMode = mode.type === 'RUSH';
+        const isRestMode = mode.type === 'REST';
+        const restrictProjectsToToday = mode.type === 'MONUMENTAL' || mode.type === 'SKILLED';
+        const durationMultiplier = isRushMode ? 0.8 : 1;
+        const filteredProjectIds = new Set();
+        const noteModeFiltered = (projectId) => {
+            if (!projectId || filteredProjectIds.has(projectId))
+                return;
+            filteredProjectIds.add(projectId);
+            result.failures.push({ itemId: projectId, reason: 'MODE_FILTERED' });
+        };
+        const adjustDuration = (value) => {
+            if (!Number.isFinite(value) || value <= 0)
+                return value;
+            if (durationMultiplier === 1)
+                return value;
+            return Math.max(1, Math.round(value * durationMultiplier));
+        };
+        emitProgress({
+            type: 'start',
+            userId,
+            baseDateIso: baseDate.toISOString(),
+            mode: mode.type,
+            horizonDays: SCHEDULER_MAX_HORIZON_DAYS,
+        });
+        const missed = await fetchBacklogNeedingSchedule(supabase, userId);
+        if (missed.error) {
+            result.error = missed.error;
+            emitProgress({
+                type: 'error',
+                stage: 'fetch-missed',
+                message: missed.error.message ?? 'failed to fetch backlog needing schedule',
+                code: missed.error.code ?? null,
+            });
+            return result;
         }
-        else {
-            regularHabits.push(habit);
-        }
-    }
-    const projectItems = buildProjectItems(Object.values(projectsMap), tasks);
-    const projectItemMap = {};
-    for (const item of projectItems)
-        projectItemMap[item.id] = item;
-    const taskSkillsByProjectId = new Map();
-    const taskMonumentsByProjectId = new Map();
-    for (const task of tasks) {
-        const projectId = task.project_id ?? null;
-        if (!projectId)
-            continue;
-        if (task.skill_id) {
-            const existing = taskSkillsByProjectId.get(projectId) ?? new Set();
-            existing.add(task.skill_id);
-            taskSkillsByProjectId.set(projectId, existing);
-        }
-        if (task.skill_monument_id) {
-            const existing = taskMonumentsByProjectId.get(projectId) ?? new Set();
-            existing.add(task.skill_monument_id);
-            taskMonumentsByProjectId.set(projectId, existing);
-        }
-    }
-    let projectSkillsMap = {};
-    let skillMonumentMap = {};
-    if (mode.type === 'MONUMENTAL' || mode.type === 'SKILLED') {
-        try {
-            const projectIds = Object.keys(projectsMap);
-            if (projectIds.length > 0) {
-                projectSkillsMap = await fetchProjectSkillsForProjects(supabase, projectIds);
+        emitProgress({
+            type: 'missed-fetched',
+            count: Array.isArray(missed.data) ? missed.data.length : 0,
+        });
+        const [tasks, projectsMap, habits] = await Promise.all([
+            fetchReadyTasks(supabase),
+            fetchProjectsMap(supabase),
+            fetchHabitsForSchedule(supabase),
+        ]);
+        const syncHabits = [];
+        const regularHabits = [];
+        for (const habit of habits) {
+            if (isSyncHabitType(habit.habitType)) {
+                syncHabits.push(habit);
+            }
+            else {
+                regularHabits.push(habit);
             }
         }
-        catch (error) {
-            console.error('Failed to fetch project skill links for scheduler mode', error);
-            projectSkillsMap = {};
+        emitProgress({
+            type: 'inputs-fetched',
+            tasks: tasks.length,
+            projects: Object.keys(projectsMap).length,
+            regularHabits: regularHabits.length,
+            syncHabits: syncHabits.length,
+        });
+        const projectItems = buildProjectItems(Object.values(projectsMap), tasks);
+        const projectItemMap = {};
+        for (const item of projectItems)
+            projectItemMap[item.id] = item;
+        const taskSkillsByProjectId = new Map();
+        const taskMonumentsByProjectId = new Map();
+        for (const task of tasks) {
+            const projectId = task.project_id ?? null;
+            if (!projectId)
+                continue;
+            if (task.skill_id) {
+                const existing = taskSkillsByProjectId.get(projectId) ?? new Set();
+                existing.add(task.skill_id);
+                taskSkillsByProjectId.set(projectId, existing);
+            }
+            if (task.skill_monument_id) {
+                const existing = taskMonumentsByProjectId.get(projectId) ?? new Set();
+                existing.add(task.skill_monument_id);
+                taskMonumentsByProjectId.set(projectId, existing);
+            }
         }
-        try {
-            skillMonumentMap = await fetchSkillMonumentMap(supabase, userId);
+        let projectSkillsMap = {};
+        let skillMonumentMap = {};
+        if (mode.type === 'MONUMENTAL' || mode.type === 'SKILLED') {
+            try {
+                const projectIds = Object.keys(projectsMap);
+                if (projectIds.length > 0) {
+                    projectSkillsMap = await fetchProjectSkillsForProjects(supabase, projectIds);
+                }
+            }
+            catch (error) {
+                console.error('Failed to fetch project skill links for scheduler mode', error);
+                projectSkillsMap = {};
+            }
+            try {
+                skillMonumentMap = await fetchSkillMonumentMap(supabase, userId);
+            }
+            catch (error) {
+                console.error('Failed to fetch skill monuments for scheduler mode', error);
+                skillMonumentMap = {};
+            }
         }
-        catch (error) {
-            console.error('Failed to fetch skill monuments for scheduler mode', error);
-            skillMonumentMap = {};
-        }
-    }
-    const projectSkillIdsCache = new Map();
-    const projectMonumentIdsCache = new Map();
-    const getProjectSkillIds = (projectId) => {
-        const cached = projectSkillIdsCache.get(projectId);
-        if (cached)
-            return cached;
-        const set = new Set();
-        for (const id of projectSkillsMap[projectId] ?? []) {
-            if (id)
-                set.add(id);
-        }
-        const taskSkillIds = taskSkillsByProjectId.get(projectId);
-        if (taskSkillIds) {
-            for (const id of taskSkillIds) {
+        const projectSkillIdsCache = new Map();
+        const projectMonumentIdsCache = new Map();
+        const getProjectSkillIds = (projectId) => {
+            const cached = projectSkillIdsCache.get(projectId);
+            if (cached)
+                return cached;
+            const set = new Set();
+            for (const id of projectSkillsMap[projectId] ?? []) {
                 if (id)
                     set.add(id);
             }
-        }
-        const ids = Array.from(set);
-        projectSkillIdsCache.set(projectId, ids);
-        return ids;
-    };
-    const getProjectMonumentIds = (projectId) => {
-        const cached = projectMonumentIdsCache.get(projectId);
-        if (cached)
-            return cached;
-        const set = new Set();
-        for (const skillId of getProjectSkillIds(projectId)) {
-            const monumentId = skillMonumentMap[skillId] ?? null;
-            if (monumentId)
-                set.add(monumentId);
-        }
-        const taskMonuments = taskMonumentsByProjectId.get(projectId);
-        if (taskMonuments) {
-            for (const monumentId of taskMonuments) {
+            const taskSkillIds = taskSkillsByProjectId.get(projectId);
+            if (taskSkillIds) {
+                for (const id of taskSkillIds) {
+                    if (id)
+                        set.add(id);
+                }
+            }
+            const ids = Array.from(set);
+            projectSkillIdsCache.set(projectId, ids);
+            return ids;
+        };
+        const getProjectMonumentIds = (projectId) => {
+            const cached = projectMonumentIdsCache.get(projectId);
+            if (cached)
+                return cached;
+            const set = new Set();
+            for (const skillId of getProjectSkillIds(projectId)) {
+                const monumentId = skillMonumentMap[skillId] ?? null;
                 if (monumentId)
                     set.add(monumentId);
             }
+            const taskMonuments = taskMonumentsByProjectId.get(projectId);
+            if (taskMonuments) {
+                for (const monumentId of taskMonuments) {
+                    if (monumentId)
+                        set.add(monumentId);
+                }
+            }
+            const ids = Array.from(set);
+            projectMonumentIdsCache.set(projectId, ids);
+            return ids;
+        };
+        const matchesMode = (projectId) => {
+            if (mode.type === 'MONUMENTAL') {
+                return getProjectMonumentIds(projectId).includes(mode.monumentId);
+            }
+            if (mode.type === 'SKILLED') {
+                const required = new Set(mode.skillIds);
+                if (required.size === 0)
+                    return false;
+                return getProjectSkillIds(projectId).some(id => required.has(id));
+            }
+            return true;
+        };
+        const queue = [];
+        const baseStart = startOfDayInTimeZone(baseDate, timeZone);
+        const dayOffsetFor = (startUTC) => {
+            const start = new Date(startUTC);
+            if (Number.isNaN(start.getTime()))
+                return undefined;
+            const diff = differenceInCalendarDaysInTimeZone(baseStart, start, timeZone);
+            return Number.isFinite(diff) ? diff : undefined;
+        };
+        const seenMissedProjects = new Set();
+        for (const m of missed.data ?? []) {
+            if (m.source_type !== 'PROJECT')
+                continue;
+            if (seenMissedProjects.has(m.source_id)) {
+                const dedupe = await supabase
+                    .from('schedule_instances')
+                    .update({ status: 'canceled' })
+                    .eq('id', m.id)
+                    .select('id, source_id')
+                    .single();
+                if (dedupe.error) {
+                    result.failures.push({ itemId: m.source_id, reason: 'error', detail: dedupe.error });
+                }
+                continue;
+            }
+            seenMissedProjects.add(m.source_id);
+            const def = projectItemMap[m.source_id];
+            if (!def)
+                continue;
+            if (!matchesMode(def.id)) {
+                noteModeFiltered(def.id);
+                continue;
+            }
+            let duration = Number(def.duration_min ?? 0);
+            if (!Number.isFinite(duration) || duration <= 0) {
+                const fallback = Number(m.duration_min ?? 0);
+                if (Number.isFinite(fallback) && fallback > 0) {
+                    duration = fallback;
+                }
+                else {
+                    duration = DEFAULT_PROJECT_DURATION_MIN;
+                }
+            }
+            duration = adjustDuration(duration);
+            const resolvedEnergy = ('energy' in def && def.energy)
+                ? String(def.energy)
+                : m.energy_resolved;
+            const weight = typeof m.weight_snapshot === 'number'
+                ? m.weight_snapshot
+                : def.weight ?? 0;
+            queue.push({
+                id: def.id,
+                sourceType: 'PROJECT',
+                duration_min: duration,
+                energy: (resolvedEnergy ?? 'NO').toUpperCase(),
+                weight,
+                instanceId: m.id,
+            });
         }
-        const ids = Array.from(set);
-        projectMonumentIdsCache.set(projectId, ids);
-        return ids;
-    };
-    const matchesMode = (projectId) => {
-        if (mode.type === 'MONUMENTAL') {
-            return getProjectMonumentIds(projectId).includes(mode.monumentId);
+        const reuseInstanceByProject = new Map();
+        const registerReuseInstance = (projectId, reuseId) => {
+            if (!reuseId)
+                return;
+            if (reuseInstanceByProject.has(projectId))
+                return;
+            reuseInstanceByProject.set(projectId, reuseId);
+        };
+        const collectReuseIds = (source) => {
+            for (const [projectId, ids] of source) {
+                const reuseId = ids.find(Boolean);
+                registerReuseInstance(projectId, reuseId);
+            }
+        };
+        const collectPrimaryReuseIds = (source) => {
+            for (const [projectId, reuseId] of source) {
+                registerReuseInstance(projectId, reuseId);
+            }
+        };
+        const queuedProjectIds = new Set(queue.map(item => item.id));
+        const enqueue = (def) => {
+            if (!def)
+                return;
+            if (!matchesMode(def.id)) {
+                noteModeFiltered(def.id);
+                return;
+            }
+            let duration = Number(def.duration_min ?? 0);
+            if (!Number.isFinite(duration) || duration <= 0)
+                return;
+            duration = adjustDuration(duration);
+            if (queuedProjectIds.has(def.id))
+                return;
+            const energy = (def.energy ?? 'NO').toString().toUpperCase();
+            queue.push({
+                id: def.id,
+                sourceType: 'PROJECT',
+                duration_min: duration,
+                energy,
+                weight: def.weight ?? 0,
+            });
+            queuedProjectIds.add(def.id);
+        };
+        for (const project of projectItems) {
+            enqueue(project);
         }
-        if (mode.type === 'SKILLED') {
-            const required = new Set(mode.skillIds);
-            if (required.size === 0)
-                return false;
-            return getProjectSkillIds(projectId).some(id => required.has(id));
+        emitProgress({ type: 'queue-built', projects: queue.length });
+        const finalQueueProjectIds = new Set(queuedProjectIds);
+        const scheduleHorizonDays = SCHEDULER_MAX_HORIZON_DAYS;
+        const dedupeWindowDays = Math.max(scheduleHorizonDays, 28);
+        const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone);
+        const dedupe = await dedupeScheduledProjects(supabase, userId, baseStart, rangeEnd, finalQueueProjectIds);
+        if (dedupe.error) {
+            result.error = dedupe.error;
+            emitProgress({
+                type: 'error',
+                stage: 'dedupe',
+                message: dedupe.error.message ?? 'failed to dedupe scheduled projects',
+                code: dedupe.error.code ?? null,
+            });
+            return result;
         }
-        return true;
-    };
-    const queue = [];
-    const baseStart = startOfDayInTimeZone(baseDate, timeZone);
-    const dayOffsetFor = (startUTC) => {
-        const start = new Date(startUTC);
-        if (Number.isNaN(start.getTime()))
-            return undefined;
-        const diff = differenceInCalendarDaysInTimeZone(baseStart, start, timeZone);
-        return Number.isFinite(diff) ? diff : undefined;
-    };
-    const seenMissedProjects = new Set();
-    for (const m of missed.data ?? []) {
-        if (m.source_type !== 'PROJECT')
-            continue;
-        if (seenMissedProjects.has(m.source_id)) {
-            const dedupe = await supabase
+        if (dedupe.failures.length > 0) {
+            result.failures.push(...dedupe.failures);
+        }
+        collectPrimaryReuseIds(dedupe.reusableByProject);
+        collectReuseIds(dedupe.canceledByProject);
+        const previouslyScheduledHabitIds = new Set();
+        const habitInstancesToCancel = dedupe.rangeInstances.filter(inst => inst.source_type === 'HABIT' && inst.status === 'scheduled');
+        if (habitInstancesToCancel.length > 0) {
+            const cancelIds = habitInstancesToCancel.map(inst => inst.id);
+            const cancel = await supabase
                 .from('schedule_instances')
                 .update({ status: 'canceled' })
-                .eq('id', m.id)
-                .select('id, source_id')
-                .single();
-            if (dedupe.error) {
-                result.failures.push({ itemId: m.source_id, reason: 'error', detail: dedupe.error });
-            }
-            continue;
-        }
-        seenMissedProjects.add(m.source_id);
-        const def = projectItemMap[m.source_id];
-        if (!def)
-            continue;
-        if (!matchesMode(def.id)) {
-            noteModeFiltered(def.id);
-            continue;
-        }
-        let duration = Number(def.duration_min ?? 0);
-        if (!Number.isFinite(duration) || duration <= 0) {
-            const fallback = Number(m.duration_min ?? 0);
-            if (Number.isFinite(fallback) && fallback > 0) {
-                duration = fallback;
+                .in('id', cancelIds);
+            if (cancel.error) {
+                for (const inst of habitInstancesToCancel) {
+                    result.failures.push({
+                        itemId: inst.source_id || inst.id,
+                        reason: 'error',
+                        detail: cancel.error,
+                    });
+                }
             }
             else {
-                duration = DEFAULT_PROJECT_DURATION_MIN;
+                for (const inst of habitInstancesToCancel) {
+                    if (inst.source_id) {
+                        previouslyScheduledHabitIds.add(inst.source_id);
+                    }
+                }
             }
         }
-        duration = adjustDuration(duration);
-        const resolvedEnergy = ('energy' in def && def.energy)
-            ? String(def.energy)
-            : m.energy_resolved;
-        const weight = typeof m.weight_snapshot === 'number'
-            ? m.weight_snapshot
-            : def.weight ?? 0;
-        queue.push({
-            id: def.id,
-            sourceType: 'PROJECT',
-            duration_min: duration,
-            energy: (resolvedEnergy ?? 'NO').toUpperCase(),
-            weight,
-            instanceId: m.id,
+        const canceledProjectInstanceCount = Array.from(dedupe.canceledByProject.values()).reduce((total, ids) => total + ids.length, 0);
+        const canceledHabitInstanceCount = habitInstancesToCancel.length;
+        emitProgress({
+            type: 'dedupe-complete',
+            reusedProjects: dedupe.reusableByProject.size,
+            canceledProjectInstances: canceledProjectInstanceCount,
+            canceledHabitInstances: canceledHabitInstanceCount,
         });
-    }
-    const reuseInstanceByProject = new Map();
-    const registerReuseInstance = (projectId, reuseId) => {
-        if (!reuseId)
-            return;
-        if (reuseInstanceByProject.has(projectId))
-            return;
-        reuseInstanceByProject.set(projectId, reuseId);
-    };
-    const collectReuseIds = (source) => {
-        for (const [projectId, ids] of source) {
-            const reuseId = ids.find(Boolean);
-            registerReuseInstance(projectId, reuseId);
+        const windowAvailabilityByDay = new Map();
+        const windowCache = new Map();
+        const regularHabitPlacementsByOffset = new Map();
+        const syncHabitPlacementsByOffset = new Map();
+        const existingWindowBlocksByOffset = new Map();
+        const occupiedBlocksByOffset = new Map();
+        const summarizeHabitPlacementCache = (cache) => {
+            let placements = 0;
+            let offsetsWithPlacements = 0;
+            for (const entries of cache.values()) {
+                if (entries.length > 0)
+                    offsetsWithPlacements += 1;
+                placements += entries.length;
+            }
+            return { placements, offsetsWithPlacements };
+        };
+        const getOccupiedBlocksForOffset = (offset) => {
+            let blocks = occupiedBlocksByOffset.get(offset);
+            if (!blocks) {
+                blocks = [];
+                occupiedBlocksByOffset.set(offset, blocks);
+            }
+            return blocks;
+        };
+        const registerOccupiedRange = (offset, startUTC, endUTC) => {
+            if (typeof offset !== 'number' || !Number.isFinite(offset))
+                return;
+            if (offset < 0 || offset >= SCHEDULER_MAX_HORIZON_DAYS)
+                return;
+            const startMs = new Date(startUTC).getTime();
+            const endMs = new Date(endUTC).getTime();
+            if (!Number.isFinite(startMs) || !Number.isFinite(endMs))
+                return;
+            if (endMs <= startMs)
+                return;
+            const blocks = getOccupiedBlocksForOffset(offset);
+            insertOccupiedBlock(blocks, startMs, endMs);
+        };
+        const registerExistingWindowBlock = (offset, inst) => {
+            if (typeof offset !== 'number')
+                return;
+            if (!Number.isFinite(offset))
+                return;
+            if (offset < 0 || offset >= SCHEDULER_MAX_HORIZON_DAYS)
+                return;
+            const blocks = existingWindowBlocksByOffset.get(offset) ?? [];
+            blocks.push({
+                startUTC: inst.start_utc,
+                endUTC: inst.end_utc,
+                windowId: inst.window_id ?? null,
+            });
+            existingWindowBlocksByOffset.set(offset, blocks);
+            registerOccupiedRange(offset, inst.start_utc, inst.end_utc);
+        };
+        const keptInstances = [...dedupe.keepers];
+        for (const inst of keptInstances) {
+            const projectId = inst.source_id ?? '';
+            if (!projectId)
+                continue;
+            registerExistingWindowBlock(dayOffsetFor(inst.start_utc), inst);
+            result.timeline.push({
+                type: 'PROJECT',
+                instance: inst,
+                projectId,
+                decision: 'kept',
+                scheduledDayOffset: dayOffsetFor(inst.start_utc) ?? undefined,
+            });
         }
-    };
-    const collectPrimaryReuseIds = (source) => {
-        for (const [projectId, reuseId] of source) {
-            registerReuseInstance(projectId, reuseId);
+        for (const item of queue) {
+            if (item.instanceId)
+                continue;
+            const reuseId = reuseInstanceByProject.get(item.id);
+            if (!reuseId)
+                continue;
+            item.instanceId = reuseId;
+            reuseInstanceByProject.delete(item.id);
         }
-    };
-    const queuedProjectIds = new Set(queue.map(item => item.id));
-    const enqueue = (def) => {
-        if (!def)
-            return;
-        if (!matchesMode(def.id)) {
-            noteModeFiltered(def.id);
-            return;
-        }
-        let duration = Number(def.duration_min ?? 0);
-        if (!Number.isFinite(duration) || duration <= 0)
-            return;
-        duration = adjustDuration(duration);
-        if (queuedProjectIds.has(def.id))
-            return;
-        const energy = (def.energy ?? 'NO').toString().toUpperCase();
-        queue.push({
-            id: def.id,
-            sourceType: 'PROJECT',
-            duration_min: duration,
-            energy,
-            weight: def.weight ?? 0,
-        });
-        queuedProjectIds.add(def.id);
-    };
-    for (const project of projectItems) {
-        enqueue(project);
-    }
-    const finalQueueProjectIds = new Set(queuedProjectIds);
-    const scheduleHorizonDays = SCHEDULER_MAX_HORIZON_DAYS;
-    const dedupeWindowDays = Math.max(scheduleHorizonDays, 28);
-    const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone);
-    const dedupe = await dedupeScheduledProjects(supabase, userId, baseStart, rangeEnd, finalQueueProjectIds);
-    if (dedupe.error) {
-        result.error = dedupe.error;
-        return result;
-    }
-    if (dedupe.failures.length > 0) {
-        result.failures.push(...dedupe.failures);
-    }
-    collectPrimaryReuseIds(dedupe.reusableByProject);
-    collectReuseIds(dedupe.canceledByProject);
-    const previouslyScheduledHabitIds = new Set();
-    const habitInstancesToCancel = dedupe.rangeInstances.filter(inst => inst.source_type === 'HABIT' && inst.status === 'scheduled');
-    if (habitInstancesToCancel.length > 0) {
-        const cancelIds = habitInstancesToCancel.map(inst => inst.id);
-        const cancel = await supabase
-            .from('schedule_instances')
-            .update({ status: 'canceled' })
-            .in('id', cancelIds);
-        if (cancel.error) {
-            for (const inst of habitInstancesToCancel) {
-                result.failures.push({
-                    itemId: inst.source_id || inst.id,
-                    reason: 'error',
-                    detail: cancel.error,
+        const ignoreProjectIds = new Set(finalQueueProjectIds);
+        const getAvailabilityForOffset = (offset) => {
+            let availability = windowAvailabilityByDay.get(offset);
+            if (!availability) {
+                availability = new Map();
+                windowAvailabilityByDay.set(offset, availability);
+            }
+            return availability;
+        };
+        const adjustWindowsForOccupancy = (windows, occupiedBlocks, durationMin) => {
+            const durationMs = Math.max(0, durationMin) * 60000;
+            if (durationMs <= 0)
+                return windows;
+            const adjusted = [];
+            for (const win of windows) {
+                const startMs = win.availableStartLocal.getTime();
+                const endMs = win.endLocal.getTime();
+                const nextStart = findFirstAvailableStart(occupiedBlocks, startMs, endMs, durationMs);
+                if (nextStart === null)
+                    continue;
+                if (nextStart !== startMs) {
+                    adjusted.push({ ...win, availableStartLocal: new Date(nextStart) });
+                }
+                else {
+                    adjusted.push(win);
+                }
+            }
+            return adjusted;
+        };
+        const scheduleHabitsAcrossHorizon = async (habits, cache, options) => {
+            if (habits.length === 0)
+                return;
+            for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
+                const availability = getAvailabilityForOffset(offset);
+                const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
+                const occupiedBlocks = getOccupiedBlocksForOffset(offset);
+                await ensureHabitPlacementsForDay(offset, day, availability, {
+                    habits,
+                    cache,
+                    allowOverlap: options.allowOverlap,
+                    occupiedBlocks,
+                    registerOccupiedBlock: options.allowOverlap
+                        ? undefined
+                        : (startMs, endMs) => {
+                            insertOccupiedBlock(occupiedBlocks, startMs, endMs);
+                        },
                 });
             }
-        }
-        else {
-            for (const inst of habitInstancesToCancel) {
-                if (inst.source_id) {
-                    previouslyScheduledHabitIds.add(inst.source_id);
-                }
-            }
-        }
-    }
-    const windowAvailabilityByDay = new Map();
-    const windowCache = new Map();
-    const regularHabitPlacementsByOffset = new Map();
-    const syncHabitPlacementsByOffset = new Map();
-    const existingWindowBlocksByOffset = new Map();
-    const occupiedBlocksByOffset = new Map();
-    const getOccupiedBlocksForOffset = (offset) => {
-        let blocks = occupiedBlocksByOffset.get(offset);
-        if (!blocks) {
-            blocks = [];
-            occupiedBlocksByOffset.set(offset, blocks);
-        }
-        return blocks;
-    };
-    const registerOccupiedRange = (offset, startUTC, endUTC) => {
-        if (typeof offset !== 'number' || !Number.isFinite(offset))
-            return;
-        if (offset < 0 || offset >= SCHEDULER_MAX_HORIZON_DAYS)
-            return;
-        const startMs = new Date(startUTC).getTime();
-        const endMs = new Date(endUTC).getTime();
-        if (!Number.isFinite(startMs) || !Number.isFinite(endMs))
-            return;
-        if (endMs <= startMs)
-            return;
-        const blocks = getOccupiedBlocksForOffset(offset);
-        insertOccupiedBlock(blocks, startMs, endMs);
-    };
-    const registerExistingWindowBlock = (offset, inst) => {
-        if (typeof offset !== 'number')
-            return;
-        if (!Number.isFinite(offset))
-            return;
-        if (offset < 0 || offset >= SCHEDULER_MAX_HORIZON_DAYS)
-            return;
-        const blocks = existingWindowBlocksByOffset.get(offset) ?? [];
-        blocks.push({
-            startUTC: inst.start_utc,
-            endUTC: inst.end_utc,
-            windowId: inst.window_id ?? null,
+        };
+        queue.sort((a, b) => {
+            const energyDiff = energyIndex(b.energy) - energyIndex(a.energy);
+            if (energyDiff !== 0)
+                return energyDiff;
+            const weightDiff = b.weight - a.weight;
+            if (weightDiff !== 0)
+                return weightDiff;
+            return a.id.localeCompare(b.id);
         });
-        existingWindowBlocksByOffset.set(offset, blocks);
-        registerOccupiedRange(offset, inst.start_utc, inst.end_utc);
-    };
-    const keptInstances = [...dedupe.keepers];
-    for (const inst of keptInstances) {
-        const projectId = inst.source_id ?? '';
-        if (!projectId)
-            continue;
-        registerExistingWindowBlock(dayOffsetFor(inst.start_utc), inst);
-        result.timeline.push({
-            type: 'PROJECT',
-            instance: inst,
-            projectId,
-            decision: 'kept',
-            scheduledDayOffset: dayOffsetFor(inst.start_utc) ?? undefined,
-        });
-    }
-    for (const item of queue) {
-        if (item.instanceId)
-            continue;
-        const reuseId = reuseInstanceByProject.get(item.id);
-        if (!reuseId)
-            continue;
-        item.instanceId = reuseId;
-        reuseInstanceByProject.delete(item.id);
-    }
-    const ignoreProjectIds = new Set(finalQueueProjectIds);
-    const getAvailabilityForOffset = (offset) => {
-        let availability = windowAvailabilityByDay.get(offset);
-        if (!availability) {
-            availability = new Map();
-            windowAvailabilityByDay.set(offset, availability);
-        }
-        return availability;
-    };
-    const adjustWindowsForOccupancy = (windows, occupiedBlocks, durationMin) => {
-        const durationMs = Math.max(0, durationMin) * 60000;
-        if (durationMs <= 0)
-            return windows;
-        const adjusted = [];
-        for (const win of windows) {
-            const startMs = win.availableStartLocal.getTime();
-            const endMs = win.endLocal.getTime();
-            const nextStart = findFirstAvailableStart(occupiedBlocks, startMs, endMs, durationMs);
-            if (nextStart === null)
-                continue;
-            if (nextStart !== startMs) {
-                adjusted.push({ ...win, availableStartLocal: new Date(nextStart) });
+        const ensureHabitPlacementsForDay = async (offset, day, availability, options) => {
+            const cache = options.cache;
+            if (cache.has(offset)) {
+                return cache.get(offset) ?? [];
             }
-            else {
-                adjusted.push(win);
+            if (options.habits.length === 0) {
+                cache.set(offset, []);
+                return [];
             }
-        }
-        return adjusted;
-    };
-    const scheduleHabitsAcrossHorizon = async (habits, cache, options) => {
-        if (habits.length === 0)
-            return;
-        for (let offset = 0; offset < scheduleHorizonDays; offset += 1) {
-            const availability = getAvailabilityForOffset(offset);
-            const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone);
-            const occupiedBlocks = getOccupiedBlocksForOffset(offset);
-            await ensureHabitPlacementsForDay(offset, day, availability, {
-                habits,
-                cache,
-                allowOverlap: options.allowOverlap,
-                occupiedBlocks,
-                registerOccupiedBlock: options.allowOverlap
-                    ? undefined
-                    : (startMs, endMs) => {
-                        insertOccupiedBlock(occupiedBlocks, startMs, endMs);
-                    },
-            });
-        }
-    };
-    queue.sort((a, b) => {
-        const energyDiff = energyIndex(b.energy) - energyIndex(a.energy);
-        if (energyDiff !== 0)
-            return energyDiff;
-        const weightDiff = b.weight - a.weight;
-        if (weightDiff !== 0)
-            return weightDiff;
-        return a.id.localeCompare(b.id);
-    });
-    const ensureHabitPlacementsForDay = async (offset, day, availability, options) => {
-        const cache = options.cache;
-        if (cache.has(offset)) {
-            return cache.get(offset) ?? [];
-        }
-        if (options.habits.length === 0) {
-            cache.set(offset, []);
-            return [];
-        }
-        const placements = await scheduleHabitsForDay({
-            habits: options.habits,
-            day,
-            offset,
-            timeZone,
-            availability,
-            baseDate,
-            windowCache,
-            client: supabase,
-            sunlightLocation: location,
-            durationMultiplier,
-            restMode: isRestMode,
-            allowOverlap: options.allowOverlap,
-            existingBlocks: options.allowOverlap === true
-                ? []
-                : existingWindowBlocksByOffset.get(offset) ?? [],
-            occupiedBlocks: options.occupiedBlocks,
-            registerOccupiedBlock: options.registerOccupiedBlock,
-        });
-        if (placements.length > 0) {
-            result.timeline.push(...placements);
-        }
-        cache.set(offset, placements);
-        return placements;
-    };
-    await scheduleHabitsAcrossHorizon(regularHabits, regularHabitPlacementsByOffset, {
-        allowOverlap: false,
-    });
-    for (const item of queue) {
-        let scheduled = false;
-        const maxOffset = restrictProjectsToToday ? 1 : scheduleHorizonDays;
-        for (let offset = 0; offset < maxOffset && !scheduled; offset += 1) {
-            const windowAvailability = getAvailabilityForOffset(offset);
-            const day = addDaysInTimeZone(baseStart, offset, timeZone);
-            const occupiedBlocks = getOccupiedBlocksForOffset(offset);
-            const windows = await fetchCompatibleWindowsForItem(supabase, day, item, timeZone, {
-                availability: windowAvailability,
-                now: offset === 0 ? baseDate : undefined,
-                cache: windowCache,
-                restMode: isRestMode,
-            });
-            if (windows.length === 0)
-                continue;
-            const adjustedWindows = adjustWindowsForOccupancy(windows, occupiedBlocks, item.duration_min);
-            if (adjustedWindows.length === 0)
-                continue;
-            const placed = await placeItemInWindows({
-                userId,
-                item,
-                windows: adjustedWindows,
-                date: day,
+            const placements = await scheduleHabitsForDay({
+                habits: options.habits,
+                day,
+                offset,
+                timeZone,
+                availability,
+                baseDate,
+                windowCache,
                 client: supabase,
-                reuseInstanceId: item.instanceId,
-                ignoreProjectIds,
-                notBefore: offset === 0 ? baseDate : undefined,
+                sunlightLocation: location,
+                durationMultiplier,
+                restMode: isRestMode,
+                allowOverlap: options.allowOverlap,
+                existingBlocks: options.allowOverlap === true
+                    ? []
+                    : existingWindowBlocksByOffset.get(offset) ?? [],
+                occupiedBlocks: options.occupiedBlocks,
+                registerOccupiedBlock: options.registerOccupiedBlock,
             });
-            if (!('status' in placed)) {
-                if (placed.error !== 'NO_FIT') {
-                    result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error });
+            if (placements.length > 0) {
+                result.timeline.push(...placements);
+            }
+            cache.set(offset, placements);
+            return placements;
+        };
+        await scheduleHabitsAcrossHorizon(regularHabits, regularHabitPlacementsByOffset, {
+            allowOverlap: false,
+        });
+        const regularHabitSummary = summarizeHabitPlacementCache(regularHabitPlacementsByOffset);
+        emitProgress({
+            type: 'habit-pass-complete',
+            stage: 'regular',
+            placements: regularHabitSummary.placements,
+            offsetsWithPlacements: regularHabitSummary.offsetsWithPlacements,
+        });
+        const projectAttemptCount = queue.length;
+        let projectPlacedCount = 0;
+        let projectFailedCount = 0;
+        for (const item of queue) {
+            let scheduled = false;
+            const maxOffset = restrictProjectsToToday ? 1 : scheduleHorizonDays;
+            for (let offset = 0; offset < maxOffset && !scheduled; offset += 1) {
+                const windowAvailability = getAvailabilityForOffset(offset);
+                const day = addDaysInTimeZone(baseStart, offset, timeZone);
+                const occupiedBlocks = getOccupiedBlocksForOffset(offset);
+                const windows = await fetchCompatibleWindowsForItem(supabase, day, item, timeZone, {
+                    availability: windowAvailability,
+                    now: offset === 0 ? baseDate : undefined,
+                    cache: windowCache,
+                    restMode: isRestMode,
+                });
+                if (windows.length === 0)
+                    continue;
+                const adjustedWindows = adjustWindowsForOccupancy(windows, occupiedBlocks, item.duration_min);
+                if (adjustedWindows.length === 0)
+                    continue;
+                const placed = await placeItemInWindows({
+                    userId,
+                    item,
+                    windows: adjustedWindows,
+                    date: day,
+                    client: supabase,
+                    reuseInstanceId: item.instanceId,
+                    ignoreProjectIds,
+                    notBefore: offset === 0 ? baseDate : undefined,
+                });
+                if (!('status' in placed)) {
+                    if (placed.error !== 'NO_FIT') {
+                        result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error });
+                    }
+                    continue;
                 }
-                continue;
-            }
-            if (placed.error) {
-                result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error });
-                continue;
-            }
-            if (placed.data) {
-                result.placed.push(placed.data);
-                const placementWindow = findPlacementWindow(adjustedWindows, placed.data);
-                if (placementWindow?.key) {
-                    const placementEnd = new Date(placed.data.end_utc);
-                    const existingBounds = windowAvailability.get(placementWindow.key);
-                    if (existingBounds) {
-                        const nextFront = Math.min(placementEnd.getTime(), existingBounds.back.getTime());
-                        existingBounds.front = new Date(nextFront);
-                        if (existingBounds.front.getTime() > existingBounds.back.getTime()) {
-                            existingBounds.back = new Date(existingBounds.front);
+                if (placed.error) {
+                    result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error });
+                    continue;
+                }
+                if (placed.data) {
+                    result.placed.push(placed.data);
+                    projectPlacedCount += 1;
+                    const placementWindow = findPlacementWindow(adjustedWindows, placed.data);
+                    if (placementWindow?.key) {
+                        const placementEnd = new Date(placed.data.end_utc);
+                        const existingBounds = windowAvailability.get(placementWindow.key);
+                        if (existingBounds) {
+                            const nextFront = Math.min(placementEnd.getTime(), existingBounds.back.getTime());
+                            existingBounds.front = new Date(nextFront);
+                            if (existingBounds.front.getTime() > existingBounds.back.getTime()) {
+                                existingBounds.back = new Date(existingBounds.front);
+                            }
+                        }
+                        else {
+                            const endLocal = placementWindow.endLocal ?? placementEnd;
+                            windowAvailability.set(placementWindow.key, {
+                                front: placementEnd,
+                                back: new Date(endLocal),
+                            });
                         }
                     }
-                    else {
-                        const endLocal = placementWindow.endLocal ?? placementEnd;
-                        windowAvailability.set(placementWindow.key, {
-                            front: placementEnd,
-                            back: new Date(endLocal),
-                        });
-                    }
+                    const decision = item.instanceId
+                        ? 'rescheduled'
+                        : 'new';
+                    const placementOffset = dayOffsetFor(placed.data.start_utc);
+                    registerOccupiedRange(placementOffset ?? offset, placed.data.start_utc, placed.data.end_utc);
+                    result.timeline.push({
+                        type: 'PROJECT',
+                        instance: placed.data,
+                        projectId: placed.data.source_id ?? item.id,
+                        decision,
+                        scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? offset,
+                        availableStartLocal: placementWindow?.availableStartLocal
+                            ? placementWindow.availableStartLocal.toISOString()
+                            : undefined,
+                        windowStartLocal: placementWindow?.startLocal
+                            ? placementWindow.startLocal.toISOString()
+                            : undefined,
+                    });
+                    scheduled = true;
                 }
-                const decision = item.instanceId
+            }
+            if (!scheduled) {
+                result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' });
+                projectFailedCount += 1;
+            }
+        }
+        emitProgress({
+            type: 'projects-scheduled',
+            attempted: projectAttemptCount,
+            placed: projectPlacedCount,
+            failed: projectFailedCount,
+        });
+        await scheduleHabitsAcrossHorizon(syncHabits, syncHabitPlacementsByOffset, {
+            allowOverlap: true,
+        });
+        const syncHabitSummary = summarizeHabitPlacementCache(syncHabitPlacementsByOffset);
+        emitProgress({
+            type: 'habit-pass-complete',
+            stage: 'sync',
+            placements: syncHabitSummary.placements,
+            offsetsWithPlacements: syncHabitSummary.offsetsWithPlacements,
+        });
+        const habitPlacements = [];
+        for (const entries of regularHabitPlacementsByOffset.values()) {
+            habitPlacements.push(...entries);
+        }
+        for (const entries of syncHabitPlacementsByOffset.values()) {
+            habitPlacements.push(...entries);
+        }
+        let habitInsertedCount = 0;
+        let habitPersistenceFailureCount = 0;
+        if (habitPlacements.length > 0) {
+            const persistence = await persistHabitPlacements({
+                supabase,
+                userId,
+                placements: habitPlacements,
+            });
+            if (persistence.failures.length > 0) {
+                result.failures.push(...persistence.failures);
+            }
+            habitPersistenceFailureCount = persistence.failures.length;
+            if (persistence.inserted.length > 0) {
+                result.placed.push(...persistence.inserted);
+                for (const inst of persistence.inserted) {
+                    registerOccupiedRange(dayOffsetFor(inst.start_utc), inst.start_utc, inst.end_utc);
+                }
+            }
+            habitInsertedCount = persistence.inserted.length;
+            for (const placement of habitPlacements) {
+                placement.decision = previouslyScheduledHabitIds.has(placement.habit.id)
                     ? 'rescheduled'
                     : 'new';
-                const placementOffset = dayOffsetFor(placed.data.start_utc);
-                registerOccupiedRange(placementOffset ?? offset, placed.data.start_utc, placed.data.end_utc);
-                result.timeline.push({
-                    type: 'PROJECT',
-                    instance: placed.data,
-                    projectId: placed.data.source_id ?? item.id,
-                    decision,
-                    scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? offset,
-                    availableStartLocal: placementWindow?.availableStartLocal
-                        ? placementWindow.availableStartLocal.toISOString()
-                        : undefined,
-                    windowStartLocal: placementWindow?.startLocal
-                        ? placementWindow.startLocal.toISOString()
-                        : undefined,
-                });
-                scheduled = true;
             }
         }
-        if (!scheduled) {
-            result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' });
-        }
-    }
-    await scheduleHabitsAcrossHorizon(syncHabits, syncHabitPlacementsByOffset, {
-        allowOverlap: true,
-    });
-    const habitPlacements = [];
-    for (const entries of regularHabitPlacementsByOffset.values()) {
-        habitPlacements.push(...entries);
-    }
-    for (const entries of syncHabitPlacementsByOffset.values()) {
-        habitPlacements.push(...entries);
-    }
-    if (habitPlacements.length > 0) {
-        const persistence = await persistHabitPlacements({
-            supabase,
-            userId,
-            placements: habitPlacements,
+        emitProgress({
+            type: 'habits-persisted',
+            inserted: habitInsertedCount,
+            failures: habitPersistenceFailureCount,
         });
-        if (persistence.failures.length > 0) {
-            result.failures.push(...persistence.failures);
-        }
-        if (persistence.inserted.length > 0) {
-            result.placed.push(...persistence.inserted);
-            for (const inst of persistence.inserted) {
-                registerOccupiedRange(dayOffsetFor(inst.start_utc), inst.start_utc, inst.end_utc);
+        result.timeline.sort((a, b) => {
+            const aTime = placementStartMs(a);
+            const bTime = placementStartMs(b);
+            if (!Number.isFinite(aTime) || !Number.isFinite(bTime))
+                return 0;
+            if (aTime === bTime) {
+                return placementKey(a).localeCompare(placementKey(b));
             }
-        }
-        for (const placement of habitPlacements) {
-            placement.decision = previouslyScheduledHabitIds.has(placement.habit.id)
-                ? 'rescheduled'
-                : 'new';
-        }
+            return aTime - bTime;
+        });
+        return result;
     }
-    result.timeline.sort((a, b) => {
-        const aTime = placementStartMs(a);
-        const bTime = placementStartMs(b);
-        if (!Number.isFinite(aTime) || !Number.isFinite(bTime))
-            return 0;
-        if (aTime === bTime) {
-            return placementKey(a).localeCompare(placementKey(b));
-        }
-        return aTime - bTime;
-    });
-    return result;
+    catch (error) {
+        const err = error;
+        const message = err && typeof err.message === 'string'
+            ? err.message
+            : error instanceof Error
+                ? error.message
+                : String(error);
+        const code = err && typeof err.code === 'string' ? err.code : undefined;
+        emitProgress({ type: 'error', stage: 'unhandled', message, code });
+        throw error;
+    }
+    finally {
+        finalize();
+    }
 }
 async function dedupeScheduledProjects(supabase, userId, baseStart, rangeEnd, projectsToReset) {
     const response = await fetchInstancesForRange(supabase, userId, baseStart.toISOString(), rangeEnd.toISOString());

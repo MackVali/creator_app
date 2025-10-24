@@ -111,6 +111,78 @@ type OccupiedBlock = {
   endMs: number
 }
 
+export type SchedulerProgressEvent =
+  | {
+      type: 'start'
+      userId: string
+      baseDateIso: string
+      mode: SchedulerModePayload['type']
+      horizonDays: number
+    }
+  | {
+      type: 'missed-fetched'
+      count: number
+    }
+  | {
+      type: 'inputs-fetched'
+      tasks: number
+      projects: number
+      regularHabits: number
+      syncHabits: number
+    }
+  | {
+      type: 'queue-built'
+      projects: number
+    }
+  | {
+      type: 'dedupe-complete'
+      reusedProjects: number
+      canceledProjectInstances: number
+      canceledHabitInstances: number
+    }
+  | {
+      type: 'habit-pass-complete'
+      stage: 'regular' | 'sync'
+      placements: number
+      offsetsWithPlacements: number
+    }
+  | {
+      type: 'projects-scheduled'
+      attempted: number
+      placed: number
+      failed: number
+    }
+  | {
+      type: 'habits-persisted'
+      inserted: number
+      failures: number
+    }
+  | {
+      type: 'complete'
+      placed: number
+      failures: number
+      error: { message?: string | null; code?: string | null } | null
+    }
+  | {
+      type: 'error'
+      stage: string
+      message: string
+      code?: string | null
+    }
+
+export type SchedulerProgressLogger = (event: SchedulerProgressEvent) => void
+
+function createProgressEmitter(logger?: SchedulerProgressLogger) {
+  if (!logger) return () => {}
+  return (event: SchedulerProgressEvent) => {
+    try {
+      logger(event)
+    } catch (error) {
+      console.warn('Scheduler progress logger failure', error)
+    }
+  }
+}
+
 function insertOccupiedBlock(blocks: OccupiedBlock[], startMs: number, endMs: number) {
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
   if (endMs <= startMs) return
@@ -184,331 +256,407 @@ export async function scheduleBacklog(
     timeZone?: string | null
     location?: GeoCoordinates | null
     mode?: SchedulerModePayload | null
+    progressLogger?: SchedulerProgressLogger
   }
 ): Promise<ScheduleBacklogResult> {
   const supabase = client
   const result: ScheduleBacklogResult = { placed: [], failures: [], timeline: [] }
-  const timeZone = normalizeTimeZone(options?.timeZone)
-  const location = normalizeCoordinates(options?.location ?? null)
-  const mode = normalizeSchedulerModePayload(options?.mode ?? { type: 'REGULAR' })
-  const isRushMode = mode.type === 'RUSH'
-  const isRestMode = mode.type === 'REST'
-  const restrictProjectsToToday =
-    mode.type === 'MONUMENTAL' || mode.type === 'SKILLED'
-  const durationMultiplier = isRushMode ? 0.8 : 1
-  const filteredProjectIds = new Set<string>()
-  const noteModeFiltered = (projectId: string) => {
-    if (!projectId || filteredProjectIds.has(projectId)) return
-    filteredProjectIds.add(projectId)
-    result.failures.push({ itemId: projectId, reason: 'MODE_FILTERED' })
-  }
-  const adjustDuration = (value: number): number => {
-    if (!Number.isFinite(value) || value <= 0) return value
-    if (durationMultiplier === 1) return value
-    return Math.max(1, Math.round(value * durationMultiplier))
+  const emitProgress = createProgressEmitter(options?.progressLogger)
+  let finalized = false
+  const finalize = () => {
+    if (finalized) return
+    finalized = true
+    const errorPayload = result.error
+      ? { message: result.error.message ?? null, code: result.error.code ?? null }
+      : null
+    emitProgress({
+      type: 'complete',
+      placed: result.placed.length,
+      failures: result.failures.length,
+      error: errorPayload,
+    })
   }
 
-  const missed = await fetchBacklogNeedingSchedule(supabase, userId)
-  if (missed.error) {
-    result.error = missed.error
-    return result
-  }
-
-  const [tasks, projectsMap, habits] = await Promise.all([
-    fetchReadyTasks(supabase),
-    fetchProjectsMap(supabase),
-    fetchHabitsForSchedule(supabase),
-  ])
-  const syncHabits: HabitScheduleItem[] = []
-  const regularHabits: HabitScheduleItem[] = []
-  for (const habit of habits) {
-    if (isSyncHabitType(habit.habitType)) {
-      syncHabits.push(habit)
-    } else {
-      regularHabits.push(habit)
+  try {
+    const timeZone = normalizeTimeZone(options?.timeZone)
+    const location = normalizeCoordinates(options?.location ?? null)
+    const mode = normalizeSchedulerModePayload(options?.mode ?? { type: 'REGULAR' })
+    const isRushMode = mode.type === 'RUSH'
+    const isRestMode = mode.type === 'REST'
+    const restrictProjectsToToday =
+      mode.type === 'MONUMENTAL' || mode.type === 'SKILLED'
+    const durationMultiplier = isRushMode ? 0.8 : 1
+    const filteredProjectIds = new Set<string>()
+    const noteModeFiltered = (projectId: string) => {
+      if (!projectId || filteredProjectIds.has(projectId)) return
+      filteredProjectIds.add(projectId)
+      result.failures.push({ itemId: projectId, reason: 'MODE_FILTERED' })
     }
-  }
-  const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
-
-  const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
-  for (const item of projectItems) projectItemMap[item.id] = item
-
-  const taskSkillsByProjectId = new Map<string, Set<string>>()
-  const taskMonumentsByProjectId = new Map<string, Set<string>>()
-  for (const task of tasks) {
-    const projectId = task.project_id ?? null
-    if (!projectId) continue
-    if (task.skill_id) {
-      const existing = taskSkillsByProjectId.get(projectId) ?? new Set<string>()
-      existing.add(task.skill_id)
-      taskSkillsByProjectId.set(projectId, existing)
+    const adjustDuration = (value: number): number => {
+      if (!Number.isFinite(value) || value <= 0) return value
+      if (durationMultiplier === 1) return value
+      return Math.max(1, Math.round(value * durationMultiplier))
     }
-    if (task.skill_monument_id) {
-      const existing = taskMonumentsByProjectId.get(projectId) ?? new Set<string>()
-      existing.add(task.skill_monument_id)
-      taskMonumentsByProjectId.set(projectId, existing)
-    }
-  }
 
-  let projectSkillsMap: Record<string, string[]> = {}
-  let skillMonumentMap: Record<string, string | null> = {}
-  if (mode.type === 'MONUMENTAL' || mode.type === 'SKILLED') {
-    try {
-      const projectIds = Object.keys(projectsMap)
-      if (projectIds.length > 0) {
-        projectSkillsMap = await fetchProjectSkillsForProjects(supabase, projectIds)
+    emitProgress({
+      type: 'start',
+      userId,
+      baseDateIso: baseDate.toISOString(),
+      mode: mode.type,
+      horizonDays: SCHEDULER_MAX_HORIZON_DAYS,
+    })
+
+    const missed = await fetchBacklogNeedingSchedule(supabase, userId)
+    if (missed.error) {
+      result.error = missed.error
+      emitProgress({
+        type: 'error',
+        stage: 'fetch-missed',
+        message: missed.error.message ?? 'failed to fetch backlog needing schedule',
+        code: missed.error.code ?? null,
+      })
+      return result
+    }
+
+    emitProgress({
+      type: 'missed-fetched',
+      count: Array.isArray(missed.data) ? missed.data.length : 0,
+    })
+
+    const [tasks, projectsMap, habits] = await Promise.all([
+      fetchReadyTasks(supabase),
+      fetchProjectsMap(supabase),
+      fetchHabitsForSchedule(supabase),
+    ])
+    const syncHabits: HabitScheduleItem[] = []
+    const regularHabits: HabitScheduleItem[] = []
+    for (const habit of habits) {
+      if (isSyncHabitType(habit.habitType)) {
+        syncHabits.push(habit)
+      } else {
+        regularHabits.push(habit)
       }
-    } catch (error) {
-      console.error('Failed to fetch project skill links for scheduler mode', error)
-      projectSkillsMap = {}
     }
-    try {
-      skillMonumentMap = await fetchSkillMonumentMap(supabase, userId)
-    } catch (error) {
-      console.error('Failed to fetch skill monuments for scheduler mode', error)
-      skillMonumentMap = {}
-    }
-  }
+    emitProgress({
+      type: 'inputs-fetched',
+      tasks: tasks.length,
+      projects: Object.keys(projectsMap).length,
+      regularHabits: regularHabits.length,
+      syncHabits: syncHabits.length,
+    })
+    const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
-  const projectSkillIdsCache = new Map<string, string[]>()
-  const projectMonumentIdsCache = new Map<string, string[]>()
-  const getProjectSkillIds = (projectId: string): string[] => {
-    const cached = projectSkillIdsCache.get(projectId)
-    if (cached) return cached
-    const set = new Set<string>()
-    for (const id of projectSkillsMap[projectId] ?? []) {
-      if (id) set.add(id)
+    const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
+    for (const item of projectItems) projectItemMap[item.id] = item
+
+    const taskSkillsByProjectId = new Map<string, Set<string>>()
+    const taskMonumentsByProjectId = new Map<string, Set<string>>()
+    for (const task of tasks) {
+      const projectId = task.project_id ?? null
+      if (!projectId) continue
+      if (task.skill_id) {
+        const existing = taskSkillsByProjectId.get(projectId) ?? new Set<string>()
+        existing.add(task.skill_id)
+        taskSkillsByProjectId.set(projectId, existing)
+      }
+      if (task.skill_monument_id) {
+        const existing = taskMonumentsByProjectId.get(projectId) ?? new Set<string>()
+        existing.add(task.skill_monument_id)
+        taskMonumentsByProjectId.set(projectId, existing)
+      }
     }
-    const taskSkillIds = taskSkillsByProjectId.get(projectId)
-    if (taskSkillIds) {
-      for (const id of taskSkillIds) {
+
+    let projectSkillsMap: Record<string, string[]> = {}
+    let skillMonumentMap: Record<string, string | null> = {}
+    if (mode.type === 'MONUMENTAL' || mode.type === 'SKILLED') {
+      try {
+        const projectIds = Object.keys(projectsMap)
+        if (projectIds.length > 0) {
+          projectSkillsMap = await fetchProjectSkillsForProjects(supabase, projectIds)
+        }
+      } catch (error) {
+        console.error('Failed to fetch project skill links for scheduler mode', error)
+        projectSkillsMap = {}
+      }
+      try {
+        skillMonumentMap = await fetchSkillMonumentMap(supabase, userId)
+      } catch (error) {
+        console.error('Failed to fetch skill monuments for scheduler mode', error)
+        skillMonumentMap = {}
+      }
+    }
+
+    const projectSkillIdsCache = new Map<string, string[]>()
+    const projectMonumentIdsCache = new Map<string, string[]>()
+    const getProjectSkillIds = (projectId: string): string[] => {
+      const cached = projectSkillIdsCache.get(projectId)
+      if (cached) return cached
+      const set = new Set<string>()
+      for (const id of projectSkillsMap[projectId] ?? []) {
         if (id) set.add(id)
       }
+      const taskSkillIds = taskSkillsByProjectId.get(projectId)
+      if (taskSkillIds) {
+        for (const id of taskSkillIds) {
+          if (id) set.add(id)
+        }
+      }
+      const ids = Array.from(set)
+      projectSkillIdsCache.set(projectId, ids)
+      return ids
     }
-    const ids = Array.from(set)
-    projectSkillIdsCache.set(projectId, ids)
-    return ids
-  }
-  const getProjectMonumentIds = (projectId: string): string[] => {
-    const cached = projectMonumentIdsCache.get(projectId)
-    if (cached) return cached
-    const set = new Set<string>()
-    for (const skillId of getProjectSkillIds(projectId)) {
-      const monumentId = skillMonumentMap[skillId] ?? null
-      if (monumentId) set.add(monumentId)
-    }
-    const taskMonuments = taskMonumentsByProjectId.get(projectId)
-    if (taskMonuments) {
-      for (const monumentId of taskMonuments) {
+    const getProjectMonumentIds = (projectId: string): string[] => {
+      const cached = projectMonumentIdsCache.get(projectId)
+      if (cached) return cached
+      const set = new Set<string>()
+      for (const skillId of getProjectSkillIds(projectId)) {
+        const monumentId = skillMonumentMap[skillId] ?? null
         if (monumentId) set.add(monumentId)
       }
+      const taskMonuments = taskMonumentsByProjectId.get(projectId)
+      if (taskMonuments) {
+        for (const monumentId of taskMonuments) {
+          if (monumentId) set.add(monumentId)
+        }
+      }
+      const ids = Array.from(set)
+      projectMonumentIdsCache.set(projectId, ids)
+      return ids
     }
-    const ids = Array.from(set)
-    projectMonumentIdsCache.set(projectId, ids)
-    return ids
-  }
-  const matchesMode = (projectId: string): boolean => {
-    if (mode.type === 'MONUMENTAL') {
-      return getProjectMonumentIds(projectId).includes(mode.monumentId)
+    const matchesMode = (projectId: string): boolean => {
+      if (mode.type === 'MONUMENTAL') {
+        return getProjectMonumentIds(projectId).includes(mode.monumentId)
+      }
+      if (mode.type === 'SKILLED') {
+        const required = new Set(mode.skillIds)
+        if (required.size === 0) return false
+        return getProjectSkillIds(projectId).some(id => required.has(id))
+      }
+      return true
     }
-    if (mode.type === 'SKILLED') {
-      const required = new Set(mode.skillIds)
-      if (required.size === 0) return false
-      return getProjectSkillIds(projectId).some(id => required.has(id))
+
+    type QueueItem = {
+      id: string
+      sourceType: 'PROJECT'
+      duration_min: number
+      energy: string
+      weight: number
+      instanceId?: string | null
     }
-    return true
-  }
 
-  type QueueItem = {
-    id: string
-    sourceType: 'PROJECT'
-    duration_min: number
-    energy: string
-    weight: number
-    instanceId?: string | null
-  }
+    const queue: QueueItem[] = []
+    const baseStart = startOfDayInTimeZone(baseDate, timeZone)
+    const dayOffsetFor = (startUTC: string): number | undefined => {
+      const start = new Date(startUTC)
+      if (Number.isNaN(start.getTime())) return undefined
+      const diff = differenceInCalendarDaysInTimeZone(baseStart, start, timeZone)
+      return Number.isFinite(diff) ? diff : undefined
+    }
 
-  const queue: QueueItem[] = []
-  const baseStart = startOfDayInTimeZone(baseDate, timeZone)
-  const dayOffsetFor = (startUTC: string): number | undefined => {
-    const start = new Date(startUTC)
-    if (Number.isNaN(start.getTime())) return undefined
-    const diff = differenceInCalendarDaysInTimeZone(baseStart, start, timeZone)
-    return Number.isFinite(diff) ? diff : undefined
-  }
+    const seenMissedProjects = new Set<string>()
 
-  const seenMissedProjects = new Set<string>()
+    for (const m of missed.data ?? []) {
+      if (m.source_type !== 'PROJECT') continue
+      if (seenMissedProjects.has(m.source_id)) {
+        const dedupe = await supabase
+          .from('schedule_instances')
+          .update({ status: 'canceled' })
+          .eq('id', m.id)
+          .select('id, source_id')
+          .single()
+        if (dedupe.error) {
+          result.failures.push({ itemId: m.source_id, reason: 'error', detail: dedupe.error })
+        }
+        continue
+      }
+      seenMissedProjects.add(m.source_id)
+      const def = projectItemMap[m.source_id]
+      if (!def) continue
+      if (!matchesMode(def.id)) {
+        noteModeFiltered(def.id)
+        continue
+      }
 
-  for (const m of missed.data ?? []) {
-    if (m.source_type !== 'PROJECT') continue
-    if (seenMissedProjects.has(m.source_id)) {
-      const dedupe = await supabase
+      let duration = Number(def.duration_min ?? 0)
+      if (!Number.isFinite(duration) || duration <= 0) {
+        const fallback = Number(m.duration_min ?? 0)
+        if (Number.isFinite(fallback) && fallback > 0) {
+          duration = fallback
+        } else {
+          duration = DEFAULT_PROJECT_DURATION_MIN
+        }
+      }
+      duration = adjustDuration(duration)
+
+      const resolvedEnergy =
+        ('energy' in def && def.energy)
+          ? String(def.energy)
+          : m.energy_resolved
+      const weight =
+        typeof m.weight_snapshot === 'number'
+          ? m.weight_snapshot
+          : (def as { weight?: number }).weight ?? 0
+
+      queue.push({
+        id: def.id,
+        sourceType: 'PROJECT',
+        duration_min: duration,
+        energy: (resolvedEnergy ?? 'NO').toUpperCase(),
+        weight,
+        instanceId: m.id,
+      })
+    }
+
+    const reuseInstanceByProject = new Map<string, string>()
+
+    const registerReuseInstance = (projectId: string, reuseId?: string | null) => {
+      if (!reuseId) return
+      if (reuseInstanceByProject.has(projectId)) return
+      reuseInstanceByProject.set(projectId, reuseId)
+    }
+
+    const collectReuseIds = (source: Map<string, string[]>) => {
+      for (const [projectId, ids] of source) {
+        const reuseId = ids.find(Boolean)
+        registerReuseInstance(projectId, reuseId)
+      }
+    }
+
+    const collectPrimaryReuseIds = (source: Map<string, string>) => {
+      for (const [projectId, reuseId] of source) {
+        registerReuseInstance(projectId, reuseId)
+      }
+    }
+
+    const queuedProjectIds = new Set(queue.map(item => item.id))
+
+    const enqueue = (
+      def:
+        | {
+            id: string
+            duration_min: number
+            energy: string | null | undefined
+            weight: number
+          }
+        | null
+    ) => {
+      if (!def) return
+      if (!matchesMode(def.id)) {
+        noteModeFiltered(def.id)
+        return
+      }
+      let duration = Number(def.duration_min ?? 0)
+      if (!Number.isFinite(duration) || duration <= 0) return
+      duration = adjustDuration(duration)
+      if (queuedProjectIds.has(def.id)) return
+      const energy = (def.energy ?? 'NO').toString().toUpperCase()
+      queue.push({
+        id: def.id,
+        sourceType: 'PROJECT',
+        duration_min: duration,
+        energy,
+        weight: def.weight ?? 0,
+      })
+      queuedProjectIds.add(def.id)
+    }
+
+    for (const project of projectItems) {
+      enqueue(project)
+    }
+
+    emitProgress({ type: 'queue-built', projects: queue.length })
+
+    const finalQueueProjectIds = new Set(queuedProjectIds)
+    const scheduleHorizonDays = SCHEDULER_MAX_HORIZON_DAYS
+    const dedupeWindowDays = Math.max(scheduleHorizonDays, 28)
+    const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
+    const dedupe = await dedupeScheduledProjects(
+      supabase,
+      userId,
+      baseStart,
+      rangeEnd,
+      finalQueueProjectIds
+    )
+    if (dedupe.error) {
+      result.error = dedupe.error
+      emitProgress({
+        type: 'error',
+        stage: 'dedupe',
+        message: dedupe.error.message ?? 'failed to dedupe scheduled projects',
+        code: dedupe.error.code ?? null,
+      })
+      return result
+    }
+    if (dedupe.failures.length > 0) {
+      result.failures.push(...dedupe.failures)
+    }
+    collectPrimaryReuseIds(dedupe.reusableByProject)
+    collectReuseIds(dedupe.canceledByProject)
+
+    const previouslyScheduledHabitIds = new Set<string>()
+    const habitInstancesToCancel = dedupe.rangeInstances.filter(
+      inst => inst.source_type === 'HABIT' && inst.status === 'scheduled'
+    )
+
+    if (habitInstancesToCancel.length > 0) {
+      const cancelIds = habitInstancesToCancel.map(inst => inst.id)
+      const cancel = await supabase
         .from('schedule_instances')
         .update({ status: 'canceled' })
-        .eq('id', m.id)
-        .select('id, source_id')
-        .single()
-      if (dedupe.error) {
-        result.failures.push({ itemId: m.source_id, reason: 'error', detail: dedupe.error })
-      }
-      continue
-    }
-    seenMissedProjects.add(m.source_id)
-    const def = projectItemMap[m.source_id]
-    if (!def) continue
-    if (!matchesMode(def.id)) {
-      noteModeFiltered(def.id)
-      continue
-    }
+        .in('id', cancelIds)
 
-    let duration = Number(def.duration_min ?? 0)
-    if (!Number.isFinite(duration) || duration <= 0) {
-      const fallback = Number(m.duration_min ?? 0)
-      if (Number.isFinite(fallback) && fallback > 0) {
-        duration = fallback
+      if (cancel.error) {
+        for (const inst of habitInstancesToCancel) {
+          result.failures.push({
+            itemId: inst.source_id || inst.id,
+            reason: 'error',
+            detail: cancel.error,
+          })
+        }
       } else {
-        duration = DEFAULT_PROJECT_DURATION_MIN
-      }
-    }
-    duration = adjustDuration(duration)
-
-    const resolvedEnergy =
-      ('energy' in def && def.energy)
-        ? String(def.energy)
-        : m.energy_resolved
-    const weight =
-      typeof m.weight_snapshot === 'number'
-        ? m.weight_snapshot
-        : (def as { weight?: number }).weight ?? 0
-
-    queue.push({
-      id: def.id,
-      sourceType: 'PROJECT',
-      duration_min: duration,
-      energy: (resolvedEnergy ?? 'NO').toUpperCase(),
-      weight,
-      instanceId: m.id,
-    })
-  }
-
-  const reuseInstanceByProject = new Map<string, string>()
-
-  const registerReuseInstance = (projectId: string, reuseId?: string | null) => {
-    if (!reuseId) return
-    if (reuseInstanceByProject.has(projectId)) return
-    reuseInstanceByProject.set(projectId, reuseId)
-  }
-
-  const collectReuseIds = (source: Map<string, string[]>) => {
-    for (const [projectId, ids] of source) {
-      const reuseId = ids.find(Boolean)
-      registerReuseInstance(projectId, reuseId)
-    }
-  }
-
-  const collectPrimaryReuseIds = (source: Map<string, string>) => {
-    for (const [projectId, reuseId] of source) {
-      registerReuseInstance(projectId, reuseId)
-    }
-  }
-
-  const queuedProjectIds = new Set(queue.map(item => item.id))
-
-  const enqueue = (
-    def:
-      | {
-          id: string
-          duration_min: number
-          energy: string | null | undefined
-          weight: number
-        }
-      | null
-  ) => {
-    if (!def) return
-    if (!matchesMode(def.id)) {
-      noteModeFiltered(def.id)
-      return
-    }
-    let duration = Number(def.duration_min ?? 0)
-    if (!Number.isFinite(duration) || duration <= 0) return
-    duration = adjustDuration(duration)
-    if (queuedProjectIds.has(def.id)) return
-    const energy = (def.energy ?? 'NO').toString().toUpperCase()
-    queue.push({
-      id: def.id,
-      sourceType: 'PROJECT',
-      duration_min: duration,
-      energy,
-      weight: def.weight ?? 0,
-    })
-    queuedProjectIds.add(def.id)
-  }
-
-  for (const project of projectItems) {
-    enqueue(project)
-  }
-
-  const finalQueueProjectIds = new Set(queuedProjectIds)
-  const scheduleHorizonDays = SCHEDULER_MAX_HORIZON_DAYS
-  const dedupeWindowDays = Math.max(scheduleHorizonDays, 28)
-  const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
-  const dedupe = await dedupeScheduledProjects(
-    supabase,
-    userId,
-    baseStart,
-    rangeEnd,
-    finalQueueProjectIds
-  )
-  if (dedupe.error) {
-    result.error = dedupe.error
-    return result
-  }
-  if (dedupe.failures.length > 0) {
-    result.failures.push(...dedupe.failures)
-  }
-  collectPrimaryReuseIds(dedupe.reusableByProject)
-  collectReuseIds(dedupe.canceledByProject)
-
-  const previouslyScheduledHabitIds = new Set<string>()
-  const habitInstancesToCancel = dedupe.rangeInstances.filter(
-    inst => inst.source_type === 'HABIT' && inst.status === 'scheduled'
-  )
-
-  if (habitInstancesToCancel.length > 0) {
-    const cancelIds = habitInstancesToCancel.map(inst => inst.id)
-    const cancel = await supabase
-      .from('schedule_instances')
-      .update({ status: 'canceled' })
-      .in('id', cancelIds)
-
-    if (cancel.error) {
-      for (const inst of habitInstancesToCancel) {
-        result.failures.push({
-          itemId: inst.source_id || inst.id,
-          reason: 'error',
-          detail: cancel.error,
-        })
-      }
-    } else {
-      for (const inst of habitInstancesToCancel) {
-        if (inst.source_id) {
-          previouslyScheduledHabitIds.add(inst.source_id)
+        for (const inst of habitInstancesToCancel) {
+          if (inst.source_id) {
+            previouslyScheduledHabitIds.add(inst.source_id)
+          }
         }
       }
     }
-  }
-  const windowAvailabilityByDay = new Map<
-    number,
-    Map<string, WindowAvailabilityBounds>
-  >()
-  const windowCache = new Map<string, WindowLite[]>()
-  const regularHabitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
-  const syncHabitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
-  const existingWindowBlocksByOffset = new Map<
-    number,
-    Array<{ startUTC: string; endUTC: string; windowId: string | null }>
-  >()
-  const occupiedBlocksByOffset = new Map<number, OccupiedBlock[]>()
+
+    const canceledProjectInstanceCount = Array.from(
+      dedupe.canceledByProject.values(),
+    ).reduce((total, ids) => total + ids.length, 0)
+    const canceledHabitInstanceCount = habitInstancesToCancel.length
+
+    emitProgress({
+      type: 'dedupe-complete',
+      reusedProjects: dedupe.reusableByProject.size,
+      canceledProjectInstances: canceledProjectInstanceCount,
+      canceledHabitInstances: canceledHabitInstanceCount,
+    })
+    const windowAvailabilityByDay = new Map<
+      number,
+      Map<string, WindowAvailabilityBounds>
+    >()
+    const windowCache = new Map<string, WindowLite[]>()
+    const regularHabitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
+    const syncHabitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
+    const existingWindowBlocksByOffset = new Map<
+      number,
+      Array<{ startUTC: string; endUTC: string; windowId: string | null }>
+    >()
+    const occupiedBlocksByOffset = new Map<number, OccupiedBlock[]>()
+
+    const summarizeHabitPlacementCache = (
+      cache: Map<number, HabitDraftPlacement[]>,
+    ) => {
+      let placements = 0
+      let offsetsWithPlacements = 0
+      for (const entries of cache.values()) {
+        if (entries.length > 0) offsetsWithPlacements += 1
+        placements += entries.length
+      }
+      return { placements, offsetsWithPlacements }
+    }
 
   const getOccupiedBlocksForOffset = (offset: number): OccupiedBlock[] => {
     let blocks = occupiedBlocksByOffset.get(offset)
@@ -701,6 +849,20 @@ export async function scheduleBacklog(
     allowOverlap: false,
   })
 
+  const regularHabitSummary = summarizeHabitPlacementCache(
+    regularHabitPlacementsByOffset,
+  )
+  emitProgress({
+    type: 'habit-pass-complete',
+    stage: 'regular',
+    placements: regularHabitSummary.placements,
+    offsetsWithPlacements: regularHabitSummary.offsetsWithPlacements,
+  })
+
+  const projectAttemptCount = queue.length
+  let projectPlacedCount = 0
+  let projectFailedCount = 0
+
   for (const item of queue) {
     let scheduled = false
     const maxOffset = restrictProjectsToToday ? 1 : scheduleHorizonDays
@@ -754,6 +916,7 @@ export async function scheduleBacklog(
 
       if (placed.data) {
         result.placed.push(placed.data)
+        projectPlacedCount += 1
         const placementWindow = findPlacementWindow(adjustedWindows, placed.data)
         if (placementWindow?.key) {
           const placementEnd = new Date(placed.data.end_utc)
@@ -803,11 +966,27 @@ export async function scheduleBacklog(
 
     if (!scheduled) {
       result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
+      projectFailedCount += 1
     }
   }
 
+  emitProgress({
+    type: 'projects-scheduled',
+    attempted: projectAttemptCount,
+    placed: projectPlacedCount,
+    failed: projectFailedCount,
+  })
+
   await scheduleHabitsAcrossHorizon(syncHabits, syncHabitPlacementsByOffset, {
     allowOverlap: true,
+  })
+
+  const syncHabitSummary = summarizeHabitPlacementCache(syncHabitPlacementsByOffset)
+  emitProgress({
+    type: 'habit-pass-complete',
+    stage: 'sync',
+    placements: syncHabitSummary.placements,
+    offsetsWithPlacements: syncHabitSummary.offsetsWithPlacements,
   })
 
   const habitPlacements: HabitDraftPlacement[] = []
@@ -817,6 +996,9 @@ export async function scheduleBacklog(
   for (const entries of syncHabitPlacementsByOffset.values()) {
     habitPlacements.push(...entries)
   }
+
+  let habitInsertedCount = 0
+  let habitPersistenceFailureCount = 0
 
   if (habitPlacements.length > 0) {
     const persistence = await persistHabitPlacements({
@@ -829,6 +1011,8 @@ export async function scheduleBacklog(
       result.failures.push(...persistence.failures)
     }
 
+    habitPersistenceFailureCount = persistence.failures.length
+
     if (persistence.inserted.length > 0) {
       result.placed.push(...persistence.inserted)
       for (const inst of persistence.inserted) {
@@ -840,6 +1024,8 @@ export async function scheduleBacklog(
       }
     }
 
+    habitInsertedCount = persistence.inserted.length
+
     for (const placement of habitPlacements) {
       placement.decision = previouslyScheduledHabitIds.has(placement.habit.id)
         ? 'rescheduled'
@@ -847,17 +1033,37 @@ export async function scheduleBacklog(
     }
   }
 
-  result.timeline.sort((a, b) => {
-    const aTime = placementStartMs(a)
-    const bTime = placementStartMs(b)
-    if (!Number.isFinite(aTime) || !Number.isFinite(bTime)) return 0
-    if (aTime === bTime) {
-      return placementKey(a).localeCompare(placementKey(b))
-    }
-    return aTime - bTime
+  emitProgress({
+    type: 'habits-persisted',
+    inserted: habitInsertedCount,
+    failures: habitPersistenceFailureCount,
   })
 
-  return result
+    result.timeline.sort((a, b) => {
+      const aTime = placementStartMs(a)
+      const bTime = placementStartMs(b)
+      if (!Number.isFinite(aTime) || !Number.isFinite(bTime)) return 0
+      if (aTime === bTime) {
+        return placementKey(a).localeCompare(placementKey(b))
+      }
+      return aTime - bTime
+    })
+
+    return result
+  } catch (error) {
+    const err = error as { message?: unknown; code?: unknown }
+    const message =
+      err && typeof err.message === 'string'
+        ? err.message
+        : error instanceof Error
+          ? error.message
+          : String(error)
+    const code = err && typeof err.code === 'string' ? err.code : undefined
+    emitProgress({ type: 'error', stage: 'unhandled', message, code })
+    throw error
+  } finally {
+    finalize()
+  }
 }
 
 type DedupeResult = {
