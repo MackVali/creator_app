@@ -47,9 +47,10 @@ export default function useSkillProgress() {
       if (!skillId) return;
       const { data: badgeRows, error: badgeError } = await supabase
         .from("skill_badges")
-        .select("id,badge_id,skill_id,badges(level,emoji,label,description)")
+        .select("id,badge_id,skill_id,badges(badge_type,level,emoji,label,description)")
         .eq("user_id", userId)
         .eq("skill_id", skillId)
+        .order("badge_type", { ascending: true, foreignTable: "badges" })
         .order("level", { ascending: true, foreignTable: "badges" });
 
       if (badgeError) {
@@ -135,6 +136,7 @@ export default function useSkillProgress() {
               id,
               badge_id,
               badges (
+                badge_type,
                 level,
                 emoji,
                 label,

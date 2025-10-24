@@ -7,7 +7,7 @@ import { calculateLevelProgress } from "@/lib/leveling";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   mapPrestigeBadgeRows,
-  type PrestigeBadgeData,
+  type BadgeData,
   type SkillBadgeRow,
 } from "@/lib/skills/skillProgress";
 import type { Database } from "@/types/supabase";
@@ -16,7 +16,7 @@ export type UserProgress = {
   currentLevel: number;
   totalDarkXp: number;
   prestige: number;
-  badges: PrestigeBadgeData[];
+  badges: BadgeData[];
   updatedAt: string | null;
 };
 
@@ -78,8 +78,9 @@ export function useUserProgress(
           .single(),
         supabase
           .from("user_badges")
-          .select("id,badge_id,badges(level,emoji,label,description)")
+          .select("id,badge_id,badges(badge_type,level,emoji,label,description)")
           .eq("user_id", userId)
+          .order("badge_type", { ascending: true, foreignTable: "badges" })
           .order("level", { ascending: true, foreignTable: "badges" }),
       ]);
 

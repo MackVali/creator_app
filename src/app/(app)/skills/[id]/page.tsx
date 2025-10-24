@@ -465,8 +465,8 @@ export default function SkillDetailPage() {
       : `Added ${daysTracked} day${daysTracked === 1 ? "" : "s"} ago.`
     : "Creation date unavailable.";
 
-  const prestigeBadges = progress?.badges ?? [];
-  const prestigeBadgeCount = prestigeBadges.length;
+  const skillBadges = progress?.badges ?? [];
+  const skillBadgeCount = skillBadges.length;
 
   const stats = [
     {
@@ -476,17 +476,17 @@ export default function SkillDetailPage() {
       icon: Target,
     },
     {
-      label: "Prestige badges",
+      label: "Badges",
       value:
-        prestigeBadgeCount > 0
-          ? `${prestigeBadgeCount} badge${prestigeBadgeCount === 1 ? "" : "s"}`
+        skillBadgeCount > 0
+          ? `${skillBadgeCount} badge${skillBadgeCount === 1 ? "" : "s"}`
           : "No badges yet",
       description:
-        prestigeBadgeCount > 0
-          ? `Unlocked ${prestigeBadgeCount} badge${
-              prestigeBadgeCount === 1 ? "" : "s"
+        skillBadgeCount > 0
+          ? `Unlocked ${skillBadgeCount} badge${
+              skillBadgeCount === 1 ? "" : "s"
             } for ${skill.name}.`
-          : "Prestige resets unlock unique skill badges for this skill.",
+          : "Level milestones and prestige resets unlock badges for this skill.",
       icon: Award,
     },
     {
@@ -557,8 +557,8 @@ export default function SkillDetailPage() {
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <div className="flex items-center gap-1 text-lg leading-none">
-                    {prestigeBadges.length > 0 ? (
-                      prestigeBadges.map((badge) => (
+                    {skillBadges.length > 0 ? (
+                      skillBadges.map((badge) => (
                         <span
                           key={badge.id}
                           role="img"

@@ -981,7 +981,7 @@ export interface Database {
         Row: {
           id: string;
           created_at: string;
-          badge_type: string;
+          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
           level: number;
           emoji: string;
           label: string;
@@ -991,7 +991,7 @@ export interface Database {
         Insert: {
           id?: string;
           created_at?: string;
-          badge_type: string;
+          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
           level: number;
           emoji: string;
           label: string;
@@ -1001,7 +1001,7 @@ export interface Database {
         Update: {
           id?: string;
           created_at?: string;
-          badge_type?: string;
+          badge_type?: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
           level?: number;
           emoji?: string;
           label?: string;

@@ -1,10 +1,16 @@
 import { xpRequired } from "./progression";
 
+export type BadgeType =
+  | "user_prestige_badge"
+  | "skill_prestige_badge"
+  | "skill_level_badge";
+
 export interface SkillBadgeRow {
   id?: string | null;
   badge_id?: string | null;
   skill_id?: string | null;
   badges?: {
+    badge_type?: BadgeType | string | null;
     level?: number | string | null;
     emoji?: string | null;
     label?: string | null;
@@ -20,9 +26,10 @@ export interface SkillProgressRow {
   skill_badges?: SkillBadgeRow[] | null;
 }
 
-export interface PrestigeBadgeData {
+export interface BadgeData {
   id: string;
   badgeId: string;
+  badgeType: BadgeType;
   level: number;
   emoji: string;
   label: string;
@@ -35,7 +42,7 @@ export interface SkillProgressData {
   xpIntoLevel: number;
   xpRequired: number;
   progressPercent: number;
-  badges: PrestigeBadgeData[];
+  badges: BadgeData[];
 }
 
 function coerceNumber(value: number | string | null | undefined, fallback: number) {
@@ -47,9 +54,43 @@ function coerceNumber(value: number | string | null | undefined, fallback: numbe
   return fallback;
 }
 
+function parseBadgeType(value: string | null | undefined): BadgeType | null {
+  switch (value) {
+    case "user_prestige_badge":
+    case "skill_prestige_badge":
+    case "skill_level_badge":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function fallbackLabel(type: BadgeType, level: number) {
+  switch (type) {
+    case "skill_level_badge":
+      return `Skill Level ${level}`;
+    case "user_prestige_badge":
+    case "skill_prestige_badge":
+    default:
+      return `Prestige Tier ${level}`;
+  }
+}
+
+function badgeSortWeight(type: BadgeType) {
+  switch (type) {
+    case "skill_level_badge":
+      return 0;
+    case "skill_prestige_badge":
+      return 1;
+    case "user_prestige_badge":
+    default:
+      return 2;
+  }
+}
+
 export function mapPrestigeBadgeRows(
   rows: SkillBadgeRow[] | null | undefined,
-): PrestigeBadgeData[] {
+): BadgeData[] {
   if (!Array.isArray(rows)) {
     return [];
   }
@@ -60,29 +101,36 @@ export function mapPrestigeBadgeRows(
       const id = typeof entry.id === "string" ? entry.id : badgeId;
       const badge = entry.badges ?? null;
 
+      const badgeType = parseBadgeType(badge?.badge_type ?? null);
       const level = coerceNumber(badge?.level ?? null, 0);
       const emoji = typeof badge?.emoji === "string" ? badge.emoji : null;
       const labelSource = typeof badge?.label === "string" ? badge.label : null;
+      const type = badgeType ?? "skill_prestige_badge";
       const label = labelSource && labelSource.trim().length > 0
         ? labelSource.trim()
-        : `Prestige Tier ${level}`;
+        : fallbackLabel(type, level);
       const description = typeof badge?.description === "string" ? badge.description : null;
 
-      if (!id || !badgeId || !emoji) {
+      if (!id || !badgeId || !emoji || !badgeType) {
         return null;
       }
 
       return {
         id,
         badgeId,
+        badgeType,
         level,
         emoji,
         label,
         description,
-      } satisfies PrestigeBadgeData;
+      } satisfies BadgeData;
     })
-    .filter((entry): entry is PrestigeBadgeData => entry !== null)
+    .filter((entry): entry is BadgeData => entry !== null)
     .sort((a, b) => {
+      const typeWeightDelta = badgeSortWeight(a.badgeType) - badgeSortWeight(b.badgeType);
+      if (typeWeightDelta !== 0) {
+        return typeWeightDelta;
+      }
       if (a.level === b.level) {
         return a.label.localeCompare(b.label);
       }
@@ -92,7 +140,7 @@ export function mapPrestigeBadgeRows(
 
 export function mapRowToProgress(
   row: SkillProgressRow | null,
-  fallbackBadges: PrestigeBadgeData[] = [],
+  fallbackBadges: BadgeData[] = [],
 ): SkillProgressData | null {
   if (!row?.skill_id) return null;
   const level = coerceNumber(row.level, 1);
