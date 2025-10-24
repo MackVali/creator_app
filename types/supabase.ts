@@ -1032,9 +1032,13 @@ export interface Database {
         };
         Returns: string | null;
       };
+      ensure_schedule_instance_habit_type: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
     };
     Enums: {
-      schedule_instance_source_type: 'PROJECT' | 'TASK';
+      schedule_instance_source_type: 'PROJECT' | 'TASK' | 'HABIT';
       schedule_instance_status: 'scheduled' | 'completed' | 'missed' | 'canceled';
       xp_kind: 'task' | 'habit' | 'project' | 'goal' | 'manual';
     };
