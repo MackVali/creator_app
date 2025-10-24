@@ -1223,6 +1223,71 @@ function computeTimelineLayoutForSyncHabits({
     return a.endMs - b.endMs
   })
 
+  const projectCandidates = sortedCandidates.filter(
+    (candidate): candidate is Candidate & { kind: 'project' } => candidate.kind === 'project'
+  )
+
+  habitPlacements.forEach((placement, habitIndex) => {
+    if (habitLayouts[habitIndex] !== 'full') return
+
+    const startMs = placement.start.getTime()
+    const endMs = placement.end.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+
+    type ProjectMatch = {
+      candidate: Candidate & { kind: 'project' }
+      overlapStart: number
+      startGap: number
+      overlapDuration: number
+    }
+
+    const matches: ProjectMatch[] = []
+
+    for (const candidate of projectCandidates) {
+      if (candidate.startMs >= endMs) {
+        break
+      }
+      if (candidate.endMs <= startMs) {
+        continue
+      }
+
+      const overlapStart = Math.max(startMs, candidate.startMs)
+      const overlapEnd = Math.min(endMs, candidate.endMs)
+      if (!(overlapEnd > overlapStart)) {
+        continue
+      }
+
+      matches.push({
+        candidate,
+        overlapStart,
+        startGap: Math.abs(candidate.startMs - startMs),
+        overlapDuration: overlapEnd - overlapStart,
+      })
+    }
+
+    if (matches.length === 0) return
+
+    matches.sort((a, b) => {
+      if (a.overlapStart !== b.overlapStart) {
+        return a.overlapStart - b.overlapStart
+      }
+      if (a.startGap !== b.startGap) {
+        return a.startGap - b.startGap
+      }
+      if (a.candidate.startMs !== b.candidate.startMs) {
+        return a.candidate.startMs - b.candidate.startMs
+      }
+      if (a.overlapDuration !== b.overlapDuration) {
+        return b.overlapDuration - a.overlapDuration
+      }
+      return a.candidate.endMs - b.candidate.endMs
+    })
+
+    const best = matches[0]
+    habitLayouts[habitIndex] = 'paired-right'
+    projectLayouts[best.candidate.index] = 'paired-left'
+  })
+
   const syncHabits = habitPlacements
     .map((placement, index) => ({ placement, index }))
     .filter(({ placement }) => {
