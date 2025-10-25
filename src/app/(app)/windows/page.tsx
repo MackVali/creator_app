@@ -5,7 +5,12 @@ export const runtime = "nodejs";
 import { useCallback, useEffect, useState } from "react";
 import WindowsPolishedUI, { type WindowItem } from "@/components/WindowsPolishedUI";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { resolveLocationContextId } from "@/lib/location-metadata";
+import {
+  resolveLocationContextId,
+  isLocationMetadataError,
+  normalizeLocationValue,
+  type LocationMetadataMode,
+} from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -21,8 +26,9 @@ type SupabaseWindowRow = {
   start_local: string;
   end_local: string;
   energy: string | null;
-  location_context_id: string | null;
+  location_context_id?: string | null;
   location_context?: { value: string | null } | null;
+  legacy_location_context?: string | null;
 };
 
 function normalizeLocation(value: string | null | undefined) {
@@ -59,7 +65,9 @@ function mergeCrossMidnightWindows(rows: SupabaseWindowRow[]): WindowsStateItem[
     if (consumed.has(row.id)) continue;
 
     const baseDays = row.days ? sortDays(row.days) : [];
-    const location = normalizeLocation(row.location_context?.value ?? null);
+    const locationSource =
+      row.location_context?.value ?? row.legacy_location_context ?? null;
+    const location = normalizeLocation(locationSource);
     const energy = row.energy?.toLowerCase() as WindowItem["energy"] | undefined;
     const dayLabels = baseDays.map((d) => DAY_LABELS[d]);
 
@@ -70,7 +78,9 @@ function mergeCrossMidnightWindows(rows: SupabaseWindowRow[]): WindowsStateItem[
         if (candidate.start_local !== CROSS_START) return false;
         if (candidate.label !== row.label) return false;
         if ((candidate.energy ?? null) !== (row.energy ?? null)) return false;
-        const candidateLocation = normalizeLocation(candidate.location_context?.value ?? null);
+        const candidateLocationSource =
+          candidate.location_context?.value ?? candidate.legacy_location_context ?? null;
+        const candidateLocation = normalizeLocation(candidateLocationSource);
         if (candidateLocation !== location) return false;
         const candidateDays = candidate.days ? shiftDaysBackward(candidate.days) : [];
         return arraysEqual(candidateDays, baseDays);
@@ -125,16 +135,35 @@ export default function WindowsPage() {
       setWindows([]);
       return;
     }
-    const { data, error } = await supabase
+    const baseQuery = supabase
       .from("windows")
       .select(
         "id,label,days,start_local,end_local,energy,location_context_id,location_context:location_contexts(value,label)"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
+
+    const { data, error } = await baseQuery;
+
     if (!error && data) {
       const merged = mergeCrossMidnightWindows(data as SupabaseWindowRow[]);
       setWindows(merged);
+      return;
+    }
+
+    if (error && isLocationMetadataError(error)) {
+      const { data: legacyData, error: legacyError } = await supabase
+        .from("windows")
+        .select(
+          "id,label,days,start_local,end_local,energy,legacy_location_context:location_context"
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+
+      if (!legacyError && legacyData) {
+        const merged = mergeCrossMidnightWindows(legacyData as SupabaseWindowRow[]);
+        setWindows(merged);
+      }
     }
   }, [supabase]);
 
@@ -150,80 +179,114 @@ export default function WindowsPage() {
     if (!user) return false;
 
     const baseDays = item.days.map((d) => DAY_LABELS.indexOf(d));
-    const contextId = await resolveLocationContextId(
-      supabase,
-      user.id,
-      item.location ?? null,
-    );
+    const normalizedLocationValue = normalizeLocationValue(item.location ?? null);
+    const normalizedLocation = normalizeLocation(item.location ?? null);
 
-    const payload = {
+    let locationContextId: string | null = null;
+    let metadataModes: LocationMetadataMode[] = ["id", "legacy"];
+
+    if (normalizedLocationValue) {
+      try {
+        locationContextId = await resolveLocationContextId(
+          supabase,
+          user.id,
+          normalizedLocationValue,
+        );
+      } catch (maybeError) {
+        if (isLocationMetadataError(maybeError)) {
+          metadataModes = ["legacy"];
+        } else {
+          throw maybeError;
+        }
+      }
+    }
+
+    const basePayload = {
       user_id: user.id,
       label: item.name,
       days: baseDays,
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
-      location_context_id: contextId,
     };
-
-    const normalizedLocation = normalizeLocation(item.location ?? null);
 
     const [sh, sm] = item.start.split(":").map(Number);
     const [eh, em] = item.end.split(":").map(Number);
     const crosses = eh < sh || (eh === sh && em < sm);
 
-    try {
-      if (!crosses) {
-        const { data: inserted, error } = await supabase
-          .from("windows")
-          .insert(payload)
-          .select("id")
-          .single();
-        if (error) throw error;
-        const id =
-          inserted?.id ??
-          item.id ??
-          (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-            ? crypto.randomUUID()
-            : Math.random().toString(36).slice(2));
-        setWindows((prev) => [
-          ...(prev ?? []),
-          {
-            ...item,
-            id,
-            location: normalizedLocation,
-            segmentIds: [id],
-            active: true,
-          },
-        ]);
-      } else {
+    const locationModes = metadataModes.includes("id")
+      ? metadataModes
+      : ["legacy"];
+
+    let lastError: unknown = null;
+
+    for (const mode of locationModes) {
+      try {
+        if (!crosses) {
+          const payload = {
+            ...basePayload,
+            ...(mode === "id"
+              ? { location_context_id: locationContextId }
+              : { location_context: normalizedLocationValue }),
+          };
+          const { data: inserted, error } = await supabase
+            .from("windows")
+            .insert(payload)
+            .select("id")
+            .single();
+          if (error) throw error;
+          const id =
+            inserted?.id ??
+            item.id ??
+            (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : Math.random().toString(36).slice(2));
+          setWindows((prev) => [
+            ...(prev ?? []),
+            {
+              ...item,
+              id,
+              location: normalizedLocation,
+              segmentIds: [id],
+              active: true,
+            },
+          ]);
+          return true;
+        }
+
         const nextDays = baseDays.map((d) => (d + 1) % 7);
-        const firstPayload = { ...payload, end_local: CROSS_END };
+        const firstPayload = {
+          ...basePayload,
+          end_local: CROSS_END,
+          ...(mode === "id"
+            ? { location_context_id: locationContextId }
+            : { location_context: normalizedLocationValue }),
+        };
         const secondPayload = {
-          ...payload,
+          ...basePayload,
           days: nextDays,
           start_local: CROSS_START,
           end_local: item.end,
+          ...(mode === "id"
+            ? { location_context_id: locationContextId }
+            : { location_context: normalizedLocationValue }),
         };
-        const { data: first, error: err1 } = await supabase
+
+        const { data, error } = await supabase
           .from("windows")
-          .insert(firstPayload)
-          .select("id")
-          .single();
-        if (err1) throw err1;
-        const { data: second, error: err2 } = await supabase
-          .from("windows")
-          .insert(secondPayload)
-          .select("id")
-          .single();
-        if (err2) throw err2;
+          .insert([firstPayload, secondPayload])
+          .select("id");
+        if (error) throw error;
+
+        const [first, second] = Array.isArray(data) ? data : [];
         const firstId =
-          first?.id ??
+          (first as { id?: string } | null | undefined)?.id ??
           item.id ??
           (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
             ? crypto.randomUUID()
             : Math.random().toString(36).slice(2));
-        const secondId = second?.id ?? null;
+        const secondId = (second as { id?: string } | null | undefined)?.id ?? null;
+
         setWindows((prev) => [
           ...(prev ?? []),
           {
@@ -235,11 +298,21 @@ export default function WindowsPage() {
             active: true,
           },
         ]);
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (mode === "id" && isLocationMetadataError(error)) {
+          continue;
+        }
+        throw error;
       }
-      return true;
-    } catch (err) {
-      throw err;
     }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    return false;
   }
 
   async function handleEdit(id: string, item: WindowItem): Promise<boolean> {
@@ -270,19 +343,32 @@ export default function WindowsPage() {
     } = await supabase.auth.getUser();
     if (!user) return false;
 
-    const contextId = await resolveLocationContextId(
-      supabase,
-      user.id,
-      item.location ?? null,
-    );
+    const normalizedLocationValue = normalizeLocationValue(item.location ?? null);
+    let locationContextId: string | null = null;
+    let metadataModes: LocationMetadataMode[] = ["id", "legacy"];
 
-    const payload = {
+    if (normalizedLocationValue) {
+      try {
+        locationContextId = await resolveLocationContextId(
+          supabase,
+          user.id,
+          normalizedLocationValue,
+        );
+      } catch (maybeError) {
+        if (isLocationMetadataError(maybeError)) {
+          metadataModes = ["legacy"];
+        } else {
+          throw maybeError;
+        }
+      }
+    }
+
+    const payloadBase = {
       label: item.name,
       days: baseDays,
       start_local: item.start,
       end_local: item.end,
       energy: item.energy?.toUpperCase(),
-      location_context_id: contextId,
     };
 
     const extraSegments = existingSegments.filter((segmentId) => segmentId !== id);
@@ -294,22 +380,50 @@ export default function WindowsPage() {
       if (cleanupError) throw cleanupError;
     }
 
-    const { error } = await supabase.from("windows").update(payload).eq("id", id);
-    if (error) throw error;
-    setWindows((prev) =>
-      prev?.map((w) =>
-        w.id === id
-          ? {
-              ...item,
-              id,
-              location: normalizedLocation,
-              segmentIds: [id],
-              active: w.active,
-            }
-          : w,
-      )
-    );
-    return true;
+    const locationModes = metadataModes.includes("id")
+      ? metadataModes
+      : ["legacy"];
+
+    let lastError: unknown = null;
+
+    for (const mode of locationModes) {
+      try {
+        const updatePayload = {
+          ...payloadBase,
+          ...(mode === "id"
+            ? { location_context_id: locationContextId }
+            : { location_context: normalizedLocationValue }),
+        };
+        const { error } = await supabase.from("windows").update(updatePayload).eq("id", id);
+        if (error) throw error;
+        setWindows((prev) =>
+          prev?.map((w) =>
+            w.id === id
+              ? {
+                  ...item,
+                  id,
+                  location: normalizedLocation,
+                  segmentIds: [id],
+                  active: w.active,
+                }
+              : w,
+          )
+        );
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (mode === "id" && isLocationMetadataError(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    return false;
   }
 
   async function handleDelete(id: string) {
