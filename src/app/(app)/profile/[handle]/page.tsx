@@ -7,6 +7,7 @@ import { Profile, SocialLink, ContentCard, ProfileModule } from "@/lib/types";
 import { getProfileByHandle, getProfileLinks } from "@/lib/db";
 import { getSocialLinks } from "@/lib/db/profile-management";
 import HeroHeader from "@/components/profile/HeroHeader";
+import ProfileHighlights from "@/components/profile/ProfileHighlights";
 import ProfileModules from "@/components/profile/modules/ProfileModules";
 import { buildProfileModules } from "@/components/profile/modules/buildProfileModules";
 import { ProfileSkeleton } from "@/components/profile/ProfileSkeleton";
@@ -161,6 +162,10 @@ export default function ProfileByHandlePage() {
   ).length;
   const activeLinkCount = contentCards.filter((card) => card.is_active).length;
   const isOwner = user?.id === profile.user_id;
+  const profileStats = {
+    linkCount: activeLinkCount,
+    socialCount: activeSocialCount,
+  };
 
   return (
     <div className="relative min-h-screen bg-slate-950 pb-[env(safe-area-inset-bottom)] text-white">
@@ -175,9 +180,15 @@ export default function ProfileByHandlePage() {
         <HeroHeader
           profile={profile}
           socials={socialsData}
-          stats={{ linkCount: activeLinkCount, socialCount: activeSocialCount }}
+          stats={profileStats}
           onShare={handleShare}
           onBack={handleBack}
+        />
+
+        <ProfileHighlights
+          profile={profile}
+          stats={profileStats}
+          activeModuleCount={activeModuleCount}
         />
 
         <section className="mx-auto mt-14 w-full max-w-5xl px-4 pb-20">
