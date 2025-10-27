@@ -78,6 +78,11 @@ type ListingFormState = {
   currency: string
   inventory: string
   durationMinutes: string
+  mediaUrls: string
+  caption: string
+  callToActionUrl: string
+  socialNetworks: string
+  hashtags: string
   metadata: string
 }
 
@@ -111,6 +116,11 @@ const defaultListingForm: ListingFormState = {
   currency: "USD",
   inventory: "",
   durationMinutes: "",
+  mediaUrls: "",
+  caption: "",
+  callToActionUrl: "",
+  socialNetworks: "",
+  hashtags: "",
   metadata: "",
 }
 
@@ -631,6 +641,108 @@ const integrationPresets: IntegrationPreset[] = [
       }
     },
   },
+  {
+    id: "universal-social",
+    label: "Universal social poster",
+    description:
+      "Cross-post photo drops to Snapchat, Facebook, Instagram, and every other network from a single endpoint.",
+    docsUrl: "https://buffer.com/developers/api",
+    fields: [
+      {
+        id: "endpointUrl",
+        label: "Poster endpoint",
+        placeholder: "https://api.yourposter.com/posts",
+        type: "url",
+        help: "Use Buffer, a Zapier webhook, or your own API that fans posts out to each network.",
+      },
+      {
+        id: "apiKey",
+        label: "API key",
+        placeholder: "Optional secret",
+        type: "password",
+        help: "If required, we send this as an X-API-Key header on every publish call.",
+      },
+      {
+        id: "defaultNetworks",
+        label: "Default networks",
+        placeholder: "snapchat, facebook, instagram",
+        help: "Comma or line separated list used when a post doesn't specify networks.",
+      },
+    ],
+    build: (inputs) => {
+      const rawEndpoint = inputs.endpointUrl?.trim()
+      if (!rawEndpoint) {
+        throw new Error("Poster endpoint URL is required")
+      }
+
+      let parsed: URL
+      try {
+        parsed = new URL(rawEndpoint)
+      } catch {
+        throw new Error("Enter a valid poster endpoint URL")
+      }
+
+      const apiKey = inputs.apiKey?.trim() ?? ""
+      const defaultNetworks = inputs.defaultNetworks?.trim() ?? ""
+      const networks = Array.from(
+        new Set(
+          defaultNetworks
+            .split(/[\n,]+/)
+            .flatMap((entry) => entry.split(/\s+/))
+            .map((entry) => entry.trim().toLowerCase())
+            .filter(Boolean)
+        )
+      )
+
+      const headers: Record<string, string> = {
+        "X-Source-Channel": "source-universal-poster",
+      }
+
+      if (networks.length > 0) {
+        headers["X-Default-Platforms"] = networks.join(",")
+      }
+
+      const payload = {
+        caption: "{{social.caption}}",
+        media: "{{social.media}}",
+        link: "{{social.link}}",
+        platforms: "{{social.platforms}}",
+        hashtags: "{{social.hashtags}}",
+        defaults: {
+          platforms: networks,
+        },
+        listing: {
+          id: "{{listing.id}}",
+          title: "{{listing.title}}",
+          description: "{{listing.description}}",
+          price: "{{listing.price}}",
+          currency: "{{listing.currency}}",
+          metadata: "{{listing.metadata}}",
+        },
+        integration: {
+          id: "{{integration.id}}",
+          provider: "{{integration.provider}}",
+          connectionUrl: "{{integration.connectionUrl}}",
+        },
+      }
+
+      const authMode = apiKey ? ("api_key" as const) : ("none" as const)
+
+      return {
+        provider: "Universal Social Poster",
+        displayName: parsed.host,
+        connectionUrl: `${parsed.protocol}//${parsed.host}`,
+        publishUrl: parsed.toString(),
+        publishMethod: "POST" as const,
+        authMode,
+        authToken: apiKey,
+        authHeader: "X-API-Key",
+        headers: JSON.stringify(headers, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+      }
+    },
+  },
 ]
 
 const setupSteps: { id: string; title: string; description: string; icon: LucideIcon }[] = [
@@ -1002,12 +1114,76 @@ export default function Source() {
         metadata.duration_minutes = duration
       }
 
+      if (payload.mediaUrls.trim()) {
+        const mediaEntries = payload.mediaUrls
+          .split(/[\n,]+/)
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+
+        if (mediaEntries.length > 0) {
+          const media = mediaEntries.map((entry) => {
+            try {
+              const url = new URL(entry)
+              return {
+                url: url.toString(),
+                type: "image" as const,
+              }
+            } catch {
+              throw new Error(`Media URL must be valid: ${entry}`)
+            }
+          })
+
+          metadata.media = media
+        }
+      }
+
+      if (payload.caption.trim()) {
+        metadata.caption = payload.caption.trim()
+      }
+
+      if (payload.callToActionUrl.trim()) {
+        try {
+          const url = new URL(payload.callToActionUrl.trim())
+          metadata.call_to_action_url = url.toString()
+        } catch {
+          throw new Error("Call-to-action link must be a valid URL")
+        }
+      }
+
+      if (payload.socialNetworks.trim()) {
+        const networks = payload.socialNetworks
+          .split(/[\n,]+/)
+          .map((entry) => entry.trim().toLowerCase())
+          .filter(Boolean)
+
+        if (networks.length > 0) {
+          metadata.social_channels = Array.from(new Set(networks))
+        }
+      }
+
+      if (payload.hashtags.trim()) {
+        const tags = payload.hashtags
+          .split(/[\n,]+/)
+          .map((entry) => entry.trim().replace(/^#+/, ""))
+          .filter(Boolean)
+
+        if (tags.length > 0) {
+          metadata.hashtags = Array.from(
+            new Set(tags.map((tag) => (tag.startsWith("#") ? tag : `#${tag}`)))
+          )
+        }
+      }
+
       if (payload.metadata.trim()) {
         const parsed = JSON.parse(payload.metadata)
         if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
           throw new Error("Additional metadata must be a JSON object")
         }
         Object.assign(metadata, parsed as Record<string, unknown>)
+      }
+
+      if (metadata.media || metadata.caption || metadata.social_channels || metadata.call_to_action_url) {
+        metadata.post_kind = "universal_poster"
       }
 
       const body = {
@@ -1877,6 +2053,105 @@ export default function Source() {
                         }
                         placeholder="What customers receive when they purchase"
                         rows={5}
+                      />
+                    </FieldStack>
+                  </div>
+
+                  <FormSubheading
+                    title="Universal poster"
+                    description="Attach media, captions, and destinations to fan out social posts automatically."
+                  />
+                  <div className="grid gap-4">
+                    <FieldStack
+                      label="Media URLs"
+                      htmlFor="listing-media"
+                      description="Paste one or more image links (comma or line separated) to share with every network."
+                    >
+                      <Textarea
+                        id="listing-media"
+                        value={listingForm.mediaUrls}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            mediaUrls: event.target.value,
+                          }))
+                        }
+                        placeholder="https://cdn.example.com/post.jpg"
+                        rows={3}
+                      />
+                    </FieldStack>
+
+                    <FieldStack
+                      label="Caption"
+                      htmlFor="listing-caption"
+                      description="We'll reuse this copy everywhere (falls back to your description if blank)."
+                    >
+                      <Textarea
+                        id="listing-caption"
+                        value={listingForm.caption}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            caption: event.target.value,
+                          }))
+                        }
+                        placeholder="Announce your drop or story"
+                        rows={3}
+                      />
+                    </FieldStack>
+
+                    <FieldStack
+                      label="Call-to-action link"
+                      htmlFor="listing-cta"
+                      description="Optional link we include with every social post."
+                    >
+                      <Input
+                        id="listing-cta"
+                        type="url"
+                        value={listingForm.callToActionUrl}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            callToActionUrl: event.target.value,
+                          }))
+                        }
+                        placeholder="https://yourstore.com/drop"
+                      />
+                    </FieldStack>
+
+                    <FieldStack
+                      label="Social networks"
+                      htmlFor="listing-networks"
+                      description="Comma separated list (snapchat, facebook, instagram) to target by default."
+                    >
+                      <Input
+                        id="listing-networks"
+                        value={listingForm.socialNetworks}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            socialNetworks: event.target.value,
+                          }))
+                        }
+                        placeholder="snapchat, facebook, instagram"
+                      />
+                    </FieldStack>
+
+                    <FieldStack
+                      label="Hashtags"
+                      htmlFor="listing-hashtags"
+                      description="Add tags (comma or # separated) and we&apos;ll normalize them for each post."
+                    >
+                      <Input
+                        id="listing-hashtags"
+                        value={listingForm.hashtags}
+                        onChange={(event) =>
+                          setListingForm((prev) => ({
+                            ...prev,
+                            hashtags: event.target.value,
+                          }))
+                        }
+                        placeholder="#summerdrop, #newin"
                       />
                     </FieldStack>
                   </div>
