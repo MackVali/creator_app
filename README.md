@@ -74,6 +74,7 @@ All data is properly linked and includes realistic relationships between entitie
 
 To learn more about Next.js, take a look at the following resources:
 
+- [Universal Social Poster guide](docs/universal-poster.md) - step-by-step instructions for syndicating listings to every connected social network.
 - [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
 - [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
