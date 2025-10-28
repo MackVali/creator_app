@@ -88,7 +88,7 @@ export function Fab({
       secondary: [
         { label: "SERVICE" },
         { label: "PRODUCT" },
-        { label: "REQUEST" },
+        { label: "POST" },
         { label: "NOTE" },
       ],
       menuClassName: "left-1/2 -translate-x-1/2",
@@ -119,7 +119,7 @@ export function Fab({
       ],
       secondary: [
         { label: "NOTE" },
-        { label: "REQUEST" },
+        { label: "POST" },
         { label: "SERVICE" },
         { label: "PRODUCT" },
       ],
