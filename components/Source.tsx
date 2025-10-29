@@ -28,10 +28,13 @@ import { Textarea } from "./ui/textarea"
 import type {
   IntegrationsResponse,
   ListingsResponse,
+  PostsResponse,
   PublishResult,
   SourceIntegration,
   SourceListing,
+  SourcePost,
 } from "@/types/source"
+import { uploadSourceMedia } from "@/lib/storage"
 import { cn } from "@/lib/utils"
 
 const httpMethods = ["POST", "PUT", "PATCH"] as const
@@ -81,6 +84,15 @@ type ListingFormState = {
   metadata: string
 }
 
+type PostFormState = {
+  caption: string
+  linkUrl: string
+  mediaUrl: string
+  mediaAlt: string
+  metadata: string
+  publishNow: boolean
+}
+
 type ApiError = { error: string }
 
 const defaultIntegrationForm: IntegrationFormState = {
@@ -112,6 +124,15 @@ const defaultListingForm: ListingFormState = {
   inventory: "",
   durationMinutes: "",
   metadata: "",
+}
+
+const defaultPostForm: PostFormState = {
+  caption: "",
+  linkUrl: "",
+  mediaUrl: "",
+  mediaAlt: "",
+  metadata: "",
+  publishNow: true,
 }
 
 type IntegrationPresetField = {
@@ -631,6 +652,221 @@ const integrationPresets: IntegrationPreset[] = [
       }
     },
   },
+  {
+    id: "zapier-social",
+    label: "Zapier social multicast",
+    description:
+      "Send every Source post into a Zapier Catch Hook so one automation can cross-post to Snapchat, Facebook, Instagram, TikTok, and beyond.",
+    docsUrl: "https://zapier.com/apps/webhook/help",
+    fields: [
+      {
+        id: "webhookUrl",
+        label: "Catch Hook URL",
+        placeholder: "https://hooks.zapier.com/hooks/catch/...",
+        type: "url",
+      },
+      {
+        id: "connectionName",
+        label: "Connection label",
+        placeholder: "Zapier social relay",
+      },
+      {
+        id: "secretHeader",
+        label: "Optional secret header",
+        placeholder: "X-Webhook-Secret",
+        help: "Populate if your Zap validates a custom header secret.",
+      },
+    ],
+    build: (inputs) => {
+      const urlInput = inputs.webhookUrl?.trim()
+      if (!urlInput) {
+        throw new Error("Webhook URL is required")
+      }
+
+      let parsed: URL
+      try {
+        parsed = new URL(urlInput)
+      } catch {
+        throw new Error("Enter a valid Zapier webhook URL")
+      }
+
+      const label = inputs.connectionName?.trim() || "Zapier social relay"
+      const secret = inputs.secretHeader?.trim()
+      const headers = secret ? { "X-Webhook-Secret": secret } : {}
+
+      const payload = {
+        post: {
+          id: "{{post.id}}",
+          caption: "{{post.caption}}",
+          media_url: "{{post.media_url}}",
+          media_alt: "{{post.media_alt}}",
+          link_url: "{{post.link_url}}",
+          metadata: "{{post.metadata}}",
+        },
+        integration: {
+          id: "{{integration.id}}",
+          provider: "{{integration.provider}}",
+          connectionUrl: "{{integration.connectionUrl}}",
+        },
+      }
+
+      return {
+        provider: label,
+        displayName: label,
+        connectionUrl: `${parsed.protocol}//${parsed.host}`,
+        publishUrl: parsed.toString(),
+        publishMethod: "POST" as const,
+        authMode: "none" as const,
+        authToken: "",
+        authHeader: "X-API-Key",
+        headers: JSON.stringify(headers, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+      }
+    },
+  },
+  {
+    id: "ifttt-social",
+    label: "IFTTT webhook blast",
+    description:
+      "Trigger an IFTTT Webhooks applet so a single Source post can publish to every connected social profile.",
+    docsUrl: "https://help.ifttt.com/hc/en-us/articles/360059539653-Webhooks-service",
+    fields: [
+      {
+        id: "eventName",
+        label: "Event name",
+        placeholder: "social_post",
+      },
+      {
+        id: "webhookKey",
+        label: "Webhook key",
+        placeholder: "IFTTT webhook key",
+      },
+      {
+        id: "connectionName",
+        label: "Connection label",
+        placeholder: "IFTTT social blast",
+      },
+    ],
+    build: (inputs) => {
+      const event = inputs.eventName?.trim()
+      if (!event) {
+        throw new Error("Event name is required")
+      }
+
+      const key = inputs.webhookKey?.trim()
+      if (!key) {
+        throw new Error("Webhook key is required")
+      }
+
+      const label = inputs.connectionName?.trim() || "IFTTT social blast"
+      const webhookUrl = `https://maker.ifttt.com/trigger/${event}/json/with/key/${key}`
+
+      const payload = {
+        post: {
+          id: "{{post.id}}",
+          caption: "{{post.caption}}",
+          media_url: "{{post.media_url}}",
+          media_alt: "{{post.media_alt}}",
+          link_url: "{{post.link_url}}",
+          metadata: "{{post.metadata}}",
+        },
+        integration: {
+          id: "{{integration.id}}",
+          provider: "{{integration.provider}}",
+          connectionUrl: "{{integration.connectionUrl}}",
+        },
+      }
+
+      return {
+        provider: "IFTTT",
+        displayName: label,
+        connectionUrl: "https://ifttt.com",
+        publishUrl: webhookUrl,
+        publishMethod: "POST" as const,
+        authMode: "none" as const,
+        authToken: "",
+        authHeader: "X-API-Key",
+        headers: JSON.stringify({}, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+      }
+    },
+  },
+  {
+    id: "make-social",
+    label: "Make.com scenario",
+    description:
+      "Call a Make.com custom webhook to orchestrate complex cross-posting workflows for every social network you support.",
+    docsUrl: "https://www.make.com/en/help/modules/webhooks",
+    fields: [
+      {
+        id: "webhookUrl",
+        label: "Scenario webhook URL",
+        placeholder: "https://hook.make.com/...",
+        type: "url",
+      },
+      {
+        id: "connectionName",
+        label: "Connection label",
+        placeholder: "Make universal poster",
+      },
+      {
+        id: "bearerToken",
+        label: "Optional bearer token",
+        placeholder: "make-token",
+        type: "password",
+        help: "Provide when the scenario expects an Authorization header.",
+      },
+    ],
+    build: (inputs) => {
+      const urlInput = inputs.webhookUrl?.trim()
+      if (!urlInput) {
+        throw new Error("Webhook URL is required")
+      }
+
+      let parsed: URL
+      try {
+        parsed = new URL(urlInput)
+      } catch {
+        throw new Error("Enter a valid Make.com webhook URL")
+      }
+
+      const label = inputs.connectionName?.trim() || "Make universal poster"
+      const token = inputs.bearerToken?.trim()
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+
+      const payload = {
+        post: {
+          id: "{{post.id}}",
+          caption: "{{post.caption}}",
+          media_url: "{{post.media_url}}",
+          media_alt: "{{post.media_alt}}",
+          link_url: "{{post.link_url}}",
+          metadata: "{{post.metadata}}",
+        },
+        integration: {
+          id: "{{integration.id}}",
+          provider: "{{integration.provider}}",
+          connectionUrl: "{{integration.connectionUrl}}",
+        },
+      }
+
+      return {
+        provider: label,
+        displayName: label,
+        connectionUrl: `${parsed.protocol}//${parsed.host}`,
+        publishUrl: parsed.toString(),
+        publishMethod: "POST" as const,
+        authMode: "none" as const,
+        authToken: "",
+        authHeader: "X-API-Key",
+        headers: JSON.stringify(headers, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+      }
+    },
+  },
 ]
 
 const setupSteps: { id: string; title: string; description: string; icon: LucideIcon }[] = [
@@ -652,7 +888,7 @@ const setupSteps: { id: string; title: string; description: string; icon: Lucide
     id: "publish",
     title: "Publish everywhere",
     description:
-      "Create a product or service once and we fan the listing out to every active integration instantly.",
+      "Create a product, service, or social photo once and we fan the payload out to every active integration instantly.",
     icon: UploadCloud,
   },
 ]
@@ -661,14 +897,19 @@ export default function Source() {
   const queryClient = useQueryClient()
   const [integrationForm, setIntegrationForm] = useState(defaultIntegrationForm)
   const [listingForm, setListingForm] = useState(defaultListingForm)
+  const [postForm, setPostForm] = useState(defaultPostForm)
   const [integrationError, setIntegrationError] = useState<string | null>(null)
   const [listingError, setListingError] = useState<string | null>(null)
+  const [postError, setPostError] = useState<string | null>(null)
+  const [postNotice, setPostNotice] = useState<string | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [presetInputs, setPresetInputs] = useState<Record<string, string>>({})
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
   const [presetError, setPresetError] = useState<string | null>(null)
   const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
   const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
+  const [postMediaFile, setPostMediaFile] = useState<File | null>(null)
+  const [postPreviewUrl, setPostPreviewUrl] = useState<string | null>(null)
   const oauthWindowRef = useRef<Window | null>(null)
 
   useEffect(() => {
@@ -719,6 +960,18 @@ export default function Source() {
 
     return () => window.clearInterval(watcher)
   }, [connectingIntegrationId])
+
+  useEffect(() => {
+    if (!postMediaFile) {
+      setPostPreviewUrl(null)
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(postMediaFile)
+    setPostPreviewUrl(objectUrl)
+
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [postMediaFile])
 
   const beginOAuthConnection = async (integration: SourceIntegration) => {
     if (integration.auth_mode !== "oauth2") return
@@ -861,6 +1114,23 @@ export default function Source() {
       }
 
       return (json ?? { listings: [] }) as ListingsResponse
+    },
+  })
+
+  const postsQuery = useQuery<PostsResponse, Error>({
+    queryKey: ["source", "posts"],
+    queryFn: async () => {
+      const res = await fetch("/api/source/posts")
+      const json = (await res.json().catch(() => null)) as
+        | PostsResponse
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        throw new Error((json as ApiError | null)?.error ?? "Unable to load posts")
+      }
+
+      return (json ?? { posts: [] }) as PostsResponse
     },
   })
 
@@ -1049,8 +1319,76 @@ export default function Source() {
     onError: (err: Error) => setListingError(err.message),
   })
 
+  const createPost = useMutation({
+    mutationFn: async (payload: { form: PostFormState; file: File | null }) => {
+      let parsedMetadata: Record<string, unknown> | null = null
+      if (payload.form.metadata.trim()) {
+        try {
+          parsedMetadata = JSON.parse(payload.form.metadata)
+        } catch {
+          throw new Error("Metadata must be valid JSON")
+        }
+      }
+
+      let mediaUrl = payload.form.mediaUrl.trim()
+
+      if (payload.file) {
+        const upload = await uploadSourceMedia(payload.file)
+        if (!upload.success || !upload.url) {
+          throw new Error(upload.error ?? "Unable to upload media")
+        }
+        mediaUrl = upload.url
+      }
+
+      if (!mediaUrl) {
+        throw new Error("Upload a photo or provide a media URL")
+      }
+
+      const body = {
+        caption: payload.form.caption.trim() || null,
+        mediaUrl,
+        mediaAlt: payload.form.mediaAlt.trim() || null,
+        linkUrl: payload.form.linkUrl.trim() || null,
+        metadata: parsedMetadata,
+        publishNow: payload.form.publishNow,
+      }
+
+      const res = await fetch("/api/source/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const error = (await res.json().catch(() => null)) as ApiError | null
+        throw new Error(error?.error ?? "Unable to publish post")
+      }
+
+      return (await res.json()) as { post: SourcePost }
+    },
+    onSuccess: (response) => {
+      setPostForm(defaultPostForm)
+      setPostMediaFile(null)
+      setPostPreviewUrl(null)
+      setPostError(null)
+      queryClient.invalidateQueries({ queryKey: ["source", "posts"] })
+
+      const nextStatus = response?.post?.status
+      setPostNotice(
+        nextStatus === "published"
+          ? "Post published across every active integration."
+          : "Post saved and waiting for delivery."
+      )
+    },
+    onError: (error: Error) => {
+      setPostNotice(null)
+      setPostError(error.message)
+    },
+  })
+
   const integrations = integrationsQuery.data?.integrations ?? []
   const listings = listingsQuery.data?.listings ?? []
+  const posts = postsQuery.data?.posts ?? []
 
   const activeIntegrationCount = integrations.filter(
     (integration) =>
@@ -1153,6 +1491,229 @@ export default function Source() {
                 </div>
               )
             })}
+          </div>
+        </section>
+
+        <section className="space-y-6">
+          <div className="rounded-2xl border border-slate-900/60 bg-slate-950/70 p-6 shadow-xl shadow-slate-950/40">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Universal poster</h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Drop a photo once and blast it to every social integration—Snapchat, Facebook, Instagram, and anything else
+                  connected above.
+                </p>
+              </div>
+            </div>
+
+            {postNotice && (
+              <div className="mt-4 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+                {postNotice}
+              </div>
+            )}
+
+            {postError && (
+              <div className="mt-4 rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+                {postError}
+              </div>
+            )}
+
+            <form
+              className="mt-5 space-y-6"
+              onSubmit={(event) => {
+                event.preventDefault()
+                setPostError(null)
+                setPostNotice(null)
+                createPost.mutate({ form: postForm, file: postMediaFile })
+              }}
+            >
+              <div className="rounded-xl border border-slate-900/60 bg-slate-950/60 p-4 text-xs text-slate-300">
+                {activeIntegrationCount > 0 ? (
+                  <span>
+                    Publishing now will post to
+                    {" "}
+                    <span className="font-semibold text-white">
+                      all {activeIntegrationCount} active connection{activeIntegrationCount === 1 ? "" : "s"}
+                    </span>
+                    . Check delivery logs below to verify every network accepts the payload.
+                  </span>
+                ) : (
+                  <span>
+                    Connect at least one integration to auto-post your photos everywhere. Drafts stay ready until you activate
+                    connections.
+                  </span>
+                )}
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                <div className="space-y-5">
+                  <FieldStack label="Caption" htmlFor="post-caption">
+                    <Textarea
+                      id="post-caption"
+                      value={postForm.caption}
+                      onChange={(event) =>
+                        setPostForm((prev) => ({
+                          ...prev,
+                          caption: event.target.value,
+                        }))
+                      }
+                      placeholder="Share what&apos;s happening across your channels"
+                      rows={4}
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Call-to-action link"
+                    htmlFor="post-link"
+                    description="Optional link to include with the post payload."
+                  >
+                    <Input
+                      id="post-link"
+                      type="url"
+                      value={postForm.linkUrl}
+                      onChange={(event) =>
+                        setPostForm((prev) => ({
+                          ...prev,
+                          linkUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://your-site.com/drop"
+                    />
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Metadata overrides (JSON)"
+                    htmlFor="post-metadata"
+                    description="Inject per-network options like tags, location IDs, or scheduling hints."
+                  >
+                    <Textarea
+                      id="post-metadata"
+                      value={postForm.metadata}
+                      onChange={(event) =>
+                        setPostForm((prev) => ({
+                          ...prev,
+                          metadata: event.target.value,
+                        }))
+                      }
+                      rows={4}
+                      placeholder='{"instagram_tags": ["studio", "drop"], "snapchat_story": true}'
+                    />
+                  </FieldStack>
+
+                  <div className="flex items-center gap-2 text-sm">
+                    <input
+                      id="post-publish-now"
+                      type="checkbox"
+                      className="size-4 rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500"
+                      checked={postForm.publishNow}
+                      onChange={(event) =>
+                        setPostForm((prev) => ({
+                          ...prev,
+                          publishNow: event.target.checked,
+                        }))
+                      }
+                    />
+                    <Label htmlFor="post-publish-now" className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                      Publish immediately
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <FieldStack
+                    label="Upload photo"
+                    htmlFor="post-media-upload"
+                    description="We&apos;ll host the asset and reuse its public URL in every integration payload."
+                  >
+                    <div className="space-y-3">
+                      <Input
+                        id="post-media-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null
+                          setPostMediaFile(file)
+                        }}
+                      />
+                      {postMediaFile && (
+                        <div className="flex items-center justify-between rounded-lg border border-slate-900/70 bg-slate-950/60 p-3 text-xs text-slate-300">
+                          <span className="truncate">{postMediaFile.name}</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setPostMediaFile(null)
+                              setPostPreviewUrl(null)
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      )}
+                      {postPreviewUrl && (
+                        <div className="overflow-hidden rounded-lg border border-slate-900/70 bg-slate-900">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={postPreviewUrl} alt="Post preview" className="h-40 w-full object-cover" />
+                        </div>
+                      )}
+                    </div>
+                  </FieldStack>
+
+                  <FieldStack
+                    label="Or provide an existing media URL"
+                    htmlFor="post-media-url"
+                    description="Use when the asset already lives on a CDN accessible by every network."
+                  >
+                    <Input
+                      id="post-media-url"
+                      type="url"
+                      value={postForm.mediaUrl}
+                      onChange={(event) =>
+                        setPostForm((prev) => ({
+                          ...prev,
+                          mediaUrl: event.target.value,
+                        }))
+                      }
+                      placeholder="https://cdn.your-site.com/posts/summer-drop.jpg"
+                    />
+                  </FieldStack>
+
+                  <FieldStack label="Alt text" htmlFor="post-media-alt">
+                    <Input
+                      id="post-media-alt"
+                      value={postForm.mediaAlt}
+                      onChange={(event) =>
+                        setPostForm((prev) => ({
+                          ...prev,
+                          mediaAlt: event.target.value,
+                        }))
+                      }
+                      placeholder="Describe the photo for accessibility"
+                    />
+                  </FieldStack>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setPostForm(defaultPostForm)
+                    setPostMediaFile(null)
+                    setPostPreviewUrl(null)
+                    setPostError(null)
+                    setPostNotice(null)
+                  }}
+                >
+                  Reset
+                </Button>
+                <Button type="submit" disabled={createPost.isPending}>
+                  {createPost.isPending ? "Publishing..." : "Post everywhere"}
+                </Button>
+              </div>
+            </form>
           </div>
         </section>
 
@@ -2057,6 +2618,56 @@ export default function Source() {
             ))}
           </div>
         </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">Recent posts</h2>
+              <p className="text-sm text-slate-300">
+                Verify each social network accepted the payload or fix anything that needs attention.
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                queryClient.invalidateQueries({
+                  queryKey: ["source", "posts"],
+                })
+              }
+              disabled={postsQuery.isFetching}
+            >
+              <RefreshCcw className="size-4" />
+              Refresh
+            </Button>
+          </div>
+
+          {postsQuery.error && (
+            <div className="rounded-md border border-rose-500/40 bg-rose-950/40 p-3 text-sm text-rose-200">
+              {postsQuery.error.message}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {postsQuery.isLoading &&
+              Array.from({ length: 3 }).map((_, idx) => (
+                <div
+                  key={`post-skeleton-${idx}`}
+                  className="h-32 animate-pulse rounded-xl border border-slate-900/80 bg-slate-950/60"
+                />
+              ))}
+
+            {!postsQuery.isLoading && posts.length === 0 && (
+              <div className="rounded-xl border border-slate-900/70 bg-slate-950/60 p-6 text-sm text-slate-300">
+                No social posts yet. Publish a photo above and we&apos;ll record the delivery status for every destination.
+              </div>
+            )}
+
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} />
+            ))}
+          </div>
+        </section>
       </main>
     </div>
   )
@@ -2316,6 +2927,79 @@ function ListingCard({ listing }: ListingCardProps) {
           <p className="text-xs text-slate-400">
             Not sent to any integrations yet.
           </p>
+        ) : (
+          <div className="space-y-2">
+            {publishResults.map((result, index) => (
+              <PublishRow key={`${result.integrationId}-${index}`} result={result} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+type PostCardProps = {
+  post: SourcePost
+}
+
+function PostCard({ post }: PostCardProps) {
+  const status = post.status as SourceListing["status"]
+  const publishResults = post.publish_results ?? []
+
+  return (
+    <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2 md:max-w-[60%]">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-white">Social post</h3>
+            <Badge className="bg-slate-800 text-slate-200">Universal poster</Badge>
+          </div>
+          {post.caption ? (
+            <p className="whitespace-pre-wrap text-sm text-slate-300">{post.caption}</p>
+          ) : (
+            <p className="text-sm text-slate-400">No caption provided.</p>
+          )}
+          {post.link_url && (
+            <a
+              href={post.link_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-sky-300"
+            >
+              <ExternalLink className="size-3" />
+              {post.link_url}
+            </a>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-2 text-right">
+          <Badge className={cn("border", statusAccent[status])}>{listingStatuses[status]}</Badge>
+          <p className="text-xs text-slate-400">Updated {formatRelativeTime(post.updated_at)}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {post.media_url && (
+          <div className="overflow-hidden rounded-lg border border-slate-900/60 bg-slate-900">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={post.media_url} alt={post.media_alt ?? ""} className="h-40 w-full object-cover" />
+          </div>
+        )}
+
+        {post.metadata && Object.keys(post.metadata).length > 0 && (
+          <div className="space-y-1 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
+            <p className="font-semibold text-slate-200">Metadata</p>
+            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-400">
+              {JSON.stringify(post.metadata, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Delivery log</p>
+        {publishResults.length === 0 ? (
+          <p className="text-xs text-slate-400">Not sent to any integrations yet.</p>
         ) : (
           <div className="space-y-2">
             {publishResults.map((result, index) => (

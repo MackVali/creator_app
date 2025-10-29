@@ -48,10 +48,28 @@ export type SourceListing = {
   updated_at: string
 }
 
+export type SourcePost = {
+  id: string
+  caption: string | null
+  media_url: string | null
+  media_alt: string | null
+  link_url: string | null
+  status: "draft" | "queued" | "published" | "needs_attention"
+  metadata: Record<string, unknown> | null
+  publish_results: PublishResult[] | null
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type IntegrationsResponse = {
   integrations: SourceIntegration[]
 }
 
 export type ListingsResponse = {
   listings: SourceListing[]
+}
+
+export type PostsResponse = {
+  posts: SourcePost[]
 }
