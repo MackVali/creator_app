@@ -97,6 +97,7 @@ type HabitScheduleDayResult = {
   placements: HabitDraftPlacement[]
   instances: ScheduleInstance[]
   failures: ScheduleFailure[]
+  existingInstances: ScheduleInstance[]
 }
 
 type ScheduleBacklogResult = {
@@ -512,7 +513,8 @@ export async function scheduleBacklog(
     }
 
     const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-    await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+    const dayResult = await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+    const dayInstances = dayResult.existingInstances
 
     for (const item of queue) {
       if (scheduledProjectIds.has(item.id)) continue
@@ -540,6 +542,7 @@ export async function scheduleBacklog(
         reuseInstanceId: item.instanceId,
         ignoreProjectIds,
         notBefore: offset === 0 ? baseDate : undefined,
+        existingInstances: dayInstances,
       })
 
       if (!('status' in placed)) {
@@ -597,6 +600,7 @@ export async function scheduleBacklog(
             : undefined,
         })
         scheduledProjectIds.add(item.id)
+        upsertInstance(dayInstances, placed.data)
       }
     }
   }
@@ -776,7 +780,12 @@ async function scheduleHabitsForDay(params: {
     restMode = false,
   } = params
 
-  const result: HabitScheduleDayResult = { placements: [], instances: [], failures: [] }
+  const result: HabitScheduleDayResult = {
+    placements: [],
+    instances: [],
+    failures: [],
+    existingInstances: [],
+  }
   if (!habits.length) return result
 
   const cacheKey = dateCacheKey(day)
@@ -806,6 +815,8 @@ async function scheduleHabitsForDay(params: {
   const anchorStartsByWindowKey = new Map<string, number[]>()
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const existingByHabitId = new Map<string, ScheduleInstance>()
+  const dayInstances = result.existingInstances
+
   const existingResponse = await fetchInstancesForRange(
     userId,
     dayStart.toISOString(),
@@ -821,6 +832,8 @@ async function scheduleHabitsForDay(params: {
   } else {
     for (const inst of existingResponse.data ?? []) {
       if (!inst) continue
+      if (inst.status !== 'scheduled') continue
+      upsertInstance(dayInstances, inst)
       if (inst.source_type !== 'HABIT') continue
       if (!inst.source_id) continue
       if (inst.status !== 'scheduled') continue
@@ -1117,9 +1130,11 @@ async function scheduleHabitsForDay(params: {
         existingByHabitId.set(habit.id, response.data)
         decision = 'rescheduled'
         instanceId = response.data.id
+        upsertInstance(dayInstances, response.data)
       } else {
         decision = 'kept'
         instanceId = existingInstance.id
+        upsertInstance(dayInstances, existingInstance)
       }
     } else {
       const response = await createInstance(
@@ -1150,6 +1165,7 @@ async function scheduleHabitsForDay(params: {
       existingByHabitId.set(habit.id, response.data)
       decision = 'new'
       instanceId = response.data.id
+      upsertInstance(dayInstances, response.data)
     }
 
     result.placements.push({
@@ -1219,6 +1235,15 @@ function placementKey(entry: ScheduleDraftPlacement) {
     return `PROJECT:${id}`
   }
   return `HABIT:${entry.habit.id}`
+}
+
+function upsertInstance(list: ScheduleInstance[], instance: ScheduleInstance) {
+  const index = list.findIndex(existing => existing.id === instance.id)
+  if (index >= 0) {
+    list[index] = instance
+    return
+  }
+  list.push(instance)
 }
 
 function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number) {

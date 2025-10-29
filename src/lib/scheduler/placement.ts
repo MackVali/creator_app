@@ -36,10 +36,20 @@ type PlaceParams = {
   reuseInstanceId?: string | null
   ignoreProjectIds?: Set<string>
   notBefore?: Date
+  existingInstances?: ScheduleInstance[]
 }
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
-  const { userId, item, windows, client, reuseInstanceId, ignoreProjectIds, notBefore } = params
+  const {
+    userId,
+    item,
+    windows,
+    client,
+    reuseInstanceId,
+    ignoreProjectIds,
+    notBefore,
+    existingInstances,
+  } = params
   let best: null | {
     window: (typeof windows)[number]
     windowIndex: number
@@ -64,17 +74,29 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       typeof notBeforeMs === 'number' ? Math.max(windowStartMs, notBeforeMs) : windowStartMs
     const rangeStart = new Date(startMs)
 
-    const { data: taken, error } = await fetchInstancesForRange(
-      userId,
-      rangeStart.toISOString(),
-      windowEnd.toISOString(),
-      client
-    )
-    if (error) {
-      return { error }
+    let taken: ScheduleInstance[] = []
+    if (existingInstances) {
+      taken = existingInstances.filter(inst => {
+        if (!inst) return false
+        if (inst.status !== 'scheduled') return false
+        const instStartMs = new Date(inst.start_utc).getTime()
+        const instEndMs = new Date(inst.end_utc).getTime()
+        return instEndMs > startMs && instStartMs < windowEndMs
+      })
+    } else {
+      const { data, error } = await fetchInstancesForRange(
+        userId,
+        rangeStart.toISOString(),
+        windowEnd.toISOString(),
+        client
+      )
+      if (error) {
+        return { error }
+      }
+      taken = (data ?? []).filter(inst => inst && inst.status !== 'canceled')
     }
 
-    const filtered = (taken ?? []).filter(inst => {
+    const filtered = taken.filter(inst => {
       if (inst.id === reuseInstanceId) return false
       if (ignoreProjectIds && inst.source_type === 'PROJECT') {
         const projectId = inst.source_id ?? ''
