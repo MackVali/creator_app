@@ -35,7 +35,7 @@ export type PublishResult = {
 
 export type SourceListing = {
   id: string
-  type: "product" | "service"
+  type: "product" | "service" | "post"
   title: string
   description: string | null
   price: number | null

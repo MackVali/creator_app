@@ -13,6 +13,7 @@ import {
   Lock,
   Plug,
   RefreshCcw,
+  Send,
   UploadCloud,
   X,
   type LucideIcon,
@@ -24,6 +25,7 @@ import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem } from "./ui/select"
 import { Textarea } from "./ui/textarea"
+import { PostModal } from "./ui/PostModal"
 
 import type {
   IntegrationsResponse,
@@ -48,6 +50,32 @@ const statusAccent: Record<SourceListing["status"], string> = {
   queued: "bg-sky-500/10 text-sky-300 border border-sky-500/30",
   published: "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30",
   needs_attention: "bg-amber-500/10 text-amber-300 border border-amber-500/40",
+}
+
+const listingTypeLabels: Record<SourceListing["type"], string> = {
+  product: "Product",
+  service: "Service",
+  post: "Post",
+}
+
+const POST_MEDIA_TYPES = ["text", "image", "video", "link"] as const
+type PostMediaType = (typeof POST_MEDIA_TYPES)[number]
+type PostMedia = { url: string; type: PostMediaType }
+type PostMetadata = {
+  title: string | null
+  content: string | null
+  media: PostMedia[]
+  mediaTypes: PostMediaType[]
+  selectedIntegrationIds: string[] | null
+  deliveredIntegrationIds: string[] | null
+  missingIntegrationIds: string[] | null
+}
+
+const POST_MEDIA_LABELS: Record<PostMediaType, string> = {
+  text: "Text",
+  image: "Image",
+  video: "Video",
+  link: "Link",
 }
 
 type IntegrationFormState = {
@@ -669,6 +697,7 @@ export default function Source() {
   const [presetError, setPresetError] = useState<string | null>(null)
   const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
   const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
+  const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
 
   useEffect(() => {
@@ -1087,9 +1116,18 @@ export default function Source() {
                 headers you provide.
               </p>
             </div>
-            <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
-              <Plug className="size-3" /> Paid upgrade
-            </Badge>
+            <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
+              <Button
+                type="button"
+                className="gap-2 bg-sky-500 text-white hover:bg-sky-400"
+                onClick={() => setIsPostModalOpen(true)}
+              >
+                <Send className="size-4" /> Post everywhere
+              </Button>
+              <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
+                <Plug className="size-3" /> Paid upgrade
+              </Badge>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
             <div className="flex items-center gap-2">
@@ -2058,6 +2096,7 @@ export default function Source() {
           </div>
         </section>
       </main>
+      <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
     </div>
   )
 }
@@ -2269,6 +2308,13 @@ type ListingCardProps = {
 function ListingCard({ listing }: ListingCardProps) {
   const status = listing.status
   const publishResults = listing.publish_results ?? []
+  const postMetadata = parsePostMetadata(listing.metadata)
+  const isPost = listing.type === "post" || Boolean(postMetadata)
+  const description = isPost
+    ? postMetadata?.content?.trim() || "No message included."
+    : listing.description || "No description"
+  const showGenericMetadata =
+    !postMetadata && listing.metadata && Object.keys(listing.metadata).length > 0
 
   return (
     <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
@@ -2277,18 +2323,16 @@ function ListingCard({ listing }: ListingCardProps) {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-semibold text-white">{listing.title}</h3>
             <Badge className="bg-slate-800 text-slate-200">
-              {listing.type === "product" ? "Product" : "Service"}
+              {listingTypeLabels[listing.type]}
             </Badge>
           </div>
-          <p className="text-sm text-slate-300">
-            {listing.description || "No description"}
-          </p>
+          <p className={cn("text-sm text-slate-300", isPost && "whitespace-pre-wrap break-words")}>{description}</p>
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           <Badge className={cn("border", statusAccent[status])}>
             {listingStatuses[status]}
           </Badge>
-          {listing.price !== null && (
+          {listing.type !== "post" && listing.price !== null && (
             <p className="font-mono text-sm text-slate-200">
               {formatCurrency(listing.price, listing.currency)}
             </p>
@@ -2299,14 +2343,16 @@ function ListingCard({ listing }: ListingCardProps) {
         </div>
       </div>
 
-      {Object.keys(listing.metadata ?? {}).length > 0 && (
+      {postMetadata ? (
+        <PostDetails metadata={postMetadata} />
+      ) : showGenericMetadata ? (
         <div className="mt-4 space-y-1 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
           <p className="font-semibold text-slate-200">Metadata</p>
           <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-400">
             {JSON.stringify(listing.metadata, null, 2)}
           </pre>
         </div>
-      )}
+      ) : null}
 
       <div className="mt-4 space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -2323,6 +2369,76 @@ function ListingCard({ listing }: ListingCardProps) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+type PostDetailsProps = {
+  metadata: PostMetadata
+}
+
+function PostDetails({ metadata }: PostDetailsProps) {
+  const deliveredCount = metadata.deliveredIntegrationIds?.length ?? 0
+  const selectedCount = metadata.selectedIntegrationIds?.length ?? 0
+  const missingCount = metadata.missingIntegrationIds?.length ?? 0
+  const showSelectedSummary = selectedCount > 0 && selectedCount !== deliveredCount
+
+  return (
+    <div className="mt-4 space-y-4 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
+      {metadata.mediaTypes.length > 0 ? (
+        <div className="space-y-2">
+          <p className="font-semibold text-slate-200">Media focus</p>
+          <div className="flex flex-wrap gap-2">
+            {metadata.mediaTypes.map((type) => (
+              <Badge key={type} className="bg-slate-900 text-slate-200 capitalize">
+                {formatPostMediaType(type)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        <p className="font-semibold text-slate-200">Attachments</p>
+        {metadata.media.length > 0 ? (
+          <ul className="space-y-2">
+            {metadata.media.map((media) => (
+              <li
+                key={`${media.type}-${media.url}`}
+                className="flex flex-col gap-2 rounded-md border border-slate-900/60 bg-slate-950/70 p-3 text-[11px] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+              >
+                <Badge className="w-fit bg-slate-900 text-slate-200 capitalize">
+                  {formatPostMediaType(media.type)}
+                </Badge>
+                <a
+                  href={media.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 break-all text-sky-300 hover:text-sky-200"
+                >
+                  {media.url}
+                  <ExternalLink className="size-3" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[11px] text-slate-400">No attachments were included.</p>
+        )}
+      </div>
+
+      <div className="space-y-1 text-[11px] text-slate-400">
+        <p>
+          Delivered to <span className="text-slate-200">{deliveredCount}</span> connection
+          {deliveredCount === 1 ? "" : "s"}.
+          {showSelectedSummary ? ` Requested ${selectedCount}.` : ""}
+        </p>
+        {missingCount > 0 ? (
+          <p className="text-amber-300">
+            {missingCount} connection{missingCount === 1 ? " was" : "s were"} unavailable when posting.
+          </p>
+        ) : null}
       </div>
     </div>
   )
@@ -2365,16 +2481,99 @@ function PublishRow({ result }: PublishRowProps) {
   )
 }
 
-  function formatCurrency(value: number, currency: string) {
-    try {
-      return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency,
-      }).format(value)
-    } catch {
-      return `${currency} ${value.toFixed(2)}`
-    }
+function parsePostMetadata(metadata: Record<string, unknown> | null): PostMetadata | null {
+  if (!isRecord(metadata)) {
+    return null
   }
+
+  const kind = typeof metadata.kind === "string" ? metadata.kind : null
+  if (kind && kind !== "post") {
+    return null
+  }
+
+  const rawPost = metadata.post
+  if (!isRecord(rawPost)) {
+    return null
+  }
+
+  const title = typeof rawPost.title === "string" ? rawPost.title : null
+  const content = typeof rawPost.content === "string" ? rawPost.content : null
+
+  const media: PostMedia[] = Array.isArray(rawPost.media)
+    ? (rawPost.media as unknown[])
+        .map((entry) => {
+          if (!isRecord(entry)) return null
+          const url = typeof entry.url === "string" ? entry.url.trim() : ""
+          if (!url) return null
+          const typeCandidate =
+            typeof entry.type === "string" ? entry.type.toLowerCase().trim() : ""
+          const type = isPostMediaType(typeCandidate) ? typeCandidate : "link"
+          return { url, type }
+        })
+        .filter(Boolean) as PostMedia[]
+    : []
+
+  const mediaTypes = Array.from(
+    new Set(
+      (Array.isArray(rawPost.mediaTypes) ? rawPost.mediaTypes : [])
+        .map((value) => (typeof value === "string" ? value.toLowerCase().trim() : ""))
+        .filter((value): value is PostMediaType => isPostMediaType(value))
+    )
+  )
+
+  const selectedIntegrationIds = normalizeIntegrationIds(rawPost.selectedIntegrationIds)
+  const deliveredIntegrationIds = normalizeIntegrationIds(rawPost.deliveredIntegrationIds)
+  const missingIntegrationIds = normalizeIntegrationIds(rawPost.missingIntegrationIds)
+
+  return {
+    title,
+    content,
+    media,
+    mediaTypes,
+    selectedIntegrationIds,
+    deliveredIntegrationIds,
+    missingIntegrationIds,
+  }
+}
+
+function normalizeIntegrationIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  const ids = Array.from(
+    new Set(
+      value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+    )
+  )
+
+  return ids.length > 0 ? ids : null
+}
+
+function isPostMediaType(value: unknown): value is PostMediaType {
+  return typeof value === "string" && POST_MEDIA_TYPES.includes(value as PostMediaType)
+}
+
+function formatPostMediaType(type: PostMediaType) {
+  return POST_MEDIA_LABELS[type]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function formatCurrency(value: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+    }).format(value)
+  } catch {
+    return `${currency} ${value.toFixed(2)}`
+  }
+}
 
 function formatRelativeTime(iso: string) {
   const now = Date.now()
