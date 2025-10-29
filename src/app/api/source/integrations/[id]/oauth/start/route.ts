@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 
-import { isRecord } from "../utils"
+import { isRecord } from "../../../oauth/utils"
 
 export const runtime = "nodejs"
 
