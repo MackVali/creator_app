@@ -1,10 +1,13 @@
-import { randomUUID } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
 import { publishToIntegrations, type IntegrationRow } from "@/app/api/source/listings/route";
+import {
+  LISTING_FIELDS,
+  serializeListing,
+  type ListingRow,
+} from "@/app/api/source/listings/shared";
+import type { PublishResult } from "@/types/source";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import type { SourceListing } from "@/types/source";
 
 export const runtime = "nodejs";
 
@@ -130,29 +133,48 @@ export async function POST(request: Request) {
     );
   }
 
-  const now = new Date().toISOString();
+  const normalizedTitle = rawTitle || rawContent.slice(0, 80) || "Post";
+  const selectedSnapshot = selectedIntegrationIds && selectedIntegrationIds.length > 0 ? selectedIntegrationIds : null;
+  const deliveredIds = activeIntegrations.map((integration) => integration.id);
+  const postMetadata = {
+    title: rawTitle || null,
+    content: rawContent || null,
+    media: normalizedMedia,
+    mediaTypes: normalizedMediaTypes,
+    selectedIntegrationIds: selectedSnapshot,
+    deliveredIntegrationIds: deliveredIds,
+    missingIntegrationIds: missingIntegrationIds.length > 0 ? missingIntegrationIds : null,
+  };
 
-  const listing: SourceListing = {
-    id: `post-${randomUUID()}`,
-    type: "service",
-    title: rawTitle || rawContent.slice(0, 80) || "Post",
-    description: rawContent || null,
-    price: null,
-    currency: "USD",
-    status: "queued",
-    metadata: {
-      kind: "post",
-      post: {
-        title: rawTitle || null,
-        content: rawContent || null,
-        media: normalizedMedia,
-        mediaTypes: normalizedMediaTypes,
-      },
-    },
-    publish_results: null,
-    published_at: now,
-    created_at: now,
-    updated_at: now,
+  const metadata = {
+    kind: "post" as const,
+    post: postMetadata,
+  } satisfies Record<string, unknown>;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("source_listings")
+    .insert({
+      user_id: user.id,
+      type: "post",
+      title: normalizedTitle,
+      description: rawContent || null,
+      price: null,
+      currency: "USD",
+      status: "queued",
+      metadata,
+    })
+    .select(LISTING_FIELDS)
+    .single();
+
+  if (insertError || !inserted) {
+    console.error("Failed to create universal post listing", insertError);
+    return NextResponse.json({ error: "Unable to record post" }, { status: 500 });
+  }
+
+  let listing = serializeListing(inserted as ListingRow);
+  listing = {
+    ...listing,
+    metadata,
   };
 
   const { publishResults, nextStatus } = await publishToIntegrations({
@@ -162,22 +184,45 @@ export async function POST(request: Request) {
     userId: user.id,
   });
 
-  const responseBody: Record<string, unknown> = {
+  const updatePayload: Partial<ListingRow> & {
+    publish_results: PublishResult[] | null;
+  } = {
+    publish_results: publishResults.length > 0 ? publishResults : null,
     status: nextStatus,
+    metadata,
+    published_at: nextStatus === "published" ? new Date().toISOString() : listing.published_at,
+  };
+
+  const { data: updated, error: updateError } = await supabase
+    .from("source_listings")
+    .update(updatePayload)
+    .eq("id", listing.id)
+    .eq("user_id", user.id)
+    .select(LISTING_FIELDS)
+    .single();
+
+  if (updateError || !updated) {
+    console.error("Failed to update universal post after publish", updateError);
+    listing = {
+      ...listing,
+      status: nextStatus,
+      publish_results: publishResults.length > 0 ? publishResults : null,
+      published_at:
+        nextStatus === "published" ? new Date().toISOString() : listing.published_at,
+    };
+  } else {
+    listing = serializeListing(updated as ListingRow);
+  }
+
+  const responseBody: Record<string, unknown> = {
+    listing,
     results: publishResults,
-    usedIntegrationIds: activeIntegrations.map((integration) => integration.id),
-    post: {
-      id: listing.id,
-      title: listing.title,
-      content: rawContent,
-      media: normalizedMedia,
-      mediaTypes: normalizedMediaTypes,
-    },
+    usedIntegrationIds: deliveredIds,
   };
 
   if (missingIntegrationIds.length > 0) {
     responseBody.missingIntegrationIds = missingIntegrationIds;
   }
 
-  return NextResponse.json(responseBody, { status: 200 });
+  return NextResponse.json(responseBody, { status: 201 });
 }

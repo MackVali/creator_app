@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 
+import { isRecord } from "../../../oauth/utils"
+
 export const runtime = "nodejs"
 
 type Params = {
@@ -140,10 +142,6 @@ function extractAuthorizeParams(metadata: Record<string, unknown> | null) {
     acc[key] = typeof value === "string" ? value : String(value)
     return acc
   }, {} as Record<string, string>)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 function isValidUrl(value: string) {

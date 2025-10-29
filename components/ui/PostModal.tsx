@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Loader2, Globe, Send, X, Image as ImageIcon, Film, Link2, AlignLeft } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "./button";
 import { Input } from "./input";
@@ -11,7 +12,12 @@ import { Textarea } from "./textarea";
 import { Select, SelectContent, SelectItem } from "./select";
 import { useToastHelpers } from "./toast";
 
-import type { IntegrationsResponse, PublishResult, SourceIntegration } from "@/types/source";
+import type {
+  IntegrationsResponse,
+  PublishResult,
+  SourceIntegration,
+  SourceListing,
+} from "@/types/source";
 
 interface PostModalProps {
   isOpen: boolean;
@@ -36,6 +42,7 @@ const MEDIA_TYPE_OPTIONS: { value: MediaTypeValue; label: string; icon: React.Co
 export function PostModal({ isOpen, onClose }: PostModalProps) {
   const [mounted, setMounted] = useState(false);
   const toast = useToastHelpers();
+  const queryClient = useQueryClient();
 
   const [integrations, setIntegrations] = useState<SourceIntegration[]>([]);
   const [loadingIntegrations, setLoadingIntegrations] = useState(false);
@@ -221,7 +228,13 @@ export function PostModal({ isOpen, onClose }: PostModalProps) {
         });
 
         const json = (await res.json().catch(() => null)) as
-          | { results?: PublishResult[]; status?: string; error?: string }
+          | {
+              listing?: SourceListing;
+              results?: PublishResult[];
+              usedIntegrationIds?: string[];
+              missingIntegrationIds?: string[];
+              error?: string;
+            }
           | null;
 
         if (!res.ok) {
@@ -230,25 +243,33 @@ export function PostModal({ isOpen, onClose }: PostModalProps) {
 
         setPublishResults(json?.results ?? []);
 
+        const usedIds = Array.isArray(json?.usedIntegrationIds)
+          ? (json?.usedIntegrationIds as string[])
+          : activeIntegrations;
+
         const successCount = json?.results?.filter((result) => result.status === "synced").length ?? 0;
         const failureCount = json?.results?.filter((result) => result.status !== "synced").length ?? 0;
 
-      const descriptionPieces: string[] = [];
-      descriptionPieces.push(`Sent to ${activeIntegrations.length} account${
-        activeIntegrations.length === 1 ? "" : "s"
-      }.`);
-      descriptionPieces.push(`Success: ${successCount}`);
-      if (failureCount > 0) {
-        descriptionPieces.push(`Failed: ${failureCount}`);
-      }
+        const descriptionPieces: string[] = [];
+        descriptionPieces.push(`Sent to ${usedIds.length} account${usedIds.length === 1 ? "" : "s"}.`);
+        descriptionPieces.push(`Success: ${successCount}`);
+        if (failureCount > 0) {
+          descriptionPieces.push(`Failed: ${failureCount}`);
+        }
+        if (json?.missingIntegrationIds && json.missingIntegrationIds.length > 0) {
+          descriptionPieces.push(`${json.missingIntegrationIds.length} unavailable connection${
+            json.missingIntegrationIds.length === 1 ? "" : "s"
+          }.`);
+        }
 
-      toast.success("Post sent", descriptionPieces.join(" "));
+        toast.success("Post sent", descriptionPieces.join(" "));
 
-      setTitle("");
-      setContent("");
-      setMediaEntries([]);
-      setSelectedMediaTypes(["text"]);
-      onClose();
+        await queryClient.invalidateQueries({ queryKey: ["source", "listings"] });
+
+        setTitle("");
+        setContent("");
+        setMediaEntries([]);
+        setSelectedMediaTypes(["text"]);
     } catch (error) {
       console.error("Failed to publish post", error);
       toast.error(
