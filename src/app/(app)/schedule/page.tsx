@@ -2538,7 +2538,7 @@ export default function SchedulePage() {
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
-          fetchHabitsForSchedule(),
+          fetchHabitsForSchedule(userId),
           getSkillsForUser(userId),
           getMonumentsForUser(userId),
         ])

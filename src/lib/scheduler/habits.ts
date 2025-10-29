@@ -106,7 +106,12 @@ function isGoalMetadataMissingError(error: PostgrestError | null): boolean {
   return haystack.includes('goal_id') || haystack.includes('completion_target')
 }
 
-export async function fetchHabitsForSchedule(client?: Client): Promise<HabitScheduleItem[]> {
+export async function fetchHabitsForSchedule(
+  userId: string,
+  client?: Client
+): Promise<HabitScheduleItem[]> {
+  if (!userId) return []
+
   const supabase = ensureClient(client)
   if (!supabase) return []
 
@@ -120,21 +125,44 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   const extendedColumns =
     `${baseColumns}, goal_id, completion_target`
 
-  const select = from.call(supabase, 'habits') as {
-    select?: (
-      columns: string
-    ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
-  }
-
-  if (!select || typeof select.select !== 'function') {
-    return []
-  }
-
   let supportsGoalMetadata = cachedGoalMetadataSupport !== 'unsupported'
   let data: HabitRecord[] | null = null
 
+  const emptyResponse = async () =>
+    ({ data: [] as HabitRecord[], error: null } satisfies {
+      data: HabitRecord[] | null
+      error: PostgrestError | null
+    })
+
+  const buildQuery = (
+    columns: string
+  ): Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }> => {
+    const table = from.call(supabase, 'habits') as {
+      select?: (columns: string) => unknown
+    }
+    if (!table || typeof table.select !== 'function') {
+      return emptyResponse()
+    }
+    const selected = table.select(columns) as {
+      eq?: (column: string, value: string) => unknown
+    }
+    if (!selected || typeof selected.eq !== 'function') {
+      return emptyResponse()
+    }
+    const filtered = selected.eq('user_id', userId) as {
+      order?: (column: string, options: { ascending: boolean }) => Promise<{
+        data: HabitRecord[] | null
+        error: PostgrestError | null
+      }>
+    }
+    if (!filtered || typeof filtered.order !== 'function') {
+      return emptyResponse()
+    }
+    return filtered.order('updated_at', { ascending: false })
+  }
+
   if (supportsGoalMetadata) {
-    const primary = await select.select(extendedColumns)
+    const primary = await buildQuery(extendedColumns)
     if (primary.error) {
       if (isGoalMetadataMissingError(primary.error)) {
         if (cachedGoalMetadataSupport !== 'unsupported') {
@@ -155,15 +183,7 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   }
 
   if (!data) {
-    const fallbackQuery = from.call(supabase, 'habits') as {
-      select?: (
-        columns: string
-      ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
-    }
-    if (!fallbackQuery || typeof fallbackQuery.select !== 'function') {
-      return []
-    }
-    const fallback = await fallbackQuery.select(baseColumns)
+    const fallback = await buildQuery(baseColumns)
     if (fallback.error) {
       throw fallback.error
     }
