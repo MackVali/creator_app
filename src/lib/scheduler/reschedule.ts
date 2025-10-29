@@ -4,6 +4,8 @@ import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
   fetchInstancesForRange,
+  createInstance,
+  rescheduleInstance,
   type ScheduleInstance,
 } from './instanceRepo'
 import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
@@ -86,9 +88,16 @@ type HabitDraftPlacement = {
   scheduledDayOffset?: number
   availableStartLocal?: string | null
   windowStartLocal?: string | null
+  instanceId?: string
 }
 
 type ScheduleDraftPlacement = ProjectDraftPlacement | HabitDraftPlacement
+
+type HabitScheduleDayResult = {
+  placements: HabitDraftPlacement[]
+  instances: ScheduleInstance[]
+  failures: ScheduleFailure[]
+}
 
 type ScheduleBacklogResult = {
   placed: ScheduleInstance[]
@@ -452,7 +461,7 @@ export async function scheduleBacklog(
     Map<string, WindowAvailabilityBounds>
   >()
   const windowCache = new Map<string, WindowLite[]>()
-  const habitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
+  const habitPlacementsByOffset = new Map<number, HabitScheduleDayResult>()
 
   const ensureHabitPlacementsForDay = async (
     offset: number,
@@ -460,10 +469,11 @@ export async function scheduleBacklog(
     availability: Map<string, WindowAvailabilityBounds>
   ) => {
     if (habitPlacementsByOffset.has(offset)) {
-      return habitPlacementsByOffset.get(offset) ?? []
+      return habitPlacementsByOffset.get(offset) as HabitScheduleDayResult
     }
 
-    const placements = await scheduleHabitsForDay({
+    const dayResult = await scheduleHabitsForDay({
+      userId,
       habits,
       day,
       offset,
@@ -477,12 +487,18 @@ export async function scheduleBacklog(
       restMode: isRestMode,
     })
 
-    if (placements.length > 0) {
-      result.timeline.push(...placements)
+    if (dayResult.placements.length > 0) {
+      result.timeline.push(...dayResult.placements)
+    }
+    if (dayResult.instances.length > 0) {
+      result.placed.push(...dayResult.instances)
+    }
+    if (dayResult.failures.length > 0) {
+      result.failures.push(...dayResult.failures)
     }
 
-    habitPlacementsByOffset.set(offset, placements)
-    return placements
+    habitPlacementsByOffset.set(offset, dayResult)
+    return dayResult
   }
 
   const scheduledProjectIds = new Set<string>()
@@ -732,6 +748,7 @@ async function dedupeScheduledProjects(
 }
 
 async function scheduleHabitsForDay(params: {
+  userId: string
   habits: HabitScheduleItem[]
   day: Date
   offset: number
@@ -743,8 +760,9 @@ async function scheduleHabitsForDay(params: {
   sunlightLocation?: GeoCoordinates | null
   durationMultiplier?: number
   restMode?: boolean
-}): Promise<HabitDraftPlacement[]> {
+}): Promise<HabitScheduleDayResult> {
   const {
+    userId,
     habits,
     day,
     offset,
@@ -757,7 +775,9 @@ async function scheduleHabitsForDay(params: {
     durationMultiplier = 1,
     restMode = false,
   } = params
-  if (!habits.length) return []
+
+  const result: HabitScheduleDayResult = { placements: [], instances: [], failures: [] }
+  if (!habits.length) return result
 
   const cacheKey = dateCacheKey(day)
   let windows = windowCache.get(cacheKey)
@@ -766,15 +786,13 @@ async function scheduleHabitsForDay(params: {
     windowCache.set(cacheKey, windows)
   }
 
-  if (!windows || windows.length === 0) return []
+  if (!windows || windows.length === 0) return result
 
   const windowsById = new Map<string, WindowLite>()
   for (const win of windows) {
     windowsById.set(win.id, win)
   }
 
-  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
-  const dueHabits: HabitScheduleItem[] = []
   const zone = timeZone || 'UTC'
   const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
   const previousDay = addDaysInTimeZone(day, -1, zone)
@@ -782,11 +800,44 @@ async function scheduleHabitsForDay(params: {
   const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
   const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
   const dayStart = startOfDayInTimeZone(day, zone)
+  const dayEnd = addDaysInTimeZone(dayStart, 1, zone)
   const defaultDueMs = dayStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
-  const placements: HabitDraftPlacement[] = []
   const anchorStartsByWindowKey = new Map<string, number[]>()
+  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
+  const existingByHabitId = new Map<string, ScheduleInstance>()
+  const existingResponse = await fetchInstancesForRange(
+    userId,
+    dayStart.toISOString(),
+    dayEnd.toISOString(),
+    client
+  )
+  if (existingResponse.error) {
+    result.failures.push({
+      itemId: 'HABIT_FETCH',
+      reason: 'error',
+      detail: existingResponse.error,
+    })
+  } else {
+    for (const inst of existingResponse.data ?? []) {
+      if (!inst) continue
+      if (inst.source_type !== 'HABIT') continue
+      if (!inst.source_id) continue
+      if (inst.status !== 'scheduled') continue
+      if (existingByHabitId.has(inst.source_id)) {
+        const existing = existingByHabitId.get(inst.source_id)!
+        const existingStart = new Date(existing.start_utc).getTime()
+        const candidateStart = new Date(inst.start_utc).getTime()
+        if (candidateStart < existingStart) {
+          existingByHabitId.set(inst.source_id, inst)
+        }
+        continue
+      }
+      existingByHabitId.set(inst.source_id, inst)
+    }
+  }
 
+  const dueHabits: HabitScheduleItem[] = []
   for (const habit of habits) {
     const windowDays = habit.window?.days ?? null
     const dueInfo = evaluateHabitDueOnDate({
@@ -800,7 +851,7 @@ async function scheduleHabitsForDay(params: {
     dueHabits.push(habit)
   }
 
-  if (dueHabits.length === 0) return []
+  if (dueHabits.length === 0) return result
 
   const sortedHabits = dueHabits.sort((a, b) => {
     const dueA = dueInfoByHabitId.get(a.id)
@@ -1021,34 +1072,114 @@ async function scheduleHabitsForDay(params: {
     const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
     const windowLabel = window.label ?? null
     const windowStartLocal = resolveWindowStart(window, day, zone)
+    const startUTC = startDate.toISOString()
+    const endUTC = endDate.toISOString()
+    const energyResolved = window.energy
+      ? String(window.energy).toUpperCase()
+      : resolvedEnergy
 
-    placements.push({
+    const existingInstance = existingByHabitId.get(habit.id) ?? null
+    let decision: HabitDraftPlacement['decision'] = 'new'
+    let instanceId: string | undefined
+
+    if (existingInstance) {
+      const needsUpdate =
+        existingInstance.window_id !== window.id ||
+        existingInstance.start_utc !== startUTC ||
+        existingInstance.end_utc !== endUTC ||
+        existingInstance.duration_min !== durationMinutes ||
+        (existingInstance.energy_resolved ?? '').toUpperCase() !== energyResolved
+
+      if (needsUpdate) {
+        const response = await rescheduleInstance(
+          existingInstance.id,
+          {
+            windowId: window.id,
+            startUTC,
+            endUTC,
+            durationMin: durationMinutes,
+            weightSnapshot: existingInstance.weight_snapshot ?? 0,
+            energyResolved,
+          },
+          client
+        )
+
+        if (response.error || !response.data) {
+          result.failures.push({
+            itemId: habit.id,
+            reason: 'error',
+            detail: response.error ?? new Error('Failed to reschedule habit instance'),
+          })
+          continue
+        }
+
+        result.instances.push(response.data)
+        existingByHabitId.set(habit.id, response.data)
+        decision = 'rescheduled'
+        instanceId = response.data.id
+      } else {
+        decision = 'kept'
+        instanceId = existingInstance.id
+      }
+    } else {
+      const response = await createInstance(
+        {
+          userId,
+          sourceId: habit.id,
+          sourceType: 'HABIT',
+          windowId: window.id,
+          startUTC,
+          endUTC,
+          durationMin: durationMinutes,
+          weightSnapshot: 0,
+          energyResolved,
+        },
+        client
+      )
+
+      if (response.error || !response.data) {
+        result.failures.push({
+          itemId: habit.id,
+          reason: 'error',
+          detail: response.error ?? new Error('Failed to create habit instance'),
+        })
+        continue
+      }
+
+      result.instances.push(response.data)
+      existingByHabitId.set(habit.id, response.data)
+      decision = 'new'
+      instanceId = response.data.id
+    }
+
+    result.placements.push({
       type: 'HABIT',
       habit: {
         id: habit.id,
         name: habit.name,
         windowId: window.id,
         windowLabel,
-        startUTC: startDate.toISOString(),
-        endUTC: endDate.toISOString(),
+        startUTC,
+        endUTC,
         durationMin: durationMinutes,
-        energyResolved: window.energy ? String(window.energy).toUpperCase() : resolvedEnergy,
+        energyResolved,
         clipped,
       },
-      decision: 'kept',
+      decision,
       scheduledDayOffset: offset,
-      availableStartLocal: startDate.toISOString(),
+      availableStartLocal: startUTC,
       windowStartLocal: windowStartLocal.toISOString(),
+      instanceId,
     })
   }
 
-  placements.sort((a, b) => {
+  result.placements.sort((a, b) => {
     const aTime = new Date(a.habit.startUTC).getTime()
     const bTime = new Date(b.habit.startUTC).getTime()
     return aTime - bTime
   })
 
-  return placements
+  return result
 }
 
 async function fetchSkillMonumentMap(

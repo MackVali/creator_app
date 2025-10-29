@@ -63,11 +63,12 @@ export async function createInstance(
   input: {
     userId: string
     sourceId: string
+    sourceType: ScheduleInstance['source_type']
     windowId?: string | null
     startUTC: string
     endUTC: string
     durationMin: number
-    weightSnapshot: number
+    weightSnapshot?: number
     energyResolved: string
   },
   client?: Client
@@ -77,14 +78,14 @@ export async function createInstance(
     .from('schedule_instances')
     .insert({
       user_id: input.userId,
-      source_type: 'PROJECT',
+      source_type: input.sourceType,
       source_id: input.sourceId,
       window_id: input.windowId ?? null,
       start_utc: input.startUTC,
       end_utc: input.endUTC,
       duration_min: input.durationMin,
       status: 'scheduled',
-      weight_snapshot: input.weightSnapshot,
+      weight_snapshot: input.weightSnapshot ?? 0,
       energy_resolved: input.energyResolved,
     })
     .select('*')
@@ -98,7 +99,7 @@ export async function rescheduleInstance(
     startUTC: string
     endUTC: string
     durationMin: number
-    weightSnapshot: number
+    weightSnapshot?: number
     energyResolved: string
   },
   client?: Client
@@ -112,7 +113,7 @@ export async function rescheduleInstance(
       end_utc: input.endUTC,
       duration_min: input.durationMin,
       status: 'scheduled',
-      weight_snapshot: input.weightSnapshot,
+      weight_snapshot: input.weightSnapshot ?? 0,
       energy_resolved: input.energyResolved,
       completed_at: null,
     })

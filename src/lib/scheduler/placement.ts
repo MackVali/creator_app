@@ -188,6 +188,7 @@ async function persistPlacement(
     {
       userId,
       sourceId: item.id,
+      sourceType: item.sourceType,
       windowId,
       startUTC,
       endUTC,
