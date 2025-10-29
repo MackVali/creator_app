@@ -126,6 +126,24 @@ type HabitQueryResult = {
   completion_target?: number | null;
 };
 
+type HabitUpdatePayload = Pick<
+  HabitQueryResult,
+  | "name"
+  | "description"
+  | "habit_type"
+  | "recurrence"
+  | "recurrence_days"
+  | "duration_minutes"
+  | "energy"
+  | "routine_id"
+  | "skill_id"
+  | "daylight_preference"
+  | "window_edge_preference"
+  | "goal_id"
+  | "completion_target"
+  | "location_context_id"
+>;
+
 export default function EditHabitPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -822,7 +840,7 @@ export default function EditHabitPage() {
         }
       }
 
-      const basePayload: Record<string, unknown> = {
+      const payload: HabitUpdatePayload = {
         name: name.trim(),
         description: trimmedDescription || null,
         habit_type: habitType,
@@ -837,20 +855,15 @@ export default function EditHabitPage() {
             ? daylightPreference
             : null,
         window_edge_preference: windowEdgePreference,
+        location_context_id: resolvedLocationContextId,
       };
 
       if (goalMetadataSupported) {
-        basePayload.goal_id =
-          isTempHabit && goalId !== "none" ? goalId : null;
-        basePayload.completion_target = goalMetadataRequired
+        payload.goal_id = isTempHabit && goalId !== "none" ? goalId : null;
+        payload.completion_target = goalMetadataRequired
           ? parsedCompletionTarget
           : null;
       }
-
-      const payload: Record<string, unknown> = {
-        ...basePayload,
-        location_context_id: resolvedLocationContextId,
-      };
 
       const { error: updateError } = await supabase
         .from("habits")
