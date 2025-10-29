@@ -13,6 +13,7 @@ import ClientProviders from "@/components/ClientProviders";
 import ErrorBoundary from "@/components/debug/ErrorBoundary";
 import AuthProvider from "@/components/auth/AuthProvider";
 import React from "react";
+import Dither from "@/components/dither/Dither";
 
 export default function RootLayout({
   children,
@@ -21,14 +22,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="flex min-h-screen flex-col">
-        <ErrorBoundary>
-          <AuthProvider>
-            <ClientProviders>
-              <main className="flex-1">{children}</main>
-            </ClientProviders>
-          </AuthProvider>
-        </ErrorBoundary>
+      <body className="relative min-h-screen">
+        <Dither />
+        <div className="relative z-10 flex min-h-screen flex-col">
+          <ErrorBoundary>
+            <AuthProvider>
+              <ClientProviders>
+                <main className="flex-1">{children}</main>
+              </ClientProviders>
+            </AuthProvider>
+          </ErrorBoundary>
+        </div>
       </body>
     </html>
   );
