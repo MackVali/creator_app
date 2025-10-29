@@ -96,6 +96,16 @@ function normalizeHabitType(value?: string | null) {
   return raw
 }
 
+let cachedGoalMetadataSupport: 'unknown' | 'supported' | 'unsupported' = 'unknown'
+
+function isGoalMetadataMissingError(error: PostgrestError | null): boolean {
+  if (!error) return false
+  if (error.code === '42703') return true
+  const haystack = `${error.message ?? ''}`.toLowerCase()
+  if (!haystack) return false
+  return haystack.includes('goal_id') || haystack.includes('completion_target')
+}
+
 export async function fetchHabitsForSchedule(client?: Client): Promise<HabitScheduleItem[]> {
   const supabase = ensureClient(client)
   if (!supabase) return []
@@ -105,10 +115,10 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
 
   const locationJoin = 'location_context:location_contexts(id, value, label)'
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`
-  const selectColumns =
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
-  const fallbackColumns =
+  const baseColumns =
     `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
+  const extendedColumns =
+    `${baseColumns}, goal_id, completion_target`
 
   const select = from.call(supabase, 'habits') as {
     select?: (
@@ -120,29 +130,45 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     return []
   }
 
-  let supportsGoalMetadata = true
+  let supportsGoalMetadata = cachedGoalMetadataSupport !== 'unsupported'
   let data: HabitRecord[] | null = null
 
-  const primary = await select.select(selectColumns)
+  if (supportsGoalMetadata) {
+    const primary = await select.select(extendedColumns)
+    if (primary.error) {
+      if (isGoalMetadataMissingError(primary.error)) {
+        if (cachedGoalMetadataSupport !== 'unsupported') {
+          console.warn(
+            'Failed to load habit schedule metadata with goal fields, falling back',
+            primary.error
+          )
+        }
+        cachedGoalMetadataSupport = 'unsupported'
+        supportsGoalMetadata = false
+      } else {
+        throw primary.error
+      }
+    } else {
+      cachedGoalMetadataSupport = 'supported'
+      data = primary.data as HabitRecord[] | null
+    }
+  }
 
-  if (primary.error) {
-    console.warn('Failed to load habit schedule metadata with goal fields, falling back', primary.error)
-    supportsGoalMetadata = false
+  if (!data) {
     const fallbackQuery = from.call(supabase, 'habits') as {
       select?: (
         columns: string
       ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
     }
     if (!fallbackQuery || typeof fallbackQuery.select !== 'function') {
-      throw primary.error
+      return []
     }
-    const fallback = await fallbackQuery.select(fallbackColumns)
+    const fallback = await fallbackQuery.select(baseColumns)
     if (fallback.error) {
       throw fallback.error
     }
     data = fallback.data as HabitRecord[] | null
-  } else {
-    data = primary.data as HabitRecord[] | null
+    supportsGoalMetadata = false
   }
 
   return (data ?? []).map((record: HabitRecord) => ({
