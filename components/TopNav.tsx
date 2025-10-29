@@ -69,6 +69,9 @@ export default function TopNav() {
               <Link href="/help">Help</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
+              <Link href="/snake">Snake</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
