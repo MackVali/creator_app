@@ -878,28 +878,8 @@ async function scheduleHabitsForDay(params: {
   }
   if (!habits.length) return result
 
-  const cacheKey = dateCacheKey(day)
-  let windows = windowCache.get(cacheKey)
-  if (!windows) {
-    windows = await fetchWindowsForDate(day, client, timeZone)
-    windowCache.set(cacheKey, windows)
-  }
-
-  if (!windows || windows.length === 0) return result
-
-  const windowsById = new Map<string, WindowLite>()
-  for (const win of windows) {
-    windowsById.set(win.id, win)
-  }
-
   const zone = timeZone || 'UTC'
-  const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
-  const previousDay = addDaysInTimeZone(day, -1, zone)
-  const nextDay = addDaysInTimeZone(day, 1, zone)
-  const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
-  const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
   const dayStart = startOfDayInTimeZone(day, zone)
-  const dayEnd = addDaysInTimeZone(dayStart, 1, zone)
   const defaultDueMs = dayStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
   const anchorStartsByWindowKey = new Map<string, number[]>()
@@ -941,6 +921,26 @@ async function scheduleHabitsForDay(params: {
 
   if (dueHabits.length === 0) return result
 
+  const cacheKey = dateCacheKey(day)
+  let windows = windowCache.get(cacheKey)
+  if (!windows) {
+    windows = await fetchWindowsForDate(day, client, timeZone)
+    windowCache.set(cacheKey, windows)
+  }
+
+  if (!windows || windows.length === 0) return result
+
+  const windowsById = new Map<string, WindowLite>()
+  for (const win of windows) {
+    windowsById.set(win.id, win)
+  }
+
+  const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
+  const previousDay = addDaysInTimeZone(day, -1, zone)
+  const nextDay = addDaysInTimeZone(day, 1, zone)
+  const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
+  const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
+
   const sortedHabits = dueHabits.sort((a, b) => {
     const dueA = dueInfoByHabitId.get(a.id)
     const dueB = dueInfoByHabitId.get(b.id)
@@ -967,8 +967,9 @@ async function scheduleHabitsForDay(params: {
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
-    const locationContext = habit.locationContextValue
-      ? String(habit.locationContextValue).toUpperCase().trim()
+    const locationContextSource = habit.locationContextValue ?? habit.window?.locationContextValue ?? null
+    const locationContext = locationContextSource
+      ? String(locationContextSource).toUpperCase().trim()
       : null
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
