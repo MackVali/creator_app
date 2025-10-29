@@ -8,6 +8,7 @@ export { ProjectList } from "./ProjectList";
 export { TaskList } from "./TaskList";
 export { EventModal } from "./EventModal";
 export { NoteModal } from "./NoteModal";
+export { PostModal } from "./PostModal";
 export { ComingSoonModal } from "./ComingSoonModal";
 export { Select, SelectContent, SelectItem } from "./select";
 export { CatCard } from "./CatCard";
