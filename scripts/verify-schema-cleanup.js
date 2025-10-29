@@ -96,7 +96,10 @@ async function verifySchema() {
       if (error) {
         console.log(`   profiles columns: ❌ ${error.message}`);
       } else {
-        console.log(`   profiles columns: ✅ All expected columns accessible`);
+        const sampleCount = data?.length ?? 0;
+        console.log(
+          `   profiles columns: ✅ All expected columns accessible (sample rows: ${sampleCount})`
+        );
       }
     } catch (e) {
       console.log(`   profiles columns: ❌ ${e.message}`);
@@ -167,7 +170,10 @@ async function verifySchema() {
       if (insertError) {
         console.log(`   cats CRUD: ❌ Insert failed: ${insertError.message}`);
       } else {
-        console.log(`   cats CRUD: ✅ Insert successful`);
+        const insertedCount = insertData?.length ?? 0;
+        console.log(
+          `   cats CRUD: ✅ Insert successful (rows inserted: ${insertedCount})`
+        );
 
         // Clean up test data
         await supabase.from("cats").delete().eq("name", testCatName);

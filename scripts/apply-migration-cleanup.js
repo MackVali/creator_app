@@ -88,7 +88,7 @@ async function checkCurrentSchema() {
     // Check if skills_by_cats_v view exists
     console.log("\n🔍 Checking for missing views...");
     try {
-      const { data: viewData, error: viewError } = await supabase
+      const { error: viewError } = await supabase
         .from("skills_by_cats_v")
         .select("*")
         .limit(1);
@@ -98,8 +98,10 @@ async function checkCurrentSchema() {
       } else {
         console.log("   skills_by_cats_v: ✅ Exists");
       }
-    } catch (e) {
-      console.log("   skills_by_cats_v: ❌ Missing or inaccessible");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Missing or inaccessible";
+      console.log(`   skills_by_cats_v: ❌ ${message}`);
     }
 
     return tableChecks;
@@ -204,7 +206,7 @@ async function verifyCleanup() {
 
     // Check if skills_by_cats_v view exists
     try {
-      const { data: viewData, error: viewError } = await supabase
+      const { error: viewError } = await supabase
         .from("skills_by_cats_v")
         .select("*")
         .limit(1);
@@ -215,8 +217,10 @@ async function verifyCleanup() {
       } else {
         console.log("   skills_by_cats_v: ✅ Exists");
       }
-    } catch (e) {
-      console.log("   skills_by_cats_v: ❌ Still missing or inaccessible");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Still missing or inaccessible";
+      console.log(`   skills_by_cats_v: ❌ ${message}`);
       allGood = false;
     }
 

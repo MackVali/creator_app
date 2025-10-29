@@ -1,6 +1,6 @@
 // src/app/dashboard/loaders.ts
 import { cookies as nextCookies } from "next/headers";
-import { getSupabaseServer } from "@/lib/supabase";
+import { createSupabaseServerClientFromCookies } from "@/lib/supabase-server";
 import type {
   UserStats,
   MonumentCounts,
@@ -12,21 +12,7 @@ export async function getUserStats(
   cookieStore?: Awaited<ReturnType<typeof nextCookies>>
 ): Promise<UserStats> {
   const cookieStoreResolved = cookieStore || (await nextCookies());
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStoreResolved.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+  const supabase = createSupabaseServerClientFromCookies(cookieStoreResolved);
   if (!supabase) {
     return { level: 1, xp_current: 0, xp_max: 4000 };
   }
@@ -41,21 +27,7 @@ export async function getMonumentsSummary(
   cookieStore?: Awaited<ReturnType<typeof nextCookies>>
 ): Promise<MonumentCounts> {
   const cookieStoreResolved = cookieStore || (await nextCookies());
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStoreResolved.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+  const supabase = createSupabaseServerClientFromCookies(cookieStoreResolved);
   if (!supabase) {
     return {
       Achievement: 0,
@@ -87,21 +59,7 @@ export async function getSkillsAndGoals(
   cookieStore?: Awaited<ReturnType<typeof nextCookies>>
 ): Promise<{ cats: CatItem[]; goals: GoalItem[] }> {
   const cookieStoreResolved = cookieStore || (await nextCookies());
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStoreResolved.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+  const supabase = createSupabaseServerClientFromCookies(cookieStoreResolved);
 
   if (!supabase) {
     return { cats: [], goals: [] };

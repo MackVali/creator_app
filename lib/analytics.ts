@@ -13,7 +13,6 @@ export function emitProfileModuleEvent(detail: ProfileModuleAnalyticsEvent) {
   window.dispatchEvent(new CustomEvent("profile-module-event", { detail: payload }));
 
   if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console -- Useful during development to validate analytics wiring.
     console.debug("[profile-module-event]", payload);
   }
 }

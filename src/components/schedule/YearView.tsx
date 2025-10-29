@@ -2,12 +2,9 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { FlameLevel } from "@/components/FlameEmber";
 import MiniMonth from "./MiniMonth";
 
 interface YearViewProps {
-  events?: Record<string, number>;
-  energies?: Record<string, FlameLevel>;
   selectedDate?: Date;
   onSelectDate?: (date: Date) => void;
 }
@@ -16,12 +13,7 @@ interface YearViewProps {
  * Virtualized scrollable list of years. Each year displays a grid of months
  * similar to the iOS calendar year view.
  */
-export function YearView({
-  events: _events,
-  energies: _energies,
-  selectedDate,
-  onSelectDate,
-}: YearViewProps) {
+export function YearView({ selectedDate, onSelectDate }: YearViewProps) {
   const today = useMemo(() => new Date(), []);
   const totalYears = 400; // ~200 years back and forward
   const currentIndex = Math.floor(totalYears / 2);

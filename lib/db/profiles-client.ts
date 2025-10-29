@@ -30,6 +30,8 @@ export async function updateMyProfile(
     const result = await response.json();
     return result;
   } catch (error) {
-    return { success: false, error: "Failed to update profile" };
+    const message =
+      error instanceof Error ? error.message : "Failed to update profile";
+    return { success: false, error: message };
   }
 }

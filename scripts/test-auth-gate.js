@@ -11,6 +11,12 @@
 const http = require("http");
 
 const BASE_URL = "http://localhost:3000";
+const baseUrl = new URL(BASE_URL);
+const defaultPort = baseUrl.port
+  ? Number(baseUrl.port)
+  : baseUrl.protocol === "https:"
+    ? 443
+    : 80;
 
 // Test cases based on PRD acceptance criteria
 const testCases = [
@@ -49,9 +55,10 @@ const testCases = [
 function makeRequest(path) {
   return new Promise((resolve, reject) => {
     const options = {
-      hostname: "localhost",
-      port: 3000,
-      path: path,
+      protocol: baseUrl.protocol,
+      hostname: baseUrl.hostname,
+      port: defaultPort,
+      path,
       method: "GET",
       followRedirect: false,
     };
@@ -82,7 +89,9 @@ function makeRequest(path) {
 
 async function runTests() {
   console.log("🚀 Starting Auth Gate Tests...\n");
-  console.log("Make sure the dev server is running on port 3000\n");
+  console.log(
+    `Make sure the dev server is running at ${baseUrl.hostname}:${defaultPort}\n`
+  );
 
   let passed = 0;
   let failed = 0;
@@ -159,7 +168,7 @@ async function checkServer() {
   try {
     await makeRequest("/api/health");
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 }
@@ -168,7 +177,9 @@ async function main() {
   const serverRunning = await checkServer();
 
   if (!serverRunning) {
-    console.log("❌ Dev server is not running on port 3000");
+    console.log(
+      `❌ Dev server is not running at ${baseUrl.hostname}:${defaultPort}`
+    );
     console.log("   Please start the server with: pnpm dev");
     process.exit(1);
   }

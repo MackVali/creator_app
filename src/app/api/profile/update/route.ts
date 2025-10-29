@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 400 });
     }
   } catch (error) {
+    console.error("Failed to update profile via API:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }

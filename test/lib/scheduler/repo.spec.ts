@@ -96,10 +96,11 @@ describe("fetchWindowsForDate", () => {
 
   it("derives the weekday using the provided timezone", async () => {
     const date = new Date("2024-01-01T11:00:00Z");
-    const containsMock = vi.fn(async (_column: string, value: number[]) => ({
-      data: [],
-      error: null,
-    } as const));
+    const containsMock = vi.fn(async (column: string, values: number[]) => {
+      void column;
+      void values;
+      return { data: [], error: null } as const;
+    });
     const isMock = vi.fn(async () => ({ data: [], error: null } as const));
     const select = vi.fn(() => ({ contains: containsMock, is: isMock }));
     const client = { from: vi.fn(() => ({ select })) } as const;

@@ -1,6 +1,6 @@
 "use server";
 
-import { getSupabaseServer } from "@/lib/supabase";
+import { createSupabaseServerClientFromCookies } from "@/lib/supabase-server";
 import { cookies } from "next/headers";
 
 export interface ViewTestResult {
@@ -21,21 +21,7 @@ export interface ViewsTestSummary {
 
 export async function testDatabaseViews(): Promise<ViewsTestSummary> {
   const cookieStore = await cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+  const supabase = createSupabaseServerClientFromCookies(cookieStore);
 
   if (!supabase) {
     return {
@@ -207,21 +193,7 @@ export async function testSpecificView(
   viewName: string
 ): Promise<ViewTestResult> {
   const cookieStore = await cookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+  const supabase = createSupabaseServerClientFromCookies(cookieStore);
 
   if (!supabase) {
     return {

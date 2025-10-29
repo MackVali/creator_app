@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import {
@@ -100,6 +101,30 @@ interface GoalOption {
   name: string;
   description?: string | null;
 }
+
+type HabitLocationContext = {
+  value: string;
+  label: string;
+} | null;
+
+type HabitQueryResult = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  habit_type: string | null;
+  recurrence: string | null;
+  recurrence_days: number[] | null;
+  duration_minutes: number | null;
+  energy: string | null;
+  routine_id: string | null;
+  skill_id: string | null;
+  daylight_preference: string | null;
+  window_edge_preference: string | null;
+  location_context_id: string | null;
+  location_context: HabitLocationContext;
+  goal_id?: string | null;
+  completion_target?: number | null;
+};
 
 export default function EditHabitPage() {
   const router = useRouter();
@@ -527,15 +552,18 @@ export default function EditHabitPage() {
         }
 
         let includeGoalMetadata = true;
-        let habitResponse: { data: any; error: any } | null = null;
+        let habitResponse: PostgrestSingleResponse<HabitQueryResult> | null =
+          null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
-          habitResponse = await supabase
+          const response = (await supabase
             .from("habits")
             .select(buildHabitSelectColumns(includeGoalMetadata))
             .eq("id", habitId)
             .eq("user_id", user.id)
-            .single();
+            .single()) as PostgrestSingleResponse<HabitQueryResult>;
+
+          habitResponse = response;
 
           if (!habitResponse.error) {
             break;
