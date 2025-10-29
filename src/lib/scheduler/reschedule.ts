@@ -1011,7 +1011,6 @@ async function scheduleHabitsForDay(params: {
         now: offset === 0 ? baseDate : undefined,
         locationContextValue: locationContext,
         daylight: daylightConstraint,
-        matchEnergyLevel: true,
         ignoreAvailability: isSyncHabit,
         anchor: anchorPreference,
         restMode,
