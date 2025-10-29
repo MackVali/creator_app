@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { SourceListing } from "@/types/source"
-import {
-  __testables,
-  type IntegrationRow,
-} from "@/app/api/source/listings/route"
-
-const { publishToIntegrations } = __testables
+import { publishToIntegrations, type IntegrationRow } from "@/lib/source/publisher"
 
 describe("publishToIntegrations", () => {
   const supabaseStub = {
@@ -104,11 +99,31 @@ describe("publishToIntegrations", () => {
         })
       )
 
+    const publishContext = {
+      ...listing,
+      metadata: listing.metadata ?? {},
+    }
+
     const { publishResults, nextStatus } = await publishToIntegrations({
       supabase: supabaseStub as never,
-      listing,
       integrations,
       userId: "user-1",
+      context: {
+        key: "listing",
+        data: publishContext,
+        buildDefaultPayload: ({ data, integration }) => ({
+          id: data.id,
+          type: data.type,
+          title: data.title,
+          description: data.description,
+          price: data.price,
+          currency: data.currency,
+          metadata: data.metadata,
+          published_at: data.published_at,
+          updated_at: data.updated_at,
+          integration,
+        }),
+      },
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
