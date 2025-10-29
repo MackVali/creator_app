@@ -97,7 +97,6 @@ type HabitScheduleDayResult = {
   placements: HabitDraftPlacement[]
   instances: ScheduleInstance[]
   failures: ScheduleFailure[]
-  existingInstances: ScheduleInstance[]
 }
 
 type ScheduleBacklogResult = {
@@ -427,6 +426,81 @@ export async function scheduleBacklog(
   collectReuseIds(dedupe.canceledByProject)
   const keptInstances = [...dedupe.keepers]
 
+  const dayInstancesByOffset = new Map<number, ScheduleInstance[]>()
+
+  const getDayInstances = (offset: number) => {
+    let existing = dayInstancesByOffset.get(offset)
+    if (!existing) {
+      existing = []
+      dayInstancesByOffset.set(offset, existing)
+    }
+    return existing
+  }
+
+  const removeInstanceFromBuckets = (id: string | null | undefined) => {
+    if (!id) return
+    for (const bucket of dayInstancesByOffset.values()) {
+      const index = bucket.findIndex(inst => inst.id === id)
+      if (index >= 0) {
+        bucket.splice(index, 1)
+      }
+    }
+  }
+
+  const registerInstanceForOffsets = (instance: ScheduleInstance | null | undefined) => {
+    if (!instance) return
+    if (!instance.id) return
+
+    removeInstanceFromBuckets(instance.id)
+
+    if (instance.status !== 'scheduled') {
+      return
+    }
+
+    const start = new Date(instance.start_utc)
+    const end = new Date(instance.end_utc)
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return
+    }
+
+    const startDay = startOfDayInTimeZone(start, timeZone)
+    const endReferenceMs = Math.max(start.getTime(), end.getTime() - 1)
+    if (endReferenceMs < baseStart.getTime()) {
+      return
+    }
+    const endReference = new Date(endReferenceMs)
+    const endDay = startOfDayInTimeZone(endReference, timeZone)
+
+    let startOffset = differenceInCalendarDaysInTimeZone(baseStart, startDay, timeZone)
+    let endOffset = differenceInCalendarDaysInTimeZone(baseStart, endDay, timeZone)
+
+    if (!Number.isFinite(startOffset)) startOffset = 0
+    if (!Number.isFinite(endOffset)) endOffset = startOffset
+
+    if (endOffset < startOffset) {
+      endOffset = startOffset
+    }
+
+    if (startOffset < 0) {
+      startOffset = 0
+    }
+
+    if (endOffset >= lookaheadDays) {
+      endOffset = lookaheadDays - 1
+    }
+
+    for (let offset = startOffset; offset <= endOffset; offset += 1) {
+      if (offset < 0 || offset >= lookaheadDays) continue
+      const bucket = getDayInstances(offset)
+      upsertInstance(bucket, instance)
+    }
+  }
+
+  for (const inst of dedupe.allInstances) {
+    registerInstanceForOffsets(inst)
+  }
+
   for (const inst of keptInstances) {
     const projectId = inst.source_id ?? ''
     if (!projectId) continue
@@ -469,9 +543,12 @@ export async function scheduleBacklog(
     day: Date,
     availability: Map<string, WindowAvailabilityBounds>
   ) => {
-    if (habitPlacementsByOffset.has(offset)) {
-      return habitPlacementsByOffset.get(offset) as HabitScheduleDayResult
+    const cached = habitPlacementsByOffset.get(offset)
+    if (cached) {
+      return cached
     }
+
+    const existingInstances = getDayInstances(offset)
 
     const dayResult = await scheduleHabitsForDay({
       userId,
@@ -486,6 +563,8 @@ export async function scheduleBacklog(
       sunlightLocation: location,
       durationMultiplier,
       restMode: isRestMode,
+      existingInstances,
+      registerInstance: registerInstanceForOffsets,
     })
 
     if (dayResult.placements.length > 0) {
@@ -514,7 +593,7 @@ export async function scheduleBacklog(
 
     const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
     const dayResult = await ensureHabitPlacementsForDay(offset, day, windowAvailability)
-    const dayInstances = dayResult.existingInstances
+    const dayInstances = getDayInstances(offset)
 
     for (const item of queue) {
       if (scheduledProjectIds.has(item.id)) continue
@@ -600,7 +679,7 @@ export async function scheduleBacklog(
             : undefined,
         })
         scheduledProjectIds.add(item.id)
-        upsertInstance(dayInstances, placed.data)
+        registerInstanceForOffsets(placed.data)
       }
     }
   }
@@ -631,6 +710,7 @@ type DedupeResult = {
   error: PostgrestError | null
   canceledByProject: Map<string, string[]>
   reusableByProject: Map<string, string>
+  allInstances: ScheduleInstance[]
 }
 
 async function dedupeScheduledProjects(
@@ -655,14 +735,19 @@ async function dedupeScheduledProjects(
       error: response.error,
       canceledByProject: new Map(),
       reusableByProject: new Map(),
+      allInstances: [],
     }
   }
+
+  const allInstances = ((response.data ?? []) as ScheduleInstance[]).filter(
+    (inst): inst is ScheduleInstance => Boolean(inst)
+  )
 
   const keepers = new Map<string, ScheduleInstance>()
   const reusableCandidates = new Map<string, ScheduleInstance>()
   const extras: ScheduleInstance[] = []
 
-  for (const inst of response.data ?? []) {
+  for (const inst of allInstances) {
     if (inst.source_type !== 'PROJECT') continue
     if (inst.status !== 'scheduled') continue
 
@@ -729,6 +814,7 @@ async function dedupeScheduledProjects(
     const existing = canceledByProject.get(extra.source_id) ?? []
     existing.push(id)
     canceledByProject.set(extra.source_id, existing)
+    extra.status = 'canceled'
   }
 
   const scheduled = new Set<string>()
@@ -748,6 +834,7 @@ async function dedupeScheduledProjects(
     error: null,
     canceledByProject,
     reusableByProject,
+    allInstances,
   }
 }
 
@@ -764,6 +851,8 @@ async function scheduleHabitsForDay(params: {
   sunlightLocation?: GeoCoordinates | null
   durationMultiplier?: number
   restMode?: boolean
+  existingInstances: ScheduleInstance[]
+  registerInstance: (instance: ScheduleInstance) => void
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -778,13 +867,14 @@ async function scheduleHabitsForDay(params: {
     sunlightLocation,
     durationMultiplier = 1,
     restMode = false,
+    existingInstances,
+    registerInstance,
   } = params
 
   const result: HabitScheduleDayResult = {
     placements: [],
     instances: [],
     failures: [],
-    existingInstances: [],
   }
   if (!habits.length) return result
 
@@ -815,38 +905,23 @@ async function scheduleHabitsForDay(params: {
   const anchorStartsByWindowKey = new Map<string, number[]>()
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const existingByHabitId = new Map<string, ScheduleInstance>()
-  const dayInstances = result.existingInstances
+  const dayInstances = existingInstances
 
-  const existingResponse = await fetchInstancesForRange(
-    userId,
-    dayStart.toISOString(),
-    dayEnd.toISOString(),
-    client
-  )
-  if (existingResponse.error) {
-    result.failures.push({
-      itemId: 'HABIT_FETCH',
-      reason: 'error',
-      detail: existingResponse.error,
-    })
-  } else {
-    for (const inst of existingResponse.data ?? []) {
-      if (!inst) continue
-      if (inst.status !== 'scheduled') continue
-      upsertInstance(dayInstances, inst)
-      if (inst.source_type !== 'HABIT') continue
-      if (!inst.source_id) continue
-      if (inst.status !== 'scheduled') continue
-      if (existingByHabitId.has(inst.source_id)) {
-        const existing = existingByHabitId.get(inst.source_id)!
-        const existingStart = new Date(existing.start_utc).getTime()
-        const candidateStart = new Date(inst.start_utc).getTime()
-        if (candidateStart < existingStart) {
-          existingByHabitId.set(inst.source_id, inst)
-        }
-        continue
-      }
-      existingByHabitId.set(inst.source_id, inst)
+  for (const inst of dayInstances) {
+    if (!inst) continue
+    if (inst.source_type !== 'HABIT') continue
+    if (inst.status !== 'scheduled') continue
+    const habitId = inst.source_id ?? null
+    if (!habitId) continue
+    const existing = existingByHabitId.get(habitId)
+    if (!existing) {
+      existingByHabitId.set(habitId, inst)
+      continue
+    }
+    const existingStart = new Date(existing.start_utc).getTime()
+    const candidateStart = new Date(inst.start_utc).getTime()
+    if (candidateStart < existingStart) {
+      existingByHabitId.set(habitId, inst)
     }
   }
 
@@ -1130,11 +1205,11 @@ async function scheduleHabitsForDay(params: {
         existingByHabitId.set(habit.id, response.data)
         decision = 'rescheduled'
         instanceId = response.data.id
-        upsertInstance(dayInstances, response.data)
+        registerInstance(response.data)
       } else {
         decision = 'kept'
         instanceId = existingInstance.id
-        upsertInstance(dayInstances, existingInstance)
+        registerInstance(existingInstance)
       }
     } else {
       const response = await createInstance(
@@ -1165,7 +1240,7 @@ async function scheduleHabitsForDay(params: {
       existingByHabitId.set(habit.id, response.data)
       decision = 'new'
       instanceId = response.data.id
-      upsertInstance(dayInstances, response.data)
+      registerInstance(response.data)
     }
 
     result.placements.push({
