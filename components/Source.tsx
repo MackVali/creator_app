@@ -8,9 +8,13 @@ import {
 } from "@tanstack/react-query"
 import {
   ExternalLink,
+  Facebook,
   Globe,
+  Instagram,
+  Linkedin,
   Loader2,
   Lock,
+  Music4,
   Plug,
   RefreshCcw,
   Send,
@@ -1191,6 +1195,48 @@ const setupSteps: { id: string; title: string; description: string; icon: Lucide
   },
 ]
 
+const socialConnectorOptions: {
+  id: string
+  label: string
+  description: string
+  gradient: string
+  icon: LucideIcon
+  oauth?: boolean
+}[] = [
+  {
+    id: "instagram",
+    label: "Instagram",
+    description: "Auto-publish Reels, feed posts, and stories via Meta.",
+    gradient: "from-[#F58529] via-[#DD2A7B] to-[#8134AF]",
+    icon: Instagram,
+    oauth: true,
+  },
+  {
+    id: "tiktok",
+    label: "TikTok",
+    description: "Push short-form videos straight to your TikTok shop.",
+    gradient: "from-[#010101] via-[#3A3A3A] to-[#25F4EE]",
+    icon: Music4,
+    oauth: true,
+  },
+  {
+    id: "facebook-pages",
+    label: "Facebook Pages",
+    description: "Schedule catalog drops and marketplace updates automatically.",
+    gradient: "from-[#1877F2] via-[#3578E5] to-[#4C8BF5]",
+    icon: Facebook,
+    oauth: true,
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    description: "Share thought leadership to organizations or showcase pages.",
+    gradient: "from-[#0A66C2] via-[#174886] to-[#001D3D]",
+    icon: Linkedin,
+    oauth: true,
+  },
+]
+
 export default function Source() {
   const queryClient = useQueryClient()
   const [integrationForm, setIntegrationForm] = useState(defaultIntegrationForm)
@@ -1320,6 +1366,10 @@ export default function Source() {
     selectedPresetId === null
       ? null
       : integrationPresets.find((preset) => preset.id === selectedPresetId) ?? null
+
+  const availableSocialConnectors = socialConnectorOptions.filter((option) =>
+    integrationPresets.some((preset) => preset.id === option.id)
+  )
 
   const handlePresetChange = (value: string) => {
     if (value === "manual") {
@@ -1804,7 +1854,7 @@ export default function Source() {
               </div>
             </div>
 
-            <div className="mt-5 space-y-4 rounded-xl border border-slate-900/70 bg-slate-950/60 p-4">
+            <div className="mt-5 space-y-6 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-4">
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-white">Connector library</p>
                 <p className="text-xs text-slate-400">
@@ -1813,27 +1863,99 @@ export default function Source() {
                   Depop, Facebook Marketplace, Craigslist, and more.
                 </p>
               </div>
-              <Select
-                value={selectedPresetId ?? "manual"}
-                onValueChange={handlePresetChange}
-                placeholder="Manual setup"
-              >
-                <SelectContent>
-                  <SelectItem value="manual">Manual setup</SelectItem>
-                  {integrationPresets.map((preset) => (
-                    <SelectItem key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+              {availableSocialConnectors.length > 0 && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {availableSocialConnectors.map((option) => {
+                    const Icon = option.icon
+                    const isActive = selectedPresetId === option.id
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => handlePresetChange(option.id)}
+                        className={cn(
+                          "group relative overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 p-4 text-left transition-all hover:border-slate-800/80 hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400",
+                          isActive && "border-sky-400/70 bg-sky-500/10 shadow-lg shadow-sky-500/20"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "pointer-events-none absolute inset-0 -z-10 opacity-30 blur-2xl transition-opacity",
+                            "bg-gradient-to-br",
+                            option.gradient,
+                            isActive ? "opacity-60" : "group-hover:opacity-45"
+                          )}
+                        />
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex size-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner shadow-white/10">
+                              <Icon className="size-5" />
+                            </div>
+                            <div className="space-y-1">
+                              <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                                {option.label}
+                                {isActive && (
+                                  <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-medium text-sky-100">
+                                    Selected
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs text-slate-200/90">{option.description}</p>
+                            </div>
+                          </div>
+                          {option.oauth && (
+                            <Badge className="h-fit rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-100/80">
+                              OAuth
+                            </Badge>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="space-y-3 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-white">Browse everything</p>
+                    <p className="text-xs text-slate-400">
+                      Prefer a different storefront? Pick any preset or return to manual setup.
+                    </p>
+                  </div>
+                  {selectedPresetId && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 text-slate-200 hover:text-white"
+                      onClick={() => handlePresetChange("manual")}
+                    >
+                      Reset to manual
+                    </Button>
+                  )}
+                </div>
+                <Select
+                  value={selectedPresetId ?? "manual"}
+                  onValueChange={handlePresetChange}
+                  placeholder="Manual setup"
+                >
+                  <SelectContent>
+                    <SelectItem value="manual">Manual setup</SelectItem>
+                    {integrationPresets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {selectedPreset && (
-                <div className="space-y-4">
+                <div className="space-y-4 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-slate-300">
-                      {selectedPreset.description}
-                    </p>
+                    <p className="text-xs text-slate-200/90">{selectedPreset.description}</p>
                     {selectedPreset.docsUrl && (
                       <a
                         href={selectedPreset.docsUrl}
@@ -1851,17 +1973,14 @@ export default function Source() {
                       <Lock className="mt-0.5 size-3" />
                       <span>
                         This connector uses OAuth. Save the integration, then click
-                        <span className="font-semibold"> Connect</span> to authorize
-                        before posting.
+                        <span className="font-semibold"> Connect</span> to authorize before posting.
                       </span>
                     </div>
                   )}
 
                   {selectedPreset.prerequisites && selectedPreset.prerequisites.length > 0 && (
                     <div className="space-y-3 rounded-lg border border-slate-800/80 bg-slate-900/50 p-3">
-                      <p className="text-xs font-semibold text-slate-200">
-                        Setup checklist
-                      </p>
+                      <p className="text-xs font-semibold text-slate-200">Setup checklist</p>
                       <ul className="space-y-2">
                         {selectedPreset.prerequisites.map((item) => (
                           <li key={item.id} className="flex gap-3 text-xs text-slate-300">
@@ -1878,9 +1997,7 @@ export default function Source() {
                                   <ExternalLink className="size-3" />
                                 </a>
                               ) : (
-                                <span className="font-medium text-slate-200">
-                                  {item.label}
-                                </span>
+                                <span className="font-medium text-slate-200">{item.label}</span>
                               )}
                               {item.description && (
                                 <p className="text-slate-400">{item.description}</p>
@@ -1914,24 +2031,12 @@ export default function Source() {
                           }
                           placeholder={field.placeholder}
                         />
-                        {field.help && (
-                          <p className="text-xs text-slate-500">{field.help}</p>
-                        )}
+                        {field.help && <p className="text-xs text-slate-500">{field.help}</p>}
                       </div>
                     ))}
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-                    {presetError ? (
-                      <span className="text-rose-300">{presetError}</span>
-                    ) : presetNotice ? (
-                      <span className="text-emerald-300">{presetNotice}</span>
-                    ) : (
-                      <span className="text-slate-400">
-                        Fill in the required details, then apply to load the integration
-                        fields automatically.
-                      </span>
-                    )}
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
                     <Button
                       type="button"
                       variant="secondary"
@@ -1941,6 +2046,15 @@ export default function Source() {
                     >
                       Apply details
                     </Button>
+                    {presetError ? (
+                      <span className="text-rose-300">{presetError}</span>
+                    ) : presetNotice ? (
+                      <span className="text-emerald-300">{presetNotice}</span>
+                    ) : (
+                      <span className="text-slate-400">
+                        Fill in the required details, then apply to load the integration fields automatically.
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
