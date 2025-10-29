@@ -1,7 +1,7 @@
 # Scheduler status overview
 
 ## Habit and project scheduling flow
-- `scheduleBacklog` builds a queue of project items, dedupes existing project instances, and then iterates day by day through the lookahead horizon (up to 365 days). For each day it first calls `scheduleHabitsForDay`, ensuring habits consume availability before project placement runs.
+- `scheduleBacklog` builds a queue of project items, dedupes existing project instances, and then iterates day by day through the lookahead horizon (up to 365 days). For each day within the first four weeks it first calls `scheduleHabitsForDay`, ensuring habits consume availability before project placement runs. Days beyond that window skip new habit writes so the scheduler avoids creating hundreds of Supabase rows in a single run.
 - Habit placements fetch or create `schedule_instances` rows with `source_type = 'HABIT'`. Existing rows are rescheduled when their timing no longer matches; otherwise they are kept in place. Newly created or updated habit instances are appended to the scheduler result just like project rows.
 - After habits for the day are resolved, the same availability map is reused to slot projects via `placeItemInWindows`, which persists project instances (`source_type = 'PROJECT'`) or reschedules reused ones.
 

@@ -40,6 +40,7 @@ const START_GRACE_MIN = 1
 const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
+const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
@@ -406,6 +407,7 @@ export async function scheduleBacklog(
     MAX_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
   )
+  const habitWriteLookaheadDays = Math.min(lookaheadDays, HABIT_WRITE_LOOKAHEAD_DAYS)
   const dedupeWindowDays = Math.max(lookaheadDays, 28)
   const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
   const dedupe = await dedupeScheduledProjects(
@@ -592,7 +594,9 @@ export async function scheduleBacklog(
     }
 
     const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-    const dayResult = await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+    if (offset < habitWriteLookaheadDays) {
+      await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+    }
     const dayInstances = getDayInstances(offset)
 
     for (const item of queue) {
