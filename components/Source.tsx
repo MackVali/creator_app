@@ -780,6 +780,11 @@ const integrationPresets: IntegrationPreset[] = [
         page_id: pageId,
         authorize_params: {
           scope: "pages_show_list pages_manage_posts pages_read_engagement",
+          auth_type: "rerequest",
+          display: "popup",
+        },
+        token_params: {
+          grant_type: "authorization_code",
         },
       }
 
@@ -889,6 +894,11 @@ const integrationPresets: IntegrationPreset[] = [
         authorize_params: {
           scope:
             "pages_show_list pages_manage_posts instagram_basic instagram_content_publish business_management",
+          auth_type: "rerequest",
+          display: "popup",
+        },
+        token_params: {
+          grant_type: "authorization_code",
         },
       }
 
@@ -993,6 +1003,10 @@ const integrationPresets: IntegrationPreset[] = [
         organization_urn: organizationUrn,
         authorize_params: {
           scope: "openid profile w_member_social w_organization_social",
+          response_type: "code",
+        },
+        token_params: {
+          grant_type: "authorization_code",
         },
       }
 
@@ -1112,7 +1126,15 @@ const integrationPresets: IntegrationPreset[] = [
         advertiser_id: advertiserId,
         authorize_params: {
           scope: "business.video.manage business.user.info",
+          response_type: "code",
         },
+        token_params: {
+          grant_type: "authorization_code",
+        },
+        token_code_key: "auth_code",
+        token_client_id_key: "app_id",
+        token_client_secret_key: "secret",
+        token_body_format: "json",
       }
 
       const payload = {
@@ -1183,6 +1205,7 @@ export default function Source() {
   const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
   const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
+  const oauthCompletionRef = useRef(false)
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -1197,6 +1220,7 @@ export default function Source() {
         oauthWindowRef.current.close()
       }
       oauthWindowRef.current = null
+      oauthCompletionRef.current = data.status === "success"
       setConnectingIntegrationId(null)
 
       if (data.status === "error" && typeof data.message === "string") {
@@ -1210,7 +1234,7 @@ export default function Source() {
 
     window.addEventListener("message", handleMessage)
     return () => window.removeEventListener("message", handleMessage)
-  }, [queryClient])
+  }, [oauthCompletionRef, queryClient])
 
   useEffect(() => {
     if (!connectingIntegrationId) return
@@ -1226,12 +1250,18 @@ export default function Source() {
         window.clearInterval(watcher)
         oauthWindowRef.current = null
         setConnectingIntegrationId(null)
-        setIntegrationError((prev) => prev ?? "Connection window closed before finishing authentication.")
+        if (!oauthCompletionRef.current) {
+          setIntegrationError((prev) => prev ?? "Connection window closed before finishing authentication.")
+        } else {
+          setIntegrationError((prev) => (prev && prev.includes("Connection window closed") ? null : prev))
+        }
+        oauthCompletionRef.current = false
+        queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
       }
     }, 750)
 
     return () => window.clearInterval(watcher)
-  }, [connectingIntegrationId])
+  }, [connectingIntegrationId, oauthCompletionRef, queryClient])
 
   const beginOAuthConnection = async (integration: SourceIntegration) => {
     if (integration.auth_mode !== "oauth2") return
@@ -1246,6 +1276,7 @@ export default function Source() {
     try {
       setIntegrationError(null)
       setConnectingIntegrationId(integration.id)
+      oauthCompletionRef.current = false
 
       const res = await fetch(`/api/source/integrations/${integration.id}/oauth/start`, {
         method: "POST",
