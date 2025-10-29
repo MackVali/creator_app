@@ -342,6 +342,7 @@ export async function publishToIntegrations({
     ...listing,
     metadata: listing.metadata ?? {},
   }
+  const socialContext = buildSocialContext(listing)
 
   const publishResults: PublishResult[] = []
 
@@ -377,6 +378,7 @@ export async function publishToIntegrations({
         displayName: integrationRecord.display_name,
         connectionUrl: integrationRecord.connection_url,
       },
+      social: socialContext,
     }
 
     const payloadBody = buildPayload(integrationRecord, context)
@@ -466,7 +468,199 @@ function buildPayload(
     published_at: listing.published_at,
     updated_at: listing.updated_at,
     integration: context.integration,
+    social: context.social,
   }
+}
+
+type SocialMediaAsset = {
+  url: string
+  type: string
+  alt?: string | null
+}
+
+type SocialContext = {
+  caption: string
+  link: string | null
+  media: SocialMediaAsset[]
+  platforms: string[]
+  hashtags: string[]
+}
+
+function buildSocialContext(listing: SourceListing): SocialContext {
+  const metadata = (listing.metadata ?? {}) as Record<string, unknown>
+
+  const caption =
+    typeof metadata.caption === "string" && metadata.caption.trim()
+      ? metadata.caption.trim()
+      : listing.description ?? ""
+
+  const media = collectMediaAssets(metadata)
+
+  const link = pickFirstString(metadata, [
+    "call_to_action_url",
+    "cta_url",
+    "cta_link",
+    "link_url",
+    "link",
+    "url",
+  ])
+
+  const platforms = dedupeStrings(
+    [
+      metadata.social_channels,
+      metadata.platforms,
+      metadata.channels,
+      metadata.networks,
+    ].flatMap((value) => normalizeStringArray(value, { lowercase: true }))
+  )
+
+  const hashtags = dedupeStrings(
+    [metadata.hashtags, metadata.tags].flatMap((value) => normalizeHashtags(value))
+  )
+
+  return {
+    caption,
+    link,
+    media,
+    platforms,
+    hashtags,
+  }
+}
+
+function collectMediaAssets(metadata: Record<string, unknown>): SocialMediaAsset[] {
+  const assets: SocialMediaAsset[] = []
+  const seen = new Set<string>()
+
+  const addAsset = (url: string | null | undefined, type = "image", alt?: string | null) => {
+    if (!url) return
+    const normalized = url.trim()
+    if (!normalized || seen.has(normalized)) return
+    seen.add(normalized)
+    const payload: SocialMediaAsset = { url: normalized, type }
+    if (alt && alt.trim()) {
+      payload.alt = alt.trim()
+    }
+    assets.push(payload)
+  }
+
+  if (Array.isArray(metadata.media)) {
+    for (const entry of metadata.media) {
+      if (typeof entry === "string") {
+        addAsset(entry)
+        continue
+      }
+
+      if (isRecord(entry) && typeof entry.url === "string") {
+        const type = typeof entry.type === "string" && entry.type.trim() ? entry.type.trim() : "image"
+        const alt = typeof entry.alt === "string" ? entry.alt : null
+        addAsset(entry.url, type, alt)
+      }
+    }
+  }
+
+  const fallbackKeys = [
+    "media_url",
+    "image_url",
+    "photo_url",
+    "poster_url",
+    "thumbnail_url",
+    "cover_url",
+  ]
+  for (const key of fallbackKeys) {
+    const value = metadata[key]
+    if (typeof value === "string") {
+      addAsset(value)
+    }
+  }
+
+  return assets
+}
+
+function pickFirstString(source: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === "string" && value.trim()) {
+      return value.trim()
+    }
+  }
+  return null
+}
+
+function normalizeStringArray(
+  value: unknown,
+  options: { lowercase?: boolean } = {}
+): string[] {
+  const entries: string[] = []
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string") {
+        entries.push(...tokenizeList(item))
+      }
+    }
+  } else if (typeof value === "string") {
+    entries.push(...tokenizeList(value))
+  }
+
+  const normalized = entries
+    .map((entry) => (options.lowercase ? entry.toLowerCase() : entry))
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+
+  return normalized
+}
+
+function normalizeHashtags(value: unknown): string[] {
+  if (value === null || value === undefined) {
+    return []
+  }
+
+  const tokens: string[] = []
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string") {
+        tokens.push(...tokenizeHashtags(item))
+      }
+    }
+  } else if (typeof value === "string") {
+    tokens.push(...tokenizeHashtags(value))
+  }
+
+  return tokens
+    .map((token) => token.replace(/^#+/, ""))
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean)
+    .map((token) => `#${token}`)
+}
+
+function tokenizeList(value: string): string[] {
+  return value
+    .split(/[\n,]+/)
+    .flatMap((segment) => segment.split(/\s+/))
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function tokenizeHashtags(value: string): string[] {
+  return value
+    .split(/[\n,]+/)
+    .flatMap((segment) => segment.split(/\s+/))
+    .flatMap((part) => part.split("#"))
+    .map((token) => token.trim())
+    .filter(Boolean)
+}
+
+function dedupeStrings(values: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value)
+      result.push(value)
+    }
+  }
+  return result
 }
 
 async function ensureOAuthAccessToken(
@@ -710,6 +904,13 @@ function applyTemplate(template: unknown, context: Record<string, unknown>): unk
   }
 
   if (typeof template === "string") {
+    const directMatch = template.match(/^{{\s*([^}]+)\s*}}$/)
+    if (directMatch) {
+      const value = resolvePath(context, directMatch[1].trim())
+      if (value === undefined || value === null) return ""
+      return value
+    }
+
     return template.replace(/{{\s*([^}]+)\s*}}/g, (_, token: string) => {
       const value = resolvePath(context, token.trim())
       if (value === undefined || value === null) return ""
@@ -774,4 +975,5 @@ export const __testables = {
   applyTemplate,
   determineStatus,
   sanitizePublishResults,
+  buildSocialContext,
 }
