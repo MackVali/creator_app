@@ -485,29 +485,22 @@ export async function scheduleBacklog(
     return placements
   }
 
-  if (habits.length > 0) {
-    for (let offset = 0; offset < lookaheadDays; offset += 1) {
-      let availability = windowAvailabilityByDay.get(offset)
-      if (!availability) {
-        availability = new Map<string, WindowAvailabilityBounds>()
-        windowAvailabilityByDay.set(offset, availability)
-      }
-      const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, availability)
-    }
-  }
+  const scheduledProjectIds = new Set<string>()
+  const maxOffset = restrictProjectsToToday ? 1 : lookaheadDays
 
-  for (const item of queue) {
-    let scheduled = false
-    const maxOffset = restrictProjectsToToday ? 1 : lookaheadDays
-    for (let offset = 0; offset < maxOffset && !scheduled; offset += 1) {
-      let windowAvailability = windowAvailabilityByDay.get(offset)
-      if (!windowAvailability) {
-        windowAvailability = new Map<string, WindowAvailabilityBounds>()
-        windowAvailabilityByDay.set(offset, windowAvailability)
-      }
-      const day = addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+  for (let offset = 0; offset < maxOffset; offset += 1) {
+    let windowAvailability = windowAvailabilityByDay.get(offset)
+    if (!windowAvailability) {
+      windowAvailability = new Map<string, WindowAvailabilityBounds>()
+      windowAvailabilityByDay.set(offset, windowAvailability)
+    }
+
+    const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
+    await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+
+    for (const item of queue) {
+      if (scheduledProjectIds.has(item.id)) continue
+
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
@@ -587,11 +580,13 @@ export async function scheduleBacklog(
             ? placementWindow.startLocal.toISOString()
             : undefined,
         })
-        scheduled = true
+        scheduledProjectIds.add(item.id)
       }
     }
+  }
 
-    if (!scheduled) {
+  for (const item of queue) {
+    if (!scheduledProjectIds.has(item.id)) {
       result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
     }
   }
