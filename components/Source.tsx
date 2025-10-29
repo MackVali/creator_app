@@ -13,6 +13,7 @@ import {
   Lock,
   Plug,
   RefreshCcw,
+  Send,
   UploadCloud,
   X,
   type LucideIcon,
@@ -24,6 +25,7 @@ import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem } from "./ui/select"
 import { Textarea } from "./ui/textarea"
+import { PostModal } from "./ui/PostModal"
 
 import type {
   IntegrationsResponse,
@@ -669,6 +671,7 @@ export default function Source() {
   const [presetError, setPresetError] = useState<string | null>(null)
   const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
   const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
+  const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
 
   useEffect(() => {
@@ -1087,9 +1090,18 @@ export default function Source() {
                 headers you provide.
               </p>
             </div>
-            <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
-              <Plug className="size-3" /> Paid upgrade
-            </Badge>
+            <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
+              <Button
+                type="button"
+                className="gap-2 bg-sky-500 text-white hover:bg-sky-400"
+                onClick={() => setIsPostModalOpen(true)}
+              >
+                <Send className="size-4" /> Post everywhere
+              </Button>
+              <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
+                <Plug className="size-3" /> Paid upgrade
+              </Badge>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
             <div className="flex items-center gap-2">
@@ -2058,6 +2070,7 @@ export default function Source() {
           </div>
         </section>
       </main>
+      <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
     </div>
   )
 }
