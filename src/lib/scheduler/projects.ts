@@ -12,6 +12,7 @@ export type ProjectItem = ProjectLite & {
   weight: number
   taskCount: number
   skill_icon?: string | null
+  due_date: string | null
 }
 
 const normEnergy = (e?: string | null): Energy | null => {
@@ -99,6 +100,7 @@ export function buildProjectItems(
       weight,
       taskCount: related?.count ?? 0,
       skill_icon,
+      due_date: p.due_date ?? null,
     })
   }
   return items
