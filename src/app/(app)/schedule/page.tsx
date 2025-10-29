@@ -99,6 +99,7 @@ type PeekState = {
 type HabitCompletionStatus = 'scheduled' | 'completed'
 
 const HABIT_COMPLETION_STORAGE_PREFIX = 'schedule-habit-completions'
+const SCHEDULER_DEBUG_STORAGE_PREFIX = 'schedule-last-run-debug'
 const DAY_PEEK_SAFE_GAP_PX = 24
 const MIN_PX_PER_MIN = 0.9
 const MAX_PX_PER_MIN = 3.2
@@ -400,6 +401,7 @@ type SchedulerTimelinePlacement =
       type: 'PROJECT'
       projectId: string
       projectName: string
+      windowId: string | null
       start: Date
       end: Date
       durationMinutes: number | null
@@ -410,6 +412,7 @@ type SchedulerTimelinePlacement =
       type: 'HABIT'
       habitId: string
       habitName: string
+      windowId: string | null
       start: Date
       end: Date
       durationMinutes: number | null
@@ -488,6 +491,8 @@ type HabitTimelinePlacement = {
 }
 
 type TimelineCardLayoutMode = 'full' | 'paired-left' | 'paired-right'
+
+type BusySpan = { start: number; end: number }
 
 type MemoNoteDraftState = {
   habitId: string
@@ -743,13 +748,20 @@ function computeHabitPlacementsForDay({
 
   const zone = timeZone || 'UTC'
   const dayStart = startOfDayInTimeZone(date, zone)
-  const defaultDueMs = dayStart.getTime()
+  const dayEnd = addDaysInTimeZone(dayStart, 1, zone)
+  const dayStartMs = dayStart.getTime()
+  const dayEndMs = dayEnd.getTime()
+  const defaultDueMs = dayStartMs
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const placements: HabitTimelinePlacement[] = []
   const availability = new Map<string, number>()
   const dayCompletionMap = completionMap ?? null
   const nowCandidate = now ?? null
   const nowMs = isSameLocalDay(nowCandidate, date) ? nowCandidate?.getTime() ?? null : null
+  const habitById = new Map<string, HabitScheduleItem>()
+  for (const habit of habits) {
+    habitById.set(habit.id, habit)
+  }
 
   const windowEntries = windows
     .map((window) => {
@@ -778,9 +790,11 @@ function computeHabitPlacementsForDay({
     .sort((a, b) => a.startMs - b.startMs)
 
   const anchorStartsByWindowKey = new Map<string, number[]>()
+  const busySpansByWindowKey = new Map<string, BusySpan[]>()
 
   for (const entry of windowEntries) {
     addAnchorStart(anchorStartsByWindowKey, entry.key, entry.startMs)
+    busySpansByWindowKey.set(entry.key, [])
   }
 
   if (projectInstances && projectInstances.length > 0) {
@@ -794,9 +808,26 @@ function computeHabitPlacementsForDay({
         if (!overlaps) continue
         const anchor = Math.max(entry.startMs, instanceStart)
         addAnchorStart(anchorStartsByWindowKey, entry.key, anchor)
+        const busyStart = Math.max(entry.startMs, instanceStart)
+        const busyEnd = Math.min(entry.endMs, instanceEnd)
+        if (busyEnd > busyStart) {
+          recordBusySpan(busySpansByWindowKey, entry.key, busyStart, busyEnd)
+        }
       }
     }
   }
+
+  const timelineHabitAssignments = new Map<
+    string,
+    {
+      placement: Extract<SchedulerTimelinePlacement, { type: 'HABIT' }>
+      windowEntry: (typeof windowEntries)[number]
+      startMs: number
+      endMs: number
+      rawStartMs: number
+      rawEndMs: number
+    }
+  >()
 
   if (schedulerTimelinePlacements && schedulerTimelinePlacements.length > 0) {
     for (const placement of schedulerTimelinePlacements) {
@@ -804,11 +835,47 @@ function computeHabitPlacementsForDay({
       const endMs = placement.end.getTime()
       if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
 
+      if (placement.type === 'HABIT') {
+        if (endMs <= dayStartMs || startMs >= dayEndMs) continue
+        let matched: (typeof windowEntries)[number] | null = null
+        if (placement.windowId) {
+          matched =
+            windowEntries.find(
+              (entry) =>
+                entry.window.id === placement.windowId && endMs > entry.startMs && startMs < entry.endMs
+            ) ?? null
+        }
+        if (!matched) {
+          matched =
+            windowEntries.find((entry) => endMs > entry.startMs && startMs < entry.endMs) ?? null
+        }
+        if (!matched) continue
+        const busyStart = Math.max(matched.startMs, startMs)
+        const busyEnd = Math.min(matched.endMs, endMs)
+        if (!(busyEnd > busyStart)) continue
+        addAnchorStart(anchorStartsByWindowKey, matched.key, busyStart)
+        recordBusySpan(busySpansByWindowKey, matched.key, busyStart, busyEnd)
+        timelineHabitAssignments.set(placement.habitId, {
+          placement,
+          windowEntry: matched,
+          startMs: busyStart,
+          endMs: busyEnd,
+          rawStartMs: startMs,
+          rawEndMs: endMs,
+        })
+        continue
+      }
+
       for (const entry of windowEntries) {
         const overlaps = endMs > entry.startMs && startMs < entry.endMs
         if (!overlaps) continue
         const anchor = Math.max(entry.startMs, startMs)
         addAnchorStart(anchorStartsByWindowKey, entry.key, anchor)
+        const busyStart = Math.max(entry.startMs, startMs)
+        const busyEnd = Math.min(entry.endMs, endMs)
+        if (busyEnd > busyStart) {
+          recordBusySpan(busySpansByWindowKey, entry.key, busyStart, busyEnd)
+        }
       }
     }
   }
@@ -829,6 +896,18 @@ function computeHabitPlacementsForDay({
     return true
   })
 
+  if (timelineHabitAssignments.size > 0) {
+    const dueSet = new Set(dueHabits.map((habit) => habit.id))
+    for (const habitId of timelineHabitAssignments.keys()) {
+      if (dueSet.has(habitId)) continue
+      const habit = habitById.get(habitId)
+      if (habit) {
+        dueHabits.push(habit)
+        dueSet.add(habitId)
+      }
+    }
+  }
+
   if (dueHabits.length === 0) return []
 
   const sunlightSpan = resolveSunlightSpan(date, zone, sunlightCoordinates ?? null)
@@ -843,6 +922,43 @@ function computeHabitPlacementsForDay({
     if (aTime !== bTime) return aTime - bTime
     return a.name.localeCompare(b.name)
   })
+
+  const placedHabitIds = new Set<string>()
+
+  if (timelineHabitAssignments.size > 0) {
+    for (const [habitId, assignment] of timelineHabitAssignments) {
+      const habit = habitById.get(habitId)
+      if (!habit) continue
+      const startMs = assignment.startMs
+      const endMs = assignment.endMs
+      const start = new Date(startMs)
+      const end = new Date(endMs)
+      const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
+      const isSyncHabit = normalizedType === 'SYNC'
+      const truncated =
+        assignment.placement.clipped ||
+        startMs !== assignment.rawStartMs ||
+        endMs !== assignment.rawEndMs
+
+      placements.push({
+        habitId: habit.id,
+        habitName: habit.name,
+        habitType: habit.habitType,
+        skillId: habit.skillId ?? null,
+        start,
+        end,
+        durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
+        window: assignment.windowEntry.window,
+        truncated,
+      })
+
+      if (!isSyncHabit) {
+        availability.set(assignment.windowEntry.key, endMs)
+      }
+
+      placedHabitIds.add(habit.id)
+    }
+  }
 
   for (const habit of sortedHabits) {
     const rawDuration = Number(habit.durationMinutes ?? 0)
@@ -880,7 +996,11 @@ function computeHabitPlacementsForDay({
     const dueStartMs = dueStart ? dueStart.getTime() : null
     const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
-    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
+    const isSyncHabit = normalizedType === 'SYNC'
+
+    if (placedHabitIds.has(habit.id)) {
+      continue
+    }
 
     let placed = false
     for (const entry of windowEntries) {
@@ -911,6 +1031,7 @@ function computeHabitPlacementsForDay({
 
       let startMs = earliestStart
       let endLimitMs = entry.endMs
+      let truncated = false
       if (daylightConstraint) {
         if (daylightConstraint.preference === 'DAY') {
           const sunriseMs = daylightConstraint.sunrise?.getTime()
@@ -979,21 +1100,38 @@ function computeHabitPlacementsForDay({
         }
       }
 
-      let endMs = startMs + durationMs
-      let truncated = false
-      if (endMs > endLimitMs) {
-        endMs = endLimitMs
-        truncated = true
-      }
-      if (endMs <= startMs) {
-        if (!isSyncHabit) {
-          availability.set(entry.key, endMs)
+      let endMs: number
+
+      if (isSyncHabit) {
+        endMs = startMs + durationMs
+        if (endMs > endLimitMs) {
+          endMs = endLimitMs
+          truncated = true
         }
-        continue
+        if (endMs <= startMs) {
+          continue
+        }
+      } else {
+        const busySpans = busySpansByWindowKey.get(entry.key) ?? []
+        const slot = findAvailableSlot({
+          busySpans,
+          desiredStart: startMs,
+          durationMs,
+          windowStartMs: entry.startMs,
+          windowEndMs: endLimitMs,
+        })
+        if (!slot) {
+          availability.set(entry.key, endLimitMs)
+          continue
+        }
+        startMs = slot.startMs
+        endMs = slot.endMs
+        truncated = slot.truncated
       }
 
       const start = new Date(startMs)
       const end = new Date(endMs)
+      recordBusySpan(busySpansByWindowKey, entry.key, startMs, endMs)
       if (!isSyncHabit) {
         availability.set(entry.key, endMs)
       }
@@ -1043,6 +1181,96 @@ function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number
   if (!inserted) {
     existing.push(startMs)
   }
+}
+
+function recordBusySpan(map: Map<string, BusySpan[]>, key: string, startMs: number, endMs: number) {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+  if (endMs <= startMs) return
+  const existing = map.get(key) ?? []
+  let spanStart = startMs
+  let spanEnd = endMs
+  const merged: BusySpan[] = []
+  let inserted = false
+  for (const span of existing) {
+    if (span.end <= spanStart) {
+      merged.push(span)
+      continue
+    }
+    if (span.start >= spanEnd) {
+      if (!inserted) {
+        merged.push({ start: spanStart, end: spanEnd })
+        inserted = true
+      }
+      merged.push(span)
+      continue
+    }
+    spanStart = Math.min(spanStart, span.start)
+    spanEnd = Math.max(spanEnd, span.end)
+  }
+  if (!inserted) {
+    merged.push({ start: spanStart, end: spanEnd })
+  }
+  map.set(key, merged)
+}
+
+function findAvailableSlot({
+  busySpans,
+  desiredStart,
+  durationMs,
+  windowStartMs,
+  windowEndMs,
+}: {
+  busySpans: BusySpan[]
+  desiredStart: number
+  durationMs: number
+  windowStartMs: number
+  windowEndMs: number
+}): { startMs: number; endMs: number; truncated: boolean } | null {
+  if (!(windowEndMs > windowStartMs)) return null
+  const duration = Math.max(0, durationMs)
+  let candidate = Math.max(desiredStart, windowStartMs)
+  while (candidate < windowEndMs) {
+    let advanced = false
+    for (const span of busySpans) {
+      if (span.end <= candidate) {
+        continue
+      }
+      if (span.start >= windowEndMs) {
+        break
+      }
+      if (candidate >= span.start && candidate < span.end) {
+        candidate = span.end
+        advanced = true
+        break
+      }
+      const gapEnd = Math.min(span.start, windowEndMs)
+      if (candidate < gapEnd) {
+        const fullEnd = candidate + duration
+        if (fullEnd <= gapEnd) {
+          return { startMs: candidate, endMs: fullEnd, truncated: false }
+        }
+        if (gapEnd > candidate) {
+          return { startMs: candidate, endMs: gapEnd, truncated: true }
+        }
+        candidate = span.end
+        advanced = true
+        break
+      }
+    }
+    if (advanced) {
+      continue
+    }
+    const fullEnd = candidate + duration
+    if (fullEnd <= windowEndMs) {
+      return { startMs: candidate, endMs: fullEnd, truncated: false }
+    }
+    const limitedEnd = Math.min(windowEndMs, fullEnd)
+    if (limitedEnd > candidate) {
+      return { startMs: candidate, endMs: limitedEnd, truncated: true }
+    }
+    break
+  }
+  return null
 }
 
 function computeWindowReportsForDay({
@@ -1831,6 +2059,175 @@ function parseSchedulerDebugPayload(
   }
 }
 
+function normalizeStoredTimelineEntry(entry: unknown): SchedulerTimelineEntry | null {
+  if (!entry || typeof entry !== 'object') return null
+  const value = entry as {
+    type?: unknown
+    instanceId?: unknown
+    projectId?: unknown
+    habitId?: unknown
+    habitName?: unknown
+    windowId?: unknown
+    decision?: unknown
+    startUTC?: unknown
+    endUTC?: unknown
+    durationMin?: unknown
+    energyResolved?: unknown
+    scheduledDayOffset?: unknown
+    availableStartLocal?: unknown
+    windowStartLocal?: unknown
+    clipped?: unknown
+  }
+  const typeRaw = typeof value.type === 'string' ? value.type.toUpperCase() : null
+
+  if (typeRaw === 'PROJECT') {
+    const decision = value.decision
+    if (decision !== 'kept' && decision !== 'new' && decision !== 'rescheduled') return null
+    const instanceId = typeof value.instanceId === 'string' && value.instanceId.length > 0 ? value.instanceId : null
+    const projectId = typeof value.projectId === 'string' && value.projectId.length > 0 ? value.projectId : null
+    const startUTC = typeof value.startUTC === 'string' ? value.startUTC : null
+    const endUTC = typeof value.endUTC === 'string' ? value.endUTC : null
+    if (!instanceId || !projectId || !startUTC || !endUTC) return null
+    const windowId = typeof value.windowId === 'string' ? value.windowId : null
+    const durationMin =
+      typeof value.durationMin === 'number' && Number.isFinite(value.durationMin)
+        ? value.durationMin
+        : null
+    const energyResolved =
+      typeof value.energyResolved === 'string' && value.energyResolved.trim().length > 0
+        ? value.energyResolved
+        : null
+    const scheduledDayOffset =
+      typeof value.scheduledDayOffset === 'number' && Number.isFinite(value.scheduledDayOffset)
+        ? value.scheduledDayOffset
+        : null
+    const availableStartLocal =
+      typeof value.availableStartLocal === 'string' && value.availableStartLocal.length > 0
+        ? value.availableStartLocal
+        : null
+    const windowStartLocal =
+      typeof value.windowStartLocal === 'string' && value.windowStartLocal.length > 0
+        ? value.windowStartLocal
+        : null
+    return {
+      type: 'PROJECT',
+      instanceId,
+      projectId,
+      windowId,
+      decision,
+      startUTC,
+      endUTC,
+      durationMin,
+      energyResolved,
+      scheduledDayOffset,
+      availableStartLocal,
+      windowStartLocal,
+    }
+  }
+
+  if (typeRaw === 'HABIT') {
+    const decision = value.decision
+    if (decision !== 'kept' && decision !== 'new' && decision !== 'rescheduled') return null
+    const habitId = typeof value.habitId === 'string' && value.habitId.length > 0 ? value.habitId : null
+    const startUTC = typeof value.startUTC === 'string' ? value.startUTC : null
+    const endUTC = typeof value.endUTC === 'string' ? value.endUTC : null
+    if (!habitId || !startUTC || !endUTC) return null
+    const habitName = typeof value.habitName === 'string' ? value.habitName : null
+    const windowId = typeof value.windowId === 'string' ? value.windowId : null
+    const durationMin =
+      typeof value.durationMin === 'number' && Number.isFinite(value.durationMin)
+        ? value.durationMin
+        : null
+    const energyResolved =
+      typeof value.energyResolved === 'string' && value.energyResolved.trim().length > 0
+        ? value.energyResolved
+        : null
+    const scheduledDayOffset =
+      typeof value.scheduledDayOffset === 'number' && Number.isFinite(value.scheduledDayOffset)
+        ? value.scheduledDayOffset
+        : null
+    const availableStartLocal =
+      typeof value.availableStartLocal === 'string' && value.availableStartLocal.length > 0
+        ? value.availableStartLocal
+        : null
+    const windowStartLocal =
+      typeof value.windowStartLocal === 'string' && value.windowStartLocal.length > 0
+        ? value.windowStartLocal
+        : null
+    const clipped = value.clipped === true
+    return {
+      type: 'HABIT',
+      habitId,
+      habitName,
+      windowId,
+      decision,
+      startUTC,
+      endUTC,
+      durationMin,
+      energyResolved,
+      scheduledDayOffset,
+      availableStartLocal,
+      windowStartLocal,
+      clipped,
+    }
+  }
+
+  return null
+}
+
+function deserializeSchedulerDebugState(value: unknown): SchedulerDebugState | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as {
+    runAt?: unknown
+    failures?: unknown
+    placedCount?: unknown
+    placedProjectIds?: unknown
+    timeline?: unknown
+    error?: unknown
+  }
+  const runAt = typeof record.runAt === 'string' && record.runAt.length > 0 ? record.runAt : null
+  if (!runAt) return null
+  const failures = Array.isArray(record.failures)
+    ? record.failures
+        .map(entry => {
+          if (!entry || typeof entry !== 'object') return null
+          const failure = entry as { itemId?: unknown; reason?: unknown; detail?: unknown }
+          const itemId = typeof failure.itemId === 'string' && failure.itemId.length > 0 ? failure.itemId : null
+          if (!itemId) return null
+          const reason =
+            typeof failure.reason === 'string' && failure.reason.length > 0
+              ? failure.reason
+              : 'unknown'
+          return {
+            itemId,
+            reason,
+            detail: failure.detail,
+          }
+        })
+        .filter((entry): entry is SchedulerRunFailure => Boolean(entry))
+    : []
+  const placedProjectIds = Array.isArray(record.placedProjectIds)
+    ? record.placedProjectIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    : []
+  const timeline = Array.isArray(record.timeline)
+    ? record.timeline
+        .map(normalizeStoredTimelineEntry)
+        .filter((entry): entry is SchedulerTimelineEntry => Boolean(entry))
+    : []
+  const placedCount =
+    typeof record.placedCount === 'number' && Number.isFinite(record.placedCount)
+      ? record.placedCount
+      : timeline.length
+  return {
+    runAt,
+    failures,
+    placedCount,
+    placedProjectIds,
+    timeline,
+    error: record.error ?? null,
+  }
+}
+
 type WindowReportEntry = {
   key: string
   window: RepoWindow
@@ -1909,6 +2306,10 @@ export default function SchedulePage() {
   const userMetadata = user?.user_metadata ?? null
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
+    [userId]
+  )
+  const schedulerDebugStorageKey = useMemo(
+    () => (userId ? `${SCHEDULER_DEBUG_STORAGE_PREFIX}:${userId}` : null),
     [userId]
   )
 
@@ -1996,6 +2397,7 @@ export default function SchedulePage() {
   const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
   const [schedulerDebug, setSchedulerDebug] = useState<SchedulerDebugState | null>(null)
+  const hasRestoredSchedulerDebugRef = useRef(false)
   const [pendingInstanceStatuses, setPendingInstanceStatuses] = useState<
     Map<string, ScheduleInstance['status']>
   >(new Map())
@@ -2213,6 +2615,50 @@ export default function SchedulePage() {
     setModeMonumentId(null)
     setModeSkillIds([])
   }, [userId])
+
+  useEffect(() => {
+    hasRestoredSchedulerDebugRef.current = false
+  }, [schedulerDebugStorageKey])
+
+  useEffect(() => {
+    if (!schedulerDebugStorageKey) return
+    if (typeof window === 'undefined') return
+    if (schedulerDebug || hasRestoredSchedulerDebugRef.current) return
+    hasRestoredSchedulerDebugRef.current = true
+    try {
+      const raw = window.localStorage.getItem(schedulerDebugStorageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as unknown
+      const restored = deserializeSchedulerDebugState(parsed)
+      if (restored) {
+        setSchedulerDebug(restored)
+      }
+    } catch (error) {
+      console.error('Failed to restore scheduler run state', error)
+    }
+  }, [schedulerDebugStorageKey, schedulerDebug])
+
+  useEffect(() => {
+    if (!schedulerDebugStorageKey) return
+    if (typeof window === 'undefined') return
+    if (!hasRestoredSchedulerDebugRef.current) return
+    if (!schedulerDebug) {
+      try {
+        window.localStorage.removeItem(schedulerDebugStorageKey)
+      } catch (error) {
+        console.error('Failed to persist scheduler run state', error)
+      }
+      return
+    }
+    try {
+      window.localStorage.setItem(
+        schedulerDebugStorageKey,
+        JSON.stringify(schedulerDebug)
+      )
+    } catch (error) {
+      console.error('Failed to persist scheduler run state', error)
+    }
+  }, [schedulerDebug, schedulerDebugStorageKey])
 
   useEffect(() => {
     if (!habitCompletionStorageKey) {
@@ -2707,6 +3153,7 @@ export default function SchedulePage() {
           type: 'PROJECT',
           projectId: entry.projectId,
           projectName: project?.name || 'Untitled project',
+          windowId: entry.windowId ?? null,
           start,
           end,
           durationMinutes: durationMin,
@@ -2732,6 +3179,7 @@ export default function SchedulePage() {
           type: 'HABIT',
           habitId: entry.habitId,
           habitName,
+          windowId: entry.windowId ?? null,
           start,
           end,
           durationMinutes: durationSource,
