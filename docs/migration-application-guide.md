@@ -46,6 +46,26 @@ Copy the contents of `supabase/migrations/20250101000022_consolidated_schema_cle
 
 Click "Run" to execute all the SQL statements.
 
+## Post-migration verification
+
+Once the SQL completes successfully (either via CLI or dashboard), double-check that the application layers recognize the new
+`HABIT` source type:
+
+1. Regenerate Supabase types so the client code picks up the enum change. If you use `supabase gen types typescript`, re-run it
+   and commit the updated `types/supabase.ts` file.
+2. Restart local development servers (Next.js, vitest watchers, etc.) so they reload the refreshed type definitions.
+3. Run the scheduler test suite to ensure habit instances now persist end-to-end:
+
+   ```bash
+   pnpm test:run test/lib/scheduler/*.spec.ts
+   ```
+
+   If you prefer, `pnpm test` without arguments will execute the full Vitest suite, including the scheduler specs.
+4. Trigger a manual scheduler run (e.g., `POST /api/scheduler/run`) and confirm newly scheduled habits now appear in
+   `public.schedule_instances` with `source_type = 'HABIT'` and no overlapping time ranges for non-sync habits.
+
+These steps keep the database, generated types, and runtime cache in sync after the enum addition.
+
 ## Option 3: Manual Step-by-Step Application
 
 If you prefer to apply the migration manually or encounter issues with the bulk approach:
