@@ -889,8 +889,7 @@ function computeHabitPlacementsForDay({
       const windowLocationRaw = entry.window.location_context_value
         ? String(entry.window.location_context_value).toUpperCase().trim()
         : null
-      if (locationContext) {
-        if (!windowLocationRaw) continue
+      if (locationContext || windowLocationRaw) {
         if (windowLocationRaw !== locationContext) continue
       }
 
