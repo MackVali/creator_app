@@ -1000,24 +1000,66 @@ async function scheduleHabitsForDay(params: {
       : 'FRONT'
     const anchorPreference = anchorRaw === 'BACK' ? 'BACK' : 'FRONT'
 
-    const compatibleWindows = await fetchCompatibleWindowsForItem(
-      client,
-      day,
-      { energy: resolvedEnergy, duration_min: durationMin },
-      zone,
-      {
-        availability,
-        cache: windowCache,
-        now: offset === 0 ? baseDate : undefined,
-        locationContextValue: locationContext,
-        daylight: daylightConstraint,
-        ignoreAvailability: isSyncHabit,
-        anchor: anchorPreference,
-        restMode,
+    const attemptKeys = new Set<string>()
+    const attemptQueue: Array<{
+      location: string | null
+      daylight: DaylightConstraint | null
+    }> = []
+    const enqueueAttempt = (
+      location: string | null,
+      daylight: DaylightConstraint | null,
+    ) => {
+      const key = `${location ?? 'null'}|${daylight?.preference ?? 'null'}`
+      if (attemptKeys.has(key)) return
+      attemptKeys.add(key)
+      attemptQueue.push({ location, daylight })
+    }
+
+    enqueueAttempt(locationContext, daylightConstraint)
+    if (locationContext) {
+      enqueueAttempt(null, daylightConstraint)
+    }
+    if (daylightConstraint) {
+      enqueueAttempt(locationContext, null)
+      enqueueAttempt(null, null)
+    }
+
+    let compatibleWindows: Array<{
+      id: string
+      key: string
+      startLocal: Date
+      endLocal: Date
+      availableStartLocal: Date
+    }> = []
+
+    for (const attempt of attemptQueue) {
+      const clonedAvailability = cloneAvailabilityMap(availability)
+      const windowsForAttempt = await fetchCompatibleWindowsForItem(
+        client,
+        day,
+        { energy: resolvedEnergy, duration_min: durationMin },
+        zone,
+        {
+          availability: clonedAvailability,
+          cache: windowCache,
+          now: offset === 0 ? baseDate : undefined,
+          locationContextValue: attempt.location,
+          daylight: attempt.daylight,
+          ignoreAvailability: isSyncHabit,
+          anchor: anchorPreference,
+          restMode,
+        }
+      )
+
+      if (windowsForAttempt.length > 0) {
+        adoptAvailabilityMap(availability, clonedAvailability)
+        compatibleWindows = windowsForAttempt
+        break
       }
-    )
+    }
 
     if (compatibleWindows.length === 0) {
+      result.failures.push({ itemId: habit.id, reason: 'NO_WINDOW' })
       continue
     }
 
@@ -1546,6 +1588,32 @@ async function fetchCompatibleWindowsForItem(
     endLocal: win.endLocal,
     availableStartLocal: win.availableStartLocal,
   }))
+}
+
+function cloneAvailabilityMap(
+  source: Map<string, WindowAvailabilityBounds>,
+) {
+  const clone = new Map<string, WindowAvailabilityBounds>()
+  for (const [key, bounds] of source) {
+    clone.set(key, {
+      front: new Date(bounds.front.getTime()),
+      back: new Date(bounds.back.getTime()),
+    })
+  }
+  return clone
+}
+
+function adoptAvailabilityMap(
+  target: Map<string, WindowAvailabilityBounds>,
+  source: Map<string, WindowAvailabilityBounds>,
+) {
+  target.clear()
+  for (const [key, bounds] of source) {
+    target.set(key, {
+      front: new Date(bounds.front.getTime()),
+      back: new Date(bounds.back.getTime()),
+    })
+  }
 }
 
 function setAvailabilityBoundsForKey(
