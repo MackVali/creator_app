@@ -3488,108 +3488,149 @@ export default function SchedulePage() {
     }
   }, [userId, currentDate, localTimeZone])
 
-  const runScheduler = useCallback(async () => {
-    if (!userId) {
-      console.warn('No authenticated user available for scheduler run')
-      return
-    }
-    const localNow = new Date()
-    const timeZone: string | null = localTimeZone ?? null
-    if (isSchedulingRef.current) return
-    isSchedulingRef.current = true
-    setIsScheduling(true)
-    try {
-      const response = await fetch('/api/scheduler/run', {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          localTimeIso: localNow.toISOString(),
-          timeZone,
-          mode: resolvedModePayload,
-        }),
-      })
-      let payload: unknown = null
-      let parseError: unknown = null
+  const PRIMARY_WRITE_WINDOW_DAYS = 7
+  const FULL_WRITE_WINDOW_DAYS = 365
+
+  const runScheduler = useCallback(
+    async (
+      args?: {
+        writeThroughDays?: number | null
+        background?: boolean
+      }
+    ) => {
+      const background = args?.background ?? false
+      if (!userId) {
+        if (!background) {
+          console.warn('No authenticated user available for scheduler run')
+        }
+        return
+      }
+
+      const localNow = new Date()
+      const timeZone: string | null = localTimeZone ?? null
+
+      if (!background) {
+        if (isSchedulingRef.current) return
+        isSchedulingRef.current = true
+        setIsScheduling(true)
+      }
+
       try {
-        payload = await response.json()
-      } catch (err) {
-        parseError = err
-      }
-
-      if (!response.ok) {
-        console.error('Scheduler run failed', response.status, payload ?? parseError)
-      }
-
-      const parsed = parseSchedulerDebugPayload(payload)
-      if (parsed) {
-        setSchedulerDebug({
-          runAt: new Date().toISOString(),
-          ...parsed,
+        const response = await fetch('/api/scheduler/run', {
+          method: 'POST',
+          cache: 'no-store',
+          keepalive: background,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            localTimeIso: localNow.toISOString(),
+            timeZone,
+            mode: resolvedModePayload,
+            writeThroughDays: args?.writeThroughDays ?? null,
+          }),
         })
-        if (parsed.placedProjectIds.length > 0) {
-          setScheduledProjectIds(prev => {
-            let changed = false
-            const next = new Set(prev)
-            for (const id of parsed.placedProjectIds) {
-              if (!next.has(id)) {
-                next.add(id)
-                changed = true
+
+        if (background) {
+          if (!response.ok) {
+            console.error('Background scheduler run failed', response.status)
+          }
+          return
+        }
+
+        let payload: unknown = null
+        let parseError: unknown = null
+        try {
+          payload = await response.json()
+        } catch (err) {
+          parseError = err
+        }
+
+        if (!response.ok) {
+          console.error('Scheduler run failed', response.status, payload ?? parseError)
+        }
+
+        const parsed = parseSchedulerDebugPayload(payload)
+        if (parsed) {
+          setSchedulerDebug({
+            runAt: new Date().toISOString(),
+            ...parsed,
+          })
+          if (parsed.placedProjectIds.length > 0) {
+            setScheduledProjectIds(prev => {
+              let changed = false
+              const next = new Set(prev)
+              for (const id of parsed.placedProjectIds) {
+                if (!next.has(id)) {
+                  next.add(id)
+                  changed = true
+                }
               }
-            }
-            return changed ? next : prev
+              return changed ? next : prev
+            })
+          }
+        } else {
+          if (parseError) {
+            console.error('Failed to parse scheduler response', parseError)
+          }
+          const fallbackError =
+            parseError ??
+            (!response.ok
+              ? payload
+              : { message: 'Scheduler response missing schedule payload' })
+          setSchedulerDebug({
+            runAt: new Date().toISOString(),
+            failures: [],
+            placedCount: 0,
+            placedProjectIds: [],
+            timeline: [],
+            error: fallbackError,
           })
         }
-      } else {
-        if (parseError) {
-          console.error('Failed to parse scheduler response', parseError)
+      } catch (error) {
+        if (!background) {
+          console.error('Failed to run scheduler', error)
+          setSchedulerDebug({
+            runAt: new Date().toISOString(),
+            failures: [],
+            placedCount: 0,
+            placedProjectIds: [],
+            timeline: [],
+            error,
+          })
+        } else {
+          console.error('Background scheduler run failed', error)
         }
-        const fallbackError =
-          parseError ??
-          (!response.ok
-            ? payload
-            : { message: 'Scheduler response missing schedule payload' })
-        setSchedulerDebug({
-          runAt: new Date().toISOString(),
-          failures: [],
-          placedCount: 0,
-          placedProjectIds: [],
-          timeline: [],
-          error: fallbackError,
-        })
+      } finally {
+        if (!background) {
+          isSchedulingRef.current = false
+          setIsScheduling(false)
+          try {
+            await loadInstancesRef.current()
+          } catch (error) {
+            console.error('Failed to reload schedule instances', error)
+          }
+          try {
+            await refreshScheduledProjectIds()
+          } catch (error) {
+            console.error('Failed to refresh scheduled project history', error)
+          }
+        }
       }
-    } catch (error) {
-      console.error('Failed to run scheduler', error)
-      setSchedulerDebug({
-        runAt: new Date().toISOString(),
-        failures: [],
-        placedCount: 0,
-        placedProjectIds: [],
-        timeline: [],
-        error,
-      })
-    } finally {
-      isSchedulingRef.current = false
-      setIsScheduling(false)
-      try {
-        await loadInstancesRef.current()
-      } catch (error) {
-        console.error('Failed to reload schedule instances', error)
-      }
-      try {
-        await refreshScheduledProjectIds()
-      } catch (error) {
-        console.error('Failed to refresh scheduled project history', error)
-      }
-    }
-  }, [userId, refreshScheduledProjectIds, localTimeZone, resolvedModePayload])
+    },
+    [
+      userId,
+      refreshScheduledProjectIds,
+      localTimeZone,
+      resolvedModePayload,
+      loadInstancesRef,
+    ]
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const globalWithScheduler = window as typeof window & {
-      __runScheduler?: () => Promise<void>
+      __runScheduler?: (options?: { writeThroughDays?: number | null }) => Promise<void>
     }
     globalWithScheduler.__runScheduler = runScheduler
     return () => {
@@ -3611,7 +3652,13 @@ export default function SchedulePage() {
     if (autoScheduledForRef.current === todayKey) return
     autoScheduledForRef.current = todayKey
     void (async () => {
-      await runScheduler()
+      await runScheduler({ writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS })
+      if (PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS) {
+        void runScheduler({
+          writeThroughDays: FULL_WRITE_WINDOW_DAYS,
+          background: true,
+        })
+      }
       persistAutoRunDate(todayKey)
       setHasAutoRunToday(true)
     })()
@@ -3628,7 +3675,13 @@ export default function SchedulePage() {
   const handleRescheduleClick = useCallback(async () => {
     if (!userId) return
     const todayKey = formatLocalDateKey(new Date())
-    await runScheduler()
+    await runScheduler({ writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS })
+    if (PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS) {
+      void runScheduler({
+        writeThroughDays: FULL_WRITE_WINDOW_DAYS,
+        background: true,
+      })
+    }
     persistAutoRunDate(todayKey)
     setHasAutoRunToday(true)
   }, [userId, runScheduler, persistAutoRunDate])
