@@ -1208,6 +1208,7 @@ function computeTimelineLayoutForSyncHabits({
     const startMs = placement.start.getTime()
     const endMs = placement.end.getTime()
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    // Include every habit placement so sync entries can pair with one another.
     candidates.push({ kind: 'habit', index, startMs, endMs })
   })
 
@@ -1257,6 +1258,9 @@ function computeTimelineLayoutForSyncHabits({
     const matches: Match[] = []
 
     for (const candidate of sortedCandidates) {
+      if (candidate.kind === 'habit' && candidate.index === habitIndex) {
+        continue
+      }
       const candidateKey = `${candidate.kind}:${candidate.index}`
       if (usedCandidates.has(candidateKey)) continue
       if (candidate.kind === 'habit' && candidate.index === habitIndex) continue
