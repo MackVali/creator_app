@@ -3,6 +3,7 @@ import { scheduleBacklog } from "../../../src/lib/scheduler/reschedule";
 import * as instanceRepo from "../../../src/lib/scheduler/instanceRepo";
 import * as repo from "../../../src/lib/scheduler/repo";
 import * as placement from "../../../src/lib/scheduler/placement";
+import * as habitsRepo from "../../../src/lib/scheduler/habits";
 import { getDatePartsInTimeZone } from "../../../src/lib/scheduler/timezone";
 import type { ScheduleInstance } from "../../../src/lib/scheduler/instanceRepo";
 import type { ProjectLite } from "../../../src/lib/scheduler/weight";
@@ -269,6 +270,212 @@ describe("scheduleBacklog", () => {
     expect(callOrder.length).toBeGreaterThanOrEqual(2);
     expect(callOrder[0]).toBe("proj-high");
     expect(callOrder[1]).toBe("proj-low");
+  });
+
+  it("creates schedule instances for due habits", async () => {
+    const { client } = createSupabaseMock();
+
+    const emptyBacklog: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    vi.spyOn(instanceRepo, "fetchBacklogNeedingSchedule").mockResolvedValue(emptyBacklog);
+    vi.spyOn(instanceRepo, "fetchInstancesForRange").mockResolvedValue({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse);
+    vi.spyOn(repo, "fetchReadyTasks").mockResolvedValue([]);
+    vi.spyOn(repo, "fetchProjectsMap").mockResolvedValue({});
+    vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
+    vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
+      {
+        id: "win-habit",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: null,
+      },
+    ] as unknown as repo.WindowLite[]);
+
+    const habit: habitsRepo.HabitScheduleItem = {
+      id: "habit-1",
+      name: "Stretch",
+      durationMinutes: 15,
+      createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      updatedAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: null,
+      energy: null,
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: null,
+    };
+
+    vi.spyOn(habitsRepo, "fetchHabitsForSchedule").mockResolvedValue([habit]);
+
+    const habitInstance = createInstanceRecord({
+      id: "inst-habit",
+      source_id: habit.id,
+      source_type: "HABIT",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:15:00Z",
+      duration_min: 15,
+      window_id: "win-habit",
+      energy_resolved: "LOW",
+      weight_snapshot: 0,
+    });
+
+    const placeSpy = vi
+      .spyOn(placement, "placeItemInWindows")
+      .mockImplementation(async (params) => {
+        expect(params.item.sourceType).toBe("HABIT");
+        return {
+          data: habitInstance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        item: expect.objectContaining({
+          id: habit.id,
+          sourceType: "HABIT",
+        }),
+      }),
+    );
+    expect(result.placed).toContainEqual(habitInstance);
+    expect(
+      result.timeline.some(
+        entry => entry.type === "HABIT" && entry.instanceId === habitInstance.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("relaxes habit constraints when location and daylight would block placement", async () => {
+    const { client } = createSupabaseMock();
+
+    const emptyBacklog: BacklogResponse = {
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    };
+
+    vi.spyOn(instanceRepo, "fetchBacklogNeedingSchedule").mockResolvedValue(emptyBacklog);
+    vi.spyOn(instanceRepo, "fetchInstancesForRange").mockResolvedValue({
+      data: [],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    } satisfies InstancesResponse);
+    vi.spyOn(repo, "fetchReadyTasks").mockResolvedValue([]);
+    vi.spyOn(repo, "fetchProjectsMap").mockResolvedValue({});
+    vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
+    vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
+      {
+        id: "win-night",
+        label: "Late",
+        energy: "NO",
+        start_local: "22:00",
+        end_local: "23:00",
+        days: null,
+        location_context_value: "OFFICE",
+      },
+    ] as unknown as repo.WindowLite[]);
+
+    const habit: habitsRepo.HabitScheduleItem = {
+      id: "habit-2",
+      name: "Journal",
+      durationMinutes: 30,
+      createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      updatedAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: null,
+      energy: null,
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: "ctx-home",
+      locationContextValue: "HOME",
+      locationContextName: "Home",
+      daylightPreference: "DAY",
+      windowEdgePreference: null,
+      window: null,
+    };
+
+    vi.spyOn(habitsRepo, "fetchHabitsForSchedule").mockResolvedValue([habit]);
+
+    const habitInstance = createInstanceRecord({
+      id: "inst-habit-2",
+      source_id: habit.id,
+      source_type: "HABIT",
+      start_utc: "2024-01-02T22:00:00Z",
+      end_utc: "2024-01-02T22:30:00Z",
+      duration_min: 30,
+      window_id: "win-night",
+      energy_resolved: "NO",
+      weight_snapshot: 0,
+    });
+
+    const placeSpy = vi
+      .spyOn(placement, "placeItemInWindows")
+      .mockImplementation(async (params) => {
+        expect(params.item.sourceType).toBe("HABIT");
+        return {
+          data: habitInstance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).toHaveBeenCalled();
+    expect(placeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId,
+        item: expect.objectContaining({
+          id: habit.id,
+          sourceType: "HABIT",
+        }),
+      }),
+    );
+    expect(result.failures).toEqual([]);
+    expect(
+      result.timeline.some(
+        entry => entry.type === "HABIT" && entry.instanceId === habitInstance.id,
+      ),
+    ).toBe(true);
   });
 
   it("considers 'NO' energy windows for scheduling", async () => {

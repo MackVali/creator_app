@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
 import {
   normalizeSchedulerModePayload,
@@ -42,7 +43,14 @@ export async function POST(request: Request) {
 
   const now = localNow ?? new Date()
 
-  const markResult = await markMissedAndQueue(user.id, now, supabase)
+  const adminSupabase = createAdminClient()
+  const schedulingClient = adminSupabase ?? supabase
+
+  if (!adminSupabase && process.env.NODE_ENV !== 'production') {
+    console.warn('Falling back to user-scoped Supabase client for scheduler run')
+  }
+
+  const markResult = await markMissedAndQueue(user.id, now, schedulingClient)
   if (markResult.error) {
     return NextResponse.json(
       { error: markResult.error.message ?? 'failed to mark missed instances' },
@@ -52,7 +60,7 @@ export async function POST(request: Request) {
 
   const userTimeZone = requestTimeZone ?? extractUserTimeZone(user)
   const coordinates = extractUserCoordinates(user)
-  const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
+  const scheduleResult = await scheduleBacklog(user.id, now, schedulingClient, {
     timeZone: userTimeZone,
     location: coordinates,
     mode,

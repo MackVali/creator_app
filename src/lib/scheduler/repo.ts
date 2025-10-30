@@ -113,6 +113,7 @@ export async function fetchWindowsForDate(
   date: Date,
   client?: Client,
   timeZone?: string | null,
+  options?: { userId?: string | null },
 ): Promise<WindowLite[]> {
   const supabase = ensureClient(client);
 
@@ -122,20 +123,21 @@ export async function fetchWindowsForDate(
   const contextJoin = 'location_context:location_contexts(id, value, label)';
   const columns = `id, label, energy, start_local, end_local, days, location_context_id, ${contextJoin}`;
 
+  const userId = options?.userId ?? null;
+  const selectWindows = () => supabase.from('windows').select(columns);
+  const applyUserFilter = <T extends { eq: (column: string, value: string) => T }>(builder: T): T => {
+    if (!userId) return builder;
+    return builder.eq('user_id', userId);
+  };
+
   const [
     { data: today, error: errToday },
     { data: prev, error: errPrev },
     { data: recurring, error: errRecurring },
   ] = await Promise.all([
-    supabase
-      .from('windows')
-      .select(columns)
-      .contains('days', [weekday]),
-    supabase
-      .from('windows')
-      .select(columns)
-      .contains('days', [prevWeekday]),
-    supabase.from('windows').select(columns).is('days', null),
+    applyUserFilter(selectWindows()).contains('days', [weekday]),
+    applyUserFilter(selectWindows()).contains('days', [prevWeekday]),
+    applyUserFilter(selectWindows()).is('days', null),
   ]);
 
   if (errToday || errPrev || errRecurring) {
