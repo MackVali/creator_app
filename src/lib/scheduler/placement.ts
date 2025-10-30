@@ -19,7 +19,7 @@ type PlaceParams = {
   userId: string
   item: {
     id: string
-    sourceType: 'PROJECT'
+    sourceType: ScheduleInstance['source_type']
     duration_min: number
     energy: string
     weight: number
@@ -37,6 +37,7 @@ type PlaceParams = {
   ignoreProjectIds?: Set<string>
   notBefore?: Date
   existingInstances?: ScheduleInstance[]
+  allowHabitOverlap?: boolean
 }
 
 export async function placeItemInWindows(params: PlaceParams): Promise<PlacementResult> {
@@ -49,6 +50,7 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
     ignoreProjectIds,
     notBefore,
     existingInstances,
+    allowHabitOverlap,
   } = params
   let best: null | {
     window: (typeof windows)[number]
@@ -98,6 +100,9 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
 
     const filtered = taken.filter(inst => {
       if (inst.id === reuseInstanceId) return false
+      if (allowHabitOverlap && inst.source_type === 'HABIT') {
+        return false
+      }
       if (ignoreProjectIds && inst.source_type === 'PROJECT') {
         const projectId = inst.source_id ?? ''
         if (projectId && ignoreProjectIds.has(projectId)) {

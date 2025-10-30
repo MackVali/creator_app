@@ -342,25 +342,29 @@ describe("scheduleBacklog", () => {
       weight_snapshot: 0,
     });
 
-    const createInstanceSpy = vi
-      .spyOn(instanceRepo, "createInstance")
-      .mockResolvedValue({
-        data: habitInstance,
-        error: null,
-        count: null,
-        status: 201,
-        statusText: "Created",
-      } as Awaited<ReturnType<typeof instanceRepo.createInstance>>);
+    const placeSpy = vi
+      .spyOn(placement, "placeItemInWindows")
+      .mockImplementation(async (params) => {
+        expect(params.item.sourceType).toBe("HABIT");
+        return {
+          data: habitInstance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      });
 
     const result = await scheduleBacklog(userId, baseDate, client);
 
-    expect(createInstanceSpy).toHaveBeenCalledWith(
+    expect(placeSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         userId,
-        sourceId: habit.id,
-        sourceType: "HABIT",
+        item: expect.objectContaining({
+          id: habit.id,
+          sourceType: "HABIT",
+        }),
       }),
-      client,
     );
     expect(result.placed).toContainEqual(habitInstance);
     expect(
@@ -441,27 +445,30 @@ describe("scheduleBacklog", () => {
       weight_snapshot: 0,
     });
 
-    const createInstanceSpy = vi
-      .spyOn(instanceRepo, "createInstance")
-      .mockResolvedValue({
-        data: habitInstance,
-        error: null,
-        count: null,
-        status: 201,
-        statusText: "Created",
-      } as Awaited<ReturnType<typeof instanceRepo.createInstance>>);
+    const placeSpy = vi
+      .spyOn(placement, "placeItemInWindows")
+      .mockImplementation(async (params) => {
+        expect(params.item.sourceType).toBe("HABIT");
+        return {
+          data: habitInstance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      });
 
     const result = await scheduleBacklog(userId, baseDate, client);
 
-    expect(createInstanceSpy).toHaveBeenCalled();
-    expect(createInstanceSpy).toHaveBeenCalledWith(
+    expect(placeSpy).toHaveBeenCalled();
+    expect(placeSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         userId,
-        sourceId: habit.id,
-        sourceType: "HABIT",
-        windowId: "win-night",
+        item: expect.objectContaining({
+          id: habit.id,
+          sourceType: "HABIT",
+        }),
       }),
-      client,
     );
     expect(result.failures).toEqual([]);
     expect(

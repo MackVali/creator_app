@@ -4,8 +4,6 @@ import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
   fetchInstancesForRange,
-  createInstance,
-  rescheduleInstance,
   type ScheduleInstance,
 } from './instanceRepo'
 import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
@@ -1182,9 +1180,102 @@ async function scheduleHabitsForDay(params: {
       continue
     }
 
-    const startDate = new Date(startCandidate)
-    const endDate = new Date(endCandidate)
-    addAnchorStart(anchorStartsByWindowKey, target.key, startCandidate)
+    const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
+    const windowLabel = window.label ?? null
+    const windowStartLocal = resolveWindowStart(window, day, zone)
+    const candidateStartUTC = new Date(startCandidate).toISOString()
+    const candidateEndUTC = new Date(endCandidate).toISOString()
+    const energyResolved = window.energy
+      ? String(window.energy).toUpperCase()
+      : resolvedEnergy
+
+    const existingInstance = existingByHabitId.get(habit.id) ?? null
+    const needsUpdate = existingInstance
+      ? existingInstance.window_id !== window.id ||
+        existingInstance.start_utc !== candidateStartUTC ||
+        existingInstance.end_utc !== candidateEndUTC ||
+        existingInstance.duration_min !== durationMinutes ||
+        (existingInstance.energy_resolved ?? '').toUpperCase() !== energyResolved
+      : true
+
+    let persisted: ScheduleInstance | null = null
+    let decision: HabitDraftPlacement['decision'] = 'new'
+    let instanceId: string | undefined
+
+    if (existingInstance && !needsUpdate) {
+      decision = 'kept'
+      instanceId = existingInstance.id
+      persisted = existingInstance
+      registerInstance(existingInstance)
+    } else {
+      const placement = await placeItemInWindows({
+        userId,
+        item: {
+          id: habit.id,
+          sourceType: 'HABIT',
+          duration_min: durationMinutes,
+          energy: energyResolved,
+          weight: 0,
+        },
+        windows: [
+          {
+            id: window.id,
+            startLocal: target.startLocal,
+            endLocal: target.endLocal,
+            availableStartLocal: new Date(startCandidate),
+            key: target.key,
+          },
+        ],
+        date: day,
+        client,
+        reuseInstanceId: existingInstance?.id,
+        existingInstances: isSyncHabit
+          ? dayInstances.filter(inst =>
+              inst &&
+              (inst.source_type !== 'HABIT' || inst.id === existingInstance?.id)
+            )
+          : dayInstances,
+        allowHabitOverlap: isSyncHabit,
+      })
+
+      if (!('status' in placement)) {
+        if (placement.error !== 'NO_FIT') {
+          result.failures.push({
+            itemId: habit.id,
+            reason: 'error',
+            detail: placement.error,
+          })
+        }
+        continue
+      }
+
+      if (placement.error || !placement.data) {
+        result.failures.push({
+          itemId: habit.id,
+          reason: 'error',
+          detail: placement.error ?? new Error('Failed to persist habit instance'),
+        })
+        continue
+      }
+
+      persisted = placement.data
+      result.instances.push(persisted)
+      existingByHabitId.set(habit.id, persisted)
+      registerInstance(persisted)
+      decision = existingInstance ? 'rescheduled' : 'new'
+      instanceId = persisted.id
+    }
+
+    if (!persisted) {
+      continue
+    }
+
+    const startDate = new Date(persisted.start_utc)
+    const endDate = new Date(persisted.end_utc)
+    const startUTC = startDate.toISOString()
+    const endUTC = endDate.toISOString()
+
+    addAnchorStart(anchorStartsByWindowKey, target.key, startDate.getTime())
     if (bounds) {
       if (anchorPreference === 'BACK') {
         bounds.back = new Date(startDate)
@@ -1203,91 +1294,10 @@ async function scheduleHabitsForDay(params: {
       setAvailabilityBoundsForKey(availability, target.key, endDate.getTime(), endDate.getTime())
     }
 
-    const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
-    const windowLabel = window.label ?? null
-    const windowStartLocal = resolveWindowStart(window, day, zone)
-    const startUTC = startDate.toISOString()
-    const endUTC = endDate.toISOString()
-    const energyResolved = window.energy
-      ? String(window.energy).toUpperCase()
-      : resolvedEnergy
-
-    const existingInstance = existingByHabitId.get(habit.id) ?? null
-    let decision: HabitDraftPlacement['decision'] = 'new'
-    let instanceId: string | undefined
-
-    if (existingInstance) {
-      const needsUpdate =
-        existingInstance.window_id !== window.id ||
-        existingInstance.start_utc !== startUTC ||
-        existingInstance.end_utc !== endUTC ||
-        existingInstance.duration_min !== durationMinutes ||
-        (existingInstance.energy_resolved ?? '').toUpperCase() !== energyResolved
-
-      if (needsUpdate) {
-        const response = await rescheduleInstance(
-          existingInstance.id,
-          {
-            windowId: window.id,
-            startUTC,
-            endUTC,
-            durationMin: durationMinutes,
-            weightSnapshot: existingInstance.weight_snapshot ?? 0,
-            energyResolved,
-          },
-          client
-        )
-
-        if (response.error || !response.data) {
-          result.failures.push({
-            itemId: habit.id,
-            reason: 'error',
-            detail: response.error ?? new Error('Failed to reschedule habit instance'),
-          })
-          continue
-        }
-
-        result.instances.push(response.data)
-        existingByHabitId.set(habit.id, response.data)
-        decision = 'rescheduled'
-        instanceId = response.data.id
-        registerInstance(response.data)
-      } else {
-        decision = 'kept'
-        instanceId = existingInstance.id
-        registerInstance(existingInstance)
-      }
-    } else {
-      const response = await createInstance(
-        {
-          userId,
-          sourceId: habit.id,
-          sourceType: 'HABIT',
-          windowId: window.id,
-          startUTC,
-          endUTC,
-          durationMin: durationMinutes,
-          weightSnapshot: 0,
-          energyResolved,
-        },
-        client
-      )
-
-      if (response.error || !response.data) {
-        result.failures.push({
-          itemId: habit.id,
-          reason: 'error',
-          detail: response.error ?? new Error('Failed to create habit instance'),
-        })
-        continue
-      }
-
-      result.instances.push(response.data)
-      existingByHabitId.set(habit.id, response.data)
-      decision = 'new'
-      instanceId = response.data.id
-      registerInstance(response.data)
-    }
+    const resolvedDuration = Number.isFinite(persisted.duration_min)
+      ? persisted.duration_min
+      : durationMinutes
+    const persistedEnergy = (persisted.energy_resolved ?? energyResolved).toUpperCase()
 
     result.placements.push({
       type: 'HABIT',
@@ -1298,8 +1308,8 @@ async function scheduleHabitsForDay(params: {
         windowLabel,
         startUTC,
         endUTC,
-        durationMin: durationMinutes,
-        energyResolved,
+        durationMin: resolvedDuration,
+        energyResolved: persistedEnergy,
         clipped,
       },
       decision,
