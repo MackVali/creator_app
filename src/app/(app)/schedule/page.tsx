@@ -1814,8 +1814,15 @@ function parseSchedulerDebugPayload(
           scheduleValue.placed
             .map(entry => {
               if (!entry || typeof entry !== 'object') return null
-              const value = entry as { source_id?: unknown }
-              const id = value.source_id
+              const typedEntry = entry as {
+                source_id?: unknown
+                source_type?: unknown
+              }
+              const rawType = typedEntry.source_type
+              const normalizedType =
+                typeof rawType === 'string' ? rawType.toUpperCase() : null
+              if (normalizedType !== 'PROJECT') return null
+              const id = typedEntry.source_id
               return typeof id === 'string' && id.length > 0 ? id : null
             })
             .filter((value): value is string => Boolean(value))
