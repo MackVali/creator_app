@@ -10,8 +10,10 @@ import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
+  fetchWindowsSnapshot,
   fetchProjectsMap,
   fetchProjectSkillsForProjects,
+  windowsForDateFromSnapshot,
   type WindowLite,
 } from './repo'
 import { placeItemInWindows } from './placement'
@@ -147,6 +149,7 @@ export async function scheduleBacklog(
     timeZone?: string | null
     location?: GeoCoordinates | null
     mode?: SchedulerModePayload | null
+    writeThroughDays?: number | null
   }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
@@ -180,6 +183,7 @@ export async function scheduleBacklog(
   const tasks = await fetchReadyTasks(supabase)
   const projectsMap = await fetchProjectsMap(supabase)
   const habits = await fetchHabitsForSchedule(userId, supabase)
+  const windowSnapshot = await fetchWindowsSnapshot(userId, supabase)
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
@@ -405,6 +409,15 @@ export async function scheduleBacklog(
     MAX_LOOKAHEAD_DAYS,
     BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
   )
+  const requestedWriteThroughDays = options?.writeThroughDays ?? null
+  const persistedDayLimit = (() => {
+    if (requestedWriteThroughDays === null || requestedWriteThroughDays === undefined) {
+      return lookaheadDays
+    }
+    const coerced = Math.floor(Number(requestedWriteThroughDays))
+    if (!Number.isFinite(coerced) || coerced < 0) return lookaheadDays
+    return Math.min(lookaheadDays, coerced)
+  })()
   const habitWriteLookaheadDays = Math.min(lookaheadDays, HABIT_WRITE_LOOKAHEAD_DAYS)
   const dedupeWindowDays = Math.max(lookaheadDays, 28)
   const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
@@ -536,6 +549,16 @@ export async function scheduleBacklog(
     Map<string, WindowAvailabilityBounds>
   >()
   const windowCache = new Map<string, WindowLite[]>()
+  const activeTimeZone = timeZone ?? 'UTC'
+  const getWindowsForDay = (day: Date) => {
+    const cacheKey = dateCacheKey(day)
+    let windows = windowCache.get(cacheKey)
+    if (!windows) {
+      windows = windowsForDateFromSnapshot(windowSnapshot, day, activeTimeZone)
+      windowCache.set(cacheKey, windows)
+    }
+    return windows
+  }
   const habitPlacementsByOffset = new Map<number, HabitScheduleDayResult>()
 
   const ensureHabitPlacementsForDay = async (
@@ -565,6 +588,7 @@ export async function scheduleBacklog(
       restMode: isRestMode,
       existingInstances,
       registerInstance: registerInstanceForOffsets,
+      getWindowsForDay,
     })
 
     if (dayResult.placements.length > 0) {
@@ -582,7 +606,9 @@ export async function scheduleBacklog(
   }
 
   const scheduledProjectIds = new Set<string>()
-  const maxOffset = restrictProjectsToToday ? 1 : lookaheadDays
+  const maxOffset = restrictProjectsToToday
+    ? Math.min(Math.max(persistedDayLimit, 1), 1)
+    : persistedDayLimit
 
   for (let offset = 0; offset < maxOffset; offset += 1) {
     let windowAvailability = windowAvailabilityByDay.get(offset)
@@ -592,10 +618,11 @@ export async function scheduleBacklog(
     }
 
     const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-    if (offset < habitWriteLookaheadDays) {
+    if (offset < habitWriteLookaheadDays && offset < persistedDayLimit) {
       await ensureHabitPlacementsForDay(offset, day, windowAvailability)
     }
     const dayInstances = getDayInstances(offset)
+    const dayWindows = getWindowsForDay(day)
 
     for (const item of queue) {
       if (scheduledProjectIds.has(item.id)) continue
@@ -611,6 +638,7 @@ export async function scheduleBacklog(
           cache: windowCache,
           restMode: isRestMode,
           userId,
+          preloadedWindows: dayWindows,
         }
       )
       if (windows.length === 0) continue
@@ -687,9 +715,11 @@ export async function scheduleBacklog(
     }
   }
 
-  for (const item of queue) {
-    if (!scheduledProjectIds.has(item.id)) {
-      result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
+  if (persistedDayLimit >= lookaheadDays) {
+    for (const item of queue) {
+      if (!scheduledProjectIds.has(item.id)) {
+        result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
+      }
     }
   }
 
@@ -856,6 +886,7 @@ async function scheduleHabitsForDay(params: {
   restMode?: boolean
   existingInstances: ScheduleInstance[]
   registerInstance: (instance: ScheduleInstance) => void
+  getWindowsForDay: (day: Date) => WindowLite[]
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -872,6 +903,7 @@ async function scheduleHabitsForDay(params: {
     restMode = false,
     existingInstances,
     registerInstance,
+    getWindowsForDay,
   } = params
 
   const result: HabitScheduleDayResult = {
@@ -888,7 +920,7 @@ async function scheduleHabitsForDay(params: {
   const anchorStartsByWindowKey = new Map<string, number[]>()
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const existingByHabitId = new Map<string, ScheduleInstance>()
-  const dayInstances = existingInstances
+  const dayInstances = existingInstances.map(inst => ({ ...inst }))
 
   for (const inst of dayInstances) {
     if (!inst) continue
@@ -927,7 +959,7 @@ async function scheduleHabitsForDay(params: {
   const cacheKey = dateCacheKey(day)
   let windows = windowCache.get(cacheKey)
   if (!windows) {
-    windows = await fetchWindowsForDate(day, client, timeZone, { userId })
+    windows = getWindowsForDay(day)
     windowCache.set(cacheKey, windows)
   }
 
@@ -993,7 +1025,8 @@ async function scheduleHabitsForDay(params: {
             nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
           }
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
-    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
+    const isSyncHabit = normalizedType === 'SYNC'
+    const allowsHabitOverlap = isSyncHabit
     const anchorRaw = habit.windowEdgePreference
       ? String(habit.windowEdgePreference).toUpperCase().trim()
       : 'FRONT'
@@ -1048,6 +1081,7 @@ async function scheduleHabitsForDay(params: {
           anchor: anchorPreference,
           restMode,
           userId,
+          preloadedWindows: windows,
         }
       )
 
@@ -1231,13 +1265,13 @@ async function scheduleHabitsForDay(params: {
         date: day,
         client,
         reuseInstanceId: existingInstance?.id,
-        existingInstances: isSyncHabit
+        existingInstances: allowsHabitOverlap
           ? dayInstances.filter(inst =>
               inst &&
               (inst.source_type !== 'HABIT' || inst.id === existingInstance?.id)
             )
           : dayInstances,
-        allowHabitOverlap: isSyncHabit,
+        allowHabitOverlap: allowsHabitOverlap,
       })
 
       if (!('status' in placement)) {
@@ -1278,6 +1312,7 @@ async function scheduleHabitsForDay(params: {
     const endUTC = endDate.toISOString()
 
     addAnchorStart(anchorStartsByWindowKey, target.key, startDate.getTime())
+    upsertInstance(dayInstances, persisted)
     if (bounds) {
       if (anchorPreference === 'BACK') {
         bounds.back = new Date(startDate)
@@ -1422,13 +1457,17 @@ async function fetchCompatibleWindowsForItem(
     anchor?: 'FRONT' | 'BACK'
     restMode?: boolean
     userId?: string | null
+    preloadedWindows?: WindowLite[]
   }
 ) {
   const cacheKey = dateCacheKey(date)
   const cache = options?.cache
   let windows: WindowLite[]
   const userId = options?.userId ?? null
-  if (cache?.has(cacheKey)) {
+  if (options?.preloadedWindows) {
+    windows = options.preloadedWindows
+    cache?.set(cacheKey, windows)
+  } else if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
     windows = await fetchWindowsForDate(date, supabase, timeZone, { userId })

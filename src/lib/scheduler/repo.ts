@@ -109,15 +109,66 @@ export async function updateTaskStage(
     .eq('id', taskId);
 }
 
+const crossesMidnight = (w: WindowLite) => {
+  const [sh = 0, sm = 0] = w.start_local.split(':').map(Number);
+  const [eh = 0, em = 0] = w.end_local.split(':').map(Number);
+  return eh < sh || (eh === sh && em < sm);
+};
+
+function buildWindowsForDateFromSnapshot(
+  snapshot: WindowLite[],
+  date: Date,
+  timeZone: string,
+): WindowLite[] {
+  const weekday = weekdayInTimeZone(date, timeZone);
+  const prevWeekday = (weekday + 6) % 7;
+
+  const today: WindowLite[] = [];
+  const prev: WindowLite[] = [];
+  const always: WindowLite[] = [];
+
+  for (const window of snapshot) {
+    const days = window.days ?? null;
+    const crosses = crossesMidnight(window);
+
+    if (days === null) {
+      always.push({ ...window, fromPrevDay: false });
+    } else if (days.includes(weekday)) {
+      today.push({ ...window, fromPrevDay: false });
+    }
+
+    const appliesToPrev = days === null || (days?.includes(prevWeekday) ?? false);
+    if (crosses && appliesToPrev) {
+      prev.push({ ...window, fromPrevDay: true });
+    }
+  }
+
+  const base = new Map<string, WindowLite>();
+  for (const window of [...today, ...always]) {
+    if (!base.has(window.id)) {
+      base.set(window.id, { ...window, fromPrevDay: false });
+    }
+  }
+
+  const prevCross = [...prev, ...always.filter(crossesMidnight).map((w) => ({ ...w, fromPrevDay: true }))];
+
+  return [...base.values(), ...prevCross];
+}
+
 export async function fetchWindowsForDate(
   date: Date,
   client?: Client,
   timeZone?: string | null,
-  options?: { userId?: string | null },
+  options?: { userId?: string | null; snapshot?: WindowLite[] },
 ): Promise<WindowLite[]> {
+  const normalizedTimeZone = normalizeTimeZone(timeZone);
+
+  if (options?.snapshot) {
+    return buildWindowsForDateFromSnapshot(options.snapshot, date, normalizedTimeZone);
+  }
+
   const supabase = ensureClient(client);
 
-  const normalizedTimeZone = normalizeTimeZone(timeZone);
   const weekday = weekdayInTimeZone(date, normalizedTimeZone);
   const prevWeekday = (weekday + 6) % 7;
   const contextJoin = 'location_context:location_contexts(id, value, label)';
@@ -151,12 +202,6 @@ export async function fetchWindowsForDate(
   const prevWindows = mapWindows(prev);
   const alwaysWindows = mapWindows(recurring);
 
-  const crosses = (w: WindowLite) => {
-    const [sh = 0, sm = 0] = w.start_local.split(':').map(Number);
-    const [eh = 0, em = 0] = w.end_local.split(':').map(Number);
-    return eh < sh || (eh === sh && em < sm);
-  };
-
   const base = new Map<string, WindowLite>();
   for (const window of [...todayWindows, ...alwaysWindows]) {
     if (!base.has(window.id)) {
@@ -165,10 +210,34 @@ export async function fetchWindowsForDate(
   }
 
   const prevCross = [...prevWindows, ...alwaysWindows]
-    .filter(crosses)
+    .filter(crossesMidnight)
     .map((w) => ({ ...w, fromPrevDay: true }));
 
   return [...base.values(), ...prevCross];
+}
+
+export async function fetchWindowsSnapshot(
+  userId: string,
+  client?: Client,
+): Promise<WindowLite[]> {
+  const supabase = ensureClient(client);
+  const contextJoin = 'location_context:location_contexts(id, value, label)';
+  const { data, error } = await supabase
+    .from('windows')
+    .select(`id, label, energy, start_local, end_local, days, location_context_id, ${contextJoin}`)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+
+  return ((data ?? []) as WindowRecord[]).map(mapWindowRecord);
+}
+
+export function windowsForDateFromSnapshot(
+  snapshot: WindowLite[],
+  date: Date,
+  timeZone: string,
+): WindowLite[] {
+  return buildWindowsForDateFromSnapshot(snapshot, date, timeZone);
 }
 
 export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
@@ -250,4 +319,3 @@ export async function fetchProjectSkillsForProjects(
 
   return map;
 }
-

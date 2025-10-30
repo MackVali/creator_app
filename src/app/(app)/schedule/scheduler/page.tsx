@@ -214,14 +214,31 @@ export default function SchedulerPage() {
         : undefined,
   });
 
+  const PRIMARY_WRITE_WINDOW_DAYS = 7;
+  const FULL_WRITE_WINDOW_DAYS = 365;
+
   async function handleReschedule() {
     setStatus("pending");
     setError(null);
 
     try {
+      const localNow = new Date();
+      const timeZone =
+        typeof Intl !== "undefined"
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
+          : null;
+
       const response = await fetch("/api/scheduler/run", {
         method: "POST",
         cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          localTimeIso: localNow.toISOString(),
+          timeZone,
+          writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS,
+        }),
       });
 
       let payload: unknown = null;
@@ -252,11 +269,29 @@ export default function SchedulerPage() {
           parsed ?? { placed: [], failures: [], timeline: [] },
         );
       } else {
-        setScheduleDraft(null);
+      setScheduleDraft(null);
       }
 
       setLastRunAt(new Date());
       setStatus("success");
+
+      if (PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS) {
+        void fetch("/api/scheduler/run", {
+          method: "POST",
+          cache: "no-store",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            localTimeIso: localNow.toISOString(),
+            timeZone,
+            writeThroughDays: FULL_WRITE_WINDOW_DAYS,
+          }),
+        }).catch(err => {
+          console.error("Background scheduler run failed", err);
+        });
+      }
     } catch (err) {
       console.error("Failed to trigger scheduler", err);
       setStatus("error");
