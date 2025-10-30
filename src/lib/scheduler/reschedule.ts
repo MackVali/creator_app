@@ -610,6 +610,7 @@ export async function scheduleBacklog(
           now: offset === 0 ? baseDate : undefined,
           cache: windowCache,
           restMode: isRestMode,
+          userId,
         }
       )
       if (windows.length === 0) continue
@@ -926,7 +927,7 @@ async function scheduleHabitsForDay(params: {
   const cacheKey = dateCacheKey(day)
   let windows = windowCache.get(cacheKey)
   if (!windows) {
-    windows = await fetchWindowsForDate(day, client, timeZone)
+    windows = await fetchWindowsForDate(day, client, timeZone, { userId })
     windowCache.set(cacheKey, windows)
   }
 
@@ -1046,6 +1047,7 @@ async function scheduleHabitsForDay(params: {
           ignoreAvailability: isSyncHabit,
           anchor: anchorPreference,
           restMode,
+          userId,
         }
       )
 
@@ -1419,15 +1421,17 @@ async function fetchCompatibleWindowsForItem(
     ignoreAvailability?: boolean
     anchor?: 'FRONT' | 'BACK'
     restMode?: boolean
+    userId?: string | null
   }
 ) {
   const cacheKey = dateCacheKey(date)
   const cache = options?.cache
   let windows: WindowLite[]
+  const userId = options?.userId ?? null
   if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(date, supabase, timeZone)
+    windows = await fetchWindowsForDate(date, supabase, timeZone, { userId })
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)
