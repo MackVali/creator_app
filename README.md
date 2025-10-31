@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Deployment Testing
+
+Deploying to Vercel? Trigger a preview build by pushing any change—like this update—so you can verify the latest configuration in a live environment.
+
 ## Getting Started
 
 1) Copy envs
