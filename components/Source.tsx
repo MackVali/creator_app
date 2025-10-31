@@ -1399,10 +1399,35 @@ export default function Source() {
     return new Map(list.map((connector) => [connector.id, connector]))
   }, [hostedConnectorsQuery.data])
 
+  const socialConnectorMap = useMemo(() => {
+    return new Map(socialConnectorOptions.map((option) => [option.id, option]))
+  }, [])
+
   const hostedConnectorList = hostedConnectorsQuery.data?.connectors ?? []
   const hasReadyHostedConnector = hostedConnectorList.some(
     (connector) => connector.enabled
   )
+
+  const heroReadyHostedConnector = useMemo(() => {
+    return (
+      hostedConnectorList.find(
+        (connector) => connector.enabled && !connector.integration?.oauth?.connected
+      ) ?? null
+    )
+  }, [hostedConnectorList])
+
+  const heroConnectorOption = heroReadyHostedConnector
+    ? socialConnectorMap.get(heroReadyHostedConnector.id) ?? null
+    : null
+
+  const heroQuickConnectPending = heroReadyHostedConnector
+    ? connectHostedIntegration.isPending &&
+      connectHostedIntegration.variables === heroReadyHostedConnector.id
+    : false
+
+  const heroOauthInFlight = heroReadyHostedConnector?.integration
+    ? connectingIntegrationId === heroReadyHostedConnector.integration.id
+    : false
 
   useEffect(() => {
     if (manualBuilderTouchedRef.current) return
@@ -1765,6 +1790,19 @@ export default function Source() {
     }
   }
 
+  const handleHeroQuickConnect = () => {
+    if (!heroReadyHostedConnector) {
+      scrollToIntegrationForm()
+      return
+    }
+
+    if (heroQuickConnectPending || heroOauthInFlight) {
+      return
+    }
+
+    connectHostedIntegration.mutate(heroReadyHostedConnector.id)
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-900/60 bg-slate-950/80 backdrop-blur">
@@ -1784,6 +1822,22 @@ export default function Source() {
               </p>
             </div>
             <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
+              {heroReadyHostedConnector && heroConnectorOption && (
+                <Button
+                  type="button"
+                  className="gap-2 bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 hover:bg-emerald-400"
+                  disabled={heroQuickConnectPending || heroOauthInFlight}
+                  onClick={handleHeroQuickConnect}
+                >
+                  {(heroQuickConnectPending || heroOauthInFlight) && (
+                    <Loader2 className="size-4 animate-spin" />
+                  )}
+                  <Plug className="size-4" />
+                  {heroConnectorOption.oauth
+                    ? `Sign in with ${heroConnectorOption.label}`
+                    : `Connect ${heroConnectorOption.label}`}
+                </Button>
+              )}
               <Button
                 type="button"
                 className="gap-2 bg-sky-500 text-white hover:bg-sky-400"
