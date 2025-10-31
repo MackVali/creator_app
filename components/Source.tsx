@@ -1,6 +1,6 @@
 "use client"
 
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import {
   useMutation,
   useQuery,
@@ -32,6 +32,8 @@ import { Textarea } from "./ui/textarea"
 import { PostModal } from "./ui/PostModal"
 
 import type {
+  HostedConnectorSummary,
+  HostedConnectorsResponse,
   IntegrationsResponse,
   ListingsResponse,
   PublishResult,
@@ -1174,23 +1176,23 @@ const integrationPresets: IntegrationPreset[] = [
 const setupSteps: { id: string; title: string; description: string; icon: LucideIcon }[] = [
   {
     id: "choose",
-    title: "Choose a connector",
+    title: "Pick your channel",
     description:
-      "Start with a preset to auto-fill URLs, headers, and payload tokens for popular storefronts.",
+      "Tap Instagram or another hosted connector to skip manual fields entirely—everything is preconfigured.",
     icon: Plug,
   },
   {
     id: "authorize",
-    title: "Authorize access",
+    title: "Approve the popup",
     description:
-      "Sign in with OAuth or drop in API keys so Source can publish on your behalf securely.",
+      "Sign in, review the provider terms, and grant permission. We store the tokens securely once you accept.",
     icon: Lock,
   },
   {
     id: "publish",
     title: "Publish everywhere",
     description:
-      "Create a product or service once and we fan the listing out to every active integration instantly.",
+      "Create a product or post once and Source delivers it to every connection you just authorized.",
     icon: UploadCloud,
   },
 ]
@@ -1248,6 +1250,8 @@ export default function Source() {
   const [presetNotice, setPresetNotice] = useState<string | null>(null)
   const [presetError, setPresetError] = useState<string | null>(null)
   const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
+  const [manualBuilderOpen, setManualBuilderOpen] = useState(false)
+  const manualBuilderTouchedRef = useRef(false)
   const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
   const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
@@ -1371,6 +1375,43 @@ export default function Source() {
     integrationPresets.some((preset) => preset.id === option.id)
   )
 
+  const hostedConnectorsQuery = useQuery<HostedConnectorsResponse, Error>({
+    queryKey: ["source", "hosted-connectors"],
+    queryFn: async () => {
+      const res = await fetch("/api/source/integrations/hosted")
+      const json = (await res.json().catch(() => null)) as
+        | HostedConnectorsResponse
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        const message = (json as ApiError | null)?.error ?? "Unable to load hosted connectors"
+        throw new Error(message)
+      }
+
+      return (json ?? { connectors: [] }) as HostedConnectorsResponse
+    },
+    staleTime: 60_000,
+  })
+
+  const hostedConnectorMap = useMemo<Map<string, HostedConnectorSummary>>(() => {
+    const list = hostedConnectorsQuery.data?.connectors ?? []
+    return new Map(list.map((connector) => [connector.id, connector]))
+  }, [hostedConnectorsQuery.data])
+
+  const hostedConnectorList = hostedConnectorsQuery.data?.connectors ?? []
+  const hasReadyHostedConnector = hostedConnectorList.some(
+    (connector) => connector.enabled
+  )
+
+  useEffect(() => {
+    if (manualBuilderTouchedRef.current) return
+    if (hostedConnectorsQuery.isLoading) return
+    if (!hasReadyHostedConnector) {
+      setManualBuilderOpen(true)
+    }
+  }, [hasReadyHostedConnector, hostedConnectorsQuery.isLoading])
+
   const handlePresetChange = (value: string) => {
     if (value === "manual") {
       setSelectedPresetId(null)
@@ -1398,6 +1439,22 @@ export default function Source() {
 
     setPresetNotice(null)
     setPresetError(null)
+  }
+
+  const openManualBuilder = () => {
+    manualBuilderTouchedRef.current = true
+    setManualBuilderOpen(true)
+  }
+
+  const hideManualBuilder = () => {
+    manualBuilderTouchedRef.current = true
+    setManualBuilderOpen(false)
+    setSelectedPresetId(null)
+    setPresetInputs({})
+    setPresetNotice(null)
+    setPresetError(null)
+    setIntegrationForm(defaultIntegrationForm)
+    setShowIntegrationAdvanced(false)
   }
 
   const handlePresetApply = () => {
@@ -1455,6 +1512,51 @@ export default function Source() {
       }
 
       return (json ?? { listings: [] }) as ListingsResponse
+    },
+  })
+
+  const connectHostedIntegration = useMutation<
+    { integration: SourceIntegration },
+    Error,
+    string
+  >({
+    mutationFn: async (connectorId: string) => {
+      const res = await fetch("/api/source/integrations/hosted", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectorId }),
+      })
+
+      const json = (await res.json().catch(() => null)) as
+        | { integration?: SourceIntegration }
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        const message = (json as ApiError | null)?.error ?? "Unable to create connector"
+        throw new Error(message)
+      }
+
+      const integration = (json as { integration?: SourceIntegration } | null)?.integration
+      if (!integration) {
+        throw new Error("Connector response missing integration")
+      }
+
+      return { integration }
+    },
+    onMutate: () => {
+      setIntegrationError(null)
+    },
+    onSuccess: ({ integration }) => {
+      queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
+      queryClient.invalidateQueries({ queryKey: ["source", "hosted-connectors"] })
+
+      if (integration.auth_mode === "oauth2" && integration.oauth && !integration.oauth.connected) {
+        void beginOAuthConnection(integration)
+      }
+    },
+    onError: (error) => {
+      setIntegrationError(error.message)
     },
   })
 
@@ -1676,9 +1778,9 @@ export default function Source() {
                 Connect your storefronts
               </h1>
               <p className="mt-3 max-w-3xl text-sm text-slate-300">
-                Link every website you sell on and publish listings once. Source
-                will send the payload to each integration with the structure and
-                headers you provide.
+                Launch Instagram, TikTok, and more with a single approval—no
+                digging for API payloads. Sign in, accept the provider terms,
+                and Source handles the publishing details for you.
               </p>
             </div>
             <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
@@ -1842,7 +1944,7 @@ export default function Source() {
               }
             }}
           >
-            <div className="flex items-start justify-between">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-white">
                   Add integration
@@ -1852,6 +1954,17 @@ export default function Source() {
                   Source can call it when you publish a listing.
                 </p>
               </div>
+              {manualBuilderOpen && hasReadyHostedConnector && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 text-slate-200 hover:text-white"
+                  onClick={hideManualBuilder}
+                >
+                  <Plug className="size-3" /> Back to quick connect
+                </Button>
+              )}
             </div>
 
             <div className="mt-5 space-y-6 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-4">
@@ -1860,22 +1973,96 @@ export default function Source() {
                 <p className="text-xs text-slate-400">
                   Prefill this form for Shopify, Instagram, TikTok, LinkedIn, Wix,
                   WooCommerce, or trigger automation hooks that fan listings out to
-                  Depop, Facebook Marketplace, Craigslist, and more.
+                  Depop, Facebook Marketplace, Craigslist, and more. One-click
+                  connectors appear here when credentials are configured.
                 </p>
               </div>
+
+              {hostedConnectorsQuery.error && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+                  {hostedConnectorsQuery.error.message}
+                </p>
+              )}
 
               {availableSocialConnectors.length > 0 && (
                 <div className="grid gap-3 md:grid-cols-2">
                   {availableSocialConnectors.map((option) => {
                     const Icon = option.icon
                     const isActive = selectedPresetId === option.id
+                    const hosted = hostedConnectorMap.get(option.id)
+                    const integration = hosted?.integration ?? null
+                    const oauthConnected = Boolean(integration?.oauth?.connected)
+                    const oauthInFlight =
+                      Boolean(integration) && connectingIntegrationId === integration?.id
+                    const quickConnectPending =
+                      connectHostedIntegration.isPending &&
+                      connectHostedIntegration.variables === option.id
+
+                    let quickButtonLabel = "Connect"
+                    if (!hosted) {
+                      quickButtonLabel = "Manual only"
+                    } else if (!hosted.enabled) {
+                      quickButtonLabel = "Finish setup"
+                    } else if (oauthConnected) {
+                      quickButtonLabel = "Connected"
+                    } else if (quickConnectPending || oauthInFlight) {
+                      quickButtonLabel = "Authorizing..."
+                    } else {
+                      quickButtonLabel = option.oauth
+                        ? `Sign in with ${option.label}`
+                        : `Connect ${option.label}`
+                    }
+
+                    const quickDisabled =
+                      !hosted?.enabled || quickConnectPending || oauthInFlight || oauthConnected
+
+                    const showQuickAuthorizeCopy =
+                      Boolean(hosted?.enabled) && !oauthConnected && !(quickConnectPending || oauthInFlight)
+
+                    const quickAuthorizeCopy = option.oauth
+                      ? `We'll open the ${option.label} permission popup so you can sign in and approve in seconds.`
+                      : `We'll finish the connection right after you confirm.`
+
+                    let statusBadge: { label: string; className: string } | null = null
+                    if (hosted) {
+                      if (oauthConnected) {
+                        statusBadge = {
+                          label: "Connected",
+                          className:
+                            "border border-emerald-500/40 bg-emerald-500/15 text-[10px] font-medium uppercase tracking-wide text-emerald-200",
+                        }
+                      } else if (!hosted.enabled) {
+                        statusBadge = {
+                          label: "Setup required",
+                          className:
+                            "border border-amber-500/40 bg-amber-500/10 text-[10px] font-medium uppercase tracking-wide text-amber-200",
+                        }
+                      } else if (hosted.integration) {
+                        statusBadge = {
+                          label: "Action needed",
+                          className:
+                            "border border-amber-500/40 bg-amber-500/10 text-[10px] font-medium uppercase tracking-wide text-amber-200",
+                        }
+                      } else {
+                        statusBadge = {
+                          label: "One-click ready",
+                          className:
+                            "border border-sky-500/40 bg-sky-500/10 text-[10px] font-medium uppercase tracking-wide text-sky-200",
+                        }
+                      }
+                    } else {
+                      statusBadge = {
+                        label: "Manual setup",
+                        className:
+                          "border border-slate-700 bg-slate-900/70 text-[10px] font-medium uppercase tracking-wide text-slate-200/80",
+                      }
+                    }
+
                     return (
-                      <button
+                      <div
                         key={option.id}
-                        type="button"
-                        onClick={() => handlePresetChange(option.id)}
                         className={cn(
-                          "group relative overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 p-4 text-left transition-all hover:border-slate-800/80 hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400",
+                          "group relative overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 p-4 transition-all",
                           isActive && "border-sky-400/70 bg-sky-500/10 shadow-lg shadow-sky-500/20"
                         )}
                       >
@@ -1887,606 +2074,663 @@ export default function Source() {
                             isActive ? "opacity-60" : "group-hover:opacity-45"
                           )}
                         />
+
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <div className="flex size-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner shadow-white/10">
                               <Icon className="size-5" />
                             </div>
                             <div className="space-y-1">
-                              <p className="flex items-center gap-2 text-sm font-semibold text-white">
-                                {option.label}
-                                {isActive && (
-                                  <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-medium text-sky-100">
-                                    Selected
-                                  </span>
-                                )}
-                              </p>
+                              <p className="text-sm font-semibold text-white">{option.label}</p>
                               <p className="text-xs text-slate-200/90">{option.description}</p>
                             </div>
                           </div>
-                          {option.oauth && (
-                            <Badge className="h-fit rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-100/80">
-                              OAuth
+                          {statusBadge && (
+                            <Badge className={cn("h-fit rounded-full px-2 py-0.5", statusBadge.className)}>
+                              {statusBadge.label}
                             </Badge>
                           )}
                         </div>
-                      </button>
+
+                        {hosted?.disabledReason && (
+                          <p className="mt-3 text-[11px] text-amber-200/80">
+                            {hosted.disabledReason}
+                          </p>
+                        )}
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {hosted && (
+                            <Button
+                              type="button"
+                              variant={oauthConnected ? "secondary" : "default"}
+                              disabled={quickDisabled}
+                              onClick={() => connectHostedIntegration.mutate(option.id)}
+                              className={cn(
+                                "flex-1 justify-center",
+                                oauthConnected && "cursor-default"
+                              )}
+                            >
+                              {(quickConnectPending || oauthInFlight) && (
+                                <Loader2 className="mr-2 size-4 animate-spin" />
+                              )}
+                              {quickButtonLabel}
+                            </Button>
+                          )}
+
+                          <Button
+                            type="button"
+                            variant={isActive ? "default" : "secondary"}
+                            className="flex-1 justify-center"
+                            onClick={() => {
+                              openManualBuilder()
+                              handlePresetChange(option.id)
+                            }}
+                          >
+                            {isActive ? "Selected" : "Advanced setup"}
+                          </Button>
+                        </div>
+
+                        {showQuickAuthorizeCopy && (
+                          <p className="mt-2 text-[11px] text-slate-200/80">
+                            {quickAuthorizeCopy}
+                          </p>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
               )}
 
-              <div className="space-y-3 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-white">Browse everything</p>
-                    <p className="text-xs text-slate-400">
-                      Prefer a different storefront? Pick any preset or return to manual setup.
-                    </p>
-                  </div>
-                  {selectedPresetId && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="gap-2 text-slate-200 hover:text-white"
-                      onClick={() => handlePresetChange("manual")}
-                    >
-                      Reset to manual
-                    </Button>
-                  )}
-                </div>
-                <Select
-                  value={selectedPresetId ?? "manual"}
-                  onValueChange={handlePresetChange}
-                  placeholder="Manual setup"
-                >
-                  <SelectContent>
-                    <SelectItem value="manual">Manual setup</SelectItem>
-                    {integrationPresets.map((preset) => (
-                      <SelectItem key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {selectedPreset && (
-                <div className="space-y-4 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-slate-200/90">{selectedPreset.description}</p>
-                    {selectedPreset.docsUrl && (
-                      <a
-                        href={selectedPreset.docsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-medium text-sky-300 hover:text-sky-200"
-                      >
-                        View docs
-                      </a>
-                    )}
-                  </div>
-
-                  {selectedPreset.oauthRequired && (
-                    <div className="flex items-start gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
-                      <Lock className="mt-0.5 size-3" />
-                      <span>
-                        This connector uses OAuth. Save the integration, then click
-                        <span className="font-semibold"> Connect</span> to authorize before posting.
-                      </span>
-                    </div>
-                  )}
-
-                  {selectedPreset.prerequisites && selectedPreset.prerequisites.length > 0 && (
-                    <div className="space-y-3 rounded-lg border border-slate-800/80 bg-slate-900/50 p-3">
-                      <p className="text-xs font-semibold text-slate-200">Setup checklist</p>
-                      <ul className="space-y-2">
-                        {selectedPreset.prerequisites.map((item) => (
-                          <li key={item.id} className="flex gap-3 text-xs text-slate-300">
-                            <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-sky-400" />
-                            <span className="space-y-1">
-                              {item.href ? (
-                                <a
-                                  href={item.href}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 font-medium text-sky-300 hover:text-sky-200"
-                                >
-                                  {item.label}
-                                  <ExternalLink className="size-3" />
-                                </a>
-                              ) : (
-                                <span className="font-medium text-slate-200">{item.label}</span>
-                              )}
-                              {item.description && (
-                                <p className="text-slate-400">{item.description}</p>
-                              )}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {selectedPreset.fields.map((field) => (
-                      <div key={field.id} className="space-y-2">
-                        <Label htmlFor={`preset-${field.id}`}>{field.label}</Label>
-                        <Input
-                          id={`preset-${field.id}`}
-                          type={
-                            field.type === "password"
-                              ? "password"
-                              : field.type === "url"
-                              ? "url"
-                              : "text"
-                          }
-                          value={presetInputs[field.id] ?? ""}
-                          onChange={(event) =>
-                            setPresetInputs((prev) => ({
-                              ...prev,
-                              [field.id]: event.target.value,
-                            }))
-                          }
-                          placeholder={field.placeholder}
-                        />
-                        {field.help && <p className="text-xs text-slate-500">{field.help}</p>}
+              {manualBuilderOpen ? (
+                <>
+                  <div className="space-y-3 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-white">Browse everything</p>
+                        <p className="text-xs text-slate-400">
+                          Prefer a different storefront? Pick any preset or return to manual setup.
+                        </p>
                       </div>
-                    ))}
+                      {selectedPresetId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="gap-2 text-slate-200 hover:text-white"
+                          onClick={() => handlePresetChange("manual")}
+                        >
+                          Reset to manual
+                        </Button>
+                      )}
+                    </div>
+                    <Select
+                      value={selectedPresetId ?? "manual"}
+                      onValueChange={handlePresetChange}
+                      placeholder="Manual setup"
+                    >
+                      <SelectContent>
+                        <SelectItem value="manual">Manual setup</SelectItem>
+                        {integrationPresets.map((preset) => (
+                          <SelectItem key={preset.id} value={preset.id}>
+                            {preset.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3 text-xs">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={handlePresetApply}
-                      disabled={!selectedPreset}
-                    >
-                      Apply details
-                    </Button>
-                    {presetError ? (
-                      <span className="text-rose-300">{presetError}</span>
-                    ) : presetNotice ? (
-                      <span className="text-emerald-300">{presetNotice}</span>
-                    ) : (
-                      <span className="text-slate-400">
-                        Fill in the required details, then apply to load the integration fields automatically.
-                      </span>
-                    )}
-                  </div>
+                  {selectedPreset && (
+                    <div className="space-y-4 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-slate-200/90">{selectedPreset.description}</p>
+                        {selectedPreset.docsUrl && (
+                          <a
+                            href={selectedPreset.docsUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-medium text-sky-300 hover:text-sky-200"
+                          >
+                            View docs
+                          </a>
+                        )}
+                      </div>
+
+                      {selectedPreset.oauthRequired && (
+                        <div className="flex items-start gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
+                          <Lock className="mt-0.5 size-3" />
+                          <span>
+                            This connector uses OAuth. Save the integration, then click
+                            <span className="font-semibold"> Connect</span> to authorize before posting.
+                          </span>
+                        </div>
+                      )}
+
+                      {selectedPreset.prerequisites && selectedPreset.prerequisites.length > 0 && (
+                        <div className="space-y-3 rounded-lg border border-slate-800/80 bg-slate-900/50 p-3">
+                          <p className="text-xs font-semibold text-slate-200">Setup checklist</p>
+                          <ul className="space-y-2">
+                            {selectedPreset.prerequisites.map((item) => (
+                              <li key={item.id} className="flex gap-3 text-xs text-slate-300">
+                                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-sky-400" />
+                                <span className="space-y-1">
+                                  {item.href ? (
+                                    <a
+                                      href={item.href}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-1 font-medium text-sky-300 hover:text-sky-200"
+                                    >
+                                      {item.label}
+                                      <ExternalLink className="size-3" />
+                                    </a>
+                                  ) : (
+                                    <span className="font-medium text-slate-200">{item.label}</span>
+                                  )}
+                                  {item.description && (
+                                    <p className="text-slate-400">{item.description}</p>
+                                  )}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {selectedPreset.fields.map((field) => (
+                          <div key={field.id} className="space-y-2">
+                            <Label htmlFor={`preset-${field.id}`}>{field.label}</Label>
+                            <Input
+                              id={`preset-${field.id}`}
+                              type={
+                                field.type === "password"
+                                  ? "password"
+                                  : field.type === "url"
+                                  ? "url"
+                                  : "text"
+                              }
+                              value={presetInputs[field.id] ?? ""}
+                              onChange={(event) =>
+                                setPresetInputs((prev) => ({
+                                  ...prev,
+                                  [field.id]: event.target.value,
+                                }))
+                              }
+                              placeholder={field.placeholder}
+                            />
+                            {field.help && <p className="text-xs text-slate-500">{field.help}</p>}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handlePresetApply}
+                          disabled={!selectedPreset}
+                        >
+                          Apply details
+                        </Button>
+                        {presetError ? (
+                          <span className="text-rose-300">{presetError}</span>
+                        ) : presetNotice ? (
+                          <span className="text-emerald-300">{presetNotice}</span>
+                        ) : (
+                          <span className="text-slate-400">
+                            Fill in the required details, then apply to load the integration fields automatically.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-3 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4 text-xs text-slate-300">
+                  <p className="text-sm font-semibold text-white">No API payloads required</p>
+                  <p className="text-slate-400">
+                    Use the quick-connect cards above to sign in and approve access. When you need a custom endpoint,
+                    open the advanced builder to manage headers and payload templates manually.
+                  </p>
+                  <Button type="button" size="sm" className="w-fit" onClick={openManualBuilder}>
+                    Open advanced builder
+                  </Button>
                 </div>
               )}
             </div>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
-              <div className="space-y-5">
-                <FormSubheading
-                  title="Connection basics"
-                  description="Tell Source where to send your listings and what to call the integration."
-                />
-                <div className="grid gap-4">
-                  <FieldStack label="Platform" htmlFor="provider">
-                    <Input
-                      id="provider"
-                      value={integrationForm.provider}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          provider: event.target.value,
-                        }))
-                      }
-                      placeholder="Shopify, Wix, Depop, Custom"
-                      required
+            {manualBuilderOpen && (
+              <>
+                <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                  <div className="space-y-5">
+                    <FormSubheading
+                      title="Connection basics"
+                      description="Tell Source where to send your listings and what to call the integration."
                     />
-                  </FieldStack>
-
-                  <FieldStack label="Display name" htmlFor="displayName">
-                    <Input
-                      id="displayName"
-                      value={integrationForm.displayName}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          displayName: event.target.value,
-                        }))
-                      }
-                      placeholder="Shown in your integration list"
-                    />
-                  </FieldStack>
-
-                  <FieldStack label="Website URL" htmlFor="connectionUrl">
-                    <Input
-                      id="connectionUrl"
-                      value={integrationForm.connectionUrl}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          connectionUrl: event.target.value,
-                        }))
-                      }
-                      placeholder="https://yourstore.com"
-                      type="url"
-                      required
-                    />
-                  </FieldStack>
-
-                  <FieldStack label="Publish endpoint" htmlFor="publishUrl">
-                    <Input
-                      id="publishUrl"
-                      value={integrationForm.publishUrl}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          publishUrl: event.target.value,
-                        }))
-                      }
-                      placeholder="https://api.marketplace.com/v1/listings"
-                      type="url"
-                      required
-                    />
-                  </FieldStack>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FieldStack label="HTTP method" htmlFor="publishMethod">
-                    <Select
-                      value={integrationForm.publishMethod}
-                      onValueChange={(value) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          publishMethod: value as IntegrationFormState["publishMethod"],
-                        }))
-                      }
-                    >
-                      <SelectContent>
-                        {httpMethods.map((method) => (
-                          <SelectItem key={method} value={method}>
-                            {method}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FieldStack>
-
-                  <FieldStack label="Status" htmlFor="status">
-                    <Select
-                      value={integrationForm.status}
-                      onValueChange={(value) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          status: value as IntegrationFormState["status"],
-                        }))
-                      }
-                    >
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="disabled">Disabled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FieldStack>
-                </div>
-              </div>
-
-              <div className="space-y-5">
-                <FormSubheading
-                  title="Authentication"
-                  description="Choose how Source authenticates when publishing to this channel."
-                />
-                <div className="grid gap-4">
-                  <FieldStack label="Authentication" htmlFor="authMode">
-                    <Select
-                      value={integrationForm.authMode}
-                      onValueChange={(value) => {
-                        const nextMode = value as IntegrationFormState["authMode"]
-                        setIntegrationForm((prev) => {
-                          if (nextMode === "oauth2") {
-                            return {
-                              ...prev,
-                              authMode: nextMode,
-                              authToken: "",
-                            }
-                          }
-
-                          return {
-                            ...prev,
-                            authMode: nextMode,
-                            authToken: nextMode === "none" ? "" : prev.authToken,
-                            oauthAuthorizeUrl: "",
-                            oauthTokenUrl: "",
-                            oauthScopes: "",
-                            oauthClientId: "",
-                            oauthClientSecret: "",
-                            oauthMetadata: "",
-                          }
-                        })
-
-                        if (nextMode === "oauth2") {
-                          setShowIntegrationAdvanced(true)
-                        }
-                      }}
-                    >
-                      <SelectContent>
-                        {authModes.map((mode) => (
-                          <SelectItem key={mode} value={mode}>
-                            {mode === "api_key"
-                              ? "API key header"
-                              : mode === "none"
-                              ? "No auth"
-                              : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
-                      <p className="text-xs text-slate-400">
-                        Stored securely in your Supabase project. Bearer tokens add
-                        an Authorization header automatically. API keys let you
-                        choose the header name (for example
-                        <code className="mx-1 rounded bg-slate-800 px-1">
-                          X-Shopify-Access-Token
-                        </code>
-                        ). Basic auth expects username:password.
-                      </p>
-                    )}
-                    {integrationForm.authMode === "oauth2" && (
-                      <p className="text-xs text-slate-400">
-                        After saving, Source opens the provider&apos;s consent screen so you can
-                        authorize access and capture tokens securely.
-                      </p>
-                    )}
-                  </FieldStack>
-
-                  {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
-                    <FieldStack label="Credentials" htmlFor="authToken">
-                      <Input
-                        id="authToken"
-                        value={integrationForm.authToken}
-                        onChange={(event) =>
-                          setIntegrationForm((prev) => ({
-                            ...prev,
-                            authToken: event.target.value,
-                          }))
-                        }
-                        placeholder={
-                          integrationForm.authMode === "basic"
-                            ? "username:password"
-                            : "Secret value"
-                        }
-                        required
-                      />
-                    </FieldStack>
-                  )}
-
-                  {integrationForm.authMode === "api_key" && (
-                    <FieldStack
-                      label="API key header"
-                      htmlFor="authHeader"
-                      description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
-                    >
-                      <Input
-                        id="authHeader"
-                        value={integrationForm.authHeader}
-                        onChange={(event) =>
-                          setIntegrationForm((prev) => ({
-                            ...prev,
-                            authHeader: event.target.value,
-                          }))
-                        }
-                        placeholder="X-API-Key"
-                        required
-                      />
-                    </FieldStack>
-                  )}
-
-                  {integrationForm.authMode === "oauth2" && (
                     <div className="grid gap-4">
-                      <FieldStack
-                        label="Authorization URL"
-                        htmlFor="oauth-authorize"
-                        description="Where Source sends users to approve access."
-                      >
+                      <FieldStack label="Platform" htmlFor="provider">
                         <Input
-                          id="oauth-authorize"
-                          value={integrationForm.oauthAuthorizeUrl}
+                          id="provider"
+                          value={integrationForm.provider}
                           onChange={(event) =>
                             setIntegrationForm((prev) => ({
                               ...prev,
-                              oauthAuthorizeUrl: event.target.value,
+                              provider: event.target.value,
                             }))
                           }
-                          placeholder="https://provider.com/oauth/authorize"
+                          placeholder="Shopify, Wix, Depop, Custom"
+                          required
+                        />
+                      </FieldStack>
+
+                      <FieldStack label="Display name" htmlFor="displayName">
+                        <Input
+                          id="displayName"
+                          value={integrationForm.displayName}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              displayName: event.target.value,
+                            }))
+                          }
+                          placeholder="Shown in your integration list"
+                        />
+                      </FieldStack>
+
+                      <FieldStack label="Website URL" htmlFor="connectionUrl">
+                        <Input
+                          id="connectionUrl"
+                          value={integrationForm.connectionUrl}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              connectionUrl: event.target.value,
+                            }))
+                          }
+                          placeholder="https://yourstore.com"
                           type="url"
                           required
                         />
                       </FieldStack>
 
-                      <FieldStack
-                        label="Token URL"
-                        htmlFor="oauth-token"
-                        description="Source exchanges the authorization code for tokens at this URL."
-                      >
+                      <FieldStack label="Publish endpoint" htmlFor="publishUrl">
                         <Input
-                          id="oauth-token"
-                          value={integrationForm.oauthTokenUrl}
+                          id="publishUrl"
+                          value={integrationForm.publishUrl}
                           onChange={(event) =>
                             setIntegrationForm((prev) => ({
                               ...prev,
-                              oauthTokenUrl: event.target.value,
+                              publishUrl: event.target.value,
                             }))
                           }
-                          placeholder="https://provider.com/oauth/token"
+                          placeholder="https://api.marketplace.com/v1/listings"
                           type="url"
                           required
                         />
                       </FieldStack>
+                    </div>
 
-                      <FieldStack
-                        label="Client ID"
-                        htmlFor="oauth-client-id"
-                        description="Registered OAuth client identifier."
-                      >
-                        <Input
-                          id="oauth-client-id"
-                          value={integrationForm.oauthClientId}
-                          onChange={(event) =>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FieldStack label="HTTP method" htmlFor="publishMethod">
+                        <Select
+                          value={integrationForm.publishMethod}
+                          onValueChange={(value) =>
                             setIntegrationForm((prev) => ({
                               ...prev,
-                              oauthClientId: event.target.value,
+                              publishMethod: value as IntegrationFormState["publishMethod"],
                             }))
                           }
-                          placeholder="client-id-123"
-                          required
-                        />
+                        >
+                          <SelectContent>
+                            {httpMethods.map((method) => (
+                              <SelectItem key={method} value={method}>
+                                {method}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </FieldStack>
 
-                      <FieldStack
-                        label="Client secret"
-                        htmlFor="oauth-client-secret"
-                        description="Stored securely and used during token refresh."
-                      >
-                        <Input
-                          id="oauth-client-secret"
-                          value={integrationForm.oauthClientSecret}
-                          onChange={(event) =>
+                      <FieldStack label="Status" htmlFor="status">
+                        <Select
+                          value={integrationForm.status}
+                          onValueChange={(value) =>
                             setIntegrationForm((prev) => ({
                               ...prev,
-                              oauthClientSecret: event.target.value,
+                              status: value as IntegrationFormState["status"],
                             }))
                           }
-                          placeholder="Optional"
-                          type="password"
-                        />
+                        >
+                          <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="disabled">Disabled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FieldStack>
+                    </div>
+                  </div>
+
+                  <div className="space-y-5">
+                    <FormSubheading
+                      title="Authentication"
+                      description="Choose how Source authenticates when publishing to this channel."
+                    />
+                    <div className="grid gap-4">
+                      <FieldStack label="Authentication" htmlFor="authMode">
+                        <Select
+                          value={integrationForm.authMode}
+                          onValueChange={(value) => {
+                            const nextMode = value as IntegrationFormState["authMode"]
+                            setIntegrationForm((prev) => {
+                              if (nextMode === "oauth2") {
+                                return {
+                                  ...prev,
+                                  authMode: nextMode,
+                                  authToken: "",
+                                }
+                              }
+
+                              return {
+                                ...prev,
+                                authMode: nextMode,
+                                authToken: nextMode === "none" ? "" : prev.authToken,
+                                oauthAuthorizeUrl: "",
+                                oauthTokenUrl: "",
+                                oauthScopes: "",
+                                oauthClientId: "",
+                                oauthClientSecret: "",
+                                oauthMetadata: "",
+                              }
+                            })
+
+                            if (nextMode === "oauth2") {
+                              setShowIntegrationAdvanced(true)
+                            }
+                          }}
+                        >
+                          <SelectContent>
+                            {authModes.map((mode) => (
+                              <SelectItem key={mode} value={mode}>
+                                {mode === "api_key"
+                                  ? "API key header"
+                                  : mode === "none"
+                                  ? "No auth"
+                                  : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                          <p className="text-xs text-slate-400">
+                            Stored securely in your Supabase project. Bearer tokens add
+                            an Authorization header automatically. API keys let you
+                            choose the header name (for example
+                            <code className="mx-1 rounded bg-slate-800 px-1">
+                              X-Shopify-Access-Token
+                            </code>
+                            ). Basic auth expects username:password.
+                          </p>
+                        )}
+                        {integrationForm.authMode === "oauth2" && (
+                          <p className="text-xs text-slate-400">
+                            After saving, Source opens the provider&apos;s consent screen so you can
+                            authorize access and capture tokens securely.
+                          </p>
+                        )}
                       </FieldStack>
 
-                      <FieldStack
-                        label="Scopes"
-                        htmlFor="oauth-scopes"
-                        description="Space separated list of scopes requested during authorization."
+                      {integrationForm.authMode !== "none" && integrationForm.authMode !== "oauth2" && (
+                        <FieldStack label="Credentials" htmlFor="authToken">
+                          <Input
+                            id="authToken"
+                            value={integrationForm.authToken}
+                            onChange={(event) =>
+                              setIntegrationForm((prev) => ({
+                                ...prev,
+                                authToken: event.target.value,
+                              }))
+                            }
+                            placeholder={
+                              integrationForm.authMode === "basic"
+                                ? "username:password"
+                                : "Secret value"
+                            }
+                            required
+                          />
+                        </FieldStack>
+                      )}
+
+                      {integrationForm.authMode === "api_key" && (
+                        <FieldStack
+                          label="API key header"
+                          htmlFor="authHeader"
+                          description="Choose the header name to send your key with (for example X-Shopify-Access-Token)."
+                        >
+                          <Input
+                            id="authHeader"
+                            value={integrationForm.authHeader}
+                            onChange={(event) =>
+                              setIntegrationForm((prev) => ({
+                                ...prev,
+                                authHeader: event.target.value,
+                              }))
+                            }
+                            placeholder="X-API-Key"
+                            required
+                          />
+                        </FieldStack>
+                      )}
+
+                      {integrationForm.authMode === "oauth2" && (
+                        <div className="grid gap-4">
+                          <FieldStack
+                            label="Authorization URL"
+                            htmlFor="oauth-authorize"
+                            description="Where Source sends users to approve access."
+                          >
+                            <Input
+                              id="oauth-authorize"
+                              value={integrationForm.oauthAuthorizeUrl}
+                              onChange={(event) =>
+                                setIntegrationForm((prev) => ({
+                                  ...prev,
+                                  oauthAuthorizeUrl: event.target.value,
+                                }))
+                              }
+                              placeholder="https://provider.com/oauth/authorize"
+                              type="url"
+                              required
+                            />
+                          </FieldStack>
+
+                          <FieldStack
+                            label="Token URL"
+                            htmlFor="oauth-token"
+                            description="Source exchanges the authorization code for tokens at this URL."
+                          >
+                            <Input
+                              id="oauth-token"
+                              value={integrationForm.oauthTokenUrl}
+                              onChange={(event) =>
+                                setIntegrationForm((prev) => ({
+                                  ...prev,
+                                  oauthTokenUrl: event.target.value,
+                                }))
+                              }
+                              placeholder="https://provider.com/oauth/token"
+                              type="url"
+                              required
+                            />
+                          </FieldStack>
+
+                          <FieldStack
+                            label="Client ID"
+                            htmlFor="oauth-client-id"
+                            description="Registered OAuth client identifier."
+                          >
+                            <Input
+                              id="oauth-client-id"
+                              value={integrationForm.oauthClientId}
+                              onChange={(event) =>
+                                setIntegrationForm((prev) => ({
+                                  ...prev,
+                                  oauthClientId: event.target.value,
+                                }))
+                              }
+                              placeholder="client-id-123"
+                              required
+                            />
+                          </FieldStack>
+
+                          <FieldStack
+                            label="Client secret"
+                            htmlFor="oauth-client-secret"
+                            description="Stored securely and used during token refresh."
+                          >
+                            <Input
+                              id="oauth-client-secret"
+                              value={integrationForm.oauthClientSecret}
+                              onChange={(event) =>
+                                setIntegrationForm((prev) => ({
+                                  ...prev,
+                                  oauthClientSecret: event.target.value,
+                                }))
+                              }
+                              placeholder="Optional"
+                              type="password"
+                            />
+                          </FieldStack>
+
+                          <FieldStack
+                            label="Scopes"
+                            htmlFor="oauth-scopes"
+                            description="Space separated list of scopes requested during authorization."
+                          >
+                            <Input
+                              id="oauth-scopes"
+                              value={integrationForm.oauthScopes}
+                              onChange={(event) =>
+                                setIntegrationForm((prev) => ({
+                                  ...prev,
+                                  oauthScopes: event.target.value,
+                                }))
+                              }
+                              placeholder="inventory.write listings.read"
+                            />
+                          </FieldStack>
+
+                          <FieldStack
+                            label="OAuth metadata (JSON)"
+                            htmlFor="oauth-metadata"
+                            description="Optional JSON persisted with the integration for custom providers."
+                          >
+                            <Textarea
+                              id="oauth-metadata"
+                              value={integrationForm.oauthMetadata}
+                              onChange={(event) =>
+                                setIntegrationForm((prev) => ({
+                                  ...prev,
+                                  oauthMetadata: event.target.value,
+                                }))
+                              }
+                              rows={3}
+                              placeholder='{"audience": "marketplace"}'
+                            />
+                          </FieldStack>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 space-y-4 rounded-2xl border border-slate-900/70 bg-slate-950/50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                        Advanced options
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Control custom headers and the JSON body Source sends to your integration.
+                      </p>
+                    </div>
+                    {!integrationAdvancedForced && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setShowIntegrationAdvanced((prev) => !prev)}
                       >
-                        <Input
-                          id="oauth-scopes"
-                          value={integrationForm.oauthScopes}
-                          onChange={(event) =>
-                            setIntegrationForm((prev) => ({
-                              ...prev,
-                              oauthScopes: event.target.value,
-                            }))
-                          }
-                          placeholder="inventory.write listings.read"
-                        />
-                      </FieldStack>
+                        {integrationAdvancedVisible ? "Hide advanced" : "Show advanced"}
+                      </Button>
+                    )}
+                  </div>
 
+                  {integrationAdvancedVisible && (
+                    <div className="grid gap-4 lg:grid-cols-2">
                       <FieldStack
-                        label="OAuth metadata (JSON)"
-                        htmlFor="oauth-metadata"
-                        description="Optional JSON persisted with the integration for custom providers."
+                        label="Custom headers (JSON)"
+                        htmlFor="headers"
+                        description="Use key/value pairs for any additional headers you want on publish requests."
                       >
                         <Textarea
-                          id="oauth-metadata"
-                          value={integrationForm.oauthMetadata}
+                          id="headers"
+                          value={integrationForm.headers}
                           onChange={(event) =>
                             setIntegrationForm((prev) => ({
                               ...prev,
-                              oauthMetadata: event.target.value,
+                              headers: event.target.value,
                             }))
                           }
-                          rows={3}
-                          placeholder='{"audience": "marketplace"}'
+                          placeholder='{"X-Shop-Domain": "{{integration.connectionUrl}}"}'
+                          rows={integrationAdvancedForced ? 4 : 3}
+                        />
+                      </FieldStack>
+
+                      <FieldStack
+                        label="Payload template (JSON)"
+                        htmlFor="payloadTemplate"
+                        description="Optional structure for the request body. Use {{listing.title}} style tokens to reference listing data."
+                      >
+                        <Textarea
+                          id="payloadTemplate"
+                          value={integrationForm.payloadTemplate}
+                          onChange={(event) =>
+                            setIntegrationForm((prev) => ({
+                              ...prev,
+                              payloadTemplate: event.target.value,
+                            }))
+                          }
+                          placeholder='{"name": "{{listing.title}}", "price": "{{listing.price}}"}'
+                          rows={integrationAdvancedForced ? 6 : 5}
                         />
                       </FieldStack>
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
 
-            <div className="mt-8 space-y-4 rounded-2xl border border-slate-900/70 bg-slate-950/50 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    Advanced options
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Control custom headers and the JSON body Source sends to your integration.
-                  </p>
-                </div>
-                {!integrationAdvancedForced && (
+                <div className="mt-6 flex justify-end gap-2">
                   <Button
                     type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setShowIntegrationAdvanced((prev) => !prev)}
+                    variant="ghost"
+                    onClick={() => {
+                      setIntegrationForm(defaultIntegrationForm)
+                      setIntegrationError(null)
+                      setSelectedPresetId(null)
+                      setPresetInputs({})
+                      setPresetNotice(null)
+                      setPresetError(null)
+                      setShowIntegrationAdvanced(false)
+                    }}
                   >
-                    {integrationAdvancedVisible ? "Hide advanced" : "Show advanced"}
+                    Reset
                   </Button>
-                )}
-              </div>
-
-              {integrationAdvancedVisible && (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <FieldStack
-                    label="Custom headers (JSON)"
-                    htmlFor="headers"
-                    description="Use key/value pairs for any additional headers you want on publish requests."
-                  >
-                    <Textarea
-                      id="headers"
-                      value={integrationForm.headers}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          headers: event.target.value,
-                        }))
-                      }
-                      placeholder='{"X-Shop-Domain": "{{integration.connectionUrl}}"}'
-                      rows={integrationAdvancedForced ? 4 : 3}
-                    />
-                  </FieldStack>
-
-                  <FieldStack
-                    label="Payload template (JSON)"
-                    htmlFor="payloadTemplate"
-                    description="Optional structure for the request body. Use {{listing.title}} style tokens to reference listing data."
-                  >
-                    <Textarea
-                      id="payloadTemplate"
-                      value={integrationForm.payloadTemplate}
-                      onChange={(event) =>
-                        setIntegrationForm((prev) => ({
-                          ...prev,
-                          payloadTemplate: event.target.value,
-                        }))
-                      }
-                      placeholder='{"name": "{{listing.title}}", "price": "{{listing.price}}"}'
-                      rows={integrationAdvancedForced ? 6 : 5}
-                    />
-                  </FieldStack>
+                  <Button type="submit" disabled={createIntegration.isPending}>
+                    {createIntegration.isPending ? "Saving..." : "Save integration"}
+                  </Button>
                 </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setIntegrationForm(defaultIntegrationForm)
-                  setIntegrationError(null)
-                  setSelectedPresetId(null)
-                  setPresetInputs({})
-                  setPresetNotice(null)
-                  setPresetError(null)
-                  setShowIntegrationAdvanced(false)
-                }}
-              >
-                Reset
-              </Button>
-              <Button type="submit" disabled={createIntegration.isPending}>
-                {createIntegration.isPending ? "Saving..." : "Save integration"}
-              </Button>
-            </div>
+              </>
+            )}
           </form>
 
           <form
