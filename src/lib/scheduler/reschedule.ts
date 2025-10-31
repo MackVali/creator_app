@@ -183,7 +183,12 @@ export async function scheduleBacklog(
   const tasks = await fetchReadyTasks(supabase)
   const projectsMap = await fetchProjectsMap(supabase)
   const habits = await fetchHabitsForSchedule(userId, supabase)
-  const windowSnapshot = await fetchWindowsSnapshot(userId, supabase)
+  let windowSnapshot: WindowLite[] | null = null
+  try {
+    windowSnapshot = await fetchWindowsSnapshot(userId, supabase)
+  } catch (_error) {
+    windowSnapshot = null
+  }
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
@@ -549,15 +554,46 @@ export async function scheduleBacklog(
     Map<string, WindowAvailabilityBounds>
   >()
   const windowCache = new Map<string, WindowLite[]>()
+  const pendingWindowLoads = new Map<string, Promise<void>>()
   const activeTimeZone = timeZone ?? 'UTC'
+  const prepareWindowsForDay = async (day: Date) => {
+    const cacheKey = dateCacheKey(day)
+    if (windowCache.has(cacheKey)) return
+    if (windowSnapshot !== null) {
+      windowCache.set(
+        cacheKey,
+        windowsForDateFromSnapshot(windowSnapshot, day, activeTimeZone)
+      )
+      return
+    }
+
+    let pending = pendingWindowLoads.get(cacheKey)
+    if (!pending) {
+      pending = (async () => {
+        const windows = await fetchWindowsForDate(day, supabase, activeTimeZone, {
+          userId,
+        })
+        windowCache.set(cacheKey, windows)
+      })()
+      pendingWindowLoads.set(cacheKey, pending)
+    }
+
+    try {
+      await pending
+    } finally {
+      pendingWindowLoads.delete(cacheKey)
+    }
+  }
   const getWindowsForDay = (day: Date) => {
     const cacheKey = dateCacheKey(day)
-    let windows = windowCache.get(cacheKey)
-    if (!windows) {
-      windows = windowsForDateFromSnapshot(windowSnapshot, day, activeTimeZone)
+    const cached = windowCache.get(cacheKey)
+    if (cached) return cached
+    if (windowSnapshot !== null) {
+      const windows = windowsForDateFromSnapshot(windowSnapshot, day, activeTimeZone)
       windowCache.set(cacheKey, windows)
+      return windows
     }
-    return windows
+    return []
   }
   const habitPlacementsByOffset = new Map<number, HabitScheduleDayResult>()
 
@@ -571,6 +607,7 @@ export async function scheduleBacklog(
       return cached
     }
 
+    await prepareWindowsForDay(day)
     const existingInstances = getDayInstances(offset)
 
     const dayResult = await scheduleHabitsForDay({
@@ -620,6 +657,8 @@ export async function scheduleBacklog(
     const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
     if (offset < habitWriteLookaheadDays && offset < persistedDayLimit) {
       await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+    } else {
+      await prepareWindowsForDay(day)
     }
     const dayInstances = getDayInstances(offset)
     const dayWindows = getWindowsForDay(day)
@@ -920,23 +959,72 @@ async function scheduleHabitsForDay(params: {
   const anchorStartsByWindowKey = new Map<string, number[]>()
   const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const existingByHabitId = new Map<string, ScheduleInstance>()
-  const dayInstances = existingInstances.map(inst => ({ ...inst }))
+  const scheduledHabitBuckets = new Map<string, ScheduleInstance[]>()
+  const carryoverInstances: ScheduleInstance[] = []
+  const duplicatesToCancel: ScheduleInstance[] = []
 
-  for (const inst of dayInstances) {
+  for (const inst of existingInstances) {
     if (!inst) continue
-    if (inst.source_type !== 'HABIT') continue
-    if (inst.status !== 'scheduled') continue
-    const habitId = inst.source_id ?? null
-    if (!habitId) continue
-    const existing = existingByHabitId.get(habitId)
-    if (!existing) {
-      existingByHabitId.set(habitId, inst)
+    if (inst.source_type !== 'HABIT' || inst.status !== 'scheduled') {
+      carryoverInstances.push(inst)
       continue
     }
-    const existingStart = new Date(existing.start_utc).getTime()
-    const candidateStart = new Date(inst.start_utc).getTime()
-    if (candidateStart < existingStart) {
-      existingByHabitId.set(habitId, inst)
+    const habitId = inst.source_id ?? null
+    if (!habitId) {
+      carryoverInstances.push(inst)
+      continue
+    }
+    const bucket = scheduledHabitBuckets.get(habitId)
+    if (bucket) {
+      bucket.push(inst)
+    } else {
+      scheduledHabitBuckets.set(habitId, [inst])
+    }
+  }
+
+  const startValueForInstance = (instance: ScheduleInstance) => {
+    const time = new Date(instance.start_utc ?? '').getTime()
+    return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
+  }
+
+  for (const [habitId, bucket] of scheduledHabitBuckets) {
+    bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b))
+    const keeper = bucket.shift()
+    if (keeper) {
+      existingByHabitId.set(habitId, keeper)
+      carryoverInstances.push(keeper)
+    }
+    for (const duplicate of bucket) {
+      duplicatesToCancel.push(duplicate)
+    }
+  }
+
+  existingInstances.length = 0
+  for (const inst of carryoverInstances) {
+    existingInstances.push(inst)
+  }
+
+  const dayInstances = existingInstances.map(inst => ({ ...inst }))
+
+  if (duplicatesToCancel.length > 0) {
+    for (const duplicate of duplicatesToCancel) {
+      if (!duplicate?.id) continue
+      const cancel = await client
+        .from('schedule_instances')
+        .update({ status: 'canceled' })
+        .eq('id', duplicate.id)
+        .select('id')
+        .single()
+
+      if (cancel.error) {
+        result.failures.push({
+          itemId: duplicate.source_id ?? duplicate.id,
+          reason: 'error',
+          detail: cancel.error,
+        })
+      } else {
+        duplicate.status = 'canceled'
+      }
     }
   }
 
