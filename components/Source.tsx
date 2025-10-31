@@ -1,6 +1,6 @@
 "use client"
 
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import {
   useMutation,
   useQuery,
@@ -32,6 +32,8 @@ import { Textarea } from "./ui/textarea"
 import { PostModal } from "./ui/PostModal"
 
 import type {
+  HostedConnectorSummary,
+  HostedConnectorsResponse,
   IntegrationsResponse,
   ListingsResponse,
   PublishResult,
@@ -1371,6 +1373,30 @@ export default function Source() {
     integrationPresets.some((preset) => preset.id === option.id)
   )
 
+  const hostedConnectorsQuery = useQuery<HostedConnectorsResponse, Error>({
+    queryKey: ["source", "hosted-connectors"],
+    queryFn: async () => {
+      const res = await fetch("/api/source/integrations/hosted")
+      const json = (await res.json().catch(() => null)) as
+        | HostedConnectorsResponse
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        const message = (json as ApiError | null)?.error ?? "Unable to load hosted connectors"
+        throw new Error(message)
+      }
+
+      return (json ?? { connectors: [] }) as HostedConnectorsResponse
+    },
+    staleTime: 60_000,
+  })
+
+  const hostedConnectorMap = useMemo<Map<string, HostedConnectorSummary>>(() => {
+    const list = hostedConnectorsQuery.data?.connectors ?? []
+    return new Map(list.map((connector) => [connector.id, connector]))
+  }, [hostedConnectorsQuery.data])
+
   const handlePresetChange = (value: string) => {
     if (value === "manual") {
       setSelectedPresetId(null)
@@ -1455,6 +1481,51 @@ export default function Source() {
       }
 
       return (json ?? { listings: [] }) as ListingsResponse
+    },
+  })
+
+  const connectHostedIntegration = useMutation<
+    { integration: SourceIntegration },
+    Error,
+    string
+  >({
+    mutationFn: async (connectorId: string) => {
+      const res = await fetch("/api/source/integrations/hosted", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectorId }),
+      })
+
+      const json = (await res.json().catch(() => null)) as
+        | { integration?: SourceIntegration }
+        | ApiError
+        | null
+
+      if (!res.ok) {
+        const message = (json as ApiError | null)?.error ?? "Unable to create connector"
+        throw new Error(message)
+      }
+
+      const integration = (json as { integration?: SourceIntegration } | null)?.integration
+      if (!integration) {
+        throw new Error("Connector response missing integration")
+      }
+
+      return { integration }
+    },
+    onMutate: () => {
+      setIntegrationError(null)
+    },
+    onSuccess: ({ integration }) => {
+      queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
+      queryClient.invalidateQueries({ queryKey: ["source", "hosted-connectors"] })
+
+      if (integration.auth_mode === "oauth2" && integration.oauth && !integration.oauth.connected) {
+        void beginOAuthConnection(integration)
+      }
+    },
+    onError: (error) => {
+      setIntegrationError(error.message)
     },
   })
 
@@ -1860,22 +1931,87 @@ export default function Source() {
                 <p className="text-xs text-slate-400">
                   Prefill this form for Shopify, Instagram, TikTok, LinkedIn, Wix,
                   WooCommerce, or trigger automation hooks that fan listings out to
-                  Depop, Facebook Marketplace, Craigslist, and more.
+                  Depop, Facebook Marketplace, Craigslist, and more. One-click
+                  connectors appear here when credentials are configured.
                 </p>
               </div>
+
+              {hostedConnectorsQuery.error && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+                  {hostedConnectorsQuery.error.message}
+                </p>
+              )}
 
               {availableSocialConnectors.length > 0 && (
                 <div className="grid gap-3 md:grid-cols-2">
                   {availableSocialConnectors.map((option) => {
                     const Icon = option.icon
                     const isActive = selectedPresetId === option.id
+                    const hosted = hostedConnectorMap.get(option.id)
+                    const integration = hosted?.integration ?? null
+                    const oauthConnected = Boolean(integration?.oauth?.connected)
+                    const oauthInFlight =
+                      Boolean(integration) && connectingIntegrationId === integration?.id
+                    const quickConnectPending =
+                      connectHostedIntegration.isPending &&
+                      connectHostedIntegration.variables === option.id
+
+                    let quickButtonLabel = "Connect"
+                    if (!hosted) {
+                      quickButtonLabel = "Manual only"
+                    } else if (!hosted.enabled) {
+                      quickButtonLabel = "Finish setup"
+                    } else if (oauthConnected) {
+                      quickButtonLabel = "Connected"
+                    } else if (oauthInFlight) {
+                      quickButtonLabel = "Authorizing..."
+                    } else if (hosted.integration) {
+                      quickButtonLabel = "Authorize"
+                    }
+
+                    const quickDisabled =
+                      !hosted?.enabled || quickConnectPending || oauthInFlight || oauthConnected
+
+                    let statusBadge: { label: string; className: string } | null = null
+                    if (hosted) {
+                      if (oauthConnected) {
+                        statusBadge = {
+                          label: "Connected",
+                          className:
+                            "border border-emerald-500/40 bg-emerald-500/15 text-[10px] font-medium uppercase tracking-wide text-emerald-200",
+                        }
+                      } else if (!hosted.enabled) {
+                        statusBadge = {
+                          label: "Setup required",
+                          className:
+                            "border border-amber-500/40 bg-amber-500/10 text-[10px] font-medium uppercase tracking-wide text-amber-200",
+                        }
+                      } else if (hosted.integration) {
+                        statusBadge = {
+                          label: "Action needed",
+                          className:
+                            "border border-amber-500/40 bg-amber-500/10 text-[10px] font-medium uppercase tracking-wide text-amber-200",
+                        }
+                      } else {
+                        statusBadge = {
+                          label: "One-click ready",
+                          className:
+                            "border border-sky-500/40 bg-sky-500/10 text-[10px] font-medium uppercase tracking-wide text-sky-200",
+                        }
+                      }
+                    } else {
+                      statusBadge = {
+                        label: "Manual setup",
+                        className:
+                          "border border-slate-700 bg-slate-900/70 text-[10px] font-medium uppercase tracking-wide text-slate-200/80",
+                      }
+                    }
+
                     return (
-                      <button
+                      <div
                         key={option.id}
-                        type="button"
-                        onClick={() => handlePresetChange(option.id)}
                         className={cn(
-                          "group relative overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 p-4 text-left transition-all hover:border-slate-800/80 hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400",
+                          "group relative overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 p-4 transition-all",
                           isActive && "border-sky-400/70 bg-sky-500/10 shadow-lg shadow-sky-500/20"
                         )}
                       >
@@ -1887,30 +2023,59 @@ export default function Source() {
                             isActive ? "opacity-60" : "group-hover:opacity-45"
                           )}
                         />
+
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <div className="flex size-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner shadow-white/10">
                               <Icon className="size-5" />
                             </div>
                             <div className="space-y-1">
-                              <p className="flex items-center gap-2 text-sm font-semibold text-white">
-                                {option.label}
-                                {isActive && (
-                                  <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-medium text-sky-100">
-                                    Selected
-                                  </span>
-                                )}
-                              </p>
+                              <p className="text-sm font-semibold text-white">{option.label}</p>
                               <p className="text-xs text-slate-200/90">{option.description}</p>
                             </div>
                           </div>
-                          {option.oauth && (
-                            <Badge className="h-fit rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-100/80">
-                              OAuth
+                          {statusBadge && (
+                            <Badge className={cn("h-fit rounded-full px-2 py-0.5", statusBadge.className)}>
+                              {statusBadge.label}
                             </Badge>
                           )}
                         </div>
-                      </button>
+
+                        {hosted?.disabledReason && (
+                          <p className="mt-3 text-[11px] text-amber-200/80">
+                            {hosted.disabledReason}
+                          </p>
+                        )}
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {hosted && (
+                            <Button
+                              type="button"
+                              variant={oauthConnected ? "secondary" : "default"}
+                              disabled={quickDisabled}
+                              onClick={() => connectHostedIntegration.mutate(option.id)}
+                              className={cn(
+                                "flex-1 justify-center",
+                                oauthConnected && "cursor-default"
+                              )}
+                            >
+                              {(quickConnectPending || oauthInFlight) && (
+                                <Loader2 className="mr-2 size-4 animate-spin" />
+                              )}
+                              {quickButtonLabel}
+                            </Button>
+                          )}
+
+                          <Button
+                            type="button"
+                            variant={isActive ? "default" : "secondary"}
+                            className="flex-1 justify-center"
+                            onClick={() => handlePresetChange(option.id)}
+                          >
+                            {isActive ? "Selected" : "Configure manually"}
+                          </Button>
+                        </div>
+                      </div>
                     )
                   })}
                 </div>

@@ -9,7 +9,7 @@ const allowedMethods = ["POST", "PUT", "PATCH"] as const
 const allowedAuthModes = ["none", "bearer", "basic", "api_key", "oauth2"] as const
 const allowedStatuses = ["active", "disabled"] as const
 
-type IntegrationRow = {
+export type IntegrationRow = {
   id: string
   provider: string
   display_name: string | null
@@ -27,12 +27,13 @@ type IntegrationRow = {
   oauth_client_id: string | null
   oauth_access_token: string | null
   oauth_expires_at: string | null
+  oauth_metadata: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
 
-const integrationFields =
-  "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_header, headers, payload_template, status, oauth_authorize_url, oauth_token_url, oauth_scopes, oauth_client_id, oauth_access_token, oauth_expires_at, created_at, updated_at"
+export const integrationSelectFields =
+  "id, provider, display_name, connection_url, publish_url, publish_method, auth_mode, auth_header, headers, payload_template, status, oauth_authorize_url, oauth_token_url, oauth_scopes, oauth_client_id, oauth_access_token, oauth_expires_at, oauth_metadata, created_at, updated_at"
 
 export async function GET() {
   const supabase = await createSupabaseServerClient()
@@ -51,7 +52,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("source_integrations")
-    .select(integrationFields)
+    .select(integrationSelectFields)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
 
@@ -253,7 +254,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("source_integrations")
     .insert(insert)
-    .select(integrationFields)
+    .select(integrationSelectFields)
     .single()
 
   if (error) {
@@ -270,7 +271,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ integration }, { status: 201 })
 }
 
-function serializeIntegration(row: IntegrationRow): SourceIntegration {
+export function serializeIntegration(row: IntegrationRow): SourceIntegration {
   return {
     id: row.id,
     provider: row.provider,

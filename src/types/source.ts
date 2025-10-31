@@ -55,3 +55,19 @@ export type IntegrationsResponse = {
 export type ListingsResponse = {
   listings: SourceListing[]
 }
+
+export type HostedConnectorSummary = {
+  id: string
+  label: string
+  description: string
+  gradient: string
+  icon: string
+  enabled: boolean
+  disabledReason: string | null
+  requiresOauth: boolean
+  integration: SourceIntegration | null
+}
+
+export type HostedConnectorsResponse = {
+  connectors: HostedConnectorSummary[]
+}
