@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    
+
     if (!supabaseUrl) {
       return NextResponse.json(
         { 
@@ -19,10 +19,12 @@ export async function GET(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json(
-      { 
-        ok: false, 
-        error: "Internal server error" 
+      {
+        ok: false,
+        error: message,
       },
       { status: 500 }
     );

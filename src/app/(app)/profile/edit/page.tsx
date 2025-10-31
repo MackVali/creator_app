@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getProfileByUserId, updateProfile } from "@/lib/db";
@@ -264,12 +265,15 @@ export default function ProfileEditPage() {
               {/* Cover Photo */}
               <div className="space-y-2">
                 <Label htmlFor="banner">Cover Photo</Label>
-                <div className="w-full h-40 bg-white/10 rounded-lg overflow-hidden">
+                <div className="relative w-full h-40 bg-white/10 rounded-lg overflow-hidden">
                   {bannerPreview && (
-                    <img
+                    <Image
                       src={bannerPreview}
                       alt="Cover preview"
-                      className="object-cover w-full h-full"
+                      fill
+                      className="object-cover"
+                      sizes="(min-width: 768px) 640px, 100vw"
+                      unoptimized
                     />
                   )}
                 </div>

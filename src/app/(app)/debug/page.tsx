@@ -2,25 +2,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { cookies as nextCookies } from "next/headers";
-import { getSupabaseServer } from "@/lib/supabase";
+import { createSupabaseServerClientFromCookies } from "@/lib/supabase-server";
 
 export default async function Page() {
   const cookieStore = await nextCookies();
-  const supabase = getSupabaseServer({
-    get: (name: string) => cookieStore.get(name),
-    set: (
-      _name: string,
-      _value: string,
-      _options: {
-        path?: string;
-        domain?: string;
-        maxAge?: number;
-        secure?: boolean;
-        httpOnly?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-      }
-    ) => {},
-  });
+  const supabase = createSupabaseServerClientFromCookies(cookieStore);
   const {
     data: { user },
   } = (await supabase?.auth.getUser()) ?? { data: { user: null } };
