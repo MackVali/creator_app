@@ -95,9 +95,12 @@ export function MonumentsList({
 
   if (loading) {
     return (
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="aspect-square w-full rounded-2xl bg-[#111520]" />
+          <Skeleton
+            key={i}
+            className="aspect-square w-full rounded-3xl border border-white/5 bg-white/[0.04] shadow-[0_12px_30px_rgba(8,10,18,0.35)]"
+          />
         ))}
       </div>
     );
