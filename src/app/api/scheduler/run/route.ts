@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
 import {
   normalizeSchedulerModePayload,
@@ -12,10 +13,12 @@ type SchedulerRunContext = {
   localNow: Date | null
   timeZone: string | null
   mode: SchedulerModePayload
+  writeThroughDays: number | null
 }
 
 export async function POST(request: Request) {
-  const { localNow, timeZone: requestTimeZone, mode } = await readRunRequestContext(request)
+  const { localNow, timeZone: requestTimeZone, mode, writeThroughDays } =
+    await readRunRequestContext(request)
   const supabase = await createClient()
   if (!supabase) {
     return NextResponse.json(
@@ -42,7 +45,14 @@ export async function POST(request: Request) {
 
   const now = localNow ?? new Date()
 
-  const markResult = await markMissedAndQueue(user.id, now, supabase)
+  const adminSupabase = createAdminClient()
+  const schedulingClient = adminSupabase ?? supabase
+
+  if (!adminSupabase && process.env.NODE_ENV !== 'production') {
+    console.warn('Falling back to user-scoped Supabase client for scheduler run')
+  }
+
+  const markResult = await markMissedAndQueue(user.id, now, schedulingClient)
   if (markResult.error) {
     return NextResponse.json(
       { error: markResult.error.message ?? 'failed to mark missed instances' },
@@ -52,10 +62,11 @@ export async function POST(request: Request) {
 
   const userTimeZone = requestTimeZone ?? extractUserTimeZone(user)
   const coordinates = extractUserCoordinates(user)
-  const scheduleResult = await scheduleBacklog(user.id, now, supabase, {
+  const scheduleResult = await scheduleBacklog(user.id, now, schedulingClient, {
     timeZone: userTimeZone,
     location: coordinates,
     mode,
+    writeThroughDays,
   })
   const status = scheduleResult.error ? 500 : 200
 
@@ -122,12 +133,12 @@ function pickNumericValue(values: unknown[]): number | null {
 
 async function readRunRequestContext(request: Request): Promise<SchedulerRunContext> {
   if (!request) {
-    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' } }
+    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' }, writeThroughDays: null }
   }
 
   const contentType = request.headers.get('content-type') ?? ''
   if (!contentType.toLowerCase().includes('application/json')) {
-    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' } }
+    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' }, writeThroughDays: null }
   }
 
   try {
@@ -135,6 +146,7 @@ async function readRunRequestContext(request: Request): Promise<SchedulerRunCont
       localTimeIso?: unknown
       timeZone?: unknown
       mode?: unknown
+      writeThroughDays?: unknown
     }
 
     let localNow: Date | null = null
@@ -151,10 +163,22 @@ async function readRunRequestContext(request: Request): Promise<SchedulerRunCont
     }
 
     const mode = normalizeSchedulerModePayload(payload?.mode)
-    return { localNow, timeZone, mode }
+
+    let writeThroughDays: number | null = null
+    const candidate = payload?.writeThroughDays
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      writeThroughDays = candidate
+    } else if (typeof candidate === 'string') {
+      const parsed = Number.parseFloat(candidate)
+      if (Number.isFinite(parsed)) {
+        writeThroughDays = parsed
+      }
+    }
+
+    return { localNow, timeZone, mode, writeThroughDays }
   } catch (error) {
     console.warn('Failed to parse scheduler run payload', error)
-    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' } }
+    return { localNow: null, timeZone: null, mode: { type: 'REGULAR' }, writeThroughDays: null }
   }
 }
 

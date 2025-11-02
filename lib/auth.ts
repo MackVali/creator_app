@@ -1,5 +1,5 @@
 import { getSupabaseBrowser } from "./supabase";
-import type { User } from "@supabase/supabase-js";
+import type { Session, User } from "@supabase/supabase-js";
 
 export interface AuthUser {
   id: string;
@@ -51,8 +51,25 @@ export function onAuthStateChange(callback: (user: User | null) => void) {
   if (!supabase) {
     return { data: { subscription: { unsubscribe: () => {} } } };
   }
+  const handleAuthChange = async (session: Session | null) => {
+    if (!session) {
+      callback(null);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        callback(null);
+        return;
+      }
+      callback(data.user ?? null);
+    } catch {
+      callback(null);
+    }
+  };
+
   return supabase.auth.onAuthStateChange((_event, session) => {
-    const user = session?.user || null;
-    callback(user);
+    void handleAuthChange(session);
   });
 }

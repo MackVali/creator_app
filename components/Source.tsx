@@ -8,11 +8,16 @@ import {
 } from "@tanstack/react-query"
 import {
   ExternalLink,
+  Facebook,
   Globe,
+  Instagram,
+  Linkedin,
   Loader2,
   Lock,
+  Music4,
   Plug,
   RefreshCcw,
+  Send,
   UploadCloud,
   X,
   type LucideIcon,
@@ -24,6 +29,7 @@ import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Select, SelectContent, SelectItem } from "./ui/select"
 import { Textarea } from "./ui/textarea"
+import { PostModal } from "./ui/PostModal"
 
 import type {
   IntegrationsResponse,
@@ -48,6 +54,32 @@ const statusAccent: Record<SourceListing["status"], string> = {
   queued: "bg-sky-500/10 text-sky-300 border border-sky-500/30",
   published: "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30",
   needs_attention: "bg-amber-500/10 text-amber-300 border border-amber-500/40",
+}
+
+const listingTypeLabels: Record<SourceListing["type"], string> = {
+  product: "Product",
+  service: "Service",
+  post: "Post",
+}
+
+const POST_MEDIA_TYPES = ["text", "image", "video", "link"] as const
+type PostMediaType = (typeof POST_MEDIA_TYPES)[number]
+type PostMedia = { url: string; type: PostMediaType }
+type PostMetadata = {
+  title: string | null
+  content: string | null
+  media: PostMedia[]
+  mediaTypes: PostMediaType[]
+  selectedIntegrationIds: string[] | null
+  deliveredIntegrationIds: string[] | null
+  missingIntegrationIds: string[] | null
+}
+
+const POST_MEDIA_LABELS: Record<PostMediaType, string> = {
+  text: "Text",
+  image: "Image",
+  video: "Video",
+  link: "Link",
 }
 
 type IntegrationFormState = {
@@ -122,12 +154,21 @@ type IntegrationPresetField = {
   type?: "text" | "url" | "password"
 }
 
+type IntegrationPresetPrerequisite = {
+  id: string
+  label: string
+  description?: string
+  href?: string
+}
+
 type IntegrationPreset = {
   id: string
   label: string
   description: string
   docsUrl?: string
   fields: IntegrationPresetField[]
+  oauthRequired?: boolean
+  prerequisites?: IntegrationPresetPrerequisite[]
   build(inputs: Record<string, string>): Partial<IntegrationFormState>
 }
 
@@ -215,6 +256,23 @@ const integrationPresets: IntegrationPreset[] = [
     description:
       "Push inventory into Wix Stores using an OAuth app and your site identifier.",
     docsUrl: "https://dev.wix.com/docs/rest/api-reference/stores",
+    oauthRequired: true,
+    prerequisites: [
+      {
+        id: "wix-dev-center",
+        label: "Create a Wix OAuth app",
+        description:
+          "Generate client credentials in the Wix Developers Center and authorize the Stores scope.",
+        href: "https://dev.wix.com/docs/develop-websites/articles/getting-started/quick-start#create-an-app",
+      },
+      {
+        id: "wix-site",
+        label: "Identify the site you want to sync",
+        description:
+          "Copy the site ID from Site Details so Source can target the correct storefront.",
+        href: "https://support.wix.com/en/article/finding-your-sites-id",
+      },
+    ],
     fields: [
       {
         id: "siteId",
@@ -352,6 +410,16 @@ const integrationPresets: IntegrationPreset[] = [
     description:
       "Authenticate with the eBay Sell APIs to push inventory into your connected marketplace account.",
     docsUrl: "https://developer.ebay.com/api-docs/sell/static/overview.html",
+    oauthRequired: true,
+    prerequisites: [
+      {
+        id: "ebay-application",
+        label: "Register an eBay developer application",
+        description:
+          "Create sandbox and production credentials, then request Sell API access before connecting.",
+        href: "https://developer.ebay.com/signin",
+      },
+    ],
     fields: [
       {
         id: "environment",
@@ -449,6 +517,23 @@ const integrationPresets: IntegrationPreset[] = [
     description:
       "Connect a Square application to keep your item catalog in sync with the listings you publish.",
     docsUrl: "https://developer.squareup.com/docs/catalog-api/overview",
+    oauthRequired: true,
+    prerequisites: [
+      {
+        id: "square-app",
+        label: "Create a Square OAuth application",
+        description:
+          "Enable the Catalog API and generate sandbox or production credentials in the Developer Dashboard.",
+        href: "https://developer.squareup.com/apps",
+      },
+      {
+        id: "square-location",
+        label: "Confirm your Square location ID",
+        description:
+          "Use the Locations API or Dashboard to grab the location you want Source to sync.",
+        href: "https://developer.squareup.com/docs/locations-api/use-the-api",
+      },
+    ],
     fields: [
       {
         id: "environment",
@@ -631,6 +716,459 @@ const integrationPresets: IntegrationPreset[] = [
       }
     },
   },
+  {
+    id: "facebook-pages",
+    label: "Facebook Pages",
+    description:
+      "Share updates to a Facebook Page feed using the Graph API with your Meta app credentials.",
+    docsUrl: "https://developers.facebook.com/docs/graph-api/reference/page/feed",
+    oauthRequired: true,
+    prerequisites: [
+      {
+        id: "facebook-app",
+        label: "Configure a Meta app with pages_manage_posts",
+        description:
+          "Add Facebook Login, request the required scopes, and go live before connecting.",
+        href: "https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow#permissions",
+      },
+      {
+        id: "facebook-page",
+        label: "Identify the Page ID you want to post to",
+        description:
+          "Find the numeric Page ID from Business Settings or via the Graph API explorer.",
+        href: "https://developers.facebook.com/docs/graph-api/reference/page/",
+      },
+    ],
+    fields: [
+      {
+        id: "appId",
+        label: "Meta app ID",
+        placeholder: "123456789012345",
+        help: "Create an app in the Meta for Developers dashboard.",
+      },
+      {
+        id: "appSecret",
+        label: "App secret",
+        placeholder: "your-app-secret",
+        type: "password",
+      },
+      {
+        id: "pageId",
+        label: "Facebook Page ID",
+        placeholder: "123456789012345",
+        help: "Numeric Page identifier from Meta Business Suite.",
+      },
+    ],
+    build: (inputs) => {
+      const appId = inputs.appId?.trim()
+      if (!appId) {
+        throw new Error("Meta app ID is required")
+      }
+
+      const appSecret = inputs.appSecret?.trim()
+      if (!appSecret) {
+        throw new Error("Meta app secret is required")
+      }
+
+      const rawPageId = inputs.pageId?.trim()
+      if (!rawPageId) {
+        throw new Error("Facebook Page ID is required")
+      }
+
+      const pageId = rawPageId.replace(/[^\d]/g, "")
+      if (!pageId) {
+        throw new Error("Enter a valid numeric Page ID")
+      }
+
+      const metadata = {
+        page_id: pageId,
+        authorize_params: {
+          scope: "pages_show_list pages_manage_posts pages_read_engagement",
+          auth_type: "rerequest",
+          display: "popup",
+        },
+        token_params: {
+          grant_type: "authorization_code",
+        },
+      }
+
+      const payload = {
+        message: "{{listing.metadata.post.content}}",
+        link: "{{listing.metadata.post.media.0.url}}",
+        published: true,
+      }
+
+      return {
+        provider: "Facebook Pages",
+        displayName: "Facebook Page",
+        connectionUrl: "https://graph.facebook.com",
+        publishUrl: `https://graph.facebook.com/v19.0/${pageId}/feed`,
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: "https://www.facebook.com/v19.0/dialog/oauth",
+        oauthTokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
+        oauthScopes: "pages_show_list pages_manage_posts pages_read_engagement",
+        oauthClientId: appId,
+        oauthClientSecret: appSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
+      }
+    },
+  },
+  {
+    id: "instagram",
+    label: "Instagram Business",
+    description:
+      "Publish images or reels to Instagram via the Graph API once your Business account is connected.",
+    docsUrl: "https://developers.facebook.com/docs/instagram-api/guides/content-publishing",
+    oauthRequired: true,
+    prerequisites: [
+      {
+        id: "instagram-app",
+        label: "Enable the Instagram Graph API on a Meta app",
+        description:
+          "Grant instagram_basic and instagram_content_publish scopes before going live.",
+        href: "https://developers.facebook.com/docs/instagram-api/getting-started",
+      },
+      {
+        id: "instagram-business",
+        label: "Link an Instagram Business account to a Facebook Page",
+        description:
+          "API publishing only works for Business or Creator accounts connected through Meta Business Suite.",
+        href: "https://www.facebook.com/business/help/898752960195806",
+      },
+    ],
+    fields: [
+      {
+        id: "appId",
+        label: "Meta app ID",
+        placeholder: "123456789012345",
+      },
+      {
+        id: "appSecret",
+        label: "App secret",
+        placeholder: "your-app-secret",
+        type: "password",
+      },
+      {
+        id: "businessAccountId",
+        label: "Instagram Business account ID",
+        placeholder: "17841400000000000",
+        help: "Found under Instagram Accounts in Meta Business Suite.",
+      },
+      {
+        id: "facebookPageId",
+        label: "Linked Facebook Page ID (optional)",
+        placeholder: "123456789012345",
+        help: "Required if you plan to mirror posts to Facebook automatically.",
+      },
+    ],
+    build: (inputs) => {
+      const appId = inputs.appId?.trim()
+      if (!appId) {
+        throw new Error("Meta app ID is required")
+      }
+
+      const appSecret = inputs.appSecret?.trim()
+      if (!appSecret) {
+        throw new Error("Meta app secret is required")
+      }
+
+      const rawBusinessId = inputs.businessAccountId?.trim()
+      if (!rawBusinessId) {
+        throw new Error("Instagram Business account ID is required")
+      }
+
+      const businessAccountId = rawBusinessId.replace(/[^\d]/g, "")
+      if (!businessAccountId) {
+        throw new Error("Enter a valid Instagram Business account ID")
+      }
+
+      const facebookPageRaw = inputs.facebookPageId?.trim() ?? ""
+      const facebookPageId =
+        facebookPageRaw.length > 0 ? facebookPageRaw.replace(/[^\d]/g, "") : ""
+
+      const metadata = {
+        instagram_business_account_id: businessAccountId,
+        facebook_page_id: facebookPageId && facebookPageId.length > 0 ? facebookPageId : null,
+        authorize_params: {
+          scope:
+            "pages_show_list pages_manage_posts instagram_basic instagram_content_publish business_management",
+          auth_type: "rerequest",
+          display: "popup",
+        },
+        token_params: {
+          grant_type: "authorization_code",
+        },
+      }
+
+      const payload = {
+        caption: "{{listing.metadata.post.content}}",
+        image_url: "{{listing.metadata.post.media.0.url}}",
+        share_to_feed: true,
+      }
+
+      return {
+        provider: "Instagram",
+        displayName: "Instagram Business",
+        connectionUrl: "https://graph.facebook.com",
+        publishUrl: `https://graph.facebook.com/v19.0/${businessAccountId}/media`,
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: "https://www.facebook.com/v19.0/dialog/oauth",
+        oauthTokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
+        oauthScopes:
+          "pages_show_list pages_manage_posts instagram_basic instagram_content_publish business_management",
+        oauthClientId: appId,
+        oauthClientSecret: appSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
+      }
+    },
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn Organization",
+    description:
+      "Schedule company updates through the LinkedIn Marketing API with organization-level permissions.",
+    docsUrl:
+      "https://learn.microsoft.com/linkedin/marketing/integrations/community-management/shares/ugc-posts",
+    oauthRequired: true,
+    prerequisites: [
+      {
+        id: "linkedin-app",
+        label: "Apply for Marketing Developer Platform access",
+        description:
+          "Request w_member_social and w_organization_social scopes for your LinkedIn app.",
+        href: "https://learn.microsoft.com/linkedin/marketing/getting-started",
+      },
+      {
+        id: "linkedin-organization",
+        label: "Confirm your Organization URN",
+        description:
+          "Use the Organization Lookup API or admin console to capture the urn:li:organization identifier.",
+        href:
+          "https://learn.microsoft.com/linkedin/marketing/integrations/community-management/organizations/organization-lookup-api",
+      },
+    ],
+    fields: [
+      {
+        id: "clientId",
+        label: "Client ID",
+        placeholder: "86XXXXXX",
+      },
+      {
+        id: "clientSecret",
+        label: "Client secret",
+        placeholder: "your-client-secret",
+        type: "password",
+      },
+      {
+        id: "organizationUrn",
+        label: "LinkedIn organization URN",
+        placeholder: "urn:li:organization:123456",
+        help: "Must include the urn:li:organization prefix.",
+      },
+    ],
+    build: (inputs) => {
+      const clientId = inputs.clientId?.trim()
+      if (!clientId) {
+        throw new Error("LinkedIn client ID is required")
+      }
+
+      const clientSecret = inputs.clientSecret?.trim()
+      if (!clientSecret) {
+        throw new Error("LinkedIn client secret is required")
+      }
+
+      const rawUrn = inputs.organizationUrn?.trim()
+      if (!rawUrn) {
+        throw new Error("LinkedIn organization URN is required")
+      }
+
+      let organizationUrn = rawUrn
+      if (!organizationUrn.startsWith("urn:li:organization:")) {
+        const digits = organizationUrn.replace(/[^\d]/g, "")
+        if (!digits) {
+          throw new Error("Enter a valid organization URN or numeric ID")
+        }
+        organizationUrn = `urn:li:organization:${digits}`
+      }
+
+      const metadata = {
+        organization_urn: organizationUrn,
+        authorize_params: {
+          scope: "openid profile w_member_social w_organization_social",
+          response_type: "code",
+        },
+        token_params: {
+          grant_type: "authorization_code",
+        },
+      }
+
+      const payload = {
+        author: organizationUrn,
+        lifecycleState: "PUBLISHED",
+        specificContent: {
+          "com.linkedin.ugc.ShareContent": {
+            shareCommentary: {
+              text: "{{listing.metadata.post.content}}",
+            },
+            shareMediaCategory: "ARTICLE",
+            media: [
+              {
+                status: "READY",
+                originalUrl: "{{listing.metadata.post.media.0.url}}",
+                title: {
+                  text: "{{listing.metadata.post.title}}",
+                },
+                description: {
+                  text: "{{listing.metadata.post.content}}",
+                },
+              },
+            ],
+          },
+        },
+        visibility: {
+          "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
+        },
+      }
+
+      return {
+        provider: "LinkedIn",
+        displayName: "LinkedIn Organization",
+        connectionUrl: "https://api.linkedin.com",
+        publishUrl: "https://api.linkedin.com/v2/ugcPosts",
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: "https://www.linkedin.com/oauth/v2/authorization",
+        oauthTokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+        oauthScopes: "openid profile w_member_social w_organization_social",
+        oauthClientId: clientId,
+        oauthClientSecret: clientSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
+      }
+    },
+  },
+  {
+    id: "tiktok",
+    label: "TikTok Business",
+    description:
+      "Upload short-form videos to TikTok using the Marketing API with an advertiser account.",
+    docsUrl: "https://ads.tiktok.com/marketing_api/docs?id=1737174883571713",
+    oauthRequired: true,
+    prerequisites: [
+      {
+        id: "tiktok-app",
+        label: "Enable the TikTok Marketing API",
+        description:
+          "Create a TikTok for Business app and request business.video.manage scope access.",
+        href: "https://ads.tiktok.com/marketing_api/docs?id=1737174883571713",
+      },
+      {
+        id: "tiktok-advertiser",
+        label: "Gather your advertiser account ID",
+        description:
+          "Only Business Center admins can authorize uploads on behalf of the advertiser.",
+        href: "https://ads.tiktok.com/help/article/account-id",
+      },
+    ],
+    fields: [
+      {
+        id: "clientKey",
+        label: "Client key",
+        placeholder: "awXXXXX",
+      },
+      {
+        id: "clientSecret",
+        label: "Client secret",
+        placeholder: "your-client-secret",
+        type: "password",
+      },
+      {
+        id: "advertiserId",
+        label: "Advertiser ID",
+        placeholder: "699999999999999999",
+        help: "Numeric advertiser identifier from TikTok Business Center.",
+      },
+    ],
+    build: (inputs) => {
+      const clientKey = inputs.clientKey?.trim()
+      if (!clientKey) {
+        throw new Error("TikTok client key is required")
+      }
+
+      const clientSecret = inputs.clientSecret?.trim()
+      if (!clientSecret) {
+        throw new Error("TikTok client secret is required")
+      }
+
+      const rawAdvertiser = inputs.advertiserId?.trim()
+      if (!rawAdvertiser) {
+        throw new Error("TikTok advertiser ID is required")
+      }
+
+      const advertiserId = rawAdvertiser.replace(/[^\d]/g, "")
+      if (!advertiserId) {
+        throw new Error("Enter a valid TikTok advertiser ID")
+      }
+
+      const metadata = {
+        advertiser_id: advertiserId,
+        authorize_params: {
+          scope: "business.video.manage business.user.info",
+          response_type: "code",
+        },
+        token_params: {
+          grant_type: "authorization_code",
+        },
+        token_code_key: "auth_code",
+        token_client_id_key: "app_id",
+        token_client_secret_key: "secret",
+        token_body_format: "json",
+      }
+
+      const payload = {
+        advertiser_id: advertiserId,
+        upload_type: "PULL_FROM_URL",
+        video_url: "{{listing.metadata.post.media.0.url}}",
+        text: "{{listing.metadata.post.content}}",
+      }
+
+      return {
+        provider: "TikTok",
+        displayName: "TikTok Business",
+        connectionUrl: "https://business-api.tiktok.com",
+        publishUrl: "https://business-api.tiktok.com/open_api/v1.3/video/upload/",
+        publishMethod: "POST" as const,
+        authMode: "oauth2" as const,
+        authToken: "",
+        authHeader: "",
+        headers: JSON.stringify({ "Content-Type": "application/json" }, null, 2),
+        payloadTemplate: JSON.stringify(payload, null, 2),
+        status: "active" as const,
+        oauthAuthorizeUrl: "https://business-api.tiktok.com/portal/auth/authorize/",
+        oauthTokenUrl: "https://business-api.tiktok.com/open_api/v1.3/oauth2/token/",
+        oauthScopes: "business.video.manage business.user.info",
+        oauthClientId: clientKey,
+        oauthClientSecret: clientSecret,
+        oauthMetadata: JSON.stringify(metadata, null, 2),
+      }
+    },
+  },
 ]
 
 const setupSteps: { id: string; title: string; description: string; icon: LucideIcon }[] = [
@@ -657,6 +1195,48 @@ const setupSteps: { id: string; title: string; description: string; icon: Lucide
   },
 ]
 
+const socialConnectorOptions: {
+  id: string
+  label: string
+  description: string
+  gradient: string
+  icon: LucideIcon
+  oauth?: boolean
+}[] = [
+  {
+    id: "instagram",
+    label: "Instagram",
+    description: "Auto-publish Reels, feed posts, and stories via Meta.",
+    gradient: "from-[#F58529] via-[#DD2A7B] to-[#8134AF]",
+    icon: Instagram,
+    oauth: true,
+  },
+  {
+    id: "tiktok",
+    label: "TikTok",
+    description: "Push short-form videos straight to your TikTok shop.",
+    gradient: "from-[#010101] via-[#3A3A3A] to-[#25F4EE]",
+    icon: Music4,
+    oauth: true,
+  },
+  {
+    id: "facebook-pages",
+    label: "Facebook Pages",
+    description: "Schedule catalog drops and marketplace updates automatically.",
+    gradient: "from-[#1877F2] via-[#3578E5] to-[#4C8BF5]",
+    icon: Facebook,
+    oauth: true,
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    description: "Share thought leadership to organizations or showcase pages.",
+    gradient: "from-[#0A66C2] via-[#174886] to-[#001D3D]",
+    icon: Linkedin,
+    oauth: true,
+  },
+]
+
 export default function Source() {
   const queryClient = useQueryClient()
   const [integrationForm, setIntegrationForm] = useState(defaultIntegrationForm)
@@ -669,7 +1249,9 @@ export default function Source() {
   const [presetError, setPresetError] = useState<string | null>(null)
   const [connectingIntegrationId, setConnectingIntegrationId] = useState<string | null>(null)
   const [showIntegrationAdvanced, setShowIntegrationAdvanced] = useState(false)
+  const [isPostModalOpen, setIsPostModalOpen] = useState(false)
   const oauthWindowRef = useRef<Window | null>(null)
+  const oauthCompletionRef = useRef(false)
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -684,6 +1266,7 @@ export default function Source() {
         oauthWindowRef.current.close()
       }
       oauthWindowRef.current = null
+      oauthCompletionRef.current = data.status === "success"
       setConnectingIntegrationId(null)
 
       if (data.status === "error" && typeof data.message === "string") {
@@ -697,7 +1280,7 @@ export default function Source() {
 
     window.addEventListener("message", handleMessage)
     return () => window.removeEventListener("message", handleMessage)
-  }, [queryClient])
+  }, [oauthCompletionRef, queryClient])
 
   useEffect(() => {
     if (!connectingIntegrationId) return
@@ -713,12 +1296,18 @@ export default function Source() {
         window.clearInterval(watcher)
         oauthWindowRef.current = null
         setConnectingIntegrationId(null)
-        setIntegrationError((prev) => prev ?? "Connection window closed before finishing authentication.")
+        if (!oauthCompletionRef.current) {
+          setIntegrationError((prev) => prev ?? "Connection window closed before finishing authentication.")
+        } else {
+          setIntegrationError((prev) => (prev && prev.includes("Connection window closed") ? null : prev))
+        }
+        oauthCompletionRef.current = false
+        queryClient.invalidateQueries({ queryKey: ["source", "integrations"] })
       }
     }, 750)
 
     return () => window.clearInterval(watcher)
-  }, [connectingIntegrationId])
+  }, [connectingIntegrationId, oauthCompletionRef, queryClient])
 
   const beginOAuthConnection = async (integration: SourceIntegration) => {
     if (integration.auth_mode !== "oauth2") return
@@ -733,6 +1322,7 @@ export default function Source() {
     try {
       setIntegrationError(null)
       setConnectingIntegrationId(integration.id)
+      oauthCompletionRef.current = false
 
       const res = await fetch(`/api/source/integrations/${integration.id}/oauth/start`, {
         method: "POST",
@@ -776,6 +1366,10 @@ export default function Source() {
     selectedPresetId === null
       ? null
       : integrationPresets.find((preset) => preset.id === selectedPresetId) ?? null
+
+  const availableSocialConnectors = socialConnectorOptions.filter((option) =>
+    integrationPresets.some((preset) => preset.id === option.id)
+  )
 
   const handlePresetChange = (value: string) => {
     if (value === "manual") {
@@ -1087,9 +1681,18 @@ export default function Source() {
                 headers you provide.
               </p>
             </div>
-            <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
-              <Plug className="size-3" /> Paid upgrade
-            </Badge>
+            <div className="flex flex-col gap-2 self-start md:flex-row md:items-center md:gap-3">
+              <Button
+                type="button"
+                className="gap-2 bg-sky-500 text-white hover:bg-sky-400"
+                onClick={() => setIsPostModalOpen(true)}
+              >
+                <Send className="size-4" /> Post everywhere
+              </Button>
+              <Badge className="h-fit gap-2 bg-amber-500/20 text-amber-200">
+                <Plug className="size-3" /> Paid upgrade
+              </Badge>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
             <div className="flex items-center gap-2">
@@ -1251,36 +1854,108 @@ export default function Source() {
               </div>
             </div>
 
-            <div className="mt-5 space-y-4 rounded-xl border border-slate-900/70 bg-slate-950/60 p-4">
+            <div className="mt-5 space-y-6 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-4">
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-white">Connector library</p>
                 <p className="text-xs text-slate-400">
-                  Prefill this form for Shopify, Wix, WooCommerce, or trigger automation
-                  hooks that fan listings out to Depop, Facebook Marketplace, Craigslist,
-                  and more.
+                  Prefill this form for Shopify, Instagram, TikTok, LinkedIn, Wix,
+                  WooCommerce, or trigger automation hooks that fan listings out to
+                  Depop, Facebook Marketplace, Craigslist, and more.
                 </p>
               </div>
-              <Select
-                value={selectedPresetId ?? "manual"}
-                onValueChange={handlePresetChange}
-                placeholder="Manual setup"
-              >
-                <SelectContent>
-                  <SelectItem value="manual">Manual setup</SelectItem>
-                  {integrationPresets.map((preset) => (
-                    <SelectItem key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+              {availableSocialConnectors.length > 0 && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {availableSocialConnectors.map((option) => {
+                    const Icon = option.icon
+                    const isActive = selectedPresetId === option.id
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => handlePresetChange(option.id)}
+                        className={cn(
+                          "group relative overflow-hidden rounded-2xl border border-slate-900/60 bg-slate-950/70 p-4 text-left transition-all hover:border-slate-800/80 hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400",
+                          isActive && "border-sky-400/70 bg-sky-500/10 shadow-lg shadow-sky-500/20"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "pointer-events-none absolute inset-0 -z-10 opacity-30 blur-2xl transition-opacity",
+                            "bg-gradient-to-br",
+                            option.gradient,
+                            isActive ? "opacity-60" : "group-hover:opacity-45"
+                          )}
+                        />
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex size-10 items-center justify-center rounded-xl bg-white/10 text-white shadow-inner shadow-white/10">
+                              <Icon className="size-5" />
+                            </div>
+                            <div className="space-y-1">
+                              <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                                {option.label}
+                                {isActive && (
+                                  <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-medium text-sky-100">
+                                    Selected
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs text-slate-200/90">{option.description}</p>
+                            </div>
+                          </div>
+                          {option.oauth && (
+                            <Badge className="h-fit rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-100/80">
+                              OAuth
+                            </Badge>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="space-y-3 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-white">Browse everything</p>
+                    <p className="text-xs text-slate-400">
+                      Prefer a different storefront? Pick any preset or return to manual setup.
+                    </p>
+                  </div>
+                  {selectedPresetId && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2 text-slate-200 hover:text-white"
+                      onClick={() => handlePresetChange("manual")}
+                    >
+                      Reset to manual
+                    </Button>
+                  )}
+                </div>
+                <Select
+                  value={selectedPresetId ?? "manual"}
+                  onValueChange={handlePresetChange}
+                  placeholder="Manual setup"
+                >
+                  <SelectContent>
+                    <SelectItem value="manual">Manual setup</SelectItem>
+                    {integrationPresets.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {selectedPreset && (
-                <div className="space-y-4">
+                <div className="space-y-4 rounded-xl border border-slate-900/60 bg-slate-950/70 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-slate-300">
-                      {selectedPreset.description}
-                    </p>
+                    <p className="text-xs text-slate-200/90">{selectedPreset.description}</p>
                     {selectedPreset.docsUrl && (
                       <a
                         href={selectedPreset.docsUrl}
@@ -1292,6 +1967,47 @@ export default function Source() {
                       </a>
                     )}
                   </div>
+
+                  {selectedPreset.oauthRequired && (
+                    <div className="flex items-start gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-100">
+                      <Lock className="mt-0.5 size-3" />
+                      <span>
+                        This connector uses OAuth. Save the integration, then click
+                        <span className="font-semibold"> Connect</span> to authorize before posting.
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedPreset.prerequisites && selectedPreset.prerequisites.length > 0 && (
+                    <div className="space-y-3 rounded-lg border border-slate-800/80 bg-slate-900/50 p-3">
+                      <p className="text-xs font-semibold text-slate-200">Setup checklist</p>
+                      <ul className="space-y-2">
+                        {selectedPreset.prerequisites.map((item) => (
+                          <li key={item.id} className="flex gap-3 text-xs text-slate-300">
+                            <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-sky-400" />
+                            <span className="space-y-1">
+                              {item.href ? (
+                                <a
+                                  href={item.href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 font-medium text-sky-300 hover:text-sky-200"
+                                >
+                                  {item.label}
+                                  <ExternalLink className="size-3" />
+                                </a>
+                              ) : (
+                                <span className="font-medium text-slate-200">{item.label}</span>
+                              )}
+                              {item.description && (
+                                <p className="text-slate-400">{item.description}</p>
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   <div className="grid gap-3 md:grid-cols-2">
                     {selectedPreset.fields.map((field) => (
@@ -1315,24 +2031,12 @@ export default function Source() {
                           }
                           placeholder={field.placeholder}
                         />
-                        {field.help && (
-                          <p className="text-xs text-slate-500">{field.help}</p>
-                        )}
+                        {field.help && <p className="text-xs text-slate-500">{field.help}</p>}
                       </div>
                     ))}
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-                    {presetError ? (
-                      <span className="text-rose-300">{presetError}</span>
-                    ) : presetNotice ? (
-                      <span className="text-emerald-300">{presetNotice}</span>
-                    ) : (
-                      <span className="text-slate-400">
-                        Fill in the required details, then apply to load the integration
-                        fields automatically.
-                      </span>
-                    )}
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
                     <Button
                       type="button"
                       variant="secondary"
@@ -1342,6 +2046,15 @@ export default function Source() {
                     >
                       Apply details
                     </Button>
+                    {presetError ? (
+                      <span className="text-rose-300">{presetError}</span>
+                    ) : presetNotice ? (
+                      <span className="text-emerald-300">{presetNotice}</span>
+                    ) : (
+                      <span className="text-slate-400">
+                        Fill in the required details, then apply to load the integration fields automatically.
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -2058,6 +2771,7 @@ export default function Source() {
           </div>
         </section>
       </main>
+      <PostModal isOpen={isPostModalOpen} onClose={() => setIsPostModalOpen(false)} />
     </div>
   )
 }
@@ -2269,6 +2983,13 @@ type ListingCardProps = {
 function ListingCard({ listing }: ListingCardProps) {
   const status = listing.status
   const publishResults = listing.publish_results ?? []
+  const postMetadata = parsePostMetadata(listing.metadata)
+  const isPost = listing.type === "post" || Boolean(postMetadata)
+  const description = isPost
+    ? postMetadata?.content?.trim() || "No message included."
+    : listing.description || "No description"
+  const showGenericMetadata =
+    !postMetadata && listing.metadata && Object.keys(listing.metadata).length > 0
 
   return (
     <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-5">
@@ -2277,18 +2998,16 @@ function ListingCard({ listing }: ListingCardProps) {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-semibold text-white">{listing.title}</h3>
             <Badge className="bg-slate-800 text-slate-200">
-              {listing.type === "product" ? "Product" : "Service"}
+              {listingTypeLabels[listing.type]}
             </Badge>
           </div>
-          <p className="text-sm text-slate-300">
-            {listing.description || "No description"}
-          </p>
+          <p className={cn("text-sm text-slate-300", isPost && "whitespace-pre-wrap break-words")}>{description}</p>
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           <Badge className={cn("border", statusAccent[status])}>
             {listingStatuses[status]}
           </Badge>
-          {listing.price !== null && (
+          {listing.type !== "post" && listing.price !== null && (
             <p className="font-mono text-sm text-slate-200">
               {formatCurrency(listing.price, listing.currency)}
             </p>
@@ -2299,14 +3018,16 @@ function ListingCard({ listing }: ListingCardProps) {
         </div>
       </div>
 
-      {Object.keys(listing.metadata ?? {}).length > 0 && (
+      {postMetadata ? (
+        <PostDetails metadata={postMetadata} />
+      ) : showGenericMetadata ? (
         <div className="mt-4 space-y-1 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
           <p className="font-semibold text-slate-200">Metadata</p>
           <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-slate-400">
             {JSON.stringify(listing.metadata, null, 2)}
           </pre>
         </div>
-      )}
+      ) : null}
 
       <div className="mt-4 space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -2323,6 +3044,76 @@ function ListingCard({ listing }: ListingCardProps) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+type PostDetailsProps = {
+  metadata: PostMetadata
+}
+
+function PostDetails({ metadata }: PostDetailsProps) {
+  const deliveredCount = metadata.deliveredIntegrationIds?.length ?? 0
+  const selectedCount = metadata.selectedIntegrationIds?.length ?? 0
+  const missingCount = metadata.missingIntegrationIds?.length ?? 0
+  const showSelectedSummary = selectedCount > 0 && selectedCount !== deliveredCount
+
+  return (
+    <div className="mt-4 space-y-4 rounded-lg border border-slate-900/60 bg-slate-950/80 p-3 text-xs text-slate-300">
+      {metadata.mediaTypes.length > 0 ? (
+        <div className="space-y-2">
+          <p className="font-semibold text-slate-200">Media focus</p>
+          <div className="flex flex-wrap gap-2">
+            {metadata.mediaTypes.map((type) => (
+              <Badge key={type} className="bg-slate-900 text-slate-200 capitalize">
+                {formatPostMediaType(type)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        <p className="font-semibold text-slate-200">Attachments</p>
+        {metadata.media.length > 0 ? (
+          <ul className="space-y-2">
+            {metadata.media.map((media) => (
+              <li
+                key={`${media.type}-${media.url}`}
+                className="flex flex-col gap-2 rounded-md border border-slate-900/60 bg-slate-950/70 p-3 text-[11px] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+              >
+                <Badge className="w-fit bg-slate-900 text-slate-200 capitalize">
+                  {formatPostMediaType(media.type)}
+                </Badge>
+                <a
+                  href={media.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 break-all text-sky-300 hover:text-sky-200"
+                >
+                  {media.url}
+                  <ExternalLink className="size-3" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[11px] text-slate-400">No attachments were included.</p>
+        )}
+      </div>
+
+      <div className="space-y-1 text-[11px] text-slate-400">
+        <p>
+          Delivered to <span className="text-slate-200">{deliveredCount}</span> connection
+          {deliveredCount === 1 ? "" : "s"}.
+          {showSelectedSummary ? ` Requested ${selectedCount}.` : ""}
+        </p>
+        {missingCount > 0 ? (
+          <p className="text-amber-300">
+            {missingCount} connection{missingCount === 1 ? " was" : "s were"} unavailable when posting.
+          </p>
+        ) : null}
       </div>
     </div>
   )
@@ -2365,16 +3156,99 @@ function PublishRow({ result }: PublishRowProps) {
   )
 }
 
-  function formatCurrency(value: number, currency: string) {
-    try {
-      return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency,
-      }).format(value)
-    } catch {
-      return `${currency} ${value.toFixed(2)}`
-    }
+function parsePostMetadata(metadata: Record<string, unknown> | null): PostMetadata | null {
+  if (!isRecord(metadata)) {
+    return null
   }
+
+  const kind = typeof metadata.kind === "string" ? metadata.kind : null
+  if (kind && kind !== "post") {
+    return null
+  }
+
+  const rawPost = metadata.post
+  if (!isRecord(rawPost)) {
+    return null
+  }
+
+  const title = typeof rawPost.title === "string" ? rawPost.title : null
+  const content = typeof rawPost.content === "string" ? rawPost.content : null
+
+  const media: PostMedia[] = Array.isArray(rawPost.media)
+    ? (rawPost.media as unknown[])
+        .map((entry) => {
+          if (!isRecord(entry)) return null
+          const url = typeof entry.url === "string" ? entry.url.trim() : ""
+          if (!url) return null
+          const typeCandidate =
+            typeof entry.type === "string" ? entry.type.toLowerCase().trim() : ""
+          const type = isPostMediaType(typeCandidate) ? typeCandidate : "link"
+          return { url, type }
+        })
+        .filter(Boolean) as PostMedia[]
+    : []
+
+  const mediaTypes = Array.from(
+    new Set(
+      (Array.isArray(rawPost.mediaTypes) ? rawPost.mediaTypes : [])
+        .map((value) => (typeof value === "string" ? value.toLowerCase().trim() : ""))
+        .filter((value): value is PostMediaType => isPostMediaType(value))
+    )
+  )
+
+  const selectedIntegrationIds = normalizeIntegrationIds(rawPost.selectedIntegrationIds)
+  const deliveredIntegrationIds = normalizeIntegrationIds(rawPost.deliveredIntegrationIds)
+  const missingIntegrationIds = normalizeIntegrationIds(rawPost.missingIntegrationIds)
+
+  return {
+    title,
+    content,
+    media,
+    mediaTypes,
+    selectedIntegrationIds,
+    deliveredIntegrationIds,
+    missingIntegrationIds,
+  }
+}
+
+function normalizeIntegrationIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  const ids = Array.from(
+    new Set(
+      value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+    )
+  )
+
+  return ids.length > 0 ? ids : null
+}
+
+function isPostMediaType(value: unknown): value is PostMediaType {
+  return typeof value === "string" && POST_MEDIA_TYPES.includes(value as PostMediaType)
+}
+
+function formatPostMediaType(type: PostMediaType) {
+  return POST_MEDIA_LABELS[type]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function formatCurrency(value: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+    }).format(value)
+  } catch {
+    return `${currency} ${value.toFixed(2)}`
+  }
+}
 
 function formatRelativeTime(iso: string) {
   const now = Date.now()

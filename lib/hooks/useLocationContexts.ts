@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { isLocationMetadataError } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Database } from "@/types/supabase";
 
@@ -144,8 +145,13 @@ export function useLocationContexts() {
 
       setContexts(mapped);
     } catch (err) {
-      console.error("Failed to load location contexts", err);
-      setError("We couldn’t load your saved locations. Using defaults for now.");
+      if (isLocationMetadataError(err)) {
+        console.warn("Location metadata not available; using default contexts.");
+        setError(null);
+      } else {
+        console.error("Failed to load location contexts", err);
+        setError("We couldn’t load your saved locations. Using defaults for now.");
+      }
       setContexts(defaultOptions());
     } finally {
       setLoading(false);

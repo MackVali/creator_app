@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
 
@@ -63,7 +64,7 @@ export default function NewHabitPage() {
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
   const [skillId, setSkillId] = useState("none");
-  const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
@@ -531,7 +532,28 @@ export default function NewHabitPage() {
         routineIdToUse = routineId;
       }
 
-      const { error: insertError } = await supabase.from("habits").insert({
+      let resolvedLocationContextId: string | null = null;
+      if (locationContextId) {
+        if (isValidUuid(locationContextId)) {
+          resolvedLocationContextId = locationContextId;
+        } else {
+          resolvedLocationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            locationContextId,
+          );
+
+          if (!resolvedLocationContextId) {
+            setError(
+              "We couldn’t save that location just yet. Please try again.",
+            );
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      const basePayload: Record<string, unknown> = {
         user_id: user.id,
         name: name.trim(),
         description: trimmedDescription || null,
@@ -542,7 +564,6 @@ export default function NewHabitPage() {
         energy,
         skill_id: skillId === "none" ? null : skillId,
         routine_id: routineIdToUse,
-        location_context: locationContext,
         daylight_preference:
           daylightPreference && daylightPreference !== "ALL_DAY"
             ? daylightPreference
@@ -550,7 +571,16 @@ export default function NewHabitPage() {
         window_edge_preference: windowEdgePreference,
         goal_id: isTempHabit ? goalIdValue : null,
         completion_target: parsedCompletionTarget,
-      });
+      };
+
+      const payload: Record<string, unknown> = {
+        ...basePayload,
+        location_context_id: resolvedLocationContextId,
+      };
+
+      const { error: insertError } = await supabase
+        .from("habits")
+        .insert(payload);
 
       if (insertError) {
         throw insertError;
@@ -598,7 +628,7 @@ export default function NewHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
-                locationContext={locationContext}
+                locationContextId={locationContextId}
                 daylightPreference={daylightPreference}
                 windowEdgePreference={windowEdgePreference}
                 energyOptions={energySelectOptions}
@@ -619,9 +649,7 @@ export default function NewHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
-                onLocationContextChange={(value) =>
-                  setLocationContext(value ? value.toUpperCase() : null)
-                }
+                onLocationContextIdChange={setLocationContextId}
                 onDaylightPreferenceChange={(value) =>
                   setDaylightPreference(value.toUpperCase())
                 }

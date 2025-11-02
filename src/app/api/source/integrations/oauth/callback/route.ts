@@ -2,6 +2,22 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 
+import {
+  coerceNumber,
+  coerceString,
+  deriveOAuthErrorMessage,
+  extractClientCredentialKeys,
+  extractRedirectUriKey,
+  extractTokenBodyFormat,
+  extractTokenCodeKey,
+  extractTokenHeaders,
+  extractTokenMethod,
+  extractTokenParams,
+  isRecord,
+  parseOAuthTokenResponse,
+  shouldUsePkce,
+} from "../utils"
+
 export const runtime = "nodejs"
 
 export async function GET(request: NextRequest) {
@@ -50,7 +66,7 @@ export async function GET(request: NextRequest) {
   const { data: integration, error: integrationError } = await supabase
     .from("source_integrations")
     .select(
-      "id, status, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scopes, oauth_refresh_token"
+      "id, provider, status, oauth_token_url, oauth_client_id, oauth_client_secret, oauth_scopes, oauth_refresh_token, oauth_metadata"
     )
     .eq("id", stateRow.integration_id)
     .eq("user_id", user.id)
@@ -66,46 +82,120 @@ export async function GET(request: NextRequest) {
     return htmlResponse({ status: "error", message: "Integration OAuth settings incomplete" })
   }
 
-  const tokenParams = new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: stateRow.redirect_uri,
-    client_id: integration.oauth_client_id,
-    code_verifier: stateRow.code_verifier,
-  })
+  const metadata = isRecord(integration.oauth_metadata)
+    ? (integration.oauth_metadata as Record<string, unknown>)
+    : null
 
-  if (integration.oauth_client_secret) {
-    tokenParams.append("client_secret", integration.oauth_client_secret)
+  const tokenParams = new URLSearchParams()
+  const codeKey = extractTokenCodeKey(metadata)
+  tokenParams.set(codeKey, code)
+
+  const redirectKey = extractRedirectUriKey(metadata)
+  if (redirectKey) {
+    tokenParams.set(redirectKey, stateRow.redirect_uri)
   }
 
-  const tokenResponse = await fetch(integration.oauth_token_url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: tokenParams.toString(),
-  })
+  const { clientIdKey, clientSecretKey } = extractClientCredentialKeys(metadata)
+  tokenParams.set(clientIdKey, integration.oauth_client_id)
 
-  if (!tokenResponse.ok) {
-    const errorBody = await safeJson(tokenResponse)
+  if (shouldUsePkce(metadata) && stateRow.code_verifier) {
+    tokenParams.set("code_verifier", stateRow.code_verifier)
+  }
+
+  if (clientSecretKey && integration.oauth_client_secret) {
+    tokenParams.set(clientSecretKey, integration.oauth_client_secret)
+  }
+
+  const extraTokenParams = extractTokenParams(metadata)
+  if (extraTokenParams) {
+    for (const [key, value] of Object.entries(extraTokenParams)) {
+      if (!key) continue
+      tokenParams.set(key, value)
+    }
+  }
+
+  if (!tokenParams.has("grant_type")) {
+    tokenParams.set("grant_type", "authorization_code")
+  }
+
+  const tokenMethod = extractTokenMethod(metadata)
+  const bodyFormat = extractTokenBodyFormat(metadata)
+  const additionalHeaders = extractTokenHeaders(metadata)
+
+  const headers: Record<string, string> = { Accept: "application/json" }
+  if (additionalHeaders) {
+    for (const [key, value] of Object.entries(additionalHeaders)) {
+      if (!key) continue
+      headers[key] = value
+    }
+  }
+
+  if (tokenMethod === "POST") {
+    const desiredContentType =
+      bodyFormat === "json"
+        ? "application/json"
+        : "application/x-www-form-urlencoded"
+
+    const hasContentType = Object.keys(headers).some(
+      (key) => key.toLowerCase() === "content-type"
+    )
+
+    if (!hasContentType) {
+      headers["Content-Type"] = desiredContentType
+    }
+  }
+
+  let tokenResponse: Response
+  try {
+    if (tokenMethod === "GET") {
+      const url = new URL(integration.oauth_token_url)
+      for (const [key, value] of tokenParams.entries()) {
+        url.searchParams.set(key, value)
+      }
+      tokenResponse = await fetch(url.toString(), {
+        method: "GET",
+        headers,
+      })
+    } else {
+      const body =
+        bodyFormat === "json"
+          ? JSON.stringify(Object.fromEntries(tokenParams.entries()))
+          : tokenParams.toString()
+
+      tokenResponse = await fetch(integration.oauth_token_url, {
+        method: "POST",
+        headers,
+        body,
+      })
+    }
+  } catch (error) {
     await clearState(supabase, state, user.id)
-    const message = typeof errorBody?.error_description === "string"
-      ? errorBody.error_description
-      : tokenResponse.statusText || "OAuth authorization failed"
+    const message = error instanceof Error ? error.message : "Unable to exchange OAuth code"
     return htmlResponse({ status: "error", message })
   }
 
-  const tokenJson = await safeJson(tokenResponse)
-  const accessToken = tokenJson?.access_token
-  if (typeof accessToken !== "string" || !accessToken) {
+  const { payload: tokenPayload, rawBody } = await parseOAuthTokenResponse(tokenResponse)
+
+  if (!tokenResponse.ok) {
+    await clearState(supabase, state, user.id)
+    const message = deriveOAuthErrorMessage(tokenResponse, tokenPayload, rawBody)
+    return htmlResponse({ status: "error", message })
+  }
+
+  if (!tokenPayload) {
+    await clearState(supabase, state, user.id)
+    return htmlResponse({ status: "error", message: "Provider returned an unreadable response" })
+  }
+
+  const accessToken = coerceString(tokenPayload.access_token)
+  if (!accessToken) {
     await clearState(supabase, state, user.id)
     return htmlResponse({ status: "error", message: "Provider did not return an access token" })
   }
 
-  const refreshToken =
-    typeof tokenJson?.refresh_token === "string"
-      ? tokenJson.refresh_token
-      : integration.oauth_refresh_token
+  const refreshToken = coerceString(tokenPayload.refresh_token) ?? integration.oauth_refresh_token
 
-  const expiresIn = typeof tokenJson?.expires_in === "number" ? tokenJson.expires_in : null
+  const expiresIn = coerceNumber(tokenPayload.expires_in)
   const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null
 
   const updatePayload = {
@@ -178,14 +268,6 @@ window.close();`
 </html>`
 
   return new NextResponse(body, { headers: { "Content-Type": "text/html" } })
-}
-
-async function safeJson(response: Response) {
-  try {
-    return await response.json()
-  } catch {
-    return null
-  }
 }
 
 function escapeHtml(value: string) {

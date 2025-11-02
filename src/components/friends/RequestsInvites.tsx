@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   FriendRequest,
@@ -24,11 +24,6 @@ type RequestsInvitesProps = {
 type RequestStatus = "pending" | "accepted" | "declined";
 type SuggestionStatus = "idle" | "requested";
 
-type InviteState = SentInvite & {
-  cancelled?: boolean;
-  lastSentAgo?: string;
-};
-
 type RequestState = FriendRequest & {
   status: RequestStatus;
 };
@@ -45,12 +40,25 @@ export default function RequestsInvites({
   const [requestState, setRequestState] = useState<RequestState[]>(() =>
     requests.map((req) => ({ ...req, status: "pending" }))
   );
-  const [inviteState, setInviteState] = useState<InviteState[]>(() =>
-    invites.map((invite) => ({ ...invite }))
-  );
+  const [inviteState, setInviteState] = useState<SentInvite[]>(invites);
   const [suggestionState, setSuggestionState] = useState<SuggestionState[]>(() =>
     suggestions.map((suggestion) => ({ ...suggestion, status: "idle" }))
   );
+  const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRequestState(requests.map((req) => ({ ...req, status: "pending" })));
+  }, [requests]);
+
+  useEffect(() => {
+    setInviteState(invites);
+  }, [invites]);
+
+  useEffect(() => {
+    setSuggestionState(
+      suggestions.map((suggestion) => ({ ...suggestion, status: "idle" }))
+    );
+  }, [suggestions]);
 
   const pendingRequests = useMemo(
     () => requestState.filter((req) => req.status === "pending"),
@@ -68,27 +76,62 @@ export default function RequestsInvites({
     );
   };
 
-  const handleCancelInvite = (id: string) => {
-    setInviteState((prev) =>
-      prev.map((invite) =>
-        invite.id === id ? { ...invite, cancelled: true, status: "expired" } : invite
-      )
-    );
+  const handleCancelInvite = async (id: string) => {
+    setPendingInviteId(id);
+
+    try {
+      const response = await fetch(`/api/friends/invites/${id}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Unable to cancel invite.");
+      }
+
+      const payload = (await response.json()) as { invite: SentInvite };
+      setInviteState((prev) =>
+        prev.map((invite) => (invite.id === id ? payload.invite : invite))
+      );
+    } catch (error) {
+      console.error("Failed to cancel invite", error);
+    } finally {
+      setPendingInviteId(null);
+    }
   };
 
-  const handleResendInvite = (id: string) => {
-    setInviteState((prev) =>
-      prev.map((invite) =>
-        invite.id === id
-          ? {
-              ...invite,
-              cancelled: false,
-              status: "pending",
-              lastSentAgo: "just now",
-            }
-          : invite
-      )
-    );
+  const handleResendInvite = async (id: string) => {
+    setPendingInviteId(id);
+
+    try {
+      const response = await fetch(`/api/friends/invites/${id}/resend`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Unable to resend invite.");
+      }
+
+      const payload = (await response.json()) as { invite: SentInvite };
+      setInviteState((prev) =>
+        prev.map((invite) => (invite.id === id ? payload.invite : invite))
+      );
+    } catch (error) {
+      console.error("Failed to resend invite", error);
+    } finally {
+      setPendingInviteId(null);
+    }
   };
 
   const handleSendInvite = (id: string) => {
@@ -214,15 +257,19 @@ export default function RequestsInvites({
         </header>
         <div className="space-y-2">
           {inviteState.map((invite) => {
-            const displayStatus = invite.cancelled ? "cancelled" : invite.status;
-            const statusTone = invite.cancelled
-              ? "text-rose-300"
-              : invite.status === "accepted"
-              ? "text-emerald-300"
-              : invite.status === "pending"
-              ? "text-amber-200"
-              : "text-white/50";
-            const disableFollowUps = invite.cancelled || invite.status === "accepted";
+            const displayStatus = invite.status;
+            const statusTone =
+              invite.status === "cancelled"
+                ? "text-rose-300"
+                : invite.status === "accepted"
+                ? "text-emerald-300"
+                : invite.status === "pending"
+                ? "text-amber-200"
+                : "text-white/50";
+            const disableFollowUps =
+              invite.status === "accepted" || invite.status === "cancelled";
+            const isProcessing = pendingInviteId === invite.id;
+            const relativeSentAgo = invite.lastSentAgo ?? invite.sentAgo;
 
             return (
             <div
@@ -232,7 +279,7 @@ export default function RequestsInvites({
               <div className="min-w-0">
                 <p className="truncate font-medium text-white">{invite.email}</p>
                 <p className="text-xs text-white/50">
-                  {invite.lastSentAgo ?? invite.sentAgo} ·{' '}
+                  {relativeSentAgo} ·{' '}
                   <span className={`font-semibold uppercase tracking-wide ${statusTone}`}>
                     {displayStatus}
                   </span>
@@ -241,17 +288,17 @@ export default function RequestsInvites({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleResendInvite(invite.id)}
+                  onClick={() => void handleResendInvite(invite.id)}
                   className={`${mutedButtonClass} active:scale-[0.98]`}
-                  disabled={disableFollowUps}
+                  disabled={disableFollowUps || isProcessing}
                 >
-                  Resend
+                  {isProcessing && !disableFollowUps ? "Sending…" : "Resend"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleCancelInvite(invite.id)}
+                  onClick={() => void handleCancelInvite(invite.id)}
                   className={`${mutedButtonClass} text-rose-300 hover:text-rose-200 active:scale-[0.98]`}
-                  disabled={invite.cancelled}
+                  disabled={invite.status === "cancelled" || isProcessing}
                 >
                   Cancel
                 </button>

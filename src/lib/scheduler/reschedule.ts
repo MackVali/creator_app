@@ -10,8 +10,10 @@ import { buildProjectItems, DEFAULT_PROJECT_DURATION_MIN } from './projects'
 import {
   fetchReadyTasks,
   fetchWindowsForDate,
+  fetchWindowsSnapshot,
   fetchProjectsMap,
   fetchProjectSkillsForProjects,
+  windowsForDateFromSnapshot,
   type WindowLite,
 } from './repo'
 import { placeItemInWindows } from './placement'
@@ -38,6 +40,7 @@ const START_GRACE_MIN = 1
 const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
+const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
@@ -86,9 +89,16 @@ type HabitDraftPlacement = {
   scheduledDayOffset?: number
   availableStartLocal?: string | null
   windowStartLocal?: string | null
+  instanceId?: string
 }
 
 type ScheduleDraftPlacement = ProjectDraftPlacement | HabitDraftPlacement
+
+type HabitScheduleDayResult = {
+  placements: HabitDraftPlacement[]
+  instances: ScheduleInstance[]
+  failures: ScheduleFailure[]
+}
 
 type ScheduleBacklogResult = {
   placed: ScheduleInstance[]
@@ -139,6 +149,7 @@ export async function scheduleBacklog(
     timeZone?: string | null
     location?: GeoCoordinates | null
     mode?: SchedulerModePayload | null
+    writeThroughDays?: number | null
   }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
@@ -171,7 +182,13 @@ export async function scheduleBacklog(
 
   const tasks = await fetchReadyTasks(supabase)
   const projectsMap = await fetchProjectsMap(supabase)
-  const habits = await fetchHabitsForSchedule(supabase)
+  const habits = await fetchHabitsForSchedule(userId, supabase)
+  let windowSnapshot: WindowLite[] | null = null
+  try {
+    windowSnapshot = await fetchWindowsSnapshot(userId, supabase)
+  } catch (_error) {
+    windowSnapshot = null
+  }
   const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
@@ -393,7 +410,22 @@ export async function scheduleBacklog(
   }
 
   const finalQueueProjectIds = new Set(queuedProjectIds)
-  const rangeEnd = addDaysInTimeZone(baseStart, 28, timeZone)
+  const lookaheadDays = Math.min(
+    MAX_LOOKAHEAD_DAYS,
+    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
+  )
+  const requestedWriteThroughDays = options?.writeThroughDays ?? null
+  const persistedDayLimit = (() => {
+    if (requestedWriteThroughDays === null || requestedWriteThroughDays === undefined) {
+      return lookaheadDays
+    }
+    const coerced = Math.floor(Number(requestedWriteThroughDays))
+    if (!Number.isFinite(coerced) || coerced < 0) return lookaheadDays
+    return Math.min(lookaheadDays, coerced)
+  })()
+  const habitWriteLookaheadDays = Math.min(lookaheadDays, HABIT_WRITE_LOOKAHEAD_DAYS)
+  const dedupeWindowDays = Math.max(lookaheadDays, 28)
+  const rangeEnd = addDaysInTimeZone(baseStart, dedupeWindowDays, timeZone)
   const dedupe = await dedupeScheduledProjects(
     supabase,
     userId,
@@ -411,6 +443,81 @@ export async function scheduleBacklog(
   collectPrimaryReuseIds(dedupe.reusableByProject)
   collectReuseIds(dedupe.canceledByProject)
   const keptInstances = [...dedupe.keepers]
+
+  const dayInstancesByOffset = new Map<number, ScheduleInstance[]>()
+
+  const getDayInstances = (offset: number) => {
+    let existing = dayInstancesByOffset.get(offset)
+    if (!existing) {
+      existing = []
+      dayInstancesByOffset.set(offset, existing)
+    }
+    return existing
+  }
+
+  const removeInstanceFromBuckets = (id: string | null | undefined) => {
+    if (!id) return
+    for (const bucket of dayInstancesByOffset.values()) {
+      const index = bucket.findIndex(inst => inst.id === id)
+      if (index >= 0) {
+        bucket.splice(index, 1)
+      }
+    }
+  }
+
+  const registerInstanceForOffsets = (instance: ScheduleInstance | null | undefined) => {
+    if (!instance) return
+    if (!instance.id) return
+
+    removeInstanceFromBuckets(instance.id)
+
+    if (instance.status !== 'scheduled') {
+      return
+    }
+
+    const start = new Date(instance.start_utc)
+    const end = new Date(instance.end_utc)
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return
+    }
+
+    const startDay = startOfDayInTimeZone(start, timeZone)
+    const endReferenceMs = Math.max(start.getTime(), end.getTime() - 1)
+    if (endReferenceMs < baseStart.getTime()) {
+      return
+    }
+    const endReference = new Date(endReferenceMs)
+    const endDay = startOfDayInTimeZone(endReference, timeZone)
+
+    let startOffset = differenceInCalendarDaysInTimeZone(baseStart, startDay, timeZone)
+    let endOffset = differenceInCalendarDaysInTimeZone(baseStart, endDay, timeZone)
+
+    if (!Number.isFinite(startOffset)) startOffset = 0
+    if (!Number.isFinite(endOffset)) endOffset = startOffset
+
+    if (endOffset < startOffset) {
+      endOffset = startOffset
+    }
+
+    if (startOffset < 0) {
+      startOffset = 0
+    }
+
+    if (endOffset >= lookaheadDays) {
+      endOffset = lookaheadDays - 1
+    }
+
+    for (let offset = startOffset; offset <= endOffset; offset += 1) {
+      if (offset < 0 || offset >= lookaheadDays) continue
+      const bucket = getDayInstances(offset)
+      upsertInstance(bucket, instance)
+    }
+  }
+
+  for (const inst of dedupe.allInstances) {
+    registerInstanceForOffsets(inst)
+  }
 
   for (const inst of keptInstances) {
     const projectId = inst.source_id ?? ''
@@ -447,18 +554,64 @@ export async function scheduleBacklog(
     Map<string, WindowAvailabilityBounds>
   >()
   const windowCache = new Map<string, WindowLite[]>()
-  const habitPlacementsByOffset = new Map<number, HabitDraftPlacement[]>()
+  const pendingWindowLoads = new Map<string, Promise<void>>()
+  const activeTimeZone = timeZone ?? 'UTC'
+  const prepareWindowsForDay = async (day: Date) => {
+    const cacheKey = dateCacheKey(day)
+    if (windowCache.has(cacheKey)) return
+    if (windowSnapshot !== null) {
+      windowCache.set(
+        cacheKey,
+        windowsForDateFromSnapshot(windowSnapshot, day, activeTimeZone)
+      )
+      return
+    }
+
+    let pending = pendingWindowLoads.get(cacheKey)
+    if (!pending) {
+      pending = (async () => {
+        const windows = await fetchWindowsForDate(day, supabase, activeTimeZone, {
+          userId,
+        })
+        windowCache.set(cacheKey, windows)
+      })()
+      pendingWindowLoads.set(cacheKey, pending)
+    }
+
+    try {
+      await pending
+    } finally {
+      pendingWindowLoads.delete(cacheKey)
+    }
+  }
+  const getWindowsForDay = (day: Date) => {
+    const cacheKey = dateCacheKey(day)
+    const cached = windowCache.get(cacheKey)
+    if (cached) return cached
+    if (windowSnapshot !== null) {
+      const windows = windowsForDateFromSnapshot(windowSnapshot, day, activeTimeZone)
+      windowCache.set(cacheKey, windows)
+      return windows
+    }
+    return []
+  }
+  const habitPlacementsByOffset = new Map<number, HabitScheduleDayResult>()
 
   const ensureHabitPlacementsForDay = async (
     offset: number,
     day: Date,
     availability: Map<string, WindowAvailabilityBounds>
   ) => {
-    if (habitPlacementsByOffset.has(offset)) {
-      return habitPlacementsByOffset.get(offset) ?? []
+    const cached = habitPlacementsByOffset.get(offset)
+    if (cached) {
+      return cached
     }
 
-    const placements = await scheduleHabitsForDay({
+    await prepareWindowsForDay(day)
+    const existingInstances = getDayInstances(offset)
+
+    const dayResult = await scheduleHabitsForDay({
+      userId,
       habits,
       day,
       offset,
@@ -470,44 +623,49 @@ export async function scheduleBacklog(
       sunlightLocation: location,
       durationMultiplier,
       restMode: isRestMode,
+      existingInstances,
+      registerInstance: registerInstanceForOffsets,
+      getWindowsForDay,
     })
 
-    if (placements.length > 0) {
-      result.timeline.push(...placements)
+    if (dayResult.placements.length > 0) {
+      result.timeline.push(...dayResult.placements)
+    }
+    if (dayResult.instances.length > 0) {
+      result.placed.push(...dayResult.instances)
+    }
+    if (dayResult.failures.length > 0) {
+      result.failures.push(...dayResult.failures)
     }
 
-    habitPlacementsByOffset.set(offset, placements)
-    return placements
+    habitPlacementsByOffset.set(offset, dayResult)
+    return dayResult
   }
 
-  const lookaheadDays = Math.min(
-    MAX_LOOKAHEAD_DAYS,
-    BASE_LOOKAHEAD_DAYS + queue.length * LOOKAHEAD_PER_ITEM_DAYS,
-  )
+  const scheduledProjectIds = new Set<string>()
+  const maxOffset = restrictProjectsToToday
+    ? Math.min(Math.max(persistedDayLimit, 1), 1)
+    : persistedDayLimit
 
-  if (habits.length > 0) {
-    for (let offset = 0; offset < lookaheadDays; offset += 1) {
-      let availability = windowAvailabilityByDay.get(offset)
-      if (!availability) {
-        availability = new Map<string, WindowAvailabilityBounds>()
-        windowAvailabilityByDay.set(offset, availability)
-      }
-      const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-      await ensureHabitPlacementsForDay(offset, day, availability)
+  for (let offset = 0; offset < maxOffset; offset += 1) {
+    let windowAvailability = windowAvailabilityByDay.get(offset)
+    if (!windowAvailability) {
+      windowAvailability = new Map<string, WindowAvailabilityBounds>()
+      windowAvailabilityByDay.set(offset, windowAvailability)
     }
-  }
 
-  for (const item of queue) {
-    let scheduled = false
-    const maxOffset = restrictProjectsToToday ? 1 : lookaheadDays
-    for (let offset = 0; offset < maxOffset && !scheduled; offset += 1) {
-      let windowAvailability = windowAvailabilityByDay.get(offset)
-      if (!windowAvailability) {
-        windowAvailability = new Map<string, WindowAvailabilityBounds>()
-        windowAvailabilityByDay.set(offset, windowAvailability)
-      }
-      const day = addDaysInTimeZone(baseStart, offset, timeZone)
+    const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
+    if (offset < habitWriteLookaheadDays && offset < persistedDayLimit) {
       await ensureHabitPlacementsForDay(offset, day, windowAvailability)
+    } else {
+      await prepareWindowsForDay(day)
+    }
+    const dayInstances = getDayInstances(offset)
+    const dayWindows = getWindowsForDay(day)
+
+    for (const item of queue) {
+      if (scheduledProjectIds.has(item.id)) continue
+
       const windows = await fetchCompatibleWindowsForItem(
         supabase,
         day,
@@ -518,6 +676,8 @@ export async function scheduleBacklog(
           now: offset === 0 ? baseDate : undefined,
           cache: windowCache,
           restMode: isRestMode,
+          userId,
+          preloadedWindows: dayWindows,
         }
       )
       if (windows.length === 0) continue
@@ -531,6 +691,7 @@ export async function scheduleBacklog(
         reuseInstanceId: item.instanceId,
         ignoreProjectIds,
         notBefore: offset === 0 ? baseDate : undefined,
+        existingInstances: dayInstances,
       })
 
       if (!('status' in placed)) {
@@ -587,12 +748,17 @@ export async function scheduleBacklog(
             ? placementWindow.startLocal.toISOString()
             : undefined,
         })
-        scheduled = true
+        scheduledProjectIds.add(item.id)
+        registerInstanceForOffsets(placed.data)
       }
     }
+  }
 
-    if (!scheduled) {
-      result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
+  if (persistedDayLimit >= lookaheadDays) {
+    for (const item of queue) {
+      if (!scheduledProjectIds.has(item.id)) {
+        result.failures.push({ itemId: item.id, reason: 'NO_WINDOW' })
+      }
     }
   }
 
@@ -616,6 +782,7 @@ type DedupeResult = {
   error: PostgrestError | null
   canceledByProject: Map<string, string[]>
   reusableByProject: Map<string, string>
+  allInstances: ScheduleInstance[]
 }
 
 async function dedupeScheduledProjects(
@@ -640,14 +807,19 @@ async function dedupeScheduledProjects(
       error: response.error,
       canceledByProject: new Map(),
       reusableByProject: new Map(),
+      allInstances: [],
     }
   }
+
+  const allInstances = ((response.data ?? []) as ScheduleInstance[]).filter(
+    (inst): inst is ScheduleInstance => Boolean(inst)
+  )
 
   const keepers = new Map<string, ScheduleInstance>()
   const reusableCandidates = new Map<string, ScheduleInstance>()
   const extras: ScheduleInstance[] = []
 
-  for (const inst of response.data ?? []) {
+  for (const inst of allInstances) {
     if (inst.source_type !== 'PROJECT') continue
     if (inst.status !== 'scheduled') continue
 
@@ -714,6 +886,7 @@ async function dedupeScheduledProjects(
     const existing = canceledByProject.get(extra.source_id) ?? []
     existing.push(id)
     canceledByProject.set(extra.source_id, existing)
+    extra.status = 'canceled'
   }
 
   const scheduled = new Set<string>()
@@ -733,10 +906,12 @@ async function dedupeScheduledProjects(
     error: null,
     canceledByProject,
     reusableByProject,
+    allInstances,
   }
 }
 
 async function scheduleHabitsForDay(params: {
+  userId: string
   habits: HabitScheduleItem[]
   day: Date
   offset: number
@@ -748,8 +923,12 @@ async function scheduleHabitsForDay(params: {
   sunlightLocation?: GeoCoordinates | null
   durationMultiplier?: number
   restMode?: boolean
-}): Promise<HabitDraftPlacement[]> {
+  existingInstances: ScheduleInstance[]
+  registerInstance: (instance: ScheduleInstance) => void
+  getWindowsForDay: (day: Date) => WindowLite[]
+}): Promise<HabitScheduleDayResult> {
   const {
+    userId,
     habits,
     day,
     offset,
@@ -761,37 +940,95 @@ async function scheduleHabitsForDay(params: {
     sunlightLocation,
     durationMultiplier = 1,
     restMode = false,
+    existingInstances,
+    registerInstance,
+    getWindowsForDay,
   } = params
-  if (!habits.length) return []
 
-  const cacheKey = dateCacheKey(day)
-  let windows = windowCache.get(cacheKey)
-  if (!windows) {
-    windows = await fetchWindowsForDate(day, client, timeZone)
-    windowCache.set(cacheKey, windows)
+  const result: HabitScheduleDayResult = {
+    placements: [],
+    instances: [],
+    failures: [],
   }
+  if (!habits.length) return result
 
-  if (!windows || windows.length === 0) return []
-
-  const windowsById = new Map<string, WindowLite>()
-  for (const win of windows) {
-    windowsById.set(win.id, win)
-  }
-
-  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
-  const dueHabits: HabitScheduleItem[] = []
   const zone = timeZone || 'UTC'
-  const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
-  const previousDay = addDaysInTimeZone(day, -1, zone)
-  const nextDay = addDaysInTimeZone(day, 1, zone)
-  const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
-  const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
   const dayStart = startOfDayInTimeZone(day, zone)
   const defaultDueMs = dayStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
-  const placements: HabitDraftPlacement[] = []
   const anchorStartsByWindowKey = new Map<string, number[]>()
+  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
+  const existingByHabitId = new Map<string, ScheduleInstance>()
+  const scheduledHabitBuckets = new Map<string, ScheduleInstance[]>()
+  const carryoverInstances: ScheduleInstance[] = []
+  const duplicatesToCancel: ScheduleInstance[] = []
 
+  for (const inst of existingInstances) {
+    if (!inst) continue
+    if (inst.source_type !== 'HABIT' || inst.status !== 'scheduled') {
+      carryoverInstances.push(inst)
+      continue
+    }
+    const habitId = inst.source_id ?? null
+    if (!habitId) {
+      carryoverInstances.push(inst)
+      continue
+    }
+    const bucket = scheduledHabitBuckets.get(habitId)
+    if (bucket) {
+      bucket.push(inst)
+    } else {
+      scheduledHabitBuckets.set(habitId, [inst])
+    }
+  }
+
+  const startValueForInstance = (instance: ScheduleInstance) => {
+    const time = new Date(instance.start_utc ?? '').getTime()
+    return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
+  }
+
+  for (const [habitId, bucket] of scheduledHabitBuckets) {
+    bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b))
+    const keeper = bucket.shift()
+    if (keeper) {
+      existingByHabitId.set(habitId, keeper)
+      carryoverInstances.push(keeper)
+    }
+    for (const duplicate of bucket) {
+      duplicatesToCancel.push(duplicate)
+    }
+  }
+
+  existingInstances.length = 0
+  for (const inst of carryoverInstances) {
+    existingInstances.push(inst)
+  }
+
+  const dayInstances = existingInstances.map(inst => ({ ...inst }))
+
+  if (duplicatesToCancel.length > 0) {
+    for (const duplicate of duplicatesToCancel) {
+      if (!duplicate?.id) continue
+      const cancel = await client
+        .from('schedule_instances')
+        .update({ status: 'canceled' })
+        .eq('id', duplicate.id)
+        .select('id')
+        .single()
+
+      if (cancel.error) {
+        result.failures.push({
+          itemId: duplicate.source_id ?? duplicate.id,
+          reason: 'error',
+          detail: cancel.error,
+        })
+      } else {
+        duplicate.status = 'canceled'
+      }
+    }
+  }
+
+  const dueHabits: HabitScheduleItem[] = []
   for (const habit of habits) {
     const windowDays = habit.window?.days ?? null
     const dueInfo = evaluateHabitDueOnDate({
@@ -805,7 +1042,27 @@ async function scheduleHabitsForDay(params: {
     dueHabits.push(habit)
   }
 
-  if (dueHabits.length === 0) return []
+  if (dueHabits.length === 0) return result
+
+  const cacheKey = dateCacheKey(day)
+  let windows = windowCache.get(cacheKey)
+  if (!windows) {
+    windows = getWindowsForDay(day)
+    windowCache.set(cacheKey, windows)
+  }
+
+  if (!windows || windows.length === 0) return result
+
+  const windowsById = new Map<string, WindowLite>()
+  for (const win of windows) {
+    windowsById.set(win.id, win)
+  }
+
+  const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
+  const previousDay = addDaysInTimeZone(day, -1, zone)
+  const nextDay = addDaysInTimeZone(day, 1, zone)
+  const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
+  const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
 
   const sortedHabits = dueHabits.sort((a, b) => {
     const dueA = dueInfoByHabitId.get(a.id)
@@ -859,7 +1116,8 @@ async function scheduleHabitsForDay(params: {
             nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
           }
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
-    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
+    const isSyncHabit = normalizedType === 'SYNC'
+    const allowsHabitOverlap = isSyncHabit
     const anchorRaw = habit.windowEdgePreference
       ? String(habit.windowEdgePreference).toUpperCase().trim()
       : 'FRONT'
@@ -882,9 +1140,10 @@ async function scheduleHabitsForDay(params: {
         anchor: anchorPreference,
         restMode,
       }
-    )
+    }
 
     if (compatibleWindows.length === 0) {
+      result.failures.push({ itemId: habit.id, reason: 'NO_WINDOW' })
       continue
     }
 
@@ -1003,9 +1262,103 @@ async function scheduleHabitsForDay(params: {
       continue
     }
 
-    const startDate = new Date(startCandidate)
-    const endDate = new Date(endCandidate)
-    addAnchorStart(anchorStartsByWindowKey, target.key, startCandidate)
+    const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
+    const windowLabel = window.label ?? null
+    const windowStartLocal = resolveWindowStart(window, day, zone)
+    const candidateStartUTC = new Date(startCandidate).toISOString()
+    const candidateEndUTC = new Date(endCandidate).toISOString()
+    const energyResolved = window.energy
+      ? String(window.energy).toUpperCase()
+      : resolvedEnergy
+
+    const existingInstance = existingByHabitId.get(habit.id) ?? null
+    const needsUpdate = existingInstance
+      ? existingInstance.window_id !== window.id ||
+        existingInstance.start_utc !== candidateStartUTC ||
+        existingInstance.end_utc !== candidateEndUTC ||
+        existingInstance.duration_min !== durationMinutes ||
+        (existingInstance.energy_resolved ?? '').toUpperCase() !== energyResolved
+      : true
+
+    let persisted: ScheduleInstance | null = null
+    let decision: HabitDraftPlacement['decision'] = 'new'
+    let instanceId: string | undefined
+
+    if (existingInstance && !needsUpdate) {
+      decision = 'kept'
+      instanceId = existingInstance.id
+      persisted = existingInstance
+      registerInstance(existingInstance)
+    } else {
+      const placement = await placeItemInWindows({
+        userId,
+        item: {
+          id: habit.id,
+          sourceType: 'HABIT',
+          duration_min: durationMinutes,
+          energy: energyResolved,
+          weight: 0,
+        },
+        windows: [
+          {
+            id: window.id,
+            startLocal: target.startLocal,
+            endLocal: target.endLocal,
+            availableStartLocal: new Date(startCandidate),
+            key: target.key,
+          },
+        ],
+        date: day,
+        client,
+        reuseInstanceId: existingInstance?.id,
+        existingInstances: allowsHabitOverlap
+          ? dayInstances.filter(inst =>
+              inst &&
+              (inst.source_type !== 'HABIT' || inst.id === existingInstance?.id)
+            )
+          : dayInstances,
+        allowHabitOverlap: allowsHabitOverlap,
+      })
+
+      if (!('status' in placement)) {
+        if (placement.error !== 'NO_FIT') {
+          result.failures.push({
+            itemId: habit.id,
+            reason: 'error',
+            detail: placement.error,
+          })
+        }
+        continue
+      }
+
+      if (placement.error || !placement.data) {
+        result.failures.push({
+          itemId: habit.id,
+          reason: 'error',
+          detail: placement.error ?? new Error('Failed to persist habit instance'),
+        })
+        continue
+      }
+
+      persisted = placement.data
+      result.instances.push(persisted)
+      existingByHabitId.set(habit.id, persisted)
+      registerInstance(persisted)
+      decision = existingInstance ? 'rescheduled' : 'new'
+      instanceId = persisted.id
+    }
+
+    if (!persisted) {
+      continue
+    }
+
+    const startDate = new Date(persisted.start_utc)
+    const endDate = new Date(persisted.end_utc)
+    const startUTC = startDate.toISOString()
+    const endUTC = endDate.toISOString()
+
+    addAnchorStart(anchorStartsByWindowKey, target.key, startDate.getTime())
+    upsertInstance(dayInstances, persisted)
     if (bounds) {
       if (anchorPreference === 'BACK') {
         bounds.back = new Date(startDate)
@@ -1024,37 +1377,39 @@ async function scheduleHabitsForDay(params: {
       setAvailabilityBoundsForKey(availability, target.key, endDate.getTime(), endDate.getTime())
     }
 
-    const durationMinutes = Math.max(1, Math.round((endCandidate - startCandidate) / 60000))
-    const windowLabel = window.label ?? null
-    const windowStartLocal = resolveWindowStart(window, day, zone)
+    const resolvedDuration = Number.isFinite(persisted.duration_min)
+      ? persisted.duration_min
+      : durationMinutes
+    const persistedEnergy = (persisted.energy_resolved ?? energyResolved).toUpperCase()
 
-    placements.push({
+    result.placements.push({
       type: 'HABIT',
       habit: {
         id: habit.id,
         name: habit.name,
         windowId: window.id,
         windowLabel,
-        startUTC: startDate.toISOString(),
-        endUTC: endDate.toISOString(),
-        durationMin: durationMinutes,
-        energyResolved: window.energy ? String(window.energy).toUpperCase() : resolvedEnergy,
+        startUTC,
+        endUTC,
+        durationMin: resolvedDuration,
+        energyResolved: persistedEnergy,
         clipped,
       },
-      decision: 'kept',
+      decision,
       scheduledDayOffset: offset,
-      availableStartLocal: startDate.toISOString(),
+      availableStartLocal: startUTC,
       windowStartLocal: windowStartLocal.toISOString(),
+      instanceId,
     })
   }
 
-  placements.sort((a, b) => {
+  result.placements.sort((a, b) => {
     const aTime = new Date(a.habit.startUTC).getTime()
     const bTime = new Date(b.habit.startUTC).getTime()
     return aTime - bTime
   })
 
-  return placements
+  return result
 }
 
 async function fetchSkillMonumentMap(
@@ -1094,6 +1449,15 @@ function placementKey(entry: ScheduleDraftPlacement) {
     return `PROJECT:${id}`
   }
   return `HABIT:${entry.habit.id}`
+}
+
+function upsertInstance(list: ScheduleInstance[], instance: ScheduleInstance) {
+  const index = list.findIndex(existing => existing.id === instance.id)
+  if (index >= 0) {
+    list[index] = instance
+    return
+  }
+  list.push(instance)
 }
 
 function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number) {
@@ -1139,15 +1503,21 @@ async function fetchCompatibleWindowsForItem(
     ignoreAvailability?: boolean
     anchor?: 'FRONT' | 'BACK'
     restMode?: boolean
+    userId?: string | null
+    preloadedWindows?: WindowLite[]
   }
 ) {
   const cacheKey = dateCacheKey(date)
   const cache = options?.cache
   let windows: WindowLite[]
-  if (cache?.has(cacheKey)) {
+  const userId = options?.userId ?? null
+  if (options?.preloadedWindows) {
+    windows = options.preloadedWindows
+    cache?.set(cacheKey, windows)
+  } else if (cache?.has(cacheKey)) {
     windows = cache.get(cacheKey) ?? []
   } else {
-    windows = await fetchWindowsForDate(date, supabase, timeZone)
+    windows = await fetchWindowsForDate(date, supabase, timeZone, { userId })
     cache?.set(cacheKey, windows)
   }
   const itemIdx = energyIndex(item.energy)
@@ -1331,6 +1701,32 @@ async function fetchCompatibleWindowsForItem(
     endLocal: win.endLocal,
     availableStartLocal: win.availableStartLocal,
   }))
+}
+
+function cloneAvailabilityMap(
+  source: Map<string, WindowAvailabilityBounds>,
+) {
+  const clone = new Map<string, WindowAvailabilityBounds>()
+  for (const [key, bounds] of source) {
+    clone.set(key, {
+      front: new Date(bounds.front.getTime()),
+      back: new Date(bounds.back.getTime()),
+    })
+  }
+  return clone
+}
+
+function adoptAvailabilityMap(
+  target: Map<string, WindowAvailabilityBounds>,
+  source: Map<string, WindowAvailabilityBounds>,
+) {
+  target.clear()
+  for (const [key, bounds] of source) {
+    target.set(key, {
+      front: new Date(bounds.front.getTime()),
+      back: new Date(bounds.back.getTime()),
+    })
+  }
 }
 
 function setAvailabilityBoundsForKey(

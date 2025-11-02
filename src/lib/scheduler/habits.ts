@@ -118,10 +118,12 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
   const from = (supabase as { from?: (table: string) => unknown }).from
   if (typeof from !== 'function') return []
 
-  const selectColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
-  const fallbackColumns =
-    'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context, daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context)'
+  const locationJoin = 'location_context:location_contexts(id, value, label)'
+  const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`
+  const baseColumns =
+    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
+  const extendedColumns =
+    `${baseColumns}, goal_id, completion_target`
 
   const select = from.call(supabase, 'habits') as {
     select?: (

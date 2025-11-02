@@ -4,24 +4,25 @@ import { NextResponse } from "next/server"
 
 import { createSupabaseServerClient } from "@/lib/supabase-server"
 import type { PublishResult, SourceListing } from "@/types/source"
+import {
+  coerceNumber,
+  coerceString,
+  deriveOAuthErrorMessage,
+  extractClientCredentialKeys,
+  extractTokenBodyFormat,
+  extractTokenHeaders,
+  extractRefreshTokenParams,
+  isRecord,
+  parseOAuthTokenResponse,
+} from "../integrations/oauth/utils"
+import {
+  LISTING_FIELDS,
+  serializeListing,
+  type ListingRow,
+  sanitizePublishResults,
+} from "./shared"
 
 export const runtime = "nodejs"
-
-type ListingRow = {
-  id: string
-  user_id: string
-  type: string
-  title: string
-  description: string | null
-  price: number | null
-  currency: string
-  status: string
-  metadata: Record<string, unknown> | null
-  publish_results: unknown
-  published_at: string | null
-  created_at: string
-  updated_at: string
-}
 
 export type IntegrationRow = {
   id: string
@@ -46,9 +47,6 @@ export type IntegrationRow = {
   oauth_metadata: Record<string, unknown> | null
 }
 
-const listingFields =
-  "id, user_id, type, title, description, price, currency, status, metadata, publish_results, published_at, created_at, updated_at"
-
 export async function GET() {
   const supabase = await createSupabaseServerClient()
 
@@ -66,7 +64,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("source_listings")
-    .select(listingFields)
+    .select(LISTING_FIELDS)
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .limit(50)
@@ -190,7 +188,7 @@ export async function POST(request: Request) {
   const { data: inserted, error: insertError } = await supabase
     .from("source_listings")
     .insert(insert)
-    .select(listingFields)
+    .select(LISTING_FIELDS)
     .single()
 
   if (insertError || !inserted) {
@@ -243,7 +241,7 @@ export async function POST(request: Request) {
     .update(updatePayload)
     .eq("id", listing.id)
     .eq("user_id", user.id)
-    .select(listingFields)
+    .select(LISTING_FIELDS)
     .single()
 
   if (updateError || !updated) {
@@ -258,73 +256,6 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ listing }, { status: 201 })
-}
-
-function serializeListing(row: ListingRow): SourceListing {
-  return {
-    id: row.id,
-    type: row.type as SourceListing["type"],
-    title: row.title,
-    description: row.description,
-    price: row.price,
-    currency: row.currency,
-    status: row.status as SourceListing["status"],
-    metadata: row.metadata ?? null,
-    publish_results: sanitizePublishResults(row.publish_results),
-    published_at: row.published_at,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }
-}
-
-function sanitizePublishResults(value: unknown): PublishResult[] | null {
-  if (!Array.isArray(value)) {
-    return null
-  }
-
-  const mapped = value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null
-      const record = entry as Record<string, unknown>
-      const integrationId = record.integrationId ?? record.integration_id
-      if (typeof integrationId !== "string") return null
-
-      const status = record.status === "synced" ? "synced" : "failed"
-      const responseCode = typeof record.responseCode === "number" ? record.responseCode : null
-      const responseBody = record.responseBody ?? null
-      const error = typeof record.error === "string" ? record.error : null
-      const externalId =
-        typeof record.externalId === "string"
-          ? record.externalId
-          : typeof record.external_id === "string"
-          ? record.external_id
-          : null
-      const completedAt =
-        typeof record.completedAt === "string"
-          ? record.completedAt
-          : typeof record.completed_at === "string"
-          ? record.completed_at
-          : null
-
-      return {
-        integrationId,
-        integrationName:
-          typeof record.integrationName === "string"
-            ? record.integrationName
-            : typeof record.integration_name === "string"
-            ? record.integration_name
-            : null,
-        status,
-        responseCode,
-        responseBody,
-        error,
-        externalId,
-        completedAt,
-      } satisfies PublishResult
-    })
-    .filter(Boolean) as PublishResult[]
-
-  return mapped.length > 0 ? mapped : null
 }
 
 export async function publishToIntegrations({
@@ -491,64 +422,79 @@ async function ensureOAuthAccessToken(
     return { error: "OAuth refresh settings are incomplete for this integration." }
   }
 
-  const params = new URLSearchParams({
-    grant_type: "refresh_token",
-    refresh_token: integration.oauth_refresh_token,
-    client_id: integration.oauth_client_id,
-  })
+  const metadata = isRecord(integration.oauth_metadata) ? integration.oauth_metadata : null
+  const { clientIdKey, clientSecretKey } = extractClientCredentialKeys(metadata)
 
-  if (integration.oauth_client_secret) {
-    params.append("client_secret", integration.oauth_client_secret)
+  const params = new URLSearchParams()
+  params.set("grant_type", "refresh_token")
+  params.set("refresh_token", integration.oauth_refresh_token)
+  params.set(clientIdKey, integration.oauth_client_id)
+
+  if (clientSecretKey && integration.oauth_client_secret) {
+    params.set(clientSecretKey, integration.oauth_client_secret)
   }
 
-  const metadata = isRecord(integration.oauth_metadata) ? integration.oauth_metadata : null
-  const extraTokenParams = metadata ? extractTokenParams(metadata) : null
-  if (extraTokenParams) {
-    for (const [key, value] of Object.entries(extraTokenParams)) {
+  const refreshParams = extractRefreshTokenParams(metadata)
+  if (refreshParams) {
+    for (const [key, value] of Object.entries(refreshParams)) {
+      if (!key) continue
       params.set(key, value)
+    }
+  }
+
+  const tokenMethod = extractTokenMethod(metadata)
+  const bodyFormat = extractTokenBodyFormat(metadata)
+  const additionalHeaders = extractTokenHeaders(metadata)
+
+  const headers: Record<string, string> = { Accept: "application/json" }
+  if (additionalHeaders) {
+    for (const [key, value] of Object.entries(additionalHeaders)) {
+      if (!key) continue
+      headers[key] = value
+    }
+  }
+
+  if (tokenMethod === "POST") {
+    const desiredContentType =
+      bodyFormat === "json"
+        ? "application/json"
+        : "application/x-www-form-urlencoded"
+
+    const hasContentType = Object.keys(headers).some(
+      (key) => key.toLowerCase() === "content-type"
+    )
+
+    if (!hasContentType) {
+      headers["Content-Type"] = desiredContentType
     }
   }
 
   let tokenResponse: Response
   try {
-    tokenResponse = await fetch(integration.oauth_token_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params.toString(),
-    })
+    if (tokenMethod === "GET") {
+      const url = new URL(integration.oauth_token_url)
+      for (const [key, value] of params.entries()) {
+        url.searchParams.set(key, value)
+      }
+      tokenResponse = await fetch(url.toString(), { method: "GET", headers })
+    } else {
+      const body =
+        bodyFormat === "json"
+          ? JSON.stringify(Object.fromEntries(params.entries()))
+          : params.toString()
+
+      tokenResponse = await fetch(integration.oauth_token_url, {
+        method: "POST",
+        headers,
+        body,
+      })
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to refresh OAuth token"
     return { error: message }
   }
 
-  let tokenJson: Record<string, unknown> | null = null
-  try {
-    tokenJson = (await tokenResponse.clone().json()) as Record<string, unknown>
-  } catch {
-    tokenJson = null
-  }
-
-  let rawBody: string | null = null
-  try {
-    rawBody = await tokenResponse.text()
-  } catch {
-    rawBody = null
-  }
-
-  let tokenPayload = tokenJson
-  if (!tokenPayload && rawBody) {
-    const contentType = tokenResponse.headers.get("content-type")?.toLowerCase() ?? ""
-    if (contentType.includes("application/x-www-form-urlencoded")) {
-      const form = new URLSearchParams(rawBody)
-      tokenPayload = Object.fromEntries(form.entries())
-    } else {
-      try {
-        tokenPayload = JSON.parse(rawBody) as Record<string, unknown>
-      } catch {
-        tokenPayload = null
-      }
-    }
-  }
+  const { payload: tokenPayload, rawBody } = await parseOAuthTokenResponse(tokenResponse)
 
   if (!tokenResponse.ok) {
     const message = deriveOAuthErrorMessage(tokenResponse, tokenPayload, rawBody)
@@ -595,76 +541,6 @@ async function ensureOAuthAccessToken(
       oauth_expires_at: data?.oauth_expires_at ?? nextExpiresAt,
     },
   }
-}
-
-function extractTokenParams(metadata: Record<string, unknown>) {
-  const raw = metadata.token_params
-  if (!isRecord(raw)) {
-    return null
-  }
-
-  return Object.entries(raw).reduce((acc, [key, value]) => {
-    if (!key) return acc
-    if (value === null || value === undefined) return acc
-    acc[key] = typeof value === "string" ? value : String(value)
-    return acc
-  }, {} as Record<string, string>)
-}
-
-function deriveOAuthErrorMessage(
-  response: Response,
-  payload: Record<string, unknown> | null,
-  rawBody: string | null
-) {
-  if (payload) {
-    const description = coerceString(payload.error_description)
-    if (description) return description
-
-    const error = coerceString(payload.error)
-    if (error) return error
-
-    const message = coerceString(payload.message)
-    if (message) return message
-  }
-
-  const snippet = sanitizeResponseSnippet(rawBody)
-  if (snippet) {
-    return snippet
-  }
-
-  return response.statusText || "Failed to refresh OAuth token"
-}
-
-function sanitizeResponseSnippet(rawBody: string | null) {
-  if (!rawBody) return null
-  const stripped = rawBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
-  if (!stripped) return null
-  return stripped.slice(0, 200)
-}
-
-function coerceString(value: unknown) {
-  if (typeof value === "string") {
-    const trimmed = value.trim()
-    return trimmed ? trimmed : null
-  }
-  return null
-}
-
-function coerceNumber(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value
-  }
-
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number.parseInt(value, 10)
-    return Number.isNaN(parsed) ? null : parsed
-  }
-
-  return null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 function buildHeaders(

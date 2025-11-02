@@ -9,6 +9,7 @@ import type { Note } from "@/lib/types/note";
 import { getNotes } from "@/lib/notesStorage";
 
 type MemoNoteGroup = {
+  containerId: string;
   habitId: string;
   habitName: string;
   notes: Array<{ note: Note; sequence: number | null }>;
@@ -35,9 +36,17 @@ function MemoFolderCard({
                 {group.habitName || "Memo habit"}
               </h3>
             </div>
-            <span className="rounded-full border border-purple-500/50 bg-purple-500/20 px-3 py-1 text-xs font-medium text-purple-100">
-              {memoCount} memo{memoCount === 1 ? "" : "s"}
-            </span>
+            <div className="flex flex-col items-end gap-2">
+              <span className="rounded-full border border-purple-500/50 bg-purple-500/20 px-3 py-1 text-xs font-medium text-purple-100">
+                {memoCount} memo{memoCount === 1 ? "" : "s"}
+              </span>
+              <Link
+                href={`/skills/${skillId}/notes/${group.containerId}`}
+                className="text-xs font-medium text-purple-100 underline-offset-4 transition hover:text-white hover:underline"
+              >
+                Open page
+              </Link>
+            </div>
           </div>
           <div className="space-y-2">
             {group.notes.map(({ note, sequence }, index) => {
@@ -101,10 +110,42 @@ export function NotesGrid({ skillId }: NotesGridProps) {
     };
   }, [skillId]);
 
-  const memoGroups = useMemo<MemoNoteGroup[]>(() => {
-    if (notes.length === 0) return [];
+  const { memoGroups, regularNotes, childLookup } = useMemo(() => {
+    if (notes.length === 0) {
+      return {
+        memoGroups: [] as MemoNoteGroup[],
+        regularNotes: [] as Note[],
+        childLookup: new Map<string, Note[]>(),
+      };
+    }
 
-    const groups = new Map<string, MemoNoteGroup>();
+    const childrenByParent = new Map<string, Note[]>();
+    const topLevelNotes: Note[] = [];
+
+    for (const note of notes) {
+      if (note.parentNoteId) {
+        const existing = childrenByParent.get(note.parentNoteId) ?? [];
+        existing.push(note);
+        childrenByParent.set(note.parentNoteId, existing);
+      } else {
+        topLevelNotes.push(note);
+      }
+    }
+
+    const sortChildren = (list: Note[]) =>
+      [...list].sort((a, b) => {
+        const aOrder = a.siblingOrder ?? Number.POSITIVE_INFINITY;
+        const bOrder = b.siblingOrder ?? Number.POSITIVE_INFINITY;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return aTime - bTime;
+      });
+
+    const sortedChildrenByParent = new Map<string, Note[]>();
+    for (const [parentId, list] of childrenByParent.entries()) {
+      sortedChildrenByParent.set(parentId, sortChildren(list));
+    }
 
     const parseSequence = (value: unknown): number | null => {
       if (typeof value === "number" && Number.isFinite(value)) {
@@ -117,64 +158,64 @@ export function NotesGrid({ skillId }: NotesGridProps) {
       return null;
     };
 
-    for (const note of notes) {
+    const memoGroups: MemoNoteGroup[] = [];
+    const regularNotes: Note[] = [];
+
+    for (const note of topLevelNotes) {
       const metadata = (note.metadata ?? null) as Record<string, unknown> | null;
       const memoHabitId =
-        metadata && typeof metadata.memoHabitId === "string" && metadata.memoHabitId.trim()
-          ? String(metadata.memoHabitId)
+        metadata && typeof metadata.memoHabitContainerForId === "string" && metadata.memoHabitContainerForId.trim()
+          ? String(metadata.memoHabitContainerForId)
           : null;
-      if (!memoHabitId) continue;
 
-      const memoHabitName =
-        metadata && typeof metadata.memoHabitName === "string" && metadata.memoHabitName.trim()
-          ? String(metadata.memoHabitName)
-          : "Memo habit";
-      const sequence = parseSequence(metadata?.memoSequence);
+      if (memoHabitId) {
+        const memoHabitName =
+          metadata && typeof metadata.memoHabitName === "string" && metadata.memoHabitName.trim()
+            ? String(metadata.memoHabitName)
+            : note.title?.trim() || "Memo habit";
 
-      const existing = groups.get(memoHabitId);
-      const nextEntry: MemoNoteGroup =
-        existing ?? {
-          habitId: memoHabitId,
-          habitName: memoHabitName,
-          notes: [],
-        };
+        const childNotes = sortedChildrenByParent.get(note.id) ?? [];
+        const memoNotes = childNotes.map((child, index) => {
+          const childMetadata = (child.metadata ?? null) as Record<string, unknown> | null;
+          const sequence = parseSequence(childMetadata?.memoSequence);
+          return { note: child, sequence, index };
+        });
 
-      nextEntry.habitName = memoHabitName;
-      nextEntry.notes.push({ note, sequence });
-      groups.set(memoHabitId, nextEntry);
-    }
-
-    return Array.from(groups.values())
-      .map((group) => {
-        group.notes.sort((a, b) => {
+        memoNotes.sort((a, b) => {
           if (a.sequence !== null && b.sequence !== null) {
             return a.sequence - b.sequence;
           }
           if (a.sequence !== null) return -1;
           if (b.sequence !== null) return 1;
-          const aTime = a.note.createdAt ? new Date(a.note.createdAt).getTime() : 0;
-          const bTime = b.note.createdAt ? new Date(b.note.createdAt).getTime() : 0;
-          return aTime - bTime;
+          return a.index - b.index;
         });
-        return group;
-      })
-      .sort((a, b) => a.habitName.localeCompare(b.habitName));
-  }, [notes]);
 
-  const regularNotes = useMemo(() => {
-    if (notes.length === 0) return [];
-    return notes.filter((note) => {
-      const metadata = (note.metadata ?? null) as Record<string, unknown> | null;
-      const memoHabitId =
-        metadata && typeof metadata.memoHabitId === "string" && metadata.memoHabitId.trim()
-          ? String(metadata.memoHabitId)
-          : null;
-      return !memoHabitId;
+        memoGroups.push({
+          containerId: note.id,
+          habitId: memoHabitId,
+          habitName: memoHabitName,
+          notes: memoNotes.map(({ note: memoNote, sequence }) => ({
+            note: memoNote,
+            sequence,
+          })),
+        });
+      } else {
+        regularNotes.push(note);
+      }
+    }
+
+    memoGroups.sort((a, b) => a.habitName.localeCompare(b.habitName));
+    regularNotes.sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return aTime - bTime;
     });
+
+    return { memoGroups, regularNotes, childLookup: sortedChildrenByParent };
   }, [notes]);
 
-  const hasNotes = notes.length > 0;
-  const showEmptyState = !isLoading && !hasNotes;
+  const hasTopLevelNotes = memoGroups.length > 0 || regularNotes.length > 0;
+  const showEmptyState = !isLoading && !hasTopLevelNotes;
 
   return (
     <div className="space-y-4">
@@ -195,7 +236,12 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         ))}
 
         {regularNotes.map((note) => (
-          <NoteCard key={note.id} note={note} skillId={skillId} />
+          <NoteCard
+            key={note.id}
+            note={note}
+            skillId={skillId}
+            childCount={childLookup.get(note.id)?.length ?? 0}
+          />
         ))}
 
         {showEmptyState ? (

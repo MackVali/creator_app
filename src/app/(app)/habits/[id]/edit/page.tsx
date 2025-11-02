@@ -29,7 +29,52 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
+
+function normalizeMessageTokens(maybeError?: unknown) {
+  if (!maybeError || typeof maybeError !== "object") {
+    return "";
+  }
+
+  const parts: string[] = [];
+
+  if ("message" in maybeError && typeof maybeError.message === "string") {
+    parts.push(maybeError.message.toLowerCase());
+  }
+
+  if ("details" in maybeError && typeof maybeError.details === "string") {
+    parts.push(maybeError.details.toLowerCase());
+  }
+
+  return parts.join(" ");
+}
+
+function isGoalMetadataError(maybeError?: unknown) {
+  const haystack = normalizeMessageTokens(maybeError);
+  if (!haystack) {
+    return false;
+  }
+  return (
+    haystack.includes("goal_id") || haystack.includes("completion_target")
+  );
+}
+
+function buildHabitSelectColumns(includeGoalMetadata: boolean) {
+  const baseColumns =
+    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference";
+
+  const columns = [
+    baseColumns,
+    "location_context_id, location_context:location_contexts(value,label)",
+  ];
+
+  if (includeGoalMetadata) {
+    columns.push("goal_id, completion_target");
+  }
+
+  return columns.filter(Boolean).join(", ");
+}
 
 interface RoutineOption {
   id: string;
@@ -72,7 +117,7 @@ export default function EditHabitPage() {
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
   const [duration, setDuration] = useState("15");
   const [energy, setEnergy] = useState(HABIT_ENERGY_OPTIONS[0]?.value ?? "NO");
-  const [locationContext, setLocationContext] = useState<string | null>(null);
+  const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
   const [loading, setLoading] = useState(false);
@@ -94,6 +139,7 @@ export default function EditHabitPage() {
   const [goalLoadError, setGoalLoadError] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
+  const [goalMetadataSupported, setGoalMetadataSupported] = useState(true);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -205,6 +251,16 @@ export default function EditHabitPage() {
     let active = true;
 
     const fetchGoals = async () => {
+      if (!goalMetadataSupported) {
+        if (active) {
+          setGoalsLoading(false);
+          setGoalLoadError(null);
+          setGoalOptions([]);
+          setGoalId("none");
+        }
+        return;
+      }
+
       if (!supabase) {
         if (active) {
           setGoalsLoading(false);
@@ -285,7 +341,7 @@ export default function EditHabitPage() {
     return () => {
       active = false;
     };
-  }, [supabase]);
+  }, [goalMetadataSupported, supabase]);
 
   useEffect(() => {
     let active = true;
@@ -359,6 +415,16 @@ export default function EditHabitPage() {
   }, [supabase]);
 
   const goalSelectOptions = useMemo<HabitGoalSelectOption[]>(() => {
+    if (!goalMetadataSupported) {
+      return [
+        {
+          value: "none",
+          label: "Goal linking isn’t available yet for this habit.",
+          disabled: true,
+        },
+      ];
+    }
+
     if (goalsLoading) {
       return [
         {
@@ -390,7 +456,7 @@ export default function EditHabitPage() {
         description: goal.description ?? null,
       })),
     ];
-  }, [goalOptions, goalsLoading]);
+  }, [goalMetadataSupported, goalOptions, goalsLoading]);
 
   const skillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
     if (skillsLoading) {
@@ -460,16 +526,38 @@ export default function EditHabitPage() {
           return;
         }
 
-        const { data, error: habitError } = await supabase
-          .from("habits")
-          .select(
-            "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, location_context, daylight_preference, window_edge_preference, goal_id, completion_target"
-          )
-          .eq("id", habitId)
-          .eq("user_id", user.id)
-          .single();
+        let includeGoalMetadata = true;
+        let habitResponse: { data: any; error: any } | null = null;
 
-        if (habitError) throw habitError;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          habitResponse = await supabase
+            .from("habits")
+            .select(buildHabitSelectColumns(includeGoalMetadata))
+            .eq("id", habitId)
+            .eq("user_id", user.id)
+            .single();
+
+          if (!habitResponse.error) {
+            break;
+          }
+
+          let adjusted = false;
+
+          if (includeGoalMetadata && isGoalMetadataError(habitResponse.error)) {
+            includeGoalMetadata = false;
+            adjusted = true;
+          }
+
+          if (!adjusted) {
+            throw habitResponse.error;
+          }
+        }
+
+        if (!habitResponse || habitResponse.error) {
+          throw habitResponse?.error ?? new Error("Failed to load habit.");
+        }
+
+        const data = habitResponse.data;
 
         if (!data) {
           if (active) {
@@ -479,6 +567,13 @@ export default function EditHabitPage() {
         }
 
         if (active) {
+          setGoalMetadataSupported(includeGoalMetadata);
+          if (!includeGoalMetadata) {
+            setGoalsLoading(false);
+            setGoalLoadError(null);
+            setGoalOptions([]);
+            setGoalId("none");
+          }
           setName(data.name ?? "");
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
@@ -503,20 +598,27 @@ export default function EditHabitPage() {
           );
           setRoutineId(data.routine_id ?? "none");
           setSkillId(data.skill_id ?? "none");
-          const resolvedGoalId =
-            typeof data.goal_id === "string" && data.goal_id.trim().length > 0
-              ? data.goal_id
-              : "none";
-          setGoalId(resolvedGoalId);
-          const completionValue =
-            typeof data.completion_target === "number" &&
-            Number.isFinite(data.completion_target) &&
-            data.completion_target > 0
-              ? String(data.completion_target)
-              : "10";
-          setCompletionTarget(completionValue);
-          setLocationContext(
-            data.location_context ? String(data.location_context).toUpperCase() : null
+          if (includeGoalMetadata) {
+            const resolvedGoalId =
+              typeof data.goal_id === "string" && data.goal_id.trim().length > 0
+                ? data.goal_id
+                : "none";
+            setGoalId(resolvedGoalId);
+            const completionValue =
+              typeof data.completion_target === "number" &&
+              Number.isFinite(data.completion_target) &&
+              data.completion_target > 0
+                ? String(data.completion_target)
+                : "10";
+            setCompletionTarget(completionValue);
+          } else {
+            setGoalId("none");
+            setCompletionTarget("10");
+          }
+          setLocationContextId(
+            isValidUuid(data.location_context_id)
+              ? data.location_context_id
+              : null,
           );
           setDaylightPreference(
             data.daylight_preference
@@ -593,9 +695,10 @@ export default function EditHabitPage() {
 
     const normalizedHabitType = habitType.toUpperCase();
     const isTempHabit = normalizedHabitType === "TEMP";
+    const goalMetadataRequired = goalMetadataSupported && isTempHabit;
 
     let parsedCompletionTarget: number | null = null;
-    if (isTempHabit) {
+    if (goalMetadataRequired) {
       if (goalId === "none") {
         setError("Temp habits need to stay linked to a goal.");
         return;
@@ -641,7 +744,6 @@ export default function EditHabitPage() {
         normalizedRecurrence === "every x days" && recurrenceDays.length > 0
           ? recurrenceDays
           : null;
-      const goalIdValue = goalId === "none" ? null : goalId;
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -671,27 +773,60 @@ export default function EditHabitPage() {
         routineIdToUse = routineId;
       }
 
+      let resolvedLocationContextId: string | null = null;
+      if (locationContextId) {
+        if (isValidUuid(locationContextId)) {
+          resolvedLocationContextId = locationContextId;
+        } else {
+          resolvedLocationContextId = await resolveLocationContextId(
+            supabase,
+            user.id,
+            locationContextId,
+          );
+
+          if (!resolvedLocationContextId) {
+            setError(
+              "We couldn’t save that location just yet. Please try again.",
+            );
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      const basePayload: Record<string, unknown> = {
+        name: name.trim(),
+        description: trimmedDescription || null,
+        habit_type: habitType,
+        recurrence: recurrenceValue,
+        recurrence_days: recurrenceDaysValue,
+        duration_minutes: durationMinutes,
+        energy,
+        routine_id: routineIdToUse,
+        skill_id: skillId === "none" ? null : skillId,
+        daylight_preference:
+          daylightPreference && daylightPreference !== "ALL_DAY"
+            ? daylightPreference
+            : null,
+        window_edge_preference: windowEdgePreference,
+      };
+
+      if (goalMetadataSupported) {
+        basePayload.goal_id =
+          isTempHabit && goalId !== "none" ? goalId : null;
+        basePayload.completion_target = goalMetadataRequired
+          ? parsedCompletionTarget
+          : null;
+      }
+
+      const payload: Record<string, unknown> = {
+        ...basePayload,
+        location_context_id: resolvedLocationContextId,
+      };
+
       const { error: updateError } = await supabase
         .from("habits")
-        .update({
-          name: name.trim(),
-          description: trimmedDescription || null,
-          habit_type: habitType,
-          recurrence: recurrenceValue,
-          recurrence_days: recurrenceDaysValue,
-          duration_minutes: durationMinutes,
-          energy,
-          routine_id: routineIdToUse,
-          skill_id: skillId === "none" ? null : skillId,
-          location_context: locationContext,
-          daylight_preference:
-            daylightPreference && daylightPreference !== "ALL_DAY"
-              ? daylightPreference
-              : null,
-          window_edge_preference: windowEdgePreference,
-          goal_id: isTempHabit ? goalIdValue : null,
-          completion_target: parsedCompletionTarget,
-        })
+        .update(payload)
         .eq("id", habitId)
         .eq("user_id", user.id);
 
@@ -761,33 +896,31 @@ export default function EditHabitPage() {
                   habitType={habitType}
                   recurrence={recurrence}
                   recurrenceDays={recurrenceDays}
-                  duration={duration}
-                  energy={energy}
-                  skillId={skillId}
-                  locationContext={locationContext}
+                duration={duration}
+                energy={energy}
+                skillId={skillId}
+                locationContextId={locationContextId}
                   daylightPreference={daylightPreference}
                   windowEdgePreference={windowEdgePreference}
-                energyOptions={energySelectOptions}
-                skillsLoading={skillsLoading}
-                skillOptions={skillSelectOptions}
-                skillError={skillLoadError}
-                goalId={goalId}
-                goalOptions={goalSelectOptions}
-                goalError={goalLoadError}
-                onGoalChange={setGoalId}
-                completionTarget={completionTarget}
-                onCompletionTargetChange={setCompletionTarget}
-                onNameChange={setName}
-                onDescriptionChange={setDescription}
-                onHabitTypeChange={setHabitType}
-                onRecurrenceChange={setRecurrence}
-                onRecurrenceDaysChange={setRecurrenceDays}
+                  energyOptions={energySelectOptions}
+                  skillsLoading={skillsLoading}
+                  skillOptions={skillSelectOptions}
+                  skillError={skillLoadError}
+                  goalId={goalId}
+                  goalOptions={goalSelectOptions}
+                  goalError={goalMetadataSupported ? goalLoadError : null}
+                  onGoalChange={setGoalId}
+                  completionTarget={completionTarget}
+                  onCompletionTargetChange={setCompletionTarget}
+                  onNameChange={setName}
+                  onDescriptionChange={setDescription}
+                  onHabitTypeChange={setHabitType}
+                  onRecurrenceChange={setRecurrence}
+                  onRecurrenceDaysChange={setRecurrenceDays}
                   onEnergyChange={setEnergy}
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
-                  onLocationContextChange={(value) =>
-                    setLocationContext(value ? value.toUpperCase() : null)
-                  }
+                  onLocationContextIdChange={setLocationContextId}
                   onDaylightPreferenceChange={(value) =>
                     setDaylightPreference(value.toUpperCase())
                   }

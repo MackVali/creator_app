@@ -27,10 +27,10 @@ interface TopNavAvatarProps {
 
 export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
   const router = useRouter();
-  const { session } = useAuth();
+  const { user } = useAuth();
 
   const handleAvatarClick = async () => {
-    if (session && userId) {
+    if (user && userId) {
       // Get user's profile to redirect to handle-based route
       try {
         const profile = await getProfileByUserId(userId);
@@ -43,7 +43,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
         // Fallback to profile page if error
         router.push("/profile");
       }
-    } else if (!session) {
+    } else if (!user) {
       // If not signed in, go to auth page
       router.push("/auth");
     }
@@ -92,7 +92,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
 
   const initials = getInitials(profile?.name || null, profile?.username || "U");
   const displayName = profile?.name?.trim() || profile?.username || "You";
-  const handleTagline = profile?.username ? `@${profile.username}` : session?.user.email;
+  const handleTagline = profile?.username ? `@${profile.username}` : user?.email;
 
   return (
     <DropdownMenu>
@@ -120,7 +120,7 @@ export default function TopNavAvatar({ profile, userId }: TopNavAvatarProps) {
         align="end"
         className="w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#090B11]/95 p-0 text-white shadow-[0px_24px_60px_rgba(8,9,14,0.45)] backdrop-blur"
       >
-        {session ? (
+        {user ? (
           // User is signed in
           <>
             <div className="flex items-center gap-3 border-b border-white/10 bg-gradient-to-br from-indigo-500/10 via-transparent to-slate-900 px-4 py-4">

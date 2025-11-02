@@ -7,6 +7,7 @@ import { Plus, X } from "lucide-react";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
+import { PostModal } from "./PostModal";
 import { cn } from "@/lib/utils";
 
 interface FabProps extends HTMLAttributes<HTMLDivElement> {
@@ -24,6 +25,7 @@ export function Fab({
     "GOAL" | "PROJECT" | "TASK" | "HABIT" | null
   >(null);
   const [showNote, setShowNote] = useState(false);
+  const [showPost, setShowPost] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const [menuPage, setMenuPage] = useState(0);
   const [touchStartX, setTouchStartX] = useState(0);
@@ -88,7 +90,7 @@ export function Fab({
       secondary: [
         { label: "SERVICE" },
         { label: "PRODUCT" },
-        { label: "REQUEST" },
+        { label: "POST" },
         { label: "NOTE" },
       ],
       menuClassName: "left-1/2 -translate-x-1/2",
@@ -119,7 +121,7 @@ export function Fab({
       ],
       secondary: [
         { label: "NOTE" },
-        { label: "REQUEST" },
+        { label: "POST" },
         { label: "SERVICE" },
         { label: "PRODUCT" },
       ],
@@ -174,6 +176,8 @@ export function Fab({
     setIsOpen(false);
     if (label === "NOTE") {
       setShowNote(true);
+    } else if (label === "POST") {
+      setShowPost(true);
     } else if (label === "SERVICE" || label === "PRODUCT") {
       router.push(`/source?create=${label.toLowerCase()}`);
     } else {
@@ -319,6 +323,7 @@ export function Fab({
         eventType={modalEventType!}
       />
       <NoteModal isOpen={showNote} onClose={() => setShowNote(false)} />
+      <PostModal isOpen={showPost} onClose={() => setShowPost(false)} />
       <ComingSoonModal
         isOpen={comingSoon !== null}
         onClose={() => setComingSoon(null)}

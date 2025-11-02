@@ -30,10 +30,13 @@ export default function UpdatePasswordPage() {
     const checkRecoverySession = async () => {
       if (!supabase) return;
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user?.aud === "authenticated") {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) {
+        setError("Invalid or expired reset link. Please request a new one.");
+        return;
+      }
+
+      if (data.user.aud === "authenticated") {
         setHasRecoverySession(true);
       } else {
         setError("Invalid or expired reset link. Please request a new one.");

@@ -59,7 +59,7 @@ export interface Database {
           window_id: string | null;
           skill_id: string | null;
           energy: string | null;
-          location_context: string | null;
+          location_context_id: string | null;
           daylight_preference: string | null;
           window_edge_preference: string | null;
           goal_id: string | null;
@@ -79,7 +79,7 @@ export interface Database {
           window_id?: string | null;
           skill_id?: string | null;
           energy?: string | null;
-          location_context?: string | null;
+          location_context_id?: string | null;
           daylight_preference?: string | null;
           window_edge_preference?: string | null;
           goal_id?: string | null;
@@ -99,7 +99,7 @@ export interface Database {
           window_id?: string | null;
           skill_id?: string | null;
           energy?: string | null;
-          location_context?: string | null;
+          location_context_id?: string | null;
           daylight_preference?: string | null;
           window_edge_preference?: string | null;
           goal_id?: string | null;
@@ -253,35 +253,41 @@ export interface Database {
           id: string;
           created_at: string;
           updated_at: string | null;
-        user_id: string;
-        title: string | null;
-        content: string | null;
-        monument_id: string | null;
-        skill_id: string | null;
-        metadata: Json | null;
-      };
-      Insert: {
-        id?: string;
-        created_at?: string;
-        updated_at?: string | null;
-        user_id: string;
-        title?: string | null;
-        content?: string | null;
-        monument_id?: string | null;
-        skill_id?: string | null;
-        metadata?: Json | null;
-      };
-      Update: {
-        id?: string;
-        created_at?: string;
-        updated_at?: string | null;
-        user_id?: string;
-        title?: string | null;
-        content?: string | null;
-        monument_id?: string | null;
-        skill_id?: string | null;
-        metadata?: Json | null;
-      };
+          user_id: string;
+          title: string | null;
+          content: string | null;
+          monument_id: string | null;
+          skill_id: string | null;
+          metadata: Json | null;
+          parent_note_id: string | null;
+          sibling_order: number | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string | null;
+          user_id: string;
+          title?: string | null;
+          content?: string | null;
+          monument_id?: string | null;
+          skill_id?: string | null;
+          metadata?: Json | null;
+          parent_note_id?: string | null;
+          sibling_order?: number | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string | null;
+          user_id?: string;
+          title?: string | null;
+          content?: string | null;
+          monument_id?: string | null;
+          skill_id?: string | null;
+          metadata?: Json | null;
+          parent_note_id?: string | null;
+          sibling_order?: number | null;
+        };
       };
       friend_connections: {
         Row: {
@@ -324,6 +330,159 @@ export interface Database {
           is_online?: boolean;
         };
       };
+      friend_contact_imports: {
+        Row: {
+          id: string;
+          user_id: string;
+          total_contacts: number;
+          imported_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          total_contacts?: number;
+          imported_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          total_contacts?: number;
+          imported_at?: string;
+          updated_at?: string;
+        };
+      };
+      friend_discovery_profiles: {
+        Row: {
+          id: string;
+          username: string;
+          display_name: string;
+          avatar_url: string | null;
+          role: string | null;
+          highlight: string | null;
+          reason: string | null;
+          mutual_friends: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          username: string;
+          display_name: string;
+          avatar_url?: string | null;
+          role?: string | null;
+          highlight?: string | null;
+          reason?: string | null;
+          mutual_friends?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          username?: string;
+          display_name?: string;
+          avatar_url?: string | null;
+          role?: string | null;
+          highlight?: string | null;
+          reason?: string | null;
+          mutual_friends?: number;
+          created_at?: string;
+        };
+      };
+      friend_invites: {
+        Row: {
+          id: string;
+          user_id: string;
+          email: string;
+          status: string;
+          sent_at: string;
+          last_sent_at: string;
+          sent_count: number;
+          responded_at: string | null;
+          cancelled_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          email: string;
+          status?: string;
+          sent_at?: string;
+          last_sent_at?: string;
+          sent_count?: number;
+          responded_at?: string | null;
+          cancelled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          email?: string;
+          status?: string;
+          sent_at?: string;
+          last_sent_at?: string;
+          sent_count?: number;
+          responded_at?: string | null;
+          cancelled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      friend_requests: {
+        Row: {
+          id: string;
+          requester_id: string;
+          requester_username: string;
+          requester_display_name: string | null;
+          requester_avatar_url: string | null;
+          target_id: string;
+          target_username: string;
+          target_display_name: string | null;
+          target_avatar_url: string | null;
+          note: string | null;
+          status: string;
+          mutual_friends: number;
+          responded_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          requester_id: string;
+          requester_username: string;
+          requester_display_name?: string | null;
+          requester_avatar_url?: string | null;
+          target_id: string;
+          target_username: string;
+          target_display_name?: string | null;
+          target_avatar_url?: string | null;
+          note?: string | null;
+          status?: string;
+          mutual_friends?: number;
+          responded_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          requester_id?: string;
+          requester_username?: string;
+          requester_display_name?: string | null;
+          requester_avatar_url?: string | null;
+          target_id?: string;
+          target_username?: string;
+          target_display_name?: string | null;
+          target_avatar_url?: string | null;
+          note?: string | null;
+          status?: string;
+          mutual_friends?: number;
+          responded_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+
       friend_messages: {
         Row: {
           id: string;
@@ -671,35 +830,35 @@ export interface Database {
           id: string;
           created_at: string;
           user_id: string;
-        label: string;
-        days: number[];
-        start_local: string;
-        end_local: string;
-        energy: string;
-        location_context: string | null;
-      };
-      Insert: {
-        id?: string;
-        created_at?: string;
-        user_id: string;
-        label: string;
-        days?: number[];
-        start_local?: string;
-        end_local?: string;
-        energy?: string;
-        location_context?: string | null;
-      };
-      Update: {
-        id?: string;
-        created_at?: string;
-        user_id?: string;
-        label?: string;
-        days?: number[];
-        start_local?: string;
-        end_local?: string;
-        energy?: string;
-        location_context?: string | null;
-      };
+          label: string;
+          days: number[];
+          start_local: string;
+          end_local: string;
+          energy: string;
+          location_context_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          user_id: string;
+          label: string;
+          days?: number[];
+          start_local?: string;
+          end_local?: string;
+          energy?: string;
+          location_context_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          user_id?: string;
+          label?: string;
+          days?: number[];
+          start_local?: string;
+          end_local?: string;
+          energy?: string;
+          location_context_id?: string | null;
+        };
       };
       schedule_instances: {
         Row: {
@@ -818,6 +977,81 @@ export interface Database {
           updated_at?: string;
         };
       };
+      badges: {
+        Row: {
+          id: string;
+          created_at: string;
+          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          level: number;
+          emoji: string;
+          label: string;
+          description: string | null;
+          metadata: Json | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          badge_type: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          level: number;
+          emoji: string;
+          label: string;
+          description?: string | null;
+          metadata?: Json | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          badge_type?: "user_prestige_badge" | "skill_prestige_badge" | "skill_level_badge";
+          level?: number;
+          emoji?: string;
+          label?: string;
+          description?: string | null;
+          metadata?: Json | null;
+        };
+      };
+      skill_badges: {
+        Row: {
+          id: string;
+          user_id: string;
+          skill_id: string;
+          badge_id: string;
+          awarded_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          skill_id: string;
+          badge_id: string;
+          awarded_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          skill_id?: string;
+          badge_id?: string;
+          awarded_at?: string;
+        };
+      };
+      user_badges: {
+        Row: {
+          id: string;
+          user_id: string;
+          badge_id: string;
+          awarded_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          badge_id: string;
+          awarded_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          badge_id?: string;
+          awarded_at?: string;
+        };
+      };
       dark_xp_events: {
         Row: {
           id: string;
@@ -849,18 +1083,21 @@ export interface Database {
           user_id: string;
           total_dark_xp: number;
           current_level: number;
+          prestige: number;
           updated_at: string;
         };
         Insert: {
           user_id: string;
           total_dark_xp?: number;
           current_level?: number;
+          prestige?: number;
           updated_at?: string;
         };
         Update: {
           user_id?: string;
           total_dark_xp?: number;
           current_level?: number;
+          prestige?: number;
           updated_at?: string;
         };
       };
@@ -875,7 +1112,7 @@ export interface Database {
       };
     };
     Enums: {
-      schedule_instance_source_type: 'PROJECT' | 'TASK';
+      schedule_instance_source_type: 'PROJECT' | 'TASK' | 'HABIT';
       schedule_instance_status: 'scheduled' | 'completed' | 'missed' | 'canceled';
       xp_kind: 'task' | 'habit' | 'project' | 'goal' | 'manual';
     };

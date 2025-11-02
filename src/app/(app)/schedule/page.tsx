@@ -719,7 +719,7 @@ function isSameLocalDay(
 }
 
 function computeHabitPlacementsForDay({
-  habits,
+  habits: allHabits,
   windows,
   date,
   timeZone,
@@ -728,6 +728,7 @@ function computeHabitPlacementsForDay({
   sunlightCoordinates,
   projectInstances,
   schedulerTimelinePlacements,
+  instances,
 }: {
   habits: HabitScheduleItem[]
   windows: RepoWindow[]
@@ -738,18 +739,20 @@ function computeHabitPlacementsForDay({
   sunlightCoordinates?: GeoCoordinates | null
   projectInstances?: ReturnType<typeof computeProjectInstances>
   schedulerTimelinePlacements?: SchedulerTimelinePlacement[]
+  instances?: ScheduleInstance[]
 }): HabitTimelinePlacement[] {
-  if (habits.length === 0 || windows.length === 0) return []
+  if (allHabits.length === 0) return []
 
   const zone = timeZone || 'UTC'
   const dayStart = startOfDayInTimeZone(date, zone)
   const defaultDueMs = dayStart.getTime()
-  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
-  const placements: HabitTimelinePlacement[] = []
   const availability = new Map<string, number>()
+  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
   const dayCompletionMap = completionMap ?? null
   const nowCandidate = now ?? null
   const nowMs = isSameLocalDay(nowCandidate, date) ? nowCandidate?.getTime() ?? null : null
+
+  const habitMap = new Map(allHabits.map(habit => [habit.id, habit]))
 
   const windowEntries = windows
     .map((window) => {
@@ -798,8 +801,17 @@ function computeHabitPlacementsForDay({
     }
   }
 
+  const timelineHabitPlacements = new Map<string, Extract<SchedulerTimelinePlacement, { type: 'HABIT' }>>()
   if (schedulerTimelinePlacements && schedulerTimelinePlacements.length > 0) {
     for (const placement of schedulerTimelinePlacements) {
+      if (placement.type !== 'HABIT') continue
+      const key = habitTimelinePlacementKey(placement.habitId, placement.start)
+      if (!timelineHabitPlacements.has(key)) {
+        timelineHabitPlacements.set(key, placement)
+      }
+    }
+    for (const placement of schedulerTimelinePlacements) {
+      if (placement.type !== 'HABIT') continue
       const startMs = placement.start.getTime()
       const endMs = placement.end.getTime()
       if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
@@ -813,9 +825,64 @@ function computeHabitPlacementsForDay({
     }
   }
 
-  if (windowEntries.length === 0) return []
+  const placements: HabitTimelinePlacement[] = []
+  const placedHabitIds = new Set<string>()
 
-  const dueHabits = habits.filter((habit) => {
+  if (instances && instances.length > 0) {
+    for (const instance of instances) {
+      if (instance.source_type !== 'HABIT') continue
+      if (instance.status !== 'scheduled' && instance.status !== 'completed') continue
+      const habit = habitMap.get(instance.source_id)
+      if (!habit) continue
+      const start = toLocal(instance.start_utc)
+      const end = toLocal(instance.end_utc)
+      if (!isValidDate(start) || !isValidDate(end)) continue
+      const durationMinutes = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000))
+      const assignedEntry = windowEntries.find(entry => entry.window.id === instance.window_id)
+      const window = assignedEntry
+        ? assignedEntry.window
+        : createFallbackWindowForHabitInstance({
+            habit,
+            instance,
+            start,
+            end,
+            timeZone: zone,
+          })
+      const timelineKey = habitTimelinePlacementKey(habit.id, start)
+      const timelinePlacement = timelineHabitPlacements.get(timelineKey)
+
+      placements.push({
+        habitId: habit.id,
+        habitName: habit.name,
+        habitType: habit.habitType,
+        skillId: habit.skillId ?? null,
+        start,
+        end,
+        durationMinutes,
+        window,
+        truncated: timelinePlacement?.clipped ?? false,
+      })
+      placedHabitIds.add(habit.id)
+
+      if (assignedEntry) {
+        const normalizedEnd = Math.min(
+          assignedEntry.endMs,
+          Math.max(assignedEntry.startMs, end.getTime()),
+        )
+        const previous = availability.get(assignedEntry.key) ?? assignedEntry.startMs
+        availability.set(assignedEntry.key, Math.max(previous, normalizedEnd))
+        addAnchorStart(anchorStartsByWindowKey, assignedEntry.key, start.getTime())
+      }
+    }
+  }
+
+  const remainingHabits = allHabits.filter(habit => !placedHabitIds.has(habit.id))
+  if (remainingHabits.length === 0 || windowEntries.length === 0) {
+    placements.sort((a, b) => a.start.getTime() - b.start.getTime())
+    return placements
+  }
+
+  const dueHabits = remainingHabits.filter((habit) => {
     const dueInfo = evaluateHabitDueOnDate({
       habit,
       date,
@@ -829,7 +896,10 @@ function computeHabitPlacementsForDay({
     return true
   })
 
-  if (dueHabits.length === 0) return []
+  if (dueHabits.length === 0) {
+    placements.sort((a, b) => a.start.getTime() - b.start.getTime())
+    return placements
+  }
 
   const sunlightSpan = resolveSunlightSpan(date, zone, sunlightCoordinates ?? null)
 
@@ -1025,13 +1095,70 @@ function computeHabitPlacementsForDay({
     }
 
     if (!placed) {
-      // no suitable window found; skip
       continue
     }
   }
 
   placements.sort((a, b) => a.start.getTime() - b.start.getTime())
   return placements
+}
+
+function habitTimelinePlacementKey(habitId: string, start: Date) {
+  return `${habitId}:${formatLocalDateKey(start)}`
+}
+
+const windowTimeFormatterCache = new Map<string, Intl.DateTimeFormat>()
+
+function formatTimeForWindow(date: Date, timeZone: string) {
+  const key = timeZone || 'UTC'
+  let formatter = windowTimeFormatterCache.get(key)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: key,
+    })
+    windowTimeFormatterCache.set(key, formatter)
+  }
+  return formatter.format(date)
+}
+
+function createFallbackWindowForHabitInstance({
+  habit,
+  instance,
+  start,
+  end,
+  timeZone,
+}: {
+  habit: HabitScheduleItem
+  instance: ScheduleInstance
+  start: Date
+  end: Date
+  timeZone: string
+}): RepoWindow {
+  const startLocal = formatTimeForWindow(start, timeZone)
+  const endLocal = formatTimeForWindow(end, timeZone)
+  const dayStart = startOfDayInTimeZone(end, timeZone)
+  const fromPrevDay = start.getTime() < dayStart.getTime()
+  const energySource =
+    instance.energy_resolved || habit.energy || habit.window?.energy || 'NO'
+
+  return {
+    id: instance.window_id ?? `habit-${habit.id}`,
+    label: habit.window?.label ?? 'Anytime',
+    energy: energySource,
+    start_local: startLocal,
+    end_local: endLocal,
+    days: null,
+    location_context_id:
+      habit.locationContextId ?? habit.window?.locationContextId ?? null,
+    location_context_value:
+      habit.locationContextValue ?? habit.window?.locationContextValue ?? null,
+    location_context_name:
+      habit.locationContextName ?? habit.window?.locationContextName ?? null,
+    fromPrevDay,
+  }
 }
 
 function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number) {
@@ -1430,6 +1557,7 @@ function buildDayTimelineModel({
     sunlightCoordinates,
     projectInstances,
     schedulerTimelinePlacements,
+    instances,
   })
   const windowReports = computeWindowReportsForDay({
     windows,
@@ -1825,8 +1953,15 @@ function parseSchedulerDebugPayload(
           scheduleValue.placed
             .map(entry => {
               if (!entry || typeof entry !== 'object') return null
-              const value = entry as { source_id?: unknown }
-              const id = value.source_id
+              const typedEntry = entry as {
+                source_id?: unknown
+                source_type?: unknown
+              }
+              const rawType = typedEntry.source_type
+              const normalizedType =
+                typeof rawType === 'string' ? rawType.toUpperCase() : null
+              if (normalizedType !== 'PROJECT') return null
+              const id = typedEntry.source_id
               return typeof id === 'string' && id.length > 0 ? id : null
             })
             .filter((value): value is string => Boolean(value))
@@ -1915,9 +2050,9 @@ export default function SchedulePage() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const prefersReducedMotion = useReducedMotion()
-  const { session } = useAuth()
-  const userId = session?.user.id ?? null
-  const userMetadata = session?.user?.user_metadata ?? null
+  const { user } = useAuth()
+  const userId = user?.id ?? null
+  const userMetadata = user?.user_metadata ?? null
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
     [userId]
@@ -2549,7 +2684,7 @@ export default function SchedulePage() {
           fetchReadyTasks(),
           fetchProjectsMap(),
           fetchScheduledProjectIds(userId),
-          fetchHabitsForSchedule(),
+          fetchHabitsForSchedule(userId),
           getSkillsForUser(userId),
           getMonumentsForUser(userId),
         ])
@@ -2979,7 +3114,7 @@ export default function SchedulePage() {
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
-        console.warn('No user session available for status update')
+        console.warn('No authenticated user available for status update')
         return
       }
 
@@ -3364,108 +3499,149 @@ export default function SchedulePage() {
     }
   }, [userId, currentDate, localTimeZone])
 
-  const runScheduler = useCallback(async () => {
-    if (!userId) {
-      console.warn('No user session available for scheduler run')
-      return
-    }
-    const localNow = new Date()
-    const timeZone: string | null = localTimeZone ?? null
-    if (isSchedulingRef.current) return
-    isSchedulingRef.current = true
-    setIsScheduling(true)
-    try {
-      const response = await fetch('/api/scheduler/run', {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          localTimeIso: localNow.toISOString(),
-          timeZone,
-          mode: resolvedModePayload,
-        }),
-      })
-      let payload: unknown = null
-      let parseError: unknown = null
+  const PRIMARY_WRITE_WINDOW_DAYS = 7
+  const FULL_WRITE_WINDOW_DAYS = 365
+
+  const runScheduler = useCallback(
+    async (
+      args?: {
+        writeThroughDays?: number | null
+        background?: boolean
+      }
+    ) => {
+      const background = args?.background ?? false
+      if (!userId) {
+        if (!background) {
+          console.warn('No authenticated user available for scheduler run')
+        }
+        return
+      }
+
+      const localNow = new Date()
+      const timeZone: string | null = localTimeZone ?? null
+
+      if (!background) {
+        if (isSchedulingRef.current) return
+        isSchedulingRef.current = true
+        setIsScheduling(true)
+      }
+
       try {
-        payload = await response.json()
-      } catch (err) {
-        parseError = err
-      }
-
-      if (!response.ok) {
-        console.error('Scheduler run failed', response.status, payload ?? parseError)
-      }
-
-      const parsed = parseSchedulerDebugPayload(payload)
-      if (parsed) {
-        setSchedulerDebug({
-          runAt: new Date().toISOString(),
-          ...parsed,
+        const response = await fetch('/api/scheduler/run', {
+          method: 'POST',
+          cache: 'no-store',
+          keepalive: background,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            localTimeIso: localNow.toISOString(),
+            timeZone,
+            mode: resolvedModePayload,
+            writeThroughDays: args?.writeThroughDays ?? null,
+          }),
         })
-        if (parsed.placedProjectIds.length > 0) {
-          setScheduledProjectIds(prev => {
-            let changed = false
-            const next = new Set(prev)
-            for (const id of parsed.placedProjectIds) {
-              if (!next.has(id)) {
-                next.add(id)
-                changed = true
+
+        if (background) {
+          if (!response.ok) {
+            console.error('Background scheduler run failed', response.status)
+          }
+          return
+        }
+
+        let payload: unknown = null
+        let parseError: unknown = null
+        try {
+          payload = await response.json()
+        } catch (err) {
+          parseError = err
+        }
+
+        if (!response.ok) {
+          console.error('Scheduler run failed', response.status, payload ?? parseError)
+        }
+
+        const parsed = parseSchedulerDebugPayload(payload)
+        if (parsed) {
+          setSchedulerDebug({
+            runAt: new Date().toISOString(),
+            ...parsed,
+          })
+          if (parsed.placedProjectIds.length > 0) {
+            setScheduledProjectIds(prev => {
+              let changed = false
+              const next = new Set(prev)
+              for (const id of parsed.placedProjectIds) {
+                if (!next.has(id)) {
+                  next.add(id)
+                  changed = true
+                }
               }
-            }
-            return changed ? next : prev
+              return changed ? next : prev
+            })
+          }
+        } else {
+          if (parseError) {
+            console.error('Failed to parse scheduler response', parseError)
+          }
+          const fallbackError =
+            parseError ??
+            (!response.ok
+              ? payload
+              : { message: 'Scheduler response missing schedule payload' })
+          setSchedulerDebug({
+            runAt: new Date().toISOString(),
+            failures: [],
+            placedCount: 0,
+            placedProjectIds: [],
+            timeline: [],
+            error: fallbackError,
           })
         }
-      } else {
-        if (parseError) {
-          console.error('Failed to parse scheduler response', parseError)
+      } catch (error) {
+        if (!background) {
+          console.error('Failed to run scheduler', error)
+          setSchedulerDebug({
+            runAt: new Date().toISOString(),
+            failures: [],
+            placedCount: 0,
+            placedProjectIds: [],
+            timeline: [],
+            error,
+          })
+        } else {
+          console.error('Background scheduler run failed', error)
         }
-        const fallbackError =
-          parseError ??
-          (!response.ok
-            ? payload
-            : { message: 'Scheduler response missing schedule payload' })
-        setSchedulerDebug({
-          runAt: new Date().toISOString(),
-          failures: [],
-          placedCount: 0,
-          placedProjectIds: [],
-          timeline: [],
-          error: fallbackError,
-        })
+      } finally {
+        if (!background) {
+          isSchedulingRef.current = false
+          setIsScheduling(false)
+          try {
+            await loadInstancesRef.current()
+          } catch (error) {
+            console.error('Failed to reload schedule instances', error)
+          }
+          try {
+            await refreshScheduledProjectIds()
+          } catch (error) {
+            console.error('Failed to refresh scheduled project history', error)
+          }
+        }
       }
-    } catch (error) {
-      console.error('Failed to run scheduler', error)
-      setSchedulerDebug({
-        runAt: new Date().toISOString(),
-        failures: [],
-        placedCount: 0,
-        placedProjectIds: [],
-        timeline: [],
-        error,
-      })
-    } finally {
-      isSchedulingRef.current = false
-      setIsScheduling(false)
-      try {
-        await loadInstancesRef.current()
-      } catch (error) {
-        console.error('Failed to reload schedule instances', error)
-      }
-      try {
-        await refreshScheduledProjectIds()
-      } catch (error) {
-        console.error('Failed to refresh scheduled project history', error)
-      }
-    }
-  }, [userId, refreshScheduledProjectIds, localTimeZone, resolvedModePayload])
+    },
+    [
+      userId,
+      refreshScheduledProjectIds,
+      localTimeZone,
+      resolvedModePayload,
+      loadInstancesRef,
+    ]
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     const globalWithScheduler = window as typeof window & {
-      __runScheduler?: () => Promise<void>
+      __runScheduler?: (options?: { writeThroughDays?: number | null }) => Promise<void>
     }
     globalWithScheduler.__runScheduler = runScheduler
     return () => {
@@ -3487,7 +3663,13 @@ export default function SchedulePage() {
     if (autoScheduledForRef.current === todayKey) return
     autoScheduledForRef.current = todayKey
     void (async () => {
-      await runScheduler()
+      await runScheduler({ writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS })
+      if (PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS) {
+        void runScheduler({
+          writeThroughDays: FULL_WRITE_WINDOW_DAYS,
+          background: true,
+        })
+      }
       persistAutoRunDate(todayKey)
       setHasAutoRunToday(true)
     })()
@@ -3504,7 +3686,13 @@ export default function SchedulePage() {
   const handleRescheduleClick = useCallback(async () => {
     if (!userId) return
     const todayKey = formatLocalDateKey(new Date())
-    await runScheduler()
+    await runScheduler({ writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS })
+    if (PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS) {
+      void runScheduler({
+        writeThroughDays: FULL_WRITE_WINDOW_DAYS,
+        background: true,
+      })
+    }
     persistAutoRunDate(todayKey)
     setHasAutoRunToday(true)
   }, [userId, runScheduler, persistAutoRunDate])

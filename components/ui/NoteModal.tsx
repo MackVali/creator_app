@@ -11,12 +11,15 @@ import { Select, SelectContent, SelectItem } from "./select";
 import { useToastHelpers } from "./toast";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
-import { createSkillNote } from "@/lib/notesStorage";
+import { createSkillNote, getNotes } from "@/lib/notesStorage";
+import type { Note } from "@/lib/types/note";
 
 interface NoteModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const ROOT_PARENT_VALUE = "__root__";
 
 export function NoteModal({ isOpen, onClose }: NoteModalProps) {
   const [mounted, setMounted] = useState(false);
@@ -27,6 +30,9 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
     title: "",
     content: "",
   });
+  const [parentOptions, setParentOptions] = useState<Note[]>([]);
+  const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
+  const [isLoadingParents, setIsLoadingParents] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -49,6 +55,48 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
       loadSkills();
     }
   }, [isOpen, mounted]);
+
+  useEffect(() => {
+    if (!isOpen || !mounted) return;
+
+    let isActive = true;
+
+    const loadParents = async () => {
+      if (!formData.skillId) {
+        setParentOptions([]);
+        setSelectedParentId(null);
+        setIsLoadingParents(false);
+        return;
+      }
+
+      setIsLoadingParents(true);
+
+      try {
+        const notes = await getNotes(formData.skillId, { parentNoteId: null });
+        if (!isActive) return;
+        setParentOptions(notes);
+        setSelectedParentId(null);
+      } catch (error) {
+        console.error("Failed to load parent note options", {
+          error,
+          skillId: formData.skillId,
+        });
+        if (!isActive) return;
+        setParentOptions([]);
+        setSelectedParentId(null);
+      } finally {
+        if (isActive) {
+          setIsLoadingParents(false);
+        }
+      }
+    };
+
+    loadParents();
+
+    return () => {
+      isActive = false;
+    };
+  }, [formData.skillId, isOpen, mounted]);
 
   if (!isOpen || !mounted) return null;
 
@@ -76,6 +124,8 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
       const saved = await createSkillNote(formData.skillId, {
         title: formData.title,
         content: formData.content,
+      }, {
+        parentNoteId: selectedParentId,
       });
 
       if (!saved) {
@@ -85,6 +135,8 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
 
       toast.success("Note saved");
       setFormData({ skillId: "", title: "", content: "" });
+      setParentOptions([]);
+      setSelectedParentId(null);
       onClose();
     } catch (error) {
       console.error("Failed to save note", error);
@@ -128,6 +180,50 @@ export function NoteModal({ isOpen, onClose }: NoteModalProps) {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-white text-sm font-medium">
+              Parent page (optional)
+            </Label>
+            <Select
+              value={selectedParentId ?? ROOT_PARENT_VALUE}
+              onValueChange={(value) => {
+                if (value === ROOT_PARENT_VALUE) {
+                  setSelectedParentId(null);
+                } else {
+                  setSelectedParentId(value);
+                }
+              }}
+              placeholder="Add to top level"
+              className="text-white"
+              triggerClassName="h-10 bg-gray-800 border-gray-600 text-left text-sm text-white"
+            >
+              <SelectContent className="bg-gray-900 text-white">
+                <SelectItem value={ROOT_PARENT_VALUE}>
+                  {isLoadingParents ? "Loading…" : "Top-level page"}
+                </SelectItem>
+                {parentOptions.map((note) => {
+                  const displayTitle =
+                    note.title?.trim() ||
+                    note.content
+                      ?.split(/\r?\n/)
+                      .map((line) => line.trim())
+                      .find((line) => line.length > 0) ||
+                    "Untitled";
+
+                  return (
+                    <SelectItem key={note.id} value={note.id}>
+                      {displayTitle}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            {selectedParentId ? (
+              <p className="text-xs text-white/60">
+                Sub-notes can only nest one level deep.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label className="text-white text-sm font-medium">Title</Label>
