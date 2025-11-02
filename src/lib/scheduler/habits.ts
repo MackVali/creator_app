@@ -20,8 +20,7 @@ export type HabitScheduleItem = {
   goalId: string | null
   completionTarget: number | null
   locationContextId: string | null
-  locationContextValue: string | null
-  locationContextName: string | null
+  locationContext: string | null
   daylightPreference: string | null
   windowEdgePreference: string | null
   window: {
@@ -32,8 +31,7 @@ export type HabitScheduleItem = {
     endLocal: string
     days: number[] | null
     locationContextId: string | null
-    locationContextValue: string | null
-    locationContextName: string | null
+    locationContext: string | null
   } | null
 }
 
@@ -51,12 +49,8 @@ type HabitRecord = {
   skill_id?: string | null
   goal_id?: string | null
   completion_target?: number | null
+  location_context?: unknown
   location_context_id?: string | null
-  location_context?: {
-    id?: string | null
-    value?: string | null
-    label?: string | null
-  } | null
   daylight_preference?: string | null
   window_edge_preference?: string | null
   window?: {
@@ -66,12 +60,8 @@ type HabitRecord = {
     start_local?: string | null
     end_local?: string | null
     days?: number[] | null
+    location_context?: unknown
     location_context_id?: string | null
-    location_context?: {
-      id?: string | null
-      value?: string | null
-      label?: string | null
-    } | null
   } | null
 }
 
@@ -96,22 +86,32 @@ function normalizeHabitType(value?: string | null) {
   return raw
 }
 
-let cachedGoalMetadataSupport: 'unknown' | 'supported' | 'unsupported' = 'unknown'
+function extractLocationContext(raw: unknown): string | null {
+  if (typeof raw === 'string') {
+    const value = raw.trim()
+    return value.length > 0 ? value : null
+  }
 
-function isGoalMetadataMissingError(error: PostgrestError | null): boolean {
-  if (!error) return false
-  if (error.code === '42703') return true
-  const haystack = `${error.message ?? ''}`.toLowerCase()
-  if (!haystack) return false
-  return haystack.includes('goal_id') || haystack.includes('completion_target')
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      const value = extractLocationContext(entry)
+      if (value) return value
+    }
+    return null
+  }
+
+  if (raw && typeof raw === 'object') {
+    const candidate = (raw as { value?: unknown }).value
+    if (typeof candidate === 'string') {
+      const value = candidate.trim()
+      return value.length > 0 ? value : null
+    }
+  }
+
+  return null
 }
 
-export async function fetchHabitsForSchedule(
-  userId: string,
-  client?: Client
-): Promise<HabitScheduleItem[]> {
-  if (!userId) return []
-
+export async function fetchHabitsForSchedule(client?: Client): Promise<HabitScheduleItem[]> {
   const supabase = ensureClient(client)
   if (!supabase) return []
 
@@ -125,70 +125,64 @@ export async function fetchHabitsForSchedule(
   const extendedColumns =
     `${baseColumns}, goal_id, completion_target`
 
-  let supportsGoalMetadata = cachedGoalMetadataSupport !== 'unsupported'
+  const select = from.call(supabase, 'habits') as {
+    select?: (
+      columns: string
+    ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
+  }
+
+  if (!select || typeof select.select !== 'function') {
+    return []
+  }
+
+  const columnVariants = [
+    {
+      supportsGoalMetadata: true,
+      columns:
+        'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context_id, location_context:location_contexts!habits_location_context_id_fkey(value), daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts!windows_location_context_id_fkey(value))',
+    },
+    {
+      supportsGoalMetadata: false,
+      columns:
+        'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, location_context:location_contexts!habits_location_context_id_fkey(value), daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts!windows_location_context_id_fkey(value))',
+    },
+    {
+      supportsGoalMetadata: true,
+      columns: selectColumns,
+    },
+    {
+      supportsGoalMetadata: false,
+      columns: fallbackColumns,
+    },
+  ] as const
+
   let data: HabitRecord[] | null = null
+  let supportsGoalMetadata = false
+  let lastError: PostgrestError | null = null
 
-  const emptyResponse = async () =>
-    ({ data: [] as HabitRecord[], error: null } satisfies {
-      data: HabitRecord[] | null
-      error: PostgrestError | null
-    })
-
-  const buildQuery = (
-    columns: string
-  ): Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }> => {
-    const table = from.call(supabase, 'habits') as {
-      select?: (columns: string) => unknown
-    }
-    if (!table || typeof table.select !== 'function') {
-      return emptyResponse()
-    }
-    const selected = table.select(columns) as {
-      eq?: (column: string, value: string) => unknown
-    }
-    if (!selected || typeof selected.eq !== 'function') {
-      return emptyResponse()
-    }
-    const filtered = selected.eq('user_id', userId) as {
-      order?: (column: string, options: { ascending: boolean }) => Promise<{
-        data: HabitRecord[] | null
-        error: PostgrestError | null
-      }>
-    }
-    if (!filtered || typeof filtered.order !== 'function') {
-      return emptyResponse()
-    }
-    return filtered.order('updated_at', { ascending: false })
-  }
-
-  if (supportsGoalMetadata) {
-    const primary = await buildQuery(extendedColumns)
-    if (primary.error) {
-      if (isGoalMetadataMissingError(primary.error)) {
-        if (cachedGoalMetadataSupport !== 'unsupported') {
-          console.warn(
-            'Failed to load habit schedule metadata with goal fields, falling back',
-            primary.error
-          )
-        }
-        cachedGoalMetadataSupport = 'unsupported'
-        supportsGoalMetadata = false
-      } else {
-        throw primary.error
+  for (const variant of columnVariants) {
+    const response = await select.select(variant.columns)
+    if (response.error) {
+      lastError = response.error
+      if (response.error.code === '42703') {
+        continue
       }
-    } else {
-      cachedGoalMetadataSupport = 'supported'
-      data = primary.data as HabitRecord[] | null
+      if (variant.columns !== fallbackColumns) {
+        console.warn('Failed to load habit schedule metadata', response.error)
+      }
+      throw response.error
     }
+
+    data = response.data as HabitRecord[] | null
+    supportsGoalMetadata = variant.supportsGoalMetadata
+    break
   }
 
-  if (!data) {
-    const fallback = await buildQuery(baseColumns)
-    if (fallback.error) {
-      throw fallback.error
+  if (data == null) {
+    if (lastError) {
+      throw lastError
     }
-    data = fallback.data as HabitRecord[] | null
-    supportsGoalMetadata = false
+    return []
   }
 
   return (data ?? []).map((record: HabitRecord) => ({
@@ -210,14 +204,7 @@ export async function fetchHabitsForSchedule(
         ? record.completion_target
         : null,
     locationContextId: record.location_context_id ?? null,
-    locationContextValue: record.location_context?.value
-      ? String(record.location_context.value).toUpperCase().trim()
-      : null,
-    locationContextName:
-      record.location_context?.label ??
-      (record.location_context?.value
-        ? String(record.location_context.value).toUpperCase()
-        : null),
+    locationContext: extractLocationContext(record.location_context),
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,
     window: record.window
@@ -229,14 +216,7 @@ export async function fetchHabitsForSchedule(
           endLocal: record.window.end_local ?? '00:00',
           days: record.window.days ?? null,
           locationContextId: record.window.location_context_id ?? null,
-          locationContextValue: record.window.location_context?.value
-            ? String(record.window.location_context.value).toUpperCase().trim()
-            : null,
-          locationContextName:
-            record.window.location_context?.label ??
-            (record.window.location_context?.value
-              ? String(record.window.location_context.value).toUpperCase()
-              : null),
+          locationContext: extractLocationContext(record.window.location_context),
         }
       : null,
   }))

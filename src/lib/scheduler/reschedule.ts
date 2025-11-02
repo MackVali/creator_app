@@ -1090,9 +1090,12 @@ async function scheduleHabitsForDay(params: {
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
-    const locationContextSource = habit.locationContextValue ?? habit.window?.locationContextValue ?? null
-    const locationContext = locationContextSource
-      ? String(locationContextSource).toUpperCase().trim()
+    const locationContextId =
+      typeof habit.locationContextId === 'string' && habit.locationContextId.trim().length > 0
+        ? habit.locationContextId.trim()
+        : null
+    const locationContext = habit.locationContext
+      ? String(habit.locationContext).toUpperCase().trim()
       : null
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
@@ -1120,63 +1123,22 @@ async function scheduleHabitsForDay(params: {
       : 'FRONT'
     const anchorPreference = anchorRaw === 'BACK' ? 'BACK' : 'FRONT'
 
-    const attemptKeys = new Set<string>()
-    const attemptQueue: Array<{
-      location: string | null
-      daylight: DaylightConstraint | null
-    }> = []
-    const enqueueAttempt = (
-      location: string | null,
-      daylight: DaylightConstraint | null,
-    ) => {
-      const key = `${location ?? 'null'}|${daylight?.preference ?? 'null'}`
-      if (attemptKeys.has(key)) return
-      attemptKeys.add(key)
-      attemptQueue.push({ location, daylight })
-    }
-
-    enqueueAttempt(locationContext, daylightConstraint)
-    if (locationContext) {
-      enqueueAttempt(null, daylightConstraint)
-    }
-    if (daylightConstraint) {
-      enqueueAttempt(locationContext, null)
-      enqueueAttempt(null, null)
-    }
-
-    let compatibleWindows: Array<{
-      id: string
-      key: string
-      startLocal: Date
-      endLocal: Date
-      availableStartLocal: Date
-    }> = []
-
-    for (const attempt of attemptQueue) {
-      const clonedAvailability = cloneAvailabilityMap(availability)
-      const windowsForAttempt = await fetchCompatibleWindowsForItem(
-        client,
-        day,
-        { energy: resolvedEnergy, duration_min: durationMin },
-        zone,
-        {
-          availability: clonedAvailability,
-          cache: windowCache,
-          now: offset === 0 ? baseDate : undefined,
-          locationContextValue: attempt.location,
-          daylight: attempt.daylight,
-          ignoreAvailability: isSyncHabit,
-          anchor: anchorPreference,
-          restMode,
-          userId,
-          preloadedWindows: windows,
-        }
-      )
-
-      if (windowsForAttempt.length > 0) {
-        adoptAvailabilityMap(availability, clonedAvailability)
-        compatibleWindows = windowsForAttempt
-        break
+    const compatibleWindows = await fetchCompatibleWindowsForItem(
+      client,
+      day,
+      { energy: resolvedEnergy, duration_min: durationMin },
+      zone,
+      {
+        availability,
+        cache: windowCache,
+        now: offset === 0 ? baseDate : undefined,
+        locationContextId,
+        locationContext,
+        daylight: daylightConstraint,
+        matchEnergyLevel: true,
+        ignoreAvailability: isSyncHabit,
+        anchor: anchorPreference,
+        restMode,
       }
     }
 
@@ -1195,11 +1157,7 @@ async function scheduleHabitsForDay(params: {
     const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
     const windowStartMs = target.startLocal.getTime()
-    const startMs = Number.isFinite(startLimit)
-      ? startLimit
-      : Number.isFinite(windowStartMs)
-        ? windowStartMs
-        : defaultDueMs
+    const startMs = windowStartMs
     let constraintLowerBound = startMs
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null
     const dueStartMs = dueStart ? dueStart.getTime() : null
@@ -1538,7 +1496,8 @@ async function fetchCompatibleWindowsForItem(
     now?: Date
     availability?: Map<string, WindowAvailabilityBounds>
     cache?: Map<string, WindowLite[]>
-    locationContextValue?: string | null
+    locationContextId?: string | null
+    locationContext?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
     ignoreAvailability?: boolean
@@ -1567,8 +1526,12 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
 
-  const desiredLocation = options?.locationContextValue
-    ? String(options.locationContextValue).toUpperCase().trim()
+  const desiredLocationId =
+    typeof options?.locationContextId === 'string' && options.locationContextId.trim().length > 0
+      ? options.locationContextId.trim()
+      : null
+  const desiredLocationValue = options?.locationContext
+    ? String(options.locationContext).toUpperCase().trim()
     : null
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
@@ -1603,12 +1566,21 @@ async function fetchCompatibleWindowsForItem(
       continue
     }
 
-    const windowLocationRaw = win.location_context_value
-      ? String(win.location_context_value).toUpperCase().trim()
+    const windowLocationId = win.location_context_id && win.location_context_id.length > 0
+      ? win.location_context_id
       : null
-    if (desiredLocation) {
-      if (!windowLocationRaw) continue
-      if (windowLocationRaw !== desiredLocation) continue
+    const windowLocationValue = win.location_context
+      ? String(win.location_context).toUpperCase().trim()
+      : null
+
+    if (desiredLocationId || windowLocationId) {
+      if (!desiredLocationId || !windowLocationId) continue
+      if (windowLocationId !== desiredLocationId) continue
+    } else if (windowLocationValue) {
+      if (!desiredLocationValue) continue
+      if (windowLocationValue !== desiredLocationValue) continue
+    } else if (desiredLocationValue) {
+      continue
     }
 
     const startLocal = resolveWindowStart(win, date, timeZone)

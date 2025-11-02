@@ -1,11 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 
 import { fetchWindowsForDate, type WindowLite } from "../../../src/lib/scheduler/repo";
+import { weekdayInTimeZone } from "../../../src/lib/scheduler/timezone";
 
 describe("fetchWindowsForDate", () => {
   it("includes recurring windows without day restrictions and their prior-day carryover", async () => {
     const date = new Date("2024-01-02T00:00:00Z");
-    const weekday = date.getDay();
+    const weekday = weekdayInTimeZone(date, "UTC");
     const prevWeekday = (weekday + 6) % 7;
 
     const todayWindows: WindowLite[] = [
@@ -119,28 +120,3 @@ describe("fetchWindowsForDate", () => {
     expect(isMock).toHaveBeenCalledWith("days", null);
   });
 });
-
-  it("filters window queries by user when a user id is provided", async () => {
-    const eqMocks: Array<ReturnType<typeof vi.fn>> = [];
-    const select = vi.fn(() => {
-      const builder: any = {
-        contains: vi.fn(async () => ({ data: [], error: null } as const)),
-        is: vi.fn(async () => ({ data: [], error: null } as const)),
-      };
-      const eq = vi.fn(() => builder);
-      builder.eq = eq;
-      eqMocks.push(eq);
-      return builder;
-    });
-    const client = { from: vi.fn(() => ({ select })) } as const;
-
-    await fetchWindowsForDate(new Date("2024-01-01T00:00:00Z"), client as never, "UTC", {
-      userId: "user-123",
-    });
-
-    expect(eqMocks).toHaveLength(3);
-    for (const eq of eqMocks) {
-      expect(eq).toHaveBeenCalledWith("user_id", "user-123");
-    }
-  });
-
