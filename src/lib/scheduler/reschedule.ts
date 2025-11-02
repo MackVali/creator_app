@@ -1091,9 +1091,15 @@ async function scheduleHabitsForDay(params: {
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const locationContextSource = habit.locationContextValue ?? habit.window?.locationContextValue ?? null
-    const locationContext = locationContextSource
-      ? String(locationContextSource).toUpperCase().trim()
-      : null
+    const locationContext =
+      locationContextSource && typeof locationContextSource === 'string'
+        ? locationContextSource.toUpperCase().trim()
+        : null
+    const locationContextIdRaw = habit.locationContextId ?? habit.window?.locationContextId ?? null
+    const locationContextId =
+      typeof locationContextIdRaw === 'string' && locationContextIdRaw.trim().length > 0
+        ? locationContextIdRaw.trim()
+        : null
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
       : 'ALL_DAY'
@@ -1122,26 +1128,43 @@ async function scheduleHabitsForDay(params: {
 
     const attemptKeys = new Set<string>()
     const attemptQueue: Array<{
-      location: string | null
+      locationId: string | null
+      locationValue: string | null
       daylight: DaylightConstraint | null
     }> = []
     const enqueueAttempt = (
-      location: string | null,
+      locationId: string | null,
+      locationValue: string | null,
       daylight: DaylightConstraint | null,
     ) => {
-      const key = `${location ?? 'null'}|${daylight?.preference ?? 'null'}`
+      const normalizedId =
+        locationId && locationId.trim().length > 0 ? locationId.trim() : null
+      const normalizedValue =
+        locationValue && locationValue.length > 0
+          ? locationValue.toUpperCase().trim()
+          : null
+      const key = `${normalizedId ?? 'null'}|${normalizedValue ?? 'null'}|${daylight?.preference ?? 'null'}`
       if (attemptKeys.has(key)) return
       attemptKeys.add(key)
-      attemptQueue.push({ location, daylight })
+      attemptQueue.push({ locationId: normalizedId, locationValue: normalizedValue, daylight })
     }
 
-    enqueueAttempt(locationContext, daylightConstraint)
-    if (locationContext) {
-      enqueueAttempt(null, daylightConstraint)
+    enqueueAttempt(locationContextId, locationContext, daylightConstraint)
+    if (locationContextId || locationContext) {
+      enqueueAttempt(locationContextId, null, daylightConstraint)
+      enqueueAttempt(null, locationContext, daylightConstraint)
+      enqueueAttempt(null, null, daylightConstraint)
     }
     if (daylightConstraint) {
-      enqueueAttempt(locationContext, null)
-      enqueueAttempt(null, null)
+      enqueueAttempt(locationContextId, locationContext, null)
+      if (locationContextId || locationContext) {
+        enqueueAttempt(locationContextId, null, null)
+        enqueueAttempt(null, locationContext, null)
+      }
+      enqueueAttempt(null, null, null)
+    }
+    if (!locationContextId && !locationContext && !daylightConstraint) {
+      enqueueAttempt(null, null, null)
     }
 
     let compatibleWindows: Array<{
@@ -1163,7 +1186,8 @@ async function scheduleHabitsForDay(params: {
           availability: clonedAvailability,
           cache: windowCache,
           now: offset === 0 ? baseDate : undefined,
-          locationContextValue: attempt.location,
+          locationContextId: attempt.locationId,
+          locationContextValue: attempt.locationValue,
           daylight: attempt.daylight,
           ignoreAvailability: isSyncHabit,
           anchor: anchorPreference,
@@ -1172,7 +1196,6 @@ async function scheduleHabitsForDay(params: {
           preloadedWindows: windows,
         }
       )
-
       if (windowsForAttempt.length > 0) {
         adoptAvailabilityMap(availability, clonedAvailability)
         compatibleWindows = windowsForAttempt
@@ -1538,6 +1561,7 @@ async function fetchCompatibleWindowsForItem(
     now?: Date
     availability?: Map<string, WindowAvailabilityBounds>
     cache?: Map<string, WindowLite[]>
+    locationContextId?: string | null
     locationContextValue?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
@@ -1567,9 +1591,14 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
 
-  const desiredLocation = options?.locationContextValue
-    ? String(options.locationContextValue).toUpperCase().trim()
-    : null
+  const desiredLocationId =
+    typeof options?.locationContextId === 'string' && options.locationContextId.trim().length > 0
+      ? options.locationContextId.trim()
+      : null
+  const desiredLocationValue =
+    options?.locationContextValue && options.locationContextValue.length > 0
+      ? options.locationContextValue.toUpperCase().trim()
+      : null
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
 
@@ -1603,12 +1632,21 @@ async function fetchCompatibleWindowsForItem(
       continue
     }
 
-    const windowLocationRaw = win.location_context_value
-      ? String(win.location_context_value).toUpperCase().trim()
-      : null
-    if (desiredLocation) {
-      if (!windowLocationRaw) continue
-      if (windowLocationRaw !== desiredLocation) continue
+    const windowLocationId =
+      typeof win.location_context_id === 'string' && win.location_context_id.trim().length > 0
+        ? win.location_context_id.trim()
+        : null
+    const windowLocationValue =
+      win.location_context_value && win.location_context_value.length > 0
+        ? win.location_context_value.toUpperCase().trim()
+        : null
+
+    if (desiredLocationId || windowLocationId) {
+      if (!desiredLocationId || !windowLocationId) continue
+      if (windowLocationId !== desiredLocationId) continue
+    } else if (desiredLocationValue) {
+      if (!windowLocationValue) continue
+      if (windowLocationValue !== desiredLocationValue) continue
     }
 
     const startLocal = resolveWindowStart(win, date, timeZone)
