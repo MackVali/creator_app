@@ -925,8 +925,15 @@ function computeHabitPlacementsForDay({
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
-    const locationContext = habit.locationContextValue
-      ? String(habit.locationContextValue).toUpperCase().trim()
+    const locationContextIdRaw = habit.locationContextId ?? habit.window?.locationContextId ?? null
+    const locationContextId =
+      typeof locationContextIdRaw === "string" && locationContextIdRaw.trim().length > 0
+        ? locationContextIdRaw.trim()
+        : null
+    const locationContextValueSource =
+      habit.locationContextValue ?? habit.window?.locationContextValue ?? null
+    const locationContext = locationContextValueSource
+      ? String(locationContextValueSource).toUpperCase().trim()
       : null
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
@@ -956,10 +963,17 @@ function computeHabitPlacementsForDay({
     for (const entry of windowEntries) {
       if (entry.energyIdx < requiredEnergyIdx) continue
 
+      const windowLocationId =
+        entry.window.location_context_id && entry.window.location_context_id.trim().length > 0
+          ? entry.window.location_context_id.trim()
+          : null
       const windowLocationRaw = entry.window.location_context_value
         ? String(entry.window.location_context_value).toUpperCase().trim()
         : null
-      if (locationContext) {
+      if (locationContextId || windowLocationId) {
+        if (!locationContextId || !windowLocationId) continue
+        if (windowLocationId !== locationContextId) continue
+      } else if (locationContext) {
         if (!windowLocationRaw) continue
         if (windowLocationRaw !== locationContext) continue
       }
