@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseBrowser } from '../../../lib/supabase';
 import type { Database } from '../../../types/supabase';
 import { normalizeTimeZone, weekdayInTimeZone } from './timezone';
@@ -11,6 +11,7 @@ export type WindowLite = {
   start_local: string;
   end_local: string;
   days: number[] | null;
+  location_context_id: string | null;
   location_context: string | null;
   fromPrevDay?: boolean;
 };
@@ -83,29 +84,85 @@ export async function fetchWindowsForDate(
   const normalizedTimeZone = normalizeTimeZone(timeZone);
   const weekday = weekdayInTimeZone(date, normalizedTimeZone);
   const prevWeekday = (weekday + 6) % 7;
-  const columns = 'id, label, energy, start_local, end_local, days, location_context';
+  const columnVariants = [
+    'id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts!windows_location_context_id_fkey(value)',
+    'id, label, energy, start_local, end_local, days, location_context',
+  ] as const;
 
-  const [
-    { data: today, error: errToday },
-    { data: prev, error: errPrev },
-    { data: recurring, error: errRecurring },
-  ] = await Promise.all([
-    supabase
-      .from('windows')
-      .select(columns)
-      .contains('days', [weekday]),
-    supabase
-      .from('windows')
-      .select(columns)
-      .contains('days', [prevWeekday]),
-    supabase.from('windows').select(columns).is('days', null),
-  ]);
+  type RawWindowRecord = {
+    id: string;
+    label: string;
+    energy: string;
+    start_local: string;
+    end_local: string;
+    days: number[] | null;
+    location_context_id?: string | null;
+    location_context?: unknown;
+    fromPrevDay?: boolean;
+  };
 
-  if (errToday || errPrev || errRecurring) {
-    throw errToday ?? errPrev ?? errRecurring;
+  const fetchVariant = async (columns: string) =>
+    Promise.all([
+      supabase
+        .from('windows')
+        .select(columns)
+        .contains('days', [weekday]),
+      supabase
+        .from('windows')
+        .select(columns)
+        .contains('days', [prevWeekday]),
+      supabase
+        .from('windows')
+        .select(columns)
+        .is('days', null),
+    ]);
+
+  let today: RawWindowRecord[] | null = null;
+  let prev: RawWindowRecord[] | null = null;
+  let recurring: RawWindowRecord[] | null = null;
+  let matchedColumns: string | null = null;
+  let lastError: PostgrestError | null = null;
+
+  for (const columns of columnVariants) {
+    const responses = await fetchVariant(columns);
+    const error =
+      responses.find((result) => result.error)?.error ?? null;
+    if (error) {
+      lastError = error;
+      if (error.code === '42703') {
+        continue;
+      }
+      throw error;
+    }
+
+    today = responses[0].data as RawWindowRecord[] | null;
+    prev = responses[1].data as RawWindowRecord[] | null;
+    recurring = responses[2].data as RawWindowRecord[] | null;
+    matchedColumns = columns;
+    break;
   }
 
-  const always = recurring ?? [];
+  if (!matchedColumns) {
+    if (lastError) throw lastError;
+    return [];
+  }
+
+  const normalizeWindow = (window: RawWindowRecord): WindowLite => ({
+    id: window.id,
+    label: window.label,
+    energy: window.energy,
+    start_local: window.start_local,
+    end_local: window.end_local,
+    days: window.days ?? null,
+    location_context_id: window.location_context_id ?? null,
+    location_context: extractLocationContext(window.location_context),
+  });
+
+  const todayWindows = (today ?? []).map(normalizeWindow);
+  const prevWindows = (prev ?? []).map(normalizeWindow);
+  const recurringWindows = (recurring ?? []).map(normalizeWindow);
+
+  const always = recurringWindows;
 
   const crosses = (w: WindowLite) => {
     const [sh = 0, sm = 0] = w.start_local.split(':').map(Number);
@@ -114,13 +171,13 @@ export async function fetchWindowsForDate(
   };
 
   const base = new Map<string, WindowLite>();
-  for (const window of [...(today ?? []), ...always]) {
+  for (const window of [...todayWindows, ...always]) {
     if (!base.has(window.id)) {
-      base.set(window.id, window as WindowLite);
+      base.set(window.id, window);
     }
   }
 
-  const prevCross = [...(prev ?? []), ...always]
+  const prevCross = [...prevWindows, ...always]
     .filter(crosses)
     .map((w) => ({ ...w, fromPrevDay: true }));
 
@@ -130,13 +187,54 @@ export async function fetchWindowsForDate(
 export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
   const supabase = ensureClient(client);
 
-  const { data, error } = await supabase
-    .from('windows')
-    .select('id, label, energy, start_local, end_local, days');
+  const columnVariants = [
+    'id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts!windows_location_context_id_fkey(value)',
+    'id, label, energy, start_local, end_local, days, location_context',
+  ] as const;
 
-  if (error) throw error;
+  type RawWindowRecord = {
+    id: string;
+    label?: string | null;
+    energy?: string | null;
+    start_local?: string | null;
+    end_local?: string | null;
+    days?: number[] | null;
+    location_context_id?: string | null;
+    location_context?: unknown;
+  };
 
-  return (data ?? []) as WindowLite[];
+  let data: RawWindowRecord[] | null = null;
+  let lastError: PostgrestError | null = null;
+
+  for (const columns of columnVariants) {
+    const response = await supabase.from('windows').select(columns);
+    if (response.error) {
+      lastError = response.error;
+      if (response.error.code === '42703') {
+        continue;
+      }
+      throw response.error;
+    }
+
+    data = response.data as RawWindowRecord[] | null;
+    break;
+  }
+
+  if (!data) {
+    if (lastError) throw lastError;
+    return [];
+  }
+
+  return (data ?? []).map((window) => ({
+    id: window.id,
+    label: window.label ?? '',
+    energy: window.energy ?? '',
+    start_local: window.start_local ?? '00:00',
+    end_local: window.end_local ?? '00:00',
+    days: window.days ?? null,
+    location_context_id: window.location_context_id ?? null,
+    location_context: extractLocationContext(window.location_context),
+  }));
 }
 
 export async function fetchProjectsMap(
@@ -172,6 +270,30 @@ export async function fetchProjectsMap(
   return map;
 }
 
+function extractLocationContext(raw: unknown): string | null {
+  if (typeof raw === 'string') {
+    const value = raw.trim();
+    return value.length > 0 ? value : null;
+  }
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      const value = extractLocationContext(entry);
+      if (value) return value;
+    }
+    return null;
+  }
+
+  if (raw && typeof raw === 'object') {
+    const candidate = (raw as { value?: unknown }).value;
+    if (typeof candidate === 'string') {
+      const value = candidate.trim();
+      return value.length > 0 ? value : null;
+    }
+  }
+
+  return null;
+}
 export async function fetchProjectSkillsForProjects(
   projectIds: string[],
   client?: Client
@@ -205,4 +327,3 @@ export async function fetchProjectSkillsForProjects(
 
   return map;
 }
-

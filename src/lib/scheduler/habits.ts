@@ -19,6 +19,7 @@ export type HabitScheduleItem = {
   skillId: string | null
   goalId: string | null
   completionTarget: number | null
+  locationContextId: string | null
   locationContext: string | null
   daylightPreference: string | null
   windowEdgePreference: string | null
@@ -29,6 +30,7 @@ export type HabitScheduleItem = {
     startLocal: string
     endLocal: string
     days: number[] | null
+    locationContextId: string | null
     locationContext: string | null
   } | null
 }
@@ -47,7 +49,8 @@ type HabitRecord = {
   skill_id?: string | null
   goal_id?: string | null
   completion_target?: number | null
-  location_context?: string | null
+  location_context?: unknown
+  location_context_id?: string | null
   daylight_preference?: string | null
   window_edge_preference?: string | null
   window?: {
@@ -57,7 +60,8 @@ type HabitRecord = {
     start_local?: string | null
     end_local?: string | null
     days?: number[] | null
-    location_context?: string | null
+    location_context?: unknown
+    location_context_id?: string | null
   } | null
 }
 
@@ -82,6 +86,31 @@ function normalizeHabitType(value?: string | null) {
   return raw
 }
 
+function extractLocationContext(raw: unknown): string | null {
+  if (typeof raw === 'string') {
+    const value = raw.trim()
+    return value.length > 0 ? value : null
+  }
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      const value = extractLocationContext(entry)
+      if (value) return value
+    }
+    return null
+  }
+
+  if (raw && typeof raw === 'object') {
+    const candidate = (raw as { value?: unknown }).value
+    if (typeof candidate === 'string') {
+      const value = candidate.trim()
+      return value.length > 0 ? value : null
+    }
+  }
+
+  return null
+}
+
 export async function fetchHabitsForSchedule(client?: Client): Promise<HabitScheduleItem[]> {
   const supabase = ensureClient(client)
   if (!supabase) return []
@@ -104,29 +133,54 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
     return []
   }
 
-  let supportsGoalMetadata = true
+  const columnVariants = [
+    {
+      supportsGoalMetadata: true,
+      columns:
+        'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, goal_id, completion_target, location_context_id, location_context:location_contexts!habits_location_context_id_fkey(value), daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts!windows_location_context_id_fkey(value))',
+    },
+    {
+      supportsGoalMetadata: false,
+      columns:
+        'id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, location_context:location_contexts!habits_location_context_id_fkey(value), daylight_preference, window_edge_preference, window:windows(id, label, energy, start_local, end_local, days, location_context_id, location_context:location_contexts!windows_location_context_id_fkey(value))',
+    },
+    {
+      supportsGoalMetadata: true,
+      columns: selectColumns,
+    },
+    {
+      supportsGoalMetadata: false,
+      columns: fallbackColumns,
+    },
+  ] as const
+
   let data: HabitRecord[] | null = null
+  let supportsGoalMetadata = false
+  let lastError: PostgrestError | null = null
 
-  const primary = await select.select(selectColumns)
+  for (const variant of columnVariants) {
+    const response = await select.select(variant.columns)
+    if (response.error) {
+      lastError = response.error
+      if (response.error.code === '42703') {
+        continue
+      }
+      if (variant.columns !== fallbackColumns) {
+        console.warn('Failed to load habit schedule metadata', response.error)
+      }
+      throw response.error
+    }
 
-  if (primary.error) {
-    console.warn('Failed to load habit schedule metadata with goal fields, falling back', primary.error)
-    supportsGoalMetadata = false
-    const fallbackQuery = from.call(supabase, 'habits') as {
-      select?: (
-        columns: string
-      ) => Promise<{ data: HabitRecord[] | null; error: PostgrestError | null }>
+    data = response.data as HabitRecord[] | null
+    supportsGoalMetadata = variant.supportsGoalMetadata
+    break
+  }
+
+  if (data == null) {
+    if (lastError) {
+      throw lastError
     }
-    if (!fallbackQuery || typeof fallbackQuery.select !== 'function') {
-      throw primary.error
-    }
-    const fallback = await fallbackQuery.select(fallbackColumns)
-    if (fallback.error) {
-      throw fallback.error
-    }
-    data = fallback.data as HabitRecord[] | null
-  } else {
-    data = primary.data as HabitRecord[] | null
+    return []
   }
 
   return (data ?? []).map((record: HabitRecord) => ({
@@ -147,7 +201,8 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
       supportsGoalMetadata && typeof record.completion_target === 'number' && Number.isFinite(record.completion_target)
         ? record.completion_target
         : null,
-    locationContext: record.location_context ?? null,
+    locationContextId: record.location_context_id ?? null,
+    locationContext: extractLocationContext(record.location_context),
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,
     window: record.window
@@ -158,7 +213,8 @@ export async function fetchHabitsForSchedule(client?: Client): Promise<HabitSche
           startLocal: record.window.start_local ?? '00:00',
           endLocal: record.window.end_local ?? '00:00',
           days: record.window.days ?? null,
-          locationContext: record.window.location_context ?? null,
+          locationContextId: record.window.location_context_id ?? null,
+          locationContext: extractLocationContext(record.window.location_context),
         }
       : null,
   }))

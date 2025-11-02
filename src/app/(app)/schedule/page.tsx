@@ -855,6 +855,10 @@ function computeHabitPlacementsForDay({
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
+    const locationContextId =
+      typeof habit.locationContextId === 'string' && habit.locationContextId.trim().length > 0
+        ? habit.locationContextId.trim()
+        : null
     const locationContext = habit.locationContext
       ? String(habit.locationContext).toUpperCase().trim()
       : null
@@ -886,10 +890,17 @@ function computeHabitPlacementsForDay({
     for (const entry of windowEntries) {
       if (entry.energyIdx < requiredEnergyIdx) continue
 
+      const windowLocationId =
+        entry.window.location_context_id && entry.window.location_context_id.length > 0
+          ? entry.window.location_context_id
+          : null
       const windowLocationRaw = entry.window.location_context
         ? String(entry.window.location_context).toUpperCase().trim()
         : null
-      if (locationContext) {
+      if (locationContextId || windowLocationId) {
+        if (!locationContextId || !windowLocationId) continue
+        if (windowLocationId !== locationContextId) continue
+      } else if (locationContext) {
         if (!windowLocationRaw) continue
         if (windowLocationRaw !== locationContext) continue
       }

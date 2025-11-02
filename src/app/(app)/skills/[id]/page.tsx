@@ -82,6 +82,7 @@ function buildScheduleHabit(habit: HabitSummary): HabitScheduleItem {
     skillId: null,
     goalId: null,
     completionTarget: null,
+    locationContextId: null,
     locationContext: null,
     daylightPreference: null,
     window: null,

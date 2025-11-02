@@ -833,6 +833,10 @@ async function scheduleHabitsForDay(params: {
     if (durationMs <= 0) continue
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
+    const locationContextId =
+      typeof habit.locationContextId === 'string' && habit.locationContextId.trim().length > 0
+        ? habit.locationContextId.trim()
+        : null
     const locationContext = habit.locationContext
       ? String(habit.locationContext).toUpperCase().trim()
       : null
@@ -870,6 +874,7 @@ async function scheduleHabitsForDay(params: {
         availability,
         cache: windowCache,
         now: offset === 0 ? baseDate : undefined,
+        locationContextId,
         locationContext,
         daylight: daylightConstraint,
         matchEnergyLevel: true,
@@ -893,6 +898,7 @@ async function scheduleHabitsForDay(params: {
     const startLimit = target.availableStartLocal.getTime()
     const endLimit = target.endLocal.getTime()
     const windowStartMs = target.startLocal.getTime()
+    const startMs = windowStartMs
     let constraintLowerBound = startMs
     const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart ?? null
     const dueStartMs = dueStart ? dueStart.getTime() : null
@@ -1126,6 +1132,7 @@ async function fetchCompatibleWindowsForItem(
     now?: Date
     availability?: Map<string, WindowAvailabilityBounds>
     cache?: Map<string, WindowLite[]>
+    locationContextId?: string | null
     locationContext?: string | null
     daylight?: DaylightConstraint | null
     matchEnergyLevel?: boolean
@@ -1149,7 +1156,11 @@ async function fetchCompatibleWindowsForItem(
   const durationMs = Math.max(0, item.duration_min) * 60000
   const availability = options?.ignoreAvailability ? undefined : options?.availability
 
-  const desiredLocation = options?.locationContext
+  const desiredLocationId =
+    typeof options?.locationContextId === 'string' && options.locationContextId.trim().length > 0
+      ? options.locationContextId.trim()
+      : null
+  const desiredLocationValue = options?.locationContext
     ? String(options.locationContext).toUpperCase().trim()
     : null
   const daylight = options?.daylight ?? null
@@ -1185,12 +1196,21 @@ async function fetchCompatibleWindowsForItem(
       continue
     }
 
-    const windowLocationRaw = win.location_context
+    const windowLocationId = win.location_context_id && win.location_context_id.length > 0
+      ? win.location_context_id
+      : null
+    const windowLocationValue = win.location_context
       ? String(win.location_context).toUpperCase().trim()
       : null
-    if (desiredLocation) {
-      if (!windowLocationRaw) continue
-      if (windowLocationRaw !== desiredLocation) continue
+
+    if (desiredLocationId || windowLocationId) {
+      if (!desiredLocationId || !windowLocationId) continue
+      if (windowLocationId !== desiredLocationId) continue
+    } else if (windowLocationValue) {
+      if (!desiredLocationValue) continue
+      if (windowLocationValue !== desiredLocationValue) continue
+    } else if (desiredLocationValue) {
+      continue
     }
 
     const startLocal = resolveWindowStart(win, date, timeZone)
