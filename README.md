@@ -85,6 +85,10 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
+### Triggering a Test Deployment
+
+If you just need to verify that the Vercel pipeline is healthy, make a lightweight change (like this note) and push it to your deployment branch. Vercel will pick up the commit, run the configured build command, and report the results in the dashboard so you can confirm everything is working end-to-end.
+
 ## Database Migrations
 
 - **Link your Supabase project**
