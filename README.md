@@ -28,6 +28,15 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 pnpm test:run
 ```
 
+4) Verify a production build locally (mirrors Vercel's build step)
+
+```bash
+pnpm build
+```
+
+Running the build command before pushing helps surface any configuration issues
+that could cause the Vercel deployment to fail.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
