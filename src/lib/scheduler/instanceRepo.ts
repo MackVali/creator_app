@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '@/lib/supabase'
 import type { Database } from '../../../types/supabase'
+import { applyInstanceVisibilityFilters } from './instanceVisibility'
 
 export type ScheduleInstance = Database['public']['Tables']['schedule_instances']['Row']
 export type ScheduleInstanceStatus = Database['public']['Enums']['schedule_instance_status']
@@ -26,16 +27,13 @@ export async function fetchInstancesForRange(
     .from('schedule_instances')
     .select('*')
     .eq('user_id', userId)
-    .neq('status', 'canceled')
 
-  const startParam = startUTC
-  const endParam = endUTC
+  const response = await applyInstanceVisibilityFilters(base, startUTC, endUTC).order(
+    'start_utc',
+    { ascending: true },
+  )
 
-  return await base
-    .or(
-      `and(start_utc.gte.${startParam},start_utc.lt.${endParam}),and(start_utc.lt.${startParam},end_utc.gt.${startParam})`
-    )
-    .order('start_utc', { ascending: true })
+  return response
 }
 
 export async function fetchScheduledProjectIds(
