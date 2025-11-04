@@ -96,6 +96,13 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
   const zone = timeZone || 'UTC'
   const recurrence = normalizeRecurrence(habit.recurrence)
   const dayStart = startOfDayInTimeZone(date, zone)
+  const lastCompletionRaw = habit.lastCompletedAt ?? null
+  const lastCompletionDate = parseIsoDate(lastCompletionRaw)
+  const lastCompletionStart =
+    lastCompletionDate !== null ? startOfDayInTimeZone(lastCompletionDate, zone) : null
+  if (lastCompletionStart && lastCompletionStart.getTime() === dayStart.getTime()) {
+    return { isDue: false, dueStart: null }
+  }
   const habitType = (habit.habitType ?? 'HABIT').toUpperCase()
   const resolvedRecurrenceDays = normalizeDayList(habit.recurrenceDays ?? null)
   const resolvedWindowDays = normalizeDayList(windowDays ?? habit.window?.days ?? null)

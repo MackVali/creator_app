@@ -183,6 +183,11 @@ export async function scheduleBacklog(
   const tasks = await fetchReadyTasks(supabase)
   const projectsMap = await fetchProjectsMap(supabase)
   const habits = await fetchHabitsForSchedule(userId, supabase)
+  const habitAllowsOverlap = new Map<string, boolean>()
+  for (const habit of habits) {
+    const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
+    habitAllowsOverlap.set(habit.id, normalizedType === 'SYNC')
+  }
   let windowSnapshot: WindowLite[] | null = null
   try {
     windowSnapshot = await fetchWindowsSnapshot(userId, supabase)
@@ -465,13 +470,139 @@ export async function scheduleBacklog(
     }
   }
 
+  const overlaps = (a: ScheduleInstance, b: ScheduleInstance) => {
+    const aStart = new Date(a.start_utc ?? '').getTime()
+    const aEnd = new Date(a.end_utc ?? '').getTime()
+    const bStart = new Date(b.start_utc ?? '').getTime()
+    const bEnd = new Date(b.end_utc ?? '').getTime()
+    if (!Number.isFinite(aStart) || !Number.isFinite(aEnd) || !Number.isFinite(bStart) || !Number.isFinite(bEnd)) {
+      return false
+    }
+    return aEnd > bStart && aStart < bEnd
+  }
+
+  const allowsOverlap = (
+    a: ScheduleInstance,
+    b: ScheduleInstance,
+    habitOverlapMap: Map<string, boolean>
+  ) => {
+    if (a.source_type !== 'HABIT' || b.source_type !== 'HABIT') {
+      return false
+    }
+    const aId = a.source_id ?? ''
+    const bId = b.source_id ?? ''
+    return habitOverlapMap.get(aId) === true && habitOverlapMap.get(bId) === true
+  }
+
+  const collectProjectOverlapConflicts = (
+    instances: ScheduleInstance[],
+    habitOverlapMap: Map<string, boolean>
+  ) => {
+    const conflicts: ScheduleInstance[] = []
+    const seen = new Set<string>()
+    const groups = new Map<string | null, ScheduleInstance[]>()
+    for (const inst of instances) {
+      if (!inst) continue
+      if (inst.status !== 'scheduled') continue
+      const key = inst.window_id ?? null
+      const list = groups.get(key)
+      if (list) {
+        list.push(inst)
+      } else {
+        groups.set(key, [inst])
+      }
+    }
+
+    for (const list of groups.values()) {
+      list.sort(
+        (a, b) => new Date(a.start_utc ?? '').getTime() - new Date(b.start_utc ?? '').getTime()
+      )
+      let last: ScheduleInstance | null = null
+      for (const current of list) {
+        if (!last) {
+          last = current
+          continue
+        }
+        if (!overlaps(last, current)) {
+          last = current
+          continue
+        }
+        if (allowsOverlap(last, current, habitOverlapMap)) {
+          last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
+            ? last
+            : current
+          continue
+        }
+        let removal: ScheduleInstance | null = null
+        const lastIsProject = last.source_type === 'PROJECT'
+        const currentIsProject = current.source_type === 'PROJECT'
+        if (lastIsProject && !currentIsProject) {
+          removal = last
+        } else if (!lastIsProject && currentIsProject) {
+          removal = current
+        } else if (lastIsProject && currentIsProject) {
+          const lastStart = new Date(last.start_utc ?? '').getTime()
+          const currentStart = new Date(current.start_utc ?? '').getTime()
+          if (currentStart < lastStart) {
+            removal = last
+          } else {
+            removal = current
+          }
+        }
+        if (removal && removal.source_type === 'PROJECT' && !seen.has(removal.id)) {
+          conflicts.push(removal)
+          seen.add(removal.id)
+          if (removal.id === last.id) {
+            last = current
+          }
+        } else {
+          last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
+            ? last
+            : current
+        }
+      }
+    }
+    return conflicts
+  }
+
+  const buildProjectQueueItemFromInstance = (
+    inst: ScheduleInstance
+  ): QueueItem | null => {
+    const projectId = inst.source_id ?? ''
+    if (!projectId) return null
+    const def = projectItemMap[projectId]
+    if (!def) return null
+    let duration = Number(inst.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      duration = Number(def.duration_min ?? 0)
+    }
+    if (!Number.isFinite(duration) || duration <= 0) {
+      duration = DEFAULT_PROJECT_DURATION_MIN
+    }
+    const energyResolved =
+      (inst.energy_resolved ?? def.energy ?? 'NO').toString().toUpperCase()
+    return {
+      id: projectId,
+      sourceType: 'PROJECT',
+      duration_min: duration,
+      energy: energyResolved,
+      weight: def.weight ?? 0,
+      instanceId: inst.id,
+    }
+  }
+
+  const isBlockingInstance = (instance: ScheduleInstance | null | undefined) => {
+    if (!instance) return false
+    return instance.status === 'scheduled' || instance.status === 'completed'
+  }
+
   const registerInstanceForOffsets = (instance: ScheduleInstance | null | undefined) => {
     if (!instance) return
     if (!instance.id) return
 
     removeInstanceFromBuckets(instance.id)
 
-    if (instance.status !== 'scheduled') {
+    if (!isBlockingInstance(instance)) {
       return
     }
 
@@ -515,8 +646,27 @@ export async function scheduleBacklog(
     }
   }
 
+  const completedProjectIds = new Set<string>()
+
   for (const inst of dedupe.allInstances) {
+    if (
+      inst?.source_type === 'PROJECT' &&
+      inst.status === 'completed' &&
+      typeof inst.source_id === 'string' &&
+      inst.source_id
+    ) {
+      completedProjectIds.add(inst.source_id)
+    }
     registerInstanceForOffsets(inst)
+  }
+
+  if (completedProjectIds.size > 0) {
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      const item = queue[index]
+      if (completedProjectIds.has(item.id)) {
+        queue.splice(index, 1)
+      }
+    }
   }
 
   for (const inst of keptInstances) {
@@ -541,13 +691,15 @@ export async function scheduleBacklog(
 
   const ignoreProjectIds = new Set(finalQueueProjectIds)
 
-  queue.sort((a, b) => {
+  const compareQueueItems = (a: QueueItem, b: QueueItem) => {
     const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
     if (energyDiff !== 0) return energyDiff
     const weightDiff = b.weight - a.weight
     if (weightDiff !== 0) return weightDiff
     return a.id.localeCompare(b.id)
-  })
+  }
+
+  queue.sort(compareQueueItems)
 
   const windowAvailabilityByDay = new Map<
     number,
@@ -662,6 +814,31 @@ export async function scheduleBacklog(
     }
     const dayInstances = getDayInstances(offset)
     const dayWindows = getWindowsForDay(day)
+    const conflictProjects = collectProjectOverlapConflicts(dayInstances, habitAllowsOverlap)
+    for (const conflict of conflictProjects) {
+      const resolution = await attemptProjectConflictPlacement(conflict, {
+        day,
+        offset,
+        dayInstances,
+        dayWindows,
+        windowAvailability,
+        scheduledProjectIds,
+        ignoreProjectIds,
+        projectItemMap,
+        supabase,
+        timeZone,
+        baseDate,
+        restMode: isRestMode,
+        windowCache,
+        userId,
+      })
+      if (resolution === 'NO_WINDOW' || resolution === 'NO_FIT') {
+        result.failures.push({
+          itemId: conflict.source_id ?? conflict.id,
+          reason: resolution,
+        })
+      }
+    }
 
     for (const item of queue) {
       if (scheduledProjectIds.has(item.id)) continue
@@ -691,7 +868,7 @@ export async function scheduleBacklog(
         reuseInstanceId: item.instanceId,
         ignoreProjectIds,
         notBefore: offset === 0 ? baseDate : undefined,
-        existingInstances: dayInstances,
+        existingInstances: dayInstances.length > 0 ? dayInstances : undefined,
       })
 
       if (!('status' in placed)) {
@@ -1120,7 +1297,7 @@ async function scheduleHabitsForDay(params: {
           }
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
     const isSyncHabit = normalizedType === 'SYNC'
-    const allowsHabitOverlap = isSyncHabit
+    const allowsHabitOverlap = false
     const anchorRaw = habit.windowEdgePreference
       ? String(habit.windowEdgePreference).toUpperCase().trim()
       : 'FRONT'
@@ -1189,7 +1366,7 @@ async function scheduleHabitsForDay(params: {
           locationContextId: attempt.locationId,
           locationContextValue: attempt.locationValue,
           daylight: attempt.daylight,
-          ignoreAvailability: isSyncHabit,
+          ignoreAvailability: allowsHabitOverlap,
           anchor: anchorPreference,
           restMode,
           userId,
@@ -1337,13 +1514,29 @@ async function scheduleHabitsForDay(params: {
       : resolvedEnergy
 
     const existingInstance = existingByHabitId.get(habit.id) ?? null
-    const needsUpdate = existingInstance
+    let needsUpdate = existingInstance
       ? existingInstance.window_id !== window.id ||
         existingInstance.start_utc !== candidateStartUTC ||
         existingInstance.end_utc !== candidateEndUTC ||
         existingInstance.duration_min !== durationMinutes ||
         (existingInstance.energy_resolved ?? '').toUpperCase() !== energyResolved
       : true
+
+    if (!needsUpdate && existingInstance) {
+      const overlapsExisting = dayInstances.some(inst => {
+        if (!inst) return false
+        if (inst.id === existingInstance.id) return false
+        if (inst.status !== 'scheduled') return false
+        if (allowsHabitOverlap && inst.source_type === 'HABIT') return false
+        const instStartMs = new Date(inst.start_utc ?? '').getTime()
+        const instEndMs = new Date(inst.end_utc ?? '').getTime()
+        if (!Number.isFinite(instStartMs) || !Number.isFinite(instEndMs)) return false
+        return instEndMs > startCandidate && instStartMs < endCandidate
+      })
+      if (overlapsExisting) {
+        needsUpdate = true
+      }
+    }
 
     let persisted: ScheduleInstance | null = null
     let decision: HabitDraftPlacement['decision'] = 'new'
@@ -1875,3 +2068,151 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
   }
   return end
 }
+  const attemptProjectConflictPlacement = async (
+    conflict: ScheduleInstance,
+    options: {
+      day: Date
+      offset: number
+      dayInstances: ScheduleInstance[]
+      dayWindows: WindowLite[]
+      windowAvailability: Map<string, WindowAvailabilityBounds>
+      scheduledProjectIds: Set<string>
+      ignoreProjectIds: Set<string>
+      projectItemMap: Record<string, (typeof projectItems)[number]>
+      supabase: Client
+      timeZone: string
+      baseDate: Date
+      restMode: boolean
+      windowCache: Map<string, WindowLite[]>
+      userId: string
+    }
+  ): Promise<'PLACED' | 'NO_WINDOW' | 'NO_FIT' | 'FAILED' | 'SKIPPED'> => {
+    const projectId = conflict.source_id ?? ''
+    if (!projectId) return 'SKIPPED'
+    const projectDef = options.projectItemMap[projectId]
+    if (!projectDef) {
+      result.failures.push({ itemId: projectId, reason: 'UNKNOWN_PROJECT' })
+      return 'FAILED'
+    }
+
+    let duration = Number(conflict.duration_min ?? 0)
+    if (!Number.isFinite(duration) || duration <= 0) {
+      duration = Number(projectDef.duration_min ?? 0)
+    }
+    if (!Number.isFinite(duration) || duration <= 0) {
+      duration = DEFAULT_PROJECT_DURATION_MIN
+    }
+
+    const energy = (conflict.energy_resolved ?? projectDef.energy ?? 'NO')
+      .toString()
+      .toUpperCase()
+
+    const item: QueueItem = {
+      id: projectId,
+      sourceType: 'PROJECT',
+      duration_min: duration,
+      energy,
+      weight: projectDef.weight ?? 0,
+      instanceId: conflict.id,
+    }
+
+    const windows = await fetchCompatibleWindowsForItem(
+      options.supabase,
+      options.day,
+      item,
+      options.timeZone,
+      {
+        availability: options.windowAvailability,
+        now: options.offset === 0 ? options.baseDate : undefined,
+        cache: options.windowCache,
+        restMode: options.restMode,
+        userId: options.userId,
+        preloadedWindows: options.dayWindows,
+      }
+    )
+
+    if (windows.length === 0) {
+      return 'NO_WINDOW'
+    }
+
+    const existingInstances = options.dayInstances.filter(inst => inst.id !== conflict.id)
+    const placed = await placeItemInWindows({
+      userId,
+      item,
+      windows,
+      date: options.day,
+      client: options.supabase,
+      reuseInstanceId: conflict.id,
+      ignoreProjectIds: options.ignoreProjectIds,
+      notBefore: options.offset === 0 ? options.baseDate : undefined,
+      existingInstances,
+    })
+
+    if (!('status' in placed)) {
+      if (placed.error === 'NO_FIT') {
+        return 'NO_FIT'
+      }
+      if (placed.error && placed.error !== 'NO_FIT') {
+        result.failures.push({ itemId: projectId, reason: 'error', detail: placed.error })
+      }
+      return 'FAILED'
+    }
+
+    if (placed.error || !placed.data) {
+      result.failures.push({
+        itemId: projectId,
+        reason: 'error',
+        detail: placed.error ?? new Error('Failed to persist conflict placement'),
+      })
+      return 'FAILED'
+    }
+
+    result.placed.push(placed.data)
+    const placementWindow = findPlacementWindow(windows, placed.data)
+    if (placementWindow?.key) {
+      const placementEnd = new Date(placed.data.end_utc)
+      const existingBounds = options.windowAvailability.get(placementWindow.key)
+      if (existingBounds) {
+        const nextFront = Math.min(
+          placementEnd.getTime(),
+          existingBounds.back.getTime(),
+        )
+        existingBounds.front = new Date(nextFront)
+        if (existingBounds.front.getTime() > existingBounds.back.getTime()) {
+          existingBounds.back = new Date(existingBounds.front)
+        }
+      } else {
+        const endLocal = placementWindow.endLocal ?? placementEnd
+        options.windowAvailability.set(placementWindow.key, {
+          front: placementEnd,
+          back: new Date(endLocal),
+        })
+      }
+    }
+
+    const decision: ScheduleDraftPlacement['decision'] = conflict.id ? 'rescheduled' : 'new'
+    result.timeline.push({
+      type: 'PROJECT',
+      instance: placed.data,
+      projectId,
+      decision,
+      scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? options.offset,
+      availableStartLocal: placementWindow?.availableStartLocal
+        ? placementWindow.availableStartLocal.toISOString()
+        : undefined,
+      windowStartLocal: placementWindow?.startLocal
+        ? placementWindow.startLocal.toISOString()
+        : undefined,
+    })
+    options.scheduledProjectIds.add(projectId)
+    registerInstanceForOffsets(placed.data)
+
+    const existingIndex = options.dayInstances.findIndex(inst => inst.id === conflict.id)
+    if (existingIndex >= 0) {
+      options.dayInstances.splice(existingIndex, 1, placed.data)
+    } else {
+      options.dayInstances.push(placed.data)
+    }
+
+    return 'PLACED'
+  }
