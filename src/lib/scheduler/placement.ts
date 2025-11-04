@@ -77,10 +77,13 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
     const rangeStart = new Date(startMs)
 
     let taken: ScheduleInstance[] = []
+    const isBlockingStatus = (status?: ScheduleInstance['status'] | null) =>
+      status === 'scheduled' || status === 'completed'
+
     if (existingInstances) {
       taken = existingInstances.filter(inst => {
         if (!inst) return false
-        if (inst.status !== 'scheduled') return false
+        if (!isBlockingStatus(inst.status)) return false
         const instStartMs = new Date(inst.start_utc).getTime()
         const instEndMs = new Date(inst.end_utc).getTime()
         return instEndMs > startMs && instStartMs < windowEndMs
@@ -95,7 +98,9 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       if (error) {
         return { error }
       }
-      taken = (data ?? []).filter(inst => inst && inst.status !== 'canceled')
+      taken = (data ?? []).filter(
+        inst => inst && isBlockingStatus(inst.status) && inst.status !== 'canceled',
+      )
     }
 
     const filtered = taken.filter(inst => {

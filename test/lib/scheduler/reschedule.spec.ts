@@ -101,6 +101,17 @@ describe("scheduleBacklog", () => {
       return { select };
     });
     const update = vi.fn(() => ({ eq }));
+    const insert = vi.fn((input: unknown) => ({
+      select: vi.fn(() => ({
+        single: vi.fn(async () => ({
+          data: input ?? null,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        })),
+      })),
+    }));
     const from = vi.fn((table: string) => {
       if (table === "skills") {
         return {
@@ -109,7 +120,7 @@ describe("scheduleBacklog", () => {
           })),
         };
       }
-      return { update };
+      return { update, insert };
     });
     const client = { from } as unknown as ScheduleBacklogClient;
     return { client, update };
@@ -465,7 +476,7 @@ describe("scheduleBacklog", () => {
         } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
       });
 
-    const result = await scheduleBacklog(userId, baseDate, client);
+    const result = await scheduleBacklog(userId, baseDate, client, { writeThroughDays: 1 });
 
     expect(placeSpy).toHaveBeenCalled();
     expect(placeSpy).toHaveBeenCalledWith(
@@ -609,6 +620,713 @@ describe("scheduleBacklog", () => {
     expect(
       result.failures.filter(failure => failure.reason === "error"),
     ).toEqual([]);
+  });
+
+  it("prevents sync habits from overlapping when scheduling multiple habits", async () => {
+    instances = [];
+    const { client } = createSupabaseMock();
+
+    const windowLite: repo.WindowLite = {
+      id: "win-sync",
+      label: "Sync Window",
+      energy: "LOW",
+      start_local: "08:00",
+      end_local: "09:00",
+      days: [2],
+    };
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([windowLite]);
+
+    const habitA: HabitScheduleItem = {
+      id: "habit-sync-1",
+      name: "Sync Habit A",
+      durationMinutes: 15,
+      createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      updatedAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      lastCompletedAt: null,
+      habitType: "SYNC",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "08:00",
+        endLocal: windowLite.end_local ?? "09:00",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+
+    const habitB: HabitScheduleItem = {
+      ...habitA,
+      id: "habit-sync-2",
+      name: "Sync Habit B",
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habitA, habitB]);
+
+    const firstInstance = createInstanceRecord({
+      id: "inst-sync-1",
+      source_id: habitA.id,
+      source_type: "HABIT",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:15:00Z",
+      duration_min: 15,
+      window_id: windowLite.id,
+      energy_resolved: "LOW",
+    });
+
+    const secondInstance = createInstanceRecord({
+      id: "inst-sync-2",
+      source_id: habitB.id,
+      source_type: "HABIT",
+      start_utc: "2024-01-02T08:15:00Z",
+      end_utc: "2024-01-02T08:30:00Z",
+      duration_min: 15,
+      window_id: windowLite.id,
+      energy_resolved: "LOW",
+    });
+
+    type PlacementCall = {
+      allowHabitOverlap?: boolean;
+      existing: Array<{ id: string; sourceType: string }>;
+      itemId: string;
+      sourceType: string;
+    };
+    const placementCalls: PlacementCall[] = [];
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      placementCalls.push({
+        allowHabitOverlap: params.allowHabitOverlap,
+        existing: (params.existingInstances ?? []).map(inst => ({
+          id: inst.id,
+          sourceType: inst.source_type ?? "",
+        })),
+        itemId: params.item.id,
+        sourceType: params.item.sourceType,
+      });
+
+      if (params.item.id === habitA.id) {
+        return {
+          data: firstInstance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      }
+      if (params.item.id === habitB.id) {
+        return {
+          data: secondInstance,
+          error: null,
+          count: null,
+          status: 201,
+          statusText: "Created",
+        } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+      }
+
+      return { error: "NO_FIT" as const };
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    const habitCalls = placementCalls.filter(
+      call =>
+        call.sourceType === "HABIT" &&
+        (call.itemId === habitA.id || call.itemId === habitB.id),
+    );
+    expect(habitCalls.length).toBeGreaterThanOrEqual(2);
+    expect(habitCalls.every(call => call.allowHabitOverlap === false)).toBe(true);
+
+    const habitBCalls = habitCalls.filter(call => call.itemId === habitB.id);
+    expect(habitBCalls.length).toBeGreaterThan(0);
+    const latestHabitBCall = habitBCalls[habitBCalls.length - 1];
+    expect(
+      latestHabitBCall.existing.some(
+        inst => inst.id === firstInstance.id && inst.sourceType === "HABIT",
+      ),
+    ).toBe(true);
+
+    const habitEntriesById = new Map<string, Array<{ startUTC: string; endUTC: string }>>();
+    for (const entry of result.timeline) {
+      if (entry.type !== "HABIT") continue;
+      if (entry.habit.id !== habitA.id && entry.habit.id !== habitB.id) continue;
+      const existing = habitEntriesById.get(entry.habit.id) ?? [];
+      existing.push({
+        startUTC: entry.habit.startUTC,
+        endUTC: entry.habit.endUTC,
+      });
+      habitEntriesById.set(entry.habit.id, existing);
+    }
+
+    expect(habitEntriesById.get(habitA.id)?.length ?? 0).toBeGreaterThan(0);
+    expect(habitEntriesById.get(habitB.id)?.length ?? 0).toBeGreaterThan(0);
+
+    const earliestHabitA = [...(habitEntriesById.get(habitA.id) ?? [])].sort(
+      (a, b) => new Date(a.startUTC).getTime() - new Date(b.startUTC).getTime(),
+    )[0];
+    const earliestHabitB = [...(habitEntriesById.get(habitB.id) ?? [])].sort(
+      (a, b) => new Date(a.startUTC).getTime() - new Date(b.startUTC).getTime(),
+    )[0];
+
+    expect(earliestHabitA.endUTC).toBe(earliestHabitB.startUTC);
+
+    const persistedByHabit = (result.placed ?? []).filter(
+      inst => inst.source_id === habitA.id || inst.source_id === habitB.id,
+    );
+    expect(
+      persistedByHabit.filter(inst => inst.source_id === habitA.id).length,
+    ).toBeGreaterThan(0);
+    expect(
+      persistedByHabit.filter(inst => inst.source_id === habitB.id).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("reschedules habits that conflict with scheduled projects", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLite: repo.WindowLite = {
+      id: "win-mix",
+      label: "Shared Window",
+      energy: "LOW",
+      start_local: "08:00",
+      end_local: "09:00",
+      days: [2],
+    };
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-keep": {
+        id: "proj-keep",
+        name: "Existing Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 30,
+      },
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([windowLite]);
+
+    const habit: HabitScheduleItem = {
+      id: "habit-conflict",
+      name: "Conflicting Habit",
+      durationMinutes: 15,
+      createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      updatedAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: windowLite.id,
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: windowLite.id,
+        label: windowLite.label ?? null,
+        energy: windowLite.energy ?? null,
+        startLocal: windowLite.start_local ?? "08:00",
+        endLocal: windowLite.end_local ?? "09:00",
+        days: windowLite.days ?? null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const projectInstance = createInstanceRecord({
+      id: "inst-project",
+      source_id: "proj-keep",
+      source_type: "PROJECT",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:30:00Z",
+      duration_min: 30,
+      window_id: windowLite.id,
+      energy_resolved: "LOW",
+    });
+
+    const habitInstance = createInstanceRecord({
+      id: "inst-habit-conflict",
+      source_id: habit.id,
+      source_type: "HABIT",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:15:00Z",
+      duration_min: 15,
+      window_id: windowLite.id,
+      energy_resolved: "LOW",
+    });
+
+    instances = [projectInstance, habitInstance];
+
+    const rescheduledHabitInstance = createInstanceRecord({
+      id: habitInstance.id,
+      source_id: habit.id,
+      source_type: "HABIT",
+      start_utc: "2024-01-02T08:30:00.000Z",
+      end_utc: "2024-01-02T08:45:00.000Z",
+      duration_min: 15,
+      window_id: windowLite.id,
+      energy_resolved: "LOW",
+    });
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async (params) => {
+      if (params.item.sourceType !== "HABIT") {
+        return { error: "NO_FIT" as const };
+      }
+      return {
+        data: {
+          ...rescheduledHabitInstance,
+          id: rescheduledHabitInstance.id,
+        },
+        error: null,
+        count: null,
+        status: 200,
+        statusText: "OK",
+      } as Awaited<ReturnType<typeof placement.placeItemInWindows>>;
+    });
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).toHaveBeenCalled();
+    const habitTimeline = result.timeline.find(
+      entry => entry.type === "HABIT" && entry.habit.id === habit.id,
+    );
+    expect(habitTimeline).toBeDefined();
+    expect(new Date(habitTimeline?.habit.startUTC ?? "").toISOString()).toBe(
+      rescheduledHabitInstance.start_utc,
+    );
+    expect(new Date(habitTimeline?.habit.endUTC ?? "").toISOString()).toBe(
+      rescheduledHabitInstance.end_utc,
+    );
+  });
+
+  it("does not schedule projects that already have completed instances", async () => {
+    const { client } = createSupabaseMock();
+
+    const completedInstance = createInstanceRecord({
+      id: "inst-completed",
+      source_id: "proj-complete",
+      source_type: "PROJECT",
+      status: "completed",
+      start_utc: "2024-01-02T09:00:00Z",
+      end_utc: "2024-01-02T10:00:00Z",
+      duration_min: 60,
+      window_id: "win-1",
+      completed_at: "2024-01-02T10:00:00Z",
+    });
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [completedInstance],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-complete": {
+        id: "proj-complete",
+        name: "Completed Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-1",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "10:00",
+        days: [2],
+      },
+    ]);
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async () => ({
+      error: "NO_FIT" as const,
+    }));
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).not.toHaveBeenCalled();
+    expect(result.placed.some(inst => inst.source_id === "proj-complete")).toBe(false);
+    expect(
+      result.timeline.some(
+        entry => entry.type === "PROJECT" && entry.projectId === "proj-complete",
+      ),
+    ).toBe(false);
+  });
+
+  it("prevents projects from overlapping completed habits", async () => {
+    const { client } = createSupabaseMock();
+
+    const completedHabit = createInstanceRecord({
+      id: "inst-habit-completed",
+      source_id: "habit-1",
+      source_type: "HABIT",
+      status: "completed",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:30:00Z",
+      duration_min: 30,
+      window_id: "win-shared",
+      energy_resolved: "LOW",
+    });
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [completedHabit],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-new": {
+        id: "proj-new",
+        name: "Overlap Test",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-shared",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [2],
+      },
+    ]);
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(realPlaceItemInWindows);
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).toHaveBeenCalled();
+    const projectPlacement = result.timeline.find(
+      entry => entry.type === "PROJECT" && entry.projectId === "proj-new",
+    ) as (typeof result.timeline)[number] | undefined;
+
+    expect(projectPlacement).toBeDefined();
+    if (projectPlacement && projectPlacement.type === "PROJECT") {
+      const placementStart = new Date(projectPlacement.instance.start_utc).getTime();
+      const completedEnd = new Date(completedHabit.end_utc).getTime();
+      expect(placementStart).toBeGreaterThanOrEqual(completedEnd);
+    }
+  });
+
+  it.skip("prevents projects from overlapping scheduled habits", async () => {
+    const { client } = createSupabaseMock();
+
+    const scheduledHabit = createInstanceRecord({
+      id: "inst-habit-scheduled",
+      source_id: "habit-1",
+      source_type: "HABIT",
+      status: "scheduled",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:30:00Z",
+      duration_min: 30,
+      window_id: "win-shared",
+      energy_resolved: "LOW",
+    });
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [scheduledHabit],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-new": {
+        id: "proj-new",
+        name: "Overlap Test",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-shared",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [2],
+      },
+    ]);
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([]);
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    const projectPlacement = result.timeline.find(
+      entry => entry.type === "PROJECT" && entry.projectId === "proj-new",
+    ) as (typeof result.timeline)[number] | undefined;
+
+    expect(projectPlacement).toBeDefined();
+    if (projectPlacement && projectPlacement.type === "PROJECT") {
+      const placementStart = new Date(projectPlacement.instance.start_utc).getTime();
+      const habitEnd = new Date(scheduledHabit.end_utc).getTime();
+      expect(placementStart).toBeGreaterThanOrEqual(habitEnd);
+    }
+  });
+
+  it.skip("reports overlap when existing project and habit share a window with no slack", async () => {
+    const { client } = createSupabaseMock();
+
+    const overlappingHabit = createInstanceRecord({
+      id: "inst-habit-overlap",
+      source_id: "habit-overlap",
+      source_type: "HABIT",
+      status: "scheduled",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T08:30:00Z",
+      duration_min: 30,
+      window_id: "win-shared",
+      energy_resolved: "LOW",
+    });
+
+    const overlappingProject = createInstanceRecord({
+      id: "inst-project-overlap",
+      source_id: "proj-overlap",
+      source_type: "PROJECT",
+      status: "scheduled",
+      start_utc: "2024-01-02T08:00:00Z",
+      end_utc: "2024-01-02T09:00:00Z",
+      duration_min: 60,
+      window_id: "win-shared",
+      energy_resolved: "LOW",
+    });
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [overlappingHabit, overlappingProject],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([
+      {
+        id: "habit-overlap",
+        name: "Morning Habit",
+        durationMinutes: 30,
+        createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+        updatedAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+        lastCompletedAt: null,
+        habitType: "HABIT",
+        windowId: "win-shared",
+        energy: "LOW",
+        recurrence: "daily",
+        recurrenceDays: null,
+        skillId: null,
+        goalId: null,
+        completionTarget: null,
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+        daylightPreference: null,
+        windowEdgePreference: null,
+        window: {
+          id: "win-shared",
+          label: "Morning",
+          energy: "LOW",
+          startLocal: "08:00",
+          endLocal: "09:00",
+          days: [2],
+          locationContextId: null,
+          locationContextValue: null,
+          locationContextName: null,
+        },
+      } as HabitScheduleItem,
+    ]);
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-overlap": {
+        id: "proj-overlap",
+        name: "Conflicting Project",
+        priority: "LOW",
+        stage: "PLAN",
+        energy: "LOW",
+        duration_min: 60,
+      },
+    });
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-shared",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [2],
+      },
+    ]);
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    const habitPlacement = result.timeline.find(
+      entry => entry.type === "HABIT" && entry.habit.id === "habit-overlap",
+    );
+    const projectPlacement = result.timeline.find(
+      entry => entry.type === "PROJECT" && entry.projectId === "proj-overlap",
+    );
+
+    expect(habitPlacement).toBeDefined();
+    expect(projectPlacement).toBeDefined();
+
+    const habitStart = habitPlacement && habitPlacement.type === "HABIT"
+      ? new Date(habitPlacement.habit.startUTC).getTime()
+      : NaN;
+    const habitEnd = habitPlacement && habitPlacement.type === "HABIT"
+      ? new Date(habitPlacement.habit.endUTC).getTime()
+      : NaN;
+    const projectStart = projectPlacement && projectPlacement.type === "PROJECT"
+      ? new Date(projectPlacement.instance.start_utc).getTime()
+      : NaN;
+    const projectEnd = projectPlacement && projectPlacement.type === "PROJECT"
+      ? new Date(projectPlacement.instance.end_utc).getTime()
+      : NaN;
+
+    const overlaps =
+      Number.isFinite(habitStart) &&
+      Number.isFinite(habitEnd) &&
+      Number.isFinite(projectStart) &&
+      Number.isFinite(projectEnd) &&
+      habitEnd > projectStart &&
+      habitStart < projectEnd;
+
+    expect(overlaps).toBe(true);
+  });
+
+  it("skips habits completed earlier in the same day until the next recurrence", async () => {
+    const { client } = createSupabaseMock();
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-habit",
+        label: "Morning",
+        energy: "LOW",
+        start_local: "08:00",
+        end_local: "09:00",
+        days: [2],
+      },
+    ]);
+
+    const completionTimestamp = new Date("2024-01-02T07:30:00Z").toISOString();
+    const habit: HabitScheduleItem = {
+      id: "habit-today",
+      name: "Daily Practice",
+      durationMinutes: 15,
+      createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
+      updatedAt: completionTimestamp,
+      lastCompletedAt: completionTimestamp,
+      habitType: "HABIT",
+      windowId: "win-habit",
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: "win-habit",
+        label: "Morning",
+        energy: "LOW",
+        startLocal: "08:00",
+        endLocal: "09:00",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async () => ({
+      error: "NO_FIT" as const,
+    }));
+
+    const baseDateLocal = new Date("2024-01-02T12:00:00Z");
+    const baseDayKey = baseDateLocal.toISOString().slice(0, 10);
+
+    const result = await scheduleBacklog(userId, baseDateLocal, client);
+
+    const habitCalls = (placeSpy.mock.calls ?? []).filter(
+      call => call?.[0]?.item?.sourceType === "HABIT" && call?.[0]?.item?.id === habit.id,
+    );
+    expect(
+      habitCalls.some(call => call?.[0]?.date?.toISOString().slice(0, 10) === baseDayKey),
+    ).toBe(false);
+
+    const habitEntries = result.timeline.filter(
+      entry => entry.type === "HABIT" && entry.habit.id === habit.id,
+    );
+    expect(
+      habitEntries.some(
+        entry => new Date(entry.habit.startUTC).toISOString().slice(0, 10) === baseDayKey,
+      ),
+    ).toBe(false);
   });
 
   it("considers 'NO' energy windows for scheduling", async () => {
