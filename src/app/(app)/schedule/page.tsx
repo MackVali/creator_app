@@ -63,12 +63,6 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from '@/lib/scheduler/habits'
-import {
-  normalizeCoordinates,
-  resolveSunlightSpan,
-  type GeoCoordinates,
-} from '@/lib/scheduler/sunlight'
-import { evaluateHabitDueOnDate, type HabitDueEvaluation } from '@/lib/scheduler/habitRecurrence'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
@@ -706,26 +700,11 @@ function computeStandaloneTaskInstancesForDay(
   return items
 }
 
-function isSameLocalDay(
-  a: Date | null | undefined,
-  b: Date | null | undefined,
-) {
-  if (!a || !b) return false
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  )
-}
-
 function computeHabitPlacementsForDay({
   habits: allHabits,
   windows,
   date,
   timeZone,
-  now,
-  completionMap,
-  sunlightCoordinates,
   projectInstances,
   schedulerTimelinePlacements,
   instances,
@@ -734,9 +713,6 @@ function computeHabitPlacementsForDay({
   windows: RepoWindow[]
   date: Date
   timeZone: string
-  now?: Date | null
-  completionMap?: Record<string, HabitCompletionStatus>
-  sunlightCoordinates?: GeoCoordinates | null
   projectInstances?: ReturnType<typeof computeProjectInstances>
   schedulerTimelinePlacements?: SchedulerTimelinePlacement[]
   instances?: ScheduleInstance[]
@@ -744,13 +720,7 @@ function computeHabitPlacementsForDay({
   if (allHabits.length === 0) return []
 
   const zone = timeZone || 'UTC'
-  const dayStart = startOfDayInTimeZone(date, zone)
-  const defaultDueMs = dayStart.getTime()
   const availability = new Map<string, number>()
-  const dueInfoByHabitId = new Map<string, HabitDueEvaluation>()
-  const dayCompletionMap = completionMap ?? null
-  const nowCandidate = now ?? null
-  const nowMs = isSameLocalDay(nowCandidate, date) ? nowCandidate?.getTime() ?? null : null
 
   const habitMap = new Map(allHabits.map(habit => [habit.id, habit]))
 
@@ -811,7 +781,7 @@ function computeHabitPlacementsForDay({
       }
     }
     for (const placement of schedulerTimelinePlacements) {
-      if (placement.type !== 'HABIT') continue
+      if (placement.type !== 'HABIT' && placement.type !== 'PROJECT') continue
       const startMs = placement.start.getTime()
       const endMs = placement.end.getTime()
       if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue
@@ -873,232 +843,6 @@ function computeHabitPlacementsForDay({
         availability.set(assignedEntry.key, Math.max(previous, normalizedEnd))
         addAnchorStart(anchorStartsByWindowKey, assignedEntry.key, start.getTime())
       }
-    }
-  }
-
-  const remainingHabits = allHabits.filter(habit => !placedHabitIds.has(habit.id))
-  if (remainingHabits.length === 0 || windowEntries.length === 0) {
-    placements.sort((a, b) => a.start.getTime() - b.start.getTime())
-    return placements
-  }
-
-  const dueHabits = remainingHabits.filter((habit) => {
-    const dueInfo = evaluateHabitDueOnDate({
-      habit,
-      date,
-      timeZone: zone,
-      windowDays: habit.window?.days ?? null,
-    })
-    if (!dueInfo.isDue) {
-      return false
-    }
-    dueInfoByHabitId.set(habit.id, dueInfo)
-    return true
-  })
-
-  if (dueHabits.length === 0) {
-    placements.sort((a, b) => a.start.getTime() - b.start.getTime())
-    return placements
-  }
-
-  const sunlightSpan = resolveSunlightSpan(date, zone, sunlightCoordinates ?? null)
-
-  const sortedHabits = dueHabits.sort((a, b) => {
-    const dueA = dueInfoByHabitId.get(a.id)
-    const dueB = dueInfoByHabitId.get(b.id)
-    const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
-    if (dueDiff !== 0) return dueDiff
-    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
-    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
-    if (aTime !== bTime) return aTime - bTime
-    return a.name.localeCompare(b.name)
-  })
-
-  for (const habit of sortedHabits) {
-    const rawDuration = Number(habit.durationMinutes ?? 0)
-    const durationMin =
-      Number.isFinite(rawDuration) && rawDuration > 0
-        ? rawDuration
-        : DEFAULT_HABIT_DURATION_MIN
-    const durationMs = durationMin * 60000
-    if (durationMs <= 0) continue
-
-    const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
-    const requiredEnergyIdx = energyIndexFromLabel(resolvedEnergy)
-    const locationContextIdRaw = habit.locationContextId ?? habit.window?.locationContextId ?? null
-    const locationContextId =
-      typeof locationContextIdRaw === "string" && locationContextIdRaw.trim().length > 0
-        ? locationContextIdRaw.trim()
-        : null
-    const locationContextValueSource =
-      habit.locationContextValue ?? habit.window?.locationContextValue ?? null
-    const locationContext = locationContextValueSource
-      ? String(locationContextValueSource).toUpperCase().trim()
-      : null
-    const rawDaylight = habit.daylightPreference
-      ? String(habit.daylightPreference).toUpperCase().trim()
-      : 'ALL_DAY'
-    const daylightPreference =
-      rawDaylight === 'DAY' || rawDaylight === 'NIGHT' ? rawDaylight : 'ALL_DAY'
-    const daylightConstraint =
-      daylightPreference === 'ALL_DAY'
-        ? null
-        : {
-            preference: daylightPreference as 'DAY' | 'NIGHT',
-            sunrise: sunlightSpan.current.sunrise ?? null,
-            sunset: sunlightSpan.current.sunset ?? null,
-            dawn: sunlightSpan.current.dawn ?? null,
-            dusk: sunlightSpan.current.dusk ?? null,
-            previousDusk:
-              sunlightSpan.previous.dusk ?? sunlightSpan.previous.sunset ?? null,
-            nextDawn: sunlightSpan.next.dawn ?? sunlightSpan.next.sunrise ?? null,
-          }
-    const dueStart = dueInfoByHabitId.get(habit.id)?.dueStart
-    const dueStartMs = dueStart ? dueStart.getTime() : null
-    const isHabitCompleted = dayCompletionMap?.[habit.id] === 'completed'
-    const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
-    const isSyncHabit = normalizedType === 'SYNC' || normalizedType === 'ASYNC'
-
-    let placed = false
-    for (const entry of windowEntries) {
-      if (entry.energyIdx < requiredEnergyIdx) continue
-
-      const windowLocationId =
-        entry.window.location_context_id && entry.window.location_context_id.trim().length > 0
-          ? entry.window.location_context_id.trim()
-          : null
-      const windowLocationRaw = entry.window.location_context_value
-        ? String(entry.window.location_context_value).toUpperCase().trim()
-        : null
-      if (locationContextId || windowLocationId) {
-        if (!locationContextId || !windowLocationId) continue
-        if (windowLocationId !== locationContextId) continue
-      } else if (locationContext) {
-        if (!windowLocationRaw) continue
-        if (windowLocationRaw !== locationContext) continue
-      }
-
-      const existingAvailability = availability.get(entry.key) ?? entry.startMs
-      const windowStartMs = entry.startMs
-      const baseStart = isSyncHabit ? windowStartMs : Math.max(existingAvailability, windowStartMs)
-      let earliestStart =
-        typeof dueStartMs === 'number' && Number.isFinite(dueStartMs)
-          ? Math.max(baseStart, dueStartMs)
-          : baseStart
-
-      if (!isHabitCompleted && typeof nowMs === 'number') {
-        const normalizedNow = Math.max(nowMs, windowStartMs)
-        if (normalizedNow > earliestStart) {
-          earliestStart = normalizedNow
-        }
-      }
-
-      let startMs = earliestStart
-      let endLimitMs = entry.endMs
-      if (daylightConstraint) {
-        if (daylightConstraint.preference === 'DAY') {
-          const sunriseMs = daylightConstraint.sunrise?.getTime()
-          const sunsetMs = daylightConstraint.sunset?.getTime()
-          if (typeof sunriseMs === 'number') {
-            startMs = Math.max(startMs, sunriseMs)
-          }
-          if (typeof sunsetMs === 'number') {
-            endLimitMs = Math.min(endLimitMs, sunsetMs)
-          }
-        } else {
-          const sunriseMs = daylightConstraint.sunrise?.getTime() ?? null
-          const duskMs =
-            daylightConstraint.dusk?.getTime() ??
-            daylightConstraint.sunset?.getTime() ??
-            null
-          const previousDuskMs =
-            daylightConstraint.previousDusk?.getTime() ?? duskMs ?? null
-          const nextDawnMs =
-            daylightConstraint.nextDawn?.getTime() ?? sunriseMs ?? null
-          const isEarlyMorning =
-            typeof sunriseMs === 'number' ? entry.startMs < sunriseMs : false
-
-          if (isEarlyMorning) {
-            if (typeof previousDuskMs === 'number') {
-              startMs = Math.max(startMs, previousDuskMs)
-            }
-            if (typeof sunriseMs === 'number') {
-              endLimitMs = Math.min(endLimitMs, sunriseMs)
-            }
-          } else {
-            if (typeof duskMs === 'number') {
-              startMs = Math.max(startMs, duskMs)
-            }
-            if (typeof nextDawnMs === 'number') {
-              endLimitMs = Math.min(endLimitMs, nextDawnMs)
-            }
-          }
-        }
-      }
-
-      if (startMs >= endLimitMs) {
-        if (!isSyncHabit) {
-          availability.set(entry.key, endLimitMs)
-        }
-        continue
-      }
-
-      if (isSyncHabit) {
-        const anchors = anchorStartsByWindowKey.get(entry.key) ?? []
-        let anchorStart: number | null = null
-        if (anchors.length > 0) {
-          anchorStart = anchors.find((value) => value >= startMs && value < endLimitMs) ?? null
-          if (anchorStart === null) {
-            anchorStart = anchors.find((value) => value >= windowStartMs && value < endLimitMs) ?? null
-          }
-          if (anchorStart === null) {
-            anchorStart = anchors[0] ?? null
-          }
-        }
-
-        if (typeof anchorStart === 'number' && Number.isFinite(anchorStart)) {
-          startMs = Math.max(startMs, anchorStart)
-        } else {
-          startMs = Math.max(startMs, windowStartMs)
-        }
-      }
-
-      let endMs = startMs + durationMs
-      let truncated = false
-      if (endMs > endLimitMs) {
-        endMs = endLimitMs
-        truncated = true
-      }
-      if (endMs <= startMs) {
-        if (!isSyncHabit) {
-          availability.set(entry.key, endMs)
-        }
-        continue
-      }
-
-      const start = new Date(startMs)
-      const end = new Date(endMs)
-      if (!isSyncHabit) {
-        availability.set(entry.key, endMs)
-      }
-      addAnchorStart(anchorStartsByWindowKey, entry.key, startMs)
-      placements.push({
-        habitId: habit.id,
-        habitName: habit.name,
-        habitType: habit.habitType,
-        skillId: habit.skillId ?? null,
-        start,
-        end,
-        durationMinutes: Math.max(1, Math.round((endMs - startMs) / 60000)),
-        window: entry.window,
-        truncated,
-      })
-      placed = true
-      break
-    }
-
-    if (!placed) {
-      continue
     }
   }
 
@@ -1401,6 +1145,13 @@ function computeTimelineLayoutForSyncHabits({
       const candidateKey = `${candidate.kind}:${candidate.index}`
       if (usedCandidates.has(candidateKey)) continue
       if (candidate.kind === 'habit' && candidate.index === habitIndex) continue
+      if (candidate.kind === 'habit') {
+        const candidatePlacement = habitPlacements[candidate.index]
+        const candidateType = (candidatePlacement?.habitType ?? 'HABIT').toUpperCase()
+        if (candidateType === 'SYNC' || candidateType === 'ASYNC') {
+          continue
+        }
+      }
       if (candidate.startMs >= endMs) {
         break
       }
@@ -1510,9 +1261,6 @@ function buildDayTimelineModel({
   timeZoneShortName,
   friendlyTimeZone,
   localTimeZone,
-  habitCompletionByDate,
-  now,
-  sunlightCoordinates,
 }: {
   date: Date
   windows: RepoWindow[]
@@ -1530,13 +1278,8 @@ function buildDayTimelineModel({
   timeZoneShortName: string
   friendlyTimeZone: string
   localTimeZone: string
-  habitCompletionByDate?: Record<string, Record<string, HabitCompletionStatus>>
-  now?: Date | null
-  sunlightCoordinates?: GeoCoordinates | null
 }): DayTimelineModel {
   const dayViewDateKey = formatLocalDateKey(date)
-  const completionMapForDay = habitCompletionByDate?.[dayViewDateKey] ?? null
-  const nowForModel = now ?? null
   const windowMap = buildWindowMap(windows)
   const projectInstances = computeProjectInstances(instances, projectMap, windowMap)
   const projectInstanceIds = collectProjectInstanceIds(projectInstances)
@@ -1555,9 +1298,6 @@ function buildDayTimelineModel({
     windows,
     date,
     timeZone: localTimeZone ?? 'UTC',
-    now: nowForModel,
-    completionMap: completionMapForDay ?? undefined,
-    sunlightCoordinates,
     projectInstances,
     schedulerTimelinePlacements,
     instances,
@@ -2055,64 +1795,10 @@ export default function SchedulePage() {
   const prefersReducedMotion = useReducedMotion()
   const { user } = useAuth()
   const userId = user?.id ?? null
-  const userMetadata = user?.user_metadata ?? null
   const habitCompletionStorageKey = useMemo(
     () => (userId ? `${HABIT_COMPLETION_STORAGE_PREFIX}:${userId}` : null),
     [userId]
   )
-
-  const userCoordinates = useMemo<GeoCoordinates | null>(() => {
-    if (!userMetadata || typeof userMetadata !== 'object') {
-      return null
-    }
-
-    const metadata = userMetadata as Record<string, unknown>
-    const coords = (metadata.coords as Record<string, unknown> | null) ?? null
-    const location = (metadata.location as Record<string, unknown> | null) ?? null
-
-    const pickNumericValue = (value: unknown): number | null => {
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return value
-      }
-      if (typeof value === 'string' && value.trim()) {
-        const parsed = Number.parseFloat(value)
-        return Number.isFinite(parsed) ? parsed : null
-      }
-      return null
-    }
-
-    const pickFromCandidates = (candidates: unknown[]): number | null => {
-      for (const candidate of candidates) {
-        const numeric = pickNumericValue(candidate)
-        if (numeric !== null) {
-          return numeric
-        }
-      }
-      return null
-    }
-
-    const latitude = pickFromCandidates([
-      metadata.latitude,
-      metadata.lat,
-      coords?.latitude,
-      coords?.lat,
-      location?.latitude,
-    ])
-    const longitude = pickFromCandidates([
-      metadata.longitude,
-      metadata.lng,
-      metadata.lon,
-      coords?.longitude,
-      coords?.lng,
-      location?.longitude,
-    ])
-
-    if (latitude === null || longitude === null) {
-      return null
-    }
-
-    return normalizeCoordinates({ latitude, longitude })
-  }, [userMetadata])
 
   const initialViewParam = searchParams.get('view') as ScheduleView | null
   const initialView: ScheduleView =
@@ -2261,7 +1947,6 @@ export default function SchedulePage() {
     timeZoneShortName: string
     friendlyTimeZone: string
     localTimeZone: string | null
-    sunlightCoordinates: GeoCoordinates | null
   } | null>(null)
 
   const [peekState, setPeekState] = useState<PeekState>({
@@ -2564,7 +2249,6 @@ export default function SchedulePage() {
   const navLock = useRef(false)
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
   const isSchedulingRef = useRef(false)
-  const autoScheduledForRef = useRef<string | null>(null)
 
   const persistAutoRunDate = useCallback(
     (dateKey: string) => {
@@ -2652,7 +2336,6 @@ export default function SchedulePage() {
 
   useEffect(() => {
     setSchedulerDebug(null)
-    autoScheduledForRef.current = null
     setHasAutoRunToday(null)
   }, [userId])
 
@@ -2912,31 +2595,26 @@ export default function SchedulePage() {
           previousDeps.unscheduledProjects !== unscheduledProjects ||
           previousDeps.schedulerFailureByProjectId !== schedulerFailureByProjectId ||
           previousDeps.schedulerDebug !== schedulerDebug ||
-          previousDeps.schedulerTimelinePlacements !== schedulerTimelinePlacements ||
-          previousDeps.timeZoneShortName !== timeZoneShortName ||
-          previousDeps.friendlyTimeZone !== friendlyTimeZone ||
-          previousDeps.localTimeZone !== localTimeZone ||
-          previousDeps.sunlightCoordinates?.latitude !==
-            userCoordinates?.latitude ||
-          previousDeps.sunlightCoordinates?.longitude !==
-            userCoordinates?.longitude
-        )
+      previousDeps.schedulerTimelinePlacements !== schedulerTimelinePlacements ||
+      previousDeps.timeZoneShortName !== timeZoneShortName ||
+      previousDeps.friendlyTimeZone !== friendlyTimeZone ||
+      previousDeps.localTimeZone !== localTimeZone
     )
+)
 
-    peekDataDepsRef.current = {
-      projectMap,
+peekDataDepsRef.current = {
+  projectMap,
       taskMap,
       tasksByProjectId,
       habits,
       unscheduledProjects,
       schedulerFailureByProjectId,
       schedulerDebug,
-      schedulerTimelinePlacements,
-      timeZoneShortName,
-      friendlyTimeZone,
-      localTimeZone,
-      sunlightCoordinates: userCoordinates,
-    }
+  schedulerTimelinePlacements,
+  timeZoneShortName,
+  friendlyTimeZone,
+  localTimeZone,
+}
 
     let cancelled = false
     const timeZone = localTimeZone ?? 'UTC'
@@ -2986,9 +2664,6 @@ export default function SchedulePage() {
           timeZoneShortName,
           friendlyTimeZone,
           localTimeZone,
-          habitCompletionByDate,
-          now: new Date(),
-          sunlightCoordinates: userCoordinates,
         })
         if (cancelled) return
         if (model.dayViewDateKey !== targetKey) return
@@ -3022,8 +2697,6 @@ export default function SchedulePage() {
     schedulerTimelinePlacements,
     timeZoneShortName,
     friendlyTimeZone,
-    habitCompletionByDate,
-    userCoordinates,
     pxPerMin,
   ])
 
@@ -3659,30 +3332,14 @@ export default function SchedulePage() {
     const stored = readLastAutoRunDate()
     if (stored === todayKey) {
       if (hasAutoRunToday !== true) setHasAutoRunToday(true)
-      return
+    } else if (hasAutoRunToday !== false) {
+      setHasAutoRunToday(false)
     }
-    if (hasAutoRunToday !== false) setHasAutoRunToday(false)
-    if (isSchedulingRef.current) return
-    if (autoScheduledForRef.current === todayKey) return
-    autoScheduledForRef.current = todayKey
-    void (async () => {
-      await runScheduler({ writeThroughDays: PRIMARY_WRITE_WINDOW_DAYS })
-      if (PRIMARY_WRITE_WINDOW_DAYS < FULL_WRITE_WINDOW_DAYS) {
-        void runScheduler({
-          writeThroughDays: FULL_WRITE_WINDOW_DAYS,
-          background: true,
-        })
-      }
-      persistAutoRunDate(todayKey)
-      setHasAutoRunToday(true)
-    })()
   }, [
     userId,
     metaStatus,
     instancesStatus,
-    runScheduler,
     readLastAutoRunDate,
-    persistAutoRunDate,
     hasAutoRunToday,
   ])
 
@@ -4054,9 +3711,6 @@ export default function SchedulePage() {
         timeZoneShortName,
         friendlyTimeZone,
         localTimeZone,
-        habitCompletionByDate,
-        now: new Date(),
-        sunlightCoordinates: userCoordinates,
       }),
     [
       currentDate,
@@ -4075,8 +3729,6 @@ export default function SchedulePage() {
       timeZoneShortName,
       friendlyTimeZone,
       localTimeZone,
-      habitCompletionByDate,
-      userCoordinates,
     ]
   )
 
