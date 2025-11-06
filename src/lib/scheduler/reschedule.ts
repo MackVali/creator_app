@@ -1139,6 +1139,85 @@ async function scheduleHabitsForDay(params: {
   const scheduledHabitBuckets = new Map<string, ScheduleInstance[]>()
   const carryoverInstances: ScheduleInstance[] = []
   const duplicatesToCancel: ScheduleInstance[] = []
+  const syncUsageByWindow = new Map<string, { start: number; end: number }[]>()
+  const anchorSegmentsByWindowKey = new Map<string, { start: number; end: number }[]>()
+  const habitTypeById = new Map<string, string>()
+  for (const habit of habits) {
+    habitTypeById.set(habit.id, (habit.habitType ?? 'HABIT').toUpperCase())
+  }
+
+  const addSyncUsage = (key: string, startMs: number, endMs: number) => {
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return
+    const normalizedStart = Math.floor(startMs)
+    const normalizedEnd = Math.floor(endMs)
+    const existing = syncUsageByWindow.get(key)
+    if (!existing) {
+      syncUsageByWindow.set(key, [{ start: normalizedStart, end: normalizedEnd }])
+      return
+    }
+    const nearDuplicate = existing.some(
+      segment =>
+        Math.abs(segment.start - normalizedStart) < 30 &&
+        Math.abs(segment.end - normalizedEnd) < 30
+    )
+    if (nearDuplicate) return
+    let inserted = false
+    for (let index = 0; index < existing.length; index += 1) {
+      if (normalizedStart < existing[index].start) {
+        existing.splice(index, 0, { start: normalizedStart, end: normalizedEnd })
+        inserted = true
+        break
+      }
+    }
+    if (!inserted) {
+      existing.push({ start: normalizedStart, end: normalizedEnd })
+    }
+  }
+
+  const addAnchorSegment = (
+    key: string,
+    startMs: number,
+    endMs: number,
+  ) => {
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
+    const normalizedStart = Math.floor(startMs)
+    const normalizedEnd = Math.floor(endMs)
+    if (normalizedEnd <= normalizedStart) return
+    const existing = anchorSegmentsByWindowKey.get(key)
+    if (!existing) {
+      anchorSegmentsByWindowKey.set(key, [{ start: normalizedStart, end: normalizedEnd }])
+      return
+    }
+    const nearDuplicate = existing.some(
+      segment =>
+        Math.abs(segment.start - normalizedStart) < 30 &&
+        Math.abs(segment.end - normalizedEnd) < 30
+    )
+    if (nearDuplicate) return
+    let inserted = false
+    for (let index = 0; index < existing.length; index += 1) {
+      if (normalizedStart < existing[index].start) {
+        existing.splice(index, 0, { start: normalizedStart, end: normalizedEnd })
+        inserted = true
+        break
+      }
+    }
+    if (!inserted) {
+      existing.push({ start: normalizedStart, end: normalizedEnd })
+    }
+  }
+
+  const hasSyncOverlap = (
+    startMs: number,
+    endMs: number,
+    segments: { start: number; end: number }[]
+  ) => segments.some(segment => endMs > segment.start && startMs < segment.end)
+
+  const findFirstSyncConflict = (
+    startMs: number,
+    endMs: number,
+    segments: { start: number; end: number }[]
+  ) => segments.find(segment => endMs > segment.start && startMs < segment.end) ?? null
 
   for (const inst of existingInstances) {
     if (!inst) continue
@@ -1235,6 +1314,84 @@ async function scheduleHabitsForDay(params: {
     windowsById.set(win.id, win)
   }
 
+  const windowEntries = windows
+    .map(win => {
+      const startLocal = resolveWindowStart(win, day, zone)
+      const endLocal = resolveWindowEnd(win, day, zone)
+      const startMs = startLocal.getTime()
+      const endMs = endLocal.getTime()
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+        return null
+      }
+      const key = windowKey(win.id, startLocal)
+      return {
+        window: win,
+        startLocal,
+        endLocal,
+        startMs,
+        endMs,
+        key,
+      }
+    })
+    .filter(
+      (entry): entry is {
+        window: WindowLite
+        startLocal: Date
+        endLocal: Date
+        startMs: number
+        endMs: number
+        key: string
+      } => entry !== null
+    )
+
+  const windowEntriesById = new Map<string, typeof windowEntries>()
+  for (const entry of windowEntries) {
+    addAnchorStart(anchorStartsByWindowKey, entry.key, entry.startMs)
+    const existing = windowEntriesById.get(entry.window.id)
+    if (existing) {
+      existing.push(entry)
+    } else {
+      windowEntriesById.set(entry.window.id, [entry])
+    }
+  }
+
+  if (windowEntries.length > 0 && dayInstances.length > 0) {
+    const anchorableStatuses = new Set(['scheduled', 'completed', 'in_progress'])
+    for (const instance of dayInstances) {
+      if (!instance) continue
+      if (!anchorableStatuses.has(instance.status ?? '')) continue
+      const start = new Date(instance.start_utc ?? '')
+      const end = new Date(instance.end_utc ?? '')
+      const startMs = start.getTime()
+      const endMs = end.getTime()
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+        continue
+      }
+      const habitId = instance.source_id ?? null
+      const habitType = habitId ? habitTypeById.get(habitId) ?? null : null
+      const isSyncInstance = habitType === 'SYNC'
+      const candidateEntries =
+        (instance.window_id ? windowEntriesById.get(instance.window_id) : null) ?? windowEntries
+      for (const entry of candidateEntries) {
+        if (instance.window_id && entry.window.id !== instance.window_id) continue
+        if (endMs <= entry.startMs || startMs >= entry.endMs) continue
+        const anchorStart = Math.max(entry.startMs, startMs)
+        if (anchorStart < entry.endMs) {
+          addAnchorStart(anchorStartsByWindowKey, entry.key, anchorStart)
+          if (isSyncInstance) {
+            const segmentStart = Math.max(entry.startMs, startMs)
+            const segmentEnd = Math.min(entry.endMs, endMs)
+            addSyncUsage(entry.key, segmentStart, segmentEnd)
+          } else {
+            const segmentStart = Math.max(entry.startMs, startMs)
+            const segmentEnd = Math.min(entry.endMs, endMs)
+            addAnchorSegment(entry.key, segmentStart, segmentEnd)
+          }
+        }
+      }
+    }
+  }
+
   const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
   const previousDay = addDaysInTimeZone(day, -1, zone)
   const nextDay = addDaysInTimeZone(day, 1, zone)
@@ -1263,8 +1420,9 @@ async function scheduleHabitsForDay(params: {
     if (durationMultiplier !== 1) {
       durationMin = Math.max(1, Math.round(durationMin * durationMultiplier))
     }
-    const durationMs = durationMin * 60000
-    if (durationMs <= 0) continue
+    const baseDurationMs = durationMin * 60000
+    if (baseDurationMs <= 0) continue
+    let scheduledDurationMs = baseDurationMs
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const locationContextSource = habit.locationContextValue ?? habit.window?.locationContextValue ?? null
@@ -1297,7 +1455,7 @@ async function scheduleHabitsForDay(params: {
           }
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
     const isSyncHabit = normalizedType === 'SYNC'
-    const allowsHabitOverlap = false
+    const allowsHabitOverlap = isSyncHabit
     const anchorRaw = habit.windowEdgePreference
       ? String(habit.windowEdgePreference).toUpperCase().trim()
       : 'FRONT'
@@ -1414,93 +1572,182 @@ async function scheduleHabitsForDay(params: {
       constraintLowerBound = baseNowMs
     }
 
-    let startCandidate: number
-    if (isSyncHabit) {
-      const anchors = anchorStartsByWindowKey.get(target.key) ?? null
+    const desiredDurationMs = scheduledDurationMs
+    const syncSegments = syncUsageByWindow.get(target.key) ?? []
+    const anchorSegments = anchorSegmentsByWindowKey.get(target.key) ?? []
+    let startCandidate: number | null = null
+    let endCandidate: number | null = null
+    let clipped = false
+
+    if (isSyncHabit && anchorSegments.length > 0) {
       const safeWindowStart = Number.isFinite(windowStartMs) ? windowStartMs : startMs
-      const fallbackStart = Math.max(safeWindowStart, startMs)
-      let anchorStartMs: number | null = null
-
-      if (anchors && anchors.length > 0) {
-        anchorStartMs =
-          anchors.find(value => value >= constraintLowerBound && value < endLimit) ?? null
-        if (anchorStartMs === null) {
-          anchorStartMs = anchors.find(value => value >= startMs && value < endLimit) ?? null
+      const earliestStart = Math.max(safeWindowStart, constraintLowerBound)
+      const searchStart =
+        typeof baseNowMs === 'number'
+          ? Math.max(earliestStart, baseNowMs)
+          : earliestStart
+      const segments = anchorSegments
+        .filter(segment => segment.end > safeWindowStart && segment.start < endLimit)
+      const GAP_TOLERANCE_MS = 60000
+      let index = 0
+      while (index < segments.length && segments[index].end <= searchStart) {
+        index += 1
+      }
+      if (index < segments.length) {
+        let alignedStart = Math.max(segments[index].start, safeWindowStart)
+        if (typeof baseNowMs === 'number') {
+          alignedStart = Math.max(alignedStart, baseNowMs)
         }
-        if (anchorStartMs === null) {
-          anchorStartMs = anchors[0]
+        if (alignedStart < segments[index].end) {
+          let coverageEnd = Math.min(segments[index].end, endLimit)
+          let totalCoverage = coverageEnd - alignedStart
+          let cursor = index
+          while (totalCoverage < desiredDurationMs && cursor + 1 < segments.length) {
+            const nextSegment = segments[cursor + 1]
+            if (nextSegment.start > coverageEnd + GAP_TOLERANCE_MS || nextSegment.start >= endLimit) {
+              break
+            }
+            coverageEnd = Math.min(Math.max(coverageEnd, nextSegment.end), endLimit)
+            totalCoverage = coverageEnd - alignedStart
+            cursor += 1
+          }
+          if (coverageEnd > alignedStart && !hasSyncOverlap(alignedStart, coverageEnd, syncSegments)) {
+            startCandidate = alignedStart
+            endCandidate = coverageEnd
+            if (totalCoverage + 1 < desiredDurationMs) {
+              clipped = true
+            }
+          }
         }
       }
+    }
 
-      if (typeof anchorStartMs === 'number' && Number.isFinite(anchorStartMs)) {
-        startCandidate = Math.max(anchorStartMs, constraintLowerBound)
-      } else {
-        startCandidate = Math.max(fallbackStart, constraintLowerBound)
-      }
-    } else {
-      startCandidate = Math.max(startLimit, constraintLowerBound)
-      if (
+    const latestStartAllowedFallback = endLimit - scheduledDurationMs
+
+    if (startCandidate === null || endCandidate === null) {
+      const latestStartAllowed = latestStartAllowedFallback
+      let candidateStart = Math.max(startLimit, constraintLowerBound)
+      if (isSyncHabit) {
+        const safeWindowStart = Number.isFinite(windowStartMs) ? windowStartMs : startMs
+        candidateStart = Math.max(candidateStart, safeWindowStart)
+        if (typeof baseNowMs === 'number') {
+          candidateStart = Math.max(candidateStart, baseNowMs)
+        }
+      } else if (
         typeof baseNowMs === 'number' &&
-        baseNowMs > startCandidate &&
+        baseNowMs > candidateStart &&
         baseNowMs < endLimit
       ) {
         if (anchorPreference === 'BACK') {
-          const latestStart = endLimit - durationMs
+          const latestStart = endLimit - scheduledDurationMs
           const desiredStart = Math.min(latestStart, baseNowMs)
-          startCandidate = Math.max(startLimit, desiredStart)
+          candidateStart = Math.max(startLimit, desiredStart)
         } else {
-          startCandidate = baseNowMs
+          candidateStart = baseNowMs
         }
       }
+
+      if (candidateStart >= endLimit) {
+        if (!allowsHabitOverlap) {
+          setAvailabilityBoundsForKey(availability, target.key, endLimit, endLimit)
+        }
+        continue
+      }
+
+      if (candidateStart > latestStartAllowed) {
+        if (!allowsHabitOverlap) {
+          if (bounds) {
+            if (anchorPreference === 'BACK') {
+              const clamped = Math.max(bounds.front.getTime(), latestStartAllowed)
+              bounds.back = new Date(clamped)
+              if (bounds.back.getTime() < bounds.front.getTime()) {
+                bounds.front = new Date(bounds.back)
+              }
+            } else {
+              bounds.front = new Date(endLimit)
+              if (bounds.back.getTime() < bounds.front.getTime()) {
+                bounds.back = new Date(bounds.front)
+              }
+            }
+          } else {
+            setAvailabilityBoundsForKey(availability, target.key, endLimit, endLimit)
+          }
+        }
+        continue
+      }
+
+      let candidateEnd = candidateStart + scheduledDurationMs
+      let candidateClipped = false
+      if (candidateEnd > endLimit) {
+        candidateEnd = endLimit
+        candidateClipped = true
+      }
+      if (candidateEnd <= candidateStart) {
+        if (!allowsHabitOverlap) {
+          setAvailabilityBoundsForKey(availability, target.key, candidateEnd, candidateEnd)
+          if (bounds) {
+            if (anchorPreference === 'BACK') {
+              bounds.back = new Date(Math.max(bounds.front.getTime(), candidateStart))
+              if (bounds.back.getTime() < bounds.front.getTime()) {
+                bounds.front = new Date(bounds.back)
+              }
+            } else {
+              bounds.front = new Date(candidateEnd)
+              if (bounds.back.getTime() < bounds.front.getTime()) {
+                bounds.back = new Date(bounds.front)
+              }
+            }
+          }
+        }
+        continue
+      }
+
+      if (isSyncHabit && hasSyncOverlap(candidateStart, candidateEnd, syncSegments)) {
+        let adjustedStart = candidateStart
+        let adjustedEnd = candidateEnd
+        let guard = 0
+        while (hasSyncOverlap(adjustedStart, adjustedEnd, syncSegments)) {
+          const conflict = findFirstSyncConflict(adjustedStart, adjustedEnd, syncSegments)
+          if (!conflict) break
+          adjustedStart = Math.max(conflict.end, adjustedStart + 1)
+          if (adjustedStart > latestStartAllowed) break
+          adjustedEnd = adjustedStart + scheduledDurationMs
+          if (adjustedEnd > endLimit) {
+            adjustedEnd = endLimit
+            candidateClipped = true
+          }
+          guard += 1
+          if (guard > syncSegments.length + 4) break
+        }
+        if (
+          adjustedStart > latestStartAllowed ||
+          adjustedEnd <= adjustedStart ||
+          hasSyncOverlap(adjustedStart, adjustedEnd, syncSegments)
+        ) {
+          continue
+        }
+        candidateStart = adjustedStart
+        candidateEnd = adjustedEnd
+      }
+
+      startCandidate = candidateStart
+      endCandidate = candidateEnd
+      clipped = candidateClipped
     }
 
-    if (startCandidate >= endLimit) {
-      setAvailabilityBoundsForKey(availability, target.key, endLimit, endLimit)
+    if (startCandidate === null || endCandidate === null) {
       continue
     }
 
-    const latestStartAllowed = endLimit - durationMs
-    if (startCandidate > latestStartAllowed) {
-      if (bounds) {
-        if (anchorPreference === 'BACK') {
-          const clamped = Math.max(bounds.front.getTime(), latestStartAllowed)
-          bounds.back = new Date(clamped)
-          if (bounds.back.getTime() < bounds.front.getTime()) {
-            bounds.front = new Date(bounds.back)
-          }
-        } else {
-          bounds.front = new Date(endLimit)
-          if (bounds.back.getTime() < bounds.front.getTime()) {
-            bounds.back = new Date(bounds.front)
-          }
-        }
-      } else {
-        setAvailabilityBoundsForKey(availability, target.key, endLimit, endLimit)
-      }
+    scheduledDurationMs = endCandidate - startCandidate
+    if (scheduledDurationMs <= 0) {
       continue
     }
-
-    let endCandidate = startCandidate + durationMs
-    let clipped = false
-    if (endCandidate > endLimit) {
-      endCandidate = endLimit
+    if (!clipped && scheduledDurationMs + 1 < desiredDurationMs) {
       clipped = true
     }
-    if (endCandidate <= startCandidate) {
-      setAvailabilityBoundsForKey(availability, target.key, endCandidate, endCandidate)
-      if (bounds) {
-        if (anchorPreference === 'BACK') {
-          bounds.back = new Date(Math.max(bounds.front.getTime(), startCandidate))
-          if (bounds.back.getTime() < bounds.front.getTime()) {
-            bounds.front = new Date(bounds.back)
-          }
-        } else {
-          bounds.front = new Date(endCandidate)
-          if (bounds.back.getTime() < bounds.front.getTime()) {
-            bounds.back = new Date(bounds.front)
-          }
-        }
-      }
+
+    if (startCandidate === null || endCandidate === null) {
       continue
     }
 
@@ -1616,23 +1863,28 @@ async function scheduleHabitsForDay(params: {
     const endUTC = endDate.toISOString()
 
     addAnchorStart(anchorStartsByWindowKey, target.key, startDate.getTime())
+    if (isSyncHabit) {
+      addSyncUsage(target.key, startDate.getTime(), endDate.getTime())
+    }
     upsertInstance(dayInstances, persisted)
-    if (bounds) {
-      if (anchorPreference === 'BACK') {
-        bounds.back = new Date(startDate)
-        if (bounds.front.getTime() > bounds.back.getTime()) {
-          bounds.front = new Date(bounds.back)
+    if (!allowsHabitOverlap) {
+      if (bounds) {
+        if (anchorPreference === 'BACK') {
+          bounds.back = new Date(startDate)
+          if (bounds.front.getTime() > bounds.back.getTime()) {
+            bounds.front = new Date(bounds.back)
+          }
+        } else {
+          bounds.front = new Date(endDate)
+          if (bounds.back.getTime() < bounds.front.getTime()) {
+            bounds.back = new Date(bounds.front)
+          }
         }
+      } else if (anchorPreference === 'BACK') {
+        setAvailabilityBoundsForKey(availability, target.key, startDate.getTime(), startDate.getTime())
       } else {
-        bounds.front = new Date(endDate)
-        if (bounds.back.getTime() < bounds.front.getTime()) {
-          bounds.back = new Date(bounds.front)
-        }
+        setAvailabilityBoundsForKey(availability, target.key, endDate.getTime(), endDate.getTime())
       }
-    } else if (anchorPreference === 'BACK') {
-      setAvailabilityBoundsForKey(availability, target.key, startDate.getTime(), startDate.getTime())
-    } else {
-      setAvailabilityBoundsForKey(availability, target.key, endDate.getTime(), endDate.getTime())
     }
 
     const resolvedDuration = Number.isFinite(persisted.duration_min)
@@ -2137,7 +2389,7 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
 
     const existingInstances = options.dayInstances.filter(inst => inst.id !== conflict.id)
     const placed = await placeItemInWindows({
-      userId,
+      userId: options.userId,
       item,
       windows,
       date: options.day,
