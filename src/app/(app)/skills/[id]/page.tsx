@@ -635,14 +635,6 @@ export default function SkillDetailPage() {
                     Save learnings, resources, and reminders tied to {skill.name}.
                   </p>
                 </div>
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
-                >
-                  <Link href={`/skills/${id}/notes/new`}>New note</Link>
-                </Button>
               </header>
               <div className="relative mt-5">
                 <NotesGrid skillId={id} />

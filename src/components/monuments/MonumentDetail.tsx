@@ -1,6 +1,5 @@
 "use client";
 
-import { useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BatteryCharging, Flame } from "lucide-react";
@@ -22,13 +21,7 @@ interface MonumentDetailProps {
 
 export function MonumentDetail({ monument }: MonumentDetailProps) {
   const router = useRouter();
-  const noteInputRef = useRef<HTMLTextAreaElement>(null);
   const { id } = monument;
-
-  const handleAddNote = () => {
-    noteInputRef.current?.scrollIntoView({ behavior: "smooth" });
-    noteInputRef.current?.focus();
-  };
 
   const handleCreateGoal = () => {
     router.push("/goals/new");
@@ -167,17 +160,9 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
                   Save ideas, links, and reminders while they&apos;re fresh.
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleAddNote}
-                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
-              >
-                New note
-              </Button>
             </header>
             <div className="relative mt-5">
-              <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
+              <MonumentNotesGrid monumentId={id} />
             </div>
           </section>
 
