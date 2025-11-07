@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 
 import {
@@ -11,21 +11,25 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { formatDateKeyInTimeZone } from "@/lib/scheduler/timezone";
 
 interface JumpToDateSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentDate: Date;
   onSelectDate: (date: Date) => void;
+  timeZone?: string | null;
 }
 
 const WEEKDAY_LABELS = (() => {
   try {
+    // Use a midday UTC timestamp to avoid timezone shifts that would otherwise
+    // roll the date backward (e.g., UTC-7 turning Sunday into Saturday).
     return Array.from({ length: 7 }, (_, index) =>
       new Intl.DateTimeFormat(undefined, {
         weekday: "short",
       })
-        .format(new Date(Date.UTC(2024, 6, index + 7)))
+        .format(new Date(Date.UTC(2024, 6, index + 7, 12)))
         .slice(0, 2)
     );
   } catch (error) {
@@ -39,21 +43,41 @@ export function JumpToDateSheet({
   onOpenChange,
   currentDate,
   onSelectDate,
+  timeZone,
 }: JumpToDateSheetProps) {
+  const resolvedTimeZone =
+    (timeZone && timeZone.trim()) ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone ||
+    "UTC";
+
   const initialMonth = useMemo(() => {
     const base = new Date(currentDate);
     return new Date(base.getFullYear(), base.getMonth(), 1);
   }, [currentDate]);
 
   const [visibleMonth, setVisibleMonth] = useState(initialMonth);
+  const [todayKey, setTodayKey] = useState<string | null>(null);
+
+  const computeTodayKey = useCallback(() => {
+    try {
+      return formatDateKeyInTimeZone(new Date(), resolvedTimeZone);
+    } catch (error) {
+      console.warn("Unable to resolve today key", error);
+      return null;
+    }
+  }, [resolvedTimeZone]);
 
   useEffect(() => {
     if (open) {
       setVisibleMonth(initialMonth);
+      setTodayKey(computeTodayKey());
     }
-  }, [open, initialMonth]);
+  }, [open, initialMonth, computeTodayKey]);
 
-  const today = useMemo(() => new Date(), []);
+  const selectedDateKey = useMemo(
+    () => formatDateKeyInTimeZone(currentDate, resolvedTimeZone),
+    [currentDate, resolvedTimeZone]
+  );
 
   const monthMetadata = useMemo(() => {
     const year = visibleMonth.getFullYear();
@@ -99,7 +123,11 @@ export function JumpToDateSheet({
   };
 
   const handleSelectToday = () => {
-    onSelectDate(new Date(today));
+    if (!todayKey) return;
+    const parsed = parseDateKey(todayKey);
+    if (parsed) {
+      onSelectDate(parsed);
+    }
   };
 
   return (
@@ -156,8 +184,9 @@ export function JumpToDateSheet({
                       if (!day) {
                         return <td key={`empty-${weekIndex}-${dayIndex}`} />;
                       }
-                      const isToday = isSameDay(day, today);
-                      const isSelected = isSameDay(day, currentDate);
+                      const dayKey = formatDateKeyInTimeZone(day, resolvedTimeZone);
+                      const isToday = todayKey ? dayKey === todayKey : false;
+                      const isSelected = dayKey === selectedDateKey;
                       const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                       return (
                         <td key={day.toISOString()} className="py-1">
@@ -207,11 +236,17 @@ export function JumpToDateSheet({
   );
 }
 
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+function parseDateKey(key: string): Date | null {
+  const [yearStr, monthStr, dayStr] = key.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    return null;
+  }
+  return new Date(year, month - 1, day);
 }
-

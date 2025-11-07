@@ -212,6 +212,28 @@ function parseScheduleDateParam(value: string | null) {
     return { date: new Date(), wasValid: false }
   }
 
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value)
+  if (dateMatch) {
+    const [, yearStr, monthStr, dayStr] = dateMatch
+    const year = Number(yearStr)
+    const month = Number(monthStr)
+    const day = Number(dayStr)
+    if (
+      Number.isFinite(year) &&
+      Number.isFinite(month) &&
+      Number.isFinite(day)
+    ) {
+      const localDate = new Date(year, month - 1, day)
+      const isSameDate =
+        localDate.getFullYear() === year &&
+        localDate.getMonth() === month - 1 &&
+        localDate.getDate() === day
+      if (!Number.isNaN(localDate.getTime()) && isSameDate) {
+        return { date: localDate, wasValid: true }
+      }
+    }
+  }
+
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) {
     return { date: new Date(), wasValid: false }
@@ -1780,6 +1802,7 @@ export default function SchedulePage() {
     () => parseScheduleDateParam(initialDate),
     [initialDate]
   )
+  const initialDateWasValid = initialDateResult.wasValid
 
   const [currentDate, setCurrentDate] = useState(
     () => initialDateResult.date
@@ -1817,6 +1840,7 @@ export default function SchedulePage() {
   const [isJumpToDateOpen, setIsJumpToDateOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null)
+  const [topBarHeight, setTopBarHeight] = useState<number | null>(null)
   const sliderControls = useAnimationControls()
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
@@ -2135,17 +2159,37 @@ export default function SchedulePage() {
     })
     return () => cancelAnimationFrame(id)
   }, [skipNextDayAnimation])
-  const localTimeZone = useMemo(() => {
+  const [localTimeZone, setLocalTimeZone] = useState(() => {
     try {
       const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
       if (resolved && resolved.trim()) {
         return resolved
       }
     } catch (error) {
-      console.warn('Unable to resolve local time zone', error)
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Unable to resolve local time zone', error)
+      }
     }
     return 'UTC'
-  }, [])
+  })
+
+  useEffect(() => {
+    try {
+      const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
+      if (resolved && resolved.trim() && resolved !== localTimeZone) {
+        setLocalTimeZone(resolved)
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Unable to resolve local time zone', error)
+      }
+    }
+  }, [localTimeZone])
+
+  useEffect(() => {
+    if (initialDateWasValid) return
+    setCurrentDate(new Date())
+  }, [initialDateWasValid])
   const dayViewDateKey = useMemo(
     () => formatLocalDateKey(currentDate),
     [currentDate]
@@ -2173,6 +2217,13 @@ export default function SchedulePage() {
       return ''
     }
   }, [currentDate, localTimeZone])
+  const scheduleContentPaddingTop = useMemo(() => {
+    if (topBarHeight !== null && Number.isFinite(topBarHeight)) {
+      const clamped = Math.max(0, topBarHeight)
+      return `calc(${clamped}px + 1rem)`
+    }
+    return 'calc(4rem + env(safe-area-inset-top, 0px))'
+  }, [topBarHeight])
   const friendlyTimeZone = useMemo(() => {
     if (!localTimeZone) return 'UTC'
     const segments = localTimeZone.split('/')
@@ -4780,14 +4831,18 @@ peekDataDepsRef.current = {
           onToday={handleToday}
           onOpenJumpToDate={() => setIsJumpToDateOpen(true)}
           onOpenSearch={() => setIsSearchOpen(true)}
-          onReschedule={handleRescheduleClick}
-          canReschedule={!isScheduling}
-          isRescheduling={isScheduling}
-          onOpenModes={() => setIsModeSheetOpen(true)}
-          modeLabel={modeLabel}
-          modeIsActive={modeIsActive}
-        />
-        <div className="text-zinc-100 space-y-4 pt-[calc(4rem + env(safe-area-inset-top, 0px))]">
+        onReschedule={handleRescheduleClick}
+        canReschedule={!isScheduling}
+        isRescheduling={isScheduling}
+        onOpenModes={() => setIsModeSheetOpen(true)}
+        modeLabel={modeLabel}
+        modeIsActive={modeIsActive}
+        onHeightChange={setTopBarHeight}
+      />
+        <div
+          className="text-zinc-100 space-y-4"
+          style={{ paddingTop: scheduleContentPaddingTop }}
+        >
           <div
             className="relative bg-[var(--surface)]"
             ref={swipeContainerRef}
@@ -4870,6 +4925,7 @@ peekDataDepsRef.current = {
         open={isJumpToDateOpen}
         onOpenChange={open => setIsJumpToDateOpen(open)}
         currentDate={currentDate}
+        timeZone={localTimeZone}
         onSelectDate={handleJumpToDateSelect}
       />
       <ScheduleSearchSheet

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -35,6 +35,7 @@ interface ScheduleTopBarProps {
   onOpenModes?: () => void;
   modeLabel?: string;
   modeIsActive?: boolean;
+  onHeightChange?: (height: number) => void;
 }
 
 export function ScheduleTopBar({
@@ -50,9 +51,46 @@ export function ScheduleTopBar({
   onOpenModes,
   modeLabel,
   modeIsActive = false,
+  onHeightChange,
 }: ScheduleTopBarProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const headerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!onHeightChange) return;
+    const node = headerRef.current;
+    if (!node) {
+      onHeightChange(0);
+      return;
+    }
+
+    const notify = () => {
+      onHeightChange(node.offsetHeight);
+    };
+    notify();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", notify);
+      return () => {
+        window.removeEventListener("resize", notify);
+      };
+    }
+
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        if (entry.target === node) {
+          const height =
+            entry.borderBoxSize && entry.borderBoxSize.length > 0
+              ? entry.borderBoxSize[0].blockSize
+              : entry.contentRect.height;
+          onHeightChange(height);
+        }
+      }
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
 
   const iconButtonClass =
     "inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-[var(--text-primary)] transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-red)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-elevated)] disabled:opacity-30 disabled:hover:bg-white/5";
@@ -86,6 +124,7 @@ export function ScheduleTopBar({
     <header
       className="fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 bg-[var(--surface-elevated)]/95 shadow-sm border-b border-[var(--hairline)] supports-[backdrop-filter]:bg-[var(--surface-elevated)]/80 backdrop-blur"
       style={safeAreaPadding}
+      ref={headerRef}
     >
       <button type="button" onClick={onBack} disabled={!canGoBack} className={iconButtonClass}>
         <ChevronLeft className="h-5 w-5 text-[var(--accent-red)]" />
@@ -190,4 +229,3 @@ export function ScheduleTopBar({
     </header>
   );
 }
-
