@@ -41,15 +41,11 @@ import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import {
-  fetchReadyTasks,
-  fetchWindowsForDate,
-  fetchProjectsMap,
-  fetchProjectSkillsForProjects,
   updateTaskStage,
+  windowsForDateFromSnapshot,
   type WindowLite as RepoWindow,
 } from '@/lib/scheduler/repo'
 import {
-  fetchInstancesForRange,
   fetchScheduledProjectIds,
   updateInstanceStatus,
   type ScheduleInstance,
@@ -59,10 +55,10 @@ import { buildProjectItems } from '@/lib/scheduler/projects'
 import { windowRectMinutes, timeToMin } from '@/lib/scheduler/windowRect'
 import { ENERGY } from '@/lib/scheduler/config'
 import {
-  fetchHabitsForSchedule,
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from '@/lib/scheduler/habits'
+import type { ScheduleEventDataset } from '@/lib/scheduler/dataset'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
@@ -72,9 +68,8 @@ import {
   formatDurationLabel,
   type SchedulerRunFailure,
 } from '@/lib/scheduler/windowReports'
-import { getSkillsForUser } from '@/lib/data/skills'
 import type { SkillRow } from '@/lib/types/skill'
-import { getMonumentsForUser, type Monument } from '@/lib/queries/monuments'
+import type { Monument } from '@/lib/queries/monuments'
 import {
   selectionToSchedulerModePayload,
   type SchedulerModeSelection,
@@ -1079,6 +1074,7 @@ function computeTimelineLayoutForSyncHabits({
 }) {
   const habitLayouts = habitPlacements.map<TimelineCardLayoutMode>(() => 'full')
   const projectLayouts = projectInstances.map<TimelineCardLayoutMode>(() => 'full')
+  const syncHabitAlignment = new Map<number, { startMs: number; endMs: number }>()
 
   type Candidate = {
     kind: 'habit' | 'project'
@@ -1132,18 +1128,10 @@ function computeTimelineLayoutForSyncHabits({
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
     if (habitLayouts[habitIndex] !== 'full') return
 
-    type Match = {
-      candidate: Candidate
-      overlapStart: number
-      startGap: number
-      overlapDuration: number
-    }
-
-    const matches: Match[] = []
+    const overlapping: Candidate[] = []
 
     for (const candidate of sortedCandidates) {
       const candidateKey = `${candidate.kind}:${candidate.index}`
-      if (usedCandidates.has(candidateKey)) continue
       if (candidate.kind === 'habit' && candidate.index === habitIndex) continue
       if (candidate.kind === 'habit') {
         const candidatePlacement = habitPlacements[candidate.index]
@@ -1152,58 +1140,39 @@ function computeTimelineLayoutForSyncHabits({
           continue
         }
       }
-      if (candidate.startMs >= endMs) {
-        break
-      }
-      if (candidate.endMs <= startMs) {
-        continue
-      }
-
-      const overlapStart = Math.max(startMs, candidate.startMs)
-      const overlapEnd = Math.min(endMs, candidate.endMs)
-      if (!(overlapEnd > overlapStart)) {
-        continue
-      }
-
-      matches.push({
-        candidate,
-        overlapStart,
-        startGap: Math.abs(candidate.startMs - startMs),
-        overlapDuration: overlapEnd - overlapStart,
-      })
+      if (candidate.endMs <= startMs) continue
+      if (candidate.startMs >= endMs) break
+      if (usedCandidates.has(candidateKey)) continue
+      overlapping.push(candidate)
     }
 
-    if (matches.length === 0) return
+    if (overlapping.length === 0) return
 
-    matches.sort((a, b) => {
-      if (a.overlapStart !== b.overlapStart) {
-        return a.overlapStart - b.overlapStart
-      }
-      if (a.startGap !== b.startGap) {
-        return a.startGap - b.startGap
-      }
-      if (a.candidate.startMs !== b.candidate.startMs) {
-        return a.candidate.startMs - b.candidate.startMs
-      }
-      if (a.overlapDuration !== b.overlapDuration) {
-        return b.overlapDuration - a.overlapDuration
-      }
-      return a.candidate.endMs - b.candidate.endMs
+    const alignmentStart = Math.min(
+      ...overlapping.map(candidate => candidate.startMs)
+    )
+    const alignmentEnd = Math.max(
+      ...overlapping.map(candidate => candidate.endMs)
+    )
+
+    habitLayouts[habitIndex] = 'paired-right'
+    syncHabitAlignment.set(habitIndex, {
+      startMs: alignmentStart,
+      endMs: alignmentEnd,
     })
 
-    const best = matches[0]
-    const bestKey = `${best.candidate.kind}:${best.candidate.index}`
-
-    usedCandidates.add(bestKey)
-    habitLayouts[habitIndex] = 'paired-right'
-    if (best.candidate.kind === 'habit') {
-      habitLayouts[best.candidate.index] = 'paired-left'
-    } else {
-      projectLayouts[best.candidate.index] = 'paired-left'
+    for (const candidate of overlapping) {
+      const candidateKey = `${candidate.kind}:${candidate.index}`
+      usedCandidates.add(candidateKey)
+      if (candidate.kind === 'habit') {
+        habitLayouts[candidate.index] = 'paired-left'
+      } else {
+        projectLayouts[candidate.index] = 'paired-left'
+      }
     }
   })
 
-  return { habitLayouts, projectLayouts }
+  return { habitLayouts, projectLayouts, syncHabitAlignment }
 }
 
 function applyTimelineLayoutStyle(
@@ -1825,7 +1794,9 @@ export default function SchedulePage() {
   const [habitCompletionByDate, setHabitCompletionByDate] = useState<
     Record<string, Record<string, HabitCompletionStatus>>
   >({})
+  const [windowSnapshot, setWindowSnapshot] = useState<RepoWindow[]>([])
   const [windows, setWindows] = useState<RepoWindow[]>([])
+  const [allInstances, setAllInstances] = useState<ScheduleInstance[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
   const [scheduledProjectIds, setScheduledProjectIds] = useState<Set<string>>(new Set())
   const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
@@ -1954,6 +1925,22 @@ export default function SchedulePage() {
     offset: 0,
   })
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
+  const clearScheduleData = useCallback(() => {
+    setWindowSnapshot([])
+    setWindows([])
+    setAllInstances([])
+    setInstances([])
+    setTasks([])
+    setProjects([])
+    setSkills([])
+    setMonuments([])
+    setProjectSkillIds({})
+    setHabits([])
+    setScheduledProjectIds(new Set())
+    setPendingBacklogTaskIds(new Set())
+    backlogTaskPreviousStageRef.current = new Map()
+    scheduleDatasetRef.current = null
+  }, [])
   const [pxPerMin, setPxPerMin] = useState(() => snapPxPerMin(2))
   const animatedPxPerMin = useMotionValue(pxPerMin)
   const zoomAnimationRef = useRef<AnimationPlaybackControls | null>(null)
@@ -2248,6 +2235,9 @@ export default function SchedulePage() {
   const swipeScrollProgressRef = useRef<number | null>(null)
   const navLock = useRef(false)
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
+  const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null)
+  const PRIMARY_WRITE_WINDOW_DAYS = 7
+  const FULL_WRITE_WINDOW_DAYS = 365
   const isSchedulingRef = useRef(false)
 
   const persistAutoRunDate = useCallback(
@@ -2350,78 +2340,117 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (!userId) {
-      setWindows([])
-      setTasks([])
-      setProjects([])
-      setSkills([])
-      setProjectSkillIds({})
-      setScheduledProjectIds(new Set())
+      clearScheduleData()
       setMetaStatus('idle')
+      setInstancesStatus('idle')
+      loadInstancesRef.current = async () => {}
       return
     }
 
     let active = true
-    setMetaStatus('loading')
 
-    async function load() {
+    const applyDataset = (payload: ScheduleEventDataset) => {
+      setWindowSnapshot(payload.windowSnapshot)
+      setTasks(payload.tasks)
+      setPendingBacklogTaskIds(new Set())
+      backlogTaskPreviousStageRef.current = new Map()
+      setProjects(payload.projects)
+      setSkills(payload.skills)
+      setMonuments(payload.monuments)
+      setProjectSkillIds(payload.projectSkillIds)
+      setHabits(payload.habits)
+      setAllInstances(payload.instances ?? [])
+      setScheduledProjectIds(new Set(payload.scheduledProjectIds))
+    }
+
+    const load = async () => {
+      if (!active) return
+      setMetaStatus('loading')
+      setInstancesStatus('loading')
       try {
-        const [ws, ts, pm, scheduledIds, hs, skillRows, monumentRows] = await Promise.all([
-          fetchWindowsForDate(currentDate, undefined, localTimeZone),
-          fetchReadyTasks(),
-          fetchProjectsMap(),
-          fetchScheduledProjectIds(userId),
-          fetchHabitsForSchedule(userId),
-          getSkillsForUser(userId),
-          getMonumentsForUser(userId),
-        ])
-        let projectSkillsMap: Record<string, string[]> = {}
-        try {
-          const projectIds = Object.keys(pm)
-          if (projectIds.length > 0) {
-            projectSkillsMap = await fetchProjectSkillsForProjects(projectIds)
-          }
-        } catch (error) {
-          console.error('Failed to load project skill links for schedule', error)
+        const params = new URLSearchParams()
+        params.set('lookaheadDays', String(FULL_WRITE_WINDOW_DAYS))
+        if (localTimeZone) {
+          params.set('timeZone', localTimeZone)
         }
-        if (!active) return
-        setWindows(ws)
-        setTasks(ts)
-        setPendingBacklogTaskIds(new Set())
-        backlogTaskPreviousStageRef.current = new Map()
-        setProjects(Object.values(pm))
-        setSkills(skillRows)
-        setMonuments(monumentRows)
-        setProjectSkillIds(projectSkillsMap)
-        setHabits(hs)
-        setScheduledProjectIds(prev => {
-          const next = new Set(prev)
-          for (const id of scheduledIds) {
-            if (id) next.add(id)
-          }
-          return next
+        const response = await fetch(`/api/schedule/events?${params.toString()}`, {
+          cache: 'no-store',
         })
-      } catch (e) {
         if (!active) return
-        console.error(e)
-        setWindows([])
-        setTasks([])
-        setProjects([])
-        setSkills([])
-        setMonuments([])
-        setProjectSkillIds({})
-        setHabits([])
+        if (!response.ok) {
+          throw new Error(`Failed to load schedule data (${response.status})`)
+        }
+        const payload = (await response.json()) as ScheduleEventDataset
+        if (!active) return
+        scheduleDatasetRef.current = payload
+        applyDataset(payload)
+      } catch (error) {
+        if (!active) return
+        console.error('Failed to load schedule dataset', error)
+        scheduleDatasetRef.current = null
+        clearScheduleData()
       } finally {
         if (!active) return
         setMetaStatus('loaded')
+        setInstancesStatus('loaded')
       }
     }
 
+    loadInstancesRef.current = load
     void load()
 
     return () => {
       active = false
     }
-  }, [currentDate, userId, localTimeZone])
+  }, [userId, localTimeZone, clearScheduleData, FULL_WRITE_WINDOW_DAYS])
+
+  useEffect(() => {
+    if (!userId) {
+      setWindows([])
+      return
+    }
+    if (windowSnapshot.length === 0) {
+      setWindows([])
+      return
+    }
+    const derived = windowsForDateFromSnapshot(
+      windowSnapshot,
+      currentDate,
+      localTimeZone ?? 'UTC'
+    )
+    setWindows(derived)
+  }, [windowSnapshot, currentDate, localTimeZone, userId])
+
+  const filterInstancesForDate = useCallback(
+    (date: Date) => {
+      if (allInstances.length === 0) {
+        return []
+      }
+      const timeZone = localTimeZone ?? 'UTC'
+      const dayStart = startOfDayInTimeZone(date, timeZone)
+      const nextDay = addDaysInTimeZone(dayStart, 1, timeZone)
+      const startMs = dayStart.getTime()
+      const endMs = nextDay.getTime()
+      return allInstances.filter(instance => {
+        const start = new Date(instance.start_utc ?? '').getTime()
+        const end = new Date(instance.end_utc ?? '').getTime()
+        if (!Number.isFinite(start) || !Number.isFinite(end)) {
+          return false
+        }
+        return end > startMs && start < endMs
+      })
+    },
+    [allInstances, localTimeZone]
+  )
+
+  useEffect(() => {
+    if (!userId) {
+      setInstances([])
+      return
+    }
+    const nextInstances = filterInstancesForDate(currentDate)
+    setInstances(nextInstances)
+  }, [filterInstancesForDate, currentDate, userId])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -2617,7 +2646,6 @@ peekDataDepsRef.current = {
 }
 
     let cancelled = false
-    const timeZone = localTimeZone ?? 'UTC'
 
     async function load(direction: 'previous' | 'next', date: Date, forceReload: boolean) {
       const targetKey = formatLocalDateKey(date)
@@ -2634,22 +2662,17 @@ peekDataDepsRef.current = {
       if (!shouldFetch) return
 
       try {
-        const dayStart = startOfDayInTimeZone(date, timeZone)
-        const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
-        const startUTC = dayStart.toISOString()
-        const endUTC = nextDayStart.toISOString()
-        const [ws, instanceResult] = await Promise.all([
-          fetchWindowsForDate(date, undefined, localTimeZone),
-          fetchInstancesForRange(userId, startUTC, endUTC),
-        ])
-        if (cancelled) return
-        if (instanceResult.error) {
-          console.error(instanceResult.error)
+        const dayWindows =
+          windowSnapshot.length > 0
+            ? windowsForDateFromSnapshot(windowSnapshot, date, localTimeZone ?? 'UTC')
+            : []
+        const instancesForDay = filterInstancesForDate(date)
+        if (cancelled) {
+          return
         }
-        const instancesForDay = instanceResult.data ?? []
         const model = buildDayTimelineModel({
           date,
-          windows: ws,
+          windows: dayWindows,
           instances: instancesForDay,
           projectMap,
           taskMap,
@@ -2658,12 +2681,14 @@ peekDataDepsRef.current = {
           startHour,
           pxPerMin,
           unscheduledProjects,
-          schedulerFailureByProjectId,
-          schedulerDebug,
-          schedulerTimelinePlacements,
-          timeZoneShortName,
-          friendlyTimeZone,
-          localTimeZone,
+    schedulerFailureByProjectId,
+    schedulerDebug,
+    schedulerTimelinePlacements,
+    windowSnapshot,
+    filterInstancesForDate,
+    timeZoneShortName,
+    friendlyTimeZone,
+    localTimeZone,
         })
         if (cancelled) return
         if (model.dayViewDateKey !== targetKey) return
@@ -2695,6 +2720,8 @@ peekDataDepsRef.current = {
     schedulerFailureByProjectId,
     schedulerDebug,
     schedulerTimelinePlacements,
+    windowSnapshot,
+    filterInstancesForDate,
     timeZoneShortName,
     friendlyTimeZone,
     pxPerMin,
@@ -3123,60 +3150,6 @@ peekDataDepsRef.current = {
     updateCurrentDate(new Date())
     navigate('day')
   }
-  useEffect(() => {
-    if (!userId) {
-      setInstances([])
-      setInstancesStatus('idle')
-      loadInstancesRef.current = async () => {}
-      return
-    }
-
-    let active = true
-
-    const load = async () => {
-      if (!active) return
-      setInstancesStatus('loading')
-      try {
-        const timeZone = localTimeZone ?? 'UTC'
-        const dayStart = startOfDayInTimeZone(currentDate, timeZone)
-        const nextDayStart = addDaysInTimeZone(dayStart, 1, timeZone)
-        const startUTC = dayStart.toISOString()
-        const endUTC = nextDayStart.toISOString()
-        const { data, error } = await fetchInstancesForRange(
-          userId,
-          startUTC,
-          endUTC
-        )
-        if (!active) return
-        if (error) {
-          console.error(error)
-          setInstances([])
-        } else {
-          setInstances(data ?? [])
-        }
-      } catch (e) {
-        if (!active) return
-        console.error(e)
-        setInstances([])
-      } finally {
-        if (!active) return
-        setInstancesStatus('loaded')
-      }
-    }
-
-    loadInstancesRef.current = load
-    void load()
-    const id = setInterval(() => {
-      void load()
-    }, 5 * 60 * 1000)
-    return () => {
-      active = false
-      clearInterval(id)
-    }
-  }, [userId, currentDate, localTimeZone])
-
-  const PRIMARY_WRITE_WINDOW_DAYS = 7
-  const FULL_WRITE_WINDOW_DAYS = 365
 
   const runScheduler = useCallback(
     async (
@@ -3794,10 +3767,11 @@ peekDataDepsRef.current = {
           }
         : TIMELINE_CSS_VARIABLES
 
-      const { habitLayouts, projectLayouts } = computeTimelineLayoutForSyncHabits({
-        habitPlacements: modelHabitPlacements,
-        projectInstances: modelProjectInstances,
-      })
+      const { habitLayouts, projectLayouts, syncHabitAlignment } =
+        computeTimelineLayoutForSyncHabits({
+          habitPlacements: modelHabitPlacements,
+          projectInstances: modelProjectInstances,
+        })
 
       return (
         <div
@@ -3890,12 +3864,41 @@ peekDataDepsRef.current = {
             })}
             {modelHabitPlacements.map((placement, index) => {
               if (!isValidDate(placement.start) || !isValidDate(placement.end)) return null
-              const startMin = placement.start.getHours() * 60 + placement.start.getMinutes()
+              const rawHabitType = placement.habitType || 'HABIT'
+              const normalizedHabitType =
+                rawHabitType === 'ASYNC' ? 'SYNC' : rawHabitType
+              let displayStart = placement.start
+              let displayEnd = placement.end
+              const alignment =
+                normalizedHabitType === 'SYNC'
+                  ? syncHabitAlignment.get(index)
+                  : undefined
+              if (alignment) {
+                const alignedStartMs = Math.min(
+                  alignment.startMs,
+                  placement.start.getTime()
+                )
+                const alignedEndMs = Math.max(
+                  alignment.endMs,
+                  placement.end.getTime()
+                )
+                const alignedStart = new Date(alignedStartMs)
+                const alignedEnd = new Date(alignedEndMs)
+                if (isValidDate(alignedStart) && isValidDate(alignedEnd)) {
+                  displayStart = alignedStart
+                  displayEnd = alignedEnd
+                }
+              }
+              const startMin =
+                displayStart.getHours() * 60 + displayStart.getMinutes()
               const startOffsetMinutes = startMin - modelStartHour * 60
-              const durationMinutes = Math.max(
+              let durationMinutes = Math.max(
                 0,
-                (placement.end.getTime() - placement.start.getTime()) / 60000
+                (displayEnd.getTime() - displayStart.getTime()) / 60000
               )
+              if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+                durationMinutes = placement.durationMinutes
+              }
               const topStyle = toTimelinePosition(startOffsetMinutes)
               const heightStyle = toTimelinePosition(durationMinutes)
               const habitStatus = getHabitCompletionStatus(
@@ -3903,9 +3906,6 @@ peekDataDepsRef.current = {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
-              const rawHabitType = placement.habitType || 'HABIT'
-              const normalizedHabitType =
-                rawHabitType === 'ASYNC' ? 'SYNC' : rawHabitType
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =

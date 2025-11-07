@@ -831,6 +831,9 @@ export async function scheduleBacklog(
         restMode: isRestMode,
         windowCache,
         userId,
+        result,
+        dayOffsetFor,
+        registerInstanceForOffsets,
       })
       if (resolution === 'NO_WINDOW' || resolution === 'NO_FIT') {
         result.failures.push({
@@ -2337,8 +2340,12 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       restMode: boolean
       windowCache: Map<string, WindowLite[]>
       userId: string
+      result: ScheduleBacklogResult
+      dayOffsetFor: (startUTC: string) => number | undefined
+      registerInstanceForOffsets: (instance: ScheduleInstance | null | undefined) => void
     }
   ): Promise<'PLACED' | 'NO_WINDOW' | 'NO_FIT' | 'FAILED' | 'SKIPPED'> => {
+    const { result, dayOffsetFor, registerInstanceForOffsets } = options
     const projectId = conflict.source_id ?? ''
     if (!projectId) return 'SKIPPED'
     const projectDef = options.projectItemMap[projectId]
