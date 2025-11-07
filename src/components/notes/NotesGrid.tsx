@@ -216,7 +216,6 @@ export function NotesGrid({ skillId }: NotesGridProps) {
   }, [notes]);
 
   const hasTopLevelNotes = memoGroups.length > 0 || regularNotes.length > 0;
-  const showEmptyState = !isLoading && !hasTopLevelNotes;
 
   return (
     <div className="space-y-4">
@@ -245,14 +244,6 @@ export function NotesGrid({ skillId }: NotesGridProps) {
           />
         ))}
 
-        {showEmptyState ? (
-          <Card className="flex h-full flex-col justify-center rounded-3xl border border-white/70 bg-white/75 text-slate-600 shadow-[0_22px_56px_-30px_rgba(148,163,184,0.45)] backdrop-blur-xl">
-            <CardContent className="p-4 text-center text-sm">
-              No notes yet. Start capturing insights with the button below.
-            </CardContent>
-          </Card>
-        ) : null}
-
         {(() => {
           const regularNoteCount = regularNotes.length;
           const hasAnyNotes = hasTopLevelNotes;
@@ -265,13 +256,11 @@ export function NotesGrid({ skillId }: NotesGridProps) {
                 ? "col-span-2"
                 : "col-span-1";
           const isBarVariant = hasAnyNotes && remainder === 0;
-          const showLabel = !hasAnyNotes || isBarVariant;
-          const labelText = !hasAnyNotes ? "Create note" : "Add note";
-
           return (
             <Link
               href={`/skills/${skillId}/notes/new`}
               className={cn("group block", spanClass)}
+              aria-label={hasAnyNotes ? "Add note" : "Create note"}
             >
               <Card
                 className={cn(
@@ -283,12 +272,12 @@ export function NotesGrid({ skillId }: NotesGridProps) {
               >
                 <CardContent
                   className={cn(
-                    "flex items-center justify-center gap-2 text-sm font-semibold text-slate-800",
-                    isBarVariant ? "px-4 py-2 uppercase tracking-[0.24em]" : "p-4"
+                    "flex items-center justify-center text-slate-800",
+                    isBarVariant ? "px-4 py-2" : "p-4"
                   )}
                 >
                   <Plus className={cn(isBarVariant ? "h-4 w-4" : "h-5 w-5")} />
-                  {showLabel ? <span>{labelText}</span> : null}
+                  <span className="sr-only">{hasAnyNotes ? "Add note" : "Create note"}</span>
                 </CardContent>
               </Card>
             </Link>
