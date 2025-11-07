@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { NoteCard } from "./NoteCard";
 import type { Note } from "@/lib/types/note";
 import { getNotes } from "@/lib/notesStorage";
+import { cn } from "@/lib/utils";
 
 type MemoNoteGroup = {
   containerId: string;
@@ -24,7 +25,7 @@ function MemoFolderCard({
 }) {
   const memoCount = group.notes.length;
   return (
-    <div className="sm:col-span-2 md:col-span-3">
+    <div className="col-span-3 sm:col-span-2 md:col-span-3">
       <Card className="h-full rounded-3xl border border-white/70 bg-white/80 text-slate-900 shadow-[0_26px_60px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
         <CardContent className="space-y-4 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -230,7 +231,7 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
         {memoGroups.map((group) => (
           <MemoFolderCard key={group.habitId} group={group} skillId={skillId} />
         ))}
@@ -252,13 +253,47 @@ export function NotesGrid({ skillId }: NotesGridProps) {
           </Card>
         ) : null}
 
-        <Link href={`/skills/${skillId}/notes/new`}>
-          <Card className="flex h-full items-center justify-center rounded-3xl border border-white/70 bg-white/60 text-slate-700 shadow-[0_18px_48px_-28px_rgba(148,163,184,0.45)] backdrop-blur-xl transition hover:border-white hover:bg-white/80 hover:text-slate-900">
-            <CardContent className="flex items-center justify-center p-4">
-              <Plus className="h-5 w-5" />
-            </CardContent>
-          </Card>
-        </Link>
+        {(() => {
+          const regularNoteCount = regularNotes.length;
+          const hasAnyNotes = hasTopLevelNotes;
+          const remainder = regularNoteCount % 3;
+          const spanClass = !hasAnyNotes
+            ? "col-span-3"
+            : remainder === 0
+              ? "col-span-3"
+              : remainder === 1
+                ? "col-span-2"
+                : "col-span-1";
+          const isBarVariant = hasAnyNotes && remainder === 0;
+          const showLabel = !hasAnyNotes || isBarVariant;
+          const labelText = !hasAnyNotes ? "Create note" : "Add note";
+
+          return (
+            <Link
+              href={`/skills/${skillId}/notes/new`}
+              className={cn("group block", spanClass)}
+            >
+              <Card
+                className={cn(
+                  "gap-0 border border-white/70 bg-white/60 text-slate-700 shadow-[0_18px_48px_-28px_rgba(148,163,184,0.45)] backdrop-blur-xl transition hover:border-white hover:bg-white/80 hover:text-slate-900",
+                  isBarVariant
+                    ? "flex h-12 items-center justify-center rounded-2xl py-0"
+                    : "flex h-full items-center justify-center rounded-3xl py-0 min-h-[6.75rem]"
+                )}
+              >
+                <CardContent
+                  className={cn(
+                    "flex items-center justify-center gap-2 text-sm font-semibold text-slate-800",
+                    isBarVariant ? "px-4 py-2 uppercase tracking-[0.24em]" : "p-4"
+                  )}
+                >
+                  <Plus className={cn(isBarVariant ? "h-4 w-4" : "h-5 w-5")} />
+                  {showLabel ? <span>{labelText}</span> : null}
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })()}
       </div>
     </div>
   );
