@@ -19,8 +19,8 @@ export function MonumentNoteCard({ note, monumentId }: MonumentNoteCardProps) {
   return (
     <Link href={`/monuments/${monumentId}/notes/${note.id}`}>
       <Card className="group relative h-full overflow-hidden rounded-2xl border border-white/70 bg-white/75 text-slate-900 shadow-[0_22px_48px_-28px_rgba(148,163,184,0.55)] backdrop-blur-xl transition hover:-translate-y-[3px] hover:border-white">
-        <CardContent className="p-3">
-          <p className="line-clamp-2 text-[11px] font-medium leading-relaxed text-slate-800 transition group-hover:text-slate-900">
+        <CardContent className="px-3 py-2.5">
+          <p className="line-clamp-2 text-[11px] font-medium leading-snug text-slate-800 transition group-hover:text-slate-900">
             {primaryLine}
           </p>
         </CardContent>
