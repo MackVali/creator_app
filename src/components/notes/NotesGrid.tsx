@@ -25,24 +25,24 @@ function MemoFolderCard({
   const memoCount = group.notes.length;
   return (
     <div className="sm:col-span-2 md:col-span-3">
-      <Card className="h-full border border-purple-500/30 bg-gradient-to-br from-purple-950/40 via-purple-900/30 to-purple-900/20 text-white shadow-[0_24px_48px_rgba(76,29,149,0.28)]">
+      <Card className="h-full rounded-3xl border border-white/70 bg-white/80 text-slate-900 shadow-[0_26px_60px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
         <CardContent className="space-y-4 p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-200/70">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
                 Memo habit
               </p>
-              <h3 className="text-lg font-semibold text-white">
+              <h3 className="text-lg font-semibold text-slate-900">
                 {group.habitName || "Memo habit"}
               </h3>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <span className="rounded-full border border-purple-500/50 bg-purple-500/20 px-3 py-1 text-xs font-medium text-purple-100">
+              <span className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm">
                 {memoCount} memo{memoCount === 1 ? "" : "s"}
               </span>
               <Link
                 href={`/skills/${skillId}/notes/${group.containerId}`}
-                className="text-xs font-medium text-purple-100 underline-offset-4 transition hover:text-white hover:underline"
+                className="text-xs font-medium text-slate-700 underline-offset-4 transition hover:text-slate-900 hover:underline"
               >
                 Open page
               </Link>
@@ -60,10 +60,10 @@ function MemoFolderCard({
                 <Link
                   key={note.id}
                   href={`/skills/${skillId}/notes/${note.id}`}
-                  className="group flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 transition hover:border-purple-300/40 hover:bg-purple-500/20 hover:text-white"
+                  className="group flex items-center justify-between rounded-xl border border-white/70 bg-white/70 px-3 py-2 text-sm text-slate-800 shadow-sm transition hover:border-white hover:bg-white/90 hover:text-slate-900"
                 >
                   <span className="font-medium">{label}</span>
-                  <span className="text-xs text-white/60 group-hover:text-white/85">
+                  <span className="text-xs text-slate-600 group-hover:text-slate-800">
                     {dateLabel}
                   </span>
                 </Link>
@@ -220,10 +220,10 @@ export function NotesGrid({ skillId }: NotesGridProps) {
   return (
     <div className="space-y-4">
       {isLoading ? (
-        <Card className="border border-white/10 bg-white/5 text-white/70">
+        <Card className="rounded-3xl border border-white/70 bg-white/80 text-slate-700 shadow-[0_24px_60px_-32px_rgba(148,163,184,0.55)] backdrop-blur-xl">
           <CardContent className="p-4">
-            <p className="text-sm font-medium text-white/80">Loading notes…</p>
-            <p className="mt-1 text-xs text-white/60">
+            <p className="text-sm font-medium text-slate-900">Loading notes…</p>
+            <p className="mt-1 text-xs text-slate-600">
               We’re pulling your notes from Supabase.
             </p>
           </CardContent>
@@ -245,7 +245,7 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         ))}
 
         {showEmptyState ? (
-          <Card className="flex h-full flex-col justify-center border-dashed border-white/10 bg-white/5 text-white/60">
+          <Card className="flex h-full flex-col justify-center rounded-3xl border border-white/70 bg-white/75 text-slate-600 shadow-[0_22px_56px_-30px_rgba(148,163,184,0.45)] backdrop-blur-xl">
             <CardContent className="p-4 text-center text-sm">
               No notes yet. Start capturing insights with the button below.
             </CardContent>
@@ -253,7 +253,7 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         ) : null}
 
         <Link href={`/skills/${skillId}/notes/new`}>
-          <Card className="flex h-full items-center justify-center border-dashed border-white/20 bg-transparent text-white/80 transition-colors hover:bg-white/10">
+          <Card className="flex h-full items-center justify-center rounded-3xl border border-white/70 bg-white/60 text-slate-700 shadow-[0_18px_48px_-28px_rgba(148,163,184,0.45)] backdrop-blur-xl transition hover:border-white hover:bg-white/80 hover:text-slate-900">
             <CardContent className="flex items-center justify-center p-4">
               <Plus className="h-5 w-5" />
             </CardContent>

@@ -118,7 +118,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           value={draft}
           onChange={handleInput}
           placeholder="Quick note..."
-          className="resize-none overflow-hidden rounded-2xl border border-white/20 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/60 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.78)] backdrop-blur focus-visible:ring-white/30 focus-visible:ring-offset-0"
+          className="resize-none overflow-hidden rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-500 shadow-[0_22px_52px_-32px_rgba(148,163,184,0.55)] backdrop-blur focus-visible:ring-slate-200 focus-visible:ring-offset-0"
         />
         {draft.trim() ? (
           <div className="flex justify-end">
@@ -137,9 +137,9 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
       </form>
 
       {isLoading ? (
-        <Card className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0a0a0a] via-[#101011] to-[#161618] p-6 text-white/70 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.7)]">
-          <p className="text-sm font-medium text-white/80">Loading notes…</p>
-          <p className="mt-2 text-xs text-white/50">Fetching your saved thoughts from Supabase.</p>
+        <Card className="rounded-3xl border border-white/70 bg-white/80 p-6 text-slate-700 shadow-[0_28px_70px_-36px_rgba(148,163,184,0.55)] backdrop-blur-xl">
+          <p className="text-sm font-medium text-slate-900">Loading notes…</p>
+          <p className="mt-2 text-xs text-slate-600">Fetching your saved thoughts from Supabase.</p>
         </Card>
       ) : hasNotes ? (
         <div className="space-y-3">
@@ -159,7 +159,7 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="rounded-full px-4 text-xs font-medium text-white/80 hover:text-white"
+                className="rounded-full border border-white/60 bg-white/70 px-4 text-xs font-semibold text-slate-800 shadow-sm backdrop-blur transition hover:bg-white/80 hover:text-slate-900"
                 onClick={() => setShowAllNotes(true)}
                 aria-label="See more notes"
               >
@@ -169,9 +169,9 @@ export function MonumentNotesGrid({ monumentId, inputRef }: MonumentNotesGridPro
           ) : null}
         </div>
       ) : (
-        <Card className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 text-white/70 shadow-[0_24px_70px_-40px_rgba(0,0,0,0.7)]">
-          <p className="text-sm font-medium text-white">No notes yet</p>
-          <p className="mt-2 text-xs text-white/60">
+        <Card className="rounded-3xl border border-white/70 bg-white/80 p-6 text-slate-700 shadow-[0_28px_70px_-36px_rgba(148,163,184,0.55)] backdrop-blur-xl">
+          <p className="text-sm font-medium text-slate-900">No notes yet</p>
+          <p className="mt-2 text-xs text-slate-600">
             Capture your first thought here and keep ideas close at hand.
           </p>
         </Card>

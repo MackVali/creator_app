@@ -23,11 +23,11 @@ export function NoteCard({ note, skillId, childCount = 0 }: NoteCardProps) {
 
   return (
     <Link href={`/skills/${skillId}/notes/${note.id}`}>
-      <Card className="h-full transition-colors hover:bg-gray-800">
+      <Card className="h-full rounded-3xl border border-white/70 bg-white/80 text-slate-900 shadow-[0_24px_56px_-30px_rgba(148,163,184,0.55)] backdrop-blur-xl transition hover:-translate-y-[2px] hover:border-white">
         <CardContent className="space-y-2 p-4">
-          <h3 className="truncate text-lg font-medium text-white">{displayTitle}</h3>
+          <h3 className="truncate text-lg font-semibold text-slate-900">{displayTitle}</h3>
           {hasChildren ? (
-            <p className="text-xs font-medium uppercase tracking-wide text-white/60">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-600">
               {childCount} sub-page{childCount === 1 ? "" : "s"}
             </p>
           ) : null}
