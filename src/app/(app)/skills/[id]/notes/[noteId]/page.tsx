@@ -244,10 +244,10 @@ export default function NotePage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#050b1b] py-12">
+    <main className="relative min-h-screen overflow-hidden bg-[#050505] py-12">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(180,83,9,0.1),_transparent_60%)]"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,_rgba(161,161,170,0.16),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(244,244,245,0.12),_transparent_60%)]"
       />
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4">
         <div className="space-y-4">
@@ -282,13 +282,19 @@ export default function NotePage() {
           ) : null}
         </div>
 
-        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_20px_60px_-40px_rgba(148,163,184,0.8)]">
-          <div className="absolute -right-20 -top-20 h-48 w-48 rounded-full bg-sky-500/20 blur-3xl" aria-hidden />
-          <div className="absolute -bottom-16 -left-10 h-52 w-52 rounded-full bg-amber-500/10 blur-3xl" aria-hidden />
+        <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_20px_60px_-40px_rgba(148,163,184,0.6)]">
+          <div
+            className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-[radial-gradient(circle,_rgba(244,244,245,0.2)_0%,_rgba(39,39,42,0)_70%)] blur-3xl"
+            aria-hidden
+          />
+          <div
+            className="absolute -bottom-24 -left-12 h-64 w-64 rounded-full bg-[radial-gradient(circle,_rgba(161,161,170,0.16)_0%,_rgba(24,24,27,0)_70%)] blur-3xl"
+            aria-hidden
+          />
           <div className="relative flex flex-col gap-6">
             <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400/70 via-indigo-500/60 to-purple-500/50 text-white shadow-lg shadow-sky-500/30">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-white/60 via-zinc-400/40 to-zinc-700/60 text-white shadow-lg shadow-zinc-500/20">
                   <NotebookPen className="h-5 w-5" />
                 </span>
                 <div>
@@ -304,7 +310,7 @@ export default function NotePage() {
                 onClick={onSave}
                 disabled={!canSave || isSaving || isLoading}
                 aria-busy={isSaving}
-                className="h-11 px-6 text-sm font-semibold shadow-[0_12px_40px_-20px_rgba(56,189,248,0.9)]"
+                className="h-11 px-6 text-sm font-semibold bg-white/10 text-white shadow-[0_12px_40px_-20px_rgba(148,163,184,0.9)] backdrop-blur"
               >
                 {isSaving ? "Saving…" : currentNoteId ? "Save changes" : "Publish note"}
               </Button>
@@ -312,7 +318,7 @@ export default function NotePage() {
 
             {isLoading ? (
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
-                <Sparkles className="h-4 w-4 animate-spin text-sky-300" />
+                <Sparkles className="h-4 w-4 animate-spin text-zinc-200" />
                 Loading note…
               </div>
             ) : (
@@ -332,9 +338,9 @@ export default function NotePage() {
                         }
                       }}
                       placeholder="Top-level page"
-                      triggerClassName="h-12 rounded-2xl border border-white/10 bg-white/5 text-left text-sm text-white shadow-inner shadow-white/5 transition focus:ring-2 focus:ring-sky-400/60"
+                      triggerClassName="h-12 rounded-2xl border border-white/10 bg-white/5 text-left text-sm text-white shadow-inner shadow-white/5 transition focus:ring-2 focus:ring-zinc-200/60"
                     >
-                      <SelectContent className="border border-white/10 bg-[#0f172a] text-white">
+                      <SelectContent className="border border-white/10 bg-[#111111] text-white">
                         <SelectItem value={ROOT_PARENT_VALUE}>
                           {isLoadingParents ? "Loading…" : "Top-level page"}
                         </SelectItem>
@@ -357,18 +363,18 @@ export default function NotePage() {
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Name the idea, ritual, or breakthrough you’re capturing"
                     disabled={isLoading}
-                    className="h-14 rounded-2xl border-white/10 bg-[#0b1327] text-lg font-medium text-white placeholder:text-white/40"
+                    className="h-14 rounded-2xl border-white/10 bg-white/[0.05] text-lg font-medium text-white placeholder:text-white/40 backdrop-blur"
                   />
                   <Textarea
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     placeholder="Expand on what changed, what you learned, or what you want to explore next..."
-                    className="min-h-[320px] resize-none rounded-2xl border-white/10 bg-[#0b1327] text-base leading-relaxed text-white placeholder:text-white/40"
+                    className="min-h-[320px] resize-none rounded-2xl border-white/10 bg-white/[0.05] text-base leading-relaxed text-white placeholder:text-white/40 backdrop-blur"
                     disabled={isLoading}
                   />
                   <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white/70">
                     <div className="flex items-center gap-2 text-white">
-                      <Sparkles className="h-4 w-4 text-sky-300" />
+                      <Sparkles className="h-4 w-4 text-zinc-200" />
                       <span className="font-medium">Make it vivid</span>
                     </div>
                     <p>
@@ -397,7 +403,7 @@ export default function NotePage() {
                 type="button"
                 size="sm"
                 variant="secondary"
-                className="rounded-full border-white/20 bg-white/10 text-white hover:bg-white/20"
+                className="rounded-full border-white/20 bg-white/10 text-white backdrop-blur hover:bg-white/20"
                 onClick={() => router.push(`/skills/${skillId}/notes/new?parent=${currentNoteId}`)}
               >
                 Add sub-page
@@ -413,7 +419,7 @@ export default function NotePage() {
                       <li key={child.id}>
                         <Link
                           href={`/skills/${skillId}/notes/${child.id}`}
-                          className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#0b1327] px-4 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+                          className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/10 hover:text-white backdrop-blur"
                         >
                           <span className="truncate font-medium">{childTitle}</span>
                           {subtitle ? (
