@@ -41,6 +41,7 @@ const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
 const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS
+const COMPLETED_RETENTION_DAYS = 3
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
@@ -296,6 +297,12 @@ export async function scheduleBacklog(
 
   const queue: QueueItem[] = []
   const baseStart = startOfDayInTimeZone(baseDate, timeZone)
+  const completedRetentionStart = startOfDayInTimeZone(
+    addDaysInTimeZone(baseDate, -COMPLETED_RETENTION_DAYS, timeZone),
+    timeZone
+  )
+  const completedRetentionStartMs = completedRetentionStart.getTime()
+  const nowMs = baseDate.getTime()
   const dayOffsetFor = (startUTC: string): number | undefined => {
     const start = new Date(startUTC)
     if (Number.isNaN(start.getTime())) return undefined
@@ -591,9 +598,27 @@ export async function scheduleBacklog(
     }
   }
 
+  const shouldRetainCompletedInstance = (instance: ScheduleInstance | null | undefined) => {
+    if (!instance || instance.status !== 'completed') return false
+    const startMs = new Date(instance.start_utc ?? '').getTime()
+    const endMs = new Date(instance.end_utc ?? '').getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return false
+    if (startMs > nowMs && endMs > nowMs) {
+      return false
+    }
+    if (endMs < completedRetentionStartMs) {
+      return false
+    }
+    return true
+  }
+
   const isBlockingInstance = (instance: ScheduleInstance | null | undefined) => {
     if (!instance) return false
-    return instance.status === 'scheduled' || instance.status === 'completed'
+    if (instance.status === 'scheduled') return true
+    if (instance.status === 'completed') {
+      return shouldRetainCompletedInstance(instance)
+    }
+    return false
   }
 
   const registerInstanceForOffsets = (instance: ScheduleInstance | null | undefined) => {
@@ -653,7 +678,8 @@ export async function scheduleBacklog(
       inst?.source_type === 'PROJECT' &&
       inst.status === 'completed' &&
       typeof inst.source_id === 'string' &&
-      inst.source_id
+      inst.source_id &&
+      shouldRetainCompletedInstance(inst)
     ) {
       completedProjectIds.add(inst.source_id)
     }
@@ -773,12 +799,12 @@ export async function scheduleBacklog(
       windowCache,
       client: supabase,
       sunlightLocation: location,
-      durationMultiplier,
-      restMode: isRestMode,
-      existingInstances,
-      registerInstance: registerInstanceForOffsets,
-      getWindowsForDay,
-    })
+        durationMultiplier,
+        restMode: isRestMode,
+        existingInstances,
+        registerInstance: registerInstanceForOffsets,
+        getWindowsForDay,
+      })
 
     if (dayResult.placements.length > 0) {
       result.timeline.push(...dayResult.placements)
@@ -1820,10 +1846,16 @@ async function scheduleHabitsForDay(params: {
         client,
         reuseInstanceId: existingInstance?.id,
         existingInstances: allowsHabitOverlap
-          ? dayInstances.filter(inst =>
-              inst &&
-              (inst.source_type !== 'HABIT' || inst.id === existingInstance?.id)
-            )
+          ? dayInstances.filter(inst => {
+              if (!inst) return false
+              if (inst.source_type !== 'HABIT') return true
+              if (inst.id === existingInstance?.id) return true
+              const instHabitType =
+                inst.source_id && habitTypeById.size > 0
+                  ? habitTypeById.get(inst.source_id) ?? 'HABIT'
+                  : 'HABIT'
+              return instHabitType === 'SYNC'
+            })
           : dayInstances,
         allowHabitOverlap: allowsHabitOverlap,
       })

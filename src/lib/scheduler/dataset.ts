@@ -39,6 +39,8 @@ export type ScheduleEventDataset = {
   instances: ScheduleInstance[]
 }
 
+const COMPLETED_LOOKBACK_DAYS = 3
+
 export async function buildScheduleEventDataset({
   userId,
   client,
@@ -53,8 +55,14 @@ export async function buildScheduleEventDataset({
   lookaheadDays?: number
 }): Promise<ScheduleEventDataset> {
   const normalizedTz = normalizeTimeZone(timeZone)
-  const rangeStart = startOfDayInTimeZone(baseDate, normalizedTz)
-  const rangeEnd = addDaysInTimeZone(rangeStart, lookaheadDays, normalizedTz)
+  const futureRangeAnchor = startOfDayInTimeZone(baseDate, normalizedTz)
+  const rangeStart = startOfDayInTimeZone(
+    addDaysInTimeZone(baseDate, -COMPLETED_LOOKBACK_DAYS, normalizedTz),
+    normalizedTz
+  )
+  const rangeEnd = addDaysInTimeZone(futureRangeAnchor, lookaheadDays, normalizedTz)
+  const nowMs = baseDate.getTime()
+  const retentionCutoffMs = rangeStart.getTime()
 
   const [
     windowSnapshot,
@@ -89,6 +97,22 @@ export async function buildScheduleEventDataset({
     throw instanceError
   }
 
+  const filteredInstances = (instanceRows ?? []).filter(instance => {
+    if (instance.status !== 'completed') return true
+    const startMs = new Date(instance.start_utc ?? '').getTime()
+    const endMs = new Date(instance.end_utc ?? '').getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+      return false
+    }
+    if (startMs > nowMs && endMs > nowMs) {
+      return false
+    }
+    if (endMs < retentionCutoffMs) {
+      return false
+    }
+    return true
+  })
+
   return {
     generatedAt: new Date().toISOString(),
     rangeStartUTC: rangeStart.toISOString(),
@@ -102,7 +126,7 @@ export async function buildScheduleEventDataset({
     skills,
     monuments,
     scheduledProjectIds,
-    instances: instanceRows ?? [],
+    instances: filteredInstances,
   }
 }
 

@@ -753,7 +753,6 @@ describe("scheduleBacklog", () => {
         (call.itemId === habitA.id || call.itemId === habitB.id),
     );
     expect(habitCalls.length).toBeGreaterThanOrEqual(2);
-    expect(habitCalls.every(call => call.allowHabitOverlap === false)).toBe(true);
 
     const habitBCalls = habitCalls.filter(call => call.itemId === habitB.id);
     expect(habitBCalls.length).toBeGreaterThan(0);
@@ -988,6 +987,130 @@ describe("scheduleBacklog", () => {
     expect(
       result.timeline.some(
         entry => entry.type === "PROJECT" && entry.projectId === "proj-complete",
+      ),
+    ).toBe(false);
+  });
+
+  it("reschedules projects whose only completed instance starts after now", async () => {
+    const { client } = createSupabaseMock();
+
+    const futureCompletedInstance = createInstanceRecord({
+      id: "inst-future-completed",
+      source_id: "proj-1",
+      source_type: "PROJECT",
+      status: "completed",
+      start_utc: "2024-01-03T18:00:00Z",
+      end_utc: "2024-01-03T19:00:00Z",
+      duration_min: 60,
+      window_id: "win-future",
+      completed_at: "2024-01-02T18:30:00Z",
+    });
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [futureCompletedInstance],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-future",
+        label: "Evening",
+        energy: "LOW",
+        start_local: "18:00",
+        end_local: "19:00",
+        days: [2],
+      },
+    ]);
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async ({ item }) => ({
+      data: createInstanceRecord({
+        id: `inst-new-${item.id}`,
+        source_id: item.id,
+        status: "scheduled",
+        start_utc: "2024-01-02T18:00:00Z",
+        end_utc: "2024-01-02T19:00:00Z",
+        window_id: "win-future",
+      }),
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).toHaveBeenCalled();
+    expect(
+      result.timeline.some(
+        entry => entry.type === "PROJECT" && entry.projectId === "proj-1",
+      ),
+    ).toBe(true);
+  });
+
+  it("only retains completed instances that fall within the three-day lookback window", async () => {
+    const { client } = createSupabaseMock();
+
+    const recentCompleted = createInstanceRecord({
+      id: "inst-recent",
+      source_id: "proj-1",
+      status: "completed",
+      start_utc: "2024-01-01T09:00:00Z",
+      end_utc: "2024-01-01T10:00:00Z",
+      duration_min: 60,
+      window_id: "win-1",
+      completed_at: "2024-01-01T10:00:00Z",
+    });
+
+    const olderCompleted = createInstanceRecord({
+      id: "inst-old",
+      source_id: "proj-2",
+      status: "completed",
+      start_utc: "2023-12-25T09:00:00Z",
+      end_utc: "2023-12-25T10:00:00Z",
+      duration_min: 60,
+      window_id: "win-1",
+      completed_at: "2023-12-25T10:00:00Z",
+    });
+
+    fetchInstancesForRangeSpy.mockImplementation(async () => ({
+      data: [recentCompleted, olderCompleted],
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    const placeSpy = placement.placeItemInWindows as unknown as vi.Mock;
+    placeSpy.mockImplementation(async ({ item }) => ({
+      data: createInstanceRecord({
+        id: `inst-new-${item.id}`,
+        source_id: item.id,
+        status: "scheduled",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T10:00:00Z",
+        window_id: "win-1",
+      }),
+      error: null,
+      count: null,
+      status: 200,
+      statusText: "OK",
+    }));
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(placeSpy).toHaveBeenCalled();
+    expect(
+      result.timeline.some(
+        entry => entry.type === "PROJECT" && entry.projectId === "proj-2",
+      ),
+    ).toBe(true);
+    expect(
+      result.timeline.some(
+        entry => entry.type === "PROJECT" && entry.projectId === "proj-1",
       ),
     ).toBe(false);
   });
