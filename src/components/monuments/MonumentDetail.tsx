@@ -27,6 +27,10 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
     router.push("/goals/new");
   };
 
+  const handleAddNote = () => {
+    router.push(`/monuments/${id}/notes/new`);
+  };
+
   const quickFacts = [
     {
       label: "Momentum streak",
