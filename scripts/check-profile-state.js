@@ -83,7 +83,7 @@ async function checkProfileState() {
     });
 
     const duplicates = Object.entries(usernameCounts).filter(
-      ([username, count]) => count > 1
+      ([, count]) => count > 1
     );
 
     if (duplicates.length > 0) {

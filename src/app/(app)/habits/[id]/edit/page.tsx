@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import {
@@ -100,6 +101,48 @@ interface GoalOption {
   name: string;
   description?: string | null;
 }
+
+type HabitLocationContext = {
+  value: string;
+  label: string;
+} | null;
+
+type HabitQueryResult = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  habit_type: string | null;
+  recurrence: string | null;
+  recurrence_days: number[] | null;
+  duration_minutes: number | null;
+  energy: string | null;
+  routine_id: string | null;
+  skill_id: string | null;
+  daylight_preference: string | null;
+  window_edge_preference: string | null;
+  location_context_id: string | null;
+  location_context: HabitLocationContext;
+  goal_id?: string | null;
+  completion_target?: number | null;
+};
+
+type HabitUpdatePayload = Pick<
+  HabitQueryResult,
+  | "name"
+  | "description"
+  | "habit_type"
+  | "recurrence"
+  | "recurrence_days"
+  | "duration_minutes"
+  | "energy"
+  | "routine_id"
+  | "skill_id"
+  | "daylight_preference"
+  | "window_edge_preference"
+  | "goal_id"
+  | "completion_target"
+  | "location_context_id"
+>;
 
 export default function EditHabitPage() {
   const router = useRouter();
@@ -527,15 +570,18 @@ export default function EditHabitPage() {
         }
 
         let includeGoalMetadata = true;
-        let habitResponse: { data: any; error: any } | null = null;
+        let habitResponse: PostgrestSingleResponse<HabitQueryResult> | null =
+          null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
-          habitResponse = await supabase
+          const response = (await supabase
             .from("habits")
             .select(buildHabitSelectColumns(includeGoalMetadata))
             .eq("id", habitId)
             .eq("user_id", user.id)
-            .single();
+            .single()) as PostgrestSingleResponse<HabitQueryResult>;
+
+          habitResponse = response;
 
           if (!habitResponse.error) {
             break;
@@ -794,7 +840,7 @@ export default function EditHabitPage() {
         }
       }
 
-      const basePayload: Record<string, unknown> = {
+      const payload: HabitUpdatePayload = {
         name: name.trim(),
         description: trimmedDescription || null,
         habit_type: habitType,
@@ -809,20 +855,15 @@ export default function EditHabitPage() {
             ? daylightPreference
             : null,
         window_edge_preference: windowEdgePreference,
+        location_context_id: resolvedLocationContextId,
       };
 
       if (goalMetadataSupported) {
-        basePayload.goal_id =
-          isTempHabit && goalId !== "none" ? goalId : null;
-        basePayload.completion_target = goalMetadataRequired
+        payload.goal_id = isTempHabit && goalId !== "none" ? goalId : null;
+        payload.completion_target = goalMetadataRequired
           ? parsedCompletionTarget
           : null;
       }
-
-      const payload: Record<string, unknown> = {
-        ...basePayload,
-        location_context_id: resolvedLocationContextId,
-      };
 
       const { error: updateError } = await supabase
         .from("habits")
