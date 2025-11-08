@@ -1,14 +1,13 @@
 "use client";
 
-import { useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ArrowLeft, BatteryCharging, Flame } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import ActivityPanel from "./ActivityPanel";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
+import type { MonumentNote } from "@/lib/types/monument-note";
 
 export interface MonumentDetailMonument {
   id: string;
@@ -18,21 +17,11 @@ export interface MonumentDetailMonument {
 
 interface MonumentDetailProps {
   monument: MonumentDetailMonument;
+  notes: MonumentNote[];
 }
 
-export function MonumentDetail({ monument }: MonumentDetailProps) {
-  const router = useRouter();
-  const noteInputRef = useRef<HTMLTextAreaElement>(null);
+export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
-
-  const handleAddNote = () => {
-    noteInputRef.current?.scrollIntoView({ behavior: "smooth" });
-    noteInputRef.current?.focus();
-  };
-
-  const handleCreateGoal = () => {
-    router.push("/goals/new");
-  };
 
   const quickFacts = [
     {
@@ -96,13 +85,13 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
                 <Link href={`/monuments/${id}/edit`}>Edit monument</Link>
               </Button>
               <Button
+                asChild
                 size="sm"
                 variant="outline"
-                onClick={handleAddNote}
                 aria-label="Add note"
                 className="rounded-full border-white/20 bg-transparent px-4 text-white/80 backdrop-blur hover:border-white/30 hover:bg-white/10"
               >
-                Add note
+                <Link href={`/monuments/${id}/notes/new`}>Add note</Link>
               </Button>
             </div>
           </div>
@@ -135,19 +124,21 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
                 GOALS
               </h2>
               <Button
+                asChild
                 size="sm"
                 variant="outline"
-                onClick={handleCreateGoal}
                 className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
               >
-                New goal
+                <Link href="/goals/new">New goal</Link>
               </Button>
             </header>
             <div className="relative mt-4">
               <FilteredGoalsGrid
                 entity="monument"
                 id={id}
-                onCreateGoal={handleCreateGoal}
+                onCreateGoal={() => {
+                  window.location.assign("/goals/new");
+                }}
                 displayMode="minimal"
               />
             </div>
@@ -167,17 +158,9 @@ export function MonumentDetail({ monument }: MonumentDetailProps) {
                   Save ideas, links, and reminders while they&apos;re fresh.
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleAddNote}
-                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
-              >
-                New note
-              </Button>
             </header>
             <div className="relative mt-5">
-              <MonumentNotesGrid monumentId={id} inputRef={noteInputRef} />
+              <MonumentNotesGrid monumentId={id} initialNotes={notes} />
             </div>
           </section>
 
