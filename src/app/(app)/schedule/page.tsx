@@ -112,7 +112,7 @@ const PX_PER_MIN_STOPS = [
 const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
-const SCHEDULE_CARD_LONG_PRESS_MS = 600
+const SCHEDULE_CARD_LONG_PRESS_MS = 3000
 
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
@@ -1857,6 +1857,11 @@ export default function SchedulePage() {
   const sliderControls = useAnimationControls()
   const longPressTimerRef = useRef<number | null>(null)
   const longPressTriggeredRef = useRef(false)
+  const activePressRef = useRef<{
+    instanceId: string
+    shortPress: (() => void) | null
+  } | null>(null)
+  const shortPressHandledRef = useRef(false)
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
     next?: DayTimelineModel | null
@@ -3854,39 +3859,75 @@ peekDataDepsRef.current = {
     }
   }, [])
 
-  const scheduleLongPress = useCallback(
-    (instanceId: string) => {
-      longPressTriggeredRef.current = false
-      clearLongPressTimer()
-      longPressTimerRef.current = window.setTimeout(() => {
-        longPressTimerRef.current = null
-        longPressTriggeredRef.current = true
-        openInstanceEditor(instanceId)
-      }, SCHEDULE_CARD_LONG_PRESS_MS)
-    },
-    [clearLongPressTimer, openInstanceEditor]
-  )
-
   const cancelLongPress = useCallback(() => {
     clearLongPressTimer()
   }, [clearLongPressTimer])
 
   const handleInstancePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLElement>, instanceId?: string | null) => {
+    (
+      event: ReactPointerEvent<HTMLElement>,
+      instanceId?: string | null,
+      onShortPress?: () => void,
+      onLongPress?: () => void
+    ) => {
       if (!instanceId) return
-      if (event.pointerType === 'mouse' && event.button !== 0) return
-      scheduleLongPress(instanceId)
+      const pointerType = event.pointerType
+      const isTouchLike =
+        pointerType === 'touch' ||
+        pointerType === 'pen' ||
+        pointerType === '' ||
+        pointerType === undefined
+      if (!isTouchLike) {
+        activePressRef.current = null
+        longPressTriggeredRef.current = false
+        shortPressHandledRef.current = false
+        clearLongPressTimer()
+        return
+      }
+      activePressRef.current = {
+        instanceId,
+        shortPress: onShortPress ?? null,
+      }
+      longPressTriggeredRef.current = false
+      shortPressHandledRef.current = false
+      clearLongPressTimer()
+      const timerId = window.setTimeout(() => {
+        longPressTimerRef.current = null
+        longPressTriggeredRef.current = true
+        if (onLongPress) {
+          onLongPress()
+        } else {
+          openInstanceEditor(instanceId)
+        }
+      }, SCHEDULE_CARD_LONG_PRESS_MS)
+      longPressTimerRef.current = timerId
     },
-    [scheduleLongPress]
+    [clearLongPressTimer, openInstanceEditor]
   )
 
+  const handleInstancePointerUp = useCallback(() => {
+    const pending = activePressRef.current
+    const longPressTriggered = longPressTriggeredRef.current
+    cancelLongPress()
+    activePressRef.current = null
+    if (!longPressTriggered && pending?.shortPress) {
+      shortPressHandledRef.current = true
+      pending.shortPress()
+    }
+  }, [cancelLongPress])
+
   const handleInstancePointerCancel = useCallback(() => {
+    activePressRef.current = null
     cancelLongPress()
   }, [cancelLongPress])
 
   const shouldBlockClickFromLongPress = useCallback(() => {
     if (longPressTriggeredRef.current) {
       longPressTriggeredRef.current = false
+      return true
+    }
+    if (shortPressHandledRef.current) {
+      shortPressHandledRef.current = false
       return true
     }
     return false
@@ -4153,23 +4194,19 @@ peekDataDepsRef.current = {
               )
               const isHabitCompleted = habitStatus === 'completed'
               let shouldHideHabit = false
-              let habitIsLocked = false
               if (isHabitCompleted) {
                 if (viewIsFutureDay) {
                   shouldHideHabit = true
-                } else if (viewIsPastDay) {
-                  habitIsLocked = true
-                } else {
+                } else if (!viewIsPastDay) {
                   const placementIsBeforeNow = placement.end.getTime() <= currentTimeMs
-                  if (placementIsBeforeNow) habitIsLocked = true
-                  else shouldHideHabit = true
+                  if (!placementIsBeforeNow) {
+                    shouldHideHabit = true
+                  }
                 }
               }
               if (shouldHideHabit) {
                 return null
               }
-              const habitInteractionsDisabled =
-                options?.disableInteractions || habitIsLocked
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
@@ -4260,29 +4297,47 @@ peekDataDepsRef.current = {
                 layoutMode,
                 { animate: !prefersReducedMotion }
               )
+              const hasHabitInstance = Boolean(placement.instanceId)
+              const handleHabitPrimaryAction = () => {
+                if (options?.disableInteractions) return
+                handleHabitCardActivation(placement, dayViewDateKey)
+              }
+              const habitPointerHandlers = hasHabitInstance
+                ? {
+                    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+                      if (options?.disableInteractions) return
+                      if (!placement.instanceId) return
+                      handleInstancePointerDown(
+                        event,
+                        placement.instanceId,
+                        handleHabitPrimaryAction
+                      )
+                    },
+                    onPointerUp: handleInstancePointerUp,
+                    onPointerCancel: handleInstancePointerCancel,
+                  }
+                : {}
+
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}${
-                    habitInteractionsDisabled ? '' : ' cursor-pointer'
-                  }`}
+                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer`}
                   role="button"
-                  tabIndex={habitInteractionsDisabled ? -1 : 0}
+                  tabIndex={options?.disableInteractions ? -1 : 0}
                   aria-pressed={isHabitCompleted}
-                  aria-disabled={habitInteractionsDisabled}
+                  aria-disabled={options?.disableInteractions ?? false}
                   style={cardStyle}
                   onClick={() => {
-                    if (habitInteractionsDisabled) return
-                    handleHabitCardActivation(placement, dayViewDateKey)
+                    handleHabitPrimaryAction()
                   }}
                   onKeyDown={event => {
                     if (event.key !== 'Enter' && event.key !== ' ') {
                       return
                     }
                     event.preventDefault()
-                    if (habitInteractionsDisabled) return
-                    handleHabitCardActivation(placement, dayViewDateKey)
+                    handleHabitPrimaryAction()
                   }}
+                  {...habitPointerHandlers}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
@@ -4406,6 +4461,17 @@ peekDataDepsRef.current = {
                 effectiveStatus === 'completed' ||
                 effectiveStatus === 'scheduled'
               const isCompleted = effectiveStatus === 'completed'
+
+              const handleProjectToggle = () => {
+                if (!canToggle || isPending) return
+                const nextStatus = isCompleted ? 'scheduled' : 'completed'
+                void handleToggleInstanceCompletion(instance.id, nextStatus)
+              }
+              const handleProjectExpand = () => {
+                if (!canExpand) return
+                setProjectExpansion(projectId)
+              }
+              const handleProjectPrimaryAction = handleProjectToggle
               const projectBackground = isCompleted
                 ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
                 : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
@@ -4443,45 +4509,27 @@ peekDataDepsRef.current = {
                         role="button"
                         tabIndex={0}
                         aria-expanded={canExpand ? isExpanded : undefined}
-                        aria-pressed={!canExpand ? isCompleted : undefined}
-                        aria-disabled={!canExpand && (!canToggle || isPending)}
+                        aria-pressed={isCompleted}
+                        aria-disabled={!canToggle || isPending}
                         onPointerDown={event => {
                           if (options?.disableInteractions) return
-                          handleInstancePointerDown(event, instance.id)
+                          handleInstancePointerDown(event, instance.id, handleProjectPrimaryAction)
                         }}
-                        onPointerUp={handleInstancePointerCancel}
-                        onPointerLeave={handleInstancePointerCancel}
+                        onPointerUp={handleInstancePointerUp}
                         onPointerCancel={handleInstancePointerCancel}
+                        onDoubleClick={event => {
+                          event.preventDefault()
+                          if (options?.disableInteractions) return
+                          handleProjectExpand()
+                        }}
                         onClick={() => {
                           if (shouldBlockClickFromLongPress()) return
-                          if (canExpand) {
-                            setProjectExpansion(projectId)
-                            return
-                          }
-                          if (!canToggle || isPending) return
-                          const nextStatus = isCompleted
-                            ? 'scheduled'
-                            : 'completed'
-                          void handleToggleInstanceCompletion(
-                            instance.id,
-                            nextStatus
-                          )
+                          handleProjectPrimaryAction()
                         }}
                         onKeyDown={event => {
                           if (event.key !== 'Enter' && event.key !== ' ') return
                           event.preventDefault()
-                          if (canExpand) {
-                            setProjectExpansion(projectId)
-                            return
-                          }
-                          if (!canToggle || isPending) return
-                          const nextStatus = isCompleted
-                            ? 'scheduled'
-                            : 'completed'
-                          void handleToggleInstanceCompletion(
-                            instance.id,
-                            nextStatus
-                          )
+                          handleProjectPrimaryAction()
                         }}
                         className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
                           canExpand || (canToggle && !isPending)
@@ -4708,6 +4756,24 @@ peekDataDepsRef.current = {
                                 : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
                             const hasInteractiveRole =
                               isFallbackCard || (kind === 'scheduled' && !!instanceId)
+
+                            const handleTaskCardPrimaryAction = () => {
+                              if (isFallbackCard) {
+                                if (!canToggle || isPending) return
+                                handleToggleBacklogTaskCompletion(task.id)
+                                return
+                              }
+                              if (!instanceId) return
+                              if (!canToggle || isPending) return
+                              const nextStatus = isCompleted
+                                ? 'scheduled'
+                                : 'completed'
+                              void handleToggleInstanceCompletion(
+                                instanceId,
+                                nextStatus
+                              )
+                            }
+
                             return (
                               <motion.div
                                 key={key}
@@ -4732,28 +4798,14 @@ peekDataDepsRef.current = {
                                 }${isPending ? ' opacity-60' : ''}`}
                                 style={tStyle}
                                 onPointerDown={event => {
-                                  if (kind !== 'scheduled' || !instanceId) return
-                                  handleInstancePointerDown(event, instanceId)
+                                  if (!instanceId) return
+                                  handleInstancePointerDown(event, instanceId, handleTaskCardPrimaryAction)
                                 }}
-                                onPointerUp={handleInstancePointerCancel}
-                                onPointerLeave={handleInstancePointerCancel}
+                                onPointerUp={handleInstancePointerUp}
                                 onPointerCancel={handleInstancePointerCancel}
                                 onClick={() => {
                                   if (shouldBlockClickFromLongPress()) return
-                                  if (isFallbackCard) {
-                                    if (!canToggle || isPending) return
-                                    handleToggleBacklogTaskCompletion(task.id)
-                                    return
-                                  }
-                                  if (!instanceId) return
-                                  if (!canToggle || isPending) return
-                                  const nextStatus = isCompleted
-                                    ? 'scheduled'
-                                    : 'completed'
-                                  void handleToggleInstanceCompletion(
-                                    instanceId,
-                                    nextStatus
-                                  )
+                                  handleTaskCardPrimaryAction()
                                 }}
                                 onKeyDown={event => {
                                   if (event.key !== 'Enter' && event.key !== ' ') {
@@ -4876,6 +4928,13 @@ peekDataDepsRef.current = {
               ]
                 .filter(Boolean)
                 .join(' ')
+
+              const handleStandaloneTaskPrimaryAction = () => {
+                if (!canToggle || isPending) return
+                const nextStatus = isCompleted ? 'scheduled' : 'completed'
+                void handleToggleInstanceCompletion(instance.id, nextStatus)
+              }
+
               return (
                 <motion.div
                   key={instance.id}
@@ -4889,16 +4948,13 @@ peekDataDepsRef.current = {
                   className={standaloneClassName}
                   style={style}
                   onPointerDown={event => {
-                    handleInstancePointerDown(event, instance.id)
+                    handleInstancePointerDown(event, instance.id, handleStandaloneTaskPrimaryAction)
                   }}
-                  onPointerUp={handleInstancePointerCancel}
-                  onPointerLeave={handleInstancePointerCancel}
+                  onPointerUp={handleInstancePointerUp}
                   onPointerCancel={handleInstancePointerCancel}
                   onClick={() => {
                     if (shouldBlockClickFromLongPress()) return
-                    if (!canToggle || isPending) return
-                    const nextStatus = isCompleted ? 'scheduled' : 'completed'
-                    void handleToggleInstanceCompletion(instance.id, nextStatus)
+                    handleStandaloneTaskPrimaryAction()
                   }}
                   onKeyDown={event => {
                     if (event.key !== 'Enter' && event.key !== ' ') {
@@ -4971,6 +5027,7 @@ peekDataDepsRef.current = {
         instanceStatusById,
         handleHabitCardActivation,
         handleInstancePointerDown,
+        handleInstancePointerUp,
         handleInstancePointerCancel,
         shouldBlockClickFromLongPress,
       ]
