@@ -26,6 +26,7 @@ export type ProjectLite = {
   stage: string;
   energy?: string | null;
   duration_min?: number | null;
+  goal_id?: string | null;
 };
 
 export type GoalLite = {
@@ -59,4 +60,3 @@ export function goalWeight(g: GoalLite, relatedProjectWeightsSum: number): numbe
     : 0;
   return relatedProjectWeightsSum / 1000 + priority;
 }
-

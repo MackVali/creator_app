@@ -260,7 +260,7 @@ export async function fetchProjectsMap(
 
   const { data, error } = await supabase
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min');
+    .select('id, name, priority, stage, energy, duration_min, goal_id');
 
   if (error) throw error;
   const map: Record<string, ProjectLite> = {};
@@ -271,6 +271,7 @@ export async function fetchProjectsMap(
     stage: string;
     energy?: string | null;
     duration_min?: number | null;
+    goal_id?: string | null;
   };
 
   for (const p of (data ?? []) as ProjectRecord[]) {
@@ -281,6 +282,7 @@ export async function fetchProjectsMap(
       stage: p.stage,
       energy: p.energy ?? null,
       duration_min: p.duration_min ?? null,
+      goal_id: p.goal_id ?? null,
     };
   }
   return map;
@@ -318,4 +320,31 @@ export async function fetchProjectSkillsForProjects(
   }
 
   return map;
+}
+
+export type GoalSummary = {
+  id: string;
+  name: string | null;
+};
+
+export async function fetchGoalsForUser(
+  userId: string,
+  client?: Client
+): Promise<GoalSummary[]> {
+  const supabase = ensureClient(client);
+  type GoalRecord = {
+    id: string;
+    name?: string | null;
+  };
+  const { data, error } = await supabase
+    .from('goals')
+    .select('id, name')
+    .eq('user_id', userId);
+
+  if (error) throw error;
+
+  return ((data ?? []) as GoalRecord[]).map(goal => ({
+    id: goal.id,
+    name: goal.name ?? null,
+  }));
 }
