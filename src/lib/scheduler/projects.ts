@@ -99,8 +99,8 @@ export function buildProjectItems(
       weight,
       taskCount: related?.count ?? 0,
       skill_icon,
+      goal_id: p.goal_id ?? null,
     })
   }
   return items
 }
-

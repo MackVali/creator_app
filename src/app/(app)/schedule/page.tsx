@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
 } from 'react'
@@ -38,6 +39,7 @@ import FlameEmber, { FlameLevel, type FlameEmberProps } from '@/components/Flame
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
+import { ScheduleInstanceEditSheet } from '@/components/schedule/ScheduleInstanceEditSheet'
 import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import {
@@ -47,6 +49,7 @@ import {
 } from '@/lib/scheduler/repo'
 import {
   fetchScheduledProjectIds,
+  rescheduleInstance,
   updateInstanceStatus,
   type ScheduleInstance,
 } from '@/lib/scheduler/instanceRepo'
@@ -59,7 +62,7 @@ import {
   type HabitScheduleItem,
 } from '@/lib/scheduler/habits'
 import type { ScheduleEventDataset } from '@/lib/scheduler/dataset'
-import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
+import { formatLocalDateKey, localWindowToUTC, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
   TIME_FORMATTER,
@@ -109,6 +112,7 @@ const PX_PER_MIN_STOPS = [
 const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
+const SCHEDULE_CARD_LONG_PRESS_MS = 600
 
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
@@ -491,6 +495,7 @@ type HabitTimelinePlacement = {
   habitName: string
   habitType: HabitScheduleItem['habitType']
   skillId: string | null
+  instanceId: string | null
   start: Date
   end: Date
   durationMinutes: number
@@ -843,6 +848,7 @@ function computeHabitPlacementsForDay({
         habitName: habit.name,
         habitType: habit.habitType,
         skillId: habit.skillId ?? null,
+        instanceId: instance.id ?? null,
         start,
         end,
         durationMinutes,
@@ -1813,6 +1819,9 @@ export default function SchedulePage() {
   const [skills, setSkills] = useState<SkillRow[]>([])
   const [monuments, setMonuments] = useState<Monument[]>([])
   const [projectSkillIds, setProjectSkillIds] = useState<Record<string, string[]>>({})
+  const [projectGoalRelations, setProjectGoalRelations] = useState<
+    ScheduleEventDataset['projectGoalRelations']
+  >({})
   const [habits, setHabits] = useState<HabitScheduleItem[]>([])
   const [habitCompletionByDate, setHabitCompletionByDate] = useState<
     Record<string, Record<string, HabitCompletionStatus>>
@@ -1840,8 +1849,14 @@ export default function SchedulePage() {
   const [isJumpToDateOpen, setIsJumpToDateOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null)
+  const [editInstanceId, setEditInstanceId] = useState<string | null>(null)
+  const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
   const [topBarHeight, setTopBarHeight] = useState<number | null>(null)
   const sliderControls = useAnimationControls()
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressTriggeredRef = useRef(false)
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
     next?: DayTimelineModel | null
@@ -1949,6 +1964,10 @@ export default function SchedulePage() {
     offset: 0,
   })
   const backlogTaskPreviousStageRef = useRef<Map<string, TaskLite['stage']>>(new Map())
+  const editingInstance = useMemo(() => {
+    if (!editInstanceId) return null
+    return instances.find(instance => instance.id === editInstanceId) ?? null
+  }, [editInstanceId, instances])
   const clearScheduleData = useCallback(() => {
     setWindowSnapshot([])
     setWindows([])
@@ -1959,6 +1978,7 @@ export default function SchedulePage() {
     setSkills([])
     setMonuments([])
     setProjectSkillIds({})
+    setProjectGoalRelations({})
     setHabits([])
     setScheduledProjectIds(new Set())
     setPendingBacklogTaskIds(new Set())
@@ -2409,6 +2429,7 @@ export default function SchedulePage() {
       setSkills(payload.skills)
       setMonuments(payload.monuments)
       setProjectSkillIds(payload.projectSkillIds)
+      setProjectGoalRelations(payload.projectGoalRelations)
       setHabits(payload.habits)
       setAllInstances(payload.instances ?? [])
       setScheduledProjectIds(new Set(payload.scheduledProjectIds))
@@ -2557,6 +2578,49 @@ export default function SchedulePage() {
     for (const habit of habits) map[habit.id] = habit
     return map
   }, [habits])
+
+  const editingEventTitle = useMemo(() => {
+    if (!editingInstance) return 'Scheduled event'
+    const sourceId = editingInstance.source_id ?? ''
+    if (editingInstance.source_type === 'TASK') {
+      const task = taskMap[sourceId]
+      if (task?.name?.trim()) {
+        return task.name
+      }
+      const parent =
+        task?.project_id && projectMap[task.project_id]
+          ? projectMap[task.project_id]
+          : null
+      if (parent?.name?.trim()) {
+        return parent.name
+      }
+    } else if (editingInstance.source_type === 'PROJECT') {
+      const project = projectMap[sourceId]
+      if (project?.name?.trim()) {
+        return project.name
+      }
+    } else if (editingInstance.source_type === 'HABIT') {
+      const habit = habitMap[sourceId]
+      if (habit?.name?.trim()) {
+        return habit.name
+      }
+    }
+    return sourceId || 'Scheduled event'
+  }, [editingInstance, taskMap, projectMap, habitMap])
+
+  const editingEventTypeLabel = useMemo(() => {
+    if (!editingInstance) return 'Event'
+    switch (editingInstance.source_type) {
+      case 'PROJECT':
+        return 'Project'
+      case 'TASK':
+        return 'Task'
+      case 'HABIT':
+        return 'Habit'
+      default:
+        return 'Event'
+    }
+  }, [editingInstance])
 
   const windowMap = useMemo(() => buildWindowMap(windows), [windows])
 
@@ -2989,11 +3053,12 @@ peekDataDepsRef.current = {
   )
 
   const toggleHabitCompletionStatus = useCallback(
-    (dateKey: string, habitId: string) => {
+    (dateKey: string, habitId: string): HabitCompletionStatus => {
       const current = getHabitCompletionStatus(dateKey, habitId)
-      const nextStatus: HabitCompletionStatus | null =
+      const nextStatus: HabitCompletionStatus =
         current === 'completed' ? 'scheduled' : 'completed'
       updateHabitCompletionStatus(dateKey, habitId, nextStatus)
+      return nextStatus
     },
     [getHabitCompletionStatus, updateHabitCompletionStatus]
   )
@@ -3010,9 +3075,69 @@ peekDataDepsRef.current = {
         })
         return
       }
-      toggleHabitCompletionStatus(dateKey, placement.habitId)
+      const nextStatus = toggleHabitCompletionStatus(dateKey, placement.habitId)
+      const instanceId = placement.instanceId
+      if (instanceId) {
+        const targetStatus: 'completed' | 'scheduled' =
+          nextStatus === 'completed' ? 'completed' : 'scheduled'
+        void handleToggleInstanceCompletion(instanceId, targetStatus)
+      }
     },
-    [toggleHabitCompletionStatus]
+    [toggleHabitCompletionStatus, handleToggleInstanceCompletion]
+  )
+
+  const handleCloseEditSheet = useCallback(() => {
+    if (editSaving) return
+    setIsEditSheetOpen(false)
+    setEditInstanceId(null)
+    setEditError(null)
+  }, [editSaving])
+
+  const handleSubmitInstanceEdit = useCallback(
+    async ({ startLocal, endLocal }: { startLocal: string; endLocal: string }) => {
+      if (!editingInstance) return
+      setEditSaving(true)
+      setEditError(null)
+      try {
+        if (!startLocal || !endLocal) {
+          setEditError('Select both start and end times.')
+          return
+        }
+        const startUTC = localWindowToUTC(startLocal)
+        const endUTC = localWindowToUTC(endLocal)
+        const startDate = new Date(startUTC)
+        const endDate = new Date(endUTC)
+        if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {
+          setEditError('Invalid date or time.')
+          return
+        }
+        if (endDate.getTime() <= startDate.getTime()) {
+          setEditError('End time must be after the start time.')
+          return
+        }
+        const durationMin = Math.max(
+          1,
+          Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+        )
+        await rescheduleInstance(editingInstance.id, {
+          windowId: editingInstance.window_id,
+          startUTC,
+          endUTC,
+          durationMin,
+          weightSnapshot: editingInstance.weight_snapshot ?? 0,
+          energyResolved: editingInstance.energy_resolved ?? 'NO',
+        })
+        await loadInstancesRef.current()
+        setIsEditSheetOpen(false)
+        setEditInstanceId(null)
+      } catch (error) {
+        console.error('Failed to update schedule instance', error)
+        setEditError('Unable to update this schedule entry. Please try again.')
+      } finally {
+        setEditSaving(false)
+      }
+    },
+    [editingInstance, loadInstancesRef]
   )
 
   useEffect(() => {
@@ -3716,6 +3841,57 @@ peekDataDepsRef.current = {
     setFocusInstanceId(instanceId)
   }
 
+  const openInstanceEditor = useCallback((instanceId: string) => {
+    setEditInstanceId(instanceId)
+    setEditError(null)
+    setIsEditSheetOpen(true)
+  }, [])
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleLongPress = useCallback(
+    (instanceId: string) => {
+      longPressTriggeredRef.current = false
+      clearLongPressTimer()
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null
+        longPressTriggeredRef.current = true
+        openInstanceEditor(instanceId)
+      }, SCHEDULE_CARD_LONG_PRESS_MS)
+    },
+    [clearLongPressTimer, openInstanceEditor]
+  )
+
+  const cancelLongPress = useCallback(() => {
+    clearLongPressTimer()
+  }, [clearLongPressTimer])
+
+  const handleInstancePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLElement>, instanceId?: string | null) => {
+      if (!instanceId) return
+      if (event.pointerType === 'mouse' && event.button !== 0) return
+      scheduleLongPress(instanceId)
+    },
+    [scheduleLongPress]
+  )
+
+  const handleInstancePointerCancel = useCallback(() => {
+    cancelLongPress()
+  }, [cancelLongPress])
+
+  const shouldBlockClickFromLongPress = useCallback(() => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false
+      return true
+    }
+    return false
+  }, [])
+
   const dayTimelineModel = useMemo(
     () =>
       buildDayTimelineModel({
@@ -3755,6 +3931,20 @@ peekDataDepsRef.current = {
       localTimeZone,
     ]
   )
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer()
+    }
+  }, [clearLongPressTimer])
+
+  useEffect(() => {
+    if (!isEditSheetOpen) return
+    if (editInstanceId && !editingInstance) {
+      setIsEditSheetOpen(false)
+      setEditInstanceId(null)
+    }
+  }, [isEditSheetOpen, editInstanceId, editingInstance])
 
   const baseTimelineHeight = useMemo(
     () =>
@@ -3800,6 +3990,11 @@ peekDataDepsRef.current = {
       } = model
 
       const modelPxPerMin = pxPerMin
+      const todayDateKey = formatLocalDateKey(new Date())
+      const viewDateComparison = dayViewDateKey.localeCompare(todayDateKey)
+      const viewIsPastDay = viewDateComparison < 0
+      const viewIsFutureDay = viewDateComparison > 0
+      const currentTimeMs = Date.now()
 
       const toTimelinePosition = (minutes: number) => {
         if (!Number.isFinite(minutes)) return '0px'
@@ -3957,6 +4152,24 @@ peekDataDepsRef.current = {
                 placement.habitId
               )
               const isHabitCompleted = habitStatus === 'completed'
+              let shouldHideHabit = false
+              let habitIsLocked = false
+              if (isHabitCompleted) {
+                if (viewIsFutureDay) {
+                  shouldHideHabit = true
+                } else if (viewIsPastDay) {
+                  habitIsLocked = true
+                } else {
+                  const placementIsBeforeNow = placement.end.getTime() <= currentTimeMs
+                  if (placementIsBeforeNow) habitIsLocked = true
+                  else shouldHideHabit = true
+                }
+              }
+              if (shouldHideHabit) {
+                return null
+              }
+              const habitInteractionsDisabled =
+                options?.disableInteractions || habitIsLocked
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
@@ -4051,15 +4264,15 @@ peekDataDepsRef.current = {
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
                   className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass}${
-                    options?.disableInteractions ? '' : ' cursor-pointer'
+                    habitInteractionsDisabled ? '' : ' cursor-pointer'
                   }`}
                   role="button"
-                  tabIndex={options?.disableInteractions ? -1 : 0}
+                  tabIndex={habitInteractionsDisabled ? -1 : 0}
                   aria-pressed={isHabitCompleted}
-                  aria-disabled={options?.disableInteractions ?? false}
+                  aria-disabled={habitInteractionsDisabled}
                   style={cardStyle}
                   onClick={() => {
-                    if (options?.disableInteractions) return
+                    if (habitInteractionsDisabled) return
                     handleHabitCardActivation(placement, dayViewDateKey)
                   }}
                   onKeyDown={event => {
@@ -4067,7 +4280,7 @@ peekDataDepsRef.current = {
                       return
                     }
                     event.preventDefault()
-                    if (options?.disableInteractions) return
+                    if (habitInteractionsDisabled) return
                     handleHabitCardActivation(placement, dayViewDateKey)
                   }}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
@@ -4128,6 +4341,11 @@ peekDataDepsRef.current = {
                   : null
               const layoutMode = projectLayouts[index] ?? 'full'
               const projectCornerClass = getTimelineCardCornerClass(layoutMode)
+              const goalRelationInfo = projectGoalRelations[projectId]
+              const goalRelationName = goalRelationInfo?.goalName?.trim()
+              const goalRelationText =
+                goalRelationName && goalRelationName.length > 0 ? goalRelationName : null
+              const collapsedCardPaddingClass = goalRelationText ? 'pt-4 pb-2' : 'py-2'
               const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
                   ...TIMELINE_CARD_BOUNDS,
@@ -4227,7 +4445,15 @@ peekDataDepsRef.current = {
                         aria-expanded={canExpand ? isExpanded : undefined}
                         aria-pressed={!canExpand ? isCompleted : undefined}
                         aria-disabled={!canExpand && (!canToggle || isPending)}
+                        onPointerDown={event => {
+                          if (options?.disableInteractions) return
+                          handleInstancePointerDown(event, instance.id)
+                        }}
+                        onPointerUp={handleInstancePointerCancel}
+                        onPointerLeave={handleInstancePointerCancel}
+                        onPointerCancel={handleInstancePointerCancel}
                         onClick={() => {
+                          if (shouldBlockClickFromLongPress()) return
                           if (canExpand) {
                             setProjectExpansion(projectId)
                             return
@@ -4257,7 +4483,7 @@ peekDataDepsRef.current = {
                             nextStatus
                           )
                         }}
-                        className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 py-2 text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                        className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
                           canExpand || (canToggle && !isPending)
                             ? ' cursor-pointer'
                             : ''
@@ -4288,9 +4514,16 @@ peekDataDepsRef.current = {
                                 opacity: 0,
                                 y: 4,
                                 transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
-                              }
+                          }
                         }
                       >
+                        {goalRelationText ? (
+                          <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+                            <span className="truncate text-[9px] font-semibold text-white/80">
+                              {goalRelationText}
+                            </span>
+                          </div>
+                        ) : null}
                         <div className="flex min-w-0 flex-1 items-start gap-3">
                           <div className="min-w-0">
                             <span className="block truncate text-sm font-medium">
@@ -4498,7 +4731,15 @@ peekDataDepsRef.current = {
                                   canToggle && !isPending ? ' cursor-pointer' : ''
                                 }${isPending ? ' opacity-60' : ''}`}
                                 style={tStyle}
+                                onPointerDown={event => {
+                                  if (kind !== 'scheduled' || !instanceId) return
+                                  handleInstancePointerDown(event, instanceId)
+                                }}
+                                onPointerUp={handleInstancePointerCancel}
+                                onPointerLeave={handleInstancePointerCancel}
+                                onPointerCancel={handleInstancePointerCancel}
                                 onClick={() => {
+                                  if (shouldBlockClickFromLongPress()) return
                                   if (isFallbackCard) {
                                     if (!canToggle || isPending) return
                                     handleToggleBacklogTaskCompletion(task.id)
@@ -4647,7 +4888,14 @@ peekDataDepsRef.current = {
                   data-completed={isCompleted ? 'true' : 'false'}
                   className={standaloneClassName}
                   style={style}
+                  onPointerDown={event => {
+                    handleInstancePointerDown(event, instance.id)
+                  }}
+                  onPointerUp={handleInstancePointerCancel}
+                  onPointerLeave={handleInstancePointerCancel}
+                  onPointerCancel={handleInstancePointerCancel}
                   onClick={() => {
+                    if (shouldBlockClickFromLongPress()) return
                     if (!canToggle || isPending) return
                     const nextStatus = isCompleted ? 'scheduled' : 'completed'
                     void handleToggleInstanceCompletion(instance.id, nextStatus)
@@ -4716,11 +4964,15 @@ peekDataDepsRef.current = {
         expandedProjects,
         pendingInstanceStatuses,
         pendingBacklogTaskIds,
+        projectGoalRelations,
         getHabitCompletionStatus,
         handleToggleInstanceCompletion,
         handleToggleBacklogTaskCompletion,
         instanceStatusById,
         handleHabitCardActivation,
+        handleInstancePointerDown,
+        handleInstancePointerCancel,
+        shouldBlockClickFromLongPress,
       ]
     )
 
@@ -4948,6 +5200,17 @@ peekDataDepsRef.current = {
         onClearSkills={handleClearSkills}
         monuments={monuments}
         skills={skills}
+      />
+      <ScheduleInstanceEditSheet
+        open={isEditSheetOpen && Boolean(editingInstance)}
+        instance={editingInstance}
+        eventTitle={editingEventTitle}
+        eventTypeLabel={editingEventTypeLabel}
+        timeZoneLabel={friendlyTimeZone}
+        onClose={handleCloseEditSheet}
+        onSubmit={handleSubmitInstanceEdit}
+        saving={editSaving}
+        error={editError}
       />
     </>
   )

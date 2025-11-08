@@ -3,9 +3,11 @@ import type { Database } from '@/types/supabase'
 import {
   fetchProjectsMap,
   fetchProjectSkillsForProjects,
+  fetchGoalsForUser,
   fetchReadyTasks,
   fetchWindowsSnapshot,
   type WindowLite,
+  type GoalSummary,
 } from './repo'
 import {
   fetchHabitsForSchedule,
@@ -32,12 +34,21 @@ export type ScheduleEventDataset = {
   tasks: TaskLite[]
   projects: ProjectLite[]
   projectSkillIds: Record<string, string[]>
+  projectGoalRelations: ProjectGoalRelations
   habits: HabitScheduleItem[]
   skills: SkillRow[]
   monuments: Monument[]
   scheduledProjectIds: string[]
   instances: ScheduleInstance[]
 }
+
+export type ProjectGoalRelations = Record<
+  string,
+  {
+    goalId: string
+    goalName: string | null
+  }
+>
 
 const COMPLETED_LOOKBACK_DAYS = 3
 
@@ -72,6 +83,7 @@ export async function buildScheduleEventDataset({
     skills,
     monuments,
     scheduledProjectIds,
+    goals,
   ] = await Promise.all([
     fetchWindowsSnapshot(userId, client),
     fetchReadyTasks(client),
@@ -80,6 +92,7 @@ export async function buildScheduleEventDataset({
     fetchSkillsForUser(userId, client),
     fetchMonumentsForUser(userId, client),
     fetchScheduledProjectIds(userId, client),
+    fetchGoalsForUser(userId, client),
   ])
 
   const projectIds = Object.keys(projectMap)
@@ -113,6 +126,21 @@ export async function buildScheduleEventDataset({
     return true
   })
 
+  const projectList = Object.values(projectMap)
+  const goalNameById = new Map<string, GoalSummary['name']>(
+    goals.map(goal => [goal.id, goal.name ?? null])
+  )
+  const projectGoalRelations: ProjectGoalRelations = {}
+  for (const project of projectList) {
+    const goalId = project.goal_id ?? null
+    if (!goalId) continue
+    if (!project.id) continue
+    projectGoalRelations[project.id] = {
+      goalId,
+      goalName: goalNameById.get(goalId) ?? null,
+    }
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     rangeStartUTC: rangeStart.toISOString(),
@@ -120,8 +148,9 @@ export async function buildScheduleEventDataset({
     lookaheadDays,
     windowSnapshot,
     tasks,
-    projects: Object.values(projectMap),
+    projects: projectList,
     projectSkillIds,
+    projectGoalRelations,
     habits,
     skills,
     monuments,
