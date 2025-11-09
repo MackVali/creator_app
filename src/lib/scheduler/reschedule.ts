@@ -1248,9 +1248,13 @@ async function scheduleHabitsForDay(params: {
     segments: { start: number; end: number }[]
   ) => segments.find(segment => endMs > segment.start && startMs < segment.end) ?? null
 
+  const HABIT_BLOCKING_STATUSES: ScheduleInstance['status'][] = ['scheduled', 'completed']
+
   for (const inst of existingInstances) {
     if (!inst) continue
-    if (inst.source_type !== 'HABIT' || inst.status !== 'scheduled') {
+    const isHabitInstance =
+      inst.source_type === 'HABIT' && HABIT_BLOCKING_STATUSES.includes(inst.status ?? null)
+    if (!isHabitInstance) {
       carryoverInstances.push(inst)
       continue
     }
@@ -1272,8 +1276,15 @@ async function scheduleHabitsForDay(params: {
     return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY
   }
 
+  const habitStatusPriority = (inst: ScheduleInstance) =>
+    inst.status === 'completed' ? 0 : 1
+
   for (const [habitId, bucket] of scheduledHabitBuckets) {
-    bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b))
+    bucket.sort((a, b) => {
+      const statusDiff = habitStatusPriority(a) - habitStatusPriority(b)
+      if (statusDiff !== 0) return statusDiff
+      return startValueForInstance(a) - startValueForInstance(b)
+    })
     const keeper = bucket.shift()
     if (keeper) {
       existingByHabitId.set(habitId, keeper)
