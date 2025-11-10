@@ -19,6 +19,7 @@ type EvaluateParams = {
   date: Date
   timeZone: string
   windowDays?: number[] | null
+  lastScheduledStart?: Date | null
 }
 
 const DAILY_RECURRENCES = new Set(['daily', 'none', 'everyday', ''])
@@ -92,14 +93,19 @@ function daysInMonth(year: number, month: number) {
 }
 
 export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluation {
-  const { habit, date, timeZone, windowDays } = params
+  const { habit, date, timeZone, windowDays, lastScheduledStart } = params
   const zone = timeZone || 'UTC'
   const recurrence = normalizeRecurrence(habit.recurrence)
   const dayStart = startOfDayInTimeZone(date, zone)
+  const scheduleAnchorOverride =
+    lastScheduledStart ? startOfDayInTimeZone(lastScheduledStart, zone) : null
   const lastCompletionRaw = habit.lastCompletedAt ?? null
   const lastCompletionDate = parseIsoDate(lastCompletionRaw)
   const lastCompletionStart =
     lastCompletionDate !== null ? startOfDayInTimeZone(lastCompletionDate, zone) : null
+  if (scheduleAnchorOverride && scheduleAnchorOverride.getTime() === dayStart.getTime()) {
+    return { isDue: false, dueStart: null }
+  }
   if (lastCompletionStart && lastCompletionStart.getTime() === dayStart.getTime()) {
     return { isDue: false, dueStart: null }
   }
@@ -122,9 +128,14 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
     const lastCompletionRaw =
       habit.lastCompletedAt ?? habit.updatedAt ?? habit.createdAt ?? null
     const lastCompletionDate = parseIsoDate(lastCompletionRaw)
-    const lastStart = lastCompletionDate
+    const completionStart = lastCompletionDate
       ? startOfDayInTimeZone(lastCompletionDate, zone)
       : null
+    const lastStart =
+      scheduleAnchorOverride &&
+      (!completionStart || scheduleAnchorOverride.getTime() > completionStart.getTime())
+        ? scheduleAnchorOverride
+        : completionStart
 
     if (!lastStart) {
       return { isDue: true, dueStart: dayStart }
@@ -152,16 +163,27 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
 
   const anchorRaw = habit.createdAt ?? habit.updatedAt ?? null
   const anchorDate = parseIsoDate(anchorRaw)
-  const anchorStart = anchorDate ? startOfDayInTimeZone(anchorDate, zone) : null
+  let anchorStart = scheduleAnchorOverride
+  if (!anchorStart) {
+    anchorStart = anchorDate ? startOfDayInTimeZone(anchorDate, zone) : null
+  }
   if (!anchorStart) {
     return { isDue: true, dueStart: dayStart }
   }
 
   switch (recurrence) {
     case 'weekly': {
-      if (!resolvedWindowDays || resolvedWindowDays.length === 0) {
+      const diffDays = differenceInCalendarDaysInTimeZone(anchorStart, dayStart, zone)
+      if (diffDays < 0 || diffDays % 7 !== 0) {
+        return { isDue: false, dueStart: null }
+      }
+      const weekday = weekdayInTimeZone(dayStart, zone)
+      if (activeDayList && activeDayList.length > 0) {
+        if (!activeDayList.includes(weekday)) {
+          return { isDue: false, dueStart: null }
+        }
+      } else {
         const anchorWeekday = weekdayInTimeZone(anchorStart, zone)
-        const weekday = weekdayInTimeZone(dayStart, zone)
         if (weekday !== anchorWeekday) {
           return { isDue: false, dueStart: null }
         }
@@ -173,9 +195,13 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
       if (diffDays < 0 || diffDays % 14 !== 0) {
         return { isDue: false, dueStart: null }
       }
-      if (!resolvedWindowDays || resolvedWindowDays.length === 0) {
+      const weekday = weekdayInTimeZone(dayStart, zone)
+      if (activeDayList && activeDayList.length > 0) {
+        if (!activeDayList.includes(weekday)) {
+          return { isDue: false, dueStart: null }
+        }
+      } else {
         const anchorWeekday = weekdayInTimeZone(anchorStart, zone)
-        const weekday = weekdayInTimeZone(dayStart, zone)
         if (weekday !== anchorWeekday) {
           return { isDue: false, dueStart: null }
         }

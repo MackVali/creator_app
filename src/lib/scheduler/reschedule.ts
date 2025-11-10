@@ -185,10 +185,28 @@ export async function scheduleBacklog(
   const projectsMap = await fetchProjectsMap(supabase)
   const habits = await fetchHabitsForSchedule(userId, supabase)
   const habitAllowsOverlap = new Map<string, boolean>()
+  const habitById = new Map<string, HabitScheduleItem>()
   for (const habit of habits) {
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
     habitAllowsOverlap.set(habit.id, normalizedType === 'SYNC')
+    habitById.set(habit.id, habit)
   }
+  const habitLastScheduledStart = new Map<string, Date>()
+  const recordHabitScheduledStart = (
+    habitId: string | null | undefined,
+    startInput: Date | string | null | undefined
+  ) => {
+    if (!habitId || !startInput) return
+    const start =
+      startInput instanceof Date ? new Date(startInput.getTime()) : new Date(startInput ?? '')
+    if (Number.isNaN(start.getTime())) return
+    const normalized = startOfDayInTimeZone(start, timeZone)
+    const previous = habitLastScheduledStart.get(habitId)
+    if (!previous || normalized.getTime() > previous.getTime()) {
+      habitLastScheduledStart.set(habitId, normalized)
+    }
+  }
+  const getHabitLastScheduledStart = (habitId: string) => habitLastScheduledStart.get(habitId) ?? null
   let windowSnapshot: WindowLite[] | null = null
   try {
     windowSnapshot = await fetchWindowsSnapshot(userId, supabase)
@@ -455,6 +473,28 @@ export async function scheduleBacklog(
   collectPrimaryReuseIds(dedupe.reusableByProject)
   collectReuseIds(dedupe.canceledByProject)
   const keptInstances = [...dedupe.keepers]
+  const habitScheduledDatesById = new Map<string, Date[]>()
+  for (const instance of dedupe.allInstances) {
+    if (!instance || instance.source_type !== 'HABIT') continue
+    if (!instance.source_id) continue
+    if (!instance.start_utc) continue
+    const start = new Date(instance.start_utc)
+    if (Number.isNaN(start.getTime())) continue
+    const normalized = startOfDayInTimeZone(start, timeZone)
+    const list = habitScheduledDatesById.get(instance.source_id)
+    if (list) {
+      list.push(normalized)
+    } else {
+      habitScheduledDatesById.set(instance.source_id, [normalized])
+    }
+  }
+  for (const [habitId, dates] of habitScheduledDatesById) {
+    dates.sort((a, b) => a.getTime() - b.getTime())
+    for (const start of dates) {
+      if (start.getTime() > baseStart.getTime()) break
+      recordHabitScheduledStart(habitId, start)
+    }
+  }
 
   const dayInstancesByOffset = new Map<number, ScheduleInstance[]>()
 
@@ -804,6 +844,9 @@ export async function scheduleBacklog(
         existingInstances,
         registerInstance: registerInstanceForOffsets,
         getWindowsForDay,
+        getLastScheduledHabitStart: getHabitLastScheduledStart,
+        recordHabitScheduledStart,
+        habitMap: habitById,
       })
 
     if (dayResult.placements.length > 0) {
@@ -1132,6 +1175,9 @@ async function scheduleHabitsForDay(params: {
   existingInstances: ScheduleInstance[]
   registerInstance: (instance: ScheduleInstance) => void
   getWindowsForDay: (day: Date) => WindowLite[]
+  getLastScheduledHabitStart: (habitId: string) => Date | null
+  recordHabitScheduledStart: (habitId: string, start: Date | string) => void
+  habitMap: Map<string, HabitScheduleItem>
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -1149,6 +1195,9 @@ async function scheduleHabitsForDay(params: {
     existingInstances,
     registerInstance,
     getWindowsForDay,
+    getLastScheduledHabitStart,
+    recordHabitScheduledStart,
+    habitMap,
   } = params
 
   const result: HabitScheduleDayResult = {
@@ -1291,6 +1340,47 @@ async function scheduleHabitsForDay(params: {
 
   const dayInstances = existingInstances.map(inst => ({ ...inst }))
 
+  const invalidHabitInstances: ScheduleInstance[] = []
+  const seenInvalidIds = new Set<string>()
+  for (let index = dayInstances.length - 1; index >= 0; index -= 1) {
+    const instance = dayInstances[index]
+    if (!instance) continue
+    if (instance.source_type !== 'HABIT') continue
+    if (instance.status !== 'scheduled') continue
+    const habitId = instance.source_id ?? null
+    if (!habitId) continue
+    const habit = habitMap.get(habitId)
+    if (!habit) continue
+    const instanceStart = new Date(instance.start_utc ?? '')
+    if (Number.isNaN(instanceStart.getTime())) continue
+    const instanceDayStart = startOfDayInTimeZone(instanceStart, zone)
+    if (instanceDayStart.getTime() !== dayStart.getTime()) continue
+    const windowDays = habit.window?.days ?? null
+    const dueInfo = evaluateHabitDueOnDate({
+      habit,
+      date: instanceDayStart,
+      timeZone: zone,
+      windowDays,
+      lastScheduledStart: getLastScheduledHabitStart(habitId),
+    })
+    if (!dueInfo.isDue) {
+      if (!seenInvalidIds.has(instance.id ?? `${habitId}:${index}`)) {
+        invalidHabitInstances.push(instance)
+        seenInvalidIds.add(instance.id ?? `${habitId}:${index}`)
+      }
+      dayInstances.splice(index, 1)
+      if (existingByHabitId.get(habitId)?.id === instance.id) {
+        existingByHabitId.delete(habitId)
+      }
+      continue
+    }
+    recordHabitScheduledStart(habitId, instanceStart)
+  }
+
+  if (invalidHabitInstances.length > 0) {
+    duplicatesToCancel.push(...invalidHabitInstances)
+  }
+
   if (duplicatesToCancel.length > 0) {
     for (const duplicate of duplicatesToCancel) {
       if (!duplicate?.id) continue
@@ -1321,6 +1411,7 @@ async function scheduleHabitsForDay(params: {
       date: day,
       timeZone: zone,
       windowDays,
+      lastScheduledStart: getLastScheduledHabitStart(habit.id),
     })
     if (!dueInfo.isDue) continue
     dueInfoByHabitId.set(habit.id, dueInfo)
@@ -1894,6 +1985,7 @@ async function scheduleHabitsForDay(params: {
 
     const startDate = new Date(persisted.start_utc)
     const endDate = new Date(persisted.end_utc)
+    recordHabitScheduledStart(habit.id, startDate)
     const startUTC = startDate.toISOString()
     const endUTC = endDate.toISOString()
 
