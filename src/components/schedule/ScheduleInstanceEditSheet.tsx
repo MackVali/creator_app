@@ -6,6 +6,7 @@ import {
   useState,
   useRef,
   useId,
+  useLayoutEffect,
 } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -27,6 +28,15 @@ type ScheduleInstanceEditSheetProps = {
   onSubmit: (payload: { startLocal: string; endLocal: string }) => void;
   saving?: boolean;
   error?: string | null;
+  origin?: ScheduleEditOrigin | null;
+};
+
+export type ScheduleEditOrigin = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  borderRadius: string;
 };
 
 const INPUT_PLACEHOLDER = "Select date & time";
@@ -41,12 +51,22 @@ export function ScheduleInstanceEditSheet({
   onSubmit,
   saving = false,
   error,
+  origin,
 }: ScheduleInstanceEditSheetProps) {
   const [startValue, setStartValue] = useState("");
   const [endValue, setEndValue] = useState("");
   const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
   const startInputRef = useRef<HTMLInputElement | null>(null);
   const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window === "undefined" ? 0 : window.innerWidth,
+    height: typeof window === "undefined" ? 0 : window.innerHeight,
+  }));
+  const [originSnapshot, setOriginSnapshot] = useState<ScheduleEditOrigin | null>(
+    origin ?? null
+  );
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
 
   useEffect(() => {
     if (!instance) {
@@ -62,6 +82,17 @@ export function ScheduleInstanceEditSheet({
 
   useEffect(() => {
     setPortalElement(document.body);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   useEffect(() => {
@@ -94,6 +125,26 @@ export function ScheduleInstanceEditSheet({
     return () => window.clearTimeout(focusTimeout);
   }, [open]);
 
+  useEffect(() => {
+    if (origin) {
+      setOriginSnapshot(origin);
+    }
+  }, [origin]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const element = dialogRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (!entry) return;
+      const nextHeight = entry.contentRect.height;
+      setContentHeight(nextHeight);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [open]);
+
   const durationLabel = useMemo(() => {
     if (!startValue || !endValue) return null;
     const start = Date.parse(startValue);
@@ -122,8 +173,58 @@ export function ScheduleInstanceEditSheet({
     !isValidDateInput(startValue) ||
     !isValidDateInput(endValue);
 
+  const targetWidth = useMemo(() => {
+    if (!viewport.width) return 520;
+    const padded = viewport.width - 32;
+    return Math.min(Math.max(320, padded), 560);
+  }, [viewport.width]);
+
+  const maxDialogHeight = useMemo(() => {
+    if (!viewport.height) return 640;
+    const capped = viewport.height - 80;
+    return Math.min(Math.max(360, capped), 640);
+  }, [viewport.height]);
+
+  const springTransition = useMemo(
+    () => ({ type: "spring", stiffness: 150, damping: 20, mass: 0.9 }),
+    []
+  );
+
+  const morphTransform = useMemo(() => {
+    if (!originSnapshot || viewport.width === 0 || viewport.height === 0) {
+      return null;
+    }
+    const originCenterX = originSnapshot.x + originSnapshot.width / 2;
+    const originCenterY = originSnapshot.y + originSnapshot.height / 2;
+    const offsetX = originCenterX - viewport.width / 2;
+    const offsetY = originCenterY - viewport.height / 2;
+    const widthRatio = originSnapshot.width / targetWidth;
+    const baseHeight = contentHeight ?? Math.min(maxDialogHeight, originSnapshot.height + 180);
+    const heightRatio = originSnapshot.height / Math.max(baseHeight, 1);
+    const uniformScale = Math.max(0.35, Math.min(1.2, Math.max(widthRatio, heightRatio)));
+    return {
+      x: offsetX,
+      y: offsetY,
+      scale: uniformScale,
+      borderRadius: originSnapshot.borderRadius,
+    };
+  }, [
+    originSnapshot,
+    viewport.width,
+    viewport.height,
+    targetWidth,
+    contentHeight,
+    maxDialogHeight,
+  ]);
+
   const dialogContent = (
-    <AnimatePresence>
+    <AnimatePresence
+      mode="wait"
+      onExitComplete={() => {
+        setContentHeight(null);
+        setOriginSnapshot(null);
+      }}
+    >
       {open ? (
         <motion.div
           key="schedule-edit-dialog"
@@ -148,10 +249,47 @@ export function ScheduleInstanceEditSheet({
             aria-modal="true"
             aria-labelledby={titleId}
             className="relative z-10 w-full max-w-lg origin-center rounded-2xl border border-white/12 bg-[var(--surface-elevated)] px-5 pb-6 pt-5 text-white shadow-[0_32px_80px_rgba(5,8,22,0.78)]"
-            initial={{ opacity: 0, scale: 0.94, y: 28 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 18 }}
-            transition={{ type: "spring", stiffness: 160, damping: 22 }}
+            initial={
+              morphTransform
+                ? {
+                    opacity: 1,
+                    x: morphTransform.x,
+                    y: morphTransform.y,
+                    scale: morphTransform.scale,
+                    borderRadius: morphTransform.borderRadius,
+                  }
+                : { opacity: 0, scale: 0.94, y: 28 }
+            }
+            animate={
+              morphTransform
+                ? {
+                    opacity: 1,
+                    x: 0,
+                    y: 0,
+                    scale: 1,
+                    borderRadius: "24px",
+                  }
+                : { opacity: 1, scale: 1, y: 0 }
+            }
+            exit={
+              morphTransform
+                ? {
+                    opacity: 0,
+                    x: morphTransform.x,
+                    y: morphTransform.y,
+                    scale: morphTransform.scale,
+                    borderRadius: morphTransform.borderRadius,
+                  }
+                : { opacity: 0, scale: 0.96, y: 18 }
+            }
+            transition={springTransition}
+            style={{
+              width: targetWidth,
+              maxWidth: "min(560px, calc(100vw - 32px))",
+              maxHeight: maxDialogHeight,
+              transformOrigin: "center",
+            }}
+            ref={dialogRef}
           >
             <button
               type="button"

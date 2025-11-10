@@ -39,7 +39,10 @@ import FlameEmber, { FlameLevel, type FlameEmberProps } from '@/components/Flame
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
-import { ScheduleInstanceEditSheet } from '@/components/schedule/ScheduleInstanceEditSheet'
+import {
+  ScheduleInstanceEditSheet,
+  type ScheduleEditOrigin,
+} from '@/components/schedule/ScheduleInstanceEditSheet'
 import { ProjectEditSheet } from '@/components/schedule/ProjectEditSheet'
 import { HabitEditSheet } from '@/components/schedule/HabitEditSheet'
 import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
@@ -1857,6 +1860,7 @@ export default function SchedulePage() {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null)
   const [editInstanceId, setEditInstanceId] = useState<string | null>(null)
+  const [editOrigin, setEditOrigin] = useState<ScheduleEditOrigin | null>(null)
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
@@ -1871,6 +1875,7 @@ export default function SchedulePage() {
   const shortPressHandledRef = useRef(false)
   const [longPressBounceId, setLongPressBounceId] = useState<string | null>(null)
   const longPressBounceTimeoutRef = useRef<number | null>(null)
+  const longPressOriginRef = useRef<HTMLElement | null>(null)
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
     next?: DayTimelineModel | null
@@ -3122,6 +3127,7 @@ peekDataDepsRef.current = {
     setIsEditSheetOpen(false)
     setEditInstanceId(null)
     setEditError(null)
+    setEditOrigin(null)
   }, [editSaving])
 
   const handleSubmitInstanceEdit = useCallback(
@@ -3161,6 +3167,7 @@ peekDataDepsRef.current = {
         await loadInstancesRef.current()
         setIsEditSheetOpen(false)
         setEditInstanceId(null)
+        setEditOrigin(null)
       } catch (error) {
         console.error('Failed to update schedule instance', error)
         setEditError('Unable to update this schedule entry. Please try again.')
@@ -3872,11 +3879,15 @@ peekDataDepsRef.current = {
     setFocusInstanceId(instanceId)
   }
 
-  const openInstanceEditor = useCallback((instanceId: string) => {
-    setEditInstanceId(instanceId)
-    setEditError(null)
-    setIsEditSheetOpen(true)
-  }, [])
+  const openInstanceEditor = useCallback(
+    (instanceId: string, origin?: ScheduleEditOrigin | null) => {
+      setEditInstanceId(instanceId)
+      setEditOrigin(origin ?? null)
+      setEditError(null)
+      setIsEditSheetOpen(true)
+    },
+    []
+  )
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -3934,8 +3945,10 @@ peekDataDepsRef.current = {
         longPressTriggeredRef.current = false
         shortPressHandledRef.current = false
         clearLongPressTimer()
+        longPressOriginRef.current = null
         return
       }
+      longPressOriginRef.current = event.currentTarget
       activePressRef.current = {
         instanceId,
         shortPress: onShortPress ?? null,
@@ -3945,14 +3958,41 @@ peekDataDepsRef.current = {
       clearLongPressTimer()
       const timerId = window.setTimeout(() => {
         longPressTimerRef.current = null
+        const element = longPressOriginRef.current
+        let originData: ScheduleEditOrigin | null = null
+        if (element) {
+          const rect = element.getBoundingClientRect()
+          const computed = window.getComputedStyle(element)
+          const fallbackRadius = [
+            computed.borderTopLeftRadius,
+            computed.borderTopRightRadius,
+            computed.borderBottomRightRadius,
+            computed.borderBottomLeftRadius,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .trim()
+          const radius =
+            (computed.borderRadius && computed.borderRadius.trim().length > 0
+              ? computed.borderRadius
+              : fallbackRadius) || '0px'
+          originData = {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            borderRadius: radius,
+          }
+        }
         triggerLongPressFeedback(instanceId)
         longPressTriggeredRef.current = true
         const runLongPressAction = () => {
           if (onLongPress) {
             onLongPress()
           } else {
-            openInstanceEditor(instanceId)
+            openInstanceEditor(instanceId, originData)
           }
+          longPressOriginRef.current = null
         }
         if (LONG_PRESS_ACTION_DELAY_MS > 0) {
           window.setTimeout(runLongPressAction, LONG_PRESS_ACTION_DELAY_MS)
@@ -3962,7 +4002,11 @@ peekDataDepsRef.current = {
       }, SCHEDULE_CARD_LONG_PRESS_MS)
       longPressTimerRef.current = timerId
     },
-    [clearLongPressTimer, openInstanceEditor, triggerLongPressFeedback]
+    [
+      clearLongPressTimer,
+      openInstanceEditor,
+      triggerLongPressFeedback,
+    ]
   )
 
   const handleInstancePointerUp = useCallback(() => {
@@ -3970,6 +4014,7 @@ peekDataDepsRef.current = {
     const longPressTriggered = longPressTriggeredRef.current
     cancelLongPress()
     activePressRef.current = null
+    longPressOriginRef.current = null
     if (!longPressTriggered && pending?.shortPress) {
       shortPressHandledRef.current = true
       pending.shortPress()
@@ -3979,6 +4024,7 @@ peekDataDepsRef.current = {
   const handleInstancePointerCancel = useCallback(() => {
     activePressRef.current = null
     cancelLongPress()
+    longPressOriginRef.current = null
   }, [cancelLongPress])
 
   const shouldBlockClickFromLongPress = useCallback(() => {
@@ -4044,6 +4090,7 @@ peekDataDepsRef.current = {
     if (editInstanceId && !editingInstance) {
       setIsEditSheetOpen(false)
       setEditInstanceId(null)
+      setEditOrigin(null)
     }
   }, [isEditSheetOpen, editInstanceId, editingInstance])
 
@@ -5401,6 +5448,7 @@ peekDataDepsRef.current = {
         onSubmit={handleSubmitInstanceEdit}
         saving={editSaving}
         error={editError}
+        origin={editOrigin}
       />
     </>
   )
