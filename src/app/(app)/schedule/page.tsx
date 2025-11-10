@@ -4385,7 +4385,7 @@ peekDataDepsRef.current = {
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer`}
+                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
                   role="button"
                   tabIndex={options?.disableInteractions ? -1 : 0}
                   aria-pressed={isHabitCompleted}
@@ -4614,7 +4614,7 @@ peekDataDepsRef.current = {
                           event.preventDefault()
                           handleProjectPrimaryAction()
                         }}
-                        className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                        className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none${
                           canExpand || (canToggle && !isPending)
                             ? ' cursor-pointer'
                             : ''
@@ -4777,7 +4777,7 @@ peekDataDepsRef.current = {
                               ...sharedCardStyle,
                             }
                             const baseTaskClasses =
-                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 select-none'
                             const shinyTaskClasses =
                               'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
                             const completedTaskClasses =
