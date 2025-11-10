@@ -40,6 +40,8 @@ import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
 import { ScheduleInstanceEditSheet } from '@/components/schedule/ScheduleInstanceEditSheet'
+import { ProjectEditSheet } from '@/components/schedule/ProjectEditSheet'
+import { HabitEditSheet } from '@/components/schedule/HabitEditSheet'
 import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import {
@@ -112,7 +114,9 @@ const PX_PER_MIN_STOPS = [
 const VERTICAL_SCROLL_THRESHOLD_PX = 20
 const VERTICAL_SCROLL_BIAS_PX = 8
 const VERTICAL_SCROLL_SLOPE = 1.35
-const SCHEDULE_CARD_LONG_PRESS_MS = 3000
+const SCHEDULE_CARD_LONG_PRESS_MS = 650
+const LONG_PRESS_FEEDBACK_DURATION_MS = 280
+const LONG_PRESS_ACTION_DELAY_MS = 120
 
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
@@ -1865,6 +1869,8 @@ export default function SchedulePage() {
     shortPress: (() => void) | null
   } | null>(null)
   const shortPressHandledRef = useRef(false)
+  const [longPressBounceId, setLongPressBounceId] = useState<string | null>(null)
+  const longPressBounceTimeoutRef = useRef<number | null>(null)
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
     next?: DayTimelineModel | null
@@ -2314,6 +2320,9 @@ export default function SchedulePage() {
   const swipeScrollProgressRef = useRef<number | null>(null)
   const navLock = useRef(false)
   const loadInstancesRef = useRef<() => Promise<void>>(async () => {})
+  const refreshScheduleData = useCallback(async () => {
+    await loadInstancesRef.current()
+  }, [])
   const scheduleDatasetRef = useRef<ScheduleEventDataset | null>(null)
   const PRIMARY_WRITE_WINDOW_DAYS = 7
   const FULL_WRITE_WINDOW_DAYS = 365
@@ -2628,6 +2637,20 @@ export default function SchedulePage() {
       default:
         return 'Event'
     }
+  }, [editingInstance])
+
+  const editingProjectId = useMemo(() => {
+    if (!editingInstance) return null
+    if (editingInstance.source_type !== 'PROJECT') return null
+    const sourceId = editingInstance.source_id ?? ''
+    return sourceId && sourceId.length > 0 ? sourceId : null
+  }, [editingInstance])
+
+  const editingHabitId = useMemo(() => {
+    if (!editingInstance) return null
+    if (editingInstance.source_type !== 'HABIT') return null
+    const sourceId = editingInstance.source_id ?? ''
+    return sourceId && sourceId.length > 0 ? sourceId : null
   }, [editingInstance])
 
   const windowMap = useMemo(() => buildWindowMap(windows), [windows])
@@ -3866,6 +3889,28 @@ peekDataDepsRef.current = {
     clearLongPressTimer()
   }, [clearLongPressTimer])
 
+  const triggerLongPressFeedback = useCallback((instanceId: string) => {
+    if (!instanceId) return
+    setLongPressBounceId(instanceId)
+    if (longPressBounceTimeoutRef.current !== null) {
+      window.clearTimeout(longPressBounceTimeoutRef.current)
+      longPressBounceTimeoutRef.current = null
+    }
+    longPressBounceTimeoutRef.current = window.setTimeout(() => {
+      setLongPressBounceId(current => (current === instanceId ? null : current))
+      longPressBounceTimeoutRef.current = null
+    }, LONG_PRESS_FEEDBACK_DURATION_MS)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (longPressBounceTimeoutRef.current !== null) {
+        window.clearTimeout(longPressBounceTimeoutRef.current)
+        longPressBounceTimeoutRef.current = null
+      }
+    }
+  }, [])
+
   const handleInstancePointerDown = useCallback(
     (
       event: ReactPointerEvent<HTMLElement>,
@@ -3878,8 +3923,12 @@ peekDataDepsRef.current = {
       const isTouchLike =
         pointerType === 'touch' ||
         pointerType === 'pen' ||
+        pointerType === 'mouse' ||
         pointerType === '' ||
         pointerType === undefined
+      if (pointerType === 'mouse' && event.button !== 0) {
+        return
+      }
       if (!isTouchLike) {
         activePressRef.current = null
         longPressTriggeredRef.current = false
@@ -3896,16 +3945,24 @@ peekDataDepsRef.current = {
       clearLongPressTimer()
       const timerId = window.setTimeout(() => {
         longPressTimerRef.current = null
+        triggerLongPressFeedback(instanceId)
         longPressTriggeredRef.current = true
-        if (onLongPress) {
-          onLongPress()
+        const runLongPressAction = () => {
+          if (onLongPress) {
+            onLongPress()
+          } else {
+            openInstanceEditor(instanceId)
+          }
+        }
+        if (LONG_PRESS_ACTION_DELAY_MS > 0) {
+          window.setTimeout(runLongPressAction, LONG_PRESS_ACTION_DELAY_MS)
         } else {
-          openInstanceEditor(instanceId)
+          runLongPressAction()
         }
       }, SCHEDULE_CARD_LONG_PRESS_MS)
       longPressTimerRef.current = timerId
     },
-    [clearLongPressTimer, openInstanceEditor]
+    [clearLongPressTimer, openInstanceEditor, triggerLongPressFeedback]
   )
 
   const handleInstancePointerUp = useCallback(() => {
@@ -4301,6 +4358,10 @@ peekDataDepsRef.current = {
                 { animate: !prefersReducedMotion }
               )
               const hasHabitInstance = Boolean(placement.instanceId)
+              const habitBounceActive =
+                hasHabitInstance && placement.instanceId
+                  ? longPressBounceId === placement.instanceId
+                  : false
               const handleHabitPrimaryAction = () => {
                 if (options?.disableInteractions) return
                 handleHabitCardActivation(placement, dayViewDateKey)
@@ -4342,7 +4403,15 @@ peekDataDepsRef.current = {
                   }}
                   {...habitPointerHandlers}
                   initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-                  animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+                  animate={
+                    prefersReducedMotion
+                      ? undefined
+                      : {
+                          opacity: 1,
+                          y: 0,
+                          scale: habitBounceActive ? 1.04 : 1,
+                        }
+                  }
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
                   <span className="truncate text-sm font-medium leading-snug">
@@ -4452,6 +4521,16 @@ peekDataDepsRef.current = {
               const detailParts: string[] = []
               if (tasksLabel) detailParts.push(tasksLabel)
               const detailText = detailParts.join(' · ')
+              const weightValue =
+                typeof instance.weight_snapshot === 'number'
+                  ? instance.weight_snapshot
+                  : project.weight
+              const weightDisplay =
+                typeof weightValue === 'number' && Number.isFinite(weightValue)
+                  ? weightValue % 1 === 0
+                    ? weightValue.toString()
+                    : weightValue.toFixed(2).replace(/\.00$/, '')
+                  : null
               const hiddenFallbackCount = usingFallback
                 ? Math.max(0, backlogTasks.length - displayCards.length)
                 : 0
@@ -4464,6 +4543,7 @@ peekDataDepsRef.current = {
                 effectiveStatus === 'completed' ||
                 effectiveStatus === 'scheduled'
               const isCompleted = effectiveStatus === 'completed'
+              const projectLongPressActive = longPressBounceId === instance.id
 
               const handleProjectToggle = () => {
                 if (!canToggle || isPending) return
@@ -4549,12 +4629,19 @@ peekDataDepsRef.current = {
                             : {
                                 opacity: 1,
                                 y: 0,
+                                scale: projectLongPressActive ? 1.03 : 1,
                                 transition: {
                                   delay: hasInteractedWithProjects
                                     ? 0
                                     : index * 0.02,
                                   duration: 0.18,
                                   ease: [0.4, 0, 0.2, 1],
+                                  scale: {
+                                    delay: 0,
+                                    type: 'spring',
+                                    stiffness: 520,
+                                    damping: 32,
+                                  },
                                 },
                               }
                         }
@@ -4579,6 +4666,11 @@ peekDataDepsRef.current = {
                           <div className="min-w-0">
                             <span className="block truncate text-sm font-medium">
                               {project.name}
+                              {weightDisplay ? (
+                                <span className="ml-1 text-xs font-normal text-white/70">
+                                  ({weightDisplay})
+                                </span>
+                              ) : null}
                             </span>
                             {detailText ? (
                               <div className="text-xs text-zinc-200/70">
@@ -4759,6 +4851,10 @@ peekDataDepsRef.current = {
                                 : 'absolute left-0 bottom-0 h-[3px] bg-white/25'
                             const hasInteractiveRole =
                               isFallbackCard || (kind === 'scheduled' && !!instanceId)
+                            const taskLongPressActive =
+                              kind === 'scheduled' && instanceId
+                                ? longPressBounceId === instanceId
+                                : false
 
                             const handleTaskCardPrimaryAction = () => {
                               if (isFallbackCard) {
@@ -4841,9 +4937,16 @@ peekDataDepsRef.current = {
                                     : {
                                         opacity: 1,
                                         y: 0,
+                                        scale: taskLongPressActive ? 1.03 : 1,
                                         transition: {
                                           duration: 0.18,
                                           ease: [0.4, 0, 0.2, 1],
+                                          scale: {
+                                            delay: 0,
+                                            type: 'spring',
+                                            stiffness: 500,
+                                            damping: 30,
+                                          },
                                         },
                                       }
                                 }
@@ -4931,6 +5034,7 @@ peekDataDepsRef.current = {
               ]
                 .filter(Boolean)
                 .join(' ')
+              const standaloneLongPressActive = longPressBounceId === instance.id
 
               const handleStandaloneTaskPrimaryAction = () => {
                 if (!canToggle || isPending) return
@@ -4972,7 +5076,13 @@ peekDataDepsRef.current = {
                     prefersReducedMotion ? false : { opacity: 0, y: 4 }
                   }
                   animate={
-                    prefersReducedMotion ? undefined : { opacity: 1, y: 0 }
+                    prefersReducedMotion
+                      ? undefined
+                      : {
+                          opacity: 1,
+                          y: 0,
+                          scale: standaloneLongPressActive ? 1.03 : 1,
+                        }
                   }
                   exit={
                     prefersReducedMotion ? undefined : { opacity: 0, y: 4 }
@@ -5033,6 +5143,7 @@ peekDataDepsRef.current = {
         handleInstancePointerUp,
         handleInstancePointerCancel,
         shouldBlockClickFromLongPress,
+        longPressBounceId,
       ]
     )
 
@@ -5261,8 +5372,27 @@ peekDataDepsRef.current = {
         monuments={monuments}
         skills={skills}
       />
+      <ProjectEditSheet
+        open={isEditSheetOpen && Boolean(editingProjectId)}
+        projectId={editingProjectId}
+        eventTitle={editingEventTitle}
+        onClose={handleCloseEditSheet}
+        onSaved={refreshScheduleData}
+      />
+      <HabitEditSheet
+        open={isEditSheetOpen && Boolean(editingHabitId)}
+        habitId={editingHabitId}
+        eventTitle={editingEventTitle}
+        onClose={handleCloseEditSheet}
+        onSaved={refreshScheduleData}
+      />
       <ScheduleInstanceEditSheet
-        open={isEditSheetOpen && Boolean(editingInstance)}
+        open={
+          isEditSheetOpen &&
+          Boolean(editingInstance) &&
+          !editingProjectId &&
+          !editingHabitId
+        }
         instance={editingInstance}
         eventTitle={editingEventTitle}
         eventTypeLabel={editingEventTypeLabel}

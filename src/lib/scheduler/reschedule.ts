@@ -473,6 +473,7 @@ export async function scheduleBacklog(
   collectPrimaryReuseIds(dedupe.reusableByProject)
   collectReuseIds(dedupe.canceledByProject)
   const keptInstances = [...dedupe.keepers]
+  const keptInstancesByProject = new Map<string, ScheduleInstance>()
   const habitScheduledDatesById = new Map<string, Date[]>()
   for (const instance of dedupe.allInstances) {
     if (!instance || instance.source_type !== 'HABIT') continue
@@ -490,8 +491,10 @@ export async function scheduleBacklog(
   }
   for (const [habitId, dates] of habitScheduledDatesById) {
     dates.sort((a, b) => a.getTime() - b.getTime())
+    const baseStartMs = baseStart.getTime()
     for (const start of dates) {
-      if (start.getTime() > baseStart.getTime()) break
+      const startMs = start.getTime()
+      if (startMs >= baseStartMs) break
       recordHabitScheduledStart(habitId, start)
     }
   }
@@ -541,6 +544,16 @@ export async function scheduleBacklog(
     return habitOverlapMap.get(aId) === true && habitOverlapMap.get(bId) === true
   }
 
+  const projectWeightForInstance = (instance: ScheduleInstance): number => {
+    if (typeof instance?.weight_snapshot === 'number') {
+      return instance.weight_snapshot
+    }
+    const projectId = instance?.source_id ?? ''
+    if (!projectId) return 0
+    const def = projectItemMap[projectId]
+    return typeof def?.weight === 'number' ? def.weight : 0
+  }
+
   const collectProjectOverlapConflicts = (
     instances: ScheduleInstance[],
     habitOverlapMap: Map<string, boolean>
@@ -588,12 +601,16 @@ export async function scheduleBacklog(
         } else if (!lastIsProject && currentIsProject) {
           removal = current
         } else if (lastIsProject && currentIsProject) {
-          const lastStart = new Date(last.start_utc ?? '').getTime()
-          const currentStart = new Date(current.start_utc ?? '').getTime()
-          if (currentStart < lastStart) {
+          const lastWeight = projectWeightForInstance(last)
+          const currentWeight = projectWeightForInstance(current)
+          if (lastWeight < currentWeight) {
             removal = last
-          } else {
+          } else if (currentWeight < lastWeight) {
             removal = current
+          } else {
+            const lastStart = new Date(last.start_utc ?? '').getTime()
+            const currentStart = new Date(current.start_utc ?? '').getTime()
+            removal = currentStart < lastStart ? last : current
           }
         }
         if (removal && removal.source_type === 'PROJECT' && !seen.has(removal.id)) {
@@ -738,13 +755,8 @@ export async function scheduleBacklog(
   for (const inst of keptInstances) {
     const projectId = inst.source_id ?? ''
     if (!projectId) continue
-    result.timeline.push({
-      type: 'PROJECT',
-      instance: inst,
-      projectId,
-      decision: 'kept',
-      scheduledDayOffset: dayOffsetFor(inst.start_utc) ?? undefined,
-    })
+    keptInstancesByProject.set(projectId, inst)
+    registerReuseInstance(projectId, inst.id)
   }
 
   for (const item of queue) {
@@ -981,6 +993,7 @@ export async function scheduleBacklog(
             })
           }
         }
+        keptInstancesByProject.delete(item.id)
         const decision: ScheduleDraftPlacement['decision'] = item.instanceId
           ? 'rescheduled'
           : 'new'
@@ -1001,6 +1014,17 @@ export async function scheduleBacklog(
         registerInstanceForOffsets(placed.data)
       }
     }
+  }
+
+  for (const [projectId, inst] of keptInstancesByProject) {
+    scheduledProjectIds.add(projectId)
+    result.timeline.push({
+      type: 'PROJECT',
+      instance: inst,
+      projectId,
+      decision: 'kept',
+      scheduledDayOffset: dayOffsetFor(inst.start_utc) ?? undefined,
+    })
   }
 
   if (persistedDayLimit >= lookaheadDays) {
