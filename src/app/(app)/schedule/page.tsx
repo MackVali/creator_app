@@ -818,7 +818,7 @@ function computeHabitPlacementsForDay({
   }
 
   const placements: HabitTimelinePlacement[] = []
-  const placedHabitIds = new Set<string>()
+  const placedHabitKeys = new Set<string>()
 
   if (instances && instances.length > 0) {
     for (const instance of instances) {
@@ -841,6 +841,9 @@ function computeHabitPlacementsForDay({
             timeZone: zone,
           })
       const timelineKey = habitTimelinePlacementKey(habit.id, start)
+      if (placedHabitKeys.has(timelineKey)) {
+        continue
+      }
       const timelinePlacement = timelineHabitPlacements.get(timelineKey)
 
       placements.push({
@@ -855,7 +858,7 @@ function computeHabitPlacementsForDay({
         window,
         truncated: timelinePlacement?.clipped ?? false,
       })
-      placedHabitIds.add(habit.id)
+      placedHabitKeys.add(timelineKey)
 
       if (assignedEntry) {
         const normalizedEnd = Math.min(
