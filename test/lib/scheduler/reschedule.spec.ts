@@ -290,6 +290,98 @@ describe("scheduleBacklog", () => {
     expect(callOrder[1]).toBe("proj-low");
   });
 
+  it("repositions overlapping projects by rescheduling the lower weight instance first", async () => {
+    const { client } = createSupabaseMock();
+
+    const overlappingWindow: repo.WindowLite = {
+      id: "win-overlap",
+      label: "Morning",
+      energy: "LOW",
+      start_local: "09:00",
+      end_local: "11:00",
+      days: [2],
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+    };
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-heavy",
+        source_id: "proj-heavy",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T10:30:00Z",
+        window_id: overlappingWindow.id,
+        weight_snapshot: 80,
+      }),
+      createInstanceRecord({
+        id: "inst-light",
+        source_id: "proj-light",
+        start_utc: "2024-01-02T09:30:00Z",
+        end_utc: "2024-01-02T11:00:00Z",
+        window_id: overlappingWindow.id,
+        weight_snapshot: 10,
+      }),
+    ];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-heavy": {
+        id: "proj-heavy",
+        name: "Heavy",
+        priority: "HIGH",
+        stage: "RESEARCH",
+        energy: "LOW",
+        duration_min: 90,
+      },
+      "proj-light": {
+        id: "proj-light",
+        name: "Light",
+        priority: "LOW",
+        stage: "RESEARCH",
+        energy: "LOW",
+        duration_min: 90,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([overlappingWindow]);
+    vi.spyOn(repo, "fetchWindowsSnapshot").mockResolvedValue([overlappingWindow]);
+
+    const placementCalls: Array<{ id: string; reuseInstanceId: string | null }> = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item, reuseInstanceId }) => {
+        placementCalls.push({ id: item.id, reuseInstanceId: reuseInstanceId ?? null });
+        return {
+          data: createInstanceRecord({
+            id: `inst-${item.id}`,
+            source_id: item.id,
+            status: "scheduled",
+            start_utc: "2024-01-02T11:30:00Z",
+            end_utc: "2024-01-02T12:30:00Z",
+            window_id: overlappingWindow.id,
+            weight_snapshot: item.weight,
+            energy_resolved: "LOW",
+          }),
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        };
+      },
+    );
+
+    const morningBaseDate = new Date("2024-01-02T07:00:00Z");
+    await scheduleBacklog(userId, morningBaseDate, client, {
+      writeThroughDays: 1,
+      mode: { type: "SKILLED", skillIds: ["skill-x"] },
+    });
+
+    expect(placementCalls.length).toBeGreaterThan(0);
+    expect(placementCalls[0]).toEqual({
+      id: "proj-light",
+      reuseInstanceId: "inst-light",
+    });
+  });
+
   it("creates schedule instances for due habits", async () => {
     const { client } = createSupabaseMock();
 
