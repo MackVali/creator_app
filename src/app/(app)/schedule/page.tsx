@@ -16,6 +16,7 @@ import {
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
   AnimatePresence,
+  LayoutGroup,
   animate,
   motion,
   useAnimationControls,
@@ -147,6 +148,9 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
   left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
   right: `var(--timeline-card-right, ${TIMELINE_CARD_RIGHT_FALLBACK})`,
 }
+
+const getScheduleInstanceLayoutId = (instanceId: string) =>
+  `schedule-instance-${instanceId}`
 
 function computeDayTimelineHeightPx(
   startHour: number,
@@ -3976,12 +3980,30 @@ peekDataDepsRef.current = {
             (computed.borderRadius && computed.borderRadius.trim().length > 0
               ? computed.borderRadius
               : fallbackRadius) || '0px'
+          const backgroundImage =
+            computed.backgroundImage && computed.backgroundImage !== 'none'
+              ? computed.backgroundImage
+              : undefined
+          const backgroundColorRaw = computed.backgroundColor
+          const backgroundColor =
+            backgroundColorRaw &&
+            backgroundColorRaw !== 'rgba(0, 0, 0, 0)' &&
+            backgroundColorRaw.toLowerCase() !== 'transparent'
+              ? backgroundColorRaw
+              : undefined
+          const boxShadow =
+            computed.boxShadow && computed.boxShadow !== 'none'
+              ? computed.boxShadow
+              : undefined
           originData = {
             x: rect.left,
             y: rect.top,
             width: rect.width,
             height: rect.height,
             borderRadius: radius,
+            backgroundColor,
+            backgroundImage,
+            boxShadow,
           }
         }
         triggerLongPressFeedback(instanceId)
@@ -4592,6 +4614,14 @@ peekDataDepsRef.current = {
               const isCompleted = effectiveStatus === 'completed'
               const projectLongPressActive = longPressBounceId === instance.id
 
+              const hideForEdit = Boolean(
+                isEditSheetOpen &&
+                  editInstanceId &&
+                  editInstanceId === instance.id &&
+                  !editingProjectId &&
+                  !editingHabitId
+              )
+
               const handleProjectToggle = () => {
                 if (!canToggle || isPending) return
                 const nextStatus = isCompleted ? 'scheduled' : 'completed'
@@ -4633,13 +4663,16 @@ peekDataDepsRef.current = {
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {!isExpanded || !canExpand ? (
-                      <motion.div
-                        key="project"
-                        aria-label={`Project ${project.name}`}
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={canExpand ? isExpanded : undefined}
-                        aria-pressed={isCompleted}
+                      hideForEdit ? null : (
+                        <motion.div
+                          key="project"
+                          layout="position"
+                          layoutId={getScheduleInstanceLayoutId(instance.id)}
+                          aria-label={`Project ${project.name}`}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={canExpand ? isExpanded : undefined}
+                          aria-pressed={isCompleted}
                         aria-disabled={!canToggle || isPending}
                         onPointerDown={event => {
                           if (options?.disableInteractions) return
@@ -4700,15 +4733,15 @@ peekDataDepsRef.current = {
                                 y: 4,
                                 transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
                           }
-                        }
-                      >
-                        {goalRelationText ? (
-                          <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
-                            <span className="truncate text-[9px] font-semibold text-white/80">
-                              {goalRelationText}
-                            </span>
-                          </div>
-                        ) : null}
+                          }
+                        >
+                          {goalRelationText ? (
+                            <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+                              <span className="truncate text-[9px] font-semibold text-white/80">
+                                {goalRelationText}
+                              </span>
+                            </div>
+                          ) : null}
                         <div className="flex min-w-0 flex-1 items-start gap-3">
                           <div className="min-w-0">
                             <span className="block truncate text-sm font-medium">
@@ -4736,7 +4769,8 @@ peekDataDepsRef.current = {
                           iconClassName="text-lg leading-none"
                           flameClassName="flex-shrink-0"
                         />
-                      </motion.div>
+                        </motion.div>
+                      )
                     ) : (
                       <motion.div
                         key="tasks"
@@ -4778,18 +4812,19 @@ peekDataDepsRef.current = {
                         <div
                           className={`relative h-full w-full overflow-hidden p-2 ${projectCornerClass}`}
                         >
-                          {displayCards.map(taskCard => {
-                            const {
-                              key,
-                              task,
-                              start: taskStart,
-                              end: taskEnd,
-                              kind,
-                              instanceId,
-                            } = taskCard
-                            if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
-                              return null
-                            }
+                          <AnimatePresence initial={false}>
+                            {displayCards.map(taskCard => {
+                              const {
+                                key,
+                                task,
+                                start: taskStart,
+                                end: taskEnd,
+                                kind,
+                                instanceId,
+                              } = taskCard
+                              if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
+                                return null
+                              }
                             const startOffsetMs =
                               taskStart.getTime() - start.getTime()
                             const endOffsetMs = taskEnd.getTime() - start.getTime()
@@ -4903,6 +4938,19 @@ peekDataDepsRef.current = {
                                 ? longPressBounceId === instanceId
                                 : false
 
+                            const hideForEdit = Boolean(
+                              isEditSheetOpen &&
+                                editInstanceId &&
+                                instanceId &&
+                                editInstanceId === instanceId &&
+                                !editingProjectId &&
+                                !editingHabitId
+                            )
+
+                            if (hideForEdit) {
+                              return null
+                            }
+
                             const handleTaskCardPrimaryAction = () => {
                               if (isFallbackCard) {
                                 if (!canToggle || isPending) return
@@ -4923,6 +4971,12 @@ peekDataDepsRef.current = {
                             return (
                               <motion.div
                                 key={key}
+                                layout={instanceId ? 'position' : false}
+                                layoutId={
+                                  kind === 'scheduled' && instanceId
+                                    ? getScheduleInstanceLayoutId(instanceId)
+                                    : undefined
+                                }
                                 data-schedule-instance-id={
                                   kind === 'scheduled' && instanceId ? instanceId : undefined
                                 }
@@ -5031,6 +5085,7 @@ peekDataDepsRef.current = {
                               </motion.div>
                             )
                           })}
+                          </AnimatePresence>
                           {usingFallback && hiddenFallbackCount > 0 && (
                             <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
                               <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
@@ -5045,12 +5100,13 @@ peekDataDepsRef.current = {
                 </motion.div>
               )
             })}
-            {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
-              if (!isValidDate(start) || !isValidDate(end)) return null
-              const startMin = start.getHours() * 60 + start.getMinutes()
-              const startOffsetMinutes = startMin - modelStartHour * 60
-              const durationMinutes = Math.max(
-                0,
+            <AnimatePresence initial={false}>
+              {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
+                if (!isValidDate(start) || !isValidDate(end)) return null
+                const startMin = start.getHours() * 60 + start.getMinutes()
+                const startOffsetMinutes = startMin - modelStartHour * 60
+                const durationMinutes = Math.max(
+                  0,
                 (end.getTime() - start.getTime()) / 60000
               )
               const style: CSSProperties = {
@@ -5074,29 +5130,43 @@ peekDataDepsRef.current = {
                 `${standaloneBaseClass} text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]`
               const standaloneCompletedClass =
                 `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`
-              const standaloneClassName = [
-                isCompleted ? standaloneCompletedClass : standaloneScheduledClass,
-                canToggle && !isPending ? 'cursor-pointer' : '',
-                isPending ? 'opacity-60' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')
-              const standaloneLongPressActive = longPressBounceId === instance.id
+                const standaloneClassName = [
+                  isCompleted ? standaloneCompletedClass : standaloneScheduledClass,
+                  canToggle && !isPending ? 'cursor-pointer' : '',
+                  isPending ? 'opacity-60' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+                const standaloneLongPressActive = longPressBounceId === instance.id
 
-              const handleStandaloneTaskPrimaryAction = () => {
-                if (!canToggle || isPending) return
-                const nextStatus = isCompleted ? 'scheduled' : 'completed'
-                void handleToggleInstanceCompletion(instance.id, nextStatus)
-              }
+                const hideForEdit = Boolean(
+                  isEditSheetOpen &&
+                    editInstanceId &&
+                    editInstanceId === instance.id &&
+                    !editingProjectId &&
+                    !editingHabitId
+                )
 
-              return (
-                <motion.div
-                  key={instance.id}
-                  data-schedule-instance-id={instance.id}
-                  aria-label={`Task ${task.name}`}
-                  role="button"
-                  tabIndex={canToggle ? 0 : -1}
-                  aria-pressed={isCompleted}
+                if (hideForEdit) {
+                  return null
+                }
+
+                const handleStandaloneTaskPrimaryAction = () => {
+                  if (!canToggle || isPending) return
+                  const nextStatus = isCompleted ? 'scheduled' : 'completed'
+                  void handleToggleInstanceCompletion(instance.id, nextStatus)
+                }
+
+                return (
+                  <motion.div
+                    key={instance.id}
+                    layout="position"
+                    layoutId={getScheduleInstanceLayoutId(instance.id)}
+                    data-schedule-instance-id={instance.id}
+                    aria-label={`Task ${task.name}`}
+                    role="button"
+                    tabIndex={canToggle ? 0 : -1}
+                    aria-pressed={isCompleted}
                   aria-disabled={!canToggle || isPending}
                   data-completed={isCompleted ? 'true' : 'false'}
                   className={standaloneClassName}
@@ -5165,8 +5235,9 @@ peekDataDepsRef.current = {
                     style={{ width: `${progress}%` }}
                   />
                 </motion.div>
-              )
-            })}
+                )
+              })}
+            </AnimatePresence>
           </DayTimeline>
         </div>
       )
@@ -5293,7 +5364,7 @@ peekDataDepsRef.current = {
   }, [focusInstanceId, dayTimelineModel.dayViewDateKey])
 
   return (
-    <>
+    <LayoutGroup id="schedule-shared-layout">
       <ProtectedRoute>
         <ScheduleTopBar
           year={year}
@@ -5449,7 +5520,10 @@ peekDataDepsRef.current = {
         saving={editSaving}
         error={editError}
         origin={editOrigin}
+        layoutId={
+          editInstanceId ? getScheduleInstanceLayoutId(editInstanceId) : undefined
+        }
       />
-    </>
+    </LayoutGroup>
   )
 }

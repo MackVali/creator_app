@@ -1,22 +1,18 @@
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-  useId,
-  useLayoutEffect,
-} from "react";
-import { createPortal } from "react-dom";
+import React from "react";
+import { useEffect, useMemo, useRef, useState, useId } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { XIcon } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import { toLocal } from "@/lib/time/tz";
 import { cn } from "@/lib/utils";
+
+type LayoutPhase = "idle" | "morphing" | "modal";
 
 type ScheduleInstanceEditSheetProps = {
   open: boolean;
@@ -29,6 +25,7 @@ type ScheduleInstanceEditSheetProps = {
   saving?: boolean;
   error?: string | null;
   origin?: ScheduleEditOrigin | null;
+  layoutId?: string;
 };
 
 export type ScheduleEditOrigin = {
@@ -37,6 +34,9 @@ export type ScheduleEditOrigin = {
   width: number;
   height: number;
   borderRadius: string;
+  backgroundColor?: string;
+  backgroundImage?: string;
+  boxShadow?: string;
 };
 
 const INPUT_PLACEHOLDER = "Select date & time";
@@ -52,10 +52,10 @@ export function ScheduleInstanceEditSheet({
   saving = false,
   error,
   origin,
+  layoutId,
 }: ScheduleInstanceEditSheetProps) {
   const [startValue, setStartValue] = useState("");
   const [endValue, setEndValue] = useState("");
-  const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
   const startInputRef = useRef<HTMLInputElement | null>(null);
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -64,9 +64,9 @@ export function ScheduleInstanceEditSheet({
     height: typeof window === "undefined" ? 0 : window.innerHeight,
   }));
   const [originSnapshot, setOriginSnapshot] = useState<ScheduleEditOrigin | null>(
-    origin ?? null
+    origin ?? null,
   );
-  const [contentHeight, setContentHeight] = useState<number | null>(null);
+  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("idle");
 
   useEffect(() => {
     if (!instance) {
@@ -79,10 +79,6 @@ export function ScheduleInstanceEditSheet({
     setStartValue(formatLocalInput(startDate));
     setEndValue(formatLocalInput(endDate));
   }, [instance]);
-
-  useEffect(() => {
-    setPortalElement(document.body);
-  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -119,10 +115,7 @@ export function ScheduleInstanceEditSheet({
 
   useEffect(() => {
     if (!open) return;
-    const focusTimeout = window.setTimeout(() => {
-      startInputRef.current?.focus({ preventScroll: true });
-    }, 90);
-    return () => window.clearTimeout(focusTimeout);
+    setLayoutPhase("morphing");
   }, [open]);
 
   useEffect(() => {
@@ -131,19 +124,15 @@ export function ScheduleInstanceEditSheet({
     }
   }, [origin]);
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    const element = dialogRef.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(entries => {
-      const entry = entries[0];
-      if (!entry) return;
-      const nextHeight = entry.contentRect.height;
-      setContentHeight(nextHeight);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [open]);
+  useEffect(() => {
+    if (open && layoutPhase === "modal") {
+      const focusTimeout = window.setTimeout(() => {
+        startInputRef.current?.focus({ preventScroll: true });
+      }, 90);
+      return () => window.clearTimeout(focusTimeout);
+    }
+    return undefined;
+  }, [open, layoutPhase]);
 
   const durationLabel = useMemo(() => {
     if (!startValue || !endValue) return null;
@@ -185,54 +174,31 @@ export function ScheduleInstanceEditSheet({
     return Math.min(Math.max(360, capped), 640);
   }, [viewport.height]);
 
-  const springTransition = useMemo(
-    () => ({ type: "spring", stiffness: 150, damping: 20, mass: 0.9 }),
-    []
-  );
+  const effectiveLayoutId = layoutId ?? (instance ? `schedule-instance-${instance.id}` : undefined);
 
-  const morphTransform = useMemo(() => {
-    if (!originSnapshot || viewport.width === 0 || viewport.height === 0) {
-      return null;
-    }
-    const originCenterX = originSnapshot.x + originSnapshot.width / 2;
-    const originCenterY = originSnapshot.y + originSnapshot.height / 2;
-    const offsetX = originCenterX - viewport.width / 2;
-    const offsetY = originCenterY - viewport.height / 2;
-    const widthRatio = originSnapshot.width / targetWidth;
-    const baseHeight = contentHeight ?? Math.min(maxDialogHeight, originSnapshot.height + 180);
-    const heightRatio = originSnapshot.height / Math.max(baseHeight, 1);
-    const uniformScale = Math.max(0.35, Math.min(1.2, Math.max(widthRatio, heightRatio)));
-    return {
-      x: offsetX,
-      y: offsetY,
-      scale: uniformScale,
-      borderRadius: originSnapshot.borderRadius,
-    };
-  }, [
-    originSnapshot,
-    viewport.width,
-    viewport.height,
-    targetWidth,
-    contentHeight,
-    maxDialogHeight,
-  ]);
+  const handleLayoutComplete = () => {
+    if (!open) return;
+    setLayoutPhase("modal");
+  };
 
-  const dialogContent = (
+  const scrimTransition = { duration: 0.22, ease: [0.4, 0, 0.2, 1] as const };
+
+  return (
     <AnimatePresence
       mode="wait"
       onExitComplete={() => {
-        setContentHeight(null);
+        setLayoutPhase("idle");
         setOriginSnapshot(null);
       }}
     >
-      {open ? (
+      {open && instance ? (
         <motion.div
           key="schedule-edit-dialog"
           className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-8"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          transition={scrimTransition}
           role="presentation"
         >
           <motion.div
@@ -241,151 +207,148 @@ export function ScheduleInstanceEditSheet({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            transition={scrimTransition}
             onClick={onClose}
           />
           <motion.div
+            ref={dialogRef}
+            layout
+            layoutId={effectiveLayoutId}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="relative z-10 w-full max-w-lg origin-center rounded-2xl border border-white/12 bg-[var(--surface-elevated)] px-5 pb-6 pt-5 text-white shadow-[0_32px_80px_rgba(5,8,22,0.78)]"
-            initial={
-              morphTransform
-                ? {
-                    opacity: 1,
-                    x: morphTransform.x,
-                    y: morphTransform.y,
-                    scale: morphTransform.scale,
-                    borderRadius: morphTransform.borderRadius,
-                  }
-                : { opacity: 0, scale: 0.94, y: 28 }
-            }
-            animate={
-              morphTransform
-                ? {
-                    opacity: 1,
-                    x: 0,
-                    y: 0,
-                    scale: 1,
-                    borderRadius: "24px",
-                  }
-                : { opacity: 1, scale: 1, y: 0 }
-            }
-            exit={
-              morphTransform
-                ? {
-                    opacity: 0,
-                    x: morphTransform.x,
-                    y: morphTransform.y,
-                    scale: morphTransform.scale,
-                    borderRadius: morphTransform.borderRadius,
-                  }
-                : { opacity: 0, scale: 0.96, y: 18 }
-            }
-            transition={springTransition}
+            data-phase={layoutPhase}
+            className={cn(
+              "relative z-10 w-full max-w-lg",
+              layoutPhase === "modal"
+                ? "rounded-3xl border border-white/12 bg-[var(--surface-elevated)] px-5 pb-6 pt-5 text-white shadow-[0_32px_80px_rgba(5,8,22,0.78)]"
+                : "pointer-events-none"
+            )}
             style={{
               width: targetWidth,
               maxWidth: "min(560px, calc(100vw - 32px))",
               maxHeight: maxDialogHeight,
-              transformOrigin: "center",
+              borderRadius:
+                layoutPhase === "modal"
+                  ? undefined
+                  : originSnapshot?.borderRadius ?? "24px",
+              backgroundImage:
+                layoutPhase === "modal"
+                  ? undefined
+                  : originSnapshot?.backgroundImage,
+              backgroundColor:
+                layoutPhase === "modal"
+                  ? undefined
+                  : originSnapshot?.backgroundColor,
+              boxShadow:
+                layoutPhase === "modal"
+                  ? undefined
+                  : originSnapshot?.boxShadow,
             }}
-            ref={dialogRef}
+            transition={{ type: "spring", stiffness: 150, damping: 22, mass: 0.9 }}
+            onLayoutAnimationComplete={handleLayoutComplete}
           >
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: layoutPhase === "modal" ? 1 : 0 }}
+              transition={{ duration: 0.16, ease: [0.33, 1, 0.68, 1] as const }}
+              className={cn(
+                "h-full w-full",
+                layoutPhase === "modal" ? "pointer-events-auto" : "pointer-events-none"
+              )}
             >
-              <XIcon className="size-4" aria-hidden="true" />
-              <span className="sr-only">Close</span>
-            </button>
-            <div className="space-y-4">
-              <div className="space-y-3 pr-8">
-                <h2 id={titleId} className="text-lg font-semibold tracking-tight text-white">
-                  Edit scheduled {eventTypeLabel.toLowerCase()}
-                </h2>
-                <p className="text-sm text-white/70">
-                  Update the scheduled time for this entry. Times are interpreted in {timeZoneLabel ?? "your local time"}.
-                </p>
-                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                  <p className="text-sm font-medium text-white">{eventTitle}</p>
-                  <p className="text-xs uppercase tracking-[0.2em] text-white/60">{eventTypeLabel}</p>
-                </div>
-              </div>
-              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="schedule-edit-start" className="text-xs uppercase tracking-[0.2em] text-white/60">
-                    Start
-                  </Label>
-                  <Input
-                    ref={startInputRef}
-                    id="schedule-edit-start"
-                    type="datetime-local"
-                    value={startValue}
-                    onChange={event => setStartValue(event.target.value)}
-                    className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                    required
-                    disabled={!instance}
-                    placeholder={INPUT_PLACEHOLDER}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="schedule-edit-end" className="text-xs uppercase tracking-[0.2em] text-white/60">
-                    End
-                  </Label>
-                  <Input
-                    id="schedule-edit-end"
-                    type="datetime-local"
-                    value={endValue}
-                    onChange={event => setEndValue(event.target.value)}
-                    className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                    required
-                    disabled={!instance}
-                    placeholder={INPUT_PLACEHOLDER}
-                  />
-                  <p className="text-xs text-white/50">
-                    {durationLabel
-                      ? `Duration: ${durationLabel}`
-                      : "Ensure end time is after the start time."}
+              <button
+                type="button"
+                onClick={onClose}
+                className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+              >
+                <XIcon className="size-4" aria-hidden="true" />
+                <span className="sr-only">Close</span>
+              </button>
+              <div className="space-y-4">
+                <div className="space-y-3 pr-8">
+                  <h2 id={titleId} className="text-lg font-semibold tracking-tight text-white">
+                    Edit scheduled {eventTypeLabel.toLowerCase()}
+                  </h2>
+                  <p className="text-sm text-white/70">
+                    Update the scheduled time for this entry. Times are interpreted in {timeZoneLabel ?? "your local time"}.
                   </p>
-                </div>
-                {error ? (
-                  <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-                    {error}
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <p className="text-sm font-medium text-white">{eventTitle}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/60">{eventTypeLabel}</p>
                   </div>
-                ) : null}
-                <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-                    onClick={onClose}
-                    disabled={saving}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    className={cn(
-                      "bg-white text-zinc-900 hover:bg-white/90",
-                      disableSubmit && "opacity-50"
-                    )}
-                    disabled={disableSubmit}
-                  >
-                    {saving ? "Saving…" : "Save changes"}
-                  </Button>
                 </div>
-              </form>
-            </div>
+                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="schedule-edit-start" className="text-xs uppercase tracking-[0.2em] text-white/60">
+                      Start
+                    </Label>
+                    <Input
+                      ref={startInputRef}
+                      id="schedule-edit-start"
+                      type="datetime-local"
+                      value={startValue}
+                      onChange={event => setStartValue(event.target.value)}
+                      className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                      required
+                      disabled={!instance}
+                      placeholder={INPUT_PLACEHOLDER}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="schedule-edit-end" className="text-xs uppercase tracking-[0.2em] text-white/60">
+                      End
+                    </Label>
+                    <Input
+                      id="schedule-edit-end"
+                      type="datetime-local"
+                      value={endValue}
+                      onChange={event => setEndValue(event.target.value)}
+                      className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                      required
+                      disabled={!instance}
+                      placeholder={INPUT_PLACEHOLDER}
+                    />
+                    <p className="text-xs text-white/50">
+                      {durationLabel
+                        ? `Duration: ${durationLabel}`
+                        : "Ensure end time is after the start time."}
+                    </p>
+                  </div>
+                  {error ? (
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                      {error}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                      onClick={onClose}
+                      disabled={saving}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      className={cn(
+                        "bg-white text-zinc-900 hover:bg-white/90",
+                        disableSubmit && "opacity-50"
+                      )}
+                      disabled={disableSubmit}
+                    >
+                      {saving ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
           </motion.div>
         </motion.div>
       ) : null}
     </AnimatePresence>
   );
-
-  if (!portalElement) return null;
-
-  return createPortal(dialogContent, portalElement);
 }
 
 function formatLocalInput(date: Date) {
@@ -399,7 +362,7 @@ function formatLocalInput(date: Date) {
 }
 
 function isValidDateInput(value: string) {
-  if (!value) return false;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed);
+  if (typeof value !== "string" || value.trim().length === 0) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp);
 }
