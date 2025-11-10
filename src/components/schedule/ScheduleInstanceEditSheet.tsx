@@ -148,10 +148,10 @@ export function ScheduleInstanceEditSheet({
             aria-modal="true"
             aria-labelledby={titleId}
             className="relative z-10 w-full max-w-lg origin-center rounded-2xl border border-white/12 bg-[var(--surface-elevated)] px-5 pb-6 pt-5 text-white shadow-[0_32px_80px_rgba(5,8,22,0.78)]"
-            initial={{ opacity: 0, scale: 0.92, y: 24 }}
+            initial={{ opacity: 0, scale: 0.94, y: 28 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 16 }}
-            transition={{ type: "spring", stiffness: 420, damping: 34 }}
+            exit={{ opacity: 0, scale: 0.96, y: 18 }}
+            transition={{ type: "spring", stiffness: 160, damping: 22 }}
           >
             <button
               type="button"
