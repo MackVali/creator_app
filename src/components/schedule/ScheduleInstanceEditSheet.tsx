@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils";
 import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
 
 type LayoutPhase = "idle" | "morphing" | "modal";
-type ContentPhase = "hidden" | "revealing" | "visible";
 
 type ScheduleInstanceEditSheetProps = {
   open: boolean;
@@ -68,8 +67,9 @@ export function ScheduleInstanceEditSheet({
   const [originSnapshot, setOriginSnapshot] = useState<ScheduleEditOrigin | null>(
     origin ?? null,
   );
-  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("idle");
-  const [contentPhase, setContentPhase] = useState<ContentPhase>("hidden");
+  const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>(
+    open ? "morphing" : "idle",
+  );
 
   useEffect(() => {
     if (!instance) {
@@ -118,17 +118,10 @@ export function ScheduleInstanceEditSheet({
 
   useEffect(() => {
     if (!open) {
-      setContentPhase("hidden");
+      setLayoutPhase("idle");
       return;
     }
     setLayoutPhase("morphing");
-    setContentPhase("revealing");
-    const revealTimeout = window.setTimeout(() => {
-      setContentPhase("visible");
-    }, 160);
-    return () => {
-      window.clearTimeout(revealTimeout);
-    };
   }, [open]);
 
   useEffect(() => {
@@ -236,7 +229,6 @@ export function ScheduleInstanceEditSheet({
       onExitComplete={() => {
         setLayoutPhase("idle");
         setOriginSnapshot(null);
-        setContentPhase("hidden");
       }}
     >
       {open && instance ? (
@@ -285,131 +277,163 @@ export function ScheduleInstanceEditSheet({
                     boxShadow: originSnapshot.boxShadow,
                   }}
                   initial={false}
-                  animate={{
-                    opacity:
-                      contentPhase === "hidden"
-                        ? 1
-                        : contentPhase === "revealing"
-                          ? 0.6
-                          : 0,
-                  }}
-                  transition={{ duration: 0.32, ease: [0.33, 1, 0.68, 1] as const }}
+                  animate={{ opacity: layoutPhase === "modal" ? 0 : 1 }}
+                  transition={{ duration: 0.36, ease: [0.33, 1, 0.68, 1] as const }}
                 />
               ) : null}
-              <div className="relative z-10 px-4 py-4 sm:px-5 sm:py-5">
-                <motion.p
-                  layoutId={layoutTokens?.title}
-                  id={titleId}
-                  className="text-sm font-medium leading-tight sm:text-base"
-                >
-                  {eventTitle}
-                </motion.p>
-                {timeRangeLabel ? (
-                  <motion.p
-                    layoutId={layoutTokens?.meta}
-                    className="mt-1 text-xs text-white/70 sm:text-sm"
-                  >
-                    {timeRangeLabel}
-                  </motion.p>
-                ) : null}
-                <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">
-                  {eventTypeLabel}
-                </p>
-              </div>
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{
-                  opacity: contentPhase === "hidden" ? 0 : 1,
-                  y: contentPhase === "hidden" ? 16 : 0,
-                }}
-                transition={{
-                  duration: 0.28,
-                  ease: [0.2, 0.8, 0.2, 1] as const,
-                }}
-                className={cn(
-                  "relative z-10 flex flex-1 flex-col gap-4 px-4 pb-4 sm:px-5 sm:pb-6",
-                  layoutPhase === "modal" ? "pointer-events-auto" : "pointer-events-none"
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
-                >
-                  <XIcon className="size-4" aria-hidden="true" />
-                  <span className="sr-only">Close</span>
-                </button>
-                <h2 className="text-lg font-semibold tracking-tight text-white">
-                  Edit scheduled {eventTypeLabel.toLowerCase()}
-                </h2>
-                <p className="text-sm text-white/70">
-                  Update the scheduled time for this entry. Times are interpreted in {timeZoneLabel ?? "your local time"}.
-                </p>
-                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="schedule-edit-start" className="text-xs uppercase tracking-[0.2em] text-white/60">
-                      Start
-                    </Label>
-                    <Input
-                      ref={startInputRef}
-                      id="schedule-edit-start"
-                      type="datetime-local"
-                      value={startValue}
-                      onChange={event => setStartValue(event.target.value)}
-                      className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                      required
-                      disabled={!instance}
-                      placeholder={INPUT_PLACEHOLDER}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="schedule-edit-end" className="text-xs uppercase tracking-[0.2em] text-white/60">
-                      End
-                    </Label>
-                    <Input
-                      id="schedule-edit-end"
-                      type="datetime-local"
-                      value={endValue}
-                      onChange={event => setEndValue(event.target.value)}
-                      className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                      required
-                      disabled={!instance}
-                      placeholder={INPUT_PLACEHOLDER}
-                    />
-                    <p className="text-xs text-white/50">
-                      {durationLabel
-                        ? `Duration: ${durationLabel}`
-                        : "Ensure end time is after the start time."}
-                    </p>
-                  </div>
-                  {error ? (
-                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-                      {error}
-                    </div>
+              <div className="relative z-10 flex flex-1 flex-col">
+                <AnimatePresence initial={false} mode="wait">
+                  {layoutPhase !== "modal" ? (
+                    <motion.div
+                      key="card-chrome"
+                      className="px-4 py-4 sm:px-5 sm:py-5"
+                      initial={{ opacity: 1 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0, transition: { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const } }}
+                    >
+                      <motion.p
+                        layoutId={layoutTokens?.title}
+                        id={titleId}
+                        className="text-sm font-medium leading-tight sm:text-base"
+                      >
+                        {eventTitle}
+                      </motion.p>
+                      {timeRangeLabel ? (
+                        <motion.p
+                          layoutId={layoutTokens?.meta}
+                          className="mt-1 text-xs text-white/70 sm:text-sm"
+                        >
+                          {timeRangeLabel}
+                        </motion.p>
+                      ) : null}
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="modal-chrome"
+                      className="px-4 pt-4 pb-2 sm:px-5 sm:pt-5 sm:pb-4"
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 12, transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] as const } }}
+                      transition={{ duration: 0.26, ease: [0.2, 0.8, 0.2, 1] as const }}
+                    >
+                      <motion.p
+                        layoutId={layoutTokens?.title}
+                        id={titleId}
+                        className="text-lg font-semibold leading-tight text-white sm:text-xl"
+                      >
+                        {eventTitle}
+                      </motion.p>
+                      {timeRangeLabel ? (
+                        <motion.p
+                          layoutId={layoutTokens?.meta}
+                          className="mt-1 text-sm text-white/70"
+                        >
+                          {timeRangeLabel}
+                        </motion.p>
+                      ) : null}
+                      <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.24, ease: [0.33, 1, 0.68, 1] as const, delay: 0.08 }}
+                        className="mt-3 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/60"
+                      >
+                        {eventTypeLabel}
+                      </motion.p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <AnimatePresence mode="wait">
+                  {layoutPhase === "modal" ? (
+                    <motion.div
+                      key="modal-body"
+                      initial={{ opacity: 0, y: 18 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 18 }}
+                      transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] as const }}
+                      className="relative z-10 flex flex-1 flex-col gap-4 px-4 pb-4 sm:px-5 sm:pb-6"
+                    >
+                      <button
+                        type="button"
+                        onClick={onClose}
+                        className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+                      >
+                        <XIcon className="size-4" aria-hidden="true" />
+                        <span className="sr-only">Close</span>
+                      </button>
+                      <h2 className="text-lg font-semibold tracking-tight text-white">
+                        Edit scheduled {eventTypeLabel.toLowerCase()}
+                      </h2>
+                      <p className="text-sm text-white/70">
+                        Update the scheduled time for this entry. Times are interpreted in {timeZoneLabel ?? "your local time"}.
+                      </p>
+                      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor="schedule-edit-start" className="text-xs uppercase tracking-[0.2em] text-white/60">
+                            Start
+                          </Label>
+                          <Input
+                            ref={startInputRef}
+                            id="schedule-edit-start"
+                            type="datetime-local"
+                            value={startValue}
+                            onChange={event => setStartValue(event.target.value)}
+                            className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                            required
+                            disabled={!instance}
+                            placeholder={INPUT_PLACEHOLDER}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor="schedule-edit-end" className="text-xs uppercase tracking-[0.2em] text-white/60">
+                            End
+                          </Label>
+                          <Input
+                            id="schedule-edit-end"
+                            type="datetime-local"
+                            value={endValue}
+                            onChange={event => setEndValue(event.target.value)}
+                            className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                            required
+                            disabled={!instance}
+                            placeholder={INPUT_PLACEHOLDER}
+                          />
+                          <p className="text-xs text-white/50">
+                            {durationLabel
+                              ? `Duration: ${durationLabel}`
+                              : "Ensure end time is after the start time."}
+                          </p>
+                        </div>
+                        {error ? (
+                          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                            {error}
+                          </div>
+                        ) : null}
+                        <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                            onClick={onClose}
+                            disabled={saving}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="submit"
+                            className={cn(
+                              "bg-white text-zinc-900 hover:bg-white/90",
+                              disableSubmit && "opacity-50"
+                            )}
+                            disabled={disableSubmit}
+                          >
+                            {saving ? "Saving…" : "Save changes"}
+                          </Button>
+                        </div>
+                      </form>
+                    </motion.div>
                   ) : null}
-                  <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-                      onClick={onClose}
-                      disabled={saving}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      className={cn(
-                        "bg-white text-zinc-900 hover:bg-white/90",
-                        disableSubmit && "opacity-50"
-                      )}
-                      disabled={disableSubmit}
-                    >
-                      {saving ? "Saving…" : "Save changes"}
-                    </Button>
-                  </div>
-                </form>
-              </motion.div>
+                </AnimatePresence>
+              </div>
             </div>
           </motion.div>
         </motion.div>
