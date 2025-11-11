@@ -16,6 +16,7 @@ import {
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
   AnimatePresence,
+  LayoutGroup,
   animate,
   motion,
   useAnimationControls,
@@ -39,9 +40,13 @@ import FlameEmber, { FlameLevel, type FlameEmberProps } from '@/components/Flame
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
-import { ScheduleInstanceEditSheet } from '@/components/schedule/ScheduleInstanceEditSheet'
+import {
+  ScheduleInstanceEditSheet,
+  type ScheduleEditOrigin,
+} from '@/components/schedule/ScheduleInstanceEditSheet'
 import { ProjectEditSheet } from '@/components/schedule/ProjectEditSheet'
 import { HabitEditSheet } from '@/components/schedule/HabitEditSheet'
+import { scheduleInstanceLayoutTokens } from '@/components/schedule/sharedLayout'
 import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import {
@@ -144,6 +149,9 @@ const TIMELINE_CARD_BOUNDS: CSSProperties = {
   left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
   right: `var(--timeline-card-right, ${TIMELINE_CARD_RIGHT_FALLBACK})`,
 }
+
+const getScheduleInstanceLayoutId = (instanceId: string) =>
+  `schedule-instance-${instanceId}`
 
 function computeDayTimelineHeightPx(
   startHour: number,
@@ -1857,6 +1865,7 @@ export default function SchedulePage() {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [focusInstanceId, setFocusInstanceId] = useState<string | null>(null)
   const [editInstanceId, setEditInstanceId] = useState<string | null>(null)
+  const [editOrigin, setEditOrigin] = useState<ScheduleEditOrigin | null>(null)
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
@@ -1871,6 +1880,7 @@ export default function SchedulePage() {
   const shortPressHandledRef = useRef(false)
   const [longPressBounceId, setLongPressBounceId] = useState<string | null>(null)
   const longPressBounceTimeoutRef = useRef<number | null>(null)
+  const longPressOriginRef = useRef<HTMLElement | null>(null)
   const [peekModels, setPeekModels] = useState<{
     previous?: DayTimelineModel | null
     next?: DayTimelineModel | null
@@ -3122,6 +3132,7 @@ peekDataDepsRef.current = {
     setIsEditSheetOpen(false)
     setEditInstanceId(null)
     setEditError(null)
+    setEditOrigin(null)
   }, [editSaving])
 
   const handleSubmitInstanceEdit = useCallback(
@@ -3161,6 +3172,7 @@ peekDataDepsRef.current = {
         await loadInstancesRef.current()
         setIsEditSheetOpen(false)
         setEditInstanceId(null)
+        setEditOrigin(null)
       } catch (error) {
         console.error('Failed to update schedule instance', error)
         setEditError('Unable to update this schedule entry. Please try again.')
@@ -3872,11 +3884,15 @@ peekDataDepsRef.current = {
     setFocusInstanceId(instanceId)
   }
 
-  const openInstanceEditor = useCallback((instanceId: string) => {
-    setEditInstanceId(instanceId)
-    setEditError(null)
-    setIsEditSheetOpen(true)
-  }, [])
+  const openInstanceEditor = useCallback(
+    (instanceId: string, origin?: ScheduleEditOrigin | null) => {
+      setEditInstanceId(instanceId)
+      setEditOrigin(origin ?? null)
+      setEditError(null)
+      setIsEditSheetOpen(true)
+    },
+    []
+  )
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current !== null) {
@@ -3934,8 +3950,10 @@ peekDataDepsRef.current = {
         longPressTriggeredRef.current = false
         shortPressHandledRef.current = false
         clearLongPressTimer()
+        longPressOriginRef.current = null
         return
       }
+      longPressOriginRef.current = event.currentTarget
       activePressRef.current = {
         instanceId,
         shortPress: onShortPress ?? null,
@@ -3945,14 +3963,59 @@ peekDataDepsRef.current = {
       clearLongPressTimer()
       const timerId = window.setTimeout(() => {
         longPressTimerRef.current = null
+        const element = longPressOriginRef.current
+        let originData: ScheduleEditOrigin | null = null
+        if (element) {
+          const rect = element.getBoundingClientRect()
+          const computed = window.getComputedStyle(element)
+          const fallbackRadius = [
+            computed.borderTopLeftRadius,
+            computed.borderTopRightRadius,
+            computed.borderBottomRightRadius,
+            computed.borderBottomLeftRadius,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .trim()
+          const radius =
+            (computed.borderRadius && computed.borderRadius.trim().length > 0
+              ? computed.borderRadius
+              : fallbackRadius) || '0px'
+          const backgroundImage =
+            computed.backgroundImage && computed.backgroundImage !== 'none'
+              ? computed.backgroundImage
+              : undefined
+          const backgroundColorRaw = computed.backgroundColor
+          const backgroundColor =
+            backgroundColorRaw &&
+            backgroundColorRaw !== 'rgba(0, 0, 0, 0)' &&
+            backgroundColorRaw.toLowerCase() !== 'transparent'
+              ? backgroundColorRaw
+              : undefined
+          const boxShadow =
+            computed.boxShadow && computed.boxShadow !== 'none'
+              ? computed.boxShadow
+              : undefined
+          originData = {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            borderRadius: radius,
+            backgroundColor,
+            backgroundImage,
+            boxShadow,
+          }
+        }
         triggerLongPressFeedback(instanceId)
         longPressTriggeredRef.current = true
         const runLongPressAction = () => {
           if (onLongPress) {
             onLongPress()
           } else {
-            openInstanceEditor(instanceId)
+            openInstanceEditor(instanceId, originData)
           }
+          longPressOriginRef.current = null
         }
         if (LONG_PRESS_ACTION_DELAY_MS > 0) {
           window.setTimeout(runLongPressAction, LONG_PRESS_ACTION_DELAY_MS)
@@ -3962,7 +4025,11 @@ peekDataDepsRef.current = {
       }, SCHEDULE_CARD_LONG_PRESS_MS)
       longPressTimerRef.current = timerId
     },
-    [clearLongPressTimer, openInstanceEditor, triggerLongPressFeedback]
+    [
+      clearLongPressTimer,
+      openInstanceEditor,
+      triggerLongPressFeedback,
+    ]
   )
 
   const handleInstancePointerUp = useCallback(() => {
@@ -3970,6 +4037,7 @@ peekDataDepsRef.current = {
     const longPressTriggered = longPressTriggeredRef.current
     cancelLongPress()
     activePressRef.current = null
+    longPressOriginRef.current = null
     if (!longPressTriggered && pending?.shortPress) {
       shortPressHandledRef.current = true
       pending.shortPress()
@@ -3979,6 +4047,7 @@ peekDataDepsRef.current = {
   const handleInstancePointerCancel = useCallback(() => {
     activePressRef.current = null
     cancelLongPress()
+    longPressOriginRef.current = null
   }, [cancelLongPress])
 
   const shouldBlockClickFromLongPress = useCallback(() => {
@@ -4044,6 +4113,7 @@ peekDataDepsRef.current = {
     if (editInstanceId && !editingInstance) {
       setIsEditSheetOpen(false)
       setEditInstanceId(null)
+      setEditOrigin(null)
     }
   }, [isEditSheetOpen, editInstanceId, editingInstance])
 
@@ -4382,10 +4452,18 @@ peekDataDepsRef.current = {
                   }
                 : {}
 
+              const habitLayoutId = placement.instanceId
+                ? getScheduleInstanceLayoutId(placement.instanceId)
+                : null
+              const habitLayoutTokens = habitLayoutId
+                ? scheduleInstanceLayoutTokens(habitLayoutId)
+                : null
+
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
-                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer`}
+                  layoutId={habitLayoutTokens?.card}
+                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
                   role="button"
                   tabIndex={options?.disableInteractions ? -1 : 0}
                   aria-pressed={isHabitCompleted}
@@ -4414,9 +4492,12 @@ peekDataDepsRef.current = {
                   }
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
-                  <span className="truncate text-sm font-medium leading-snug">
+                  <motion.span
+                    layoutId={habitLayoutTokens?.title}
+                    className="truncate text-sm font-medium leading-snug"
+                  >
                     {placement.habitName}
-                  </span>
+                  </motion.span>
                 </motion.div>
               )
             })}
@@ -4545,6 +4626,17 @@ peekDataDepsRef.current = {
               const isCompleted = effectiveStatus === 'completed'
               const projectLongPressActive = longPressBounceId === instance.id
 
+              const hideForEdit = Boolean(
+                isEditSheetOpen &&
+                  editInstanceId &&
+                  editInstanceId === instance.id &&
+                  !editingProjectId &&
+                  !editingHabitId
+              )
+
+              const instanceLayoutId = getScheduleInstanceLayoutId(instance.id)
+              const layoutTokens = scheduleInstanceLayoutTokens(instanceLayoutId)
+
               const handleProjectToggle = () => {
                 if (!canToggle || isPending) return
                 const nextStatus = isCompleted ? 'scheduled' : 'completed'
@@ -4586,13 +4678,16 @@ peekDataDepsRef.current = {
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     {!isExpanded || !canExpand ? (
-                      <motion.div
-                        key="project"
-                        aria-label={`Project ${project.name}`}
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={canExpand ? isExpanded : undefined}
-                        aria-pressed={isCompleted}
+                      hideForEdit ? null : (
+                        <motion.div
+                          key="project"
+                          layout="position"
+                          layoutId={layoutTokens.card}
+                          aria-label={`Project ${project.name}`}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={canExpand ? isExpanded : undefined}
+                          aria-pressed={isCompleted}
                         aria-disabled={!canToggle || isPending}
                         onPointerDown={event => {
                           if (options?.disableInteractions) return
@@ -4614,7 +4709,7 @@ peekDataDepsRef.current = {
                           event.preventDefault()
                           handleProjectPrimaryAction()
                         }}
-                        className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]${
+                        className={`relative flex h-full w-full items-center justify-between ${projectCornerClass} px-3 ${collapsedCardPaddingClass} text-white backdrop-blur-sm border ${projectBorderClass} transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] select-none${
                           canExpand || (canToggle && !isPending)
                             ? ' cursor-pointer'
                             : ''
@@ -4653,29 +4748,35 @@ peekDataDepsRef.current = {
                                 y: 4,
                                 transition: { duration: 0.14, ease: [0.4, 0, 0.2, 1] },
                           }
-                        }
-                      >
-                        {goalRelationText ? (
-                          <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
-                            <span className="truncate text-[9px] font-semibold text-white/80">
-                              {goalRelationText}
-                            </span>
-                          </div>
-                        ) : null}
+                          }
+                        >
+                          {goalRelationText ? (
+                            <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+                              <span className="truncate text-[9px] font-semibold text-white/80">
+                                {goalRelationText}
+                              </span>
+                            </div>
+                          ) : null}
                         <div className="flex min-w-0 flex-1 items-start gap-3">
-                          <div className="min-w-0">
-                            <span className="block truncate text-sm font-medium">
+                          <div className="min-w-0 space-y-1">
+                            <motion.span
+                              layoutId={layoutTokens.title}
+                              className="block truncate text-sm font-medium"
+                            >
                               {project.name}
                               {weightDisplay ? (
                                 <span className="ml-1 text-xs font-normal text-white/70">
                                   ({weightDisplay})
                                 </span>
                               ) : null}
-                            </span>
+                            </motion.span>
                             {detailText ? (
-                              <div className="text-xs text-zinc-200/70">
+                              <motion.div
+                                layoutId={layoutTokens.meta}
+                                className="text-xs text-zinc-200/70"
+                              >
                                 {detailText}
-                              </div>
+                              </motion.div>
                             ) : null}
                           </div>
                         </div>
@@ -4689,7 +4790,8 @@ peekDataDepsRef.current = {
                           iconClassName="text-lg leading-none"
                           flameClassName="flex-shrink-0"
                         />
-                      </motion.div>
+                        </motion.div>
+                      )
                     ) : (
                       <motion.div
                         key="tasks"
@@ -4731,18 +4833,19 @@ peekDataDepsRef.current = {
                         <div
                           className={`relative h-full w-full overflow-hidden p-2 ${projectCornerClass}`}
                         >
-                          {displayCards.map(taskCard => {
-                            const {
-                              key,
-                              task,
-                              start: taskStart,
-                              end: taskEnd,
-                              kind,
-                              instanceId,
-                            } = taskCard
-                            if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
-                              return null
-                            }
+                          <AnimatePresence initial={false}>
+                            {displayCards.map(taskCard => {
+                              const {
+                                key,
+                                task,
+                                start: taskStart,
+                                end: taskEnd,
+                                kind,
+                                instanceId,
+                              } = taskCard
+                              if (!isValidDate(taskStart) || !isValidDate(taskEnd)) {
+                                return null
+                              }
                             const startOffsetMs =
                               taskStart.getTime() - start.getTime()
                             const endOffsetMs = taskEnd.getTime() - start.getTime()
@@ -4777,7 +4880,7 @@ peekDataDepsRef.current = {
                               ...sharedCardStyle,
                             }
                             const baseTaskClasses =
-                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 select-none'
                             const shinyTaskClasses =
                               'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
                             const completedTaskClasses =
@@ -4856,6 +4959,26 @@ peekDataDepsRef.current = {
                                 ? longPressBounceId === instanceId
                                 : false
 
+                            const hideForEdit = Boolean(
+                              isEditSheetOpen &&
+                                editInstanceId &&
+                                instanceId &&
+                                editInstanceId === instanceId &&
+                                !editingProjectId &&
+                                !editingHabitId
+                            )
+
+                            if (hideForEdit) {
+                              return null
+                            }
+
+                            const nestedLayoutTokens =
+                              kind === 'scheduled' && instanceId
+                                ? scheduleInstanceLayoutTokens(
+                                    getScheduleInstanceLayoutId(instanceId)
+                                  )
+                                : null
+
                             const handleTaskCardPrimaryAction = () => {
                               if (isFallbackCard) {
                                 if (!canToggle || isPending) return
@@ -4873,9 +4996,11 @@ peekDataDepsRef.current = {
                               )
                             }
 
-                            return (
-                              <motion.div
+                              return (
+                                <motion.div
                                 key={key}
+                                layout={instanceId ? 'position' : false}
+                                layoutId={nestedLayoutTokens?.card}
                                 data-schedule-instance-id={
                                   kind === 'scheduled' && instanceId ? instanceId : undefined
                                 }
@@ -4964,9 +5089,12 @@ peekDataDepsRef.current = {
                                 }
                               >
                                 <div className="flex flex-col">
-                                  <span className="truncate text-sm font-medium">
+                                  <motion.span
+                                    layoutId={nestedLayoutTokens?.title}
+                                    className="truncate text-sm font-medium"
+                                  >
                                     {task.name}
-                                  </span>
+                                  </motion.span>
                                 </div>
                                 <SkillEnergyBadge
                                   energyLevel={energyLevel}
@@ -4984,6 +5112,7 @@ peekDataDepsRef.current = {
                               </motion.div>
                             )
                           })}
+                          </AnimatePresence>
                           {usingFallback && hiddenFallbackCount > 0 && (
                             <div className="pointer-events-none absolute inset-x-0 bottom-1 flex justify-center">
                               <span className="rounded-full border border-white/50 bg-white/80 px-2 py-[2px] text-[10px] text-zinc-700 shadow-sm backdrop-blur-sm">
@@ -4998,12 +5127,13 @@ peekDataDepsRef.current = {
                 </motion.div>
               )
             })}
-            {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
-              if (!isValidDate(start) || !isValidDate(end)) return null
-              const startMin = start.getHours() * 60 + start.getMinutes()
-              const startOffsetMinutes = startMin - modelStartHour * 60
-              const durationMinutes = Math.max(
-                0,
+            <AnimatePresence initial={false}>
+              {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
+                if (!isValidDate(start) || !isValidDate(end)) return null
+                const startMin = start.getHours() * 60 + start.getMinutes()
+                const startOffsetMinutes = startMin - modelStartHour * 60
+                const durationMinutes = Math.max(
+                  0,
                 (end.getTime() - start.getTime()) / 60000
               )
               const style: CSSProperties = {
@@ -5027,29 +5157,46 @@ peekDataDepsRef.current = {
                 `${standaloneBaseClass} text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]`
               const standaloneCompletedClass =
                 `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`
-              const standaloneClassName = [
-                isCompleted ? standaloneCompletedClass : standaloneScheduledClass,
-                canToggle && !isPending ? 'cursor-pointer' : '',
-                isPending ? 'opacity-60' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')
-              const standaloneLongPressActive = longPressBounceId === instance.id
+                const standaloneClassName = [
+                  isCompleted ? standaloneCompletedClass : standaloneScheduledClass,
+                  canToggle && !isPending ? 'cursor-pointer' : '',
+                  isPending ? 'opacity-60' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+                const standaloneLongPressActive = longPressBounceId === instance.id
 
-              const handleStandaloneTaskPrimaryAction = () => {
-                if (!canToggle || isPending) return
-                const nextStatus = isCompleted ? 'scheduled' : 'completed'
-                void handleToggleInstanceCompletion(instance.id, nextStatus)
-              }
+                const hideForEdit = Boolean(
+                  isEditSheetOpen &&
+                    editInstanceId &&
+                    editInstanceId === instance.id &&
+                    !editingProjectId &&
+                    !editingHabitId
+                )
 
-              return (
-                <motion.div
-                  key={instance.id}
-                  data-schedule-instance-id={instance.id}
-                  aria-label={`Task ${task.name}`}
-                  role="button"
-                  tabIndex={canToggle ? 0 : -1}
-                  aria-pressed={isCompleted}
+                const instanceLayoutId = getScheduleInstanceLayoutId(instance.id)
+                const layoutTokens = scheduleInstanceLayoutTokens(instanceLayoutId)
+
+                if (hideForEdit) {
+                  return null
+                }
+
+                const handleStandaloneTaskPrimaryAction = () => {
+                  if (!canToggle || isPending) return
+                  const nextStatus = isCompleted ? 'scheduled' : 'completed'
+                  void handleToggleInstanceCompletion(instance.id, nextStatus)
+                }
+
+                return (
+                  <motion.div
+                    key={instance.id}
+                    layout="position"
+                    layoutId={layoutTokens.card}
+                    data-schedule-instance-id={instance.id}
+                    aria-label={`Task ${task.name}`}
+                    role="button"
+                    tabIndex={canToggle ? 0 : -1}
+                    aria-pressed={isCompleted}
                   aria-disabled={!canToggle || isPending}
                   data-completed={isCompleted ? 'true' : 'false'}
                   className={standaloneClassName}
@@ -5089,10 +5236,14 @@ peekDataDepsRef.current = {
                   }
                 >
                   <div className="flex flex-col">
-                    <span className="truncate text-sm font-medium">
+                    <motion.span
+                      layoutId={layoutTokens.title}
+                      className="truncate text-sm font-medium"
+                    >
                       {task.name}
-                    </span>
-                    <div
+                    </motion.span>
+                    <motion.div
+                      layoutId={layoutTokens.meta}
                       className={
                         isCompleted
                           ? 'text-xs text-emerald-100/80'
@@ -5100,7 +5251,7 @@ peekDataDepsRef.current = {
                       }
                     >
                       {Math.round((end.getTime() - start.getTime()) / 60000)}m
-                    </div>
+                    </motion.div>
                   </div>
                   <SkillEnergyBadge
                     energyLevel={(task.energy as FlameLevel) || 'NO'}
@@ -5118,8 +5269,9 @@ peekDataDepsRef.current = {
                     style={{ width: `${progress}%` }}
                   />
                 </motion.div>
-              )
-            })}
+                )
+              })}
+            </AnimatePresence>
           </DayTimeline>
         </div>
       )
@@ -5246,7 +5398,7 @@ peekDataDepsRef.current = {
   }, [focusInstanceId, dayTimelineModel.dayViewDateKey])
 
   return (
-    <>
+    <LayoutGroup id="schedule-shared-layout">
       <ProtectedRoute>
         <ScheduleTopBar
           year={year}
@@ -5401,7 +5553,11 @@ peekDataDepsRef.current = {
         onSubmit={handleSubmitInstanceEdit}
         saving={editSaving}
         error={editError}
+        origin={editOrigin}
+        layoutId={
+          editInstanceId ? getScheduleInstanceLayoutId(editInstanceId) : undefined
+        }
       />
-    </>
+    </LayoutGroup>
   )
 }
