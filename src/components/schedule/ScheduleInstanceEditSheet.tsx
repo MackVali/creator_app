@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
 
 type LayoutPhase = "idle" | "morphing" | "modal";
+type ContentPhase = "hidden" | "revealing" | "visible";
 
 type ScheduleInstanceEditSheetProps = {
   open: boolean;
@@ -68,6 +69,7 @@ export function ScheduleInstanceEditSheet({
     origin ?? null,
   );
   const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("idle");
+  const [contentPhase, setContentPhase] = useState<ContentPhase>("hidden");
 
   useEffect(() => {
     if (!instance) {
@@ -115,8 +117,18 @@ export function ScheduleInstanceEditSheet({
   }, [open, onClose]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setContentPhase("hidden");
+      return;
+    }
     setLayoutPhase("morphing");
+    setContentPhase("revealing");
+    const revealTimeout = window.setTimeout(() => {
+      setContentPhase("visible");
+    }, 160);
+    return () => {
+      window.clearTimeout(revealTimeout);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -205,20 +217,18 @@ export function ScheduleInstanceEditSheet({
   }, [instance, timeZoneLabel]);
 
   const dynamicStyle = useMemo(() => {
-    if (layoutPhase === "modal") {
-      return {
-        width: targetWidth,
-        maxWidth: "min(560px, calc(100vw - 32px))",
-        maxHeight: maxDialogHeight,
-      } as React.CSSProperties;
-    }
+    if (!open) return undefined;
+    const targetRadius =
+      layoutPhase === "modal"
+        ? "28px"
+        : originSnapshot?.borderRadius ?? "24px";
     return {
-      borderRadius: originSnapshot?.borderRadius ?? "24px",
-      backgroundImage: originSnapshot?.backgroundImage,
-      backgroundColor: originSnapshot?.backgroundColor,
-      boxShadow: originSnapshot?.boxShadow,
+      width: targetWidth,
+      maxWidth: "min(560px, calc(100vw - 32px))",
+      maxHeight: maxDialogHeight,
+      borderRadius: targetRadius,
     } as React.CSSProperties;
-  }, [layoutPhase, maxDialogHeight, originSnapshot, targetWidth]);
+  }, [open, layoutPhase, maxDialogHeight, originSnapshot, targetWidth]);
 
   return (
     <AnimatePresence
@@ -226,6 +236,7 @@ export function ScheduleInstanceEditSheet({
       onExitComplete={() => {
         setLayoutPhase("idle");
         setOriginSnapshot(null);
+        setContentPhase("hidden");
       }}
     >
       {open && instance ? (
@@ -256,17 +267,36 @@ export function ScheduleInstanceEditSheet({
             aria-labelledby={titleId}
             data-phase={layoutPhase}
             className={cn(
-              "relative z-10 w-full text-white",
-              layoutPhase === "modal"
-                ? "max-w-lg rounded-3xl border border-white/12 bg-[var(--surface-elevated)] shadow-[0_32px_80px_rgba(5,8,22,0.78)]"
-                : "pointer-events-none"
+              "relative z-10 w-full max-w-lg rounded-3xl border border-white/12 bg-[var(--surface-elevated)] text-white shadow-[0_32px_80px_rgba(5,8,22,0.78)]",
+              layoutPhase !== "modal" && "pointer-events-none"
             )}
             style={dynamicStyle}
             transition={{ type: "spring", stiffness: 150, damping: 22, mass: 0.9 }}
             onLayoutAnimationComplete={handleLayoutComplete}
           >
             <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[inherit]">
-              <div className="px-4 py-4 sm:px-5 sm:py-5">
+              {originSnapshot ? (
+                <motion.div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
+                  style={{
+                    backgroundColor: originSnapshot.backgroundColor,
+                    backgroundImage: originSnapshot.backgroundImage,
+                    boxShadow: originSnapshot.boxShadow,
+                  }}
+                  initial={false}
+                  animate={{
+                    opacity:
+                      contentPhase === "hidden"
+                        ? 1
+                        : contentPhase === "revealing"
+                          ? 0.6
+                          : 0,
+                  }}
+                  transition={{ duration: 0.32, ease: [0.33, 1, 0.68, 1] as const }}
+                />
+              ) : null}
+              <div className="relative z-10 px-4 py-4 sm:px-5 sm:py-5">
                 <motion.p
                   layoutId={layoutTokens?.title}
                   id={titleId}
@@ -287,11 +317,17 @@ export function ScheduleInstanceEditSheet({
                 </p>
               </div>
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: layoutPhase === "modal" ? 1 : 0 }}
-                transition={{ duration: 0.2, ease: [0.33, 1, 0.68, 1] as const }}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{
+                  opacity: contentPhase === "hidden" ? 0 : 1,
+                  y: contentPhase === "hidden" ? 16 : 0,
+                }}
+                transition={{
+                  duration: 0.28,
+                  ease: [0.2, 0.8, 0.2, 1] as const,
+                }}
                 className={cn(
-                  "flex flex-1 flex-col gap-4 px-4 pb-4 sm:px-5 sm:pb-6",
+                  "relative z-10 flex flex-1 flex-col gap-4 px-4 pb-4 sm:px-5 sm:pb-6",
                   layoutPhase === "modal" ? "pointer-events-auto" : "pointer-events-none"
                 )}
               >
