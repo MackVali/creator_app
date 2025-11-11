@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import { toLocal } from "@/lib/time/tz";
 import { cn } from "@/lib/utils";
+import { scheduleInstanceLayoutTokens } from "@/components/schedule/sharedLayout";
 
 type LayoutPhase = "idle" | "morphing" | "modal";
 
@@ -175,6 +176,10 @@ export function ScheduleInstanceEditSheet({
   }, [viewport.height]);
 
   const effectiveLayoutId = layoutId ?? (instance ? `schedule-instance-${instance.id}` : undefined);
+  const layoutTokens = useMemo(
+    () => (effectiveLayoutId ? scheduleInstanceLayoutTokens(effectiveLayoutId) : null),
+    [effectiveLayoutId],
+  );
 
   const handleLayoutComplete = () => {
     if (!open) return;
@@ -182,6 +187,38 @@ export function ScheduleInstanceEditSheet({
   };
 
   const scrimTransition = { duration: 0.22, ease: [0.4, 0, 0.2, 1] as const };
+
+  const timeRangeLabel = useMemo(() => {
+    if (!instance) return null;
+    const startDate = toLocal(instance.start_utc);
+    const endDate = toLocal(instance.end_utc);
+    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return null;
+    if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) return null;
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const startLabel = formatter.format(startDate);
+    const endLabel = formatter.format(endDate);
+    const zoneLabel = timeZoneLabel ? ` • ${timeZoneLabel}` : "";
+    return `${startLabel} – ${endLabel}${zoneLabel}`;
+  }, [instance, timeZoneLabel]);
+
+  const dynamicStyle = useMemo(() => {
+    if (layoutPhase === "modal") {
+      return {
+        width: targetWidth,
+        maxWidth: "min(560px, calc(100vw - 32px))",
+        maxHeight: maxDialogHeight,
+      } as React.CSSProperties;
+    }
+    return {
+      borderRadius: originSnapshot?.borderRadius ?? "24px",
+      backgroundImage: originSnapshot?.backgroundImage,
+      backgroundColor: originSnapshot?.backgroundColor,
+      boxShadow: originSnapshot?.boxShadow,
+    } as React.CSSProperties;
+  }, [layoutPhase, maxDialogHeight, originSnapshot, targetWidth]);
 
   return (
     <AnimatePresence
@@ -219,65 +256,59 @@ export function ScheduleInstanceEditSheet({
             aria-labelledby={titleId}
             data-phase={layoutPhase}
             className={cn(
-              "relative z-10 w-full max-w-lg",
+              "relative z-10 w-full text-white",
               layoutPhase === "modal"
-                ? "rounded-3xl border border-white/12 bg-[var(--surface-elevated)] px-5 pb-6 pt-5 text-white shadow-[0_32px_80px_rgba(5,8,22,0.78)]"
+                ? "max-w-lg rounded-3xl border border-white/12 bg-[var(--surface-elevated)] shadow-[0_32px_80px_rgba(5,8,22,0.78)]"
                 : "pointer-events-none"
             )}
-            style={{
-              width: targetWidth,
-              maxWidth: "min(560px, calc(100vw - 32px))",
-              maxHeight: maxDialogHeight,
-              borderRadius:
-                layoutPhase === "modal"
-                  ? undefined
-                  : originSnapshot?.borderRadius ?? "24px",
-              backgroundImage:
-                layoutPhase === "modal"
-                  ? undefined
-                  : originSnapshot?.backgroundImage,
-              backgroundColor:
-                layoutPhase === "modal"
-                  ? undefined
-                  : originSnapshot?.backgroundColor,
-              boxShadow:
-                layoutPhase === "modal"
-                  ? undefined
-                  : originSnapshot?.boxShadow,
-            }}
+            style={dynamicStyle}
             transition={{ type: "spring", stiffness: 150, damping: 22, mass: 0.9 }}
             onLayoutAnimationComplete={handleLayoutComplete}
           >
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: layoutPhase === "modal" ? 1 : 0 }}
-              transition={{ duration: 0.16, ease: [0.33, 1, 0.68, 1] as const }}
-              className={cn(
-                "h-full w-full",
-                layoutPhase === "modal" ? "pointer-events-auto" : "pointer-events-none"
-              )}
-            >
-              <button
-                type="button"
-                onClick={onClose}
-                className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+            <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[inherit]">
+              <div className="px-4 py-4 sm:px-5 sm:py-5">
+                <motion.p
+                  layoutId={layoutTokens?.title}
+                  id={titleId}
+                  className="text-sm font-medium leading-tight sm:text-base"
+                >
+                  {eventTitle}
+                </motion.p>
+                {timeRangeLabel ? (
+                  <motion.p
+                    layoutId={layoutTokens?.meta}
+                    className="mt-1 text-xs text-white/70 sm:text-sm"
+                  >
+                    {timeRangeLabel}
+                  </motion.p>
+                ) : null}
+                <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/50">
+                  {eventTypeLabel}
+                </p>
+              </div>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: layoutPhase === "modal" ? 1 : 0 }}
+                transition={{ duration: 0.2, ease: [0.33, 1, 0.68, 1] as const }}
+                className={cn(
+                  "flex flex-1 flex-col gap-4 px-4 pb-4 sm:px-5 sm:pb-6",
+                  layoutPhase === "modal" ? "pointer-events-auto" : "pointer-events-none"
+                )}
               >
-                <XIcon className="size-4" aria-hidden="true" />
-                <span className="sr-only">Close</span>
-              </button>
-              <div className="space-y-4">
-                <div className="space-y-3 pr-8">
-                  <h2 id={titleId} className="text-lg font-semibold tracking-tight text-white">
-                    Edit scheduled {eventTypeLabel.toLowerCase()}
-                  </h2>
-                  <p className="text-sm text-white/70">
-                    Update the scheduled time for this entry. Times are interpreted in {timeZoneLabel ?? "your local time"}.
-                  </p>
-                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-sm font-medium text-white">{eventTitle}</p>
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/60">{eventTypeLabel}</p>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="absolute right-4 top-4 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+                >
+                  <XIcon className="size-4" aria-hidden="true" />
+                  <span className="sr-only">Close</span>
+                </button>
+                <h2 className="text-lg font-semibold tracking-tight text-white">
+                  Edit scheduled {eventTypeLabel.toLowerCase()}
+                </h2>
+                <p className="text-sm text-white/70">
+                  Update the scheduled time for this entry. Times are interpreted in {timeZoneLabel ?? "your local time"}.
+                </p>
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="schedule-edit-start" className="text-xs uppercase tracking-[0.2em] text-white/60">
@@ -342,8 +373,8 @@ export function ScheduleInstanceEditSheet({
                     </Button>
                   </div>
                 </form>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
           </motion.div>
         </motion.div>
       ) : null}

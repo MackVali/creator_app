@@ -46,6 +46,7 @@ import {
 } from '@/components/schedule/ScheduleInstanceEditSheet'
 import { ProjectEditSheet } from '@/components/schedule/ProjectEditSheet'
 import { HabitEditSheet } from '@/components/schedule/HabitEditSheet'
+import { scheduleInstanceLayoutTokens } from '@/components/schedule/sharedLayout'
 import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
 import {
@@ -4451,9 +4452,17 @@ peekDataDepsRef.current = {
                   }
                 : {}
 
+              const habitLayoutId = placement.instanceId
+                ? getScheduleInstanceLayoutId(placement.instanceId)
+                : null
+              const habitLayoutTokens = habitLayoutId
+                ? scheduleInstanceLayoutTokens(habitLayoutId)
+                : null
+
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
+                  layoutId={habitLayoutTokens?.card}
                   className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
                   role="button"
                   tabIndex={options?.disableInteractions ? -1 : 0}
@@ -4483,9 +4492,12 @@ peekDataDepsRef.current = {
                   }
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
-                  <span className="truncate text-sm font-medium leading-snug">
+                  <motion.span
+                    layoutId={habitLayoutTokens?.title}
+                    className="truncate text-sm font-medium leading-snug"
+                  >
                     {placement.habitName}
-                  </span>
+                  </motion.span>
                 </motion.div>
               )
             })}
@@ -4622,6 +4634,9 @@ peekDataDepsRef.current = {
                   !editingHabitId
               )
 
+              const instanceLayoutId = getScheduleInstanceLayoutId(instance.id)
+              const layoutTokens = scheduleInstanceLayoutTokens(instanceLayoutId)
+
               const handleProjectToggle = () => {
                 if (!canToggle || isPending) return
                 const nextStatus = isCompleted ? 'scheduled' : 'completed'
@@ -4667,7 +4682,7 @@ peekDataDepsRef.current = {
                         <motion.div
                           key="project"
                           layout="position"
-                          layoutId={getScheduleInstanceLayoutId(instance.id)}
+                          layoutId={layoutTokens.card}
                           aria-label={`Project ${project.name}`}
                           role="button"
                           tabIndex={0}
@@ -4743,19 +4758,25 @@ peekDataDepsRef.current = {
                             </div>
                           ) : null}
                         <div className="flex min-w-0 flex-1 items-start gap-3">
-                          <div className="min-w-0">
-                            <span className="block truncate text-sm font-medium">
+                          <div className="min-w-0 space-y-1">
+                            <motion.span
+                              layoutId={layoutTokens.title}
+                              className="block truncate text-sm font-medium"
+                            >
                               {project.name}
                               {weightDisplay ? (
                                 <span className="ml-1 text-xs font-normal text-white/70">
                                   ({weightDisplay})
                                 </span>
                               ) : null}
-                            </span>
+                            </motion.span>
                             {detailText ? (
-                              <div className="text-xs text-zinc-200/70">
+                              <motion.div
+                                layoutId={layoutTokens.meta}
+                                className="text-xs text-zinc-200/70"
+                              >
                                 {detailText}
-                              </div>
+                              </motion.div>
                             ) : null}
                           </div>
                         </div>
@@ -4951,6 +4972,13 @@ peekDataDepsRef.current = {
                               return null
                             }
 
+                            const nestedLayoutTokens =
+                              kind === 'scheduled' && instanceId
+                                ? scheduleInstanceLayoutTokens(
+                                    getScheduleInstanceLayoutId(instanceId)
+                                  )
+                                : null
+
                             const handleTaskCardPrimaryAction = () => {
                               if (isFallbackCard) {
                                 if (!canToggle || isPending) return
@@ -4968,15 +4996,11 @@ peekDataDepsRef.current = {
                               )
                             }
 
-                            return (
-                              <motion.div
+                              return (
+                                <motion.div
                                 key={key}
                                 layout={instanceId ? 'position' : false}
-                                layoutId={
-                                  kind === 'scheduled' && instanceId
-                                    ? getScheduleInstanceLayoutId(instanceId)
-                                    : undefined
-                                }
+                                layoutId={nestedLayoutTokens?.card}
                                 data-schedule-instance-id={
                                   kind === 'scheduled' && instanceId ? instanceId : undefined
                                 }
@@ -5065,9 +5089,12 @@ peekDataDepsRef.current = {
                                 }
                               >
                                 <div className="flex flex-col">
-                                  <span className="truncate text-sm font-medium">
+                                  <motion.span
+                                    layoutId={nestedLayoutTokens?.title}
+                                    className="truncate text-sm font-medium"
+                                  >
                                     {task.name}
-                                  </span>
+                                  </motion.span>
                                 </div>
                                 <SkillEnergyBadge
                                   energyLevel={energyLevel}
@@ -5147,6 +5174,9 @@ peekDataDepsRef.current = {
                     !editingHabitId
                 )
 
+                const instanceLayoutId = getScheduleInstanceLayoutId(instance.id)
+                const layoutTokens = scheduleInstanceLayoutTokens(instanceLayoutId)
+
                 if (hideForEdit) {
                   return null
                 }
@@ -5161,7 +5191,7 @@ peekDataDepsRef.current = {
                   <motion.div
                     key={instance.id}
                     layout="position"
-                    layoutId={getScheduleInstanceLayoutId(instance.id)}
+                    layoutId={layoutTokens.card}
                     data-schedule-instance-id={instance.id}
                     aria-label={`Task ${task.name}`}
                     role="button"
@@ -5206,10 +5236,14 @@ peekDataDepsRef.current = {
                   }
                 >
                   <div className="flex flex-col">
-                    <span className="truncate text-sm font-medium">
+                    <motion.span
+                      layoutId={layoutTokens.title}
+                      className="truncate text-sm font-medium"
+                    >
                       {task.name}
-                    </span>
-                    <div
+                    </motion.span>
+                    <motion.div
+                      layoutId={layoutTokens.meta}
                       className={
                         isCompleted
                           ? 'text-xs text-emerald-100/80'
@@ -5217,7 +5251,7 @@ peekDataDepsRef.current = {
                       }
                     >
                       {Math.round((end.getTime() - start.getTime()) / 60000)}m
-                    </div>
+                    </motion.div>
                   </div>
                   <SkillEnergyBadge
                     energyLevel={(task.energy as FlameLevel) || 'NO'}
