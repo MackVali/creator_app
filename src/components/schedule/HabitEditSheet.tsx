@@ -1,14 +1,6 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { HabitFormFields, HABIT_ENERGY_OPTIONS, HABIT_RECURRENCE_OPTIONS, HABIT_TYPE_OPTIONS, type HabitEnergySelectOption, type HabitGoalSelectOption, type HabitSkillSelectOption } from "@/components/habits/habit-form-fields";
 import { Label } from "@/components/ui/label";
@@ -24,6 +16,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
+import { XIcon } from "lucide-react";
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
+import {
+  ScheduleMorphDialog,
+  type ScheduleEditOrigin,
+} from "@/components/schedule/ScheduleMorphDialog";
 
 type RoutineOption = {
   id: string;
@@ -42,6 +40,10 @@ type HabitEditSheetProps = {
   open: boolean;
   habitId: string | null;
   eventTitle?: string | null;
+  eventTypeLabel?: string | null;
+  timeRangeLabel?: string | null;
+  origin?: ScheduleEditOrigin | null;
+  layoutId?: string;
   onClose: () => void;
   onSaved?: () => Promise<void> | void;
 };
@@ -107,6 +109,10 @@ export function HabitEditSheet({
   open,
   habitId,
   eventTitle,
+  eventTypeLabel,
+  timeRangeLabel,
+  origin,
+  layoutId,
   onClose,
   onSaved,
 }: HabitEditSheetProps) {
@@ -558,7 +564,9 @@ export function HabitEditSheet({
         }
 
         let includeGoalMetadata = true;
-        let habitResponse: { data: any; error: any } | null = null;
+        let habitResponse:
+          | PostgrestSingleResponse<Record<string, unknown>>
+          | null = null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
           habitResponse = await supabase
@@ -922,6 +930,7 @@ export function HabitEditSheet({
       recurrence,
       recurrenceDays,
       duration,
+      name,
       energy,
       skillId,
       daylightPreference,
@@ -934,118 +943,125 @@ export function HabitEditSheet({
     ],
   );
 
+  if (!habitId) {
+    return null;
+  }
+
   return (
-    <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
-      <SheetContent
-        side="bottom"
-        className="bg-[var(--surface-elevated)] border-t border-white/10 text-white sm:max-w-3xl"
-      >
-        <SheetHeader className="gap-2">
-          <SheetTitle className="text-lg font-semibold text-white">
-            Edit habit
-          </SheetTitle>
-          <SheetDescription className="text-sm text-white/70">
-            Tune the cadence, energy, and advanced settings for this habit.
-          </SheetDescription>
-          {eventTitle ? (
-            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-              <p className="text-sm font-medium text-white">{eventTitle}</p>
-              <p className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Habit
+    <ScheduleMorphDialog
+      open={open}
+      title={eventTitle ?? "Habit"}
+      subtitle={timeRangeLabel}
+      typeLabel={eventTypeLabel ?? "Habit"}
+      onClose={onClose}
+      origin={origin}
+      layoutId={layoutId}
+    >
+      {habitLoading ? (
+        <div className="px-1 py-4 text-sm text-white/70">Loading…</div>
+      ) : habitLoadError ? (
+        <div className="space-y-3 px-1 py-4">
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+            {habitLoadError}
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="self-start text-white"
+            onClick={onClose}
+          >
+            Close
+          </Button>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6 pb-4">
+          <div className="relative pb-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+            >
+              <XIcon className="size-4" aria-hidden="true" />
+              <span className="sr-only">Close</span>
+            </button>
+            <div className="pr-10">
+              <h2 className="text-lg font-semibold text-white">Edit habit</h2>
+              <p className="mt-1 text-sm text-white/70">
+                Tune the cadence, energy, and advanced settings for this habit.
               </p>
             </div>
-          ) : null}
-        </SheetHeader>
+          </div>
 
-        {habitLoading ? (
-          <div className="px-4 py-6 text-sm text-white/70">Loading…</div>
-        ) : habitLoadError ? (
-          <div className="space-y-3 px-4 py-6">
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-              {habitLoadError}
+          <HabitFormFields
+            name={name}
+            description={description}
+            habitType={habitType}
+            recurrence={recurrence}
+            recurrenceDays={recurrenceDays}
+            duration={duration}
+            energy={energy}
+            skillId={skillId}
+            locationContextId={locationContextId}
+            daylightPreference={daylightPreference}
+            windowEdgePreference={windowEdgePreference}
+            energyOptions={energySelectOptions}
+            skillsLoading={skillsLoading}
+            skillOptions={skillSelectOptions}
+            skillError={skillLoadError}
+            goalId={goalId}
+            goalOptions={goalSelectOptions}
+            goalError={goalMetadataSupported ? goalLoadError : null}
+            onGoalChange={setGoalId}
+            completionTarget={completionTarget}
+            onCompletionTargetChange={setCompletionTarget}
+            onNameChange={setName}
+            onDescriptionChange={setDescription}
+            onHabitTypeChange={setHabitType}
+            onRecurrenceChange={setRecurrence}
+            onRecurrenceDaysChange={setRecurrenceDays}
+            onEnergyChange={setEnergy}
+            onDurationChange={setDuration}
+            onSkillChange={setSkillId}
+            onLocationContextIdChange={setLocationContextId}
+            onDaylightPreferenceChange={(value) =>
+              setDaylightPreference(value.toUpperCase())
+            }
+            onWindowEdgePreferenceChange={(value) =>
+              setWindowEdgePreference(value.toUpperCase())
+            }
+            showDescriptionField={false}
+            footerSlot={routineFooter}
+          />
+
+          {error ? (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {error}
             </div>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-3 pb-2 sm:flex-row sm:justify-end">
             <Button
               type="button"
-              variant="secondary"
-              className="self-start text-white"
+              variant="ghost"
+              className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
               onClick={onClose}
+              disabled={saving}
             >
-              Close
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className={cn(
+                "bg-white text-zinc-900 hover:bg-white/90",
+                disableSubmit && "opacity-50",
+              )}
+              disabled={disableSubmit}
+            >
+              {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-6 px-4 py-4">
-            <HabitFormFields
-              name={name}
-              description={description}
-              habitType={habitType}
-              recurrence={recurrence}
-              recurrenceDays={recurrenceDays}
-              duration={duration}
-              energy={energy}
-              skillId={skillId}
-              locationContextId={locationContextId}
-              daylightPreference={daylightPreference}
-              windowEdgePreference={windowEdgePreference}
-              energyOptions={energySelectOptions}
-              skillsLoading={skillsLoading}
-              skillOptions={skillSelectOptions}
-              skillError={skillLoadError}
-              goalId={goalId}
-              goalOptions={goalSelectOptions}
-              goalError={goalMetadataSupported ? goalLoadError : null}
-              onGoalChange={setGoalId}
-              completionTarget={completionTarget}
-              onCompletionTargetChange={setCompletionTarget}
-              onNameChange={setName}
-              onDescriptionChange={setDescription}
-              onHabitTypeChange={setHabitType}
-              onRecurrenceChange={setRecurrence}
-              onRecurrenceDaysChange={setRecurrenceDays}
-              onEnergyChange={setEnergy}
-              onDurationChange={setDuration}
-              onSkillChange={setSkillId}
-              onLocationContextIdChange={setLocationContextId}
-              onDaylightPreferenceChange={(value) =>
-                setDaylightPreference(value.toUpperCase())
-              }
-              onWindowEdgePreferenceChange={(value) =>
-                setWindowEdgePreference(value.toUpperCase())
-              }
-              showDescriptionField={false}
-              footerSlot={routineFooter}
-            />
-
-            {error ? (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                {error}
-              </div>
-            ) : null}
-
-            <SheetFooter className="gap-3 px-0 pb-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-                onClick={onClose}
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className={cn(
-                  "bg-white text-zinc-900 hover:bg-white/90",
-                  disableSubmit && "opacity-50",
-                )}
-                disabled={disableSubmit}
-              >
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-            </SheetFooter>
-          </form>
-        )}
-      </SheetContent>
-    </Sheet>
+        </form>
+      )}
+    </ScheduleMorphDialog>
   );
 }

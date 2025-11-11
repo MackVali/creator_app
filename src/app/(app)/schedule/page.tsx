@@ -40,12 +40,9 @@ import FlameEmber, { FlameLevel, type FlameEmberProps } from '@/components/Flame
 import { ScheduleTopBar } from '@/components/schedule/ScheduleTopBar'
 import { JumpToDateSheet } from '@/components/schedule/JumpToDateSheet'
 import { ScheduleSearchSheet } from '@/components/schedule/ScheduleSearchSheet'
-import {
-  ScheduleInstanceEditSheet,
-  type ScheduleEditOrigin,
-} from '@/components/schedule/ScheduleInstanceEditSheet'
 import { ProjectEditSheet } from '@/components/schedule/ProjectEditSheet'
 import { HabitEditSheet } from '@/components/schedule/HabitEditSheet'
+import { type ScheduleEditOrigin } from '@/components/schedule/ScheduleMorphDialog'
 import { scheduleInstanceLayoutTokens } from '@/components/schedule/sharedLayout'
 import { SchedulerModeSheet } from '@/components/schedule/SchedulerModeSheet'
 import { type ScheduleView } from '@/components/schedule/viewUtils'
@@ -56,7 +53,6 @@ import {
 } from '@/lib/scheduler/repo'
 import {
   fetchScheduledProjectIds,
-  rescheduleInstance,
   updateInstanceStatus,
   type ScheduleInstance,
 } from '@/lib/scheduler/instanceRepo'
@@ -69,7 +65,7 @@ import {
   type HabitScheduleItem,
 } from '@/lib/scheduler/habits'
 import type { ScheduleEventDataset } from '@/lib/scheduler/dataset'
-import { formatLocalDateKey, localWindowToUTC, toLocal } from '@/lib/time/tz'
+import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
 import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
 import {
   TIME_FORMATTER,
@@ -1867,8 +1863,6 @@ export default function SchedulePage() {
   const [editInstanceId, setEditInstanceId] = useState<string | null>(null)
   const [editOrigin, setEditOrigin] = useState<ScheduleEditOrigin | null>(null)
   const [isEditSheetOpen, setIsEditSheetOpen] = useState(false)
-  const [editSaving, setEditSaving] = useState(false)
-  const [editError, setEditError] = useState<string | null>(null)
   const [topBarHeight, setTopBarHeight] = useState<number | null>(null)
   const sliderControls = useAnimationControls()
   const longPressTimerRef = useRef<number | null>(null)
@@ -2649,6 +2643,28 @@ export default function SchedulePage() {
     }
   }, [editingInstance])
 
+  const editingTimeRangeLabel = useMemo(() => {
+    if (!editingInstance) return null
+    const startDate = toLocal(editingInstance.start_utc)
+    const endDate = toLocal(editingInstance.end_utc)
+    if (
+      !(startDate instanceof Date) ||
+      Number.isNaN(startDate.getTime()) ||
+      !(endDate instanceof Date) ||
+      Number.isNaN(endDate.getTime())
+    ) {
+      return null
+    }
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    const startLabel = formatter.format(startDate)
+    const endLabel = formatter.format(endDate)
+    const zoneLabel = friendlyTimeZone ? ` • ${friendlyTimeZone}` : ''
+    return `${startLabel} – ${endLabel}${zoneLabel}`
+  }, [editingInstance, friendlyTimeZone])
+
   const editingProjectId = useMemo(() => {
     if (!editingInstance) return null
     if (editingInstance.source_type !== 'PROJECT') return null
@@ -2662,6 +2678,11 @@ export default function SchedulePage() {
     const sourceId = editingInstance.source_id ?? ''
     return sourceId && sourceId.length > 0 ? sourceId : null
   }, [editingInstance])
+
+  const editingLayoutId = useMemo(
+    () => (editInstanceId ? getScheduleInstanceLayoutId(editInstanceId) : undefined),
+    [editInstanceId]
+  )
 
   const windowMap = useMemo(() => buildWindowMap(windows), [windows])
 
@@ -3128,60 +3149,10 @@ peekDataDepsRef.current = {
   )
 
   const handleCloseEditSheet = useCallback(() => {
-    if (editSaving) return
     setIsEditSheetOpen(false)
     setEditInstanceId(null)
-    setEditError(null)
     setEditOrigin(null)
-  }, [editSaving])
-
-  const handleSubmitInstanceEdit = useCallback(
-    async ({ startLocal, endLocal }: { startLocal: string; endLocal: string }) => {
-      if (!editingInstance) return
-      setEditSaving(true)
-      setEditError(null)
-      try {
-        if (!startLocal || !endLocal) {
-          setEditError('Select both start and end times.')
-          return
-        }
-        const startUTC = localWindowToUTC(startLocal)
-        const endUTC = localWindowToUTC(endLocal)
-        const startDate = new Date(startUTC)
-        const endDate = new Date(endUTC)
-        if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {
-          setEditError('Invalid date or time.')
-          return
-        }
-        if (endDate.getTime() <= startDate.getTime()) {
-          setEditError('End time must be after the start time.')
-          return
-        }
-        const durationMin = Math.max(
-          1,
-          Math.round((endDate.getTime() - startDate.getTime()) / 60000)
-        )
-        await rescheduleInstance(editingInstance.id, {
-          windowId: editingInstance.window_id,
-          startUTC,
-          endUTC,
-          durationMin,
-          weightSnapshot: editingInstance.weight_snapshot ?? 0,
-          energyResolved: editingInstance.energy_resolved ?? 'NO',
-        })
-        await loadInstancesRef.current()
-        setIsEditSheetOpen(false)
-        setEditInstanceId(null)
-        setEditOrigin(null)
-      } catch (error) {
-        console.error('Failed to update schedule instance', error)
-        setEditError('Unable to update this schedule entry. Please try again.')
-      } finally {
-        setEditSaving(false)
-      }
-    },
-    [editingInstance, loadInstancesRef]
-  )
+  }, [])
 
   useEffect(() => {
     if (!memoNoteState) {
@@ -3888,7 +3859,6 @@ peekDataDepsRef.current = {
     (instanceId: string, origin?: ScheduleEditOrigin | null) => {
       setEditInstanceId(instanceId)
       setEditOrigin(origin ?? null)
-      setEditError(null)
       setIsEditSheetOpen(true)
     },
     []
@@ -4116,6 +4086,15 @@ peekDataDepsRef.current = {
       setEditOrigin(null)
     }
   }, [isEditSheetOpen, editInstanceId, editingInstance])
+
+  useEffect(() => {
+    if (!isEditSheetOpen) return
+    if (!editingProjectId && !editingHabitId) {
+      setIsEditSheetOpen(false)
+      setEditInstanceId(null)
+      setEditOrigin(null)
+    }
+  }, [isEditSheetOpen, editingProjectId, editingHabitId])
 
   const baseTimelineHeight = useMemo(
     () =>
@@ -4458,6 +4437,19 @@ peekDataDepsRef.current = {
               const habitLayoutTokens = habitLayoutId
                 ? scheduleInstanceLayoutTokens(habitLayoutId)
                 : null
+              const hideForEdit =
+                hasHabitInstance &&
+                Boolean(
+                  isEditSheetOpen &&
+                    editInstanceId &&
+                    editInstanceId === placement.instanceId &&
+                    !editingProjectId &&
+                    !editingHabitId
+                )
+
+              if (hideForEdit) {
+                return null
+              }
 
               return (
                 <motion.div
@@ -4470,6 +4462,7 @@ peekDataDepsRef.current = {
                   aria-disabled={options?.disableInteractions ?? false}
                   style={cardStyle}
                   onClick={() => {
+                    if (shouldBlockClickFromLongPress()) return
                     handleHabitPrimaryAction()
                   }}
                   onKeyDown={event => {
@@ -5296,6 +5289,10 @@ peekDataDepsRef.current = {
         handleInstancePointerCancel,
         shouldBlockClickFromLongPress,
         longPressBounceId,
+        isEditSheetOpen,
+        editInstanceId,
+        editingProjectId,
+        editingHabitId,
       ]
     )
 
@@ -5528,6 +5525,10 @@ peekDataDepsRef.current = {
         open={isEditSheetOpen && Boolean(editingProjectId)}
         projectId={editingProjectId}
         eventTitle={editingEventTitle}
+        eventTypeLabel={editingEventTypeLabel}
+        timeRangeLabel={editingTimeRangeLabel}
+        origin={editOrigin}
+        layoutId={editingLayoutId}
         onClose={handleCloseEditSheet}
         onSaved={refreshScheduleData}
       />
@@ -5535,28 +5536,12 @@ peekDataDepsRef.current = {
         open={isEditSheetOpen && Boolean(editingHabitId)}
         habitId={editingHabitId}
         eventTitle={editingEventTitle}
+        eventTypeLabel={editingEventTypeLabel}
+        timeRangeLabel={editingTimeRangeLabel}
+        origin={editOrigin}
+        layoutId={editingLayoutId}
         onClose={handleCloseEditSheet}
         onSaved={refreshScheduleData}
-      />
-      <ScheduleInstanceEditSheet
-        open={
-          isEditSheetOpen &&
-          Boolean(editingInstance) &&
-          !editingProjectId &&
-          !editingHabitId
-        }
-        instance={editingInstance}
-        eventTitle={editingEventTitle}
-        eventTypeLabel={editingEventTypeLabel}
-        timeZoneLabel={friendlyTimeZone}
-        onClose={handleCloseEditSheet}
-        onSubmit={handleSubmitInstanceEdit}
-        saving={editSaving}
-        error={editError}
-        origin={editOrigin}
-        layoutId={
-          editInstanceId ? getScheduleInstanceLayoutId(editInstanceId) : undefined
-        }
       />
     </LayoutGroup>
   )

@@ -1,14 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -22,6 +14,11 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { ENERGY } from "@/lib/scheduler/config";
 import { cn } from "@/lib/utils";
+import { XIcon } from "lucide-react";
+import {
+  ScheduleMorphDialog,
+  type ScheduleEditOrigin,
+} from "@/components/schedule/ScheduleMorphDialog";
 
 const PRIORITY_OPTIONS = [
   { value: "NO", label: "No priority" },
@@ -49,6 +46,10 @@ type ProjectEditSheetProps = {
   open: boolean;
   projectId: string | null;
   eventTitle?: string | null;
+  eventTypeLabel?: string | null;
+  timeRangeLabel?: string | null;
+  origin?: ScheduleEditOrigin | null;
+  layoutId?: string;
   onClose: () => void;
   onSaved?: () => Promise<void> | void;
 };
@@ -57,6 +58,10 @@ export function ProjectEditSheet({
   open,
   projectId,
   eventTitle,
+  eventTypeLabel,
+  timeRangeLabel,
+  origin,
+  layoutId,
   onClose,
   onSaved,
 }: ProjectEditSheetProps) {
@@ -73,6 +78,7 @@ export function ProjectEditSheet({
   const [goalId, setGoalId] = useState<string>("none");
   const [goalOptions, setGoalOptions] = useState<GoalOption[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const resetState = useCallback(() => {
     setName("");
@@ -250,138 +256,68 @@ export function ProjectEditSheet({
     }
   };
 
+  if (!projectId) {
+    return null;
+  }
+
   return (
-    <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
-      <SheetContent
-        side="bottom"
-        className="bg-[var(--surface-elevated)] border-t border-white/10 text-white sm:max-w-2xl"
-      >
-        <SheetHeader className="gap-2">
-          <SheetTitle className="text-lg font-semibold text-white">
-            Edit project
-          </SheetTitle>
-          <SheetDescription className="text-sm text-white/70">
-            Update the underlying project details. Changes here apply everywhere
-            this project appears.
-          </SheetDescription>
-          {eventTitle ? (
-            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-              <p className="text-sm font-medium text-white">{eventTitle}</p>
-              <p className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Project
+    <ScheduleMorphDialog
+      open={open}
+      title={eventTitle ?? "Project"}
+      subtitle={timeRangeLabel}
+      typeLabel={eventTypeLabel ?? "Project"}
+      onClose={onClose}
+      origin={origin}
+      layoutId={layoutId}
+      focusRef={nameInputRef}
+    >
+      {loading ? (
+        <div className="px-1 py-4 text-sm text-white/70">Loading…</div>
+      ) : (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="relative pb-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute right-0 top-0 rounded-full border border-white/10 bg-white/10 p-1 text-white transition hover:bg-white/20 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-white/80"
+            >
+              <XIcon className="size-4" aria-hidden="true" />
+              <span className="sr-only">Close</span>
+            </button>
+            <div className="pr-10">
+              <h2 className="text-lg font-semibold text-white">Edit project</h2>
+              <p className="mt-1 text-sm text-white/70">
+                Update the underlying project details. Changes here apply everywhere this project appears.
               </p>
             </div>
-          ) : null}
-        </SheetHeader>
+          </div>
 
-        {loading ? (
-          <div className="px-4 py-6 text-sm text-white/70">Loading…</div>
-        ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-4 py-4">
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+              Project name
+            </Label>
+            <Input
+              ref={nameInputRef}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Project title"
+              className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+              required
+              disabled={loading}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Project name
+                Priority
               </Label>
-              <Input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Project title"
-                className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                required
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Priority
-                </Label>
-                <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                    <SelectValue placeholder="Priority" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#05070c] text-white">
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Stage
-                </Label>
-                <Select value={stage} onValueChange={setStage}>
-                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                    <SelectValue placeholder="Stage" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#05070c] text-white">
-                    {STAGE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Energy
-                </Label>
-                <Select value={energy} onValueChange={(value) => setEnergy(value as (typeof ENERGY.LIST)[number])}>
-                  <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                    <SelectValue placeholder="Energy" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#05070c] text-white">
-                    {ENERGY.LIST.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {value.charAt(0) + value.slice(1).toLowerCase()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                  Estimated duration (minutes)
-                </Label>
-                <Input
-                  value={duration}
-                  onChange={(event) => setDuration(event.target.value)}
-                  placeholder="60"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Goal
-              </Label>
-              <Select
-                value={
-                  goalOptions.some((option) => option.value === goalId)
-                    ? goalId
-                    : "none"
-                }
-                onValueChange={setGoalId}
-                disabled={goalsLoading}
-              >
+              <Select value={priority} onValueChange={setPriority} disabled={loading}>
                 <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
-                  <SelectValue placeholder="No goal linked" />
+                  <SelectValue placeholder="Priority" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#05070c] text-white">
-                  {(goalOptions.length === 0
-                    ? [{ value: "none", label: "No goal linked" }]
-                    : goalOptions
-                  ).map((option) => (
+                  {PRIORITY_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -389,37 +325,123 @@ export function ProjectEditSheet({
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                Stage
+              </Label>
+              <Select value={stage} onValueChange={setStage} disabled={loading}>
+                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                  <SelectValue placeholder="Stage" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#05070c] text-white">
+                  {STAGE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
-            {error ? (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-                {error}
-              </div>
-            ) : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                Energy
+              </Label>
+              <Select
+                value={energy}
+                onValueChange={(value) =>
+                  setEnergy(value as (typeof ENERGY.LIST)[number])
+                }
+                disabled={loading}
+              >
+                <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                  <SelectValue placeholder="Energy" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#05070c] text-white">
+                  {ENERGY.LIST.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value.charAt(0) + value.slice(1).toLowerCase()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+                Estimated duration (minutes)
+              </Label>
+              <Input
+                value={duration}
+                onChange={(event) => setDuration(event.target.value)}
+                placeholder="60"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                disabled={loading}
+              />
+            </div>
+          </div>
 
-            <SheetFooter className="gap-3 px-0 pb-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
-                onClick={onClose}
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className={cn(
-                  "bg-white text-zinc-900 hover:bg-white/90",
-                  disableSubmit && "opacity-50",
-                )}
-                disabled={disableSubmit}
-              >
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-            </SheetFooter>
-          </form>
-        )}
-      </SheetContent>
-    </Sheet>
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+              Goal
+            </Label>
+            <Select
+              value={
+                goalOptions.some((option) => option.value === goalId)
+                  ? goalId
+                  : "none"
+              }
+              onValueChange={setGoalId}
+              disabled={goalsLoading || loading}
+            >
+              <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+                <SelectValue placeholder="No goal linked" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#05070c] text-white">
+                {(goalOptions.length === 0
+                  ? [{ value: "none", label: "No goal linked" }]
+                  : goalOptions
+                ).map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {error ? (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              className="border border-white/10 bg-white/5 text-white hover:bg-white/10"
+              onClick={onClose}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className={cn(
+                "bg-white text-zinc-900 hover:bg-white/90",
+                disableSubmit && "opacity-50",
+              )}
+              disabled={disableSubmit}
+            >
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </form>
+      )}
+    </ScheduleMorphDialog>
   );
 }
