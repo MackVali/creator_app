@@ -32,6 +32,7 @@ export interface Goal {
   progress: number; // 0-100
   status: "Active" | "Completed" | "Overdue" | "Inactive";
   active: boolean;
+  createdAt: string;
   updatedAt: string;
   projects: Project[];
   monumentId?: string | null;

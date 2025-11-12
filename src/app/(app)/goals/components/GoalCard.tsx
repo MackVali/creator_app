@@ -69,10 +69,14 @@ export function GoalCard({
   };
 
   const energy = energyAccent[goal.energy];
-  const updatedAt = goal.updatedAt ? new Date(goal.updatedAt).toLocaleDateString() : null;
+  const createdAt = goal.createdAt
+    ? new Date(goal.createdAt).toLocaleDateString()
+    : goal.updatedAt
+    ? new Date(goal.updatedAt).toLocaleDateString()
+    : null;
 
   return (
-    <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-5 text-white shadow-[0_20px_60px_-45px_rgba(239,68,68,0.6)] transition hover:-translate-y-1 hover:border-white/30">
+    <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-5 text-white transition hover:-translate-y-1 hover:border-white/30">
       <div className="relative flex h-full flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <button
@@ -121,9 +125,9 @@ export function GoalCard({
                   Due {new Date(goal.dueDate).toLocaleDateString()}
                 </span>
               )}
-              {updatedAt && (
+              {createdAt && (
                 <span className="rounded-full border border-white/10 px-3 py-1 text-white/60">
-                  Updated {updatedAt}
+                  Created {createdAt}
                 </span>
               )}
             </div>
@@ -178,15 +182,16 @@ export function GoalCard({
           </DropdownMenu>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02]">
-          <ProjectsDropdown
-            id={`goal-${goal.id}`}
-            goalTitle={goal.title}
-            projects={goal.projects}
-            open={open}
-            loading={loading}
-          />
-        </div>
+        {open && (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02]">
+            <ProjectsDropdown
+              id={`goal-${goal.id}`}
+              goalTitle={goal.title}
+              projects={goal.projects}
+              loading={loading}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

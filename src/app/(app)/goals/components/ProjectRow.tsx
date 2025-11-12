@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Project } from "../types";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
@@ -9,11 +9,17 @@ interface ProjectRowProps {
   project: Project;
 }
 
+const MAX_VISIBLE_TASKS = 12;
+
 export function ProjectRow({ project }: ProjectRowProps) {
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((o) => !o);
 
   const hasTasks = project.tasks.length > 0;
+  const [visibleTasks, hiddenCount] = useMemo(() => {
+    const slice = project.tasks.slice(0, MAX_VISIBLE_TASKS);
+    return [slice, project.tasks.length - slice.length] as const;
+  }, [project.tasks]);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -23,25 +29,12 @@ export function ProjectRow({ project }: ProjectRowProps) {
         aria-expanded={open}
         aria-controls={`project-${project.id}`}
       >
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2 text-white">
-            <span className="font-semibold">{project.name}</span>
-            <FlameEmber level={project.energy.toUpperCase() as FlameLevel} size="sm" />
-          </div>
-          <span className="text-[10px] uppercase tracking-[0.4em] text-white/50">
-            {project.status}
-          </span>
+        <div className="flex items-center gap-2 text-white">
+          <span className="font-semibold">{project.name}</span>
+          <FlameEmber level={project.energy.toUpperCase() as FlameLevel} size="sm" />
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-fuchsia-500 via-cyan-400 to-emerald-400"
-                style={{ width: `${project.progress}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-white/60">{project.progress}%</p>
-          </div>
+          <p className="text-[11px] text-white/60">{project.progress}%</p>
           {project.dueDate && (
             <span className="text-xs text-white/60">
               {new Date(project.dueDate).toLocaleDateString()}
@@ -61,13 +54,19 @@ export function ProjectRow({ project }: ProjectRowProps) {
             open ? "max-h-60" : "max-h-0"
           }`}
         >
-          {open &&
-            project.tasks.map((task) => (
-              <li key={task.id} className="flex items-start gap-2">
-                <span className="mt-1 h-1 w-1 rounded-full bg-white/70" aria-hidden="true" />
-                <span>{task.name}</span>
-              </li>
-            ))}
+          {open && (
+            <>
+              {visibleTasks.map((task) => (
+                <li key={task.id} className="flex items-start gap-2">
+                  <span className="mt-1 h-1 w-1 rounded-full bg-white/70" aria-hidden="true" />
+                  <span>{task.name}</span>
+                </li>
+              ))}
+              {hiddenCount > 0 && (
+                <li className="text-white/50">+{hiddenCount} more tasks</li>
+              )}
+            </>
+          )}
         </ul>
       )}
     </div>
