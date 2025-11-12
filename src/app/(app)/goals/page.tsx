@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ArrowRight } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { GoalsHeader } from "./components/GoalsHeader";
 import {
@@ -21,6 +22,12 @@ import { getGoalsForUser } from "@/lib/queries/goals";
 import { getProjectsForUser } from "@/lib/queries/projects";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import {
+  projectWeight,
+  taskWeight,
+  type TaskLite,
+  type ProjectLite,
+} from "@/lib/scheduler/weight";
 
 function mapPriority(priority: string): Goal["priority"] {
   switch (priority) {
@@ -89,6 +96,90 @@ function energyToDbValue(energy: Goal["energy"]): string {
     default:
       return "NO";
   }
+}
+
+const DAY_IN_MS = 86_400_000;
+
+const GOAL_PRIORITY_WEIGHT: Record<string, number> = {
+  NO: 0,
+  LOW: 10,
+  MEDIUM: 200,
+  HIGH: 300,
+  CRITICAL: 500,
+  "ULTRA-CRITICAL": 1000,
+};
+
+const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
+  NO: "NO",
+  LOW: "LOW",
+  MEDIUM: "MEDIUM",
+  HIGH: "HIGH",
+  CRITICAL: "Critical",
+  "ULTRA-CRITICAL": "Ultra-Critical",
+};
+
+const TASK_STAGE_MAP: Record<string, string> = {
+  PREPARE: "Prepare",
+  PRODUCE: "Produce",
+  PERFECT: "Perfect",
+};
+
+function mapSchedulerPriority(priority?: string | null): string {
+  if (!priority) return "NO";
+  const upper = priority.toUpperCase();
+  return SCHEDULER_PRIORITY_MAP[upper] || "NO";
+}
+
+function mapSchedulerTaskStage(stage?: string | null): string {
+  if (!stage) return "Produce";
+  const upper = stage.toUpperCase();
+  return TASK_STAGE_MAP[upper] || "Produce";
+}
+
+function computeGoalWeight(goal: Goal): number {
+  const priorityCode = goal.priorityCode?.toUpperCase() ?? "NO";
+  const priorityWeight = GOAL_PRIORITY_WEIGHT[priorityCode] ?? 0;
+  const projectWeightSum = goal.projects.reduce(
+    (sum, project) => sum + (project.weight ?? 0),
+    0
+  );
+  const ageInDays =
+    goal.status === "Completed"
+      ? 0
+      : Math.max(
+          0,
+          Math.floor((Date.now() - Date.parse(goal.updatedAt)) / DAY_IN_MS)
+        );
+  const boost = goal.weightBoost ?? 0;
+  return priorityWeight + projectWeightSum + ageInDays + boost;
+}
+
+function toSchedulerTask(task: {
+  id: string;
+  name: string;
+  stage: string;
+  priorityCode?: string | null;
+}): TaskLite {
+  return {
+    id: task.id,
+    name: task.name,
+    stage: mapSchedulerTaskStage(task.stage),
+    priority: mapSchedulerPriority(task.priorityCode ?? null),
+    duration_min: 0,
+    energy: null,
+  };
+}
+
+function toSchedulerProject(project: {
+  id: string;
+  priorityCode?: string | null;
+  stage?: string | null;
+}): ProjectLite {
+  return {
+    id: project.id,
+    priority: mapSchedulerPriority(project.priorityCode ?? null),
+    stage: project.stage ?? "BUILD",
+  };
 }
 
 async function syncProjectsAndTasks(
@@ -259,6 +350,32 @@ export default function GoalsPage() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
 
+  const getMonumentEmoji = useCallback(
+    (monumentId?: string | null) => {
+      if (!monumentId) return null;
+      const match = monuments.find((m) => m.id === monumentId);
+      return match?.emoji ?? null;
+    },
+    [monuments]
+  );
+
+  const decorateGoal = useCallback(
+    (goal: Goal, lookup?: Map<string, string | null>) => {
+      const emojiFromLookup =
+        lookup?.get(goal.monumentId ?? "") ??
+        getMonumentEmoji(goal.monumentId ?? null);
+      const withEmoji = {
+        ...goal,
+        monumentEmoji: emojiFromLookup ?? null,
+      };
+      return {
+        ...withEmoji,
+        weight: computeGoalWeight(withEmoji),
+      };
+    },
+    [getMonumentEmoji]
+  );
+
   useEffect(() => {
     const editId = searchParams.get("edit");
     if (editId && goals.length > 0) {
@@ -312,11 +429,12 @@ export default function GoalsPage() {
           stage: string;
           name: string;
           skill_id: string | null;
+          priority: string | null;
         }[] = [];
         try {
           const tasksRes = await supabase
             .from("tasks")
-            .select("id, project_id, stage, name, skill_id")
+            .select("id, project_id, stage, name, skill_id, priority")
             .eq("user_id", user.id);
           tasksData = tasksRes.data || [];
         } catch (err) {
@@ -355,7 +473,13 @@ export default function GoalsPage() {
           (
             acc: Record<
               string,
-              { id: string; name: string; stage: string; skill_id: string | null }[]
+              {
+                id: string;
+                name: string;
+                stage: string;
+                skillId: string | null;
+                priorityCode?: string | null;
+              }[]
             >,
             task
           ) => {
@@ -366,6 +490,7 @@ export default function GoalsPage() {
               name: task.name,
               stage: task.stage,
               skillId: task.skill_id ?? null,
+              priorityCode: task.priority ?? null,
             });
             return acc;
           },
@@ -403,6 +528,19 @@ export default function GoalsPage() {
             ...task,
             isNew: false,
           }));
+          const schedulerTasks = tasks.map(toSchedulerTask);
+          const relatedTaskWeightSum = schedulerTasks.reduce(
+            (sum, t) => sum + taskWeight(t),
+            0
+          );
+          const projectWeightValue = projectWeight(
+            toSchedulerProject({
+              id: p.id,
+              priorityCode: p.priority,
+              stage: p.stage,
+            }),
+            relatedTaskWeightSum
+          );
           const proj: Project = {
             id: p.id,
             name: p.name,
@@ -412,6 +550,7 @@ export default function GoalsPage() {
             energyCode: p.energy,
             stage: p.stage,
             priorityCode: p.priority ?? undefined,
+             weight: projectWeightValue,
             isNew: false,
             tasks: normalizedTasks,
           };
@@ -427,6 +566,14 @@ export default function GoalsPage() {
           }
         });
 
+        const monumentEmojiLookup = new Map(
+          monumentsData.map((m) => [m.id, m.emoji ?? null])
+        );
+
+        const originalWeightMap = new Map(
+          goalsData.map((g) => [g.id, g.weight ?? null])
+        );
+
         const realGoals: Goal[] = goalsData.map((g) => {
           const projList = projectsByGoal.get(g.id) || [];
           const progress =
@@ -441,7 +588,7 @@ export default function GoalsPage() {
             : progress >= 100
             ? "Completed"
             : "Active";
-          return {
+          const baseGoal: Goal = {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
@@ -452,10 +599,29 @@ export default function GoalsPage() {
             updatedAt: g.created_at,
             projects: projList,
             monumentId: g.monument_id ?? null,
+            priorityCode: g.priority ?? null,
+            weightBoost: g.weight_boost ?? 0,
             skills: Array.from(skillsByGoal.get(g.id) || []),
             why: g.why || undefined,
           };
+          return decorateGoal(baseGoal, monumentEmojiLookup);
         });
+
+        const goalsNeedingUpdate = realGoals.filter((goal) => {
+          const existing = originalWeightMap.get(goal.id) ?? null;
+          return (existing ?? 0) !== (goal.weight ?? 0);
+        });
+
+        if (goalsNeedingUpdate.length > 0) {
+          await Promise.all(
+            goalsNeedingUpdate.map((goal) =>
+              supabase
+                .from("goals")
+                .update({ weight: goal.weight })
+                .eq("id", goal.id)
+            )
+          );
+        }
 
         setGoals(realGoals);
         setMonuments(monumentsData);
@@ -467,7 +633,7 @@ export default function GoalsPage() {
       }
     };
     load();
-  }, []);
+  }, [decorateGoal]);
 
   const filteredGoals = useMemo(() => {
     let data = goals.filter((g) => {
@@ -492,36 +658,77 @@ export default function GoalsPage() {
       data = data.filter((g) => g.skills?.includes(skill));
     }
     const sorted = [...data];
-    switch (sort) {
-      case "A→Z":
-        sorted.sort((a, b) => a.title.localeCompare(b.title));
-        break;
-      case "Due Soon":
-        sorted.sort((a, b) => {
+    const primarySort = (a: Goal, b: Goal) =>
+      (b.weight ?? 0) - (a.weight ?? 0);
+    sorted.sort((a, b) => {
+      const weightDelta = primarySort(a, b);
+      if (weightDelta !== 0) return weightDelta;
+      switch (sort) {
+        case "A→Z":
+          return a.title.localeCompare(b.title);
+        case "Due Soon": {
           const ad = a.dueDate ? Date.parse(a.dueDate) : Infinity;
           const bd = b.dueDate ? Date.parse(b.dueDate) : Infinity;
           return ad - bd;
-        });
-        break;
-      case "Progress":
-        sorted.sort((a, b) => b.progress - a.progress);
-        break;
-      case "Recently Updated":
-        sorted.sort(
-          (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
-        );
-        break;
-    }
+        }
+        case "Progress":
+          return b.progress - a.progress;
+        case "Recently Updated":
+          return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+        case "Weight":
+        default:
+          return 0;
+      }
+    });
     return sorted;
   }, [goals, search, energy, priority, monument, skill, sort]);
 
+  const goalStats = useMemo(() => {
+    if (goals.length === 0) {
+      return { total: 0, active: 0, completed: 0, momentum: 0, xp: 0 };
+    }
+    const total = goals.length;
+    const active = goals.filter((g) => g.status === "Active").length;
+    const completed = goals.filter((g) => g.status === "Completed").length;
+    const momentum = Math.round(
+      goals.reduce((sum, g) => sum + g.progress, 0) / total
+    );
+    const xp = goals.reduce(
+      (sum, goal) => sum + goal.progress + goal.projects.length * 20,
+      0
+    );
+    return { total, active, completed, momentum, xp };
+  }, [goals]);
+
+  const handleBoost = async (goal: Goal) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const newBoost = (goal.weightBoost ?? 0) + 250;
+    const updatedGoal = decorateGoal(
+      {
+        ...goal,
+        weightBoost: newBoost,
+      },
+      undefined
+    );
+    setGoals((gs) =>
+      gs.map((g) => (g.id === goal.id ? updatedGoal : g))
+    );
+    await supabase
+      .from("goals")
+      .update({ weight_boost: newBoost, weight: updatedGoal.weight })
+      .eq("id", goal.id);
+  };
+
   const addGoal = (_goal: Goal, _context: GoalUpdateContext) => {
     void _context;
-    setGoals((g) => [_goal, ...g]);
+    setGoals((g) => [decorateGoal(_goal), ...g]);
   };
 
   const updateGoal = (goal: Goal) =>
-    setGoals((gs) => gs.map((g) => (g.id === goal.id ? goal : g)));
+    setGoals((gs) =>
+      gs.map((g) => (g.id === goal.id ? decorateGoal(goal) : g))
+    );
 
   const handleEdit = (goal: Goal) => {
     setEditing(goal);
@@ -623,14 +830,15 @@ export default function GoalsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="relative min-h-screen overflow-hidden bg-[#05070c] text-white">
-        <div className="pointer-events-none absolute inset-0 -z-10 opacity-80">
-          <div className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-indigo-500/20 blur-3xl" />
-          <div className="absolute bottom-0 left-10 h-72 w-72 rounded-full bg-sky-500/20 blur-3xl" />
-          <div className="absolute -right-32 top-32 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl" />
+      <div className="relative min-h-screen overflow-hidden bg-[#05040b] text-white">
+        <div className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute inset-0 bg-gradient-to-b from-[#12040b] via-[#080304] to-[#010000]" />
+          <div className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-rose-600/35 blur-[200px]" />
+          <div className="absolute bottom-0 right-0 h-[460px] w-[460px] translate-x-1/4 rounded-full bg-red-500/25 blur-[220px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,80,80,0.12),_transparent_55%)] opacity-60" />
         </div>
-        <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pb-28 sm:px-6 lg:px-8">
-          <GoalsHeader onCreate={() => setDrawer(true)} />
+        <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pb-24 pt-10 sm:px-6 lg:px-8">
+          <GoalsHeader stats={goalStats} onCreate={() => setDrawer(true)} />
           <GoalsUtilityBar
             search={search}
             onSearch={setSearch}
@@ -648,24 +856,34 @@ export default function GoalsPage() {
             onSkill={setSkill}
           />
           {loading ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur">
+            <div className="rounded-[32px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur">
               <LoadingSkeleton />
             </div>
           ) : filteredGoals.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-white/20 bg-white/[0.02] p-10 text-center backdrop-blur">
+            <div className="rounded-[32px] border border-dashed border-white/20 bg-white/[0.02] p-10 text-center backdrop-blur">
               <EmptyState onCreate={() => setDrawer(true)} />
             </div>
           ) : (
-            <div className="grid gap-6 pb-8 sm:grid-cols-2">
-              {filteredGoals.map((goal) => (
-                <GoalCard
-                  key={goal.id}
-                  goal={goal}
-                  onEdit={() => handleEdit(goal)}
-                  onToggleActive={() => handleToggleActive(goal)}
-                  onDelete={() => handleDelete(goal)}
-                />
-              ))}
+            <div className="relative">
+              {filteredGoals.length > 1 && (
+                <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
+                  Swipe to browse
+                  <ArrowRight className="h-3 w-3" />
+                </div>
+              )}
+              <div className="grid auto-cols-[minmax(280px,1fr)] grid-flow-col gap-6 overflow-x-auto pb-6 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none xl:grid-cols-3">
+                {filteredGoals.map((goal) => (
+                  <div key={goal.id} className="h-full snap-center sm:[scroll-snap-align:unset]">
+                    <GoalCard
+                      goal={goal}
+                      onEdit={() => handleEdit(goal)}
+                      onToggleActive={() => handleToggleActive(goal)}
+                      onDelete={() => handleDelete(goal)}
+                      onBoost={() => handleBoost(goal)}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
