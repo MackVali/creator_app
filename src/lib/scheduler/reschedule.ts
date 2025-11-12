@@ -13,6 +13,7 @@ import {
   fetchWindowsSnapshot,
   fetchProjectsMap,
   fetchProjectSkillsForProjects,
+  fetchGoalsForUser,
   windowsForDateFromSnapshot,
   type WindowLite,
 } from './repo'
@@ -183,6 +184,7 @@ export async function scheduleBacklog(
 
   const tasks = await fetchReadyTasks(supabase)
   const projectsMap = await fetchProjectsMap(supabase)
+  const goals = await fetchGoalsForUser(userId, supabase)
   const habits = await fetchHabitsForSchedule(userId, supabase)
   const habitAllowsOverlap = new Map<string, boolean>()
   const habitById = new Map<string, HabitScheduleItem>()
@@ -213,7 +215,11 @@ export async function scheduleBacklog(
   } catch (_error) {
     windowSnapshot = null
   }
-  const projectItems = buildProjectItems(Object.values(projectsMap), tasks)
+  const goalWeightsById = goals.reduce<Record<string, number>>((acc, goal) => {
+    acc[goal.id] = goal.weight ?? 0
+    return acc
+  }, {})
+  const projectItems = buildProjectItems(Object.values(projectsMap), tasks, goalWeightsById)
 
   const projectItemMap: Record<string, (typeof projectItems)[number]> = {}
   for (const item of projectItems) projectItemMap[item.id] = item
@@ -310,6 +316,7 @@ export async function scheduleBacklog(
     duration_min: number
     energy: string
     weight: number
+    goalWeight: number
     instanceId?: string | null
   }
 
@@ -378,6 +385,7 @@ export async function scheduleBacklog(
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      goalWeight: def.goalWeight ?? 0,
       instanceId: m.id,
     })
   }
@@ -431,6 +439,7 @@ export async function scheduleBacklog(
       duration_min: duration,
       energy,
       weight: def.weight ?? 0,
+      goalWeight: def.goalWeight ?? 0,
     })
     queuedProjectIds.add(def.id)
   }
@@ -651,6 +660,7 @@ export async function scheduleBacklog(
       duration_min: duration,
       energy: energyResolved,
       weight: def.weight ?? 0,
+      goalWeight: def.goalWeight ?? 0,
       instanceId: inst.id,
     }
   }
@@ -770,10 +780,12 @@ export async function scheduleBacklog(
   const ignoreProjectIds = new Set(finalQueueProjectIds)
 
   const compareQueueItems = (a: QueueItem, b: QueueItem) => {
-    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
-    if (energyDiff !== 0) return energyDiff
+    const goalWeightDiff = b.goalWeight - a.goalWeight
+    if (goalWeightDiff !== 0) return goalWeightDiff
     const weightDiff = b.weight - a.weight
     if (weightDiff !== 0) return weightDiff
+    const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
+    if (energyDiff !== 0) return energyDiff
     return a.id.localeCompare(b.id)
   }
 
@@ -2520,6 +2532,7 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       duration_min: duration,
       energy,
       weight: projectDef.weight ?? 0,
+      goalWeight: projectDef.goalWeight ?? 0,
       instanceId: conflict.id,
     }
 

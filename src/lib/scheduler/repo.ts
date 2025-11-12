@@ -325,6 +325,7 @@ export async function fetchProjectSkillsForProjects(
 export type GoalSummary = {
   id: string;
   name: string | null;
+  weight: number;
 };
 
 export async function fetchGoalsForUser(
@@ -335,10 +336,11 @@ export async function fetchGoalsForUser(
   type GoalRecord = {
     id: string;
     name?: string | null;
+    weight?: number | null;
   };
   const { data, error } = await supabase
     .from('goals')
-    .select('id, name')
+    .select('id, name, weight')
     .eq('user_id', userId);
 
   if (error) throw error;
@@ -346,5 +348,6 @@ export async function fetchGoalsForUser(
   return ((data ?? []) as GoalRecord[]).map(goal => ({
     id: goal.id,
     name: goal.name ?? null,
+    weight: Number(goal.weight ?? 0) || 0,
   }));
 }

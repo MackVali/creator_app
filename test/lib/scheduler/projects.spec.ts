@@ -103,5 +103,12 @@ describe('buildProjectItems', () => {
     const items = buildProjectItems(projects, tasks)
     expect(items[0].energy).toBe('ULTRA')
   })
-})
 
+  it('assigns goal weight from provided map', () => {
+    const projects: ProjectLite[] = [
+      { id: 'p1', name: 'P1', priority: 'LOW', stage: 'RESEARCH', energy: null, goal_id: 'g1' },
+    ]
+    const items = buildProjectItems(projects, [], { g1: 42 })
+    expect(items[0].goalWeight).toBe(42)
+  })
+})
