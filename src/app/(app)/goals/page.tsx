@@ -18,8 +18,7 @@ import { EmptyState } from "./components/EmptyState";
 import { GoalDrawer, type GoalUpdateContext } from "./components/GoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { getGoalsForUser } from "@/lib/queries/goals";
-import { getProjectsForUser } from "@/lib/queries/projects";
+import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import {
@@ -99,6 +98,7 @@ function energyToDbValue(energy: Goal["energy"]): string {
 }
 
 const DAY_IN_MS = 86_400_000;
+const GOAL_BATCH_SIZE = 6;
 
 const GOAL_PRIORITY_WEIGHT: Record<string, number> = {
   NO: 0,
@@ -152,6 +152,73 @@ function computeGoalWeight(goal: Goal): number {
         );
   const boost = goal.weightBoost ?? 0;
   return priorityWeight + projectWeightSum + ageInDays + boost;
+}
+
+const GOAL_WEIGHT_UPDATE_BATCH_SIZE = 8;
+
+async function persistGoalWeights(
+  supabase: SupabaseClient,
+  updates: { id: string; weight: number }[]
+) {
+  for (let i = 0; i < updates.length; i += GOAL_WEIGHT_UPDATE_BATCH_SIZE) {
+    const batch = updates.slice(i, i + GOAL_WEIGHT_UPDATE_BATCH_SIZE);
+    await Promise.all(
+      batch.map(({ id, weight }) =>
+        supabase.from("goals").update({ weight }).eq("id", id)
+      )
+    );
+  }
+}
+
+type GoalRowWithRelations = GoalRow & {
+  projects?: {
+    id: string;
+    name: string;
+    goal_id: string;
+    priority: string | null;
+    energy: string | null;
+    stage: string | null;
+    created_at: string;
+    tasks?: {
+      id: string;
+      project_id: string | null;
+      stage: string;
+      name: string;
+      skill_id: string | null;
+      priority: string | null;
+    }[];
+    project_skills?: {
+      skill_id: string | null;
+    }[];
+  }[];
+};
+
+async function fetchGoalsWithRelations(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<GoalRowWithRelations[]> {
+  const { data, error } = await supabase
+    .from("goals")
+    .select(
+      `
+        id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost,
+        projects (
+          id, name, goal_id, priority, energy, stage, created_at,
+          tasks (
+            id, project_id, stage, name, skill_id, priority
+          ),
+          project_skills (
+            skill_id
+          )
+        )
+      `
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
 }
 
 function toSchedulerTask(task: {
@@ -341,7 +408,9 @@ export default function GoalsPage() {
   const [energy, setEnergy] = useState<EnergyFilter>("All");
   const [priority, setPriority] = useState<PriorityFilter>("All");
   const [sort, setSort] = useState<SortOption>("A→Z");
-  const [monuments, setMonuments] = useState<{ id: string; title: string }[]>([]);
+  const [monuments, setMonuments] = useState<
+    { id: string; title: string; emoji: string | null }[]
+  >([]);
   const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
   const [monument, setMonument] = useState<string>("All");
   const [skill, setSkill] = useState<string>("All");
@@ -349,6 +418,7 @@ export default function GoalsPage() {
   const [editing, setEditing] = useState<Goal | null>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [visibleGoalCount, setVisibleGoalCount] = useState(GOAL_BATCH_SIZE);
 
   const getMonumentEmoji = useCallback(
     (monumentId?: string | null) => {
@@ -407,164 +477,28 @@ export default function GoalsPage() {
 
         setUserId(user.id);
 
-        let goalsData: Awaited<ReturnType<typeof getGoalsForUser>> = [];
-        try {
-          goalsData = await getGoalsForUser(user.id);
-        } catch (err) {
-          console.error("Error fetching goals:", err);
-        }
-
-        let projectsData: Awaited<ReturnType<typeof getProjectsForUser>> = [];
-        try {
-          projectsData = await getProjectsForUser(user.id);
-        } catch (err) {
-          console.error("Error fetching projects:", err);
-        }
-
-        const projectIds = projectsData.map((p) => p.id);
-
-        let tasksData: {
-          id: string;
-          project_id: string | null;
-          stage: string;
-          name: string;
-          skill_id: string | null;
-          priority: string | null;
-        }[] = [];
-        try {
-          const tasksRes = await supabase
-            .from("tasks")
-            .select("id, project_id, stage, name, skill_id, priority")
-            .eq("user_id", user.id);
-          tasksData = tasksRes.data || [];
-        } catch (err) {
-          console.error("Error fetching tasks:", err);
-        }
-
-        let projectSkills: { project_id: string; skill_id: string | null }[] = [];
-        try {
-          if (projectIds.length > 0) {
-            const { data: psData, error: psError } = await supabase
-              .from("project_skills")
-              .select("project_id, skill_id")
-              .in("project_id", projectIds);
-            if (psError) throw psError;
-            projectSkills = psData || [];
+        const goalsPromise = fetchGoalsWithRelations(supabase, user.id).catch(
+          (err) => {
+            console.error("Error fetching goals:", err);
+            return [];
           }
-        } catch (err) {
-          console.error("Error fetching project skills:", err);
-        }
-
-        let monumentsData: Awaited<ReturnType<typeof getMonumentsForUser>> = [];
-        try {
-          monumentsData = await getMonumentsForUser(user.id);
-        } catch (err) {
-          console.error("Error fetching monuments:", err);
-        }
-
-        let skillsData: Awaited<ReturnType<typeof getSkillsForUser>> = [];
-        try {
-          skillsData = await getSkillsForUser(user.id);
-        } catch (err) {
-          console.error("Error fetching skills:", err);
-        }
-
-        const tasksByProject = tasksData.reduce(
-          (
-            acc: Record<
-              string,
-              {
-                id: string;
-                name: string;
-                stage: string;
-                skillId: string | null;
-                priorityCode?: string | null;
-              }[]
-            >,
-            task
-          ) => {
-            if (!task.project_id) return acc;
-            acc[task.project_id] = acc[task.project_id] || [];
-            acc[task.project_id].push({
-              id: task.id,
-              name: task.name,
-              stage: task.stage,
-              skillId: task.skill_id ?? null,
-              priorityCode: task.priority ?? null,
-            });
-            return acc;
-          },
-          {}
         );
 
-        const skillsByProject: Record<string, Set<string>> = {};
-        projectSkills.forEach((ps) => {
-          if (!skillsByProject[ps.project_id]) {
-            skillsByProject[ps.project_id] = new Set();
-          }
-          if (ps.skill_id) {
-            skillsByProject[ps.project_id].add(ps.skill_id);
-          }
+        const monumentsPromise = getMonumentsForUser(user.id).catch((err) => {
+          console.error("Error fetching monuments:", err);
+          return [];
         });
 
-        Object.entries(tasksByProject).forEach(([pid, tasks]) => {
-          tasks.forEach((t) => {
-            if (t.skillId) {
-              skillsByProject[pid] = skillsByProject[pid] || new Set();
-              skillsByProject[pid].add(t.skillId);
-            }
-          });
+        const skillsPromise = getSkillsForUser(user.id).catch((err) => {
+          console.error("Error fetching skills:", err);
+          return [];
         });
 
-        const projectsByGoal = new Map<string, Project[]>();
-        const skillsByGoal = new Map<string, Set<string>>();
-        projectsData.forEach((p) => {
-          const tasks = tasksByProject[p.id] || [];
-          const total = tasks.length;
-          const done = tasks.filter((t) => t.stage === "PERFECT").length;
-          const progress = total ? Math.round((done / total) * 100) : 0;
-          const status = projectStageToStatus(p.stage);
-          const normalizedTasks = tasks.map((task) => ({
-            ...task,
-            isNew: false,
-          }));
-          const schedulerTasks = tasks.map(toSchedulerTask);
-          const relatedTaskWeightSum = schedulerTasks.reduce(
-            (sum, t) => sum + taskWeight(t),
-            0
-          );
-          const projectWeightValue = projectWeight(
-            toSchedulerProject({
-              id: p.id,
-              priorityCode: p.priority,
-              stage: p.stage,
-            }),
-            relatedTaskWeightSum
-          );
-          const proj: Project = {
-            id: p.id,
-            name: p.name,
-            status,
-            progress,
-            energy: mapEnergy(p.energy),
-            energyCode: p.energy,
-            stage: p.stage,
-            priorityCode: p.priority ?? undefined,
-             weight: projectWeightValue,
-            isNew: false,
-            tasks: normalizedTasks,
-          };
-          const list = projectsByGoal.get(p.goal_id) || [];
-          list.push(proj);
-          projectsByGoal.set(p.goal_id, list);
-
-          const projSkills = skillsByProject[p.id];
-          if (projSkills) {
-            const goalSkills = skillsByGoal.get(p.goal_id) || new Set<string>();
-            projSkills.forEach((s) => goalSkills.add(s));
-            skillsByGoal.set(p.goal_id, goalSkills);
-          }
-        });
+        const [goalsData, monumentsData, skillsData] = await Promise.all([
+          goalsPromise,
+          monumentsPromise,
+          skillsPromise,
+        ]);
 
         const monumentEmojiLookup = new Map(
           monumentsData.map((m) => [m.id, m.emoji ?? null])
@@ -575,7 +509,60 @@ export default function GoalsPage() {
         );
 
         const realGoals: Goal[] = goalsData.map((g) => {
-          const projList = projectsByGoal.get(g.id) || [];
+          const goalSkills = new Set<string>();
+          const projList: Project[] = (g.projects ?? []).map((p) => {
+            const normalizedTasks = (p.tasks ?? []).map((task) => {
+              const normalized = {
+                id: task.id,
+                name: task.name,
+                stage: task.stage,
+                skillId: task.skill_id ?? null,
+                priorityCode: task.priority ?? null,
+                isNew: false,
+              };
+              if (normalized.skillId) {
+                goalSkills.add(normalized.skillId);
+              }
+              return normalized;
+            });
+            (p.project_skills ?? []).forEach((record) => {
+              if (record?.skill_id) {
+                goalSkills.add(record.skill_id);
+              }
+            });
+            const total = normalizedTasks.length;
+            const done = normalizedTasks.filter(
+              (t) => t.stage === "PERFECT"
+            ).length;
+            const progress = total ? Math.round((done / total) * 100) : 0;
+            const status = projectStageToStatus(p.stage ?? "BUILD");
+            const schedulerTasks = normalizedTasks.map(toSchedulerTask);
+            const relatedTaskWeightSum = schedulerTasks.reduce(
+              (sum, t) => sum + taskWeight(t),
+              0
+            );
+            const projectWeightValue = projectWeight(
+              toSchedulerProject({
+                id: p.id,
+                priorityCode: p.priority ?? undefined,
+                stage: p.stage ?? undefined,
+              }),
+              relatedTaskWeightSum
+            );
+            return {
+              id: p.id,
+              name: p.name,
+              status,
+              progress,
+              energy: mapEnergy(p.energy ?? "NO"),
+              energyCode: p.energy ?? undefined,
+              stage: p.stage ?? "BUILD",
+              priorityCode: p.priority ?? undefined,
+              weight: projectWeightValue,
+              isNew: false,
+              tasks: normalizedTasks,
+            };
+          });
           const progress =
             projList.length > 0
               ? Math.round(
@@ -596,12 +583,13 @@ export default function GoalsPage() {
             progress,
             status,
             active: g.active ?? status === "Active",
+            createdAt: g.created_at,
             updatedAt: g.created_at,
             projects: projList,
             monumentId: g.monument_id ?? null,
             priorityCode: g.priority ?? null,
             weightBoost: g.weight_boost ?? 0,
-            skills: Array.from(skillsByGoal.get(g.id) || []),
+            skills: Array.from(goalSkills),
             why: g.why || undefined,
           };
           return decorateGoal(baseGoal, monumentEmojiLookup);
@@ -613,14 +601,13 @@ export default function GoalsPage() {
         });
 
         if (goalsNeedingUpdate.length > 0) {
-          await Promise.all(
-            goalsNeedingUpdate.map((goal) =>
-              supabase
-                .from("goals")
-                .update({ weight: goal.weight })
-                .eq("id", goal.id)
-            )
-          );
+          const weightUpdates = goalsNeedingUpdate.map((goal) => ({
+            id: goal.id,
+            weight: goal.weight ?? 0,
+          }));
+          persistGoalWeights(supabase, weightUpdates).catch((err) => {
+            console.error("Error updating goal weights:", err);
+          });
         }
 
         setGoals(realGoals);
@@ -699,6 +686,15 @@ export default function GoalsPage() {
     );
     return { total, active, completed, momentum, xp };
   }, [goals]);
+
+  useEffect(() => {
+    setVisibleGoalCount(GOAL_BATCH_SIZE);
+  }, [search, energy, priority, monument, skill, sort]);
+
+  const visibleGoals = useMemo(
+    () => filteredGoals.slice(0, visibleGoalCount),
+    [filteredGoals, visibleGoalCount]
+  );
 
   const handleBoost = async (goal: Goal) => {
     const supabase = getSupabaseBrowser();
@@ -865,14 +861,14 @@ export default function GoalsPage() {
             </div>
           ) : (
             <div className="relative">
-              {filteredGoals.length > 1 && (
+              {visibleGoals.length > 1 && (
                 <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
                   Swipe to browse
                   <ArrowRight className="h-3 w-3" />
                 </div>
               )}
               <div className="grid auto-cols-[minmax(280px,1fr)] grid-flow-col gap-6 overflow-x-auto pb-6 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none xl:grid-cols-3">
-                {filteredGoals.map((goal) => (
+                {visibleGoals.map((goal) => (
                   <div key={goal.id} className="h-full snap-center sm:[scroll-snap-align:unset]">
                     <GoalCard
                       goal={goal}
@@ -884,6 +880,21 @@ export default function GoalsPage() {
                   </div>
                 ))}
               </div>
+              {filteredGoals.length > visibleGoalCount && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVisibleGoalCount((prev) =>
+                        Math.min(filteredGoals.length, prev + GOAL_BATCH_SIZE)
+                      )
+                    }
+                    className="rounded-full border border-white/20 bg-white/[0.05] px-6 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/40 hover:bg-white/[0.08]"
+                  >
+                    See more goals
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
