@@ -11,6 +11,8 @@ export type HabitScheduleItem = {
   createdAt: string | null
   updatedAt: string | null
   lastCompletedAt: string | null
+  currentStreakDays: number
+  longestStreakDays: number
   habitType: string
   windowId: string | null
   energy?: string | null
@@ -43,6 +45,9 @@ type HabitRecord = {
   duration_minutes?: number | null
   created_at?: string | null
   updated_at?: string | null
+  last_completed_at?: string | null
+  current_streak_days?: number | null
+  longest_streak_days?: number | null
   habit_type?: string | null
   window_id?: string | null
   energy?: string | null
@@ -121,7 +126,7 @@ export async function fetchHabitsForSchedule(
   const locationJoin = 'location_context:location_contexts(id, value, label)'
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`
   const baseColumns =
-    `id, name, duration_minutes, created_at, updated_at, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
+    `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
   const extendedColumns =
     `${baseColumns}, goal_id, completion_target`
 
@@ -197,7 +202,13 @@ export async function fetchHabitsForSchedule(
     durationMinutes: record.duration_minutes ?? null,
     createdAt: record.created_at ?? null,
     updatedAt: record.updated_at ?? null,
-    lastCompletedAt: record.updated_at ?? record.created_at ?? null,
+    lastCompletedAt: record.last_completed_at ?? null,
+    currentStreakDays: Number.isFinite(record.current_streak_days)
+      ? Number(record.current_streak_days)
+      : 0,
+    longestStreakDays: Number.isFinite(record.longest_streak_days)
+      ? Number(record.longest_streak_days)
+      : 0,
     habitType: normalizeHabitType(record.habit_type),
     windowId: record.window_id ?? null,
     energy: record.energy ?? record.window?.energy ?? null,

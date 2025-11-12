@@ -18,6 +18,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@/components", replacement: path.resolve(projectRoot, "src/components") },
+      { find: "@/lib/scheduler", replacement: path.resolve(projectRoot, "src/lib/scheduler") },
       { find: "@/lib", replacement: path.resolve(projectRoot, "lib") },
       { find: "@/types", replacement: path.resolve(projectRoot, "src/types") },
       { find: "@", replacement: path.resolve(projectRoot, "src") },

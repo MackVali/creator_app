@@ -64,6 +64,9 @@ export interface Database {
           window_edge_preference: string | null;
           goal_id: string | null;
           completion_target: number | null;
+          last_completed_at: string | null;
+          current_streak_days: number;
+          longest_streak_days: number;
         };
         Insert: {
           id?: string;
@@ -84,6 +87,9 @@ export interface Database {
           window_edge_preference?: string | null;
           goal_id?: string | null;
           completion_target?: number | null;
+          last_completed_at?: string | null;
+          current_streak_days?: number;
+          longest_streak_days?: number;
         };
         Update: {
           id?: string;
@@ -104,6 +110,32 @@ export interface Database {
           window_edge_preference?: string | null;
           goal_id?: string | null;
           completion_target?: number | null;
+          last_completed_at?: string | null;
+          current_streak_days?: number;
+          longest_streak_days?: number;
+        };
+      };
+      habit_completion_days: {
+        Row: {
+          id: string;
+          user_id: string;
+          habit_id: string;
+          completion_day: string;
+          completed_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          habit_id: string;
+          completion_day: string;
+          completed_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          habit_id?: string;
+          completion_day?: string;
+          completed_at?: string;
         };
       };
       location_contexts: {
