@@ -65,6 +65,11 @@ serve(async req => {
       return new Response(JSON.stringify(scheduleResult), { status: 500 })
     }
 
+    const cleanupResult = await cleanupOldHabitInstances(supabase, userId, now)
+    if (cleanupResult?.error) {
+      console.error('cleanupOldHabitInstances error', cleanupResult.error)
+    }
+
     return new Response(JSON.stringify(scheduleResult), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -109,6 +114,17 @@ async function markMissedAndQueue(client: Client, userId: string, now: Date) {
     .eq('user_id', userId)
     .eq('status', 'scheduled')
     .lt('start_utc', cutoff)
+}
+
+async function cleanupOldHabitInstances(client: Client, userId: string, now: Date) {
+  const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  return await client
+    .from('schedule_instances')
+    .delete()
+    .eq('user_id', userId)
+    .eq('source_type', 'HABIT')
+    .eq('status', 'completed')
+    .lt('end_utc', cutoff)
 }
 
 async function scheduleBacklog(

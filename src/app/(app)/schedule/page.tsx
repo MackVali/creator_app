@@ -64,9 +64,16 @@ import {
   DEFAULT_HABIT_DURATION_MIN,
   type HabitScheduleItem,
 } from '@/lib/scheduler/habits'
+import {
+  mergeHabitCompletionStateFromInstances,
+} from '@/lib/scheduler/habitCompletionState'
+import {
+  computeTimelineLayoutForSyncHabits,
+  type TimelineCardLayoutMode,
+} from '@/lib/scheduler/syncLayout'
 import type { ScheduleEventDataset } from '@/lib/scheduler/dataset'
 import { formatLocalDateKey, toLocal } from '@/lib/time/tz'
-import { startOfDayInTimeZone, addDaysInTimeZone } from '@/lib/scheduler/timezone'
+import { startOfDayInTimeZone, addDaysInTimeZone, makeDateInTimeZone } from '@/lib/scheduler/timezone'
 import {
   TIME_FORMATTER,
   describeEmptyWindowReport,
@@ -510,8 +517,6 @@ type HabitTimelinePlacement = {
   window: RepoWindow
   truncated: boolean
 }
-
-type TimelineCardLayoutMode = 'full' | 'paired-left' | 'paired-right'
 
 type MemoNoteDraftState = {
   habitId: string
@@ -1103,116 +1108,6 @@ const TIMELINE_LEFT_OFFSET = '4rem'
 const TIMELINE_RIGHT_OFFSET = '0.5rem'
 const TIMELINE_PAIR_WIDTH = `calc((100% - ${TIMELINE_LEFT_OFFSET} - ${TIMELINE_RIGHT_OFFSET}) / 2)`
 const TIMELINE_PAIR_RIGHT_LEFT = `calc(${TIMELINE_LEFT_OFFSET} + ${TIMELINE_PAIR_WIDTH})`
-
-function computeTimelineLayoutForSyncHabits({
-  habitPlacements,
-  projectInstances,
-}: {
-  habitPlacements: HabitTimelinePlacement[]
-  projectInstances: ReturnType<typeof computeProjectInstances>
-}) {
-  const habitLayouts = habitPlacements.map<TimelineCardLayoutMode>(() => 'full')
-  const projectLayouts = projectInstances.map<TimelineCardLayoutMode>(() => 'full')
-  const syncHabitAlignment = new Map<number, { startMs: number; endMs: number }>()
-
-  type Candidate = {
-    kind: 'habit' | 'project'
-    index: number
-    startMs: number
-    endMs: number
-  }
-
-  const candidates: Candidate[] = []
-
-  habitPlacements.forEach((placement, index) => {
-    const startMs = placement.start.getTime()
-    const endMs = placement.end.getTime()
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
-    candidates.push({ kind: 'habit', index, startMs, endMs })
-  })
-
-  projectInstances.forEach((instance, index) => {
-    const startMs = instance.start.getTime()
-    const endMs = instance.end.getTime()
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
-    candidates.push({ kind: 'project', index, startMs, endMs })
-  })
-
-  const sortedCandidates = candidates.sort((a, b) => {
-    if (a.startMs !== b.startMs) return a.startMs - b.startMs
-    return a.endMs - b.endMs
-  })
-
-  const syncHabits = habitPlacements
-    .map((placement, index) => ({ placement, index }))
-    .filter(({ placement }) => {
-      const habitType = (placement.habitType ?? 'HABIT').toUpperCase()
-      return habitType === 'SYNC' || habitType === 'ASYNC'
-    })
-    .map(({ placement, index }) => ({
-      index,
-      startMs: placement.start.getTime(),
-      endMs: placement.end.getTime(),
-    }))
-    .filter(({ startMs, endMs }) => Number.isFinite(startMs) && Number.isFinite(endMs))
-    .sort((a, b) => {
-      if (a.startMs !== b.startMs) return a.startMs - b.startMs
-      return a.endMs - b.endMs
-    })
-
-  const usedCandidates = new Set<string>()
-
-  syncHabits.forEach(syncHabit => {
-    const { index: habitIndex, startMs, endMs } = syncHabit
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return
-    if (habitLayouts[habitIndex] !== 'full') return
-
-    const overlapping: Candidate[] = []
-
-    for (const candidate of sortedCandidates) {
-      const candidateKey = `${candidate.kind}:${candidate.index}`
-      if (candidate.kind === 'habit' && candidate.index === habitIndex) continue
-      if (candidate.kind === 'habit') {
-        const candidatePlacement = habitPlacements[candidate.index]
-        const candidateType = (candidatePlacement?.habitType ?? 'HABIT').toUpperCase()
-        if (candidateType === 'SYNC' || candidateType === 'ASYNC') {
-          continue
-        }
-      }
-      if (candidate.endMs <= startMs) continue
-      if (candidate.startMs >= endMs) break
-      if (usedCandidates.has(candidateKey)) continue
-      overlapping.push(candidate)
-    }
-
-    if (overlapping.length === 0) return
-
-    const alignmentStart = Math.min(
-      ...overlapping.map(candidate => candidate.startMs)
-    )
-    const alignmentEnd = Math.max(
-      ...overlapping.map(candidate => candidate.endMs)
-    )
-
-    habitLayouts[habitIndex] = 'paired-right'
-    syncHabitAlignment.set(habitIndex, {
-      startMs: alignmentStart,
-      endMs: alignmentEnd,
-    })
-
-    for (const candidate of overlapping) {
-      const candidateKey = `${candidate.kind}:${candidate.index}`
-      usedCandidates.add(candidateKey)
-      if (candidate.kind === 'habit') {
-        habitLayouts[candidate.index] = 'paired-left'
-      } else {
-        projectLayouts[candidate.index] = 'paired-left'
-      }
-    }
-  })
-
-  return { habitLayouts, projectLayouts, syncHabitAlignment }
-}
 
 function applyTimelineLayoutStyle(
   style: CSSProperties,
@@ -1841,6 +1736,15 @@ export default function SchedulePage() {
   const [windows, setWindows] = useState<RepoWindow[]>([])
   const [allInstances, setAllInstances] = useState<ScheduleInstance[]>([])
   const [instances, setInstances] = useState<ScheduleInstance[]>([])
+  const instancesById = useMemo(() => {
+    const map = new Map<string, ScheduleInstance>()
+    for (const instance of instances) {
+      if (instance?.id) {
+        map.set(instance.id, instance)
+      }
+    }
+    return map
+  }, [instances])
   const [scheduledProjectIds, setScheduledProjectIds] = useState<Set<string>>(new Set())
   const [metaStatus, setMetaStatus] = useState<LoadStatus>('idle')
   const [instancesStatus, setInstancesStatus] = useState<LoadStatus>('idle')
@@ -2302,6 +2206,54 @@ export default function SchedulePage() {
     () => formatLocalDateKey(nextDayDate),
     [nextDayDate]
   )
+  const recordHabitCompletionRemote = useCallback(
+    async (params: { habitId: string; completedAt: string; action: 'complete' | 'undo' }) => {
+      if (!userId) return
+      try {
+        const response = await fetch('/api/habits/completion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            habitId: params.habitId,
+            completedAt: params.completedAt,
+            timeZone: localTimeZone ?? 'UTC',
+            action: params.action,
+          }),
+        })
+        if (!response.ok) {
+          console.error('Failed to sync habit completion metadata', await response.text())
+        }
+      } catch (error) {
+        console.error('Failed to sync habit completion metadata', error)
+      }
+    },
+    [localTimeZone, userId]
+  )
+  const completionTimestampForDateKey = useCallback(
+    (dateKey: string) => {
+      const [yearStr, monthStr, dayStr] = dateKey.split('-')
+      const year = Number(yearStr)
+      const month = Number(monthStr)
+      const day = Number(dayStr)
+      if (
+        !Number.isFinite(year) ||
+        !Number.isFinite(month) ||
+        !Number.isFinite(day)
+      ) {
+        return new Date().toISOString()
+      }
+      try {
+        const base = makeDateInTimeZone(
+          { year, month, day, hour: 12, minute: 0 },
+          localTimeZone ?? 'UTC'
+        )
+        return base.toISOString()
+      } catch {
+        return new Date().toISOString()
+      }
+    },
+    [localTimeZone]
+  )
   const setProjectExpansion = useCallback(
     (projectId: string, nextState?: boolean) => {
       setHasInteractedWithProjects(true)
@@ -2544,6 +2496,12 @@ export default function SchedulePage() {
     const nextInstances = filterInstancesForDate(currentDate)
     setInstances(nextInstances)
   }, [filterInstancesForDate, currentDate, userId])
+
+  useEffect(() => {
+    setHabitCompletionByDate(prev =>
+      mergeHabitCompletionStateFromInstances(prev, instances)
+    )
+  }, [instances])
   const projectItems = useMemo(
     () => buildProjectItems(projects, tasks),
     [projects, tasks]
@@ -3011,7 +2969,7 @@ peekDataDepsRef.current = {
           return
         }
 
-        const instance = instances.find(inst => inst.id === instanceId)
+        const instance = instancesById.get(instanceId)
         const previousStatus = instance?.status ?? null
         const isUndo = nextStatus === 'scheduled' && previousStatus === 'completed'
         const shouldAwardXp = nextStatus === 'completed' || isUndo
@@ -3047,6 +3005,19 @@ peekDataDepsRef.current = {
           }
         }
 
+        if (instance?.source_type === 'HABIT' && instance.source_id) {
+          const completionTimestamp =
+            instance.end_utc ??
+            instance.start_utc ??
+            new Date().toISOString()
+          const action = nextStatus === 'completed' ? 'complete' : 'undo'
+          void recordHabitCompletionRemote({
+            habitId: instance.source_id,
+            completedAt: completionTimestamp,
+            action,
+          })
+        }
+
         setInstances(prev =>
           prev.map(inst =>
             inst.id === instanceId
@@ -3071,7 +3042,7 @@ peekDataDepsRef.current = {
         })
       }
     },
-    [userId, setInstances, instances, buildXpAwardPayload]
+    [userId, setInstances, instancesById, buildXpAwardPayload, recordHabitCompletionRemote]
   )
 
   const getHabitCompletionStatus = useCallback(
@@ -3143,9 +3114,25 @@ peekDataDepsRef.current = {
         const targetStatus: 'completed' | 'scheduled' =
           nextStatus === 'completed' ? 'completed' : 'scheduled'
         void handleToggleInstanceCompletion(instanceId, targetStatus)
+      } else {
+        const completionTimestamp =
+          isValidDate(placement.end) && typeof placement.end.toISOString === 'function'
+            ? placement.end.toISOString()
+            : completionTimestampForDateKey(dateKey)
+        const action = nextStatus === 'completed' ? 'complete' : 'undo'
+        void recordHabitCompletionRemote({
+          habitId: placement.habitId,
+          completedAt: completionTimestamp,
+          action,
+        })
       }
     },
-    [toggleHabitCompletionStatus, handleToggleInstanceCompletion]
+    [
+      toggleHabitCompletionStatus,
+      handleToggleInstanceCompletion,
+      completionTimestampForDateKey,
+      recordHabitCompletionRemote,
+    ]
   )
 
   const handleCloseEditSheet = useCallback(() => {
@@ -3199,6 +3186,12 @@ peekDataDepsRef.current = {
           memoNoteState.habitId,
           'completed'
         )
+        const completionIso = completionTimestampForDateKey(memoNoteState.dateKey)
+        void recordHabitCompletionRemote({
+          habitId: memoNoteState.habitId,
+          completedAt: completionIso,
+          action: 'complete',
+        })
         setMemoNoteState(null)
       } catch (error) {
         console.error('Failed to save memo note', error)
@@ -3207,7 +3200,7 @@ peekDataDepsRef.current = {
         setMemoNoteSaving(false)
       }
     },
-    [memoNoteState, updateHabitCompletionStatus]
+    [memoNoteState, updateHabitCompletionStatus, completionTimestampForDateKey, recordHabitCompletionRemote]
   )
 
   const handleToggleBacklogTaskCompletion = useCallback(
