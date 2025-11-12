@@ -12,6 +12,7 @@ export type ProjectItem = ProjectLite & {
   weight: number
   taskCount: number
   skill_icon?: string | null
+  goalWeight: number
 }
 
 const normEnergy = (e?: string | null): Energy | null => {
@@ -35,7 +36,8 @@ type TaskAggregates = {
 
 export function buildProjectItems(
   projects: ProjectLite[],
-  tasks: TaskLite[]
+  tasks: TaskLite[],
+  goalWeights: Record<string, number> = {}
 ): ProjectItem[] {
   const aggregates = new Map<ProjectLite['id'], TaskAggregates>()
 
@@ -67,6 +69,12 @@ export function buildProjectItems(
   }
 
   const items: ProjectItem[] = []
+  const getGoalWeight = (goalId: string | null | undefined) => {
+    if (!goalId) return 0
+    const value = goalWeights[goalId]
+    return Number.isFinite(value) ? Number(value) : 0
+  }
+
   for (const p of projects) {
     const related = aggregates.get(p.id)
     const projectDuration = Number(p.duration_min ?? 0)
@@ -100,6 +108,7 @@ export function buildProjectItems(
       taskCount: related?.count ?? 0,
       skill_icon,
       goal_id: p.goal_id ?? null,
+      goalWeight: getGoalWeight(p.goal_id),
     })
   }
   return items

@@ -122,7 +122,8 @@ async function scheduleBacklog(
 
   const tasks = await fetchReadyTasks(client, userId)
   const projects = await fetchProjectsMap(client, userId)
-  const projectItems = buildProjectItems(Object.values(projects), tasks)
+  const goalWeights = await fetchGoalWeights(client, userId)
+  const projectItems = buildProjectItems(Object.values(projects), tasks, goalWeights)
 
   const projectMap = new Map(projectItems.map(project => [project.id, project]))
 
@@ -132,6 +133,7 @@ async function scheduleBacklog(
     duration_min: number
     energy: string
     weight: number
+    goalWeight: number
     instanceId?: string | null
   }
 
@@ -189,6 +191,7 @@ async function scheduleBacklog(
       duration_min: duration,
       energy: (resolvedEnergy ?? 'NO').toUpperCase(),
       weight,
+      goalWeight: def.goalWeight ?? 0,
       instanceId: instance.id,
     })
   }
@@ -223,6 +226,7 @@ async function scheduleBacklog(
       existing.duration_min = duration
       existing.energy = energy
       existing.weight = weight
+      existing.goalWeight = project.goalWeight ?? 0
       if (!existing.instanceId && reuse) {
         existing.instanceId = reuse.id
       }
@@ -233,6 +237,7 @@ async function scheduleBacklog(
         duration_min: duration,
         energy,
         weight,
+        goalWeight: project.goalWeight ?? 0,
         instanceId: reuse?.id,
       }
       queue.push(entry)
@@ -254,6 +259,7 @@ async function scheduleBacklog(
       duration_min: duration,
       energy,
       weight: fallbackProject?.weight ?? weight,
+      goalWeight: fallbackProject?.goalWeight ?? 0,
       instanceId: inst.id,
     }
     queue.push(entry)
@@ -289,6 +295,8 @@ async function scheduleBacklog(
   }
 
   queue.sort((a, b) => {
+    const goalWeightDiff = b.goalWeight - a.goalWeight
+    if (goalWeightDiff !== 0) return goalWeightDiff
     const weightDiff = b.weight - a.weight
     if (weightDiff !== 0) return weightDiff
     const energyDiff = energyIndex(b.energy) - energyIndex(a.energy)
@@ -379,6 +387,7 @@ type ProjectLite = {
   stage: string
   energy?: string | null
   duration_min?: number | null
+  goal_id?: string | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -388,6 +397,7 @@ type ProjectItem = ProjectLite & {
   weight: number
   taskCount: number
   skill_icon?: string | null
+  goalWeight: number
 }
 
 async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite[]> {
@@ -418,7 +428,7 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
   const { data, error } = await client
     .from('projects')
-    .select('id, name, priority, stage, energy, duration_min')
+    .select('id, name, priority, stage, energy, duration_min, goal_id')
     .eq('user_id', userId)
 
   if (error) {
@@ -435,13 +445,43 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       stage: project.stage ?? 'RESEARCH',
       energy: project.energy ?? 'NO',
       duration_min: project.duration_min ?? null,
+      goal_id: project.goal_id ?? null,
     }
   }
   return map
 }
 
-function buildProjectItems(projects: ProjectLite[], tasks: TaskLite[]): ProjectItem[] {
+async function fetchGoalWeights(client: Client, userId: string): Promise<Record<string, number>> {
+  const { data, error } = await client
+    .from('goals')
+    .select('id, weight')
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('fetchGoalWeights error', error)
+    return {}
+  }
+
+  const weights: Record<string, number> = {}
+  for (const goal of data ?? []) {
+    if (!goal?.id) continue
+    const value = Number(goal.weight ?? 0)
+    weights[goal.id] = Number.isFinite(value) ? value : 0
+  }
+  return weights
+}
+
+function buildProjectItems(
+  projects: ProjectLite[],
+  tasks: TaskLite[],
+  goalWeights: Record<string, number> = {},
+): ProjectItem[] {
   const items: ProjectItem[] = []
+  const getGoalWeight = (goalId?: string | null) => {
+    if (!goalId) return 0
+    const value = goalWeights[goalId]
+    return Number.isFinite(value) ? Number(value) : 0
+  }
   for (const project of projects) {
     const related = tasks.filter(task => task.project_id === project.id)
     const projectDuration = Number(project.duration_min ?? 0)
@@ -485,6 +525,7 @@ function buildProjectItems(projects: ProjectLite[], tasks: TaskLite[]): ProjectI
       weight,
       taskCount: related.length,
       skill_icon,
+      goalWeight: getGoalWeight(project.goal_id),
     })
   }
   return items
