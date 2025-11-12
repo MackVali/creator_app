@@ -2,7 +2,7 @@
 import React from "react";
 
 export type FlameLevel = "NO" | "LOW" | "MEDIUM" | "HIGH" | "ULTRA" | "EXTREME";
-type FlameSize = "sm" | "md" | "lg";
+type FlameSize = "xs" | "sm" | "md" | "lg";
 
 export type FlameEmberProps = {
   level: FlameLevel;
@@ -10,7 +10,7 @@ export type FlameEmberProps = {
   className?: string;
 };
 
-const SIZE_MAP: Record<FlameSize, number> = { sm: 24, md: 36, lg: 48 };
+const SIZE_MAP: Record<FlameSize, number> = { xs: 10, sm: 24, md: 36, lg: 48 };
 
 const OUTER_SHAPES: Record<string, string> = {
   stubby: `M50,112 C36,110 28,102 27,96 C26,90 29,85 32,81
@@ -502,4 +502,3 @@ function cssFor(profile: Profile) {
     @media (prefers-reduced-motion: reduce) { .flame, .outer, .mid, .core, .nub, .speck { animation: none !important; } }
   `;
 }
-

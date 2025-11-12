@@ -11,7 +11,12 @@ export type EnergyFilter =
   | "Ultra"
   | "Extreme";
 export type PriorityFilter = "All" | "Low" | "Medium" | "High";
-export type SortOption = "A→Z" | "Due Soon" | "Progress" | "Recently Updated";
+export type SortOption =
+  | "A→Z"
+  | "Due Soon"
+  | "Progress"
+  | "Recently Updated"
+  | "Weight";
 
 interface GoalsUtilityBarProps {
   search: string;
@@ -54,10 +59,20 @@ export function GoalsUtilityBar({
   }, [local, onSearch]);
 
   return (
-    <div className="relative z-10">
-      <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_25px_80px_-40px_rgba(79,70,229,0.6)] backdrop-blur">
+    <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#07050d]/80 p-6 shadow-[0_25px_90px_-60px_rgba(239,68,68,0.75)] backdrop-blur">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.08),transparent)] opacity-30" />
+      <div className="relative flex flex-col gap-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs uppercase tracking-[0.3em] text-white/60">Control filters</p>
+          <p className="text-xs text-white/50">
+            Tune the feed to surface only the goals you want to play.
+          </p>
+        </div>
         <div className="relative">
-          <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-white/40">
+          <label className="sr-only" htmlFor="goals-search">
+            Search goals
+          </label>
+          <div className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-white/40">
             <svg
               className="h-4 w-4"
               viewBox="0 0 24 24"
@@ -72,71 +87,82 @@ export function GoalsUtilityBar({
             </svg>
           </div>
           <input
+            id="goals-search"
             value={local}
-            onChange={(e) => setLocal(e.target.value)}
+            onChange={(event) => setLocal(event.target.value)}
             placeholder="Search goals or projects"
-            className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 pl-10 pr-4 text-sm text-white placeholder:text-white/40 focus:border-indigo-400/60 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
+            className="w-full rounded-2xl border border-white/15 bg-white/[0.04] py-3.5 pl-12 pr-4 text-sm text-white placeholder:text-white/50 focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
           />
         </div>
-        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 md:grid-cols-5">
-          <select
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <FilterSelect
+            label="Energy"
             value={energy}
-            onChange={(e) => onEnergy(e.target.value as EnergyFilter)}
-            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left font-medium text-white transition focus:border-indigo-400/60 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
-          >
-            <option value="All">Energy: All</option>
-            <option value="No">No</option>
-            <option value="Low">Low</option>
-            <option value="Medium">Medium</option>
-            <option value="High">High</option>
-            <option value="Ultra">Ultra</option>
-            <option value="Extreme">Extreme</option>
-          </select>
-          <select
+            onChange={(value) => onEnergy(value as EnergyFilter)}
+            options={["All", "No", "Low", "Medium", "High", "Ultra", "Extreme"]}
+          />
+          <FilterSelect
+            label="Priority"
             value={priority}
-            onChange={(e) => onPriority(e.target.value as PriorityFilter)}
-            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left font-medium text-white transition focus:border-indigo-400/60 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
-          >
-            <option value="All">Priority: All</option>
-            <option value="Low">Low</option>
-            <option value="Medium">Medium</option>
-            <option value="High">High</option>
-          </select>
-          <select
+            onChange={(value) => onPriority(value as PriorityFilter)}
+            options={["All", "Low", "Medium", "High"]}
+          />
+          <FilterSelect
+            label="Monument"
             value={monument}
-            onChange={(e) => onMonument(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left font-medium text-white transition focus:border-indigo-400/60 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
-          >
-            <option value="All">Monument: All</option>
-            {monuments.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={onMonument}
+            options={["All", ...monuments.map((m) => ({ value: m.id, label: m.title }))]}
+          />
+          <FilterSelect
+            label="Skill"
             value={skill}
-            onChange={(e) => onSkill(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left font-medium text-white transition focus:border-indigo-400/60 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
-          >
-            <option value="All">Skill: All</option>
-            {skills.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={onSkill}
+            options={["All", ...skills.map((s) => ({ value: s.id, label: s.name }))]}
+          />
+          <FilterSelect
+            label="Sort"
             value={sort}
-            onChange={(e) => onSort(e.target.value as SortOption)}
-            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left font-medium text-white transition focus:border-indigo-400/60 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
-          >
-            <option value="A→Z">A→Z</option>
-            <option value="Due Soon">Due Soon</option>
-            <option value="Progress">Progress</option>
-            <option value="Recently Updated">Recently Updated</option>
-          </select>
+            onChange={(value) => onSort(value as SortOption)}
+            options={["A→Z", "Due Soon", "Progress", "Recently Updated", "Weight"]}
+          />
         </div>
+      </div>
+    </div>
+  );
+}
+
+type FilterOption = string | { label: string; value: string };
+
+interface FilterSelectProps {
+  label: string;
+  value: string;
+  onChange(value: string): void;
+  options: FilterOption[];
+}
+
+function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
+  const normalized = options.map((option) =>
+    typeof option === "string" ? { value: option, label: option } : option
+  );
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+      <p className="text-[10px] uppercase tracking-[0.3em] text-white/50">{label}</p>
+      <div className="relative mt-1">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full appearance-none bg-transparent text-sm font-semibold text-white focus:outline-none"
+        >
+          {normalized.map((option) => (
+            <option key={option.value} value={option.value} className="bg-[#07050d] text-white">
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-white/50">
+          ▾
+        </span>
       </div>
     </div>
   );

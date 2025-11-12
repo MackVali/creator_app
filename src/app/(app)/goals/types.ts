@@ -4,6 +4,7 @@ export interface Task {
   stage: string;
   skillId?: string | null;
   isNew?: boolean;
+  priorityCode?: string | null;
 }
 
 export interface Project {
@@ -17,6 +18,7 @@ export interface Project {
   stage?: string;
   energyCode?: string;
   priorityCode?: string;
+  weight?: number;
   isNew?: boolean;
 }
 
@@ -25,7 +27,7 @@ export interface Goal {
   title: string;
   emoji?: string;
   dueDate?: string;
-  priority: "Low" | "Medium" | "High";
+  priority: "Low" | "Medium" | "High" | "Critical" | "Ultra-Critical";
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   progress: number; // 0-100
   status: "Active" | "Completed" | "Overdue" | "Inactive";
@@ -33,8 +35,11 @@ export interface Goal {
   updatedAt: string;
   projects: Project[];
   monumentId?: string | null;
+  monumentEmoji?: string | null;
+  priorityCode?: string | null;
   /** Associated skill IDs */
   skills?: string[];
   weight?: number;
+  weightBoost?: number;
   why?: string;
 }
