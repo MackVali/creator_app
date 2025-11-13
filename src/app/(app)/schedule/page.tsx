@@ -2979,6 +2979,26 @@ peekDataDepsRef.current = {
     [habitMap, projectSkillIds, skillMonumentMap, taskMap, tasksByProjectId]
   )
 
+  const computeTrimmedHabitTiming = useCallback((instance: ScheduleInstance | undefined) => {
+    if (!instance) return null
+    if (instance.source_type !== 'HABIT') return null
+    const start = instance.start_utc ? new Date(instance.start_utc) : null
+    const end = instance.end_utc ? new Date(instance.end_utc) : null
+    if (!start || !end) return null
+    const startMs = start.getTime()
+    const endMs = end.getTime()
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
+    const nowMs = Date.now()
+    if (nowMs <= startMs || nowMs >= endMs) return null
+    const trimmedDurationMin = Math.max(1, Math.round((nowMs - startMs) / 60000))
+    const completionIso = new Date(nowMs).toISOString()
+    return {
+      completionIso,
+      endUTC: completionIso,
+      durationMin: trimmedDurationMin,
+    }
+  }, [])
+
   const handleToggleInstanceCompletion = useCallback(
     async (instanceId: string, nextStatus: 'completed' | 'scheduled') => {
       if (!userId) {
@@ -2993,13 +3013,34 @@ peekDataDepsRef.current = {
       })
 
       try {
-        const { error } = await updateInstanceStatus(instanceId, nextStatus)
+        const instance = instancesById.get(instanceId)
+        const trimResult =
+          nextStatus === 'completed' ? computeTrimmedHabitTiming(instance) : null
+        const completionIso =
+          nextStatus === 'completed'
+            ? trimResult?.completionIso ?? new Date().toISOString()
+            : undefined
+
+        const { error } = await updateInstanceStatus(
+          instanceId,
+          nextStatus,
+          nextStatus === 'completed'
+            ? {
+                completedAtUTC: completionIso,
+                updates: trimResult
+                  ? {
+                      endUTC: trimResult.endUTC,
+                      durationMin: trimResult.durationMin,
+                    }
+                  : undefined,
+              }
+            : undefined
+        )
         if (error) {
           console.error(error)
           return
         }
 
-        const instance = instancesById.get(instanceId)
         const previousStatus = instance?.status ?? null
         const isUndo = nextStatus === 'scheduled' && previousStatus === 'completed'
         const shouldAwardXp = nextStatus === 'completed' || isUndo
@@ -3037,6 +3078,9 @@ peekDataDepsRef.current = {
 
         if (instance?.source_type === 'HABIT' && instance.source_id) {
           const completionTimestamp =
+            (nextStatus === 'completed'
+              ? trimResult?.endUTC ?? completionIso
+              : null) ??
             instance.end_utc ??
             instance.start_utc ??
             new Date().toISOString()
@@ -3056,8 +3100,16 @@ peekDataDepsRef.current = {
                   status: nextStatus,
                   completed_at:
                     nextStatus === 'completed'
-                      ? new Date().toISOString()
+                      ? completionIso ?? new Date().toISOString()
                       : null,
+                  end_utc:
+                    nextStatus === 'completed' && trimResult?.endUTC
+                      ? trimResult.endUTC
+                      : inst.end_utc,
+                  duration_min:
+                    nextStatus === 'completed' && typeof trimResult?.durationMin === 'number'
+                      ? trimResult.durationMin
+                      : inst.duration_min,
                 }
               : inst
           )
@@ -3072,7 +3124,14 @@ peekDataDepsRef.current = {
         })
       }
     },
-    [userId, setInstances, instancesById, buildXpAwardPayload, recordHabitCompletionRemote]
+    [
+      userId,
+      setInstances,
+      instancesById,
+      buildXpAwardPayload,
+      recordHabitCompletionRemote,
+      computeTrimmedHabitTiming,
+    ]
   )
 
   const getHabitCompletionStatus = useCallback(

@@ -176,6 +176,7 @@ describe("scheduleBacklog", () => {
       },
     });
     vi.spyOn(repo, "fetchProjectSkillsForProjects").mockResolvedValue({});
+    vi.spyOn(repo, "fetchGoalsForUser").mockResolvedValue([]);
     vi.spyOn(repo, "fetchWindowsForDate").mockResolvedValue([
       {
         id: "win-1",
@@ -1637,7 +1638,7 @@ describe("scheduleBacklog", () => {
     expect(result.failures).toEqual([]);
   });
 
-  it("filters projects that do not match the selected monument", async () => {
+  it("prioritizes projects tied to the selected monument before others", async () => {
     instances = [];
 
     (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
@@ -1648,6 +1649,7 @@ describe("scheduleBacklog", () => {
         stage: "PLAN",
         energy: "LOW",
         duration_min: 45,
+        goal_id: "goal-focus",
       },
       "proj-other": {
         id: "proj-other",
@@ -1656,13 +1658,14 @@ describe("scheduleBacklog", () => {
         stage: "PLAN",
         energy: "LOW",
         duration_min: 45,
+        goal_id: "goal-other",
       },
     });
 
-    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({
-      "proj-focus": ["skill-focus"],
-      "proj-other": ["skill-other"],
-    });
+    (repo.fetchGoalsForUser as unknown as vi.Mock).mockResolvedValue([
+      { id: "goal-focus", name: "Focus Goal", weight: 0, monumentId: "monument-keep" },
+      { id: "goal-other", name: "Other Goal", weight: 0, monumentId: "monument-ignore" },
+    ]);
 
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
       {
@@ -1701,24 +1704,15 @@ describe("scheduleBacklog", () => {
       }
     );
 
-    const { client: supabase } = createSupabaseMock({
-      skills: [
-        { id: "skill-focus", monument_id: "monument-keep" },
-        { id: "skill-other", monument_id: "monument-ignore" },
-      ],
-    });
+    const { client: supabase } = createSupabaseMock();
 
     const result = await scheduleBacklog(userId, baseDate, supabase, {
       mode: { type: "MONUMENTAL", monumentId: "monument-keep" },
     });
 
-    expect(result.failures).toEqual(
-      expect.arrayContaining([{ itemId: "proj-other", reason: "MODE_FILTERED" }])
-    );
-    expect(
-      result.failures.filter(failure => failure.reason === "MODE_FILTERED").length
-    ).toBe(1);
-    expect(result.failures.find(failure => failure.itemId === "proj-focus")).toBeUndefined();
+    expect(result.failures.find(failure => failure.reason === "MODE_FILTERED")).toBeUndefined();
+    expect(attemptedProjectIds[0]).toBe("proj-focus");
+    expect(new Set(attemptedProjectIds)).toEqual(new Set(["proj-focus", "proj-other"]));
   });
 
   it("prioritizes upcoming windows closest to now before later options", async () => {

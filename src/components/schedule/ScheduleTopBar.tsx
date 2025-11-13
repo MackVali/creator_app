@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import {
   ChevronLeft,
   Calendar,
@@ -142,14 +143,17 @@ export function ScheduleTopBar({
             onClick={onOpenModes}
             aria-label={modeLabel ? `Scheduler mode (${modeLabel})` : "Open scheduler modes"}
             title={modeLabel ?? "Scheduler modes"}
-            className={`${iconButtonClass} ${
-              modeIsActive ? "bg-[var(--accent-red)]/20 ring-2 ring-[var(--accent-red)] ring-offset-2 ring-offset-[var(--surface-elevated)]" : ""
-            }`}
+            className={cn(
+              iconButtonClass,
+              modeIsActive &&
+                "bg-gradient-to-br from-[#510A1E] via-[#350810] to-[#110005] text-white shadow-[0_12px_25px_rgba(81,10,30,0.55)] ring-2 ring-[#7C102D]/70 ring-offset-2 ring-offset-[var(--surface-elevated)]"
+            )}
           >
             <Gauge
-              className={`h-5 w-5 ${
-                modeIsActive ? "text-amber-300" : "text-[var(--accent-red)]"
-              }`}
+              className={cn(
+                "h-5 w-5 transition-colors",
+                modeIsActive ? "text-[#F6E7E9]" : "text-[var(--accent-red)]"
+              )}
             />
           </button>
         ) : null}

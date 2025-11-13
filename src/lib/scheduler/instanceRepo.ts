@@ -125,18 +125,41 @@ export async function rescheduleInstance(
 export async function updateInstanceStatus(
   id: string,
   status: 'completed' | 'canceled' | 'scheduled',
-  completedAtUTC?: string,
+  options?: {
+    completedAtUTC?: string
+    updates?: {
+      endUTC?: string
+      durationMin?: number
+    }
+  },
   client?: Client
 ) {
   const supabase = await ensureClient(client)
   const completedAt =
-    status === 'completed' ? completedAtUTC ?? new Date().toISOString() : null
+    status === 'completed'
+      ? options?.completedAtUTC ?? new Date().toISOString()
+      : null
+  const payload: {
+    status: ScheduleInstanceStatus
+    completed_at: string | null
+    end_utc?: string
+    duration_min?: number
+  } = {
+    status,
+    completed_at: completedAt,
+  }
+  if (options?.updates?.endUTC) {
+    payload.end_utc = options.updates.endUTC
+  }
+  if (
+    typeof options?.updates?.durationMin === 'number' &&
+    Number.isFinite(options.updates.durationMin)
+  ) {
+    payload.duration_min = options.updates.durationMin
+  }
   return await supabase
     .from('schedule_instances')
-    .update({
-      status,
-      completed_at: completedAt,
-    })
+    .update(payload)
     .eq('id', id)
 }
 
