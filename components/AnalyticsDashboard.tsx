@@ -255,19 +255,12 @@ function normalizeHabitSummary(summary: unknown): AnalyticsHabitSummary {
   };
 }
 
-interface Kpi {
-  id: string;
-  label: string;
-  value: number;
-  delta: number;
-  icon: ComponentType<{ className?: string }>;
-}
-
 interface Skill {
   id: string;
   name: string;
   level: number;
   progress: number; // 0-100
+  xpGained: number;
 }
 
 interface Project {
@@ -448,7 +441,7 @@ export default function AnalyticsDashboard() {
     <div className="relative min-h-screen overflow-hidden bg-[#07080A] text-[#E6E6EB]">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(126,107,255,0.35),transparent_65%)] blur-3xl"
+        className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(248,113,113,0.35),transparent_65%)] blur-3xl"
       />
       <div className="relative mx-auto max-w-7xl space-y-10 px-4 pb-16 pt-10 sm:px-6 lg:px-8">
         <Header
@@ -457,52 +450,33 @@ export default function AnalyticsDashboard() {
           lastUpdated={lastUpdated ?? undefined}
         />
 
-        <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-          <SectionCard
-            title="Performance snapshot"
-            description="Key metrics from your current focus window."
-          >
-            {loading ? (
-              <Skeleton className="h-32" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {kpis.map((k) => (
-                  <KpiCard key={k.id} kpi={k} />
-                ))}
-              </div>
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="Focus insights"
-            description="Quick cues for where to lean in next."
-          >
-            {loading ? (
-              <Skeleton className="h-48" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : (
-              <ul className="space-y-4">
-                {focusInsights.map((insight) => (
-                  <li
-                    key={insight.id}
-                    className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
-                  >
-                    <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                      {insight.title}
-                    </span>
-                    <div className="mt-2 text-lg font-semibold text-white">
-                      {insight.metric}
-                    </div>
-                    <p className="mt-1 text-sm text-[#99A4BD]">{insight.helper}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SectionCard>
-        </div>
+        <SectionCard
+          title="Focus insights"
+          description="Quick cues for where to lean in next."
+        >
+          {loading ? (
+            <Skeleton className="h-48" />
+          ) : error ? (
+            <ErrorState message={error} />
+          ) : (
+            <ul className="space-y-4">
+              {focusInsights.map((insight) => (
+                <li
+                  key={insight.id}
+                  className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
+                >
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                    {insight.title}
+                  </span>
+                  <div className="mt-2 text-lg font-semibold text-white">
+                    {insight.metric}
+                  </div>
+                  <p className="mt-1 text-sm text-[#99A4BD]">{insight.helper}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
 
         <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
           <SectionCard
@@ -524,6 +498,13 @@ export default function AnalyticsDashboard() {
               <Skeleton className="h-56" />
             ) : error ? (
               <ErrorState message={error} />
+            ) : skills.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[#273041] bg-[#0D131E] p-6 text-center text-sm text-[#6E7A96]">
+                No skills gained XP in this range yet.
+                <p className="mt-2 text-xs text-[#4E5A73]">
+                  Complete skill-linked rituals to see progress here.
+                </p>
+              </div>
             ) : (
               <div className="space-y-6">
                 <div
@@ -541,7 +522,7 @@ export default function AnalyticsDashboard() {
                 <div className="flex justify-end">
                   <Link
                     href="#"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
                   >
                     View all skills<span aria-hidden="true">→</span>
                   </Link>
@@ -561,27 +542,7 @@ export default function AnalyticsDashboard() {
             ) : (
               <div className="space-y-6">
                 <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-                  <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                          Daily consistency
-                        </div>
-                        <p className="mt-1 text-sm text-[#9DA6BB]">
-                          Track check-ins across the past {habitSummary.calendarDays} days.
-                        </p>
-                      </div>
-                      <span className="hidden text-xs font-medium text-[#6E7A96] sm:inline-flex">
-                        {habitSummary.calendarDays}-day view
-                      </span>
-                    </div>
-                    <div className="mt-4">
-                      <StreakCalendar
-                        days={habitSummary.calendarDays}
-                        completed={habitSummary.calendarCompleted}
-                      />
-                    </div>
-                  </div>
+                  <DailyConsistencyCard summary={habitSummary} />
                   <StreakTrendCard
                     currentStreak={currentStreak}
                     longestStreak={longestStreak}
@@ -609,7 +570,7 @@ export default function AnalyticsDashboard() {
                 <div className="flex justify-end">
                   <Link
                     href="#"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
                   >
                     Review rituals<span aria-hidden="true">→</span>
                   </Link>
@@ -639,7 +600,7 @@ export default function AnalyticsDashboard() {
                 <div className="flex justify-end">
                   <Link
                     href="/projects"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
                   >
                     Open projects<span aria-hidden="true">→</span>
                   </Link>
@@ -670,20 +631,19 @@ export default function AnalyticsDashboard() {
 
         <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
           <SectionCard
-            title="Windows & energy"
-            description="Understand how your focus windows convert into energy states."
+            title="Window energy mix"
+            description="Where you’re investing your scheduled focus time."
           >
             {loading ? (
               <Skeleton className="h-56" />
             ) : error ? (
               <ErrorState message={error} />
-            ) : windows.heatmap.length === 0 ? (
-              <EmptyState title="No windows yet" cta="Set up windows" />
-            ) : (
-              <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-                <Heatmap data={windows.heatmap} />
-                <DonutChart data={windows.energy} />
+            ) : windows.energy.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[#273041] bg-[#0D131E] p-6 text-center text-sm text-[#6E7A96]">
+                Log a few focus windows to see the energy breakdown.
               </div>
+            ) : (
+              <DonutChart data={windows.energy} />
             )}
           </SectionCard>
 
@@ -699,7 +659,7 @@ export default function AnalyticsDashboard() {
               <>
                 <ActivityTimeline events={activity} />
                 <div className="mt-6 flex justify-end">
-                  <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-4 py-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]">
+                  <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
                     Show more
                   </button>
                 </div>
@@ -731,7 +691,7 @@ function Header({
             <button
               onClick={() => router.push("/dashboard")}
               aria-label="Back to dashboard"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#262F45] bg-[#0B1018] text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#262F45] bg-[#0B1018] text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
@@ -813,9 +773,9 @@ function DateRangeSelector({
               type="button"
               onClick={() => onChange(range.value)}
               className={classNames(
-                "min-w-[72px] rounded-full px-3 py-1.5 text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80",
+                "min-w-[72px] rounded-full px-3 py-1.5 text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80",
                 active
-                  ? "bg-[#7E6BFF] text-white shadow-[0_12px_30px_rgba(126,107,255,0.45)]"
+                  ? "bg-[#F87171] text-white shadow-[0_12px_30px_rgba(248,113,113,0.45)]"
                   : "text-[#A1ADC7] hover:text-white"
               )}
             >
@@ -823,42 +783,6 @@ function DateRangeSelector({
             </button>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-function KpiCard({ kpi }: { kpi: Kpi }) {
-  const Icon = kpi.icon;
-  const isPositive = kpi.delta >= 0;
-  const deltaColor = isPositive ? "text-[#6DD3A8]" : "text-[#E87070]";
-  return (
-    <div className="group relative overflow-hidden rounded-2xl border border-[#1E2432] bg-gradient-to-br from-[#141A26] via-[#101521] to-[#0A0E15] p-5 transition-all hover:-translate-y-1 hover:border-[#7E6BFF]/70 hover:shadow-[0_20px_45px_rgba(8,10,16,0.45)]">
-      <div className="flex items-start justify-between">
-        <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
-          {kpi.label}
-        </span>
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#7E6BFF]/20 to-transparent text-[#B19CFF]">
-          <Icon className="h-5 w-5" />
-        </span>
-      </div>
-      <div
-        className="mt-5 text-3xl font-semibold text-white"
-        aria-label={formatNumber(kpi.value)}
-      >
-        {formatNumber(kpi.value)}
-      </div>
-      <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#273041] bg-[#0C111A] px-3 py-1 text-xs font-medium text-[#A1ADC7]">
-        <span
-          aria-hidden="true"
-          className={classNames("text-base", deltaColor)}
-        >
-          {isPositive ? "▲" : "▼"}
-        </span>
-        <span className={classNames("font-semibold", deltaColor)}>
-          {formatDelta(kpi.delta)}
-        </span>
-        <span className="text-[#6E7A96]">vs last period</span>
       </div>
     </div>
   );
@@ -879,7 +803,7 @@ function SkillCard({
   return (
     <div
       className={classNames(
-        "group rounded-2xl border border-[#1E2432] bg-[#0F141D]/90 p-5 transition hover:border-[#7E6BFF]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
+        "group rounded-2xl border border-[#1E2432] bg-[#0F141D]/90 p-5 transition hover:border-[#F87171]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
         view === "grid"
           ? "flex flex-col items-center gap-4 text-center"
           : "flex items-center justify-between gap-4"
@@ -911,7 +835,7 @@ function SkillCard({
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#7E6BFF"
+            stroke="#F87171"
             strokeWidth={strokeWidth}
             fill="none"
             strokeDasharray={circumference}
@@ -930,22 +854,22 @@ function SkillCard({
           view === "grid" ? "w-full max-w-[180px]" : "w-full"
         )}
       >
-        <div
-          className={classNames(
-            "text-sm font-semibold text-white",
-            view === "grid" ? "text-center" : "text-left"
-          )}
-        >
-          {skill.name}
-        </div>
-        <div
-          className={classNames(
-            "mt-1 text-xs uppercase tracking-[0.2em] text-[#6E7A96]",
-            view === "grid" ? "text-center" : "text-left"
-          )}
-        >
-          Level {skill.level}
-        </div>
+      <div
+        className={classNames(
+          "text-sm font-semibold text-white",
+          view === "grid" ? "text-center" : "text-left"
+        )}
+      >
+        {skill.name}
+      </div>
+      <div
+        className={classNames(
+          "mt-1 text-xs text-[#6E7A96]",
+          view === "grid" ? "text-center" : "text-left"
+        )}
+      >
+        Level {skill.level} · +{formatNumber(skill.xpGained)} XP
+      </div>
         <div
           className={classNames(
             "mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#1F2736]",
@@ -953,7 +877,7 @@ function SkillCard({
           )}
         >
           <div
-            className="h-full rounded-full bg-gradient-to-r from-[#7E6BFF] via-[#B19CFF] to-[#6DD3A8]"
+            className="h-full rounded-full bg-gradient-to-r from-[#F87171] via-[#FECACA] to-[#6DD3A8]"
             style={{ width: `${skill.progress}%` }}
           />
         </div>
@@ -965,9 +889,9 @@ function SkillCard({
 function BarChart({ data }: { data: number[] }) {
   if (data.length === 0) {
     return (
-      <div className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
-        No recent throughput recorded.
-      </div>
+        <div className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
+          No recent throughput recorded.
+        </div>
     );
   }
 
@@ -975,30 +899,61 @@ function BarChart({ data }: { data: number[] }) {
   const total = data.reduce((sum, value) => sum + value, 0);
   const average = Math.round(total / data.length);
   const defaultLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const labels =
-    data.length === defaultLabels.length
-      ? defaultLabels
-      : data.map((_, index) => `D${index + 1}`);
+  const today = new Date();
+  const labels = data.map((_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (data.length - 1 - index));
+    const dayName = defaultLabels[index % defaultLabels.length];
+    return { day: dayName, date: date.getDate() };
+  });
+  const headerFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    year: "numeric",
+  });
   return (
     <div
       className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]"
       aria-label="Tasks completed per period"
     >
+      <div className="flex items-center justify-between text-sm text-white">
+        <span className="font-semibold">Project completions</span>
+        <span className="text-xs text-[#6E7A96]">
+          {headerFormatter.format(today)}
+        </span>
+      </div>
       <div
         className="grid h-44 items-end gap-3"
         style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
       >
         {data.map((value, index) => {
-          const height = max === 0 ? 0 : (value / max) * 100;
+          const heightPercent = max === 0 ? 0 : (value / max) * 100;
+          const barHeight =
+            max === 0
+              ? "6px"
+              : `${Math.max(heightPercent, 6)}%`;
+          const isZero = value === 0;
           return (
-            <div key={index} className="flex h-full flex-col justify-end">
+            <div
+              key={index}
+              className="flex h-full flex-col items-center justify-end gap-2"
+            >
+              <span className="text-xs font-semibold text-[#A1ADC7]">{value}</span>
               <div
-                className="rounded-t-lg bg-gradient-to-t from-[#7E6BFF]/30 via-[#7E6BFF]/70 to-[#B19CFF] shadow-[0_12px_24px_rgba(126,107,255,0.35)]"
-                style={{ height: `${height}%` }}
+                className={classNames(
+                  "w-full rounded-t-lg shadow-[0_12px_24px_rgba(248,113,113,0.35)]",
+                  isZero
+                    ? "bg-[#1F2736]"
+                    : "bg-gradient-to-t from-[#F87171]/30 via-[#F87171]/70 to-[#FECACA]"
+                )}
+                style={{ height: barHeight }}
               />
-            <span className="mt-3 text-xs font-medium uppercase tracking-[0.2em] text-[#6E7A96]">
-              {labels[index] ?? `D${index + 1}`}
-            </span>
+              <span className="text-center text-xs font-medium uppercase tracking-[0.2em] text-[#6E7A96]">
+                {labels[index]?.day ?? ""}
+                <br />
+                <span className="text-[10px] font-normal text-[#8A94AB]">
+                  {labels[index]?.date ?? ""}
+                </span>
+              </span>
             </div>
           );
         })}
@@ -1024,13 +979,13 @@ function ProjectCard({ project }: { project: Project }) {
             {project.tasksDone}/{project.tasksTotal} tasks complete
           </div>
         </div>
-        <span className="text-sm font-semibold text-[#B19CFF]">
+        <span className="text-sm font-semibold text-[#FECACA]">
           {project.progress}%
         </span>
       </div>
       <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#1F2736]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#7E6BFF] to-[#6DD3A8]"
+          className="h-full rounded-full bg-gradient-to-r from-[#F87171] to-[#6DD3A8]"
           style={{ width: `${project.progress}%` }}
         />
       </div>
@@ -1090,73 +1045,13 @@ function MonumentCard({ monument }: { monument: Monument }) {
   );
 }
 
-function Heatmap({ data }: { data: number[][] }) {
-  const flattened = data.flat();
-  const max = flattened.length > 0 ? Math.max(...flattened) : 0;
-  const columns = data[0]?.length ?? 0;
-  const timeLabels = ["Early", "Morning", "Afternoon", "Evening"];
-  const labels = columns > 0 ? timeLabels.slice(0, columns) : [];
-  return (
-    <div className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-sm font-semibold text-white">Focus heatmap</div>
-          <p className="mt-1 text-xs text-[#6E7A96]">
-            Intensity across your scheduled windows
-          </p>
-        </div>
-        <span className="inline-flex items-center gap-2 rounded-full border border-[#273041] bg-[#0C111A] px-3 py-1 text-xs text-[#A1ADC7]">
-          Peak
-          <span
-            aria-hidden="true"
-            className="h-2 w-8 rounded-full bg-gradient-to-r from-transparent via-[#7E6BFF] to-[#7E6BFF]"
-          />
-        </span>
-      </div>
-      <div
-        className="mt-4 grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-        aria-label="Window adherence heatmap"
-      >
-        {data.map((row, i) =>
-          row.map((val, j) => {
-            const intensity = max === 0 ? 0 : val / max;
-            return (
-              <div
-                key={`${i}-${j}`}
-                className="aspect-square w-full rounded-md"
-                style={{
-                  background:
-                    intensity === 0
-                      ? "rgba(32,38,49,0.85)"
-                      : `rgba(126,107,255,${0.25 + intensity * 0.65})`,
-                }}
-              />
-            );
-          })
-        )}
-      </div>
-      <div
-        className="mt-3 grid gap-2 text-xs uppercase tracking-[0.2em] text-[#6E7A96]"
-        style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-      >
-        {labels.map((label) => (
-          <span key={label} className="text-center">
-            {label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function DonutChart({
   data,
 }: {
   data: { label: string; value: number }[];
 }) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
-  const colors = ["#9966CC", "#7C838A", "#6DD3A8", "#E8C268", "#22262A"];
+  const colors = ["#FB7185", "#7C838A", "#6DD3A8", "#E8C268", "#22262A"];
   let current = 0;
   const segments = data.map((d, i) => {
     const start = current;
@@ -1223,10 +1118,10 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
           <li key={event.id} className="relative flex gap-4">
             <div className="flex flex-col items-center">
               <span className="relative z-10 flex h-4 w-4 items-center justify-center">
-                <span className="h-3 w-3 rounded-full border border-[#7E6BFF] bg-[#0B1018]" />
+                <span className="h-3 w-3 rounded-full border border-[#F87171] bg-[#0B1018]" />
               </span>
               {index !== events.length - 1 && (
-                <span className="mt-1 h-full w-px bg-gradient-to-b from-[#7E6BFF]/60 to-transparent" />
+                <span className="mt-1 h-full w-px bg-gradient-to-b from-[#F87171]/60 to-transparent" />
               )}
             </div>
             <div className="flex-1 rounded-2xl border border-[#1E2432] bg-[#0B1018] px-4 py-3 shadow-[0_12px_24px_rgba(8,10,16,0.35)]">
@@ -1341,8 +1236,8 @@ function StreakSparkline({
       <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full">
         <defs>
           <linearGradient id="streakGradient" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(177,156,255,0.6)" />
-            <stop offset="100%" stopColor="rgba(126,107,255,0.05)" />
+            <stop offset="0%" stopColor="rgba(254,202,202,0.6)" />
+            <stop offset="100%" stopColor="rgba(248,113,113,0.05)" />
           </linearGradient>
         </defs>
         <path d={areaPath} fill="url(#streakGradient)" />
@@ -1440,11 +1335,11 @@ function RoutineHeatmap({
                         const backgroundColor =
                           ratio === 0
                             ? "#0B1018"
-                            : `rgba(126,107,255,${opacity.toFixed(2)})`;
+                            : `rgba(248,113,113,${opacity.toFixed(2)})`;
                         const boxShadow =
                           ratio === 0
                             ? undefined
-                            : "0 3px 10px rgba(126,107,255,0.35)";
+                            : "0 3px 10px rgba(248,113,113,0.35)";
                         const percent = Math.round(ratio * 100);
                         return (
                           <span
@@ -1500,7 +1395,7 @@ function BestPerformanceList({
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1F2736]">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#7E6BFF] via-[#B19CFF] to-[#6DD3A8]"
+                    className="h-full rounded-full bg-gradient-to-r from-[#F87171] via-[#FECACA] to-[#6DD3A8]"
                     style={{ width: `${percent}%` }}
                   />
                 </div>
@@ -1633,7 +1528,7 @@ function WeeklyReflectionPanel({
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-[#6E7A96]">
-                    <Sparkles className="h-4 w-4 text-[#B19CFF]" />
+                    <Sparkles className="h-4 w-4 text-[#FECACA]" />
                     {reflection.weekLabel}
                   </div>
                   <h3 className="mt-2 text-lg font-semibold text-white">
@@ -1664,9 +1559,9 @@ function WeeklyReflectionPanel({
                   type="button"
                   onClick={() => handleTogglePin(reflection.id)}
                   className={classNames(
-                    "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80",
+                    "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80",
                     pinned
-                      ? "border-[#7E6BFF] bg-[#7E6BFF]/10 text-[#B19CFF]"
+                      ? "border-[#F87171] bg-[#F87171]/10 text-[#FECACA]"
                       : "border-[#273041] text-[#9DA6BB] hover:text-white"
                   )}
                 >
@@ -1690,14 +1585,14 @@ function WeeklyReflectionPanel({
                     }))
                   }
                   rows={3}
-                  className="w-full resize-none rounded-xl border border-[#273041] bg-[#070A12] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#7E6BFF] focus:outline-none focus:ring-2 focus:ring-[#7E6BFF]/50"
+                  className="w-full resize-none rounded-xl border border-[#273041] bg-[#070A12] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#F87171] focus:outline-none focus:ring-2 focus:ring-[#F87171]/50"
                   placeholder="Capture the habits, supports, or rituals that unlocked momentum."
                 />
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => handleSave(reflection.id)}
-                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#7E6BFF] to-[#B19CFF] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(126,107,255,0.45)] transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80"
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#F87171] to-[#FECACA] px-4 py-1.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(248,113,113,0.45)] transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
                   >
                     <PenLine className="h-4 w-4" />
                     Save reflection
@@ -1705,7 +1600,7 @@ function WeeklyReflectionPanel({
                   <button
                     type="button"
                     onClick={() => handleShare(reflection.id)}
-                    className="inline-flex items-center gap-2 rounded-full border border-[#273041] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]/80"
+                    className="inline-flex items-center gap-2 rounded-full border border-[#273041] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
                   >
                     <Share2 className="h-4 w-4" />
                     Share snapshot
@@ -1714,7 +1609,7 @@ function WeeklyReflectionPanel({
                     {saved === "saved" ? (
                       <span className="text-[#6DD3A8]">Saved! We’ll tailor future nudges.</span>
                     ) : shared === "copied" ? (
-                      <span className="text-[#B19CFF]">Copied summary to clipboard.</span>
+                      <span className="text-[#FECACA]">Copied summary to clipboard.</span>
                     ) : shared === "error" ? (
                       <span className="text-[#FFB4A2]">Clipboard unavailable—share manually.</span>
                     ) : pinned ? (
@@ -1738,25 +1633,43 @@ function StreakCalendar({
   days: number;
   completed: number[];
 }) {
-  const cells = Array.from({ length: days }, (_, i) => i + 1);
+  const today = new Date();
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - (days - 1));
+  const cells = Array.from({ length: days }, (_, index) => {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + index);
+    const dayNumber = index + 1;
+    const isComplete = completed.includes(dayNumber);
+    return { key: dayNumber, date, isComplete };
+  });
+  const weekLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
   return (
-    <div className="grid grid-cols-7 gap-2" aria-label="Streak calendar">
-      {cells.map((day) => {
-        const isComplete = completed.includes(day);
-        return (
+    <div>
+      <div className="grid grid-cols-7 gap-2 text-[10px] uppercase tracking-[0.2em] text-[#6E7A96]">
+        {weekLabels.map((label) => (
+          <span key={label} className="text-center">
+            {label}
+          </span>
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-7 gap-2" aria-label="Streak calendar">
+        {cells.map(({ key, date, isComplete }) => (
           <div
-            key={day}
+            key={key}
             className={classNames(
-              "aspect-square w-full rounded-lg border text-[10px] font-medium transition",
+              "flex h-8 w-full items-center justify-center rounded-lg border text-sm font-semibold transition",
               isComplete
-                ? "border-transparent bg-gradient-to-br from-[#7E6BFF] to-[#B19CFF] text-white shadow-[0_8px_18px_rgba(126,107,255,0.35)]"
+                ? "border-transparent bg-gradient-to-br from-[#F87171] to-[#FECACA] text-white shadow-[0_8px_18px_rgba(248,113,113,0.35)]"
                 : "border-[#1E2432] bg-[#0B1018] text-[#6E7A96]"
             )}
+            title={date.toDateString()}
           >
-            <span className="flex h-full items-center justify-center">{day}</span>
+            <span>{date.getDate()}</span>
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
@@ -1808,7 +1721,7 @@ function EmptyState({
       aria-label="Empty state"
     >
       <div>{title}</div>
-      <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0C111A] px-4 py-2 text-sm font-medium text-[#B19CFF] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7E6BFF]">
+      <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0C111A] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
         {cta}
       </button>
     </div>
@@ -1833,4 +1746,38 @@ function Skeleton({ className }: { className?: string }) {
     />
   );
 }
+function DailyConsistencyCard({ summary }: { summary: AnalyticsHabitSummary }) {
+  const weeks = Math.ceil(summary.calendarDays / 7);
+  const today = new Date();
+  const currentFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    year: "numeric",
+  });
 
+  return (
+    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+            Daily consistency
+          </div>
+          <p className="mt-1 text-sm text-[#9DA6BB]">
+            Streak coverage for the last {summary.calendarDays} days.
+          </p>
+        </div>
+        <div className="text-right text-xs font-medium text-[#6E7A96]">
+          <div>
+            {weeks} week{weeks === 1 ? "" : "s"}
+          </div>
+          <div>{currentFormatter.format(today)}</div>
+        </div>
+      </div>
+      <div className="mt-4 overflow-x-auto">
+        <StreakCalendar
+          days={summary.calendarDays}
+          completed={summary.calendarCompleted}
+        />
+      </div>
+    </div>
+  );
+}

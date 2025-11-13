@@ -58,6 +58,32 @@ type RawSkillRow = {
   created_at?: string | null;
 };
 
+type RawXpEventRow = {
+  id: string;
+  created_at: string | null;
+  amount?: number | null;
+  kind?: string | null;
+  skill_id?: string | null;
+};
+
+type RawHabitRow = {
+  id: string;
+  created_at: string | null;
+  name?: string | null;
+  routine_id?: string | null;
+};
+
+type RawHabitCompletionRow = {
+  habit_id: string | null;
+  completion_day: string | null;
+  completed_at: string | null;
+};
+
+type RawHabitRoutineRow = {
+  id: string;
+  name?: string | null;
+};
+
 type NormalizedTaskRow = {
   id: string;
   created_at: string | null;
@@ -86,6 +112,24 @@ type NormalizedSkillRow = {
   name: string;
   monument_id: string | null;
   updated_at: string | null;
+};
+
+type NormalizedHabitRow = {
+  id: string;
+  name: string;
+  created_at: string | null;
+  routine_id: string | null;
+};
+
+type NormalizedHabitRoutineRow = {
+  id: string;
+  name: string;
+};
+
+type NormalizedHabitCompletionRow = {
+  habit_id: string;
+  completion_day: string;
+  completed_at: string | null;
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -127,6 +171,7 @@ export async function GET(request: NextRequest) {
   const combinedStartIso = previousStart.toISOString();
 
   const habitHistoryStart = startOfDay(addDays(end, -365));
+  const habitCompletionStart = habitHistoryStart.toISOString().slice(0, 10);
 
   const [
     xpEventsRes,
@@ -139,10 +184,12 @@ export async function GET(request: NextRequest) {
     skillProgressRes,
     goalsRes,
     habitHistoryRes,
+    habitRoutinesRes,
+    habitCompletionRes,
   ] = await Promise.all([
     supabase
       .from("xp_events")
-      .select("id, created_at, amount, kind")
+      .select("id, created_at, amount, kind, skill_id")
       .eq("user_id", user.id)
       .gte("created_at", combinedStartIso)
       .order("created_at", { ascending: false }),
@@ -176,12 +223,20 @@ export async function GET(request: NextRequest) {
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
     ),
-    supabase
-      .from("habits")
-      .select("id, created_at, name")
-      .eq("user_id", user.id)
-      .gte("created_at", combinedStartIso)
-      .order("created_at", { ascending: false }),
+    queryWithFallback(
+      () =>
+        supabase
+          .from("habits")
+          .select("id, created_at, name, routine_id")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+      () =>
+        supabase
+          .from("habits")
+          .select("id, created_at, name")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+    ),
     queryWithFallback(
       () =>
         supabase
@@ -231,6 +286,17 @@ export async function GET(request: NextRequest) {
       .eq("kind", "habit")
       .gte("created_at", habitHistoryStart.toISOString())
       .order("created_at", { ascending: false }),
+    supabase
+      .from("habit_routines")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("habit_completion_days")
+      .select("habit_id, completion_day, completed_at")
+      .eq("user_id", user.id)
+      .gte("completion_day", habitCompletionStart)
+      .order("completion_day", { ascending: true }),
   ]);
 
   const queryError =
@@ -243,7 +309,9 @@ export async function GET(request: NextRequest) {
     skillsRes.error ||
     skillProgressRes.error ||
     goalsRes.error ||
-    habitHistoryRes.error;
+    habitHistoryRes.error ||
+    habitRoutinesRes.error ||
+    habitCompletionRes.error;
 
   if (queryError) {
     return NextResponse.json(
@@ -252,16 +320,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const xpEvents = xpEventsRes.data ?? [];
+  const xpEvents = (xpEventsRes.data ?? []) as RawXpEventRow[];
   const tasks = normalizeTaskRows(tasksRes.data ?? []);
   const projects = normalizeProjectRows(projectsRes.data ?? []);
-  const habits = habitsRes.data ?? [];
+  const habits = normalizeHabitRows(habitsRes.data ?? []);
   const monuments = normalizeMonumentRows(monumentsRes.data ?? []);
   const windows = windowsRes.data ?? [];
   const skills = normalizeSkillRows(skillsRes.data ?? []);
   const skillProgress = skillProgressRes.data ?? [];
   const goals = goalsRes.data ?? [];
   const habitHistory = habitHistoryRes.data ?? [];
+  const habitRoutines = normalizeHabitRoutineRows(habitRoutinesRes.data ?? []);
+  const habitCompletions = normalizeHabitCompletionRows(
+    habitCompletionRes.data ?? []
+  );
 
   const xpSplit = splitByPeriod(
     xpEvents,
@@ -271,6 +343,19 @@ export async function GET(request: NextRequest) {
     previousEnd,
     (event) => parseDate(event.created_at)
   );
+
+  const skillXpDuringRange = new Map<string, number>();
+  for (const event of xpEvents) {
+    if (!event?.skill_id) continue;
+    const eventDate = parseDate(event.created_at);
+    if (!isWithinRange(eventDate, start, end)) continue;
+    const amount = Number(event.amount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    skillXpDuringRange.set(
+      event.skill_id,
+      (skillXpDuringRange.get(event.skill_id) ?? 0) + amount
+    );
+  }
 
   const taskSplit = splitByPeriod(
     tasks,
@@ -370,6 +455,10 @@ export async function GET(request: NextRequest) {
 
   const rankedSkills: AnalyticsSkill[] = skills
     .map((skill) => {
+      const xpGained = skillXpDuringRange.get(skill.id) ?? 0;
+      if (xpGained <= 0) {
+        return null;
+      }
       const progress = skillProgressMap.get(skill.id);
       if (!progress) {
         return {
@@ -378,6 +467,7 @@ export async function GET(request: NextRequest) {
           level: 1,
           progress: 0,
           updatedAt: skill.updated_at ?? null,
+          xpGained,
         } satisfies AnalyticsSkill;
       }
 
@@ -391,14 +481,11 @@ export async function GET(request: NextRequest) {
         level: progress.level ?? 1,
         progress: clampPercent(percent),
         updatedAt: progress.updated_at ?? skill.updated_at ?? null,
+        xpGained,
       } satisfies AnalyticsSkill;
     })
-    .sort((a, b) => {
-      if (a.level === b.level) {
-        return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
-      }
-      return b.level - a.level;
-    })
+    .filter((skill): skill is AnalyticsSkill => skill !== null)
+    .sort((a, b) => b.xpGained - a.xpGained)
     .slice(0, 6);
 
   const projectIds = projects.map((project) => project.id);
@@ -506,12 +593,20 @@ export async function GET(request: NextRequest) {
     ),
   });
 
-  const habitSummary = buildHabitSummary(
-    habitHistory.map((entry) => entry.created_at).filter(Boolean) as string[],
+  const habitSummary = buildHabitSummary({
+    completions: habitCompletions,
+    habits,
+    routines: habitRoutines,
+    end,
+    fallbackDates: habitHistory
+      .map((entry) => entry.created_at)
+      .filter(Boolean) as string[],
+  });
+
+  const projectVelocity = buildProjectDeliverySeries(
+    xpEvents.filter((event) => event.kind === "project"),
     end
   );
-
-  const projectVelocity = buildProjectVelocity(taskSplit.current, end);
 
   const response: AnalyticsResponse = {
     range,
@@ -659,6 +754,51 @@ function normalizeSkillRows(rows: unknown[]): NormalizedSkillRow[] {
       updated_at: normalizeIsoString(record.updated_at, record.created_at),
     } satisfies NormalizedSkillRow;
   });
+}
+
+function normalizeHabitRows(rows: unknown[]): NormalizedHabitRow[] {
+  return rows.map((row) => {
+    const record = row as RawHabitRow;
+    return {
+      id: record.id,
+      name: normalizeText(record.name) ?? "Untitled habit",
+      created_at: record.created_at ?? null,
+      routine_id: record.routine_id ?? null,
+    } satisfies NormalizedHabitRow;
+  });
+}
+
+function normalizeHabitRoutineRows(
+  rows: unknown[]
+): NormalizedHabitRoutineRow[] {
+  return rows.map((row) => {
+    const record = row as RawHabitRoutineRow;
+    return {
+      id: record.id,
+      name: normalizeText(record.name) ?? "Routine",
+    } satisfies NormalizedHabitRoutineRow;
+  });
+}
+
+function normalizeHabitCompletionRows(
+  rows: unknown[]
+): NormalizedHabitCompletionRow[] {
+  return rows
+    .map((row) => {
+      const record = row as RawHabitCompletionRow;
+      if (!record.habit_id || !record.completion_day) {
+        return null;
+      }
+      return {
+        habit_id: record.habit_id,
+        completion_day: record.completion_day,
+        completed_at: record.completed_at ?? null,
+      } satisfies NormalizedHabitCompletionRow;
+    })
+    .filter(
+      (row): row is NormalizedHabitCompletionRow =>
+        row !== null && typeof row.habit_id === "string"
+    );
 }
 
 function splitByPeriod<T>(
@@ -897,49 +1037,123 @@ function buildActivityFeed(input: {
     .slice(0, 12);
 }
 
-function buildHabitSummary(
-  dates: string[],
-  end: Date
-): AnalyticsHabitSummary {
-  const uniqueDates = Array.from(
-    new Set(
-      dates
-        .map((iso) => startOfDay(new Date(iso)).toISOString())
-        .filter((iso) => !Number.isNaN(new Date(iso).getTime()))
+type HabitCompletionEntry = {
+  habitId: string;
+  timestamp: Date;
+  dayIso: string;
+};
+
+const DAY_LABELS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const TIME_BUCKETS = [
+  { id: "early", label: "Early (before 8am)", startHour: 0, endHour: 8 },
+  { id: "morning", label: "Morning (8am-noon)", startHour: 8, endHour: 12 },
+  { id: "midday", label: "Midday (noon-3pm)", startHour: 12, endHour: 15 },
+  { id: "afternoon", label: "Afternoon (3-6pm)", startHour: 15, endHour: 18 },
+  { id: "evening", label: "Evening (6-9pm)", startHour: 18, endHour: 21 },
+  { id: "late", label: "Late (after 9pm)", startHour: 21, endHour: 24 },
+];
+
+const WEEK_LABEL_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
+
+function buildHabitSummary({
+  completions,
+  habits,
+  routines,
+  end,
+  calendarDays = 28,
+  heatmapWeeks = 6,
+  fallbackDates = [],
+}: {
+  completions: NormalizedHabitCompletionRow[];
+  habits: NormalizedHabitRow[];
+  routines: NormalizedHabitRoutineRow[];
+  end: Date;
+  calendarDays?: number;
+  heatmapWeeks?: number;
+  fallbackDates?: string[];
+}): AnalyticsHabitSummary {
+  const baseSummary: AnalyticsHabitSummary = {
+    currentStreak: 0,
+    longestStreak: 0,
+    calendarDays,
+    calendarCompleted: [],
+    routines: [],
+    streakHistory: [],
+    bestTimes: [],
+    bestDays: [],
+    weeklyReflections: [],
+  };
+
+  const completionEntries = completions
+    .map((entry) => {
+      const date =
+        parseDate(entry.completed_at) ??
+        (entry.completion_day
+          ? parseDate(`${entry.completion_day}T12:00:00Z`)
+          : null);
+      if (!date) {
+        return null;
+      }
+      return {
+        habitId: entry.habit_id,
+        timestamp: date,
+        dayIso: startOfDay(date).toISOString(),
+      } satisfies HabitCompletionEntry;
+    })
+    .filter(
+      (entry): entry is HabitCompletionEntry =>
+        entry !== null && Boolean(entry.habitId)
     )
-  ).sort();
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-  let longest = 0;
-  let currentRun = 0;
-  let previousDate: Date | null = null;
+  const hasConcreteCompletions = completionEntries.length > 0;
 
-  for (const iso of uniqueDates) {
-    const date = new Date(iso);
-    if (!previousDate) {
-      currentRun = 1;
-    } else {
-      const diff = Math.round(
-        (date.getTime() - previousDate.getTime()) / MS_PER_DAY
-      );
-      currentRun = diff === 1 ? currentRun + 1 : 1;
-    }
-    if (currentRun > longest) {
-      longest = currentRun;
-    }
-    previousDate = date;
+  const fallbackEntries =
+    completionEntries.length === 0 && fallbackDates.length > 0
+      ? fallbackDates
+          .map((iso) => parseDate(iso))
+          .filter((date): date is Date => Boolean(date))
+          .map((date) => ({
+            habitId: "__fallback__",
+            timestamp: date,
+            dayIso: startOfDay(date).toISOString(),
+          }))
+      : [];
+
+  const entries =
+    completionEntries.length > 0 ? completionEntries : fallbackEntries;
+
+  if (entries.length === 0) {
+    return baseSummary;
   }
 
-  const completionSet = new Set(uniqueDates);
+  const uniqueDayIsos = Array.from(
+    new Set(entries.map((entry) => entry.dayIso))
+  ).sort();
+
+  const longestStreak = computeLongestRunFromIsoDays(uniqueDayIsos);
+  const daySet = new Set(uniqueDayIsos);
   let currentStreak = 0;
   let cursor = startOfDay(end);
-  while (completionSet.has(cursor.toISOString())) {
+  while (daySet.has(cursor.toISOString())) {
     currentStreak += 1;
     cursor = addDays(cursor, -1);
   }
 
-  const calendarDays = 28;
   const calendarStart = startOfDay(addDays(end, -(calendarDays - 1)));
-  const calendarCompleted = uniqueDates
+  const calendarCompleted = uniqueDayIsos
     .map((iso) => {
       const date = new Date(iso);
       if (!isWithinRange(date, calendarStart, end)) return null;
@@ -948,28 +1162,363 @@ function buildHabitSummary(
       );
       return diff + 1;
     })
-    .filter((value): value is number => value !== null);
+    .filter(
+      (value): value is number => value !== null && value >= 1 && value <= calendarDays
+    )
+    .sort((a, b) => a - b);
+
+  const streakHistory = buildStreakHistoryPoints(uniqueDayIsos, end);
+
+  const routineHeatmap =
+    hasConcreteCompletions && routines.length > 0
+      ? buildRoutineHeatmap({
+          entries: completionEntries,
+          habits,
+          routines,
+          end,
+          weeks: heatmapWeeks,
+        })
+      : [];
+
+  const bestTimes = hasConcreteCompletions
+    ? buildBestTimes(completionEntries)
+    : [];
+  const bestDays = hasConcreteCompletions
+    ? buildBestDays(completionEntries)
+    : [];
+  const weeklyReflections = hasConcreteCompletions
+    ? buildWeeklyReflections(completionEntries, end)
+    : [];
 
   return {
     currentStreak,
-    longestStreak: longest,
+    longestStreak,
     calendarDays,
-    calendarCompleted: Array.from(new Set(calendarCompleted)).sort(
-      (a, b) => a - b
-    ),
-  } satisfies AnalyticsHabitSummary;
+    calendarCompleted,
+    routines: routineHeatmap,
+    streakHistory,
+    bestTimes,
+    bestDays,
+    weeklyReflections,
+  };
 }
 
-function buildProjectVelocity(
-  tasks: Array<{ created_at: string | null }>,
+function computeLongestRunFromIsoDays(dayIsos: string[]): number {
+  if (dayIsos.length === 0) return 0;
+  let longest = 0;
+  let run = 0;
+  let previousDate: Date | null = null;
+  for (const iso of dayIsos) {
+    const date = new Date(iso);
+    if (!previousDate) {
+      run = 1;
+    } else {
+      const diff = Math.round(
+        (date.getTime() - previousDate.getTime()) / MS_PER_DAY
+      );
+      run = diff === 1 ? run + 1 : 1;
+    }
+    if (run > longest) {
+      longest = run;
+    }
+    previousDate = date;
+  }
+  return longest;
+}
+
+function buildStreakHistoryPoints(
+  dayIsos: string[],
+  end: Date,
+  maxWeeks = 8
+): AnalyticsHabitStreakPoint[] {
+  if (dayIsos.length === 0) return [];
+  const weekMap = new Map<string, { start: Date; value: number }>();
+  let run = 0;
+  let prevDate: Date | null = null;
+  for (const iso of dayIsos) {
+    const date = new Date(iso);
+    if (!prevDate) {
+      run = 1;
+    } else {
+      const diff = Math.round(
+        (date.getTime() - prevDate.getTime()) / MS_PER_DAY
+      );
+      run = diff === 1 ? run + 1 : 1;
+    }
+    const weekStart = startOfWeek(date);
+    const key = weekStart.toISOString();
+    const existing = weekMap.get(key);
+    if (!existing || run > existing.value) {
+      weekMap.set(key, { start: weekStart, value: run });
+    }
+    prevDate = date;
+  }
+
+  const ordered = Array.from(weekMap.values()).sort(
+    (a, b) => a.start.getTime() - b.start.getTime()
+  );
+  const slice = ordered.slice(-maxWeeks);
+  return slice.map((entry) => ({
+    label: formatWeekLabel(entry.start),
+    value: entry.value,
+  }));
+}
+
+function buildRoutineHeatmap({
+  entries,
+  habits,
+  routines,
+  end,
+  weeks,
+}: {
+  entries: HabitCompletionEntry[];
+  habits: NormalizedHabitRow[];
+  routines: NormalizedHabitRoutineRow[];
+  end: Date;
+  weeks: number;
+}): AnalyticsHabitRoutine[] {
+  if (entries.length === 0) return [];
+  const routineNames = new Map(routines.map((routine) => [routine.id, routine.name]));
+  const habitsByRoutine = new Map<string, string[]>();
+  for (const habit of habits) {
+    if (!habit.routine_id || !routineNames.has(habit.routine_id)) continue;
+    const bucket = habitsByRoutine.get(habit.routine_id) ?? [];
+    bucket.push(habit.id);
+    habitsByRoutine.set(habit.routine_id, bucket);
+  }
+  if (habitsByRoutine.size === 0) return [];
+
+  const habitById = new Map(habits.map((habit) => [habit.id, habit]));
+  const completionsByDay = new Map<string, Map<string, Set<string>>>();
+
+  for (const entry of entries) {
+    const habit = habitById.get(entry.habitId);
+    const routineId = habit?.routine_id;
+    if (!routineId) continue;
+    let routineMap = completionsByDay.get(entry.dayIso);
+    if (!routineMap) {
+      routineMap = new Map<string, Set<string>>();
+      completionsByDay.set(entry.dayIso, routineMap);
+    }
+    const habitSet = routineMap.get(routineId) ?? new Set<string>();
+    habitSet.add(entry.habitId);
+    routineMap.set(routineId, habitSet);
+  }
+
+  const startWeek = startOfWeek(addDays(end, -7 * (weeks - 1)));
+  const result: AnalyticsHabitRoutine[] = [];
+
+  for (const [routineId, routineHabitIds] of habitsByRoutine) {
+    const heatmap: number[][] = [];
+    for (let weekIndex = 0; weekIndex < weeks; weekIndex += 1) {
+      const weekStart = addDays(startWeek, weekIndex * 7);
+      const weekRow: number[] = [];
+      for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+        const date = addDays(weekStart, dayOffset);
+        if (date.getTime() > end.getTime()) {
+          weekRow.push(0);
+          continue;
+        }
+        const dayKey = startOfDay(date).toISOString();
+        const routineSet =
+          completionsByDay.get(dayKey)?.get(routineId) ?? null;
+        const matched = routineSet ? routineSet.size : 0;
+        const ratio =
+          routineHabitIds.length === 0 ? 0 : matched / routineHabitIds.length;
+        weekRow.push(Number.isFinite(ratio) ? Number(ratio.toFixed(2)) : 0);
+      }
+      heatmap.push(weekRow);
+    }
+    const hasSignal = heatmap.some((week) => week.some((value) => value > 0));
+    if (!hasSignal) continue;
+    result.push({
+      id: routineId,
+      name: routineNames.get(routineId) ?? "Routine",
+      heatmap,
+    });
+  }
+
+  return result.slice(0, 4);
+}
+
+function buildBestTimes(
+  entries: HabitCompletionEntry[]
+): AnalyticsHabitPerformance[] {
+  if (entries.length === 0) return [];
+  const bucketCounts = TIME_BUCKETS.map((bucket) => ({
+    ...bucket,
+    count: 0,
+  }));
+
+  for (const entry of entries) {
+    const hours =
+      entry.timestamp.getUTCHours() + entry.timestamp.getUTCMinutes() / 60;
+    const bucket =
+      bucketCounts.find(
+        (slot) => hours >= slot.startHour && hours < slot.endHour
+      ) ?? bucketCounts[bucketCounts.length - 1];
+    bucket.count += 1;
+  }
+
+  const total = entries.length || 1;
+  return bucketCounts
+    .filter((bucket) => bucket.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 4)
+    .map(
+      (bucket) =>
+        ({
+          label: bucket.label,
+          successRate: bucket.count / total,
+        }) satisfies AnalyticsHabitPerformance
+    );
+}
+
+function buildBestDays(
+  entries: HabitCompletionEntry[]
+): AnalyticsHabitPerformance[] {
+  if (entries.length === 0) return [];
+  const counts = Array.from({ length: 7 }, () => 0);
+  for (const entry of entries) {
+    const dayIndex = entry.timestamp.getUTCDay();
+    counts[dayIndex] += 1;
+  }
+  const total = entries.length || 1;
+  return counts
+    .map((count, index) => ({
+      label: DAY_LABELS[index],
+      successRate: count / total,
+      count,
+    }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map(
+      (item) =>
+        ({
+          label: item.label,
+          successRate: item.successRate,
+        }) satisfies AnalyticsHabitPerformance
+    );
+}
+
+function buildWeeklyReflections(
+  entries: HabitCompletionEntry[],
+  end: Date,
+  maxWeeks = 4
+): AnalyticsHabitWeeklyReflection[] {
+  const reflections: AnalyticsHabitWeeklyReflection[] = [];
+  if (entries.length === 0) return reflections;
+
+  const entriesByWeek = new Map<string, HabitCompletionEntry[]>();
+  for (const entry of entries) {
+    const weekKey = startOfWeek(entry.timestamp).toISOString();
+    const bucket = entriesByWeek.get(weekKey) ?? [];
+    bucket.push(entry);
+    entriesByWeek.set(weekKey, bucket);
+  }
+
+  const startWeek = startOfWeek(end);
+  for (let offset = 0; offset < maxWeeks; offset += 1) {
+    const weekStart = addDays(startWeek, -7 * offset);
+    const weekEnd = addDays(weekStart, 6);
+    const key = weekStart.toISOString();
+    const weekEntries = entriesByWeek.get(key) ?? [];
+    if (weekEntries.length === 0) {
+      continue;
+    }
+    const dayIsoSet = Array.from(
+      new Set(
+        weekEntries
+          .map((entry) => entry.dayIso)
+          .filter((iso) => {
+            const date = new Date(iso);
+            return isWithinRange(date, weekStart, weekEnd);
+          })
+      )
+    ).sort();
+    const weekStreak = computeLongestRunFromIsoDays(dayIsoSet);
+    const dayCounts = Array.from({ length: 7 }, () => 0);
+    for (const entry of weekEntries) {
+      dayCounts[entry.timestamp.getUTCDay()] += 1;
+    }
+    const bestDayIndex = dayCounts.reduce(
+      (best, value, index) => (value > dayCounts[best] ? index : best),
+      0
+    );
+    const bestDayLabel = dayCounts[bestDayIndex] > 0 ? DAY_LABELS[bestDayIndex] : "—";
+    const lesson = buildReflectionLesson(weekStreak, bestDayLabel, weekEntries.length);
+    const recommendation = buildReflectionRecommendation(weekStreak);
+
+    reflections.push({
+      id: `week-${key}`,
+      weekLabel: formatWeekRange(weekStart),
+      streak: weekStreak,
+      bestDay: bestDayLabel,
+      lesson,
+      pinned: offset === 0,
+      recommendation,
+    });
+  }
+
+  return reflections;
+}
+
+function startOfWeek(date: Date) {
+  const start = startOfDay(date);
+  const weekday = start.getUTCDay();
+  const diff = (weekday + 6) % 7;
+  return addDays(start, -diff);
+}
+
+function formatWeekLabel(date: Date) {
+  return `Week of ${WEEK_LABEL_FORMATTER.format(date)}`;
+}
+
+function formatWeekRange(start: Date) {
+  const end = addDays(start, 6);
+  const startLabel = WEEK_LABEL_FORMATTER.format(start);
+  const endLabel = WEEK_LABEL_FORMATTER.format(end);
+  return `${startLabel} – ${endLabel}`;
+}
+
+function buildReflectionLesson(
+  streak: number,
+  bestDay: string,
+  total: number
+) {
+  if (streak >= 6) {
+    return `Locked in a ${streak}-day streak. Keep the chain going.`;
+  }
+  if (streak >= 3) {
+    return `Momentum clustered around ${bestDay}. Extend it to nearby days.`;
+  }
+  if (total >= 3) {
+    return `Logged ${total} times—batching around ${bestDay} works.`;
+  }
+  return "Light week. Plan deliberate check-ins earlier to regain flow.";
+}
+
+function buildReflectionRecommendation(streak: number) {
+  if (streak >= 6) {
+    return "Experiment with tougher goals or longer sessions.";
+  }
+  if (streak >= 3) {
+    return "Aim to add one more consecutive day next week.";
+  }
+  return "Schedule two back-to-back check-ins to spark a new streak.";
+}
+
+function buildProjectDeliverySeries(
+  events: Array<{ created_at: string | null }>,
   end: Date
 ): number[] {
   const segments = 7;
   const series = Array.from({ length: segments }, () => 0);
   const start = startOfDay(addDays(end, -(segments - 1)));
 
-  for (const task of tasks) {
-    const date = parseDate(task.created_at);
+  for (const event of events) {
+    const date = parseDate(event.created_at);
     if (!date) continue;
     if (!isWithinRange(date, start, end)) continue;
     const diff = Math.round(
