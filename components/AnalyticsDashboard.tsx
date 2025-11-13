@@ -451,7 +451,7 @@ export default function AnalyticsDashboard() {
     }
 
     let animationFrame: number;
-    const SPEED = 0.25;
+    const SPEED = 0.45;
 
     const tick = () => {
       const maxScroll = container.scrollWidth - container.clientWidth;
@@ -493,12 +493,12 @@ export default function AnalyticsDashboard() {
           ) : (
             <ul
               ref={focusInsightsRef}
-              className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:overflow-visible lg:grid-cols-4"
+              className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2"
             >
               {focusInsights.map((insight) => (
                 <li
                   key={insight.id}
-                  className="min-w-[220px] flex-1 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] snap-center md:min-w-0"
+                  className="min-w-[240px] shrink-0 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] snap-center"
                 >
                   <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
                     {insight.title}
