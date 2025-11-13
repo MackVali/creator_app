@@ -696,9 +696,6 @@ function Header({
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
-              <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
-                Insights hub
-              </span>
               <h1 className="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-4xl">
                 Analytics
               </h1>
@@ -761,9 +758,6 @@ function DateRangeSelector({
   ];
   return (
     <div className="flex flex-col items-end gap-3 text-right">
-      <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
-        Timeframe
-      </span>
       <div className="inline-flex items-center gap-1 rounded-full border border-[#2B2B2B] bg-[#0A0A0A] p-1 shadow-[0_12px_30px_rgba(7,9,14,0.45)]">
         {ranges.map((range) => {
           const active = value === range.value;
