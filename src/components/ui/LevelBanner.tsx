@@ -47,9 +47,7 @@ export function LevelBanner({ className }: LevelBannerProps) {
         {badge.emoji}
       </span>
     ))
-  ) : (
-    <span className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/35">No badges yet</span>
-  );
+  ) : null;
 
   return (
     <div
