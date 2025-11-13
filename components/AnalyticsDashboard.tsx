@@ -684,14 +684,14 @@ function Header({
   const router = useRouter();
   const updatedAt = lastUpdated ? new Date(lastUpdated) : new Date();
   return (
-    <header className="overflow-hidden rounded-3xl border border-[#191919] bg-gradient-to-br from-[#1F1F1F] via-[#0F0F0F] to-[#050505] px-6 py-8 shadow-[0_30px_80px_rgba(7,10,16,0.55)]">
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-6">
-          <div className="flex items-start gap-4 sm:items-center">
+    <header className="overflow-hidden rounded-3xl border border-[#191919] bg-gradient-to-br from-[#1F1F1F] via-[#0F0F0F] to-[#050505] px-4 py-5 shadow-[0_30px_80px_rgba(7,10,16,0.55)] sm:px-6 sm:py-8">
+      <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
+        <div className="space-y-4 sm:space-y-6">
+          <div className="flex items-start gap-3 sm:items-center sm:gap-4">
             <button
               onClick={() => router.push("/dashboard")}
               aria-label="Back to dashboard"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#272727] bg-[#080808] text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#272727] bg-[#080808] text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171] sm:h-11 sm:w-11"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
@@ -699,16 +699,16 @@ function Header({
               <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
                 Insights hub
               </span>
-              <h1 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">
+              <h1 className="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-4xl">
                 Analytics
               </h1>
-              <p className="mt-2 max-w-xl text-sm text-[#9DA6BB]">
+              <p className="mt-2 max-w-xl text-xs text-[#9DA6BB] sm:text-sm">
                 An integrated view of how your skills, projects, and rituals are
                 compounding.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3 text-xs text-[#8A94AB]">
+          <div className="flex flex-wrap gap-2 text-[11px] text-[#8A94AB] sm:gap-3 sm:text-xs">
             <span className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-3 py-1">
               <span
                 aria-hidden="true"
