@@ -161,8 +161,7 @@ export async function scheduleBacklog(
   const mode = normalizeSchedulerModePayload(options?.mode ?? { type: 'REGULAR' })
   const isRushMode = mode.type === 'RUSH'
   const isRestMode = mode.type === 'REST'
-  const restrictProjectsToToday =
-    mode.type === 'MONUMENTAL' || mode.type === 'SKILLED'
+  const restrictProjectsToToday = mode.type === 'SKILLED'
   const durationMultiplier = isRushMode ? 0.8 : 1
   const filteredProjectIds = new Set<string>()
   const noteModeFiltered = (projectId: string) => {
@@ -225,7 +224,6 @@ export async function scheduleBacklog(
   for (const item of projectItems) projectItemMap[item.id] = item
 
   const taskSkillsByProjectId = new Map<string, Set<string>>()
-  const taskMonumentsByProjectId = new Map<string, Set<string>>()
   for (const task of tasks) {
     const projectId = task.project_id ?? null
     if (!projectId) continue
@@ -234,16 +232,10 @@ export async function scheduleBacklog(
       existing.add(task.skill_id)
       taskSkillsByProjectId.set(projectId, existing)
     }
-    if (task.skill_monument_id) {
-      const existing = taskMonumentsByProjectId.get(projectId) ?? new Set<string>()
-      existing.add(task.skill_monument_id)
-      taskMonumentsByProjectId.set(projectId, existing)
-    }
   }
 
   let projectSkillsMap: Record<string, string[]> = {}
-  let skillMonumentMap: Record<string, string | null> = {}
-  if (mode.type === 'MONUMENTAL' || mode.type === 'SKILLED') {
+  if (mode.type === 'SKILLED') {
     try {
       const projectIds = Object.keys(projectsMap)
       if (projectIds.length > 0) {
@@ -253,16 +245,9 @@ export async function scheduleBacklog(
       console.error('Failed to fetch project skill links for scheduler mode', error)
       projectSkillsMap = {}
     }
-    try {
-      skillMonumentMap = await fetchSkillMonumentMap(supabase, userId)
-    } catch (error) {
-      console.error('Failed to fetch skill monuments for scheduler mode', error)
-      skillMonumentMap = {}
-    }
   }
 
   const projectSkillIdsCache = new Map<string, string[]>()
-  const projectMonumentIdsCache = new Map<string, string[]>()
   const getProjectSkillIds = (projectId: string): string[] => {
     const cached = projectSkillIdsCache.get(projectId)
     if (cached) return cached
@@ -280,27 +265,28 @@ export async function scheduleBacklog(
     projectSkillIdsCache.set(projectId, ids)
     return ids
   }
-  const getProjectMonumentIds = (projectId: string): string[] => {
-    const cached = projectMonumentIdsCache.get(projectId)
-    if (cached) return cached
-    const set = new Set<string>()
-    for (const skillId of getProjectSkillIds(projectId)) {
-      const monumentId = skillMonumentMap[skillId] ?? null
-      if (monumentId) set.add(monumentId)
-    }
-    const taskMonuments = taskMonumentsByProjectId.get(projectId)
-    if (taskMonuments) {
-      for (const monumentId of taskMonuments) {
-        if (monumentId) set.add(monumentId)
-      }
-    }
-    const ids = Array.from(set)
-    projectMonumentIdsCache.set(projectId, ids)
-    return ids
+  const goalMonumentById = new Map<string, string | null>()
+  for (const goal of goals) {
+    goalMonumentById.set(goal.id, goal.monumentId ?? null)
   }
+  const getProjectGoalMonumentId = (projectId: string): string | null => {
+    const project = projectsMap[projectId]
+    if (!project) return null
+    const goalId = project.goal_id ?? null
+    if (!goalId) return null
+    return goalMonumentById.get(goalId) ?? null
+  }
+  const projectMatchesSelectedMonument = (projectId: string): boolean => {
+    if (mode.type !== 'MONUMENTAL') return false
+    if (!mode.monumentId) return false
+    const monumentId = getProjectGoalMonumentId(projectId)
+    if (!monumentId) return false
+    return monumentId === mode.monumentId
+  }
+
   const matchesMode = (projectId: string): boolean => {
     if (mode.type === 'MONUMENTAL') {
-      return getProjectMonumentIds(projectId).includes(mode.monumentId)
+      return true
     }
     if (mode.type === 'SKILLED') {
       const required = new Set(mode.skillIds)
@@ -318,6 +304,7 @@ export async function scheduleBacklog(
     weight: number
     goalWeight: number
     instanceId?: string | null
+    preferred?: boolean
   }
 
   const queue: QueueItem[] = []
@@ -440,6 +427,7 @@ export async function scheduleBacklog(
       energy,
       weight: def.weight ?? 0,
       goalWeight: def.goalWeight ?? 0,
+      preferred: projectMatchesSelectedMonument(def.id),
     })
     queuedProjectIds.add(def.id)
   }
@@ -662,6 +650,7 @@ export async function scheduleBacklog(
       weight: def.weight ?? 0,
       goalWeight: def.goalWeight ?? 0,
       instanceId: inst.id,
+      preferred: projectMatchesSelectedMonument(projectId),
     }
   }
 
@@ -780,6 +769,9 @@ export async function scheduleBacklog(
   const ignoreProjectIds = new Set(finalQueueProjectIds)
 
   const compareQueueItems = (a: QueueItem, b: QueueItem) => {
+    const preferredDiff =
+      Number(b.preferred === true) - Number(a.preferred === true)
+    if (preferredDiff !== 0) return preferredDiff
     const goalWeightDiff = b.goalWeight - a.goalWeight
     if (goalWeightDiff !== 0) return goalWeightDiff
     const weightDiff = b.weight - a.weight
@@ -927,6 +919,7 @@ export async function scheduleBacklog(
         result,
         dayOffsetFor,
         registerInstanceForOffsets,
+        projectMatchesMonument: projectMatchesSelectedMonument,
       })
       if (resolution === 'NO_WINDOW' || resolution === 'NO_FIT') {
         result.failures.push({
@@ -2085,30 +2078,6 @@ async function scheduleHabitsForDay(params: {
   return result
 }
 
-async function fetchSkillMonumentMap(
-  client: Client,
-  userId: string
-): Promise<Record<string, string | null>> {
-  const { data, error } = await client
-    .from('skills')
-    .select('id, monument_id')
-    .eq('user_id', userId)
-
-  if (error) {
-    throw error
-  }
-
-  const map: Record<string, string | null> = {}
-  for (const row of (data ?? []) as Array<{
-    id: string | null
-    monument_id: string | null
-  }>) {
-    if (!row?.id) continue
-    map[row.id] = row.monument_id ?? null
-  }
-  return map
-}
-
 function placementStartMs(entry: ScheduleDraftPlacement) {
   if (entry.type === 'PROJECT') {
     return new Date(entry.instance.start_utc).getTime()
@@ -2503,6 +2472,7 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       result: ScheduleBacklogResult
       dayOffsetFor: (startUTC: string) => number | undefined
       registerInstanceForOffsets: (instance: ScheduleInstance | null | undefined) => void
+      projectMatchesMonument?: (projectId: string) => boolean
     }
   ): Promise<'PLACED' | 'NO_WINDOW' | 'NO_FIT' | 'FAILED' | 'SKIPPED'> => {
     const { result, dayOffsetFor, registerInstanceForOffsets } = options
@@ -2534,6 +2504,9 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       weight: projectDef.weight ?? 0,
       goalWeight: projectDef.goalWeight ?? 0,
       instanceId: conflict.id,
+      preferred: options.projectMatchesMonument
+        ? options.projectMatchesMonument(projectId)
+        : false,
     }
 
     const windows = await fetchCompatibleWindowsForItem(
