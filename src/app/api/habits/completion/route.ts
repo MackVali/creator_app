@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import { normalizeTimeZone, formatDateKeyInTimeZone } from '@/lib/scheduler/timezone'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { refreshHabitStreak } from '@/lib/streaks'
 
 const completionRequestSchema = z.object({
   habitId: z.string().uuid(),
@@ -75,6 +76,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: error.message ?? 'Failed to remove completion' }, { status: 500 })
       }
     }
+
+    await refreshHabitStreak(supabase, habitId, user.id)
 
     return NextResponse.json({ success: true })
   } catch (error) {

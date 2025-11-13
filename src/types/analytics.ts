@@ -21,6 +21,7 @@ export type AnalyticsSkill = {
   level: number;
   progress: number;
   updatedAt: string | null;
+  xpGained: number;
 };
 
 export type AnalyticsProject = {

@@ -510,6 +510,7 @@ type HabitTimelinePlacement = {
   habitName: string
   habitType: HabitScheduleItem['habitType']
   skillId: string | null
+  currentStreakDays: number
   instanceId: string | null
   start: Date
   end: Date
@@ -864,6 +865,12 @@ function computeHabitPlacementsForDay({
         habitName: habit.name,
         habitType: habit.habitType,
         skillId: habit.skillId ?? null,
+        currentStreakDays: Math.max(
+          0,
+          Number.isFinite(habit.currentStreakDays)
+            ? Math.round(habit.currentStreakDays)
+            : 0
+        ),
         instanceId: instance.id ?? null,
         start,
         end,
@@ -4332,6 +4339,9 @@ peekDataDepsRef.current = {
               if (shouldHideHabit) {
                 return null
               }
+              const streakDays = Math.max(0, Math.round(placement.currentStreakDays ?? 0))
+              const showHabitStreakBadge = streakDays >= 2
+              const streakLabel = `${streakDays} day${streakDays === 1 ? '' : 's'} streak`
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
@@ -4507,6 +4517,16 @@ peekDataDepsRef.current = {
                   >
                     {placement.habitName}
                   </motion.span>
+                  {showHabitStreakBadge ? (
+                    <span className="flex flex-shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                      <FlameEmber
+                        level={streakDays >= 7 ? 'HIGH' : streakDays >= 4 ? 'MEDIUM' : 'LOW'}
+                        size="xs"
+                        className="drop-shadow-[0_0_6px_rgba(0,0,0,0.4)]"
+                      />
+                      <span className="tracking-normal">{streakLabel}</span>
+                    </span>
+                  ) : null}
                 </motion.div>
               )
             })}

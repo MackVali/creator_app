@@ -115,6 +115,45 @@ function getHabitLocationLabel(habit: Habit) {
   return "Anywhere";
 }
 
+type HabitStreakPill = {
+  icon: string;
+  text: string;
+};
+
+function normalizeStreakDays(value?: number | null) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  return 0;
+}
+
+function formatStreakDays(days: number) {
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+function formatLastCompletionLabel(value?: string | null) {
+  if (!value) {
+    return "No check-ins yet";
+  }
+  const relative = formatRelativeTime(value);
+  if (!relative || relative === "—") {
+    return "No check-ins yet";
+  }
+  return `Last log ${relative}`;
+}
+
+function buildHabitStreakPills(habit: Habit): HabitStreakPill[] {
+  const currentStreak = normalizeStreakDays(habit.current_streak_days);
+  const longestStreak = normalizeStreakDays(habit.longest_streak_days);
+  const lastLog = formatLastCompletionLabel(habit.last_completed_at);
+
+  return [
+    { icon: "🔥", text: `${formatStreakDays(currentStreak)} current` },
+    { icon: "🏆", text: `${formatStreakDays(longestStreak)} best` },
+    { icon: "🕒", text: lastLog },
+  ];
+}
+
 export default function HabitsPage() {
   const router = useRouter();
   const supabase = getSupabaseBrowser();
@@ -456,6 +495,7 @@ export default function HabitsPage() {
                                   ? habit.completion_target
                                   : null;
                               const locationLabel = getHabitLocationLabel(habit);
+                              const streakPills = buildHabitStreakPills(habit);
 
                               return (
                                 <li
@@ -547,6 +587,17 @@ export default function HabitsPage() {
                                       </span>
                                     </span>
                                   </div>
+                                  <div className="mt-3 flex flex-wrap gap-2 text-[0.7rem] text-white/80">
+                                    {streakPills.map(({ icon, text }) => (
+                                      <span
+                                        key={`${habit.id}-${icon}`}
+                                        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium"
+                                      >
+                                        <span className="text-base">{icon}</span>
+                                        <span>{text}</span>
+                                      </span>
+                                    ))}
+                                  </div>
                                 </li>
                               );
                             })}
@@ -598,6 +649,7 @@ export default function HabitsPage() {
                           ? habit.completion_target
                           : null;
                       const locationLabel = getHabitLocationLabel(habit);
+                      const streakPills = buildHabitStreakPills(habit);
 
                       return (
                         <article
@@ -700,10 +752,17 @@ export default function HabitsPage() {
                             </div>
                           </div>
 
-                          <div className="relative mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-5 text-xs text-white/60">
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">✨</span>
-                              <span>Keep the streak going</span>
+                          <div className="relative mt-6 flex flex-wrap gap-3 border-t border-white/5 pt-5 text-xs text-white/60">
+                            <div className="flex flex-1 flex-wrap items-center gap-2 text-[0.75rem] text-white/80">
+                              {streakPills.map(({ icon, text }) => (
+                                <span
+                                  key={`${habit.id}-${icon}`}
+                                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium"
+                                >
+                                  <span className="text-base">{icon}</span>
+                                  <span>{text}</span>
+                                </span>
+                              ))}
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                               <Link
