@@ -478,9 +478,12 @@ export default function AnalyticsDashboard() {
 
     const container = track.parentElement;
     const containerWidth = container?.clientWidth ?? track.clientWidth;
-    const loopWidth = track.scrollWidth / 2;
+    const perSetCount = focusInsights.length;
+    const markerChild =
+      perSetCount > 0 ? (track.children.item(perSetCount) as HTMLElement | null) : null;
+    const loopWidth = markerChild?.offsetLeft ?? track.scrollWidth / 2;
 
-    if (loopWidth <= containerWidth + 8) {
+    if (!loopWidth || loopWidth <= containerWidth + 8) {
       track.style.transform = "translateX(0)";
       return;
     }
@@ -522,6 +525,7 @@ export default function AnalyticsDashboard() {
     tickerInsights.length,
     tickerPaused,
     tickerLayoutVersion,
+    focusInsights.length,
   ]);
 
   useEffect(() => {
@@ -571,7 +575,7 @@ export default function AnalyticsDashboard() {
               <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#050505] via-[#050505]/60 to-transparent" />
               <ul
                 ref={focusInsightsRef}
-                className="flex flex-nowrap gap-4 overflow-hidden pb-2 will-change-transform"
+                className="flex flex-nowrap gap-4 pb-2 will-change-transform"
                 onMouseEnter={() => setTickerPaused(true)}
                 onMouseLeave={() => setTickerPaused(false)}
                 onFocusCapture={() => setTickerPaused(true)}
