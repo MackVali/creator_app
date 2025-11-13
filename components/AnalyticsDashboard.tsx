@@ -450,11 +450,6 @@ export default function AnalyticsDashboard() {
       return;
     }
 
-    if (container.scrollWidth <= container.clientWidth) {
-      container.scrollLeft = 0;
-      return;
-    }
-
     let animationFrame: number;
     const SPEED = 0.25;
 
