@@ -320,6 +320,7 @@ export default function AnalyticsDashboard() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const focusInsightsRef = useRef<HTMLUListElement | null>(null);
   const [tickerPaused, setTickerPaused] = useState(false);
+  const [tickerLayoutVersion, setTickerLayoutVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -475,10 +476,19 @@ export default function AnalyticsDashboard() {
       return;
     }
 
+    const container = track.parentElement;
+    const containerWidth = container?.clientWidth ?? track.clientWidth;
+    const loopWidth = track.scrollWidth / 2;
+
+    if (loopWidth <= containerWidth + 8) {
+      track.style.transform = "translateX(0)";
+      return;
+    }
+
     let animationFrame: number;
     let lastTimestamp: number | null = null;
     let offset = 0;
-    const SPEED_PX_PER_SEC = 68;
+    const SPEED_PX_PER_SEC = 60;
 
     const tick = (timestamp: number) => {
       if (tickerPaused) {
@@ -490,7 +500,6 @@ export default function AnalyticsDashboard() {
       if (lastTimestamp != null) {
         const deltaSeconds = (timestamp - lastTimestamp) / 1000;
         offset += deltaSeconds * SPEED_PX_PER_SEC;
-        const loopWidth = track.scrollWidth / 2;
         if (loopWidth > 0) {
           offset = offset % loopWidth;
         }
@@ -507,7 +516,33 @@ export default function AnalyticsDashboard() {
       window.cancelAnimationFrame(animationFrame);
       track.style.transform = "";
     };
-  }, [loading, error, tickerInsights.length, tickerPaused]);
+  }, [
+    loading,
+    error,
+    tickerInsights.length,
+    tickerPaused,
+    tickerLayoutVersion,
+  ]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const track = focusInsightsRef.current;
+    if (!track) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setTickerLayoutVersion((version) => version + 1);
+    });
+    observer.observe(track);
+    if (track.parentElement) {
+      observer.observe(track.parentElement);
+    }
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#050505] via-[#080808] to-[#050505] text-[#E6E6EB]">
@@ -536,7 +571,7 @@ export default function AnalyticsDashboard() {
               <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#050505] via-[#050505]/60 to-transparent" />
               <ul
                 ref={focusInsightsRef}
-                className="flex gap-4 overflow-hidden pb-2"
+                className="flex flex-nowrap gap-4 overflow-hidden pb-2 will-change-transform"
                 onMouseEnter={() => setTickerPaused(true)}
                 onMouseLeave={() => setTickerPaused(false)}
                 onFocusCapture={() => setTickerPaused(true)}
