@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -293,6 +299,7 @@ export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const focusInsightsRef = useRef<HTMLUListElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -437,6 +444,36 @@ export default function AnalyticsDashboard() {
     },
   ];
 
+  useEffect(() => {
+    const container = focusInsightsRef.current;
+    if (!container) {
+      return;
+    }
+
+    if (container.scrollWidth <= container.clientWidth) {
+      container.scrollLeft = 0;
+      return;
+    }
+
+    let animationFrame: number;
+    const SPEED = 0.25;
+
+    const tick = () => {
+      const maxScroll = container.scrollWidth - container.clientWidth;
+      container.scrollLeft += SPEED;
+      if (container.scrollLeft >= maxScroll) {
+        container.scrollLeft = 0;
+      }
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+
+    animationFrame = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [loading, error, focusInsights.length]);
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#050505] via-[#080808] to-[#050505] text-[#E6E6EB]">
       <div
@@ -460,6 +497,7 @@ export default function AnalyticsDashboard() {
             <ErrorState message={error} />
           ) : (
             <ul
+              ref={focusInsightsRef}
               className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:overflow-visible lg:grid-cols-4"
             >
               {focusInsights.map((insight) => (
