@@ -1081,7 +1081,7 @@ function MonumentCard({ monument }: { monument: Monument }) {
         </span>
       </div>
       <div>
-        <div className="text-sm font-semibold text-white">{monument.title}</div>
+        <div className="text-[13px] font-semibold text-white">{monument.title}</div>
         <div className="mt-1 text-xs text-[#6E7A96]">
           {monument.goalCount} goal{monument.goalCount === 1 ? "" : "s"} linked
         </div>
