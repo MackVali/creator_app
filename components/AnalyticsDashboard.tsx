@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -293,6 +299,7 @@ export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const focusInsightsRef = useRef<HTMLUListElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -437,8 +444,33 @@ export default function AnalyticsDashboard() {
     },
   ];
 
+  useEffect(() => {
+    const container = focusInsightsRef.current;
+    if (!container) {
+      return;
+    }
+
+    let animationFrame: number;
+    const SPEED = 0.45;
+
+    const tick = () => {
+      const maxScroll = container.scrollWidth - container.clientWidth;
+      container.scrollLeft += SPEED;
+      if (container.scrollLeft >= maxScroll) {
+        container.scrollLeft = 0;
+      }
+      animationFrame = window.requestAnimationFrame(tick);
+    };
+
+    animationFrame = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [loading, error, focusInsights.length]);
+
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#07080A] text-[#E6E6EB]">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#050505] via-[#080808] to-[#050505] text-[#E6E6EB]">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-[-40%] h-[520px] bg-[radial-gradient(circle_at_top,rgba(248,113,113,0.35),transparent_65%)] blur-3xl"
@@ -459,11 +491,14 @@ export default function AnalyticsDashboard() {
           ) : error ? (
             <ErrorState message={error} />
           ) : (
-            <ul className="space-y-4">
+            <ul
+              ref={focusInsightsRef}
+              className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2"
+            >
               {focusInsights.map((insight) => (
                 <li
                   key={insight.id}
-                  className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
+                  className="min-w-[240px] shrink-0 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] snap-center"
                 >
                   <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
                     {insight.title}
@@ -485,7 +520,7 @@ export default function AnalyticsDashboard() {
             action={
               <div className="flex items-center gap-3">
                 <button
-                  className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#7E8AA6]"
+                  className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#7E8AA6]"
                   type="button"
                   onClick={() => setSkillsView(skillsView === "grid" ? "list" : "grid")}
                 >
@@ -499,7 +534,7 @@ export default function AnalyticsDashboard() {
             ) : error ? (
               <ErrorState message={error} />
             ) : skills.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[#273041] bg-[#0D131E] p-6 text-center text-sm text-[#6E7A96]">
+              <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
                 No skills gained XP in this range yet.
                 <p className="mt-2 text-xs text-[#4E5A73]">
                   Complete skill-linked rituals to see progress here.
@@ -549,7 +584,7 @@ export default function AnalyticsDashboard() {
                     history={streakHistory}
                   />
                 </div>
-                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 sm:p-5">
                   <RoutineHeatmap routines={routineTrends} />
                 </div>
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -564,7 +599,7 @@ export default function AnalyticsDashboard() {
                     data={bestDays}
                   />
                 </div>
-                <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+                <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 sm:p-5">
                   <WeeklyReflectionPanel reflections={weeklyReflections} />
                 </div>
                 <div className="flex justify-end">
@@ -639,7 +674,7 @@ export default function AnalyticsDashboard() {
             ) : error ? (
               <ErrorState message={error} />
             ) : windows.energy.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[#273041] bg-[#0D131E] p-6 text-center text-sm text-[#6E7A96]">
+              <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
                 Log a few focus windows to see the energy breakdown.
               </div>
             ) : (
@@ -659,7 +694,7 @@ export default function AnalyticsDashboard() {
               <>
                 <ActivityTimeline events={activity} />
                 <div className="mt-6 flex justify-end">
-                  <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
+                  <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
                     Show more
                   </button>
                 </div>
@@ -684,46 +719,40 @@ function Header({
   const router = useRouter();
   const updatedAt = lastUpdated ? new Date(lastUpdated) : new Date();
   return (
-    <header className="overflow-hidden rounded-3xl border border-[#1C2330] bg-gradient-to-br from-[#161C2C] via-[#0F131D] to-[#090C12] px-6 py-8 shadow-[0_30px_80px_rgba(7,10,16,0.55)]">
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-6">
-          <div className="flex items-start gap-4 sm:items-center">
+    <header className="overflow-hidden rounded-3xl border border-[#191919] bg-gradient-to-br from-[#1F1F1F] via-[#0F0F0F] to-[#050505] px-4 py-5 shadow-[0_30px_80px_rgba(7,10,16,0.55)] sm:px-6 sm:py-8">
+      <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
+        <div className="space-y-4 sm:space-y-6">
+          <div className="flex items-start gap-3 sm:items-center sm:gap-4">
             <button
               onClick={() => router.push("/dashboard")}
               aria-label="Back to dashboard"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#262F45] bg-[#0B1018] text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#272727] bg-[#080808] text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171] sm:h-11 sm:w-11"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div>
-              <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
-                Insights hub
-              </span>
-              <h1 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">
+              <h1 className="mt-2 text-2xl font-semibold text-white sm:mt-3 sm:text-4xl">
                 Analytics
               </h1>
-              <p className="mt-2 max-w-xl text-sm text-[#9DA6BB]">
+              <p className="mt-2 max-w-xl text-xs text-[#9DA6BB] sm:text-sm">
                 An integrated view of how your skills, projects, and rituals are
                 compounding.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3 text-xs text-[#8A94AB]">
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-3 py-1">
+          <div className="flex flex-wrap gap-2 text-[11px] text-[#8A94AB] sm:gap-3 sm:text-xs">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-3 py-1">
               <span
                 aria-hidden="true"
                 className="h-2 w-2 rounded-full bg-[#6DD3A8]"
               />
               Systems nominal
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-3 py-1">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-3 py-1">
               Updated {new Intl.DateTimeFormat("en-US", {
                 month: "long",
                 day: "numeric",
               }).format(updatedAt)}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0B1018] px-3 py-1">
-              Range: {rangeLabel(dateRange)}
             </span>
           </div>
         </div>
@@ -731,19 +760,6 @@ function Header({
       </div>
     </header>
   );
-}
-
-function rangeLabel(range: "7d" | "30d" | "90d" | "custom") {
-  switch (range) {
-    case "7d":
-      return "7 days";
-    case "30d":
-      return "30 days";
-    case "90d":
-      return "90 days";
-    default:
-      return "Custom";
-  }
 }
 
 function DateRangeSelector({
@@ -761,10 +777,7 @@ function DateRangeSelector({
   ];
   return (
     <div className="flex flex-col items-end gap-3 text-right">
-      <span className="text-xs uppercase tracking-[0.3em] text-[#6E7A96]">
-        Timeframe
-      </span>
-      <div className="inline-flex items-center gap-1 rounded-full border border-[#273041] bg-[#0C111A] p-1 shadow-[0_12px_30px_rgba(7,9,14,0.45)]">
+      <div className="inline-flex items-center gap-1 rounded-full border border-[#2B2B2B] bg-[#0A0A0A] p-1 shadow-[0_12px_30px_rgba(7,9,14,0.45)]">
         {ranges.map((range) => {
           const active = value === range.value;
           return (
@@ -803,7 +816,7 @@ function SkillCard({
   return (
     <div
       className={classNames(
-        "group rounded-2xl border border-[#1E2432] bg-[#0F141D]/90 p-5 transition hover:border-[#F87171]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
+        "group rounded-2xl border border-[#1B1B1B] bg-[#101010]/90 p-5 transition hover:border-[#F87171]/60 hover:shadow-[0_18px_40px_rgba(8,10,16,0.4)]",
         view === "grid"
           ? "flex flex-col items-center gap-4 text-center"
           : "flex items-center justify-between gap-4"
@@ -812,7 +825,7 @@ function SkillCard({
     >
       <div
         className={classNames(
-          "relative flex items-center justify-center rounded-full bg-[#0B1018]",
+          "relative flex items-center justify-center rounded-full bg-[#080808]",
           view === "grid" ? "h-20 w-20" : "h-16 w-16"
         )}
       >
@@ -827,7 +840,7 @@ function SkillCard({
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#1F2736"
+            stroke="#222222"
             strokeWidth={strokeWidth}
             fill="none"
           />
@@ -872,7 +885,7 @@ function SkillCard({
       </div>
         <div
           className={classNames(
-            "mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#1F2736]",
+            "mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#222222]",
             view === "grid" ? "mx-auto" : ""
           )}
         >
@@ -889,7 +902,7 @@ function SkillCard({
 function BarChart({ data }: { data: number[] }) {
   if (data.length === 0) {
     return (
-        <div className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
+        <div className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
           No recent throughput recorded.
         </div>
     );
@@ -912,7 +925,7 @@ function BarChart({ data }: { data: number[] }) {
   });
   return (
     <div
-      className="rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]"
+      className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]"
       aria-label="Tasks completed per period"
     >
       <div className="flex items-center justify-between text-sm text-white">
@@ -942,7 +955,7 @@ function BarChart({ data }: { data: number[] }) {
                 className={classNames(
                   "w-full rounded-t-lg shadow-[0_12px_24px_rgba(248,113,113,0.35)]",
                   isZero
-                    ? "bg-[#1F2736]"
+                    ? "bg-[#222222]"
                     : "bg-gradient-to-t from-[#F87171]/30 via-[#F87171]/70 to-[#FECACA]"
                 )}
                 style={{ height: barHeight }}
@@ -969,7 +982,7 @@ function BarChart({ data }: { data: number[] }) {
 function ProjectCard({ project }: { project: Project }) {
   return (
     <div
-      className="rounded-2xl border border-[#1E2432] bg-[#0B0F17]/80 p-4 shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
+      className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
       aria-label={`${project.title} progress`}
     >
       <div className="flex items-start justify-between">
@@ -983,7 +996,7 @@ function ProjectCard({ project }: { project: Project }) {
           {project.progress}%
         </span>
       </div>
-      <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#1F2736]">
+      <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-[#222222]">
         <div
           className="h-full rounded-full bg-gradient-to-r from-[#F87171] to-[#6DD3A8]"
           style={{ width: `${project.progress}%` }}
@@ -1001,10 +1014,10 @@ function MonumentCard({ monument }: { monument: Monument }) {
   const offset = circumference - (monument.progress / 100) * circumference;
   return (
     <div
-      className="flex flex-col items-center gap-4 rounded-2xl border border-[#1E2432] bg-[#0B0F17]/80 p-4 text-center shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
+      className="flex flex-col items-center gap-4 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 text-center shadow-[0_12px_32px_rgba(8,10,16,0.4)]"
       aria-label={`${monument.title} progress`}
     >
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-[#0B1018]">
+      <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-[#080808]">
         <svg
           width={size}
           height={size}
@@ -1015,7 +1028,7 @@ function MonumentCard({ monument }: { monument: Monument }) {
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#1F2736"
+            stroke="#222222"
             strokeWidth={strokeWidth}
             fill="none"
           />
@@ -1061,18 +1074,18 @@ function DonutChart({
     return `${colors[i % colors.length]} ${start * 360}deg ${end * 360}deg`;
   });
   return (
-    <div className="flex flex-col items-center gap-6 rounded-2xl border border-[#1E2432] bg-[#0B1018] p-5 text-center shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
+    <div className="flex flex-col items-center gap-6 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 text-center shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
       <div
-        className="relative h-36 w-36 rounded-full border border-[#273041] bg-[#0C111A]"
+        className="relative h-36 w-36 rounded-full border border-[#2B2B2B] bg-[#0A0A0A]"
         style={{
           background:
             total === 0
-              ? "#141A26"
+              ? "#151515"
               : `conic-gradient(${segments.join(",")})`,
         }}
         aria-label="Energy distribution"
       >
-        <div className="absolute inset-6 rounded-full bg-[#070A12]" />
+        <div className="absolute inset-6 rounded-full bg-[#050505]" />
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
           <span className="text-[10px] uppercase tracking-[0.3em] text-[#6E7A96]">
             Focus
@@ -1118,13 +1131,13 @@ function ActivityTimeline({ events }: { events: ActivityEvent[] }) {
           <li key={event.id} className="relative flex gap-4">
             <div className="flex flex-col items-center">
               <span className="relative z-10 flex h-4 w-4 items-center justify-center">
-                <span className="h-3 w-3 rounded-full border border-[#F87171] bg-[#0B1018]" />
+                <span className="h-3 w-3 rounded-full border border-[#F87171] bg-[#080808]" />
               </span>
               {index !== events.length - 1 && (
                 <span className="mt-1 h-full w-px bg-gradient-to-b from-[#F87171]/60 to-transparent" />
               )}
             </div>
-            <div className="flex-1 rounded-2xl border border-[#1E2432] bg-[#0B1018] px-4 py-3 shadow-[0_12px_24px_rgba(8,10,16,0.35)]">
+            <div className="flex-1 rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] px-4 py-3 shadow-[0_12px_24px_rgba(8,10,16,0.35)]">
               <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
                 {dateLabel}
               </div>
@@ -1147,7 +1160,7 @@ function StreakTrendCard({
   history: { label: string; value: number }[];
 }) {
   return (
-    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
+    <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
@@ -1169,7 +1182,7 @@ function StreakTrendCard({
       <div className="mt-6">
         <StreakSparkline data={history} />
       </div>
-      <div className="mt-4 rounded-xl border border-[#1F2736] bg-[#101624] p-4 text-xs text-[#9DA6BB]">
+      <div className="mt-4 rounded-xl border border-[#222222] bg-[#121212] p-4 text-xs text-[#9DA6BB]">
         <div className="flex items-center justify-between">
           <span className="uppercase tracking-[0.2em] text-[#6E7A96]">
             Longest streak
@@ -1193,7 +1206,7 @@ function StreakSparkline({
 }) {
   if (data.length === 0) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[#273041] bg-[#0D131E] text-center text-xs text-[#6E7A96]">
+      <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] text-center text-xs text-[#6E7A96]">
         Log more rituals to unlock streak trends.
       </div>
     );
@@ -1264,7 +1277,7 @@ function RoutineHeatmap({
 }) {
   if (routines.length === 0) {
     return (
-      <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#273041] bg-[#0D131E] text-center text-sm text-[#6E7A96]">
+      <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] text-center text-sm text-[#6E7A96]">
         No routine data yet.
         <span className="text-xs text-[#4E5A73]">
           Log habits like exercise or journaling to reveal patterns.
@@ -1334,7 +1347,7 @@ function RoutineHeatmap({
                         const opacity = ratio === 0 ? 0.12 : 0.25 + ratio * 0.55;
                         const backgroundColor =
                           ratio === 0
-                            ? "#0B1018"
+                            ? "#080808"
                             : `rgba(248,113,113,${opacity.toFixed(2)})`;
                         const boxShadow =
                           ratio === 0
@@ -1344,7 +1357,7 @@ function RoutineHeatmap({
                         return (
                           <span
                             key={`${routine.id}-week-${weekIndex}-day-${dayIndex}`}
-                            className="h-6 w-6 rounded-md border border-[#1F2736]"
+                            className="h-6 w-6 rounded-md border border-[#222222]"
                             style={{ backgroundColor, boxShadow }}
                             title={`${dayLabels[dayIndex]} · ${percent}%`}
                           />
@@ -1372,7 +1385,7 @@ function BestPerformanceList({
   emptyLabel: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
+    <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 text-sm text-[#9DA6BB] sm:p-5">
       <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
         {title}
       </div>
@@ -1393,7 +1406,7 @@ function BestPerformanceList({
                   </span>
                   <span>{percent}%</span>
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1F2736]">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#222222]">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-[#F87171] via-[#FECACA] to-[#6DD3A8]"
                     style={{ width: `${percent}%` }}
@@ -1455,7 +1468,7 @@ function WeeklyReflectionPanel({
 
   if (reflections.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#273041] bg-[#0D131E] p-6 text-center text-sm text-[#6E7A96]">
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
         Weekly reflections will appear once you build a streak.
         <span className="text-xs text-[#4E5A73]">
           Capture highlights to train smarter recommendations.
@@ -1523,7 +1536,7 @@ function WeeklyReflectionPanel({
           return (
             <div
               key={reflection.id}
-              className="space-y-4 rounded-2xl border border-[#1F2736] bg-[#0D131E] p-5 shadow-[0_16px_36px_rgba(7,9,14,0.45)]"
+              className="space-y-4 rounded-2xl border border-[#222222] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 shadow-[0_16px_36px_rgba(7,9,14,0.45)]"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -1535,13 +1548,13 @@ function WeeklyReflectionPanel({
                     {reflection.streak} day streak snapshot
                   </h3>
                   <dl className="mt-3 grid gap-3 text-sm text-[#9DA6BB] sm:grid-cols-2">
-                    <div className="rounded-xl border border-[#1F2736] bg-[#0B1018] p-3">
+                    <div className="rounded-xl border border-[#222222] bg-[#080808] p-3">
                       <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
                         Best day
                       </dt>
                       <dd className="mt-1 text-white">{reflection.bestDay}</dd>
                     </div>
-                    <div className="rounded-xl border border-[#1F2736] bg-[#0B1018] p-3">
+                    <div className="rounded-xl border border-[#222222] bg-[#080808] p-3">
                       <dt className="text-[11px] uppercase tracking-[0.2em] text-[#6E7A96]">
                         Lesson learned
                       </dt>
@@ -1549,7 +1562,7 @@ function WeeklyReflectionPanel({
                     </div>
                   </dl>
                   {reflection.recommendation ? (
-                    <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#253149] bg-[#111725] p-3 text-sm text-[#9DA6BB]">
+                    <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#292929] bg-[#121212] p-3 text-sm text-[#9DA6BB]">
                       <PenLine className="h-4 w-4 text-[#6DD3A8]" />
                       <span>{reflection.recommendation}</span>
                     </div>
@@ -1562,7 +1575,7 @@ function WeeklyReflectionPanel({
                     "inline-flex items-center gap-2 self-end rounded-full border px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80",
                     pinned
                       ? "border-[#F87171] bg-[#F87171]/10 text-[#FECACA]"
-                      : "border-[#273041] text-[#9DA6BB] hover:text-white"
+                      : "border-[#2B2B2B] text-[#9DA6BB] hover:text-white"
                   )}
                 >
                   <Bookmark className="h-4 w-4" />
@@ -1585,7 +1598,7 @@ function WeeklyReflectionPanel({
                     }))
                   }
                   rows={3}
-                  className="w-full resize-none rounded-xl border border-[#273041] bg-[#070A12] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#F87171] focus:outline-none focus:ring-2 focus:ring-[#F87171]/50"
+                  className="w-full resize-none rounded-xl border border-[#2B2B2B] bg-[#050505] p-3 text-sm text-white placeholder:text-[#3F4A63] focus:border-[#F87171] focus:outline-none focus:ring-2 focus:ring-[#F87171]/50"
                   placeholder="Capture the habits, supports, or rituals that unlocked momentum."
                 />
                 <div className="flex flex-wrap gap-3">
@@ -1600,7 +1613,7 @@ function WeeklyReflectionPanel({
                   <button
                     type="button"
                     onClick={() => handleShare(reflection.id)}
-                    className="inline-flex items-center gap-2 rounded-full border border-[#273041] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
+                    className="inline-flex items-center gap-2 rounded-full border border-[#2B2B2B] px-4 py-1.5 text-xs font-medium text-[#9DA6BB] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]/80"
                   >
                     <Share2 className="h-4 w-4" />
                     Share snapshot
@@ -1662,7 +1675,7 @@ function StreakCalendar({
               "flex h-8 w-full items-center justify-center rounded-lg border text-sm font-semibold transition",
               isComplete
                 ? "border-transparent bg-gradient-to-br from-[#F87171] to-[#FECACA] text-white shadow-[0_8px_18px_rgba(248,113,113,0.35)]"
-                : "border-[#1E2432] bg-[#0B1018] text-[#6E7A96]"
+                : "border-[#1B1B1B] bg-[#080808] text-[#6E7A96]"
             )}
             title={date.toDateString()}
           >
@@ -1690,7 +1703,7 @@ function SectionCard({
   return (
     <section
       className={classNames(
-        "rounded-3xl border border-[#1C2330] bg-[#11161F]/90 p-6 shadow-[0_30px_80px_rgba(7,10,16,0.55)] backdrop-blur",
+        "rounded-3xl border border-[#191919] bg-gradient-to-br from-[#1C1C1C]/90 via-[#0F0F0F]/90 to-[#050505]/90 p-6 shadow-[0_30px_80px_rgba(7,10,16,0.55)] backdrop-blur",
         className
       )}
     >
@@ -1717,11 +1730,11 @@ function EmptyState({
 }) {
   return (
     <div
-      className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#273041] bg-[#0B1018] px-6 py-8 text-center text-sm text-[#9DA6BB]"
+      className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-[#2B2B2B] bg-[#080808] px-6 py-8 text-center text-sm text-[#9DA6BB]"
       aria-label="Empty state"
     >
       <div>{title}</div>
-      <button className="inline-flex items-center gap-2 rounded-full border border-[#262F45] bg-[#0C111A] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
+      <button className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#0A0A0A] px-4 py-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]">
         {cta}
       </button>
     </div>
@@ -1740,7 +1753,7 @@ function Skeleton({ className }: { className?: string }) {
   return (
     <div
       className={classNames(
-        "animate-pulse rounded-2xl bg-[#141A26]/80",
+        "animate-pulse rounded-2xl bg-[#151515]/80",
         className
       )}
     />
@@ -1755,7 +1768,7 @@ function DailyConsistencyCard({ summary }: { summary: AnalyticsHabitSummary }) {
   });
 
   return (
-    <div className="rounded-2xl border border-[#232A3A] bg-[#0B0F17]/80 p-4 sm:p-5">
+    <div className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
