@@ -500,7 +500,7 @@ function SkillsPageContent() {
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
-                          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/70 opacity-0 transition hover:text-white group-hover:opacity-100"
+                          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/70 opacity-100 transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
                           aria-label="More"
                           onClick={(e) => {
                             e.preventDefault();
