@@ -459,11 +459,13 @@ export default function AnalyticsDashboard() {
           ) : error ? (
             <ErrorState message={error} />
           ) : (
-            <ul className="space-y-4">
+            <ul
+              className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-2 md:overflow-visible lg:grid-cols-4"
+            >
               {focusInsights.map((insight) => (
                 <li
                   key={insight.id}
-                  className="rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
+                  className="min-w-[220px] flex-1 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] snap-center md:min-w-0"
                 >
                   <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
                     {insight.title}
