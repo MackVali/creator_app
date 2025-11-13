@@ -71,7 +71,7 @@ export default function SkillRow({ skill, progress, onColor, trackColor, fillCol
         )}
       </div>
       {showProgress && (
-        <div className="flex items-center gap-2 min-w-[36%]">
+        <div className="flex items-center gap-2 min-w-[30%]">
           <div
             className="flex-1 h-2 rounded-full overflow-hidden"
             style={{ backgroundColor: trackColor }}
