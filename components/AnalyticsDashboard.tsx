@@ -30,6 +30,7 @@ import type {
   AnalyticsHabitPerformance,
   AnalyticsHabitStreakPoint,
   AnalyticsHabitWeeklyReflection,
+  AnalyticsScheduleCompletion,
 } from "@/types/analytics";
 
 const KPI_ICON_MAP: Record<
@@ -42,6 +43,24 @@ const KPI_ICON_MAP: Record<
   monuments: BatteryCharging,
   windows: Clock,
   habits: Flame,
+};
+
+const SCHEDULE_ICON_MAP: Record<
+  AnalyticsScheduleCompletion["type"],
+  ComponentType<{ className?: string }>
+> = {
+  project: FolderKanban,
+  task: CheckSquare,
+  habit: Flame,
+};
+
+const SCHEDULE_BADGE_STYLES: Record<
+  AnalyticsScheduleCompletion["type"],
+  string
+> = {
+  project: "border-sky-400/40 text-sky-100",
+  task: "border-emerald-400/40 text-emerald-100",
+  habit: "border-orange-400/40 text-orange-100",
 };
 
 function classNames(
@@ -300,6 +319,7 @@ export default function AnalyticsDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const focusInsightsRef = useRef<HTMLUListElement | null>(null);
+  const [tickerPaused, setTickerPaused] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -363,6 +383,7 @@ export default function AnalyticsDashboard() {
   const activity = analytics?.activity ?? [];
   const projectVelocity = analytics?.projectVelocity ?? [];
   const habitSummary = normalizeHabitSummary(analytics?.habit);
+  const recentSchedules = analytics?.recentSchedules ?? [];
 
   const bestSkill =
     skills.length > 0
@@ -443,31 +464,50 @@ export default function AnalyticsDashboard() {
           : "No KPIs yet",
     },
   ];
+  const tickerInsights =
+    focusInsights.length > 0
+      ? [...focusInsights, ...focusInsights]
+      : [];
 
   useEffect(() => {
-    const container = focusInsightsRef.current;
-    if (!container) {
+    const track = focusInsightsRef.current;
+    if (!track || tickerInsights.length === 0) {
       return;
     }
 
     let animationFrame: number;
-    const SPEED = 0.45;
+    let lastTimestamp: number | null = null;
+    let offset = 0;
+    const SPEED_PX_PER_SEC = 68;
 
-    const tick = () => {
-      const maxScroll = container.scrollWidth - container.clientWidth;
-      container.scrollLeft += SPEED;
-      if (container.scrollLeft >= maxScroll) {
-        container.scrollLeft = 0;
+    const tick = (timestamp: number) => {
+      if (tickerPaused) {
+        lastTimestamp = timestamp;
+        animationFrame = window.requestAnimationFrame(tick);
+        return;
       }
+
+      if (lastTimestamp != null) {
+        const deltaSeconds = (timestamp - lastTimestamp) / 1000;
+        offset += deltaSeconds * SPEED_PX_PER_SEC;
+        const loopWidth = track.scrollWidth / 2;
+        if (loopWidth > 0) {
+          offset = offset % loopWidth;
+        }
+        track.style.transform = `translateX(-${offset}px)`;
+      }
+      lastTimestamp = timestamp;
       animationFrame = window.requestAnimationFrame(tick);
     };
 
+    track.style.transform = "translateX(0)";
     animationFrame = window.requestAnimationFrame(tick);
 
     return () => {
       window.cancelAnimationFrame(animationFrame);
+      track.style.transform = "";
     };
-  }, [loading, error, focusInsights.length]);
+  }, [loading, error, tickerInsights.length, tickerPaused]);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#050505] via-[#080808] to-[#050505] text-[#E6E6EB]">
@@ -491,80 +531,110 @@ export default function AnalyticsDashboard() {
           ) : error ? (
             <ErrorState message={error} />
           ) : (
-            <ul
-              ref={focusInsightsRef}
-              className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2"
-            >
-              {focusInsights.map((insight) => (
-                <li
-                  key={insight.id}
-                  className="min-w-[240px] shrink-0 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] snap-center"
-                >
-                  <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
-                    {insight.title}
-                  </span>
-                  <div className="mt-2 text-lg font-semibold text-white">
-                    {insight.metric}
-                  </div>
-                  <p className="mt-1 text-sm text-[#99A4BD]">{insight.helper}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="relative overflow-hidden">
+              <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[#050505] via-[#050505]/60 to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#050505] via-[#050505]/60 to-transparent" />
+              <ul
+                ref={focusInsightsRef}
+                className="flex gap-4 overflow-hidden pb-2"
+                onMouseEnter={() => setTickerPaused(true)}
+                onMouseLeave={() => setTickerPaused(false)}
+                onFocusCapture={() => setTickerPaused(true)}
+                onBlurCapture={() => setTickerPaused(false)}
+                aria-live="off"
+              >
+                {tickerInsights.map((insight, index) => (
+                  <li
+                    key={`${insight.id}-${index}`}
+                    className="min-w-[240px] shrink-0 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)]"
+                  >
+                    <span className="text-xs uppercase tracking-[0.2em] text-[#6E7A96]">
+                      {insight.title}
+                    </span>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {insight.metric}
+                    </div>
+                    <p className="mt-1 text-sm text-[#99A4BD]">{insight.helper}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </SectionCard>
 
         <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-          <SectionCard
-            title="Skill mastery"
-            description="Track progress toward your next level-up across key disciplines."
-            action={
-              <div className="flex items-center gap-3">
-                <button
-                  className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#7E8AA6]"
-                  type="button"
-                  onClick={() => setSkillsView(skillsView === "grid" ? "list" : "grid")}
-                >
-                  {skillsView === "grid" ? "List view" : "Grid view"}
-                </button>
-              </div>
-            }
-          >
-            {loading ? (
-              <Skeleton className="h-56" />
-            ) : error ? (
-              <ErrorState message={error} />
-            ) : skills.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
-                No skills gained XP in this range yet.
-                <p className="mt-2 text-xs text-[#4E5A73]">
-                  Complete skill-linked rituals to see progress here.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div
-                  className={classNames(
-                    "gap-4",
-                    skillsView === "grid"
-                      ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
-                      : "grid gap-4"
-                  )}
-                >
-                  {skills.map((skill) => (
-                    <SkillCard key={skill.id} skill={skill} view={skillsView} />
-                  ))}
-                </div>
-                <div className="flex justify-end">
-                  <Link
-                    href="#"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
+          <div className="space-y-6">
+            <SectionCard
+              title="Skill mastery"
+              description="Track progress toward your next level-up across key disciplines."
+              action={
+                <div className="flex items-center gap-3">
+                  <button
+                    className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#7E8AA6]"
+                    type="button"
+                    onClick={() =>
+                      setSkillsView(skillsView === "grid" ? "list" : "grid")
+                    }
                   >
-                    View all skills<span aria-hidden="true">→</span>
-                  </Link>
+                    {skillsView === "grid" ? "List view" : "Grid view"}
+                  </button>
                 </div>
-              </div>
-            )}
-          </SectionCard>
+              }
+            >
+              {loading ? (
+                <Skeleton className="h-56" />
+              ) : error ? (
+                <ErrorState message={error} />
+              ) : skills.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
+                  No skills gained XP in this range yet.
+                  <p className="mt-2 text-xs text-[#4E5A73]">
+                    Complete skill-linked rituals to see progress here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div
+                    className={classNames(
+                      "gap-4",
+                      skillsView === "grid"
+                        ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+                        : "grid gap-4"
+                    )}
+                  >
+                    {skills.map((skill) => (
+                      <SkillCard key={skill.id} skill={skill} view={skillsView} />
+                    ))}
+                  </div>
+                  <div className="flex justify-end">
+                    <Link
+                      href="#"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-[#FECACA] transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F87171]"
+                    >
+                      View all skills<span aria-hidden="true">→</span>
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              title="Recently completed"
+              description="A snapshot of the latest schedule blocks you crossed off."
+            >
+              {loading ? (
+                <Skeleton className="h-56" />
+              ) : error ? (
+                <ErrorState message={error} />
+              ) : recentSchedules.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[#2B2B2B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-6 text-center text-sm text-[#6E7A96]">
+                  Wrap a scheduled task, project, or habit to see it showcased here.
+                </div>
+              ) : (
+                <RecentScheduleShowcase items={recentSchedules} />
+              )}
+            </SectionCard>
+          </div>
 
           <SectionCard
             title="Habits & streaks"
@@ -899,30 +969,151 @@ function SkillCard({
   );
 }
 
+function RecentScheduleShowcase({
+  items,
+}: {
+  items: AnalyticsScheduleCompletion[];
+}) {
+  const timeFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const dayFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+
+  return (
+    <ul className="space-y-4">
+      {items.map((item) => {
+        const start = safeDate(item.startUtc);
+        const end = safeDate(item.endUtc);
+        const completed = safeDate(item.completedAt);
+        const Icon = SCHEDULE_ICON_MAP[item.type];
+        const timeRange =
+          start && end
+            ? `${timeFormatter.format(start)} – ${timeFormatter.format(end)}`
+            : "Scheduled block";
+        const completedLabel = completed
+          ? dayFormatter.format(completed)
+          : "—";
+        return (
+          <li
+            key={item.id}
+            className="flex flex-col gap-4 rounded-2xl border border-[#1F1F1F] bg-gradient-to-br from-[#1A1A1A]/80 via-[#0D0D0D]/80 to-[#050505]/80 p-4 shadow-[0_12px_30px_rgba(5,7,12,0.35)] sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex flex-1 items-start gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#272727] bg-[#0B0B0B] text-[#FECACA]">
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-sm font-semibold text-white">
+                    {item.title}
+                  </span>
+                  <span
+                    className={classNames(
+                      "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em]",
+                      SCHEDULE_BADGE_STYLES[item.type]
+                    )}
+                  >
+                    {item.type}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-[#8A94AB]">{timeRange}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#C4CBDC]">
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-white/80">
+                    {formatDurationLabel(item.durationMinutes)}
+                  </span>
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-white/80">
+                    {formatEnergyLabel(item.energy)}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="text-xs text-[#8A94AB] sm:text-right">
+              <div className="font-semibold text-white">{completedLabel}</div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-[#5F6783]">
+                Completed
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function safeDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function formatDurationLabel(minutes: number) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return "Flexible";
+  }
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    if (remainder === 0) {
+      return `${hours}h`;
+    }
+    return `${hours}h ${remainder}m`;
+  }
+  return `${minutes}m`;
+}
+
+function formatEnergyLabel(value: string | null) {
+  if (!value) {
+    return "Neutral energy";
+  }
+  const normalized = value.toLowerCase();
+  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} energy`;
+}
+
 function BarChart({ data }: { data: number[] }) {
   if (data.length === 0) {
     return (
         <div className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 text-sm text-[#99A4BD] shadow-[0_18px_40px_rgba(8,10,16,0.4)]">
-          No recent throughput recorded.
-        </div>
+        No recent throughput recorded.
+      </div>
     );
   }
 
-  const max = Math.max(...data);
-  const total = data.reduce((sum, value) => sum + value, 0);
-  const average = Math.round(total / data.length);
-  const defaultLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const today = new Date();
-  const labels = data.map((_, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (data.length - 1 - index));
-    const dayName = defaultLabels[index % defaultLabels.length];
-    return { day: dayName, date: date.getDate() };
+  const weekdayFormatter = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
   });
   const headerFormatter = new Intl.DateTimeFormat(undefined, {
     month: "long",
     year: "numeric",
   });
+  const points = data.map((value, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (data.length - 1 - index));
+    return { value, date, weekday: date.getDay() };
+  });
+  const pointByWeekday = new Map<number, { value: number; date: Date }>();
+  points.forEach((point) => pointByWeekday.set(point.weekday, point));
+  const getFallbackDateForWeekday = (weekday: number) => {
+    const date = new Date(today);
+    const diff = (today.getDay() - weekday + 7) % 7;
+    date.setDate(today.getDate() - diff);
+    return date;
+  };
+  const orderedPoints = [0, 1, 2, 3, 4, 5, 6].map((weekday) => {
+    const point = pointByWeekday.get(weekday);
+    if (point) return point;
+    return { value: 0, date: getFallbackDateForWeekday(weekday) };
+  });
+  const values = orderedPoints.map((point) => point.value);
+  const max = Math.max(...values);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const average = Math.round(total / values.length);
+
   return (
     <div
       className="rounded-2xl border border-[#1B1B1B] bg-gradient-to-br from-[#1A1A1A] via-[#0D0D0D] to-[#050505] p-5 shadow-[0_18px_40px_rgba(8,10,16,0.4)]"
@@ -936,21 +1127,24 @@ function BarChart({ data }: { data: number[] }) {
       </div>
       <div
         className="grid h-44 items-end gap-3"
-        style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+        style={{
+          gridTemplateColumns: `repeat(${orderedPoints.length}, minmax(0, 1fr))`,
+        }}
       >
-        {data.map((value, index) => {
+        {orderedPoints.map((point, index) => {
+          const { value, date } = point;
           const heightPercent = max === 0 ? 0 : (value / max) * 100;
           const barHeight =
-            max === 0
-              ? "6px"
-              : `${Math.max(heightPercent, 6)}%`;
+            max === 0 ? "6px" : `${Math.max(heightPercent, 6)}%`;
           const isZero = value === 0;
           return (
             <div
-              key={index}
+              key={`${date.toISOString()}-${index}`}
               className="flex h-full flex-col items-center justify-end gap-2"
             >
-              <span className="text-xs font-semibold text-[#A1ADC7]">{value}</span>
+              <span className="text-xs font-semibold text-[#A1ADC7]">
+                {value}
+              </span>
               <div
                 className={classNames(
                   "w-full rounded-t-lg shadow-[0_12px_24px_rgba(248,113,113,0.35)]",
@@ -961,10 +1155,10 @@ function BarChart({ data }: { data: number[] }) {
                 style={{ height: barHeight }}
               />
               <span className="text-center text-xs font-medium uppercase tracking-[0.2em] text-[#6E7A96]">
-                {labels[index]?.day ?? ""}
+                {weekdayFormatter.format(date)}
                 <br />
                 <span className="text-[10px] font-normal text-[#8A94AB]">
-                  {labels[index]?.date ?? ""}
+                  {date.getDate()}
                 </span>
               </span>
             </div>

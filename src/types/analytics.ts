@@ -40,6 +40,17 @@ export type AnalyticsMonument = {
   goalCount: number;
 };
 
+export type AnalyticsScheduleCompletion = {
+  id: string;
+  title: string;
+  type: "project" | "task" | "habit";
+  completedAt: string;
+  startUtc: string;
+  endUtc: string;
+  durationMinutes: number;
+  energy: string | null;
+};
+
 export type AnalyticsActivityEvent = {
   id: string;
   label: string;
@@ -96,6 +107,7 @@ export type AnalyticsResponse = {
   skills: AnalyticsSkill[];
   projects: AnalyticsProject[];
   monuments: AnalyticsMonument[];
+  recentSchedules: AnalyticsScheduleCompletion[];
   windows: AnalyticsWindowsSummary;
   activity: AnalyticsActivityEvent[];
   habit: AnalyticsHabitSummary;

@@ -13,6 +13,7 @@ import type {
   AnalyticsResponse,
   AnalyticsSkill,
   AnalyticsWindowsSummary,
+  AnalyticsScheduleCompletion,
 } from "@/types/analytics";
 
 export const runtime = "nodejs";
@@ -132,6 +133,30 @@ type NormalizedHabitCompletionRow = {
   completed_at: string | null;
 };
 
+type RawScheduleInstanceRow = {
+  id: string;
+  source_id: string | null;
+  source_type: string | null;
+  start_utc: string | null;
+  end_utc: string | null;
+  duration_min: number | null;
+  energy_resolved?: string | null;
+  completed_at: string | null;
+};
+
+type NormalizedScheduleInstanceRow = {
+  id: string;
+  sourceId: string;
+  sourceType: ScheduleSourceType;
+  startUtc: string;
+  endUtc: string;
+  durationMinutes: number;
+  energy: string | null;
+  completedAt: string;
+};
+
+type ScheduleSourceType = "PROJECT" | "TASK" | "HABIT";
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
@@ -186,6 +211,7 @@ export async function GET(request: NextRequest) {
     habitHistoryRes,
     habitRoutinesRes,
     habitCompletionRes,
+    recentScheduleInstancesRes,
   ] = await Promise.all([
     supabase
       .from("xp_events")
@@ -297,6 +323,18 @@ export async function GET(request: NextRequest) {
       .eq("user_id", user.id)
       .gte("completion_day", habitCompletionStart)
       .order("completion_day", { ascending: true }),
+    supabase
+      .from("schedule_instances")
+      .select(
+        "id, source_id, source_type, start_utc, end_utc, duration_min, energy_resolved, completed_at"
+      )
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .not("completed_at", "is", null)
+      .gte("completed_at", start.toISOString())
+      .lte("completed_at", end.toISOString())
+      .order("completed_at", { ascending: false })
+      .limit(12),
   ]);
 
   const queryError =
@@ -311,7 +349,8 @@ export async function GET(request: NextRequest) {
     goalsRes.error ||
     habitHistoryRes.error ||
     habitRoutinesRes.error ||
-    habitCompletionRes.error;
+    habitCompletionRes.error ||
+    recentScheduleInstancesRes.error;
 
   if (queryError) {
     return NextResponse.json(
@@ -333,6 +372,10 @@ export async function GET(request: NextRequest) {
   const habitRoutines = normalizeHabitRoutineRows(habitRoutinesRes.data ?? []);
   const habitCompletions = normalizeHabitCompletionRows(
     habitCompletionRes.data ?? []
+  );
+  const recentScheduleInstances = normalizeScheduleInstanceRows(
+    (recentScheduleInstancesRes.data ??
+      []) as RawScheduleInstanceRow[]
   );
 
   const xpSplit = splitByPeriod(
@@ -576,6 +619,164 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => b.progress - a.progress)
     .slice(0, 4);
 
+  let recentScheduleShowcase: AnalyticsScheduleCompletion[] = [];
+  if (recentScheduleInstances.length > 0) {
+    const instanceIds = recentScheduleInstances.map((instance) => instance.id);
+    let cancelledInstanceIds = new Set<string>();
+    if (instanceIds.length > 0) {
+      const { data: scheduleXpRows, error: scheduleXpError } = await supabase
+        .from("xp_events")
+        .select("schedule_instance_id, amount")
+        .eq("user_id", user.id)
+        .in("schedule_instance_id", instanceIds);
+
+      if (scheduleXpError) {
+        return NextResponse.json(
+          { error: scheduleXpError.message },
+          { status: 500 }
+        );
+      }
+
+      cancelledInstanceIds = collectCancelledScheduleInstances(
+        scheduleXpRows ?? []
+      );
+    }
+
+    const activeInstances = recentScheduleInstances.filter(
+      (instance) => !cancelledInstanceIds.has(instance.id)
+    );
+
+    if (activeInstances.length > 0) {
+      const projectIds = Array.from(
+        new Set(
+          activeInstances
+            .filter((instance) => instance.sourceType === "PROJECT")
+            .map((instance) => instance.sourceId)
+        )
+      );
+      const taskIds = Array.from(
+        new Set(
+          activeInstances
+            .filter((instance) => instance.sourceType === "TASK")
+            .map((instance) => instance.sourceId)
+        )
+      );
+      const habitIds = Array.from(
+        new Set(
+          activeInstances
+            .filter((instance) => instance.sourceType === "HABIT")
+            .map((instance) => instance.sourceId)
+        )
+      );
+
+      const projectLookupRes =
+        projectIds.length > 0
+          ? await queryWithFallback(
+              () =>
+                supabase
+                  .from("projects")
+                  .select("id, name, title")
+                  .eq("user_id", user.id)
+                  .in("id", projectIds),
+              () =>
+                supabase
+                  .from("projects")
+                  .select("id, title")
+                  .eq("user_id", user.id)
+                  .in("id", projectIds)
+            )
+          : null;
+
+      const taskLookupRes =
+        taskIds.length > 0
+          ? await queryWithFallback(
+              () =>
+                supabase
+                  .from("tasks")
+                  .select("id, name")
+                  .eq("user_id", user.id)
+                  .in("id", taskIds),
+              () =>
+                supabase
+                  .from("tasks")
+                  .select("id, title")
+                  .eq("user_id", user.id)
+                  .in("id", taskIds)
+            )
+          : null;
+
+      const habitLookupRes =
+        habitIds.length > 0
+          ? await supabase
+              .from("habits")
+              .select("id, name")
+              .eq("user_id", user.id)
+              .in("id", habitIds)
+          : null;
+
+      const scheduleLookupError =
+        projectLookupRes?.error ||
+        taskLookupRes?.error ||
+        habitLookupRes?.error;
+
+      if (scheduleLookupError) {
+        return NextResponse.json(
+          { error: scheduleLookupError.message },
+          { status: 500 }
+        );
+      }
+
+      const projectNameById = new Map<string, string>();
+      for (const record of (projectLookupRes?.data ??
+        []) as RawProjectRow[]) {
+        projectNameById.set(
+          record.id,
+          normalizeText(record.name, record.title) ?? "Untitled project"
+        );
+      }
+
+      const taskNameById = new Map<string, string>();
+      for (const record of (taskLookupRes?.data ?? []) as RawTaskRow[]) {
+        taskNameById.set(
+          record.id,
+          normalizeText(record.name, record.title) ?? "Untitled task"
+        );
+      }
+
+      const habitNameById = new Map<string, string>();
+      for (const record of (habitLookupRes?.data ?? []) as RawHabitRow[]) {
+        habitNameById.set(
+          record.id,
+          normalizeText(record.name) ?? "Habit session"
+        );
+      }
+
+      const trimmedInstances = activeInstances.slice(0, 6);
+      recentScheduleShowcase = trimmedInstances.map((instance) => {
+        let resolvedTitle: string | null = null;
+        if (instance.sourceType === "PROJECT") {
+          resolvedTitle = projectNameById.get(instance.sourceId) ?? null;
+        } else if (instance.sourceType === "TASK") {
+          resolvedTitle = taskNameById.get(instance.sourceId) ?? null;
+        } else if (instance.sourceType === "HABIT") {
+          resolvedTitle = habitNameById.get(instance.sourceId) ?? null;
+        }
+
+        return {
+          id: instance.id,
+          title:
+            resolvedTitle ?? fallbackScheduleLabel(instance.sourceType),
+          type: SCHEDULE_SOURCE_TYPE_MAP[instance.sourceType],
+          completedAt: instance.completedAt,
+          startUtc: instance.startUtc,
+          endUtc: instance.endUtc,
+          durationMinutes: instance.durationMinutes,
+          energy: instance.energy,
+        } satisfies AnalyticsScheduleCompletion;
+      });
+    }
+  }
+
   const windowSummary: AnalyticsWindowsSummary = {
     heatmap: buildWindowHeatmap(windows),
     energy: buildEnergyBreakdown(windows),
@@ -615,6 +816,7 @@ export async function GET(request: NextRequest) {
     skills: rankedSkills,
     projects: rankedProjects,
     monuments: rankedMonuments,
+    recentSchedules: recentScheduleShowcase,
     windows: windowSummary,
     activity: activityEvents,
     habit: habitSummary,
@@ -799,6 +1001,129 @@ function normalizeHabitCompletionRows(
       (row): row is NormalizedHabitCompletionRow =>
         row !== null && typeof row.habit_id === "string"
     );
+}
+
+const SCHEDULE_SOURCE_TYPE_MAP: Record<
+  ScheduleSourceType,
+  AnalyticsScheduleCompletion["type"]
+> = {
+  PROJECT: "project",
+  TASK: "task",
+  HABIT: "habit",
+};
+
+function normalizeScheduleInstanceRows(
+  rows: RawScheduleInstanceRow[]
+): NormalizedScheduleInstanceRow[] {
+  return rows
+    .map((row) => {
+      if (typeof row.id !== "string") {
+        return null;
+      }
+      const sourceId =
+        typeof row.source_id === "string" ? row.source_id : null;
+      const sourceType = normalizeScheduleSourceType(row.source_type);
+      const startUtc = normalizeIsoString(row.start_utc);
+      const endUtc = normalizeIsoString(row.end_utc);
+      const completedAt = normalizeIsoString(row.completed_at);
+      if (!sourceId || !sourceType || !startUtc || !endUtc || !completedAt) {
+        return null;
+      }
+      const durationMinutes = deriveDurationMinutes(
+        row.duration_min,
+        startUtc,
+        endUtc
+      );
+      return {
+        id: row.id,
+        sourceId,
+        sourceType,
+        startUtc,
+        endUtc,
+        durationMinutes,
+        energy:
+          typeof row.energy_resolved === "string"
+            ? row.energy_resolved
+            : null,
+        completedAt,
+      } satisfies NormalizedScheduleInstanceRow;
+    })
+    .filter(
+      (row): row is NormalizedScheduleInstanceRow => row !== null
+    );
+}
+
+function normalizeScheduleSourceType(
+  value: string | null | undefined
+): ScheduleSourceType | null {
+  if (!value) return null;
+  const normalized = value.toUpperCase();
+  if (
+    normalized === "PROJECT" ||
+    normalized === "TASK" ||
+    normalized === "HABIT"
+  ) {
+    return normalized as ScheduleSourceType;
+  }
+  return null;
+}
+
+function deriveDurationMinutes(
+  duration: number | null | undefined,
+  startUtc: string,
+  endUtc: string
+) {
+  if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
+    return Math.max(1, Math.round(duration));
+  }
+  const start = parseDate(startUtc);
+  const end = parseDate(endUtc);
+  if (!start || !end) {
+    return 30;
+  }
+  const diffMs = end.getTime() - start.getTime();
+  const minutes = Math.round(diffMs / (60 * 1000));
+  return Math.max(1, minutes);
+}
+
+function fallbackScheduleLabel(type: ScheduleSourceType) {
+  switch (type) {
+    case "PROJECT":
+      return "Project focus";
+    case "TASK":
+      return "Task block";
+    case "HABIT":
+    default:
+      return "Habit session";
+  }
+}
+
+function collectCancelledScheduleInstances(
+  events: Array<{ schedule_instance_id: string | null; amount: number | null }>
+) {
+  const cancelled = new Set<string>();
+  const aggregates = new Map<string, { sum: number; count: number }>();
+  for (const event of events) {
+    const scheduleId =
+      typeof event.schedule_instance_id === "string"
+        ? event.schedule_instance_id
+        : null;
+    if (!scheduleId) continue;
+    const amount = Number(event.amount ?? 0);
+    const current = aggregates.get(scheduleId);
+    if (current) {
+      current.sum += amount;
+      current.count += 1;
+    } else {
+      aggregates.set(scheduleId, { sum: amount, count: 1 });
+    }
+  }
+  for (const [id, stats] of aggregates.entries()) {
+    if (stats.count > 0 && stats.sum === 0) {
+      cancelled.add(id);
+    }
+  }
+  return cancelled;
 }
 
 function splitByPeriod<T>(
