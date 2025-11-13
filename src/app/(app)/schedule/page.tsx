@@ -2209,13 +2209,17 @@ export default function SchedulePage() {
   const recordHabitCompletionRemote = useCallback(
     async (params: { habitId: string; completedAt: string; action: 'complete' | 'undo' }) => {
       if (!userId) return
+      const completionDate = new Date(params.completedAt)
+      const completedAtISO = Number.isNaN(completionDate.getTime())
+        ? new Date().toISOString()
+        : completionDate.toISOString()
       try {
         const response = await fetch('/api/habits/completion', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             habitId: params.habitId,
-            completedAt: params.completedAt,
+            completedAt: completedAtISO,
             timeZone: localTimeZone ?? 'UTC',
             action: params.action,
           }),
@@ -2912,11 +2916,15 @@ peekDataDepsRef.current = {
 
   const buildXpAwardPayload = useCallback(
     (instance: ScheduleInstance) => {
+      const collectSkillIds = (ids: (string | null | undefined)[]) =>
+        Array.from(
+          new Set(ids.filter((id): id is string => typeof id === 'string' && id.length > 0))
+        )
+
       if (instance.source_type === 'TASK') {
         const task = taskMap[instance.source_id]
         if (!task) return null
-        const skillIds = task.skill_id ? [task.skill_id] : []
-        const uniqueSkillIds = Array.from(new Set(skillIds))
+        const uniqueSkillIds = collectSkillIds([task.skill_id])
         const monumentIds = uniqueSkillIds
           .map(id => skillMonumentMap[id])
           .filter((id): id is string => typeof id === 'string' && id.length > 0)
@@ -2929,10 +2937,11 @@ peekDataDepsRef.current = {
       }
 
       if (instance.source_type === 'PROJECT') {
-        const rawSkillIds = projectSkillIds[instance.source_id] ?? []
-        const uniqueSkillIds = Array.from(
-          new Set(rawSkillIds.filter((id): id is string => typeof id === 'string' && id.length > 0))
+        const linkedSkillIds = projectSkillIds[instance.source_id] ?? []
+        const taskDerivedSkillIds = (tasksByProjectId[instance.source_id] ?? []).map(
+          task => task.skill_id
         )
+        const uniqueSkillIds = collectSkillIds([...linkedSkillIds, ...taskDerivedSkillIds])
         const monumentIds = uniqueSkillIds
           .map(id => skillMonumentMap[id])
           .filter((id): id is string => typeof id === 'string' && id.length > 0)
@@ -2944,9 +2953,23 @@ peekDataDepsRef.current = {
         }
       }
 
+      if (instance.source_type === 'HABIT') {
+        const habit = habitMap[instance.source_id]
+        const skillId = habit?.skillId ?? null
+        if (!skillId) return null
+        const monumentId = skillMonumentMap[skillId]
+        const monumentIds = monumentId && monumentId.length > 0 ? [monumentId] : []
+        return {
+          kind: 'habit' as const,
+          amount: 1,
+          skillIds: [skillId],
+          monumentIds,
+        }
+      }
+
       return null
     },
-    [projectSkillIds, skillMonumentMap, taskMap]
+    [habitMap, projectSkillIds, skillMonumentMap, taskMap, tasksByProjectId]
   )
 
   const handleToggleInstanceCompletion = useCallback(

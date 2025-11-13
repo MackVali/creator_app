@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { MoreVertical } from "lucide-react";
 import { MonumentsList } from "@/components/monuments/MonumentsList";
 
 export default function MonumentsPage() {
@@ -29,6 +30,13 @@ export default function MonumentsPage() {
                   {m.emoji || "\uD83C\uDFDB\uFE0F"}
                 </div>
                 <p className="flex-1 truncate font-medium">{m.title}</p>
+                <Link
+                  href={`/monuments/${m.id}/edit`}
+                  aria-label={`Edit ${m.title}`}
+                  className="rounded-full p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+                >
+                  <MoreVertical className="h-5 w-5" aria-hidden="true" />
+                </Link>
               </li>
             ))}
           </ul>
@@ -37,4 +45,3 @@ export default function MonumentsPage() {
     </main>
   );
 }
-
