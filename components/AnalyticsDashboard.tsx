@@ -719,28 +719,12 @@ function Header({
                 day: "numeric",
               }).format(updatedAt)}
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#272727] bg-[#080808] px-3 py-1">
-              Range: {rangeLabel(dateRange)}
-            </span>
           </div>
         </div>
         <DateRangeSelector value={dateRange} onChange={onRangeChange} />
       </div>
     </header>
   );
-}
-
-function rangeLabel(range: "7d" | "30d" | "90d" | "custom") {
-  switch (range) {
-    case "7d":
-      return "7 days";
-    case "30d":
-      return "30 days";
-    case "90d":
-      return "90 days";
-    default:
-      return "Custom";
-  }
 }
 
 function DateRangeSelector({
