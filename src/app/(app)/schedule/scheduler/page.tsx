@@ -12,6 +12,7 @@ import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
 import { toLocal } from "@/lib/time/tz";
 import { useSchedulerMeta } from "@/lib/scheduler/useSchedulerMeta";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Lock } from "lucide-react";
 
 const GAP_THRESHOLD_MINUTES = 1;
 
@@ -35,6 +36,7 @@ type DraftPlacementEntry = {
   availableStartLocal?: string | null;
   windowStartLocal?: string | null;
   scheduledDayOffset?: number | null;
+  locked?: boolean;
 };
 
 type PreparedPlacementEntry = DraftPlacementEntry & {
@@ -54,6 +56,7 @@ type PlacementView = {
   durationMin: number;
   decision: DraftPlacementEntry["decision"];
   reason: string;
+  locked: boolean;
 };
 
 type GapEntry = {
@@ -140,6 +143,7 @@ export default function SchedulerPage() {
         durationMin,
         decision,
         reason,
+        locked: entry.locked === true,
       };
     });
   }, [scheduleDraft, projectMap, windowMap]);
@@ -408,8 +412,11 @@ export default function SchedulerPage() {
                               <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
-                                    <div className="text-sm font-medium text-zinc-100">
-                                      {projectName}
+                                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                                      <span>{projectName}</span>
+                                      {placement.locked ? (
+                                        <Lock className="h-3.5 w-3.5 text-amber-200" aria-label="Locked project" />
+                                      ) : null}
                                     </div>
                                     <div className="text-xs text-zinc-400">
                                       {(placement.project?.stage || "") && (
@@ -728,6 +735,7 @@ function toDraftPlacementEntry(input: unknown): DraftPlacementEntry | null {
       typeof record.scheduledDayOffset === "number"
         ? record.scheduledDayOffset
         : null,
+    locked: instance.locked === true,
   };
 }
 

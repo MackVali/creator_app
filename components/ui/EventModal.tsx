@@ -67,6 +67,7 @@ import {
   type DraftProject,
   type DraftTask,
 } from "@/lib/drafts/projects";
+import { projectWeight } from "@/lib/scheduler/weight";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
@@ -168,8 +169,9 @@ async function createGoalFallback(
   supabase: SupabaseClient,
   goalInput: GoalWizardRpcInput,
   projects: NormalizedProjectPayload[]
-): Promise<{ success: boolean; goalId: string | null }> {
+): Promise<{ success: boolean; goalId: string | null; projectIds: string[] }> {
   let createdGoalId: string | null = null;
+  const createdProjectIds: string[] = [];
 
   try {
     const { data: goalRecord, error: goalError } = await supabase
@@ -214,6 +216,7 @@ async function createGoalFallback(
         console.error("Fallback project insert failed:", projectError);
         throw projectError ?? new Error("Project insert failed");
       }
+      createdProjectIds.push(projectRecord.id);
 
       if (project.skill_id) {
         const { error: projectSkillError } = await supabase
@@ -256,13 +259,68 @@ async function createGoalFallback(
       }
     }
 
-    return { success: true, goalId: createdGoalId };
+    return { success: true, goalId: createdGoalId, projectIds: createdProjectIds };
   } catch (error) {
     console.error("Fallback goal creation failed:", error);
     if (createdGoalId) {
       await cleanupGoalHierarchy(supabase, createdGoalId);
     }
-    return { success: false, goalId: null };
+    return { success: false, goalId: null, projectIds: [] };
+  }
+}
+
+type LockedPlacementInput = {
+  projectId: string;
+  startUTC: string;
+  endUTC: string;
+  durationMin: number;
+  priority: string;
+  stage: string;
+  energy: string;
+};
+
+async function persistLockedProjectPlacements({
+  supabase,
+  userId,
+  placements,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+  placements: LockedPlacementInput[];
+}) {
+  if (placements.length === 0) return;
+  const rows = placements.map((placement) => {
+    const weightSnapshot = projectWeight(
+      {
+        id: placement.projectId,
+        priority: placement.priority,
+        stage: placement.stage,
+        duration_min: placement.durationMin,
+        energy: placement.energy,
+      },
+      0
+    );
+    const energyResolved =
+      placement.energy && placement.energy.trim().length > 0
+        ? placement.energy.toUpperCase()
+        : "NO";
+    return {
+      user_id: userId,
+      source_type: "PROJECT",
+      source_id: placement.projectId,
+      window_id: null,
+      start_utc: placement.startUTC,
+      end_utc: placement.endUTC,
+      duration_min: placement.durationMin,
+      status: "scheduled" as const,
+      weight_snapshot: weightSnapshot,
+      energy_resolved: energyResolved,
+      locked: true,
+    };
+  });
+  const { error } = await supabase.from("schedule_instances").insert(rows);
+  if (error) {
+    throw error;
   }
 }
 
@@ -352,6 +410,8 @@ interface FormState {
   daylight_preference: string;
   window_edge_preference: string;
   completion_target: string;
+  manual_start: string;
+  manual_end: string;
 }
 
 type GoalWizardStep = "GOAL" | "PROJECTS" | "TASKS";
@@ -407,6 +467,8 @@ const createInitialFormState = (
   daylight_preference: "ALL_DAY",
   window_edge_preference: "FRONT",
   completion_target: eventType === "HABIT" ? "10" : "",
+  manual_start: "",
+  manual_end: "",
 });
 
 type EventMeta = {
@@ -927,6 +989,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [showGoalAdvanced, setShowGoalAdvanced] = useState(false);
   const [projectAdvanced, setProjectAdvanced] = useState<Record<string, boolean>>({});
   const [taskAdvanced, setTaskAdvanced] = useState<Record<string, boolean>>({});
+  const [showProjectAdvancedOptions, setShowProjectAdvancedOptions] = useState(false);
 
   // State for dropdown data
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -974,7 +1037,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const currentIds = new Set<string>();
       draftProjects.forEach((draft) => {
         currentIds.add(draft.id);
-        const hasAdvancedData = Boolean(draft.skillId || draft.dueDate);
+        const hasAdvancedData = Boolean(
+          draft.skillId || draft.dueDate || draft.manualStart || draft.manualEnd
+        );
         if (!(draft.id in next)) {
           next[draft.id] = hasAdvancedData;
           changed = true;
@@ -1026,6 +1091,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       resetGoalWizard();
     } else if (isOpen) {
       setFormData(createInitialFormState(eventType));
+      setShowProjectAdvancedOptions(false);
     }
   }, [eventType, isOpen, resetGoalWizard]);
 
@@ -1038,8 +1104,25 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       setRoutineId("none");
       setNewRoutineName("");
       setNewRoutineDescription("");
+      setShowProjectAdvancedOptions(false);
     }
   }, [isOpen, resetGoalWizard]);
+
+  useEffect(() => {
+    if (eventType !== "PROJECT") return;
+    if (
+      (formData.manual_start.trim().length > 0 ||
+        formData.manual_end.trim().length > 0) &&
+      !showProjectAdvancedOptions
+    ) {
+      setShowProjectAdvancedOptions(true);
+    }
+  }, [
+    eventType,
+    formData.manual_start,
+    formData.manual_end,
+    showProjectAdvancedOptions,
+  ]);
 
   const loadFormData = useCallback(async () => {
     if (!eventType) return;
@@ -1522,6 +1605,53 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
     }
 
+    let pendingManualPlacement: {
+      startUTC: string;
+      endUTC: string;
+      durationMin: number;
+    } | null = null;
+
+    if (eventType === "PROJECT") {
+      const manualStartValue = formData.manual_start.trim();
+      const manualEndValue = formData.manual_end.trim();
+      if ((manualStartValue && !manualEndValue) || (!manualStartValue && manualEndValue)) {
+        toast.error(
+          "Manual schedule incomplete",
+          "Provide both start and end times to lock this project."
+        );
+        return;
+      }
+      if (manualStartValue && manualEndValue) {
+        const startDate = new Date(manualStartValue);
+        const endDate = new Date(manualEndValue);
+        if (
+          Number.isNaN(startDate.getTime()) ||
+          Number.isNaN(endDate.getTime())
+        ) {
+          toast.error(
+            "Manual schedule invalid",
+            "Enter valid start and end times."
+          );
+          return;
+        }
+        if (endDate.getTime() <= startDate.getTime()) {
+          toast.error(
+            "Manual schedule invalid",
+            "End time must be after the start time."
+          );
+          return;
+        }
+        pendingManualPlacement = {
+          startUTC: startDate.toISOString(),
+          endUTC: endDate.toISOString(),
+          durationMin: Math.max(
+            1,
+            Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+          ),
+        };
+      }
+    }
+
     try {
       setIsSaving(true);
       const supabase = getSupabaseBrowser();
@@ -1780,6 +1910,36 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
       }
 
+      if (
+        eventType === "PROJECT" &&
+        pendingManualPlacement &&
+        data?.id
+      ) {
+        try {
+          await persistLockedProjectPlacements({
+            supabase,
+            userId: user.id,
+            placements: [
+              {
+                projectId: data.id,
+                startUTC: pendingManualPlacement.startUTC,
+                endUTC: pendingManualPlacement.endUTC,
+                durationMin: pendingManualPlacement.durationMin,
+                priority: insertData.priority ?? DEFAULT_PRIORITY,
+                stage: insertData.stage ?? PROJECT_STAGE_OPTIONS[0].value,
+                energy: insertData.energy ?? DEFAULT_ENERGY,
+              },
+            ],
+          });
+        } catch (lockError) {
+          console.error("Failed to persist locked project schedule:", lockError);
+          toast.error(
+            "Manual lock failed",
+            "Project saved, but its manual schedule could not be applied."
+          );
+        }
+      }
+
       toast.success("Saved", eventType + " created successfully");
       router.refresh();
       onClose();
@@ -1832,8 +1992,57 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
-        const sanitizedProjects = draftProjects
-          .map<NormalizedProjectPayload | null>((draft) => {
+        for (const draft of draftProjects) {
+          const hasStart = draft.manualStart.trim().length > 0;
+          const hasEnd = draft.manualEnd.trim().length > 0;
+          if (hasStart !== hasEnd) {
+            toast.error(
+              "Manual schedule incomplete",
+              "Provide both start and end times to lock a project."
+            );
+            setIsSaving(false);
+            return;
+          }
+          if (hasStart && hasEnd) {
+            const start = new Date(draft.manualStart);
+            const end = new Date(draft.manualEnd);
+            if (
+              Number.isNaN(start.getTime()) ||
+              Number.isNaN(end.getTime())
+            ) {
+              toast.error(
+                "Manual schedule invalid",
+                "Enter valid start and end times."
+              );
+              setIsSaving(false);
+              return;
+            }
+            if (end.getTime() <= start.getTime()) {
+              toast.error(
+                "Manual schedule invalid",
+                "End time must be after the start time."
+              );
+              setIsSaving(false);
+              return;
+            }
+          }
+        }
+
+        const sanitizedProjectTuples = draftProjects
+          .map<
+            | {
+                draftId: string;
+                payload: NormalizedProjectPayload;
+                manualSchedule?:
+                  | {
+                      startUTC: string;
+                      endUTC: string;
+                      durationMin: number;
+                    }
+                  | undefined;
+              }
+            | null
+          >((draft) => {
             const rawName = draft.name.trim();
             const formattedName = formatNameValue(rawName);
             if (!formattedName) {
@@ -1870,25 +2079,73 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               })
               .filter((task): task is NormalizedTaskPayload => task !== null);
 
+            let manualSchedule:
+              | {
+                  startUTC: string;
+                  endUTC: string;
+                  durationMin: number;
+                }
+              | undefined;
+            if (draft.manualStart && draft.manualEnd) {
+              const startDate = new Date(draft.manualStart);
+              const endDate = new Date(draft.manualEnd);
+              if (
+                Number.isFinite(startDate.getTime()) &&
+                Number.isFinite(endDate.getTime()) &&
+                endDate.getTime() > startDate.getTime()
+              ) {
+                manualSchedule = {
+                  startUTC: startDate.toISOString(),
+                  endUTC: endDate.toISOString(),
+                  durationMin: Math.max(
+                    1,
+                    Math.round(
+                      (endDate.getTime() - startDate.getTime()) / 60000
+                    )
+                  ),
+                };
+              }
+            }
+
             return {
-              name: formattedName,
-              stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
-              priority: draft.priority || DEFAULT_PRIORITY,
-              energy: draft.energy || DEFAULT_ENERGY,
-              why: trimmedWhy.length > 0 ? trimmedWhy : null,
-              duration_min:
-                Number.isFinite(parsedDuration) && parsedDuration > 0
-                  ? Math.max(1, Math.round(parsedDuration))
-                  : null,
-              skill_id: projectSkillId,
-              due_date:
-                trimmedProjectDueDate.length > 0 ? trimmedProjectDueDate : null,
-              tasks,
-            } satisfies NormalizedProjectPayload;
+              draftId: draft.id,
+              payload: {
+                name: formattedName,
+                stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
+                priority: draft.priority || DEFAULT_PRIORITY,
+                energy: draft.energy || DEFAULT_ENERGY,
+                why: trimmedWhy.length > 0 ? trimmedWhy : null,
+                duration_min:
+                  Number.isFinite(parsedDuration) && parsedDuration > 0
+                    ? Math.max(1, Math.round(parsedDuration))
+                    : null,
+                skill_id: projectSkillId,
+                due_date:
+                  trimmedProjectDueDate.length > 0 ? trimmedProjectDueDate : null,
+                tasks,
+              } satisfies NormalizedProjectPayload,
+              manualSchedule,
+            };
           })
           .filter(
-            (project): project is NormalizedProjectPayload => project !== null
+            (
+              project
+            ): project is {
+              draftId: string;
+              payload: NormalizedProjectPayload;
+              manualSchedule?:
+                | {
+                    startUTC: string;
+                    endUTC: string;
+                    durationMin: number;
+                  }
+                | undefined;
+            } => project !== null
           );
+
+        const sanitizedProjects = sanitizedProjectTuples.map(
+          (tuple) => tuple.payload
+        );
 
         const hasProjects = sanitizedProjects.length > 0;
         const goalWhy = goalForm.why.trim();
@@ -1917,6 +2174,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         );
 
         let createdGoalId: string | undefined;
+        let createdProjectIds: string[] = [];
 
         if (rpcError || !data) {
           if (rpcError) {
@@ -1945,9 +2203,51 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
           console.warn("Goal created via fallback inserts.");
           createdGoalId = fallbackResult.goalId ?? undefined;
+          createdProjectIds = fallbackResult.projectIds ?? [];
         } else {
-          const goalPayload = (data as { goal?: { id?: string } } | null) ?? null;
-          createdGoalId = goalPayload?.goal?.id;
+          const rpcPayload =
+            (data as { goal?: { id?: string }; projects?: unknown } | null) ?? null;
+          createdGoalId = rpcPayload?.goal?.id;
+          if (Array.isArray(rpcPayload?.projects)) {
+            createdProjectIds = (rpcPayload?.projects as Array<{ id?: string }>).map(
+              (project) => (typeof project?.id === "string" ? project.id : null)
+            ).filter((id): id is string => Boolean(id));
+          } else {
+            createdProjectIds = [];
+          }
+        }
+
+        const lockedPlacements = sanitizedProjectTuples
+          .map<LockedPlacementInput | null>((tuple, index) => {
+            if (!tuple.manualSchedule) return null;
+            const projectId = createdProjectIds[index];
+            if (!projectId) return null;
+            return {
+              projectId,
+              startUTC: tuple.manualSchedule.startUTC,
+              endUTC: tuple.manualSchedule.endUTC,
+              durationMin: tuple.manualSchedule.durationMin,
+              priority: tuple.payload.priority || DEFAULT_PRIORITY,
+              stage: tuple.payload.stage || PROJECT_STAGE_OPTIONS[0].value,
+              energy: tuple.payload.energy || DEFAULT_ENERGY,
+            };
+          })
+          .filter((entry): entry is LockedPlacementInput => entry !== null);
+
+        if (lockedPlacements.length > 0) {
+          try {
+            await persistLockedProjectPlacements({
+              supabase,
+              userId: user.id,
+              placements: lockedPlacements,
+            });
+          } catch (error) {
+            console.error("Failed to lock manual project schedules:", error);
+            toast.error(
+              "Manual lock failed",
+              "Projects were saved, but their manual times could not be applied."
+            );
+          }
         }
 
         toast.success(
@@ -2554,6 +2854,45 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
                                     />
                                   </div>
+                                  <div className="grid gap-3 sm:grid-cols-2">
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                        Manual start time
+                                      </Label>
+                                      <Input
+                                        type="datetime-local"
+                                        value={draft.manualStart}
+                                        onChange={(event) =>
+                                          handleDraftProjectChange(
+                                            draft.id,
+                                            "manualStart",
+                                            event.target.value
+                                          )
+                                        }
+                                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                                        Manual end time
+                                      </Label>
+                                      <Input
+                                        type="datetime-local"
+                                        value={draft.manualEnd}
+                                        onChange={(event) =>
+                                          handleDraftProjectChange(
+                                            draft.id,
+                                            "manualEnd",
+                                            event.target.value
+                                          )
+                                        }
+                                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                                      />
+                                    </div>
+                                  </div>
+                                  <p className="text-[11px] text-zinc-500">
+                                    Provide both a start and end time to lock this project at an exact slot.
+                                  </p>
                                 </div>
                               ) : null}
                             </div>
@@ -3189,6 +3528,74 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
+                  </div>
+                </FormSection>
+              ) : null}
+
+              {eventType === "PROJECT" ? (
+                <FormSection title="Scheduling">
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-400">
+                        Advanced options
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setShowProjectAdvancedOptions(prev => !prev)
+                        }
+                        className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                      >
+                        {showProjectAdvancedOptions ? "Hide" : "Show"}
+                      </Button>
+                    </div>
+                    {showProjectAdvancedOptions ? (
+                      <>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                              Manual start time
+                            </Label>
+                            <Input
+                              type="datetime-local"
+                              value={formData.manual_start}
+                              onChange={event =>
+                                setFormData({
+                                  ...formData,
+                                  manual_start: event.target.value,
+                                })
+                              }
+                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                              Manual end time
+                            </Label>
+                            <Input
+                              type="datetime-local"
+                              value={formData.manual_end}
+                              onChange={event =>
+                                setFormData({
+                                  ...formData,
+                                  manual_end: event.target.value,
+                                })
+                              }
+                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-zinc-400">
+                          Provide both a start and end time to create a locked block that the scheduler will keep in place. Clear both fields to return this project to dynamic scheduling.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-zinc-500">
+                        Lock this project into a fixed window by setting a manual start and end time.
+                      </p>
+                    )}
                   </div>
                 </FormSection>
               ) : null}

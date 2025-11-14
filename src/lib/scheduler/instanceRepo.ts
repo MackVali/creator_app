@@ -70,6 +70,7 @@ export async function createInstance(
     durationMin: number
     weightSnapshot?: number
     energyResolved: string
+    locked?: boolean
   },
   client?: Client
 ) {
@@ -87,6 +88,7 @@ export async function createInstance(
       status: 'scheduled',
       weight_snapshot: input.weightSnapshot ?? 0,
       energy_resolved: input.energyResolved,
+      locked: input.locked ?? false,
     })
     .select('*')
     .single()
@@ -101,13 +103,21 @@ export async function rescheduleInstance(
     durationMin: number
     weightSnapshot?: number
     energyResolved: string
+    locked?: boolean
   },
   client?: Client
 ) {
   const supabase = await ensureClient(client)
-  return await supabase
-    .from('schedule_instances')
-    .update({
+  const payload: Partial<ScheduleInstance> & {
+    window_id?: string | null
+    start_utc: string
+    end_utc: string
+    duration_min: number
+    status: ScheduleInstanceStatus
+    weight_snapshot: number
+    energy_resolved: string
+    completed_at: null
+  } = {
       window_id: input.windowId ?? null,
       start_utc: input.startUTC,
       end_utc: input.endUTC,
@@ -116,7 +126,13 @@ export async function rescheduleInstance(
       weight_snapshot: input.weightSnapshot ?? 0,
       energy_resolved: input.energyResolved,
       completed_at: null,
-    })
+    }
+  if (typeof input.locked === 'boolean') {
+    payload.locked = input.locked
+  }
+  return await supabase
+    .from('schedule_instances')
+    .update(payload)
     .eq('id', id)
     .select('*')
     .single()

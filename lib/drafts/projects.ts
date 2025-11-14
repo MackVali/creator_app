@@ -25,6 +25,8 @@ export interface DraftProject {
   tasks: DraftTask[];
   skillId: string | null;
   dueDate: string;
+  manualStart: string;
+  manualEnd: string;
 }
 
 const generateId = () =>
@@ -66,9 +68,24 @@ export function createDraftProject(
     tasks = [createDraftTask()],
     skillId = null,
     dueDate = "",
+    manualStart = "",
+    manualEnd = "",
   } = overrides;
 
-  return { id, name, stage, why, duration, priority, energy, tasks, skillId, dueDate };
+  return {
+    id,
+    name,
+    stage,
+    why,
+    duration,
+    priority,
+    energy,
+    tasks,
+    skillId,
+    dueDate,
+    manualStart,
+    manualEnd,
+  };
 }
 
 export function normalizeTask<

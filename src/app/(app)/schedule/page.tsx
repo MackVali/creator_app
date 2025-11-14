@@ -24,6 +24,7 @@ import {
   useReducedMotion,
 } from 'framer-motion'
 import type { AnimationPlaybackControls } from 'framer-motion'
+import { Lock } from 'lucide-react'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/components/auth/AuthProvider'
 import {
@@ -408,6 +409,7 @@ type SchedulerTimelineEntry =
       scheduledDayOffset: number | null
       availableStartLocal: string | null
       windowStartLocal: string | null
+      locked: boolean
     }
   | {
       type: 'HABIT'
@@ -430,6 +432,7 @@ type SchedulerTimelinePlacement =
       type: 'PROJECT'
       projectId: string
       projectName: string
+      locked: boolean
       start: Date
       end: Date
       durationMinutes: number | null
@@ -1531,6 +1534,7 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
       end_utc?: unknown
       duration_min?: unknown
       energy_resolved?: unknown
+      locked?: unknown
     }
     const instanceId = typeof instanceValue.id === 'string' ? instanceValue.id : null
     const startUTC = typeof instanceValue.start_utc === 'string' ? instanceValue.start_utc : null
@@ -1580,6 +1584,7 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
       scheduledDayOffset,
       availableStartLocal,
       windowStartLocal,
+      locked: instanceValue.locked === true,
     })
   }
   return results
@@ -2714,6 +2719,7 @@ export default function SchedulePage() {
           type: 'PROJECT',
           projectId: entry.projectId,
           projectName: project?.name || 'Untitled project',
+          locked: entry.locked ?? false,
           start,
           end,
           durationMinutes: durationMin,
@@ -3596,11 +3602,34 @@ peekDataDepsRef.current = {
       void runScheduler({
         writeThroughDays: FULL_WRITE_WINDOW_DAYS,
         background: true,
+      }).then(async () => {
+        try {
+          await loadInstancesRef.current()
+        } catch (error) {
+          console.error(
+            'Failed to reload schedule data after background scheduler run',
+            error,
+          )
+        }
+        try {
+          await refreshScheduledProjectIds()
+        } catch (error) {
+          console.error(
+            'Failed to refresh scheduled project history after background scheduler run',
+            error,
+          )
+        }
       })
     }
     persistAutoRunDate(todayKey)
     setHasAutoRunToday(true)
-  }, [userId, runScheduler, persistAutoRunDate])
+  }, [
+    userId,
+    runScheduler,
+    persistAutoRunDate,
+    refreshScheduledProjectIds,
+    loadInstancesRef,
+  ])
 
   const dayTimelineContainerRef = useRef<HTMLDivElement | null>(null)
   const swipeContainerRef = useRef<HTMLDivElement | null>(null)
@@ -4724,6 +4753,7 @@ peekDataDepsRef.current = {
 
               const instanceLayoutId = getScheduleInstanceLayoutId(instance.id)
               const layoutTokens = scheduleInstanceLayoutTokens(instanceLayoutId)
+              const isLockedProject = instance.locked === true
 
               const handleProjectToggle = () => {
                 if (!canToggle || isPending) return
@@ -4849,14 +4879,19 @@ peekDataDepsRef.current = {
                           <div className="min-w-0 space-y-1">
                             <motion.span
                               layoutId={layoutTokens.title}
-                              className="block truncate text-sm font-medium"
+                              className="block text-sm font-medium"
                             >
-                              {project.name}
-                              {weightDisplay ? (
-                                <span className="ml-1 text-xs font-normal text-white/70">
-                                  ({weightDisplay})
-                                </span>
-                              ) : null}
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="truncate">{project.name}</span>
+                                {isLockedProject ? (
+                                  <Lock className="h-3.5 w-3.5 text-white/80" aria-label="Locked project" />
+                                ) : null}
+                                {weightDisplay ? (
+                                  <span className="text-xs font-normal text-white/70">
+                                    ({weightDisplay})
+                                  </span>
+                                ) : null}
+                              </span>
                             </motion.span>
                             {detailText ? (
                               <motion.div
