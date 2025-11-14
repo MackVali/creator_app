@@ -908,6 +908,7 @@ export interface Database {
           weight_snapshot: number;
           energy_resolved: string;
           completed_at: string | null;
+          locked: boolean;
         };
         Insert: {
           id?: string;
@@ -924,6 +925,7 @@ export interface Database {
           weight_snapshot: number;
           energy_resolved: string;
           completed_at?: string | null;
+          locked?: boolean;
         };
         Update: {
           id?: string;
@@ -940,6 +942,7 @@ export interface Database {
           weight_snapshot?: number;
           energy_resolved?: string;
           completed_at?: string | null;
+          locked?: boolean;
         };
       };
       xp_events: {

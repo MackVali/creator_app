@@ -72,6 +72,7 @@ type ProjectDraftPlacement = {
   scheduledDayOffset?: number
   availableStartLocal?: string | null
   windowStartLocal?: string | null
+  locked?: boolean
 }
 
 type HabitDraftPlacement = {
@@ -467,6 +468,19 @@ export async function scheduleBacklog(
   if (dedupe.failures.length > 0) {
     result.failures.push(...dedupe.failures)
   }
+  const lockedProjectInstances = dedupe.lockedProjectInstances
+  if (lockedProjectInstances.size > 0) {
+    for (const projectId of lockedProjectInstances.keys()) {
+      queuedProjectIds.delete(projectId)
+      finalQueueProjectIds.delete(projectId)
+    }
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      const item = queue[index]
+      if (lockedProjectInstances.has(item.id)) {
+        queue.splice(index, 1)
+      }
+    }
+  }
   collectPrimaryReuseIds(dedupe.reusableByProject)
   collectReuseIds(dedupe.canceledByProject)
   const keptInstances = [...dedupe.keepers]
@@ -593,21 +607,35 @@ export async function scheduleBacklog(
         let removal: ScheduleInstance | null = null
         const lastIsProject = last.source_type === 'PROJECT'
         const currentIsProject = current.source_type === 'PROJECT'
-        if (lastIsProject && !currentIsProject) {
-          removal = last
-        } else if (!lastIsProject && currentIsProject) {
+        const lastLocked = last.locked === true
+        const currentLocked = current.locked === true
+        if (lastLocked && currentLocked) {
+          last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
+            ? last
+            : current
+          continue
+        }
+        if (lastLocked && currentIsProject) {
           removal = current
-        } else if (lastIsProject && currentIsProject) {
-          const lastWeight = projectWeightForInstance(last)
-          const currentWeight = projectWeightForInstance(current)
-          if (lastWeight < currentWeight) {
+        } else if (currentLocked && lastIsProject) {
+          removal = last
+        } else {
+          if (lastIsProject && !currentIsProject) {
             removal = last
-          } else if (currentWeight < lastWeight) {
+          } else if (!lastIsProject && currentIsProject) {
             removal = current
-          } else {
-            const lastStart = new Date(last.start_utc ?? '').getTime()
-            const currentStart = new Date(current.start_utc ?? '').getTime()
-            removal = currentStart < lastStart ? last : current
+          } else if (lastIsProject && currentIsProject) {
+            const lastWeight = projectWeightForInstance(last)
+            const currentWeight = projectWeightForInstance(current)
+            if (lastWeight < currentWeight) {
+              removal = last
+            } else if (currentWeight < lastWeight) {
+              removal = current
+            } else {
+              const lastStart = new Date(last.start_utc ?? '').getTime()
+              const currentStart = new Date(current.start_utc ?? '').getTime()
+              removal = currentStart < lastStart ? last : current
+            }
           }
         }
         if (removal && removal.source_type === 'PROJECT' && !seen.has(removal.id)) {
@@ -755,7 +783,9 @@ export async function scheduleBacklog(
     const projectId = inst.source_id ?? ''
     if (!projectId) continue
     keptInstancesByProject.set(projectId, inst)
-    registerReuseInstance(projectId, inst.id)
+    if (inst.locked !== true) {
+      registerReuseInstance(projectId, inst.id)
+    }
   }
 
   for (const item of queue) {
@@ -1014,6 +1044,7 @@ export async function scheduleBacklog(
           windowStartLocal: placementWindow?.startLocal
             ? placementWindow.startLocal.toISOString()
             : undefined,
+          locked: placed.data.locked ?? undefined,
         })
         scheduledProjectIds.add(item.id)
         registerInstanceForOffsets(placed.data)
@@ -1029,6 +1060,7 @@ export async function scheduleBacklog(
       projectId,
       decision: 'kept',
       scheduledDayOffset: dayOffsetFor(inst.start_utc) ?? undefined,
+      locked: inst.locked ?? undefined,
     })
   }
 
@@ -1061,6 +1093,7 @@ type DedupeResult = {
   canceledByProject: Map<string, string[]>
   reusableByProject: Map<string, string>
   allInstances: ScheduleInstance[]
+  lockedProjectInstances: Map<string, ScheduleInstance>
 }
 
 async function dedupeScheduledProjects(
@@ -1086,6 +1119,7 @@ async function dedupeScheduledProjects(
       canceledByProject: new Map(),
       reusableByProject: new Map(),
       allInstances: [],
+      lockedProjectInstances: new Map(),
     }
   }
 
@@ -1096,14 +1130,21 @@ async function dedupeScheduledProjects(
   const keepers = new Map<string, ScheduleInstance>()
   const reusableCandidates = new Map<string, ScheduleInstance>()
   const extras: ScheduleInstance[] = []
+  const lockedProjectInstances = new Map<string, ScheduleInstance>()
 
   for (const inst of allInstances) {
-    if (inst.source_type !== 'PROJECT') continue
+    const isProject = inst.source_type === 'PROJECT'
+    const projectId = inst.source_id ?? ''
+    if (!isProject || !projectId) continue
     if (inst.status !== 'scheduled') continue
-
-    const projectId = inst.source_id
+    const isLockedProject = inst.locked === true
 
     if (projectsToReset.has(projectId)) {
+      if (isLockedProject) {
+        lockedProjectInstances.set(projectId, inst)
+        keepers.set(projectId, inst)
+        continue
+      }
       const existing = reusableCandidates.get(projectId)
       if (!existing) {
         reusableCandidates.set(projectId, inst)
@@ -1120,6 +1161,23 @@ async function dedupeScheduledProjects(
         extras.push(inst)
       }
       continue
+    }
+
+    if (isLockedProject) {
+      const existingLocked = lockedProjectInstances.get(projectId)
+      if (existingLocked) {
+        const existingStart = new Date(existingLocked.start_utc).getTime()
+        const instStart = new Date(inst.start_utc).getTime()
+        if (instStart < existingStart) {
+          extras.push(existingLocked)
+          lockedProjectInstances.set(projectId, inst)
+          keepers.set(projectId, inst)
+        } else {
+          extras.push(inst)
+        }
+        continue
+      }
+      lockedProjectInstances.set(projectId, inst)
     }
 
     const existing = keepers.get(projectId)
@@ -1185,6 +1243,7 @@ async function dedupeScheduledProjects(
     canceledByProject,
     reusableByProject,
     allInstances,
+    lockedProjectInstances,
   }
 }
 
@@ -2478,6 +2537,9 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
     const { result, dayOffsetFor, registerInstanceForOffsets } = options
     const projectId = conflict.source_id ?? ''
     if (!projectId) return 'SKIPPED'
+    if (conflict.locked) {
+      return 'SKIPPED'
+    }
     const projectDef = options.projectItemMap[projectId]
     if (!projectDef) {
       result.failures.push({ itemId: projectId, reason: 'UNKNOWN_PROJECT' })
@@ -2596,6 +2658,7 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       windowStartLocal: placementWindow?.startLocal
         ? placementWindow.startLocal.toISOString()
         : undefined,
+      locked: placed.data.locked ?? undefined,
     })
     options.scheduledProjectIds.add(projectId)
     registerInstanceForOffsets(placed.data)

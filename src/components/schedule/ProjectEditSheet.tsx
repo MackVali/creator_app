@@ -14,11 +14,20 @@ import {
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { ENERGY } from "@/lib/scheduler/config";
 import { cn } from "@/lib/utils";
-import { XIcon } from "lucide-react";
+import { Lock, XIcon } from "lucide-react";
 import {
   ScheduleMorphDialog,
   type ScheduleEditOrigin,
 } from "@/components/schedule/ScheduleMorphDialog";
+import type { ScheduleInstance } from "@/lib/scheduler/instanceRepo";
+
+const toDatetimeLocalValue = (value?: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (input: number) => String(input).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 const PRIORITY_OPTIONS = [
   { value: "NO", label: "No priority" },
@@ -78,6 +87,11 @@ export function ProjectEditSheet({
   const [goalId, setGoalId] = useState<string>("none");
   const [goalOptions, setGoalOptions] = useState<GoalOption[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(false);
+  const [lockedInstance, setLockedInstance] = useState<ScheduleInstance | null>(null);
+  const [manualStart, setManualStart] = useState("");
+  const [manualEnd, setManualEnd] = useState("");
+  const [manualScheduleError, setManualScheduleError] = useState<string | null>(null);
+  const [manualScheduleSaving, setManualScheduleSaving] = useState(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const resetState = useCallback(() => {
@@ -91,6 +105,11 @@ export function ProjectEditSheet({
     setError(null);
     setLoading(false);
     setGoalsLoading(false);
+    setLockedInstance(null);
+    setManualStart("");
+    setManualEnd("");
+    setManualScheduleError(null);
+    setManualScheduleSaving(false);
   }, []);
 
   const loadProject = useCallback(async () => {
@@ -114,19 +133,28 @@ export function ProjectEditSheet({
         throw new Error("You must be signed in to edit a project.");
       }
 
-      const [projectResponse, goalsResponse] = await Promise.all([
-        supabase
-          .from("projects")
-          .select("id, name, priority, stage, energy, duration_min, goal_id")
-          .eq("id", projectId)
-          .eq("user_id", user.id)
-          .single(),
-        supabase
-          .from("goals")
-          .select("id, name")
-          .eq("user_id", user.id)
-          .order("name", { ascending: true }),
-      ]);
+    const [projectResponse, goalsResponse, lockedResponse] = await Promise.all([
+      supabase
+        .from("projects")
+        .select("id, name, priority, stage, energy, duration_min, goal_id")
+        .eq("id", projectId)
+        .eq("user_id", user.id)
+        .single(),
+      supabase
+        .from("goals")
+        .select("id, name")
+        .eq("user_id", user.id)
+        .order("name", { ascending: true }),
+      supabase
+        .from("schedule_instances")
+        .select("id, start_utc, end_utc, duration_min, locked, status")
+        .eq("user_id", user.id)
+        .eq("source_type", "PROJECT")
+        .eq("source_id", projectId)
+        .eq("locked", true)
+        .order("start_utc", { ascending: true })
+        .limit(1),
+    ]);
 
       if (projectResponse.error) throw projectResponse.error;
 
@@ -167,6 +195,22 @@ export function ProjectEditSheet({
         }),
       );
       setGoalsLoading(false);
+      if (lockedResponse.error) {
+        console.error("Failed to load locked schedule instance:", lockedResponse.error);
+        setLockedInstance(null);
+        setManualStart("");
+        setManualEnd("");
+      } else {
+        const lockedRecord = (lockedResponse.data?.[0] as ScheduleInstance | undefined) ?? null;
+        setLockedInstance(lockedRecord ?? null);
+        if (lockedRecord) {
+          setManualStart(toDatetimeLocalValue(lockedRecord.start_utc));
+          setManualEnd(toDatetimeLocalValue(lockedRecord.end_utc));
+        } else {
+          setManualStart("");
+          setManualEnd("");
+        }
+      }
     } catch (err) {
       console.error("Failed to load project details:", err);
       setError(
@@ -253,6 +297,106 @@ export function ProjectEditSheet({
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleUpdateLockedSchedule = async () => {
+    if (!projectId || !lockedInstance) {
+      return;
+    }
+    if (!manualStart || !manualEnd) {
+      setManualScheduleError("Provide both start and end times.");
+      return;
+    }
+    const startDate = new Date(manualStart);
+    const endDate = new Date(manualEnd);
+    if (
+      Number.isNaN(startDate.getTime()) ||
+      Number.isNaN(endDate.getTime())
+    ) {
+      setManualScheduleError("Enter valid start and end times.");
+      return;
+    }
+    if (endDate.getTime() <= startDate.getTime()) {
+      setManualScheduleError("End time must be after the start time.");
+      return;
+    }
+
+    setManualScheduleSaving(true);
+    setManualScheduleError(null);
+
+    try {
+      if (!supabase) {
+        throw new Error("Supabase client not available.");
+      }
+      const durationMin = Math.max(
+        1,
+        Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+      );
+      const { error: updateError } = await supabase
+        .from("schedule_instances")
+        .update({
+          start_utc: startDate.toISOString(),
+          end_utc: endDate.toISOString(),
+          duration_min: durationMin,
+        })
+        .eq("id", lockedInstance.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setLockedInstance((prev) =>
+        prev
+          ? {
+              ...prev,
+              start_utc: startDate.toISOString(),
+              end_utc: endDate.toISOString(),
+              duration_min: durationMin,
+            }
+          : prev
+      );
+      await onSaved?.();
+    } catch (err) {
+      console.error("Failed to update locked schedule:", err);
+      setManualScheduleError(
+        err instanceof Error
+          ? err.message
+          : "Unable to update the manual schedule right now."
+      );
+    } finally {
+      setManualScheduleSaving(false);
+    }
+  };
+
+  const handleRemoveLockedSchedule = async () => {
+    if (!lockedInstance) return;
+    setManualScheduleSaving(true);
+    setManualScheduleError(null);
+    try {
+      if (!supabase) {
+        throw new Error("Supabase client not available.");
+      }
+      const { error: deleteError } = await supabase
+        .from("schedule_instances")
+        .delete()
+        .eq("id", lockedInstance.id);
+      if (deleteError) {
+        throw deleteError;
+      }
+      setLockedInstance(null);
+      setManualStart("");
+      setManualEnd("");
+      await onSaved?.();
+    } catch (err) {
+      console.error("Failed to remove locked schedule:", err);
+      setManualScheduleError(
+        err instanceof Error
+          ? err.message
+          : "Unable to remove the manual schedule right now."
+      );
+    } finally {
+      setManualScheduleSaving(false);
     }
   };
 
@@ -411,6 +555,89 @@ export function ProjectEditSheet({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                  Manual schedule
+                </p>
+                <p className="text-sm text-white/70">
+                  Locked blocks stay fixed when you rerun the scheduler.
+                </p>
+              </div>
+              {lockedInstance ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-1 text-xs font-semibold text-white/80">
+                  <Lock className="h-3.5 w-3.5" />
+                  Locked
+                </span>
+              ) : (
+                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-white/40">
+                  Dynamic
+                </span>
+              )}
+            </div>
+            {lockedInstance ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                      Start time
+                    </Label>
+                    <Input
+                      type="datetime-local"
+                      value={manualStart}
+                      onChange={(event) => setManualStart(event.target.value)}
+                      disabled={manualScheduleSaving}
+                      className="border-white/20 bg-white/5 text-sm text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/50">
+                      End time
+                    </Label>
+                    <Input
+                      type="datetime-local"
+                      value={manualEnd}
+                      onChange={(event) => setManualEnd(event.target.value)}
+                      disabled={manualScheduleSaving}
+                      className="border-white/20 bg-white/5 text-sm text-white"
+                    />
+                  </div>
+                </div>
+                {manualScheduleError ? (
+                  <p className="text-sm text-red-300">{manualScheduleError}</p>
+                ) : (
+                  <p className="text-xs text-white/60">
+                    Update the exact timing for this locked project or remove the lock to return it to the automatic scheduler.
+                  </p>
+                )}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    onClick={handleUpdateLockedSchedule}
+                    disabled={manualScheduleSaving}
+                    className="flex-1 bg-white text-zinc-900 hover:bg-white/90"
+                  >
+                    {manualScheduleSaving ? "Saving…" : "Update times"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleRemoveLockedSchedule}
+                    disabled={manualScheduleSaving}
+                    className="flex-1 border-red-500/40 text-red-200 hover:bg-red-500/10"
+                  >
+                    Remove lock
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-white/60">
+                This project is currently scheduled dynamically. To lock a project at a specific time, create it with manual times from the scheduler’s project workflow.
+              </p>
+            )}
           </div>
 
           {error ? (
