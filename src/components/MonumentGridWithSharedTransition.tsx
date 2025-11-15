@@ -41,24 +41,33 @@ export function MonumentGridWithSharedTransition({ monuments }: MonumentGridProp
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {monuments.map((m) => (
           <motion.button
             key={m.id}
             layoutId={`card-${m.id}`}
             onClick={() => setActiveId(m.id)}
-            className="card flex aspect-square w-full flex-col items-center justify-center p-1 transition-colors hover:bg-white/5"
+            className="group relative flex aspect-square w-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-2 text-white shadow-[0_18px_38px_rgba(7,9,17,0.45)] transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           >
-            <motion.div layoutId={`emoji-${m.id}`} className="mb-1 text-lg">
+            <span className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" style={{
+              background:
+                "radial-gradient(circle at top, rgba(255,255,255,0.18), transparent 70%)",
+            }} />
+            <motion.div
+              layoutId={`emoji-${m.id}`}
+              className="relative z-10 mb-2 text-2xl drop-shadow-[0_4px_12px_rgba(15,15,35,0.45)]"
+            >
               {m.emoji ?? "\uD83C\uDFDB\uFE0F"}
             </motion.div>
             <motion.h3
               layoutId={`title-${m.id}`}
-              className="w-full break-words text-center text-[10px] font-semibold leading-tight"
+              className="relative z-10 w-full break-words text-center text-xs font-semibold uppercase tracking-[0.18em] text-white/80 transition-colors duration-300 group-hover:text-white"
             >
               {m.title}
             </motion.h3>
-            <p className="mt-0.5 text-[9px] text-zinc-500">{m.stats}</p>
+            <p className="relative z-10 mt-1 text-[10px] font-medium uppercase tracking-[0.28em] text-white/40">
+              {m.stats}
+            </p>
           </motion.button>
         ))}
       </div>
