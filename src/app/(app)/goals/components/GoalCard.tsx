@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
 import type { Goal } from "../types";
-import { ProjectsDropdown } from "./ProjectsDropdown";
+// Lazy-load dropdown contents to reduce initial bundle and re-render cost
+const ProjectsDropdown = dynamic(() => import("./ProjectsDropdown").then(m => m.ProjectsDropdown), {
+  ssr: false,
+  loading: () => (
+    <div className="h-24 w-full animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]" />
+  ),
+});
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -48,32 +55,39 @@ interface GoalCardProps {
   onToggleActive?(): void;
   onDelete?(): void;
   onBoost?(): void;
+  showWeight?: boolean;
+  showCreatedAt?: boolean;
+  showEmojiPrefix?: boolean;
 }
 
-export function GoalCard({
+function GoalCardImpl({
   goal,
   onEdit,
   onToggleActive,
   onDelete,
   onBoost,
+  showWeight = true,
+  showCreatedAt = true,
+  showEmojiPrefix = false,
 }: GoalCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const toggle = () => {
+  const toggle = useCallback(() => {
     setOpen((prev) => !prev);
     if (!open) {
       setLoading(true);
-      setTimeout(() => setLoading(false), 400);
+      const t = setTimeout(() => setLoading(false), 300);
+      // No cleanup needed when closing; this only runs on open
     }
-  };
+  }, [open]);
 
   const energy = energyAccent[goal.energy];
-  const createdAt = goal.createdAt
-    ? new Date(goal.createdAt).toLocaleDateString()
-    : goal.updatedAt
-    ? new Date(goal.updatedAt).toLocaleDateString()
-    : null;
+  const createdAt = useMemo(() => {
+    if (goal.createdAt) return new Date(goal.createdAt).toLocaleDateString();
+    if (goal.updatedAt) return new Date(goal.updatedAt).toLocaleDateString();
+    return null;
+  }, [goal.createdAt, goal.updatedAt]);
 
   return (
     <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-5 text-white transition hover:-translate-y-1 hover:border-white/30">
@@ -100,11 +114,18 @@ export function GoalCard({
                       {goal.energy}
                     </span>
                   </span>
-                  <span className="rounded-full border border-white/20 px-2 py-0.5 text-white/70">
-                    wt {goal.weight ?? 0}
-                  </span>
+                  {showWeight ? (
+                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-white/70">
+                      wt {goal.weight ?? 0}
+                    </span>
+                  ) : null}
                 </div>
                 <h3 id={`goal-${goal.id}-label`} className="mt-2 text-xl font-semibold">
+                  {showEmojiPrefix && (goal.monumentEmoji ?? goal.emoji) ? (
+                    <span className="mr-2 inline" aria-hidden>
+                      {goal.monumentEmoji ?? goal.emoji}
+                    </span>
+                  ) : null}
                   {goal.title}
                 </h3>
                 {goal.why && (
@@ -125,7 +146,7 @@ export function GoalCard({
                   Due {new Date(goal.dueDate).toLocaleDateString()}
                 </span>
               )}
-              {createdAt && (
+              {createdAt && showCreatedAt && (
                 <span className="rounded-full border border-white/10 px-3 py-1 text-white/60">
                   Created {createdAt}
                 </span>
@@ -196,3 +217,22 @@ export function GoalCard({
     </div>
   );
 }
+
+export const GoalCard = memo(GoalCardImpl, (prev, next) => {
+  const a = prev.goal;
+  const b = next.goal;
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.progress === b.progress &&
+    a.active === b.active &&
+    a.status === b.status &&
+    (a.weight ?? 0) === (b.weight ?? 0) &&
+    a.projects.length === b.projects.length &&
+    prev.showWeight === next.showWeight &&
+    prev.showCreatedAt === next.showCreatedAt &&
+    prev.showEmojiPrefix === next.showEmojiPrefix
+  );
+});
+
+export default GoalCard;
