@@ -5,6 +5,7 @@ import { ArrowLeft, BatteryCharging, Flame } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import ActivityPanel from "./ActivityPanel";
+import { MonumentGoalsList } from "@/components/monuments/MonumentGoalsList";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
 import { MonumentNotesGrid } from "@/components/notes/MonumentNotesGrid";
 import type { MonumentNote } from "@/lib/types/monument-note";
@@ -22,6 +23,8 @@ interface MonumentDetailProps {
 
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
+  const useNewGoalCards =
+    process.env.NEXT_PUBLIC_NEW_MONUMENT_GOAL_CARDS !== "0";
 
   const quickFacts = [
     {
@@ -133,14 +136,18 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
               </Button>
             </header>
             <div className="relative mt-4">
-              <FilteredGoalsGrid
-                entity="monument"
-                id={id}
-                onCreateGoal={() => {
-                  window.location.assign("/goals/new");
-                }}
-                displayMode="minimal"
-              />
+              {useNewGoalCards ? (
+                <MonumentGoalsList monumentId={id} monumentEmoji={monument.emoji} />
+              ) : (
+                <FilteredGoalsGrid
+                  entity="monument"
+                  id={id}
+                  onCreateGoal={() => {
+                    window.location.assign("/goals/new");
+                  }}
+                  displayMode="minimal"
+                />
+              )}
             </div>
           </section>
 
