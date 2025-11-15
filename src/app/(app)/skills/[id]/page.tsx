@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft, Award } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
+import { SkillGoalsList } from "@/components/skills/SkillGoalsList";
 import {
   Card,
   CardContent,
@@ -620,7 +621,7 @@ export default function SkillDetailPage() {
               </Button>
             </header>
             <div className="relative mt-6">
-              <FilteredGoalsGrid entity="skill" id={id} displayMode="minimal" onCreateGoal={handleCreateGoal} />
+              <SkillGoalsList skillId={id} />
             </div>
           </section>
 
