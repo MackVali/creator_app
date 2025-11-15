@@ -75,12 +75,7 @@ function GoalCardImpl({
 
   const toggle = useCallback(() => {
     setOpen((prev) => !prev);
-    if (!open) {
-      setLoading(true);
-      const t = setTimeout(() => setLoading(false), 300);
-      // No cleanup needed when closing; this only runs on open
-    }
-  }, [open]);
+  }, []);
 
   const energy = energyAccent[goal.energy];
   const createdAt = useMemo(() => {
