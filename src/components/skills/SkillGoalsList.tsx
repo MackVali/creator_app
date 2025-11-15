@@ -8,6 +8,7 @@ import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { projectWeight, taskWeight, type TaskLite, type ProjectLite } from "@/lib/scheduler/weight";
+import { getMonumentsForUser } from "@/lib/queries/monuments";
 
 type GoalRowWithRelations = GoalRow & {
   projects?: {
@@ -234,7 +235,11 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
           return;
         }
 
-        const rows = await fetchGoalsWithRelations(user.id);
+        const [rows, monuments] = await Promise.all([
+          fetchGoalsWithRelations(user.id),
+          getMonumentsForUser(user.id).catch(() => []),
+        ]);
+        const monumentEmojiLookup = new Map(monuments.map(m => [m.id, m.emoji ?? null]));
 
         const mappedAll: Goal[] = rows.map((g) => {
           const goalSkills = new Set<string>();
@@ -303,6 +308,7 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
             updatedAt: g.created_at,
             projects: projList,
             monumentId: g.monument_id ?? null,
+            monumentEmoji: monumentEmojiLookup.get(g.monument_id ?? "") ?? null,
             priorityCode: g.priority ?? null,
             weightBoost: g.weight_boost ?? 0,
             skills: Array.from(goalSkills),
@@ -374,4 +380,3 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
 }
 
 export default SkillGoalsList;
-
