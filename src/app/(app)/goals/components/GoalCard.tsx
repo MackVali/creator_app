@@ -98,8 +98,9 @@ function GoalCardImpl({
             </div>
             <h3
               id={`goal-${goal.id}-label`}
-              className="max-w-full truncate text-center text-[13px] leading-tight font-semibold"
+              className="max-w-full px-1 text-center text-[13px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.6em]"
               title={goal.title}
+              style={{ hyphens: "auto" }}
             >
               {goal.title}
             </h3>
