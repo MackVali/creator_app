@@ -20,6 +20,7 @@ type EvaluateParams = {
   timeZone: string
   windowDays?: number[] | null
   lastScheduledStart?: Date | null
+  nextDueOverride?: Date | null
 }
 
 const DAILY_RECURRENCES = new Set(['daily', 'none', 'everyday', ''])
@@ -93,10 +94,19 @@ function daysInMonth(year: number, month: number) {
 }
 
 export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluation {
-  const { habit, date, timeZone, windowDays, lastScheduledStart } = params
+  const { habit, date, timeZone, windowDays, lastScheduledStart, nextDueOverride } = params
   const zone = timeZone || 'UTC'
   const recurrence = normalizeRecurrence(habit.recurrence)
   const dayStart = startOfDayInTimeZone(date, zone)
+  const nextDueOverrideStart = nextDueOverride
+    ? startOfDayInTimeZone(nextDueOverride, zone)
+    : null
+  if (nextDueOverrideStart) {
+    if (nextDueOverrideStart.getTime() > dayStart.getTime()) {
+      return { isDue: false, dueStart: nextDueOverrideStart }
+    }
+    return { isDue: true, dueStart: nextDueOverrideStart }
+  }
   const scheduleAnchorOverride =
     lastScheduledStart ? startOfDayInTimeZone(lastScheduledStart, zone) : null
   const lastCompletionRaw = habit.lastCompletedAt ?? null

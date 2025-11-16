@@ -26,6 +26,7 @@ export type HabitScheduleItem = {
   locationContextName: string | null
   daylightPreference: string | null
   windowEdgePreference: string | null
+  nextDueOverride?: string | null
   window: {
     id: string
     label: string | null
@@ -78,6 +79,7 @@ type HabitRecord = {
       label?: string | null
     } | null
   } | null
+  next_due_override?: string | null
 }
 
 type Client = SupabaseClient<Database>
@@ -126,7 +128,7 @@ export async function fetchHabitsForSchedule(
   const locationJoin = 'location_context:location_contexts(id, value, label)'
   const windowJoin = `window:windows(id, label, energy, start_local, end_local, days, location_context_id, ${locationJoin})`
   const baseColumns =
-    `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, ${windowJoin}`
+    `id, name, duration_minutes, created_at, updated_at, last_completed_at, current_streak_days, longest_streak_days, habit_type, window_id, energy, recurrence, recurrence_days, skill_id, location_context_id, ${locationJoin}, daylight_preference, window_edge_preference, next_due_override, ${windowJoin}`
   const extendedColumns =
     `${baseColumns}, goal_id, completion_target`
 
@@ -231,6 +233,7 @@ export async function fetchHabitsForSchedule(
         : null),
     daylightPreference: record.daylight_preference ?? null,
     windowEdgePreference: record.window_edge_preference ?? null,
+    nextDueOverride: record.next_due_override ?? null,
     window: record.window
       ? {
           id: record.window.id ?? '',

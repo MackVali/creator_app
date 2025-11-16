@@ -91,7 +91,7 @@ function isGoalMetadataError(maybeError?: unknown) {
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
   const baseColumns =
-    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference, location_context_id";
+    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference, location_context_id, next_due_override";
 
   const columns = [
     baseColumns,
@@ -103,6 +103,42 @@ function buildHabitSelectColumns(includeGoalMetadata: boolean) {
   }
 
   return columns.filter(Boolean).join(", ");
+}
+
+function toDateTimeLocalInput(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const offset = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - offset * 60000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocalInput(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
+function formatDateTimeDisplay(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "long",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return date.toLocaleString();
+  }
 }
 
 export function HabitEditSheet({
@@ -151,6 +187,9 @@ export function HabitEditSheet({
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nextDueOverrideInput, setNextDueOverrideInput] = useState("");
+  const [nextDueOverrideOriginal, setNextDueOverrideOriginal] =
+    useState<string | null>(null);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -188,6 +227,8 @@ export function HabitEditSheet({
     setHabitLoading(false);
     setSaving(false);
     setError(null);
+    setNextDueOverrideInput("");
+    setNextDueOverrideOriginal(null);
   }, []);
 
   useEffect(() => {
@@ -526,6 +567,24 @@ export function HabitEditSheet({
     ];
   }, [skillOptions, skillsLoading]);
 
+  const localTimeZoneLabel = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "local time";
+      } catch {
+      return "local time";
+    }
+  }, []);
+
+  const nextDueOverridePreview = useMemo(() => {
+    const isoValue = fromDateTimeLocalInput(nextDueOverrideInput);
+    return formatDateTimeDisplay(isoValue);
+  }, [nextDueOverrideInput]);
+
+  const savedNextDueOverrideLabel = useMemo(
+    () => formatDateTimeDisplay(nextDueOverrideOriginal),
+    [nextDueOverrideOriginal]
+  );
+
   useEffect(() => {
     if (!open) return;
     if (!habitId) {
@@ -613,6 +672,12 @@ export function HabitEditSheet({
             setGoalOptions([]);
             setGoalId("none");
           }
+          const nextDueOverrideValue =
+            typeof data.next_due_override === "string"
+              ? data.next_due_override
+              : null;
+          setNextDueOverrideOriginal(nextDueOverrideValue);
+          setNextDueOverrideInput(toDateTimeLocalInput(nextDueOverrideValue));
           setName(data.name ?? "");
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
@@ -887,9 +952,21 @@ export function HabitEditSheet({
             : null;
         }
 
+        let nextDueOverrideValue: string | null = null;
+        if (nextDueOverrideInput.trim()) {
+          const parsedOverride = fromDateTimeLocalInput(nextDueOverrideInput);
+          if (!parsedOverride) {
+            setError("Choose a valid next due date.");
+            setSaving(false);
+            return;
+          }
+          nextDueOverrideValue = parsedOverride;
+        }
+
         const payload: Record<string, unknown> = {
           ...basePayload,
           location_context_id: resolvedLocationContextId,
+          next_due_override: nextDueOverrideValue,
         };
 
         const { error: updateError } = await supabase
@@ -938,6 +1015,7 @@ export function HabitEditSheet({
       goalMetadataSupported,
       goalId,
       completionTarget,
+      nextDueOverrideInput,
       onSaved,
       onClose,
     ],
@@ -1032,6 +1110,66 @@ export function HabitEditSheet({
             showDescriptionField={false}
             footerSlot={routineFooter}
           />
+
+          <div className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
+                  Next due date
+                </p>
+                <p className="text-sm text-white/70">
+                  Skip upcoming reminders until a date that works better.
+                </p>
+              </div>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.3em]",
+                  nextDueOverrideInput
+                    ? "border border-amber-400/40 text-amber-200"
+                    : "border border-white/15 text-white/60"
+                )}
+              >
+                {nextDueOverrideInput ? "Custom" : "Automatic"}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                  Resume on
+                </Label>
+                <Input
+                  type="datetime-local"
+                  value={nextDueOverrideInput}
+                  onChange={(event) => setNextDueOverrideInput(event.target.value)}
+                  className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                />
+              </div>
+              {nextDueOverrideInput ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setNextDueOverrideInput("")}
+                  className="h-11 border-white/30 text-white hover:bg-white/10"
+                >
+                  Clear date
+                </Button>
+              ) : null}
+            </div>
+            <div className="space-y-1 text-xs text-white/60">
+              <p>Times use {localTimeZoneLabel}.</p>
+              {nextDueOverridePreview ? (
+                <p className="text-white/80">
+                  Next run will resume on {nextDueOverridePreview}.
+                </p>
+              ) : savedNextDueOverrideLabel ? (
+                <p className="text-amber-200">
+                  Currently deferred until {savedNextDueOverrideLabel}.
+                </p>
+              ) : (
+                <p>Leave blank to let the scheduler follow the regular cadence.</p>
+              )}
+            </div>
+          </div>
 
           {error ? (
             <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">

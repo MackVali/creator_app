@@ -62,6 +62,15 @@ export async function POST(request: NextRequest) {
       if (error) {
         return NextResponse.json({ error: error.message ?? 'Failed to record completion' }, { status: 500 })
       }
+
+      const { error: overrideError } = await supabase
+        .from('habits')
+        .update({ next_due_override: null })
+        .eq('id', habitId)
+        .eq('user_id', user.id)
+      if (overrideError) {
+        console.error('Failed to clear habit due override after completion', overrideError)
+      }
     } else {
       const { error } = await supabase
         .from('habit_completion_days')
