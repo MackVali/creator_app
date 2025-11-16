@@ -352,7 +352,7 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     }
 
     return (
-      <div className="-mx-2 grid grid-cols-3 gap-2 px-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div className="-mx-3 grid grid-cols-3 gap-2 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {goals.map((goal) => (
           <div key={goal.id} className="goal-card-wrapper relative z-0 w-full isolate min-w-0">
             <GoalCard
