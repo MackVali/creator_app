@@ -91,27 +91,24 @@ function GoalCardImpl({
     const energy = energyAccent[goal.energy];
     return (
       <div className="group relative h-full rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-white aspect-square min-h-[88px]">
-        <div className="flex h-full min-w-0 flex-col items-stretch gap-2">
-          <div className="flex min-w-0 items-start gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold">
+        <div className="flex h-full min-w-0 flex-col items-stretch">
+          <div className="flex flex-col items-center gap-1.5 min-w-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold">
               {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
             </div>
-            <div className="min-w-0 flex-1">
-              <h3 id={`goal-${goal.id}-label`} className="truncate text-[13px] leading-tight font-semibold">
-                {showEmojiPrefix && (goal.monumentEmoji ?? goal.emoji) ? (
-                  <span className="mr-1 inline" aria-hidden>
-                    {goal.monumentEmoji ?? goal.emoji}
-                  </span>
-                ) : null}
-                {goal.title}
-              </h3>
-              <div className="mt-1 flex items-center gap-1.5 text-[10px] tracking-normal text-white/60">
-                <span className={`h-1.5 w-1.5 rounded-full ${energy.dot}`} aria-hidden="true" />
-                <span>{goal.progress}%</span>
-              </div>
+            <h3
+              id={`goal-${goal.id}-label`}
+              className="max-w-full truncate text-center text-[13px] leading-tight font-semibold"
+              title={goal.title}
+            >
+              {goal.title}
+            </h3>
+            <div className="flex items-center gap-1.5 text-[10px] tracking-normal text-white/60">
+              <span className={`h-1.5 w-1.5 rounded-full ${energy.dot}`} aria-hidden="true" />
+              <span>{goal.progress}%</span>
             </div>
           </div>
-          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+          <div className="mt-auto h-1 overflow-hidden rounded-full bg-white/10">
             <div
               className="h-full rounded-full"
               style={{ width: `${goal.progress}%`, backgroundImage: energy.bar }}
