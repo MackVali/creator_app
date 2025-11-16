@@ -135,7 +135,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
                 <Link href="/goals/new">New goal</Link>
               </Button>
             </header>
-            <div className="relative mt-4">
+            <div className="relative mt-4 overflow-visible">
               {useNewGoalCards ? (
                 <MonumentGoalsList monumentId={id} monumentEmoji={monument.emoji} />
               ) : (
