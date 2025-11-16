@@ -341,9 +341,9 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
   const content = useMemo(() => {
     if (loading) {
       return (
-        <div className="grid grid-cols-1 items-start justify-items-stretch gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[220px] w-full rounded-[26px] bg-white/10" />
+        <div className="-mx-2 grid grid-cols-3 gap-2.5 px-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <Skeleton key={i} className="h-[100px] w-full rounded-2xl bg-white/10" />
           ))}
         </div>
       );
@@ -357,10 +357,10 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
     }
 
     return (
-      <div className="grid grid-cols-1 items-start justify-items-stretch gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="-mx-2 grid grid-cols-3 gap-2.5 px-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {goals.map((goal) => (
-          <div key={goal.id} className="skill-goal-card-wrapper relative z-0 w-full isolate">
-            <GoalCard goal={goal} showWeight={false} showCreatedAt={false} showEmojiPrefix={false} />
+          <div key={goal.id} className="skill-goal-card-wrapper relative z-0 w-full isolate min-w-0">
+            <GoalCard goal={goal} showWeight={false} showCreatedAt={false} showEmojiPrefix={false} variant="compact" />
           </div>
         ))}
       </div>
@@ -373,7 +373,9 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
       <style jsx global>{`
         .skill-goals-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
         .skill-goals-list .group:hover { transform: none !important; }
-        .skill-goals-list .skill-goal-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
+        @media (min-width: 640px) {
+          .skill-goals-list .skill-goal-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
+        }
       `}</style>
     </div>
   );

@@ -620,7 +620,7 @@ export default function SkillDetailPage() {
                 New goal
               </Button>
             </header>
-            <div className="relative mt-6">
+            <div className="relative mt-6 overflow-visible">
               <SkillGoalsList skillId={id} />
             </div>
           </section>

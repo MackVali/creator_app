@@ -22,19 +22,20 @@ export function ProjectRow({ project }: ProjectRowProps) {
   }, [project.tasks]);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+    <div className="relative rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] p-4 shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
       <button
         onClick={toggle}
-        className="flex w-full items-center justify-between text-left text-sm text-white"
+        className="relative z-0 flex w-full items-center justify-between text-left text-sm text-white"
         aria-expanded={open}
         aria-controls={`project-${project.id}`}
       >
         <div className="flex items-center gap-2 text-white">
-          <span className="font-semibold">{project.name}</span>
+          <span className="font-semibold leading-tight">{project.name}</span>
           <FlameEmber level={project.energy.toUpperCase() as FlameLevel} size="sm" />
         </div>
         <div className="flex items-center gap-3">
-          <p className="text-[11px] text-white/60">{project.progress}%</p>
+          <p className="text-[11px] text-white/70">{project.progress}%</p>
           {project.dueDate && (
             <span className="text-xs text-white/60">
               {new Date(project.dueDate).toLocaleDateString()}
@@ -50,7 +51,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
       {hasTasks && (
         <ul
           id={`project-${project.id}`}
-          className={`mt-3 space-y-1.5 overflow-hidden rounded-xl border border-white/5 bg-black/20 p-3 text-xs text-white/70 transition-all ${
+          className={`mt-3 space-y-1.5 overflow-hidden rounded-xl ring-1 ring-white/10 bg-white/5 p-3 text-xs text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-all ${
             open ? "max-h-60" : "max-h-0"
           }`}
         >
