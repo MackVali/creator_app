@@ -67,6 +67,7 @@ export interface Database {
           last_completed_at: string | null;
           current_streak_days: number;
           longest_streak_days: number;
+          next_due_override: string | null;
         };
         Insert: {
           id?: string;
@@ -90,6 +91,7 @@ export interface Database {
           last_completed_at?: string | null;
           current_streak_days?: number;
           longest_streak_days?: number;
+          next_due_override?: string | null;
         };
         Update: {
           id?: string;
@@ -113,6 +115,7 @@ export interface Database {
           last_completed_at?: string | null;
           current_streak_days?: number;
           longest_streak_days?: number;
+          next_due_override?: string | null;
         };
       };
       habit_completion_days: {

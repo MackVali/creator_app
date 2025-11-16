@@ -222,6 +222,7 @@ type HabitRecord = {
     created_at: string;
     updated_at: string;
   } | null;
+  next_due_override?: string | null;
 };
 
 function normalizeHabitRecord(
@@ -298,6 +299,7 @@ function normalizeHabitRecord(
           updated_at: habit.routine.updated_at,
         }
       : null,
+    next_due_override: habit.next_due_override ?? null,
   };
 }
 
@@ -341,6 +343,7 @@ export interface Habit {
     created_at: string;
     updated_at: string;
   } | null;
+  next_due_override: string | null;
 }
 
 export async function getHabits(userId: string): Promise<Habit[]> {
@@ -350,7 +353,7 @@ export async function getHabits(userId: string): Promise<Habit[]> {
   }
 
   const baseColumns =
-    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, last_completed_at, current_streak_days, longest_streak_days, created_at, updated_at, skill_id, energy, location_context_id";
+    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, last_completed_at, current_streak_days, longest_streak_days, created_at, updated_at, skill_id, energy, location_context_id, next_due_override";
   const extendedColumns = `${baseColumns}, goal_id, completion_target`;
   let supportsGoalMetadata = goalMetadataSupport !== "unsupported";
   const selectColumns = supportsGoalMetadata ? extendedColumns : baseColumns;

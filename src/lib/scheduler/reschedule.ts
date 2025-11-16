@@ -1082,6 +1082,7 @@ export async function scheduleBacklog(
     return aTime - bTime
   })
 
+  await clearHabitOverrides()
   return result
 }
 
@@ -1293,7 +1294,33 @@ async function scheduleHabitsForDay(params: {
     instances: [],
     failures: [],
   }
-  if (!habits.length) return result
+  const overridesToClear = new Set<string>()
+  const parseNextDueOverride = (value?: string | null) => {
+    if (!value) return null
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return null
+    return parsed
+  }
+  const clearHabitOverrides = async () => {
+    if (!client || overridesToClear.size === 0) return
+    const ids = Array.from(overridesToClear)
+    if (ids.length === 0) return
+    try {
+      await client
+        .from('habits')
+        .update({ next_due_override: null })
+        .in('id', ids)
+        .eq('user_id', userId)
+    } catch (error) {
+      console.error('Failed to clear habit due overrides', error)
+    } finally {
+      overridesToClear.clear()
+    }
+  }
+  if (!habits.length) {
+    await clearHabitOverrides()
+    return result
+  }
 
   const zone = timeZone || 'UTC'
   const dayStart = startOfDayInTimeZone(day, zone)
@@ -1439,6 +1466,7 @@ async function scheduleHabitsForDay(params: {
     if (!habitId) continue
     const habit = habitMap.get(habitId)
     if (!habit) continue
+    const nextDueOverride = parseNextDueOverride(habit.nextDueOverride)
     const instanceStart = new Date(instance.start_utc ?? '')
     if (Number.isNaN(instanceStart.getTime())) continue
     const instanceDayStart = startOfDayInTimeZone(instanceStart, zone)
@@ -1450,6 +1478,7 @@ async function scheduleHabitsForDay(params: {
       timeZone: zone,
       windowDays,
       lastScheduledStart: getLastScheduledHabitStart(habitId),
+      nextDueOverride,
     })
     if (!dueInfo.isDue) {
       if (!seenInvalidIds.has(instance.id ?? `${habitId}:${index}`)) {
@@ -1494,19 +1523,32 @@ async function scheduleHabitsForDay(params: {
   const dueHabits: HabitScheduleItem[] = []
   for (const habit of habits) {
     const windowDays = habit.window?.days ?? null
+    const nextDueOverride = parseNextDueOverride(habit.nextDueOverride)
+    const overrideDayStart =
+      nextDueOverride ? startOfDayInTimeZone(nextDueOverride, zone) : null
     const dueInfo = evaluateHabitDueOnDate({
       habit,
       date: day,
       timeZone: zone,
       windowDays,
       lastScheduledStart: getLastScheduledHabitStart(habit.id),
+      nextDueOverride,
     })
     if (!dueInfo.isDue) continue
+    if (
+      overrideDayStart &&
+      dayStart.getTime() >= overrideDayStart.getTime()
+    ) {
+      overridesToClear.add(habit.id)
+    }
     dueInfoByHabitId.set(habit.id, dueInfo)
     dueHabits.push(habit)
   }
 
-  if (dueHabits.length === 0) return result
+  if (dueHabits.length === 0) {
+    await clearHabitOverrides()
+    return result
+  }
 
   const cacheKey = dateCacheKey(day)
   let windows = windowCache.get(cacheKey)
@@ -1515,7 +1557,10 @@ async function scheduleHabitsForDay(params: {
     windowCache.set(cacheKey, windows)
   }
 
-  if (!windows || windows.length === 0) return result
+  if (!windows || windows.length === 0) {
+    await clearHabitOverrides()
+    return result
+  }
 
   const windowsById = new Map<string, WindowLite>()
   for (const win of windows) {
