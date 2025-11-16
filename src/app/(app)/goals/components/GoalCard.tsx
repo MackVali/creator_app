@@ -89,6 +89,8 @@ function GoalCardImpl({
   // Compact tile for dense mobile grids
   if (variant === "compact") {
     const energy = energyAccent[goal.energy];
+    const progressPct = Math.max(0, Math.min(100, Number(goal.progress ?? 0)));
+    const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
     return (
       <div className="group relative h-full rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.03] to-white/[0.015] p-3 text-white aspect-[5/6] min-h-[104px]
                       shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]">
@@ -110,7 +112,7 @@ function GoalCardImpl({
               {goal.title}
             </h3>
             <div className="flex items-center gap-1.5 text-[6px] tracking-normal text-white/60">
-              <span className={`h-1.5 w-1.5 rounded-full ${energy.dot}`} aria-hidden="true" />
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `hsl(0 0% ${lightness}%)` }} aria-hidden="true" />
               <span>{goal.progress}%</span>
             </div>
           </div>
