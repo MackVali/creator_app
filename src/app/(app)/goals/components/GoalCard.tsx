@@ -90,14 +90,14 @@ function GoalCardImpl({
   if (variant === "compact") {
     const energy = energyAccent[goal.energy];
     return (
-      <div className="group relative h-full rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-white">
-        <div className="flex h-full flex-col items-stretch gap-2">
-          <div className="flex items-start gap-2">
+      <div className="group relative h-full rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-white aspect-square min-h-[88px]">
+        <div className="flex h-full min-w-0 flex-col items-stretch gap-2">
+          <div className="flex min-w-0 items-start gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold">
               {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
             </div>
             <div className="min-w-0 flex-1">
-              <h3 id={`goal-${goal.id}-label`} className="truncate text-sm font-semibold">
+              <h3 id={`goal-${goal.id}-label`} className="truncate text-[13px] leading-tight font-semibold">
                 {showEmojiPrefix && (goal.monumentEmoji ?? goal.emoji) ? (
                   <span className="mr-1 inline" aria-hidden>
                     {goal.monumentEmoji ?? goal.emoji}
@@ -105,7 +105,7 @@ function GoalCardImpl({
                 ) : null}
                 {goal.title}
               </h3>
-              <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/60">
+              <div className="mt-1 flex items-center gap-1.5 text-[10px] tracking-normal text-white/60">
                 <span className={`h-1.5 w-1.5 rounded-full ${energy.dot}`} aria-hidden="true" />
                 <span>{goal.progress}%</span>
               </div>
