@@ -90,7 +90,7 @@ function GoalCardImpl({
   if (variant === "compact") {
     const energy = energyAccent[goal.energy];
     return (
-      <div className="group relative h-full rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-white aspect-square min-h-[96px]">
+      <div className="group relative h-full rounded-2xl ring-1 ring-white/10 bg-white/[0.03] p-3 text-white aspect-[5/6] min-h-[104px]">
         <div className="flex h-full min-w-0 flex-col items-stretch">
           <div className="flex flex-col items-center gap-1.5 min-w-0">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold">
@@ -98,13 +98,13 @@ function GoalCardImpl({
             </div>
             <h3
               id={`goal-${goal.id}-label`}
-              className="max-w-full px-1 text-center text-[7px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.6em]"
+              className="max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.5em]"
               title={goal.title}
               style={{ hyphens: "auto" }}
             >
               {goal.title}
             </h3>
-            <div className="flex items-center gap-1.5 text-[5px] tracking-normal text-white/60">
+            <div className="flex items-center gap-1.5 text-[6px] tracking-normal text-white/60">
               <span className={`h-1.5 w-1.5 rounded-full ${energy.dot}`} aria-hidden="true" />
               <span>{goal.progress}%</span>
             </div>
