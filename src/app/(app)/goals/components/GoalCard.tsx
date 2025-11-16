@@ -58,6 +58,7 @@ interface GoalCardProps {
   showWeight?: boolean;
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
+  variant?: "default" | "compact";
 }
 
 function GoalCardImpl({
@@ -69,6 +70,7 @@ function GoalCardImpl({
   showWeight = true,
   showCreatedAt = true,
   showEmojiPrefix = false,
+  variant = "default",
 }: GoalCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -83,6 +85,42 @@ function GoalCardImpl({
     if (goal.updatedAt) return new Date(goal.updatedAt).toLocaleDateString();
     return null;
   }, [goal.createdAt, goal.updatedAt]);
+
+  // Compact tile for dense mobile grids
+  if (variant === "compact") {
+    const energy = energyAccent[goal.energy];
+    return (
+      <div className="group relative h-full rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-white">
+        <div className="flex h-full flex-col items-stretch gap-2">
+          <div className="flex items-start gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold">
+              {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 id={`goal-${goal.id}-label`} className="truncate text-sm font-semibold">
+                {showEmojiPrefix && (goal.monumentEmoji ?? goal.emoji) ? (
+                  <span className="mr-1 inline" aria-hidden>
+                    {goal.monumentEmoji ?? goal.emoji}
+                  </span>
+                ) : null}
+                {goal.title}
+              </h3>
+              <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/60">
+                <span className={`h-1.5 w-1.5 rounded-full ${energy.dot}`} aria-hidden="true" />
+                <span>{goal.progress}%</span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${goal.progress}%`, backgroundImage: energy.bar }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-5 text-white transition hover:-translate-y-1 hover:border-white/30">
@@ -226,7 +264,8 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     a.projects.length === b.projects.length &&
     prev.showWeight === next.showWeight &&
     prev.showCreatedAt === next.showCreatedAt &&
-    prev.showEmojiPrefix === next.showEmojiPrefix
+    prev.showEmojiPrefix === next.showEmojiPrefix &&
+    prev.variant === next.variant
   );
 });
 

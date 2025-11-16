@@ -336,9 +336,9 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
   const content = useMemo(() => {
     if (loading) {
       return (
-        <div className="grid grid-cols-1 items-start justify-items-stretch gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[220px] w-full rounded-[26px] bg-white/10" />
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <Skeleton key={i} className="h-[110px] w-full rounded-2xl bg-white/10" />
           ))}
         </div>
       );
@@ -352,10 +352,16 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     }
 
     return (
-      <div className="grid grid-cols-1 items-start justify-items-stretch gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {goals.map((goal) => (
           <div key={goal.id} className="goal-card-wrapper relative z-0 w-full isolate">
-            <GoalCard goal={goal} showWeight={false} showCreatedAt={false} showEmojiPrefix={false} />
+            <GoalCard
+              goal={goal}
+              showWeight={false}
+              showCreatedAt={false}
+              showEmojiPrefix={false}
+              variant="compact"
+            />
           </div>
         ))}
       </div>
