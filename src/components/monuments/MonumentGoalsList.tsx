@@ -360,7 +360,6 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               showWeight={false}
               showCreatedAt={false}
               showEmojiPrefix={false}
-              variant="compact"
             />
           </div>
         ))}

@@ -2184,26 +2184,22 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               hint: rpcError.hint,
               code: rpcError.code,
             });
+            const missingFn =
+              rpcError.code === "42883" ||
+              /create_goal_with_projects_and_tasks/.test(rpcError.message || "");
+            toast.error(
+              missingFn ? "Database not ready" : "Error",
+              missingFn
+                ? "Please apply Supabase migrations to enable goal creation."
+                : "We couldn't save that goal just yet."
+            );
           } else {
             console.error(
               "RPC returned no data when creating goal with projects."
             );
-          }
-
-          const fallbackResult = await createGoalFallback(
-            supabase,
-            goalInput,
-            sanitizedProjects
-          );
-
-          if (!fallbackResult.success || !fallbackResult.goalId) {
             toast.error("Error", "We couldn't save that goal just yet.");
-            return;
           }
-
-          console.warn("Goal created via fallback inserts.");
-          createdGoalId = fallbackResult.goalId ?? undefined;
-          createdProjectIds = fallbackResult.projectIds ?? [];
+          return;
         } else {
           const rpcPayload =
             (data as { goal?: { id?: string }; projects?: unknown } | null) ?? null;

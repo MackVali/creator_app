@@ -279,7 +279,9 @@ async function syncProjectsAndTasks(
     }
   }
 
-  const newProjects = projects.filter((project) => project.isNew);
+  const newProjects = projects
+    .filter((project) => project.isNew)
+    .filter((project) => project.name.trim().length > 0);
   if (newProjects.length > 0) {
     const { error } = await supabase.from("projects").insert(
       newProjects.map((project) => ({
@@ -301,10 +303,12 @@ async function syncProjectsAndTasks(
   if (existingProjects.length > 0) {
     await Promise.all(
       existingProjects.map(async (project) => {
+        const trimmedName = project.name.trim();
+        if (trimmedName.length === 0) return;
         const { error } = await supabase
           .from("projects")
           .update({
-            name: project.name.trim(),
+            name: trimmedName,
             stage: project.stage ?? projectStatusToStage(project.status),
             energy: project.energyCode ?? energyToDbValue(project.energy),
             priority: project.priorityCode ?? "NO",
@@ -334,6 +338,7 @@ async function syncProjectsAndTasks(
   projects.forEach((project) => {
     project.tasks.forEach((task) => {
       const trimmedName = task.name.trim();
+      if (trimmedName.length === 0) return;
       if (task.isNew) {
         taskInserts.push({
           id: task.id,
@@ -716,9 +721,84 @@ export default function GoalsPage() {
       .eq("id", goal.id);
   };
 
-  const addGoal = (_goal: Goal, _context: GoalUpdateContext) => {
-    void _context;
-    setGoals((g) => [decorateGoal(_goal), ...g]);
+  const addGoal = async (_goal: Goal, _context: GoalUpdateContext) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      // Optimistic local add if Supabase client is unavailable
+      setGoals((g) => [decorateGoal(_goal), ...g]);
+      return;
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        // Not authenticated; keep optimistic state
+        setGoals((g) => [decorateGoal(_goal), ...g]);
+        return;
+      }
+
+      // Insert the goal first
+      const priorityDb =
+        _goal.priority === "High"
+          ? "HIGH"
+          : _goal.priority === "Medium"
+          ? "MEDIUM"
+          : "LOW";
+      const statusDb =
+        _goal.status === "Completed"
+          ? "COMPLETED"
+          : _goal.status === "Overdue"
+          ? "OVERDUE"
+          : _goal.status === "Inactive"
+          ? "INACTIVE"
+          : "ACTIVE";
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from("goals")
+        .insert({
+          user_id: user.id,
+          name: _goal.title.trim(),
+          priority: priorityDb,
+          energy: energyToDbValue(_goal.energy),
+          active: _goal.active,
+          status: statusDb,
+          why: _goal.why ?? null,
+          monument_id: _goal.monumentId || null,
+        })
+        .select("id, created_at, weight, weight_boost, monument_id")
+        .single();
+
+      if (insertErr || !inserted) {
+        console.error("Error inserting goal:", insertErr);
+        // Fallback to local state to avoid user losing input
+        setGoals((g) => [decorateGoal(_goal), ...g]);
+        return;
+      }
+
+      const newGoalId = inserted.id;
+
+      // If there are any projects/tasks in context, sync them now
+      if (_context) {
+        await syncProjectsAndTasks(supabase, user.id, newGoalId, _context);
+      }
+
+      // Reflect the saved goal in local state with the server id
+      const saved: Goal = decorateGoal({
+        ..._goal,
+        id: newGoalId,
+        createdAt: inserted.created_at ?? _goal.createdAt,
+        monumentId: inserted.monument_id ?? _goal.monumentId ?? null,
+        weight: inserted.weight ?? _goal.weight,
+        weightBoost: inserted.weight_boost ?? _goal.weightBoost,
+      });
+      setGoals((g) => [saved, ...g]);
+    } catch (err) {
+      console.error("Unexpected error creating goal:", err);
+      // Keep optimistic add to avoid losing user input
+      setGoals((g) => [decorateGoal(_goal), ...g]);
+    }
   };
 
   const updateGoal = (goal: Goal) =>

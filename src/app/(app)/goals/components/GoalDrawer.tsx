@@ -228,15 +228,9 @@ export function GoalDrawer({
     return [...monuments].sort((a, b) => a.title.localeCompare(b.title));
   }, [monuments]);
 
-  const projectsValid = projectsState.every((project) => {
-    const hasValidName = project.name.trim().length > 0;
-    const tasksValid = project.tasks.every(
-      (task) => task.name.trim().length > 0
-    );
-    return hasValidName && tasksValid;
-  });
-
-  const canSubmit = title.trim().length > 0 && projectsValid;
+  // Allow saving at any point: only require a title.
+  // Empty-named projects/tasks will be filtered out during persistence.
+  const canSubmit = title.trim().length > 0;
 
   const generateId = () =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
