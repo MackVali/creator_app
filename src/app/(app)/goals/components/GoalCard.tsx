@@ -95,7 +95,7 @@ function GoalCardImpl({
       "group relative h-full rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.03] to-white/[0.015] p-3 text-white min-h-[104px] shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]";
     const containerClass = open ? containerBase : `${containerBase} aspect-[5/6]`;
     return (
-      <div className={containerClass}>
+      <div className={containerClass} data-variant="compact" data-build-tag="gc-test-01">
         {/* Subtle top sheen + edge glow */}
         <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
         <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
