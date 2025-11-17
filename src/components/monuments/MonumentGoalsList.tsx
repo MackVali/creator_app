@@ -120,13 +120,13 @@ const TASK_STAGE_MAP: Record<string, string> = {
 };
 
 function mapSchedulerPriority(priority?: string | null): string {
-  if (!priority) return "NO";
+  if (typeof priority !== "string") return "NO";
   const upper = priority.toUpperCase();
   return SCHEDULER_PRIORITY_MAP[upper] || "NO";
 }
 
 function mapSchedulerTaskStage(stage?: string | null): string {
-  if (!stage) return "Produce";
+  if (typeof stage !== "string") return "Produce";
   const upper = stage.toUpperCase();
   return TASK_STAGE_MAP[upper] || "Produce";
 }
@@ -159,8 +159,13 @@ function toSchedulerProject(project: {
   };
 }
 
+function normalizePriorityCode(code?: string | null): string {
+  if (typeof code !== "string") return "NO";
+  return code.toUpperCase();
+}
+
 function computeGoalWeight(goal: Goal): number {
-  const priorityCode = goal.priorityCode?.toUpperCase() ?? "NO";
+  const priorityCode = normalizePriorityCode(goal.priorityCode);
   const priorityWeight = GOAL_PRIORITY_WEIGHT[priorityCode] ?? 0;
   const projectWeightSum = goal.projects.reduce(
     (sum, project) => sum + (project.weight ?? 0),
@@ -181,31 +186,43 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
 
-  const { data, error } = await supabase
-    .from("goals")
-    .select(
-      `
-        id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost,
-        projects (
-          id, name, goal_id, priority, energy, stage, created_at,
-          tasks (
-            id, project_id, stage, name, skill_id, priority
-          ),
-          project_skills (
-            skill_id
-          )
-        )
-      `
+  const baseSelect =
+    "id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost";
+  const selectWithRelations = `
+    ${baseSelect},
+    projects (
+      id, name, goal_id, priority, energy, stage, created_at,
+      tasks (
+        id, project_id, stage, name, skill_id, priority
+      ),
+      project_skills (
+        skill_id
+      )
     )
-    .eq("user_id", userId)
-    .eq("monument_id", monumentId)
-    .order("created_at", { ascending: false });
+  `;
 
-  if (error) {
-    console.error("Error fetching goals for monument:", error);
+  const runQuery = (select: string) =>
+    supabase
+      .from("goals")
+      .select(select)
+      .eq("user_id", userId)
+      .eq("monument_id", monumentId)
+      .order("created_at", { ascending: false });
+
+  const { data, error } = await runQuery(selectWithRelations);
+
+  if (!error) {
+    return data ?? [];
+  }
+
+  console.warn("Falling back to basic monument goal fetch:", error);
+
+  const fallback = await runQuery(baseSelect);
+  if (fallback.error) {
+    console.error("Error fetching monument goals:", fallback.error);
     return [];
   }
-  return data ?? [];
+  return fallback.data ?? [];
 }
 
 export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: string; monumentEmoji?: string | null }) {
