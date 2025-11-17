@@ -17,7 +17,7 @@ declare
   task_elem jsonb;
   inserted_projects jsonb := '[]'::jsonb;
   inserted_tasks jsonb := '[]'::jsonb;
-  goal_user_id uuid := coalesce((payload->>'user_id')::uuid, auth_id);
+  goal_user_id uuid := coalesce((nullif(payload->>'user_id',''))::uuid, auth_id);
 begin
   if auth_id is null then
     raise exception 'Authentication required';
@@ -31,15 +31,15 @@ begin
     raise exception 'Cannot create records for another user';
   end if;
 
-  insert into public.goals (user_id, name, priority, energy, monument_id, why, due_date)
+  -- goals table has no due_date; omit it entirely
+  insert into public.goals (user_id, name, priority, energy, monument_id, why)
   values (
     goal_user_id,
     coalesce(nullif(btrim(payload->>'name'), ''), 'Untitled Goal'),
     coalesce(nullif(payload->>'priority', ''), 'NO'),
     coalesce(nullif(payload->>'energy', ''), 'NO'),
-    (payload->>'monument_id')::uuid,
-    nullif(payload->>'why', ''),
-    nullif(payload->>'due_date', '')::timestamptz
+    (nullif(payload->>'monument_id',''))::uuid,
+    nullif(payload->>'why', '')
   )
   returning * into new_goal;
 
@@ -141,8 +141,7 @@ begin
       'name', new_goal.name,
       'priority', new_goal.priority,
       'energy', new_goal.energy,
-      'why', new_goal.why,
-      'due_date', new_goal.due_date
+      'why', new_goal.why
     ),
     'projects', inserted_projects,
     'tasks', inserted_tasks
