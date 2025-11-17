@@ -91,16 +91,22 @@ function GoalCardImpl({
     const energy = energyAccent[goal.energy];
     const progressPct = Math.max(0, Math.min(100, Number(goal.progress ?? 0)));
     const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
+    const containerBase =
+      "group relative h-full rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.03] to-white/[0.015] p-3 text-white min-h-[104px] shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]";
+    const containerClass = open ? containerBase : `${containerBase} aspect-[5/6]`;
     return (
-      <div className="group relative h-full rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.03] to-white/[0.015] p-3 text-white aspect-[5/6] min-h-[104px]
-                      shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className={containerClass}>
         {/* Subtle top sheen + edge glow */}
-        <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)]
-                            bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
-        <div className="flex h-full min-w-0 flex-col items-stretch relative z-0">
-          <div className="flex flex-col items-center gap-1.5 min-w-0">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold
-                            shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]">
+        <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_70%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
+        <div className="relative z-0 flex h-full min-w-0 flex-col items-stretch">
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            aria-controls={`goal-${goal.id}`}
+            className="flex flex-col items-center gap-1.5 min-w-0 text-left"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]">
               {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
             </div>
             <h3
@@ -115,13 +121,24 @@ function GoalCardImpl({
               <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `hsl(0 0% ${lightness}%)` }} aria-hidden="true" />
               <span>{goal.progress}%</span>
             </div>
-          </div>
-          <div className="mt-auto h-1 overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
-            <div
-              className="h-full rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
-              style={{ width: `${goal.progress}%`, backgroundImage: energy.bar }}
-            />
-          </div>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] w-full">
+              <div
+                className="h-full rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
+                style={{ width: `${goal.progress}%`, backgroundImage: energy.bar }}
+              />
+            </div>
+          </button>
+
+          {open && (
+            <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.02]">
+              <ProjectsDropdown
+                id={`goal-${goal.id}`}
+                goalTitle={goal.title}
+                projects={goal.projects}
+                loading={loading}
+              />
+            </div>
+          )}
         </div>
       </div>
     );
