@@ -2177,27 +2177,25 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         let createdProjectIds: string[] = [];
 
         if (rpcError || !data) {
-          if (rpcError) {
-            console.error("Error creating goal with projects via RPC:", {
-              message: rpcError.message,
-              details: rpcError.details,
-              hint: rpcError.hint,
-              code: rpcError.code,
-            });
-            const missingFn =
-              rpcError.code === "42883" ||
-              /create_goal_with_projects_and_tasks/.test(rpcError.message || "");
-            toast.error(
-              missingFn ? "Database not ready" : "Error",
-              missingFn
-                ? "Please apply Supabase migrations to enable goal creation."
-                : "We couldn't save that goal just yet."
-            );
+          // Log everything we know to help diagnose local dev issues
+          console.error("Error creating goal with projects via RPC:", {
+            rpcError,
+            data,
+            goalInput,
+            hasProjects,
+            projectCount: sanitizedProjects.length,
+          });
+          const missingFn =
+            (rpcError?.code === "42883") ||
+            /create_goal_with_projects_and_tasks/.test(rpcError?.message || "");
+          if (missingFn) {
+            toast.error("Database not ready", "Please run migrations so the goal wizard function exists.");
+          } else if (rpcError) {
+            const label = rpcError.code ? `Error ${rpcError.code}` : "Error";
+            const details = rpcError.message || rpcError.details || "We couldn't save that goal just yet.";
+            toast.error(label, details);
           } else {
-            console.error(
-              "RPC returned no data when creating goal with projects."
-            );
-            toast.error("Error", "We couldn't save that goal just yet.");
+            toast.error("Error", "RPC returned no data. Ensure the function returns JSON and migrations are applied.");
           }
           return;
         } else {

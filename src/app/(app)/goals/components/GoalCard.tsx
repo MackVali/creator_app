@@ -130,14 +130,45 @@ function GoalCardImpl({
           </button>
 
           {open && (
-            <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.02]">
-              <ProjectsDropdown
-                id={`goal-${goal.id}`}
-                goalTitle={goal.title}
-                projects={goal.projects}
-                loading={loading}
-              />
-            </div>
+            <>
+              {/* Inline dropdown for >= sm screens */}
+              <div className="mt-2 hidden rounded-2xl border border-white/10 bg-white/[0.02] sm:block">
+                <ProjectsDropdown
+                  id={`goal-${goal.id}`}
+                  goalTitle={goal.title}
+                  projects={goal.projects}
+                  loading={loading}
+                />
+              </div>
+
+              {/* Mobile overlay dropdown to avoid crowding/cut-off */}
+              <div className="sm:hidden">
+                <div className="fixed inset-0 z-50 bg-black/60" onClick={toggle} aria-hidden="true" />
+                <div className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md p-3">
+                  <div className="overflow-hidden rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] shadow-[0_20px_40px_-20px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)]">
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-[0.28em] text-white/70">{goal.title}</h4>
+                      <button
+                        type="button"
+                        onClick={toggle}
+                        className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80"
+                        aria-label="Close projects"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <div className="max-h-[60vh] overflow-y-auto px-2 pb-3">
+                      <ProjectsDropdown
+                        id={`goal-${goal.id}`}
+                        goalTitle={goal.title}
+                        projects={goal.projects}
+                        loading={loading}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

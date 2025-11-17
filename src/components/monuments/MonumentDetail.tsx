@@ -23,8 +23,8 @@ interface MonumentDetailProps {
 
 export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   const { id } = monument;
-  const useNewGoalCards =
-    process.env.NEXT_PUBLIC_NEW_MONUMENT_GOAL_CARDS !== "0";
+  // Always use the compact goal cards on monuments
+  const useNewGoalCards = true;
 
   const quickFacts = [
     {
@@ -136,18 +136,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
               </Button>
             </header>
             <div className="relative mt-4 overflow-visible">
-              {useNewGoalCards ? (
-                <MonumentGoalsList monumentId={id} monumentEmoji={monument.emoji} />
-              ) : (
-                <FilteredGoalsGrid
-                  entity="monument"
-                  id={id}
-                  onCreateGoal={() => {
-                    window.location.assign("/goals/new");
-                  }}
-                  displayMode="minimal"
-                />
-              )}
+              <MonumentGoalsList monumentId={id} monumentEmoji={monument.emoji} />
             </div>
           </section>
 
