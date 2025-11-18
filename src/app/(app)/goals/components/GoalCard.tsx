@@ -71,6 +71,8 @@ interface GoalCardProps {
   showEmojiPrefix?: boolean;
   variant?: "default" | "compact";
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 function GoalCardImpl({
@@ -84,8 +86,12 @@ function GoalCardImpl({
   showEmojiPrefix = false,
   variant = "default",
   onProjectUpdated,
+  open: openProp,
+  onOpenChange,
 }: GoalCardProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = typeof openProp === "boolean";
+  const open = isControlled ? (openProp as boolean) : internalOpen;
   const [loading, setLoading] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingProjectOrigin, setEditingProjectOrigin] = useState<ProjectCardMorphOrigin | null>(null);
@@ -117,9 +123,19 @@ function GoalCardImpl({
     };
   }, [open, updateOverlayRect]);
 
+  const setOpen = useCallback(
+    (value: boolean) => {
+      if (!isControlled) {
+        setInternalOpen(value);
+      }
+      onOpenChange?.(value);
+    },
+    [isControlled, onOpenChange]
+  );
+
   const toggle = useCallback(() => {
-    setOpen((prev) => !prev);
-  }, []);
+    setOpen(!open);
+  }, [open, setOpen]);
 
   const handleProjectLongPress = useCallback((project: Project, origin: ProjectCardMorphOrigin | null) => {
     setEditingProjectOrigin(origin ?? null);
@@ -413,7 +429,7 @@ function CompactProjectsOverlay({
   );
 
   const listContent = (
-    <div className="overflow-y-auto px-3 pb-4 sm:px-5">
+    <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
       <ProjectsDropdown
         id={regionId}
         goalTitle={goal.title}
@@ -445,7 +461,7 @@ function CompactProjectsOverlay({
             style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
           >
             {header}
-            <div className="max-h-[60vh]">{listContent}</div>
+            {listContent}
           </div>
         </div>
       </>,
@@ -470,7 +486,7 @@ function CompactProjectsOverlay({
           style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
         >
           {header}
-          <div className="max-h-[70vh]">{listContent}</div>
+          {listContent}
         </div>
       </div>
     </>,
@@ -492,7 +508,8 @@ export const GoalCard = memo(GoalCardImpl, (prev, next) => {
     prev.showWeight === next.showWeight &&
     prev.showCreatedAt === next.showCreatedAt &&
     prev.showEmojiPrefix === next.showEmojiPrefix &&
-    prev.variant === next.variant
+    prev.variant === next.variant &&
+    prev.open === next.open
   );
 });
 

@@ -264,6 +264,7 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
 export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: string; monumentEmoji?: string | null }) {
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [openGoalId, setOpenGoalId] = useState<string | null>(null);
 
   const decorate = useCallback((goal: Goal) => {
     return {
@@ -439,6 +440,25 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     []
   );
 
+  const handleGoalOpenChange = useCallback((goalId: string, isOpen: boolean) => {
+    setOpenGoalId((current) => {
+      if (isOpen) {
+        return goalId;
+      }
+      if (current === goalId) {
+        return null;
+      }
+      return current;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!openGoalId) return;
+    if (!goals.some((goal) => goal.id === openGoalId)) {
+      setOpenGoalId(null);
+    }
+  }, [goals, openGoalId]);
+
   const content = useMemo(() => {
     if (loading) {
       return (
@@ -470,12 +490,14 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               onProjectUpdated={(projectId, updates) =>
                 handleProjectUpdated(goal.id, projectId, updates)
               }
+              open={openGoalId === goal.id}
+              onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
             />
           </div>
         ))}
       </div>
     );
-  }, [loading, goals]);
+  }, [loading, goals, openGoalId, handleGoalOpenChange, handleProjectUpdated]);
 
   return (
     <div className="monument-goals-list">
