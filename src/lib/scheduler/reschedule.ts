@@ -1082,7 +1082,6 @@ export async function scheduleBacklog(
     return aTime - bTime
   })
 
-  await clearHabitOverrides()
   return result
 }
 
