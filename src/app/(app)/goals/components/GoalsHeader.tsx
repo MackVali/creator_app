@@ -63,11 +63,11 @@ export function GoalsHeader({ onCreate, stats }: GoalsHeaderProps) {
               {stats.xp.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </span>
           </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div className="mt-4 flex flex-wrap gap-4">
             {statCards.map((stat) => (
               <div
                 key={stat.label}
-                className="rounded-2xl border border-white/10 bg-white/[0.08] p-3 text-center"
+                className="flex-1 min-w-[140px] rounded-2xl border border-white/10 bg-white/[0.08] p-3 text-center"
               >
                 <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">{stat.label}</p>
                 <p className="mt-1 text-2xl font-semibold text-white">{stat.value}</p>
