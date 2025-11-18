@@ -146,13 +146,15 @@ function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
   );
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-      <p className="text-[10px] uppercase tracking-[0.3em] text-white/50">{label}</p>
-      <div className="relative mt-1">
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 sm:px-4 sm:py-3">
+      <p className="text-[9px] uppercase tracking-[0.2em] text-white/50 sm:text-[10px] sm:tracking-[0.3em]">
+        {label}
+      </p>
+      <div className="relative mt-0.5 sm:mt-1">
         <select
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-full appearance-none bg-transparent text-sm font-semibold text-white focus:outline-none"
+          className="w-full appearance-none bg-transparent text-xs font-medium text-white focus:outline-none sm:text-sm sm:font-semibold"
         >
           {normalized.map((option) => (
             <option key={option.value} value={option.value} className="bg-[#07050d] text-white">
