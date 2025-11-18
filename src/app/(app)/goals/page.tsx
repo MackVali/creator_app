@@ -757,7 +757,10 @@ export default function GoalsPage() {
       data = data.filter((g) => g.energy === energy);
     }
     if (priority !== "All") {
-      data = data.filter((g) => g.priority === priority);
+      data = data.filter((g) => {
+        const code = g.priorityCode?.toUpperCase() ?? "NO";
+        return code === priority;
+      });
     }
     if (monument !== "All") {
       data = data.filter((g) => g.monumentId === monument);
