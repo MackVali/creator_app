@@ -16,7 +16,13 @@ export type ProjectItem = ProjectLite & {
 }
 
 const normEnergy = (e?: string | null): Energy | null => {
-  const up = (e ?? '').toUpperCase()
+  const candidate =
+    typeof e === 'string'
+      ? e
+      : e != null
+        ? String(e)
+        : ''
+  const up = candidate.toUpperCase()
   return ENERGY.LIST.includes(up as Energy) ? (up as Energy) : null
 }
 
