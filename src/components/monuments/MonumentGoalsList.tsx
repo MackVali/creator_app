@@ -8,15 +8,17 @@ import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { projectWeight, taskWeight, type TaskLite, type ProjectLite } from "@/lib/scheduler/weight";
+import { getSkillsForUser } from "@/lib/queries/skills";
 
 type GoalRowWithRelations = GoalRow & {
   projects?: {
     id: string;
     name: string;
     goal_id: string;
-    priority: string | null;
-    energy: string | null;
+    priority: { id?: string | number | null; name?: string | null } | string | null;
+    energy: { id?: string | number | null; name?: string | null } | string | null;
     stage: string | null;
+    duration_min?: number | null;
     created_at: string;
     tasks?: {
       id: string;
@@ -119,6 +121,43 @@ const TASK_STAGE_MAP: Record<string, string> = {
   PERFECT: "Perfect",
 };
 
+const NORMALIZED_PRIORITY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"]);
+const NORMALIZED_ENERGY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"]);
+
+const normalizePriorityCode = (value?: string | null): string => {
+  if (typeof value !== "string") return "NO";
+  const upper = value.toUpperCase();
+  return NORMALIZED_PRIORITY_VALUES.has(upper) ? upper : "NO";
+};
+
+const normalizeEnergyCode = (value?: string | null): string => {
+  if (typeof value !== "string") return "NO";
+  const upper = value.toUpperCase();
+  return NORMALIZED_ENERGY_VALUES.has(upper) ? upper : "NO";
+};
+
+const extractLookupName = (field: { name?: string | null } | string | null | undefined) => {
+  if (!field) return null;
+  if (typeof field === "string") return field;
+  if (typeof field === "object" && "name" in field) {
+    const candidate = field.name;
+    return typeof candidate === "string" ? candidate : null;
+  }
+  return null;
+};
+
+const extractLookupId = (
+  field: { id?: string | number | null } | string | number | null | undefined
+) => {
+  if (field && typeof field === "object" && "id" in field) {
+    return field.id ?? null;
+  }
+  if (typeof field === "string" || typeof field === "number") {
+    return field;
+  }
+  return null;
+};
+
 function mapSchedulerPriority(priority?: string | null): string {
   if (typeof priority !== "string") return "NO";
   const upper = priority.toUpperCase();
@@ -159,11 +198,6 @@ function toSchedulerProject(project: {
   };
 }
 
-function normalizePriorityCode(code?: string | null): string {
-  if (typeof code !== "string") return "NO";
-  return code.toUpperCase();
-}
-
 function computeGoalWeight(goal: Goal): number {
   const priorityCode = normalizePriorityCode(goal.priorityCode);
   const priorityWeight = GOAL_PRIORITY_WEIGHT[priorityCode] ?? 0;
@@ -191,7 +225,9 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
   const selectWithRelations = `
     ${baseSelect},
     projects (
-      id, name, goal_id, priority, energy, stage, created_at,
+      id, name, goal_id, stage, duration_min, created_at,
+      priority:priority(name),
+      energy:energy(name),
       tasks (
         id, project_id, stage, name, skill_id, priority
       ),
@@ -252,7 +288,16 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           return;
         }
 
-        const rows = await fetchGoalsWithRelationsForMonument(monumentId, user.id);
+        const [rows, skills] = await Promise.all([
+          fetchGoalsWithRelationsForMonument(monumentId, user.id),
+          getSkillsForUser(user.id).catch(() => []),
+        ]);
+
+        const skillIconLookup = new Map(skills.map(skill => [skill.id, skill.icon ?? null]));
+        const resolveSkillEmoji = (skillId?: string | null) => {
+          if (!skillId) return null;
+          return skillIconLookup.get(skillId ?? "") ?? null;
+        };
 
         const mapped: Goal[] = rows.map((g) => {
           const goalSkills = new Set<string>();
@@ -271,9 +316,11 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               }
               return normalized;
             });
+            const projectSkillIds: string[] = [];
             (p.project_skills ?? []).forEach((record) => {
               if (record?.skill_id) {
                 goalSkills.add(record.skill_id);
+                projectSkillIds.push(record.skill_id);
               }
             });
             const total = normalizedTasks.length;
@@ -286,15 +333,40 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               toSchedulerProject({ id: p.id, priorityCode: p.priority ?? undefined, stage: p.stage ?? undefined }),
               relatedTaskWeightSum
             );
+            const normalizedTaskSkillIds = normalizedTasks
+              .map((task) => task.skillId)
+              .filter((value): value is string => Boolean(value));
+            const projectEmoji =
+              projectSkillIds
+                .map(resolveSkillEmoji)
+                .find((emoji): emoji is string => Boolean(emoji)) ??
+              normalizedTaskSkillIds
+                .map(resolveSkillEmoji)
+                .find((emoji): emoji is string => Boolean(emoji)) ??
+              null;
+            const rawEnergy = extractLookupName(p.energy);
+            const rawPriority = extractLookupName(p.priority);
+            const energyCode = normalizeEnergyCode(rawEnergy);
+            const priorityCode = normalizePriorityCode(rawPriority);
+            const energyId = extractLookupId(p.energy);
+            const priorityId = extractLookupId(p.priority);
             return {
               id: p.id,
               name: p.name,
               status,
               progress,
-              energy: mapEnergy(p.energy ?? "NO"),
-              energyCode: p.energy ?? undefined,
+              energy: mapEnergy(energyCode),
+              energyCode,
+              emoji: projectEmoji,
               stage: p.stage ?? "BUILD",
-              priorityCode: p.priority ?? undefined,
+              priorityCode,
+              energyId,
+              priorityId,
+              durationMinutes:
+                typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
+                  ? p.duration_min
+                  : null,
+              skillIds: projectSkillIds,
               weight: projectWeightValue,
               isNew: false,
               tasks: normalizedTasks,
@@ -350,6 +422,23 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     load();
   }, [monumentId, monumentEmoji, decorate]);
 
+  const handleProjectUpdated = useCallback(
+    (goalId: string, projectId: string, updates: Partial<Project>) => {
+      setGoals((prev) =>
+        prev.map((goal) => {
+          if (goal.id !== goalId) return goal;
+          return {
+            ...goal,
+            projects: goal.projects.map((project) =>
+              project.id === projectId ? { ...project, ...updates } : project
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
   const content = useMemo(() => {
     if (loading) {
       return (
@@ -378,6 +467,9 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               showCreatedAt={false}
               showEmojiPrefix={false}
               variant="compact"
+              onProjectUpdated={(projectId, updates) =>
+                handleProjectUpdated(goal.id, projectId, updates)
+              }
             />
           </div>
         ))}

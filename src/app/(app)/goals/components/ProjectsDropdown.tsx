@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ProjectRow } from "./ProjectRow";
+import { ProjectRow, type ProjectCardMorphOrigin } from "./ProjectRow";
 import type { Project } from "../types";
 import { Progress } from "@/components/ui/Progress";
 
@@ -10,6 +10,7 @@ interface ProjectsDropdownProps {
   goalTitle: string;
   projects: Project[];
   loading: boolean;
+  onProjectLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
 }
 
 export function ProjectsDropdown({
@@ -17,6 +18,7 @@ export function ProjectsDropdown({
   goalTitle,
   projects,
   loading,
+  onProjectLongPress,
 }: ProjectsDropdownProps) {
   return (
     <div
@@ -39,7 +41,7 @@ export function ProjectsDropdown({
         ) : projects.length > 0 ? (
           <div className="space-y-2">
             {projects.map((p) => (
-              <ProjectRow key={p.id} project={p} />
+              <ProjectRow key={p.id} project={p} onLongPress={onProjectLongPress} />
             ))}
           </div>
         ) : (

@@ -14,10 +14,15 @@ export interface Project {
   progress: number; // 0-100
   dueDate?: string;
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
+  emoji?: string | null;
   tasks: Task[];
   stage?: string;
   energyCode?: string;
   priorityCode?: string;
+  durationMinutes?: number | null;
+  skillIds?: string[];
+  priorityId?: string | number | null;
+  energyId?: string | number | null;
   weight?: number;
   isNew?: boolean;
 }

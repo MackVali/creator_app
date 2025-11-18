@@ -12,7 +12,8 @@ import {
 import dynamic from "next/dynamic";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
 import { createPortal } from "react-dom";
-import type { Goal } from "../types";
+import type { Goal, Project } from "../types";
+import type { ProjectCardMorphOrigin } from "./ProjectRow";
 // Lazy-load dropdown contents to reduce initial bundle and re-render cost
 const ProjectsDropdown = dynamic(() => import("./ProjectsDropdown").then(m => m.ProjectsDropdown), {
   ssr: false,
@@ -27,6 +28,7 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
+import { ProjectQuickEditDialog } from "./ProjectQuickEditDialog";
 
 const energyAccent: Record<
   Goal["energy"],
@@ -68,6 +70,7 @@ interface GoalCardProps {
   showCreatedAt?: boolean;
   showEmojiPrefix?: boolean;
   variant?: "default" | "compact";
+  onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
 }
 
 function GoalCardImpl({
@@ -80,9 +83,12 @@ function GoalCardImpl({
   showCreatedAt = true,
   showEmojiPrefix = false,
   variant = "default",
+  onProjectUpdated,
 }: GoalCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editingProjectOrigin, setEditingProjectOrigin] = useState<ProjectCardMorphOrigin | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [overlayRect, setOverlayRect] = useState<DOMRect | null>(null);
 
@@ -115,6 +121,16 @@ function GoalCardImpl({
     setOpen((prev) => !prev);
   }, []);
 
+  const handleProjectLongPress = useCallback((project: Project, origin: ProjectCardMorphOrigin | null) => {
+    setEditingProjectOrigin(origin ?? null);
+    setEditingProject(project);
+  }, []);
+
+  const closeProjectEditor = useCallback(() => {
+    setEditingProject(null);
+    setEditingProjectOrigin(null);
+  }, []);
+
   const energy = energyAccent[goal.energy];
   const createdAt = useMemo(() => {
     if (goal.createdAt) return new Date(goal.createdAt).toLocaleDateString();
@@ -131,6 +147,7 @@ function GoalCardImpl({
     "group relative h-full rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.03] to-white/[0.015] p-3 text-white min-h-[104px] shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]";
   const containerClass = `${containerBase} aspect-[5/6]`;
     return (
+      <>
       <div
         ref={cardRef}
         className={containerClass}
@@ -175,24 +192,36 @@ function GoalCardImpl({
               goal={goal}
               loading={loading}
               onClose={toggle}
+              onProjectLongPress={handleProjectLongPress}
+              onProjectUpdated={onProjectUpdated}
               anchorRect={overlayRect}
             />
           )}
         </div>
       </div>
+      <ProjectQuickEditDialog
+        project={editingProject}
+        origin={editingProjectOrigin}
+        onClose={closeProjectEditor}
+        onUpdated={(projectId, updates) =>
+          onProjectUpdated?.(projectId, updates)
+        }
+      />
+      </>
     );
   }
 
   return (
-    <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-5 text-white transition hover:-translate-y-1 hover:border-white/30">
-      <div className="relative flex h-full flex-col gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <button
-            onClick={toggle}
-            aria-expanded={open}
-            aria-controls={`goal-${goal.id}`}
-            className="flex flex-1 flex-col gap-3 text-left"
-          >
+    <>
+      <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-5 text-white transition hover:-translate-y-1 hover:border-white/30">
+        <div className="relative flex h-full flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <button
+              onClick={toggle}
+              aria-expanded={open}
+              aria-controls={`goal-${goal.id}`}
+              className="flex flex-1 flex-col gap-3 text-left"
+            >
             <div className="flex items-start gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xl font-semibold">
                 {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
@@ -272,43 +301,53 @@ function GoalCardImpl({
                 </button>
               </div>
             )}
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                aria-label="Goal actions"
-                className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70 transition hover:border-white/40 hover:text-white"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => onEdit?.()}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onToggleActive?.()}>
-                {goal.active ? "Mark Inactive" : "Mark Active"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-rose-500 focus:text-rose-400"
-                onSelect={() => onDelete?.()}
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {open && (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02]">
-            <ProjectsDropdown
-              id={`goal-${goal.id}`}
-              goalTitle={goal.title}
-              projects={goal.projects}
-              loading={loading}
-            />
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label="Goal actions"
+                  className="rounded-full border border-white/10 bg-white/10 p-1.5 text-white/70 transition hover:border-white/40 hover:text-white"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => onEdit?.()}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onToggleActive?.()}>
+                  {goal.active ? "Mark Inactive" : "Mark Active"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-rose-500 focus:text-rose-400"
+                  onSelect={() => onDelete?.()}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        )}
+
+          {open && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.02]">
+              <ProjectsDropdown
+                id={`goal-${goal.id}`}
+                goalTitle={goal.title}
+                projects={goal.projects}
+                loading={loading}
+                onProjectLongPress={handleProjectLongPress}
+              />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+      <ProjectQuickEditDialog
+        project={editingProject}
+        origin={editingProjectOrigin}
+        onClose={closeProjectEditor}
+        onUpdated={(projectId, updates) => {
+          onProjectUpdated?.(projectId, updates);
+        }}
+      />
+    </>
   );
 }
 
@@ -317,6 +356,8 @@ type CompactProjectsOverlayProps = {
   loading: boolean;
   onClose: () => void;
   anchorRect: DOMRect | null;
+  onProjectLongPress: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
+  onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
 };
 
 function CompactProjectsOverlay({
@@ -324,6 +365,8 @@ function CompactProjectsOverlay({
   loading,
   onClose,
   anchorRect,
+  onProjectLongPress,
+  onProjectUpdated,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -347,6 +390,9 @@ function CompactProjectsOverlay({
   const regionId = `goal-${goal.id}`;
   const headingId = `${regionId}-overlay-title`;
   const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : true;
+  const computedMaxWidth = anchorRect
+    ? Math.min(640, Math.max(anchorRect.width + 64, 300))
+    : undefined;
 
   const header = (
     <div className="flex items-center justify-between px-5 py-4">
@@ -373,69 +419,59 @@ function CompactProjectsOverlay({
         goalTitle={goal.title}
         projects={goal.projects}
         loading={loading}
+        onProjectLongPress={onProjectLongPress}
       />
     </div>
   );
 
   const basePanelClass =
-    "overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-b from-white/[0.05] to-white/[0.015] shadow-[0_25px_50px_-20px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.08)]";
+    "overflow-hidden rounded-2xl border border-white/15 bg-[#0b111c] shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
 
   if (isMobile || !anchorRect) {
     return createPortal(
       <>
         <button
           type="button"
-          className="fixed inset-0 z-[60] bg-black/60"
+          className="fixed inset-0 z-[60] bg-black/70"
           aria-label="Close projects overlay"
           onClick={onClose}
         />
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={headingId}
-          className={`fixed inset-x-0 bottom-0 z-[70] mx-auto w-full max-w-sm rounded-t-3xl ${basePanelClass}`}
-        >
-          {header}
-          <div className="max-h-[55vh]">{listContent}</div>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-10">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={headingId}
+            className={`w-full max-w-sm ${basePanelClass}`}
+            style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
+          >
+            {header}
+            <div className="max-h-[60vh]">{listContent}</div>
+          </div>
         </div>
       </>,
       document.body,
     );
   }
 
-  const viewportWidth =
-    typeof window !== "undefined" ? window.innerWidth : anchorRect.width;
-  const viewportHeight =
-    typeof window !== "undefined" ? window.innerHeight : anchorRect.height;
-  const gutter = 16;
-  const width = Math.min(
-    Math.max(anchorRect.width * 0.8, 220),
-    viewportWidth - gutter * 2,
-  );
-  const left = Math.min(
-    Math.max(gutter, anchorRect.left + anchorRect.width / 2 - width / 2),
-    viewportWidth - width - gutter,
-  );
-  const top = Math.min(anchorRect.bottom + 8, viewportHeight - 200);
-  const maxHeight = Math.max(160, viewportHeight - top - gutter);
-
   return createPortal(
     <>
       <button
         type="button"
-        className="fixed inset-0 z-[60] bg-black/40"
+        className="fixed inset-0 z-[60] bg-black/50"
         aria-label="Close projects overlay"
         onClick={onClose}
       />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={headingId}
-        className="fixed z-[70] overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-b from-white/[0.05] to-white/[0.015] shadow-[0_25px_50px_-20px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.08)]"
-        style={{ top, left, width }}
-      >
-        {header}
-        <div style={{ maxHeight }}>{listContent}</div>
+      <div className="fixed inset-0 z-[70] flex items-center justify-center px-6 py-12">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={headingId}
+          className={`w-full max-w-xl ${basePanelClass}`}
+          style={computedMaxWidth ? { maxWidth: computedMaxWidth } : undefined}
+        >
+          {header}
+          <div className="max-h-[70vh]">{listContent}</div>
+        </div>
       </div>
     </>,
     document.body,

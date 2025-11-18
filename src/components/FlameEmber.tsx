@@ -107,9 +107,11 @@ function renderFlame(level: FlameLevel) {
     case "EXTREME":
       return <ExtremeFlamePurple />;
     default: {
-      const profile = PROFILE[level];
-      const palette = PALETTES[level as keyof typeof PALETTES] || PALETTES.HIGH;
-      return <LevelFlame level={level} profile={profile} palette={palette} />;
+      const normalizedLevel: FlameLevel = PROFILE[level] ? level : "MEDIUM";
+      const profile = PROFILE[normalizedLevel] ?? PROFILE.MEDIUM;
+      const palette =
+        PALETTES[normalizedLevel as keyof typeof PALETTES] ?? PALETTES.MEDIUM;
+      return <LevelFlame level={normalizedLevel} profile={profile} palette={palette} />;
     }
   }
 }

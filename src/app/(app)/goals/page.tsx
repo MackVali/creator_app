@@ -117,6 +117,51 @@ const SCHEDULER_PRIORITY_MAP: Record<string, string> = {
   CRITICAL: "Critical",
   "ULTRA-CRITICAL": "Ultra-Critical",
 };
+const NORMALIZED_PRIORITY_VALUES = new Set([
+  "NO",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "CRITICAL",
+  "ULTRA-CRITICAL",
+]);
+const NORMALIZED_ENERGY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"]);
+
+function normalizeProjectPriority(value?: string | null): string {
+  if (typeof value !== "string") return "NO";
+  const normalized = value.toUpperCase();
+  return NORMALIZED_PRIORITY_VALUES.has(normalized) ? normalized : "NO";
+}
+
+function normalizeProjectEnergyCode(value?: string | null): string {
+  if (typeof value !== "string") return "NO";
+  const normalized = value.toUpperCase();
+  return NORMALIZED_ENERGY_VALUES.has(normalized) ? normalized : "NO";
+}
+
+function extractLookupValue(
+  field: { name?: string | null } | string | null | undefined
+): string | null {
+  if (!field) return null;
+  if (typeof field === "string") return field;
+  if (typeof field === "object" && "name" in field) {
+    const candidate = field.name;
+    return typeof candidate === "string" ? candidate : null;
+  }
+  return null;
+}
+
+function extractLookupId(
+  field: { id?: string | number | null } | string | number | null | undefined
+): string | number | null {
+  if (field && typeof field === "object" && "id" in field) {
+    return field.id ?? null;
+  }
+  if (typeof field === "string" || typeof field === "number") {
+    return field;
+  }
+  return null;
+}
 
 const TASK_STAGE_MAP: Record<string, string> = {
   PREPARE: "Prepare",
@@ -180,9 +225,10 @@ type GoalRowWithRelations = GoalRow & {
     id: string;
     name: string;
     goal_id: string;
-    priority: string | null;
-    energy: string | null;
+    priority: { id?: string | number | null; name?: string | null } | string | null;
+    energy: { id?: string | number | null; name?: string | null } | string | null;
     stage: string | null;
+    duration_min?: number | null;
     created_at: string;
     tasks?: {
       id: string;
@@ -207,7 +253,9 @@ async function fetchGoalsWithRelations(
   const selectWithRelations = `
     ${baseSelect},
     projects (
-      id, name, goal_id, priority, energy, stage, created_at,
+      id, name, goal_id, stage, duration_min, created_at,
+      priority:priority(name),
+      energy:energy(name),
       tasks (
         id, project_id, stage, name, skill_id, priority
       ),
@@ -433,7 +481,7 @@ export default function GoalsPage() {
   const [monuments, setMonuments] = useState<
     { id: string; title: string; emoji: string | null }[]
   >([]);
-  const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
+  const [skills, setSkills] = useState<{ id: string; name: string; icon: string | null }[]>([]);
   const [monument, setMonument] = useState<string>("All");
   const [skill, setSkill] = useState<string>("All");
   const [drawer, setDrawer] = useState(false);
@@ -466,6 +514,23 @@ export default function GoalsPage() {
       };
     },
     [getMonumentEmoji]
+  );
+
+  const handleProjectUpdated = useCallback(
+    (goalId: string, projectId: string, updates: Partial<Project>) => {
+      setGoals((prev) =>
+        prev.map((goal) => {
+          if (goal.id !== goalId) return goal;
+          return {
+            ...goal,
+            projects: goal.projects.map((project) =>
+              project.id === projectId ? { ...project, ...updates } : project
+            ),
+          };
+        })
+      );
+    },
+    []
   );
 
   useEffect(() => {
@@ -525,6 +590,13 @@ export default function GoalsPage() {
         const monumentEmojiLookup = new Map(
           monumentsData.map((m) => [m.id, m.emoji ?? null])
         );
+        const skillEmojiLookup = new Map(
+          skillsData.map((s) => [s.id, s.icon ?? null])
+        );
+        const resolveSkillEmoji = (skillId?: string | null) => {
+          if (!skillId) return null;
+          return skillEmojiLookup.get(skillId) ?? null;
+        };
 
         const originalWeightMap = new Map(
           goalsData.map((g) => [g.id, g.weight ?? null])
@@ -547,9 +619,11 @@ export default function GoalsPage() {
               }
               return normalized;
             });
+            const projectSkillIds: string[] = [];
             (p.project_skills ?? []).forEach((record) => {
               if (record?.skill_id) {
                 goalSkills.add(record.skill_id);
+                projectSkillIds.push(record.skill_id);
               }
             });
             const total = normalizedTasks.length;
@@ -571,15 +645,40 @@ export default function GoalsPage() {
               }),
               relatedTaskWeightSum
             );
+            const normalizedTaskSkillIds = normalizedTasks
+              .map((task) => task.skillId)
+              .filter((value): value is string => Boolean(value));
+            const projectEmoji =
+              projectSkillIds
+                .map(resolveSkillEmoji)
+                .find((emoji): emoji is string => Boolean(emoji)) ??
+              normalizedTaskSkillIds
+                .map(resolveSkillEmoji)
+                .find((emoji): emoji is string => Boolean(emoji)) ??
+              null;
+            const rawEnergy = extractLookupValue(p.energy);
+            const rawPriority = extractLookupValue(p.priority);
+            const energyId = extractLookupId(p.energy);
+            const priorityId = extractLookupId(p.priority);
+            const energyCode = normalizeProjectEnergyCode(rawEnergy);
+            const priorityCode = normalizeProjectPriority(rawPriority);
             return {
               id: p.id,
               name: p.name,
               status,
               progress,
-              energy: mapEnergy(p.energy ?? "NO"),
-              energyCode: p.energy ?? undefined,
+              energy: mapEnergy(energyCode),
+              energyCode,
+              durationMinutes:
+                typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
+                  ? p.duration_min
+                  : null,
+              skillIds: projectSkillIds,
+              emoji: projectEmoji,
               stage: p.stage ?? "BUILD",
-              priorityCode: p.priority ?? undefined,
+              priorityCode,
+              energyId,
+              priorityId,
               weight: projectWeightValue,
               isNew: false,
               tasks: normalizedTasks,
@@ -973,6 +1072,9 @@ export default function GoalsPage() {
                       onToggleActive={() => handleToggleActive(goal)}
                       onDelete={() => handleDelete(goal)}
                       onBoost={() => handleBoost(goal)}
+                      onProjectUpdated={(projectId, updates) =>
+                        handleProjectUpdated(goal.id, projectId, updates)
+                      }
                     />
                   </div>
                 ))}
