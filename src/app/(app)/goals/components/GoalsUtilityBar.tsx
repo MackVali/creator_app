@@ -94,7 +94,7 @@ export function GoalsUtilityBar({
             className="w-full rounded-2xl border border-white/15 bg-white/[0.04] py-3.5 pl-12 pr-4 text-sm text-white placeholder:text-white/50 focus:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-3 gap-3">
           <FilterSelect
             label="Energy"
             value={energy}
