@@ -136,8 +136,6 @@ export function GoalsUtilityBar({
               { value: "All", label: "All" },
               ...skills.map((s) => ({ value: s.id, label: s.name })),
             ]}
-            searchable
-            searchPlaceholder="Search skills"
           />
           <FilterSelect
             label="Sort"
