@@ -497,7 +497,7 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
         ))}
       </div>
     );
-  }, [loading, goals]);
+  }, [loading, goals, openGoalId, handleGoalOpenChange, handleProjectUpdated]);
 
   return (
     <div className="monument-goals-list">
