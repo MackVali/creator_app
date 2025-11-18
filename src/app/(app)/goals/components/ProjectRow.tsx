@@ -153,14 +153,14 @@ export function ProjectRow({ project, onLongPress }: ProjectRowProps) {
   return (
     <>
       <div
-        className="relative rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] p-4 shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)] transition-transform"
+        className="relative rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.02] p-4 shadow-[0_12px_28px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)] transition-transform select-none"
         style={cardAnimationStyle}
       >
       <div className="pointer-events-none absolute inset-0 rounded-2xl [mask-image:linear-gradient(to_bottom,black,transparent_75%)] bg-[radial-gradient(120%_70%_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
       <button
         onClick={handleClick}
         type="button"
-        className="relative z-0 flex w-full items-center justify-between text-left text-sm text-white"
+        className="relative z-0 flex w-full items-center justify-between text-left text-sm text-white select-none"
         aria-expanded={open}
         aria-controls={`project-${project.id}`}
         onPointerDown={handlePointerDown}
