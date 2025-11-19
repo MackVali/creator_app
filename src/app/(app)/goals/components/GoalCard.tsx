@@ -92,7 +92,7 @@ function GoalCardImpl({
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = typeof openProp === "boolean";
   const open = isControlled ? (openProp as boolean) : internalOpen;
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingProjectOrigin, setEditingProjectOrigin] = useState<ProjectCardMorphOrigin | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -365,6 +365,7 @@ function GoalCardImpl({
                 projects={goal.projects}
                 loading={loading}
                 onProjectLongPress={handleProjectLongPress}
+                onProjectUpdated={onProjectUpdated}
               />
             </div>
           )}
@@ -451,6 +452,7 @@ function CompactProjectsOverlay({
         projects={goal.projects}
         loading={loading}
         onProjectLongPress={onProjectLongPress}
+        onProjectUpdated={onProjectUpdated}
       />
     </div>
   );
