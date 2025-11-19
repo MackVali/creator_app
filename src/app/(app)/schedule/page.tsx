@@ -1646,11 +1646,63 @@ type WindowReportEntry = {
   rangeLabel: string
 }
 
+const ENERGY_LABEL_SET = new Set<(typeof ENERGY.LIST)[number]>(ENERGY.LIST)
+const DEFAULT_ENERGY_ID_LOOKUP: Record<string, (typeof ENERGY.LIST)[number]> = ENERGY.LIST.reduce(
+  (map, label, index) => {
+    map[String(index + 1)] = label
+    map[label] = label
+    return map
+  },
+  {} as Record<string, (typeof ENERGY.LIST)[number]>
+)
+let scheduleEnergyLookupMap: Record<string, (typeof ENERGY.LIST)[number]> = {
+  ...DEFAULT_ENERGY_ID_LOOKUP,
+}
+
 function normalizeEnergyLabel(level?: string | null): (typeof ENERGY.LIST)[number] {
-  const raw = typeof level === 'string' ? level.trim().toUpperCase() : ''
-  return ENERGY.LIST.includes(raw as (typeof ENERGY.LIST)[number])
-    ? (raw as (typeof ENERGY.LIST)[number])
-    : 'NO'
+  return resolveEnergyLevel(level) ?? 'NO'
+}
+
+function resolveEnergyLevel(value?: unknown): (typeof ENERGY.LIST)[number] | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const direct = scheduleEnergyLookupMap[trimmed]
+    if (direct) return direct
+    const upper = trimmed.toUpperCase()
+    const normalized = scheduleEnergyLookupMap[upper]
+    if (normalized) return normalized
+    return ENERGY_LABEL_SET.has(upper as (typeof ENERGY.LIST)[number])
+      ? (upper as (typeof ENERGY.LIST)[number])
+      : null
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const direct = scheduleEnergyLookupMap[String(value)]
+    if (direct) return direct
+    return resolveEnergyLevel(String(value))
+  }
+  if (
+    value &&
+    typeof value === 'object' &&
+    'name' in (value as { name?: string | null })
+  ) {
+    const candidate = (value as { name?: string | null }).name ?? null
+    return resolveEnergyLevel(candidate)
+  }
+  return null
+}
+
+function updateScheduleEnergyLookup(
+  lookup?: Record<string, (typeof ENERGY.LIST)[number]> | null
+) {
+  scheduleEnergyLookupMap = { ...DEFAULT_ENERGY_ID_LOOKUP }
+  if (!lookup) return
+  for (const [key, value] of Object.entries(lookup)) {
+    if (!key) continue
+    const normalized = normalizeEnergyLabel(value)
+    scheduleEnergyLookupMap[key] = normalized
+    scheduleEnergyLookupMap[normalized] = normalized
+  }
 }
 
 function windowDurationForDay(window: RepoWindow, startHour: number): number {
@@ -2410,6 +2462,7 @@ export default function SchedulePage() {
     let active = true
 
     const applyDataset = (payload: ScheduleEventDataset) => {
+      updateScheduleEnergyLookup(payload.energyLookup)
       setWindowSnapshot(payload.windowSnapshot)
       setTasks(payload.tasks)
       setPendingBacklogTaskIds(new Set())
@@ -4781,6 +4834,10 @@ peekDataDepsRef.current = {
               const projectBorderClass = isCompleted
                 ? 'border-emerald-400/60'
                 : 'border-black/70'
+              const instanceEnergyLevel = resolveEnergyLevel(instance.energy_resolved)
+              const projectEnergyLevel = resolveEnergyLevel(project.energy)
+              const cardEnergyLevel: FlameLevel =
+                instanceEnergyLevel ?? projectEnergyLevel ?? 'NO'
               return (
                 <motion.div
                   key={instance.id}
@@ -4904,10 +4961,7 @@ peekDataDepsRef.current = {
                           </div>
                         </div>
                         <SkillEnergyBadge
-                          energyLevel={
-                            (instance.energy_resolved?.toUpperCase() as FlameLevel) ||
-                            'NO'
-                          }
+                          energyLevel={cardEnergyLevel}
                           skillIcon={project.skill_icon}
                           className="flex flex-shrink-0 items-center gap-2"
                           iconClassName="text-lg leading-none"
@@ -5019,15 +5073,11 @@ peekDataDepsRef.current = {
                             const fallbackPending = isFallbackCard
                               ? pendingBacklogTaskIds.has(task.id)
                               : false
-                            const resolvedEnergyRaw = (
-                              task.energy ?? project.energy ?? 'NO'
-                            ).toString()
-                            const resolvedEnergyUpper = resolvedEnergyRaw.toUpperCase()
-                            const energyLevel = ENERGY.LIST.includes(
-                              resolvedEnergyUpper as FlameLevel
-                            )
-                              ? (resolvedEnergyUpper as FlameLevel)
-                              : 'NO'
+                            const fallbackTaskEnergy =
+                              resolveEnergyLevel(task.energy) ??
+                              resolveEnergyLevel(project.energy) ??
+                              'NO'
+                            const energyLevel: FlameLevel = fallbackTaskEnergy
                             const pendingStatus =
                               kind === 'scheduled' && instanceId
                                 ? pendingInstanceStatuses.get(instanceId)
@@ -5268,6 +5318,8 @@ peekDataDepsRef.current = {
                 outlineOffset: '-1px',
               }
               const progress = (task as { progress?: number }).progress ?? 0
+              const standaloneEnergyLevel: FlameLevel =
+                resolveEnergyLevel(task.energy) ?? 'NO'
               const pendingStatus = pendingInstanceStatuses.get(instance.id)
               const isPending = pendingStatus !== undefined
               const status = pendingStatus ?? instance.status ?? 'scheduled'
@@ -5377,7 +5429,7 @@ peekDataDepsRef.current = {
                     </motion.div>
                   </div>
                   <SkillEnergyBadge
-                    energyLevel={(task.energy as FlameLevel) || 'NO'}
+                    energyLevel={standaloneEnergyLevel}
                     skillIcon={task.skill_icon}
                     className="pointer-events-none absolute -top-1 -right-1 flex items-center gap-1 rounded-full bg-zinc-950/70 px-1.5 py-[1px]"
                     iconClassName="text-base leading-none"

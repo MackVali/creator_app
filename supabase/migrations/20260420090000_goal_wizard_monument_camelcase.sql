@@ -1,3 +1,5 @@
+-- Ensure goal wizard RPC accepts both snake_case and camelCase monument keys
+
 create or replace function public.create_goal_with_projects_and_tasks(
   goal_input jsonb,
   project_inputs jsonb
@@ -31,7 +33,7 @@ begin
     raise exception 'Cannot create records for another user';
   end if;
 
-  -- goals table has no due_date; omit it entirely
+  -- Insert goal without due_date; accept camelCase/snake_case monument keys
   insert into public.goals (user_id, name, priority, energy, monument_id, why)
   values (
     goal_user_id,
@@ -153,3 +155,4 @@ end;
 $$;
 
 grant execute on function public.create_goal_with_projects_and_tasks(jsonb, jsonb) to authenticated;
+
