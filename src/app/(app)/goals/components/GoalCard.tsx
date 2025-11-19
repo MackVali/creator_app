@@ -10,7 +10,7 @@ import {
   useLayoutEffect,
 } from "react";
 import dynamic from "next/dynamic";
-import { ChevronDown, MoreHorizontal } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
 import { createPortal } from "react-dom";
 import type { Goal, Project } from "../types";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
@@ -153,6 +153,10 @@ function GoalCardImpl({
     if (goal.updatedAt) return new Date(goal.updatedAt).toLocaleDateString();
     return null;
   }, [goal.createdAt, goal.updatedAt]);
+  const etaDisplay = useMemo(() => {
+    if (!goal.estimatedCompletionAt) return null;
+    return new Date(goal.estimatedCompletionAt).toLocaleDateString();
+  }, [goal.estimatedCompletionAt]);
 
   // Compact tile for dense mobile grids
   if (variant === "compact") {
@@ -283,6 +287,17 @@ function GoalCardImpl({
               {goal.dueDate && (
                 <span className="rounded-full border border-white/10 px-3 py-1">
                   Due {new Date(goal.dueDate).toLocaleDateString()}
+                </span>
+              )}
+              {etaDisplay && (
+                <span className="relative flex items-center gap-2 rounded-full border border-fuchsia-400/40 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 px-3 py-1 text-white shadow-[0_6px_18px_rgba(236,72,153,0.35)]">
+                  <span className="flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.3em] text-white/70">
+                    <Sparkles className="h-3 w-3 text-amber-100" aria-hidden="true" />
+                    ETA
+                  </span>
+                  <span className="text-sm font-semibold tracking-tight text-white">
+                    {etaDisplay}
+                  </span>
                 </span>
               )}
               {createdAt && showCreatedAt && (

@@ -277,6 +277,7 @@ type LockedPlacementInput = {
   priority: string;
   stage: string;
   energy: string;
+  dueDate?: string | null;
 };
 
 async function persistLockedProjectPlacements({
@@ -297,6 +298,7 @@ async function persistLockedProjectPlacements({
         stage: placement.stage,
         duration_min: placement.durationMin,
         energy: placement.energy,
+        due_date: placement.dueDate ?? null,
       },
       0
     );
@@ -2224,6 +2226,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               priority: tuple.payload.priority || DEFAULT_PRIORITY,
               stage: tuple.payload.stage || PROJECT_STAGE_OPTIONS[0].value,
               energy: tuple.payload.energy || DEFAULT_ENERGY,
+              dueDate: tuple.payload.due_date ?? null,
             };
           })
           .filter((entry): entry is LockedPlacementInput => entry !== null);

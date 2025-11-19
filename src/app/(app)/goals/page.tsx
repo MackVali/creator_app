@@ -26,6 +26,7 @@ import {
   taskWeight,
   type TaskLite,
   type ProjectLite,
+  dueDateUrgencyBoost,
 } from "@/lib/scheduler/weight";
 
 function mapPriority(priority: string): Goal["priority"] {
@@ -201,7 +202,15 @@ function computeGoalWeight(goal: Goal): number {
           Math.floor((Date.now() - Date.parse(goal.updatedAt)) / DAY_IN_MS)
         );
   const boost = goal.weightBoost ?? 0;
-  return priorityWeight + projectWeightSum + ageInDays + boost;
+  const dueDateBoost = dueDateUrgencyBoost(goal.dueDate ?? null, {
+    linearMax: 220,
+    surgeMax: 420,
+    surgeWindowDays: 4,
+    linearWindowDays: 30,
+    overdueBonusPerDay: 85,
+    overdueMax: 360,
+  });
+  return priorityWeight + projectWeightSum + ageInDays + boost + dueDateBoost;
 }
 
 const GOAL_WEIGHT_UPDATE_BATCH_SIZE = 8;
@@ -249,11 +258,11 @@ async function fetchGoalsWithRelations(
   userId: string
 ): Promise<GoalRowWithRelations[]> {
   const baseSelect =
-    "id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost";
+    "id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
   const selectWithRelations = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, duration_min, created_at,
+      id, name, goal_id, stage, duration_min, created_at, due_date,
       priority:priority(name),
       energy:energy(name),
       tasks (
@@ -286,6 +295,35 @@ async function fetchGoalsWithRelations(
   return fallback.data ?? [];
 }
 
+async function fetchProjectScheduleEndLookup(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<Map<string, string>> {
+  const lookup = new Map<string, string>();
+  const { data, error } = await supabase
+    .from("schedule_instances")
+    .select("source_id, end_utc")
+    .eq("user_id", userId)
+    .eq("source_type", "PROJECT")
+    .in("status", ["scheduled", "completed", "missed"])
+    .order("end_utc", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  (data ?? []).forEach((record) => {
+    const projectId = record?.source_id;
+    const endUtc = record?.end_utc;
+    if (!projectId || !endUtc) return;
+    if (!lookup.has(projectId)) {
+      lookup.set(projectId, endUtc);
+    }
+  });
+
+  return lookup;
+}
+
 function toSchedulerTask(task: {
   id: string;
   name: string;
@@ -306,11 +344,13 @@ function toSchedulerProject(project: {
   id: string;
   priorityCode?: string | null;
   stage?: string | null;
+  dueDate?: string | null;
 }): ProjectLite {
   return {
     id: project.id,
     priority: mapSchedulerPriority(project.priorityCode ?? null),
     stage: project.stage ?? "BUILD",
+    due_date: project.dueDate ?? null,
   };
 }
 
@@ -357,6 +397,7 @@ async function syncProjectsAndTasks(
         stage: project.stage ?? projectStatusToStage(project.status),
         energy: project.energyCode ?? energyToDbValue(project.energy),
         priority: project.priorityCode ?? "NO",
+        due_date: project.dueDate ?? null,
       }))
     );
     if (error) {
@@ -377,6 +418,7 @@ async function syncProjectsAndTasks(
             stage: project.stage ?? projectStatusToStage(project.status),
             energy: project.energyCode ?? energyToDbValue(project.energy),
             priority: project.priorityCode ?? "NO",
+            due_date: project.dueDate ?? null,
           })
           .eq("id", project.id);
         if (error) {
@@ -581,10 +623,19 @@ export default function GoalsPage() {
           return [];
         });
 
-        const [goalsData, monumentsData, skillsData] = await Promise.all([
+        const projectSchedulesPromise = fetchProjectScheduleEndLookup(
+          supabase,
+          user.id
+        ).catch((err) => {
+          console.error("Error fetching scheduled projects:", err);
+          return new Map<string, string>();
+        });
+
+        const [goalsData, monumentsData, skillsData, projectScheduleLookup] = await Promise.all([
           goalsPromise,
           monumentsPromise,
           skillsPromise,
+          projectSchedulesPromise,
         ]);
 
         const monumentEmojiLookup = new Map(
@@ -642,6 +693,7 @@ export default function GoalsPage() {
                 id: p.id,
                 priorityCode: p.priority ?? undefined,
                 stage: p.stage ?? undefined,
+                dueDate: p.due_date ?? null,
               }),
               relatedTaskWeightSum
             );
@@ -669,6 +721,7 @@ export default function GoalsPage() {
               progress,
               energy: mapEnergy(energyCode),
               energyCode,
+              dueDate: p.due_date ?? null,
               durationMinutes:
                 typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
                   ? p.duration_min
@@ -696,6 +749,18 @@ export default function GoalsPage() {
             : progress >= 100
             ? "Completed"
             : "Active";
+          const estimatedCompletionAt = projList.reduce<string | null>((latest, project) => {
+            const scheduledEnd = projectScheduleLookup.get(project.id) ?? null;
+            if (!scheduledEnd) return latest;
+            const scheduledTime = Date.parse(scheduledEnd);
+            if (Number.isNaN(scheduledTime)) return latest;
+            if (!latest) return scheduledEnd;
+            const latestTime = Date.parse(latest);
+            if (Number.isNaN(latestTime) || scheduledTime > latestTime) {
+              return scheduledEnd;
+            }
+            return latest;
+          }, null);
           const baseGoal: Goal = {
             id: g.id,
             title: g.name,
@@ -706,12 +771,14 @@ export default function GoalsPage() {
             active: g.active ?? status === "Active",
             createdAt: g.created_at,
             updatedAt: g.created_at,
+            dueDate: g.due_date ?? undefined,
             projects: projList,
             monumentId: g.monument_id ?? null,
             priorityCode: g.priority ?? null,
             weightBoost: g.weight_boost ?? 0,
             skills: Array.from(goalSkills),
             why: g.why || undefined,
+            estimatedCompletionAt,
           };
           return decorateGoal(baseGoal, monumentEmojiLookup);
         });
@@ -885,8 +952,9 @@ export default function GoalsPage() {
           status: statusDb,
           why: _goal.why ?? null,
           monument_id: _goal.monumentId || null,
+          due_date: _goal.dueDate ?? null,
         })
-        .select("id, created_at, weight, weight_boost, monument_id")
+        .select("id, created_at, weight, weight_boost, monument_id, due_date")
         .single();
 
       if (insertErr || !inserted) {
@@ -909,6 +977,7 @@ export default function GoalsPage() {
         id: newGoalId,
         createdAt: inserted.created_at ?? _goal.createdAt,
         monumentId: inserted.monument_id ?? _goal.monumentId ?? null,
+        dueDate: inserted.due_date ?? _goal.dueDate,
         weight: inserted.weight ?? _goal.weight,
         weightBoost: inserted.weight_boost ?? _goal.weightBoost,
       });
@@ -1136,6 +1205,7 @@ export default function GoalsPage() {
                         : "ACTIVE",
                     why: goal.why ?? null,
                     monument_id: goal.monumentId || null,
+                    due_date: goal.dueDate ?? null,
                   })
                   .eq("id", goal.id);
 

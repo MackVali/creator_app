@@ -7,11 +7,12 @@ import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { projectWeight, taskWeight, type TaskLite, type ProjectLite } from "@/lib/scheduler/weight";
+import { projectWeight, taskWeight, type TaskLite, type ProjectLite, dueDateUrgencyBoost } from "@/lib/scheduler/weight";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
 
 type GoalRowWithRelations = GoalRow & {
+  due_date?: string | null;
   projects?: {
     id: string;
     name: string;
@@ -21,6 +22,7 @@ type GoalRowWithRelations = GoalRow & {
     stage: string | null;
     duration_min?: number | null;
     created_at: string;
+    due_date?: string | null;
     tasks?: {
       id: string;
       project_id: string | null;
@@ -192,11 +194,13 @@ function toSchedulerProject(project: {
   id: string;
   priorityCode?: string | null;
   stage?: string | null;
+  dueDate?: string | null;
 }): ProjectLite {
   return {
     id: project.id,
     priority: mapSchedulerPriority(project.priorityCode ?? null),
     stage: project.stage ?? "BUILD",
+    due_date: project.dueDate ?? null,
   };
 }
 
@@ -215,18 +219,26 @@ function computeGoalWeight(goal: Goal): number {
           Math.floor((Date.now() - Date.parse(goal.updatedAt)) / DAY_IN_MS)
         );
   const boost = goal.weightBoost ?? 0;
-  return priorityWeight + projectWeightSum + ageInDays + boost;
+  const dueDateBoost = dueDateUrgencyBoost(goal.dueDate ?? null, {
+    linearMax: 220,
+    surgeMax: 420,
+    surgeWindowDays: 4,
+    linearWindowDays: 30,
+    overdueBonusPerDay: 85,
+    overdueMax: 360,
+  });
+  return priorityWeight + projectWeightSum + ageInDays + boost + dueDateBoost;
 }
 
 async function fetchGoalsWithRelations(userId: string) {
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
   const baseSelect =
-    "id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost";
+    "id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
   const selectWithRelations = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, created_at,
+      id, name, goal_id, stage, created_at, due_date,
       priority:priority(name),
       energy:energy(name),
       tasks (
@@ -331,7 +343,12 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
             const schedulerTasks: TaskLite[] = normalizedTasks.map(toSchedulerTask);
             const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
             const projectWeightValue = projectWeight(
-              toSchedulerProject({ id: p.id, priorityCode: p.priority ?? undefined, stage: p.stage ?? undefined }),
+              toSchedulerProject({
+                id: p.id,
+                priorityCode: p.priority ?? undefined,
+                stage: p.stage ?? undefined,
+                dueDate: p.due_date ?? null,
+              }),
               relatedTaskWeightSum
             );
             const normalizedTaskSkillIds = normalizedTasks
@@ -358,6 +375,7 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
               progress,
               energy: mapEnergy(energyCode),
               energyCode,
+              dueDate: p.due_date ?? null,
               durationMinutes:
                 typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
                   ? p.duration_min
@@ -392,6 +410,7 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
             active: g.active ?? status === "Active",
             createdAt: g.created_at,
             updatedAt: g.created_at,
+            dueDate: g.due_date ?? undefined,
             projects: projList,
             monumentId: g.monument_id ?? null,
             monumentEmoji: monumentEmojiLookup.get(g.monument_id ?? "") ?? null,

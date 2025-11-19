@@ -48,6 +48,20 @@ const STAGE_OPTIONS = [
 
 const DEFAULT_STAGE = "BUILD";
 
+const toDateInputValue = (iso?: string | null) => {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+};
+
+const fromDateInputValue = (value: string): string | null => {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+};
+
 const projectStageToStatus = (stage: string): Project["status"] => {
   switch (stage) {
     case "RESEARCH":
@@ -107,6 +121,7 @@ export function ProjectQuickEditDialog({
   const [durationInput, setDurationInput] = useState("");
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [initialSkillId, setInitialSkillId] = useState<string | null>(null);
+  const [dueDateInput, setDueDateInput] = useState("");
   const [skillOptions, setSkillOptions] = useState<{ id: string; name: string; icon?: string | null }[]>([]);
   const [skillSearch, setSkillSearch] = useState("");
   const [priorityOptions, setPriorityOptions] = useState<{ id: string | number; name: string }[]>([]);
@@ -131,6 +146,7 @@ export function ProjectQuickEditDialog({
         ? String(project.durationMinutes)
         : ""
     );
+    setDueDateInput(toDateInputValue(project.dueDate));
     const primarySkill = project.skillIds?.[0] ?? null;
     setSelectedSkillId(primarySkill);
     setInitialSkillId(primarySkill);
@@ -338,6 +354,7 @@ export function ProjectQuickEditDialog({
     );
     const nextEnergyId = energyLookup?.id ?? project.energyId ?? null;
     const nextPriorityId = priorityLookup?.id ?? project.priorityId ?? null;
+    const dueDateValue = fromDateInputValue(dueDateInput);
     const { error: updateError } = await supabase
       .from("projects")
       .update({
@@ -346,6 +363,7 @@ export function ProjectQuickEditDialog({
         energy: nextEnergyId,
         priority: nextPriorityId,
         duration_min: parsedDuration,
+        due_date: dueDateValue,
       })
       .eq("id", project.id);
     if (updateError) {
@@ -382,6 +400,7 @@ export function ProjectQuickEditDialog({
       durationMinutes: parsedDuration,
       skillIds: selectedSkillId ? [selectedSkillId] : [],
       emoji: nextEmoji,
+      dueDate: dueDateValue ?? undefined,
     });
     setSaving(false);
     onClose();
@@ -501,6 +520,34 @@ export function ProjectQuickEditDialog({
                       disabled={saving}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
+                    Due date
+                  </Label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      type="date"
+                      value={dueDateInput}
+                      onChange={(event) => setDueDateInput(event.target.value)}
+                      className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm text-white sm:flex-1"
+                      disabled={saving}
+                    />
+                    {dueDateInput ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-11 rounded-xl border border-white/10 bg-white/[0.02] px-4 text-xs text-white/70 hover:text-white"
+                        onClick={() => setDueDateInput("")}
+                        disabled={saving}
+                      >
+                        Clear
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-white/50">
+                    Projects with due dates climb the schedule as the deadline approaches.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs uppercase tracking-[0.24em] text-white/70">

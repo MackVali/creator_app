@@ -27,6 +27,8 @@ export type ProjectLite = {
   energy?: string | null;
   duration_min?: number | null;
   goal_id?: string | null;
+  due_date?: string | null;
+  dueDate?: string | null;
 };
 
 export type GoalLite = {
@@ -36,6 +38,69 @@ export type GoalLite = {
 
 function hasKey<T extends object>(obj: T, key: PropertyKey): key is keyof T {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+const DAY_IN_MS = 86_400_000;
+
+export type DueDateBoostOptions = {
+  linearWindowDays?: number;
+  linearMax?: number;
+  surgeWindowDays?: number;
+  surgeMax?: number;
+  overdueBonusPerDay?: number;
+  overdueMax?: number;
+};
+
+const DEFAULT_DUE_DATE_OPTIONS: Required<DueDateBoostOptions> = {
+  linearWindowDays: 30,
+  linearMax: 200,
+  surgeWindowDays: 3,
+  surgeMax: 350,
+  overdueBonusPerDay: 125,
+  overdueMax: 350,
+};
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+export function dueDateUrgencyBoost(
+  dueDate?: string | null,
+  options: DueDateBoostOptions = {}
+): number {
+  if (!dueDate) return 0;
+  const parsed = Date.parse(dueDate);
+  if (Number.isNaN(parsed)) return 0;
+
+  const config: Required<DueDateBoostOptions> = {
+    ...DEFAULT_DUE_DATE_OPTIONS,
+    ...options,
+  };
+
+  const now = Date.now();
+  const diffMs = parsed - now;
+  const daysUntilDue = diffMs / DAY_IN_MS;
+
+  let linearBoost = 0;
+  if (daysUntilDue <= config.linearWindowDays) {
+    const ratio = clamp01(1 - daysUntilDue / config.linearWindowDays);
+    linearBoost = ratio * config.linearMax;
+  }
+
+  let surgeBoost = 0;
+  if (daysUntilDue <= config.surgeWindowDays) {
+    const ratio = clamp01(1 - daysUntilDue / config.surgeWindowDays);
+    surgeBoost = Math.pow(ratio, 2) * config.surgeMax;
+  }
+
+  let overdueBoost = 0;
+  if (daysUntilDue < 0) {
+    const overdueDays = Math.abs(daysUntilDue);
+    overdueBoost = Math.min(
+      config.overdueMax,
+      overdueDays * config.overdueBonusPerDay
+    );
+  }
+
+  return Math.round(linearBoost + surgeBoost + overdueBoost);
 }
 
 export function taskWeight(t: TaskLite): number {
@@ -51,7 +116,15 @@ export function projectWeight(p: ProjectLite, relatedTaskWeightsSum: number): nu
     ? PROJECT_PRIORITY_WEIGHT[p.priority]
     : 0;
   const stage = hasKey(PROJECT_STAGE_WEIGHT, p.stage) ? PROJECT_STAGE_WEIGHT[p.stage] : 0;
-  return relatedTaskWeightsSum / 1000 + priority + stage;
+  const dueBoost = dueDateUrgencyBoost(p.dueDate ?? p.due_date ?? null, {
+    linearMax: 40,
+    surgeMax: 70,
+    surgeWindowDays: 4,
+    linearWindowDays: 28,
+    overdueBonusPerDay: 25,
+    overdueMax: 140,
+  });
+  return relatedTaskWeightsSum / 1000 + priority + stage + dueBoost;
 }
 
 export function goalWeight(g: GoalLite, relatedProjectWeightsSum: number): number {
