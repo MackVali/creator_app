@@ -6,6 +6,7 @@ import {
   fetchGoalsForUser,
   fetchReadyTasks,
   fetchWindowsSnapshot,
+  fetchPriorityEnergyLookups,
   type WindowLite,
   type GoalSummary,
 } from './repo'
@@ -20,6 +21,7 @@ import {
 } from './instanceRepo'
 import { addDaysInTimeZone, normalizeTimeZone, startOfDayInTimeZone } from './timezone'
 import type { TaskLite, ProjectLite } from './weight'
+import { ENERGY } from './config'
 import type { SkillRow } from '@/lib/types/skill'
 import type { Monument } from '@/lib/queries/monuments'
 
@@ -40,6 +42,8 @@ export type ScheduleEventDataset = {
   monuments: Monument[]
   scheduledProjectIds: string[]
   instances: ScheduleInstance[]
+  energyLookup: Record<string, (typeof ENERGY.LIST)[number]>
+  priorityLookup: Record<string, string>
 }
 
 export type ProjectGoalRelations = Record<
@@ -84,6 +88,7 @@ export async function buildScheduleEventDataset({
     monuments,
     scheduledProjectIds,
     goals,
+    priorityEnergyLookups,
   ] = await Promise.all([
     fetchWindowsSnapshot(userId, client),
     fetchReadyTasks(client),
@@ -93,6 +98,7 @@ export async function buildScheduleEventDataset({
     fetchMonumentsForUser(userId, client),
     fetchScheduledProjectIds(userId, client),
     fetchGoalsForUser(userId, client),
+    fetchPriorityEnergyLookups(client),
   ])
 
   const projectIds = Object.keys(projectMap)
@@ -125,6 +131,13 @@ export async function buildScheduleEventDataset({
     }
     return true
   })
+  const energyLookup = normalizeEnergyLookup(priorityEnergyLookups.energy)
+  const normalizedInstances = normalizeScheduleInstanceEnergy(
+    filteredInstances,
+    energyLookup,
+    projectMap
+  )
+  const priorityLookup = normalizePriorityLookup(priorityEnergyLookups.priority)
 
   const projectList = Object.values(projectMap)
   const goalNameById = new Map<string, GoalSummary['name']>(
@@ -155,7 +168,9 @@ export async function buildScheduleEventDataset({
     skills,
     monuments,
     scheduledProjectIds,
-    instances: filteredInstances,
+    instances: normalizedInstances,
+    energyLookup,
+    priorityLookup,
   }
 }
 
@@ -186,4 +201,106 @@ async function fetchMonumentsForUser(userId: string, client: Client): Promise<Mo
     title: row.title,
     emoji: row.emoji ?? null,
   }))
+}
+
+const DIGIT_PATTERN = /^\d+$/
+
+function normalizeScheduleInstanceEnergy(
+  instances: ScheduleInstance[],
+  lookup: Record<string, (typeof ENERGY.LIST)[number]>,
+  projectMap: Record<string, ProjectLite>
+): ScheduleInstance[] {
+  return instances.map(instance => {
+    let energyValue = normalizeEnergyWithLookup(instance.energy_resolved, lookup)
+    if (
+      (!energyValue || energyValue === 'NO') &&
+      instance.source_type === 'PROJECT' &&
+      instance.source_id
+    ) {
+      const projectEnergy = projectMap[instance.source_id]?.energy
+      const fallback = normalizeEnergyWithLookup(projectEnergy, lookup)
+      if (fallback) {
+        energyValue = fallback
+      }
+    }
+    if (energyValue === instance.energy_resolved) {
+      return instance
+    }
+    return {
+      ...instance,
+      energy_resolved: energyValue,
+    }
+  })
+}
+
+function normalizeEnergyWithLookup(
+  value: unknown,
+  lookup: Record<string, (typeof ENERGY.LIST)[number]>
+): string {
+  if (typeof value === 'number') {
+    const mapped = lookup[String(value)]
+    if (mapped) return mapped
+    const fallback = energyLabelFromIndex(value)
+    if (fallback) return fallback
+    return String(value)
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return 'NO'
+    if (DIGIT_PATTERN.test(trimmed)) {
+      const mapped = lookup[trimmed]
+      if (mapped) return mapped
+      const fallback = energyLabelFromIndex(trimmed)
+      return fallback ?? trimmed
+    }
+    const upper = trimmed.toUpperCase()
+    if (lookup[upper]) return lookup[upper]
+    return upper
+  }
+  return 'NO'
+}
+
+function normalizeEnergyLookup(
+  source: Record<string, string>
+): Record<string, (typeof ENERGY.LIST)[number]> {
+  const map: Record<string, (typeof ENERGY.LIST)[number]> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (!key) continue
+    const normalized = normalizeEnergyValue(value)
+    map[key] = normalized
+    map[normalized] = normalized
+  }
+  // Ensure default mapping exists for numeric IDs even if lookup table is empty
+  ENERGY.LIST.forEach((label, index) => {
+    const key = String(index + 1)
+    if (!map[key]) {
+      map[key] = label
+    }
+    map[label] = label
+  })
+  return map
+}
+
+function normalizeEnergyValue(value?: string | null): (typeof ENERGY.LIST)[number] {
+  if (typeof value !== 'string') return 'NO'
+  const upper = value.trim().toUpperCase()
+  return ENERGY.LIST.includes(upper as (typeof ENERGY.LIST)[number])
+    ? (upper as (typeof ENERGY.LIST)[number])
+    : 'NO'
+}
+
+function normalizePriorityLookup(source: Record<string, string>): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (!key || typeof value !== 'string') continue
+    map[key] = value.toUpperCase()
+  }
+  return map
+}
+
+function energyLabelFromIndex(value: number | string): (typeof ENERGY.LIST)[number] | null {
+  const numeric = typeof value === 'number' ? value : Number.parseInt(value, 10)
+  if (!Number.isFinite(numeric)) return null
+  const label = ENERGY.LIST[numeric - 1]
+  return label ?? null
 }

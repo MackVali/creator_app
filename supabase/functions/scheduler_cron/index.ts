@@ -416,11 +416,58 @@ type ProjectItem = ProjectLite & {
   goalWeight: number
 }
 
+type PriorityEnergyLookups = {
+  priority: Record<string, string>
+  energy: Record<string, string>
+}
+
+let lookupCache: PriorityEnergyLookups | null = null
+
+async function getLookupMaps(client: Client): Promise<PriorityEnergyLookups> {
+  if (lookupCache) return lookupCache
+  const [priorityRes, energyRes] = await Promise.all([
+    client.from('priority').select('id, name'),
+    client.from('energy').select('id, name'),
+  ])
+
+  const priority: Record<string, string> = {}
+  if (priorityRes.error) {
+    console.warn('priority lookup error', priorityRes.error)
+  } else {
+    for (const row of priorityRes.data ?? []) {
+      if (!row?.id || typeof row.name !== 'string') continue
+      priority[String(row.id)] = row.name.toUpperCase()
+    }
+  }
+  const energy: Record<string, string> = {}
+  if (energyRes.error) {
+    console.warn('energy lookup error', energyRes.error)
+  } else {
+    for (const row of energyRes.data ?? []) {
+      if (!row?.id || typeof row.name !== 'string') continue
+      energy[String(row.id)] = row.name.toUpperCase()
+    }
+  }
+  lookupCache = { priority, energy }
+  return lookupCache
+}
+
 async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite[]> {
-  const { data, error } = await client
-    .from('tasks')
-    .select('id, name, priority, stage, duration_min, energy, project_id, skills(icon)')
-    .eq('user_id', userId)
+  const columns = [
+    'id',
+    'name',
+    'priority',
+    'stage',
+    'duration_min',
+    'energy',
+    'project_id',
+    'skills(icon)',
+  ].join(', ')
+
+  const [lookups, { data, error }] = await Promise.all([
+    getLookupMaps(client),
+    client.from('tasks').select(columns).eq('user_id', userId),
+  ])
 
   if (error) {
     console.error('fetchReadyTasks error', error)
@@ -430,10 +477,10 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
   return (data ?? []).map(task => ({
     id: task.id,
     name: task.name ?? '',
-    priority: task.priority ?? 'NO',
+    priority: resolvePriorityValue(task, lookups),
     stage: task.stage ?? 'PREPARE',
     duration_min: task.duration_min ?? 0,
-    energy: task.energy ?? 'NO',
+    energy: resolveEnergyValue(task, lookups),
     project_id: task.project_id ?? null,
     skill_icon: ((task.skills as { icon?: string | null } | null)?.icon ?? null) as
       | string
@@ -442,10 +489,20 @@ async function fetchReadyTasks(client: Client, userId: string): Promise<TaskLite
 }
 
 async function fetchProjectsMap(client: Client, userId: string): Promise<Record<string, ProjectLite>> {
-  const { data, error } = await client
-    .from('projects')
-    .select('id, name, priority, stage, energy, duration_min, goal_id')
-    .eq('user_id', userId)
+  const columns = [
+    'id',
+    'name',
+    'priority',
+    'stage',
+    'energy',
+    'duration_min',
+    'goal_id',
+  ].join(', ')
+
+  const [lookups, { data, error }] = await Promise.all([
+    getLookupMaps(client),
+    client.from('projects').select(columns).eq('user_id', userId),
+  ])
 
   if (error) {
     console.error('fetchProjectsMap error', error)
@@ -457,14 +514,54 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
     map[project.id] = {
       id: project.id,
       name: project.name ?? '',
-      priority: project.priority ?? 'NO',
+      priority: resolvePriorityValue(project, lookups),
       stage: project.stage ?? 'RESEARCH',
-      energy: project.energy ?? 'NO',
+      energy: resolveEnergyValue(project, lookups),
       duration_min: project.duration_min ?? null,
       goal_id: project.goal_id ?? null,
     }
   }
   return map
+}
+
+function resolvePriorityValue(
+  record: { priority?: string | number | null },
+  lookups: PriorityEnergyLookups
+): string {
+  if (typeof record.priority === 'number') {
+    const value = lookups.priority[String(record.priority)]
+    if (value) return value
+  }
+  if (typeof record.priority === 'string') {
+    const trimmed = record.priority.trim()
+    if (!trimmed) return 'NO'
+    if (/^\d+$/.test(trimmed)) {
+      const value = lookups.priority[trimmed]
+      if (value) return value
+    }
+    return trimmed.toUpperCase()
+  }
+  return 'NO'
+}
+
+function resolveEnergyValue(
+  record: { energy?: string | number | null },
+  lookups: PriorityEnergyLookups
+): string {
+  if (typeof record.energy === 'number') {
+    const value = lookups.energy[String(record.energy)]
+    if (value) return value
+  }
+  if (typeof record.energy === 'string') {
+    const trimmed = record.energy.trim()
+    if (!trimmed) return 'NO'
+    if (/^\d+$/.test(trimmed)) {
+      const value = lookups.energy[trimmed]
+      if (value) return value
+    }
+    return trimmed.toUpperCase()
+  }
+  return 'NO'
 }
 
 async function fetchGoalWeights(client: Client, userId: string): Promise<Record<string, number>> {
