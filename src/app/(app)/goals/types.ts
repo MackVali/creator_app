@@ -32,6 +32,7 @@ export interface Goal {
   title: string;
   emoji?: string;
   dueDate?: string;
+  estimatedCompletionAt?: string | null;
   priority: "Low" | "Medium" | "High" | "Critical" | "Ultra-Critical";
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   progress: number; // 0-100

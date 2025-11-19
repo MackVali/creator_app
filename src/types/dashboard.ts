@@ -34,6 +34,7 @@ export type GoalItem = {
   active?: boolean | null;
   weight_snapshot?: number | null;
   weight?: number | null;
+  due_date?: string | null;
 };
 
 export type DashboardData = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { CalendarDays, ChevronDown, Plus, X } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -96,6 +96,20 @@ const TASK_STAGE_OPTIONS = [
 const DEFAULT_PROJECT_STAGE = "RESEARCH";
 const DEFAULT_TASK_STAGE = "PREPARE";
 
+const toDateInputValue = (iso?: string | null) => {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+};
+
+const fromDateInputValue = (value: string): string | undefined => {
+  if (!value) return undefined;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+};
+
 const projectStageToStatus = (stage: string): Project["status"] => {
   switch (stage) {
     case "RESEARCH":
@@ -173,6 +187,8 @@ export function GoalDrawer({
   const [active, setActive] = useState(true);
   const [why, setWhy] = useState("");
   const [monumentId, setMonumentId] = useState<string>("");
+  const [dueDateInput, setDueDateInput] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
@@ -188,6 +204,8 @@ export function GoalDrawer({
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
       setMonumentId(initialGoal.monumentId || "");
+      setDueDateInput(toDateInputValue(initialGoal.dueDate));
+      setShowAdvanced(Boolean(initialGoal.dueDate));
       setProjectsState(
         (initialGoal.projects || []).map((project) => {
           const stage = project.stage ?? projectStatusToStage(project.status);
@@ -217,6 +235,8 @@ export function GoalDrawer({
       setActive(true);
       setWhy("");
       setMonumentId("");
+      setDueDateInput("");
+      setShowAdvanced(false);
       setProjectsState([]);
     }
     setRemovedProjectIds([]);
@@ -246,6 +266,7 @@ export function GoalDrawer({
       progress: 0,
       energy: "No",
       energyCode: energyToDbValue("No"),
+       dueDate: undefined,
       tasks: [],
       stage,
       priorityCode: "NO",
@@ -287,6 +308,20 @@ export function GoalDrawer({
               ...project,
               energy: energyValue,
               energyCode: energyToDbValue(energyValue),
+            }
+          : project
+      )
+    );
+  };
+
+  const handleProjectDueDateChange = (projectId: string, value: string) => {
+    const normalized = fromDateInputValue(value);
+    setProjectsState((projects) =>
+      projects.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              dueDate: normalized ?? undefined,
             }
           : project
       )
@@ -447,11 +482,13 @@ export function GoalDrawer({
       removedTaskIds,
     };
 
+    const normalizedGoalDueDate = fromDateInputValue(dueDateInput);
+
     const nextGoal: Goal = {
       id: initialGoal?.id || Date.now().toString(),
       title: title.trim(),
       emoji: emoji.trim() || undefined,
-      dueDate: initialGoal?.dueDate,
+      dueDate: normalizedGoalDueDate,
       priority,
       energy,
       progress: goalProgress,
@@ -637,6 +674,51 @@ export function GoalDrawer({
                 </Button>
               </div>
 
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((prev) => !prev)}
+                  className="flex w-full items-center justify-between text-left text-sm font-semibold text-white"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4 text-white/70" aria-hidden="true" />
+                    Advanced timeline
+                  </span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-white/60 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {showAdvanced && (
+                  <div className="mt-4 space-y-3">
+                    <Label className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/60">
+                      Goal due date
+                    </Label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        type="date"
+                        value={dueDateInput}
+                        onChange={(event) => setDueDateInput(event.target.value)}
+                        className="h-11 rounded-xl border-white/15 bg-white/[0.05] text-sm text-white sm:flex-1"
+                      />
+                      {dueDateInput ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-11 rounded-xl border border-white/15 bg-white/[0.03] text-sm text-white/70 hover:text-white"
+                          onClick={() => setDueDateInput("")}
+                        >
+                          Clear
+                        </Button>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-white/50">
+                      Due dates slowly boost weight inside a 4-week window and spike over the final few days so
+                      this goal takes the lead when it matters.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="goal-why" className="text-white/70">
                   Why?
@@ -681,6 +763,7 @@ export function GoalDrawer({
                     {projectsState.map((project, index) => {
                       const stageValue =
                         project.stage ?? projectStatusToStage(project.status);
+                      const projectDueDateValue = toDateInputValue(project.dueDate);
                       return (
                         <div
                           key={project.id}
@@ -764,6 +847,43 @@ export function GoalDrawer({
                                 </SelectContent>
                               </Select>
                             </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+                            <details className="group" defaultOpen={Boolean(projectDueDateValue)}>
+                              <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-white">
+                                <span>Advanced options</span>
+                                <ChevronDown className="h-4 w-4 text-white/60 transition-transform group-open:rotate-180" />
+                              </summary>
+                              <div className="mt-3 space-y-2">
+                                <Label className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/60">
+                                  Project due date
+                                </Label>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                  <Input
+                                    type="date"
+                                    value={projectDueDateValue}
+                                    onChange={(event) =>
+                                      handleProjectDueDateChange(project.id, event.target.value)
+                                    }
+                                    className="h-10 rounded-xl border-white/15 bg-white/[0.05] text-sm text-white sm:flex-1"
+                                  />
+                                  {projectDueDateValue ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      className="h-10 rounded-xl border border-white/15 bg-white/[0.03] text-xs text-white/70 hover:text-white"
+                                      onClick={() => handleProjectDueDateChange(project.id, "")}
+                                    >
+                                      Clear
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                <p className="text-xs text-white/50">
+                                  Projects surge to the top of schedules as their due date nears.
+                                </p>
+                              </div>
+                            </details>
                           </div>
 
                           <div className="space-y-3">

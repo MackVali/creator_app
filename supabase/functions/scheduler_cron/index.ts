@@ -404,6 +404,7 @@ type ProjectLite = {
   energy?: string | null
   duration_min?: number | null
   goal_id?: string | null
+  due_date?: string | null
 }
 
 type ProjectItem = ProjectLite & {
@@ -497,6 +498,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
     'energy',
     'duration_min',
     'goal_id',
+    'due_date',
   ].join(', ')
 
   const [lookups, { data, error }] = await Promise.all([
@@ -519,6 +521,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
       energy: resolveEnergyValue(project, lookups),
       duration_min: project.duration_min ?? null,
       goal_id: project.goal_id ?? null,
+      due_date: project.due_date ?? null,
     }
   }
   return map
@@ -1216,6 +1219,54 @@ const PROJECT_STAGE_WEIGHT: Record<string, number> = {
   RELEASE: 10,
 }
 
+const DAY_IN_MS = 86_400_000
+
+type DueDateBoostOptions = {
+  linearWindowDays?: number
+  linearMax?: number
+  surgeWindowDays?: number
+  surgeMax?: number
+  overdueBonusPerDay?: number
+  overdueMax?: number
+}
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value))
+
+function dueDateUrgencyBoost(
+  dueDate?: string | null,
+  options: DueDateBoostOptions = {}
+): number {
+  if (!dueDate) return 0
+  const parsed = Date.parse(dueDate)
+  if (Number.isNaN(parsed)) return 0
+  const config: Required<DueDateBoostOptions> = {
+    linearWindowDays: options.linearWindowDays ?? 30,
+    linearMax: options.linearMax ?? 200,
+    surgeWindowDays: options.surgeWindowDays ?? 3,
+    surgeMax: options.surgeMax ?? 350,
+    overdueBonusPerDay: options.overdueBonusPerDay ?? 125,
+    overdueMax: options.overdueMax ?? 350,
+  }
+  const now = Date.now()
+  const diffDays = (parsed - now) / DAY_IN_MS
+  let linearBoost = 0
+  if (diffDays <= config.linearWindowDays) {
+    const ratio = clamp01(1 - diffDays / config.linearWindowDays)
+    linearBoost = ratio * config.linearMax
+  }
+  let surgeBoost = 0
+  if (diffDays <= config.surgeWindowDays) {
+    const ratio = clamp01(1 - diffDays / config.surgeWindowDays)
+    surgeBoost = Math.pow(ratio, 2) * config.surgeMax
+  }
+  let overdueBoost = 0
+  if (diffDays < 0) {
+    const overdueDays = Math.abs(diffDays)
+    overdueBoost = Math.min(config.overdueMax, overdueDays * config.overdueBonusPerDay)
+  }
+  return Math.round(linearBoost + surgeBoost + overdueBoost)
+}
+
 function taskWeight(task: TaskLite) {
   const priority = TASK_PRIORITY_WEIGHT[task.priority] ?? 0
   const stage = TASK_STAGE_WEIGHT[task.stage] ?? 0
@@ -1225,5 +1276,13 @@ function taskWeight(task: TaskLite) {
 function projectWeight(project: ProjectLite, relatedTaskWeightsSum: number) {
   const priority = PROJECT_PRIORITY_WEIGHT[project.priority] ?? 0
   const stage = PROJECT_STAGE_WEIGHT[project.stage] ?? 0
-  return relatedTaskWeightsSum / 1000 + priority + stage
+  const dueBoost = dueDateUrgencyBoost(project.due_date, {
+    linearMax: 40,
+    surgeMax: 70,
+    surgeWindowDays: 4,
+    linearWindowDays: 28,
+    overdueBonusPerDay: 25,
+    overdueMax: 140,
+  })
+  return relatedTaskWeightsSum / 1000 + priority + stage + dueBoost
 }
