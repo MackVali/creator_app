@@ -11,6 +11,7 @@ interface ProjectsDropdownProps {
   projects: Project[];
   loading: boolean;
   onProjectLongPress?: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
+  onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
 }
 
 export function ProjectsDropdown({
@@ -19,6 +20,7 @@ export function ProjectsDropdown({
   projects,
   loading,
   onProjectLongPress,
+  onProjectUpdated,
 }: ProjectsDropdownProps) {
   return (
     <div
@@ -41,7 +43,12 @@ export function ProjectsDropdown({
         ) : projects.length > 0 ? (
           <div className="space-y-2">
             {projects.map((p) => (
-              <ProjectRow key={p.id} project={p} onLongPress={onProjectLongPress} />
+              <ProjectRow
+                key={p.id}
+                project={p}
+                onLongPress={onProjectLongPress}
+                onUpdated={onProjectUpdated}
+              />
             ))}
           </div>
         ) : (
