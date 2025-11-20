@@ -510,7 +510,7 @@ export function ProjectQuickEditDialog({
                       disabled={isBusy}
                     />
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-xs uppercase tracking-[0.24em] text-white/70">Stage</Label>
                     <Select
@@ -544,7 +544,7 @@ export function ProjectQuickEditDialog({
                     </Select>
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-xs uppercase tracking-[0.24em] text-white/70">
                       Priority

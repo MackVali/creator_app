@@ -608,7 +608,7 @@ export function GoalDrawer({
 
               <div className="space-y-3">
                 <Label className="text-white/70">Priority</Label>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                   {PRIORITY_OPTIONS.map((option) => (
                     <button
                       key={option.value}
