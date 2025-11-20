@@ -136,6 +136,32 @@ type NormalizedProjectPayload = {
   tasks: NormalizedTaskPayload[];
 };
 
+type LookupRow = {
+  id?: number | null;
+  name?: string | null;
+};
+
+const normalizeLookupKey = (value?: string | null) => {
+  if (!value) {
+    return "";
+  }
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+};
+
+const buildLookupMap = (rows?: LookupRow[] | null) => {
+  const map: Record<string, number> = {};
+  for (const row of rows ?? []) {
+    if (row?.id == null) continue;
+    const normalized = normalizeLookupKey(row.name);
+    if (!normalized) continue;
+    map[normalized] = row.id;
+  }
+  return map;
+};
+
 async function cleanupGoalHierarchy(
   supabase: SupabaseClient,
   goalId: string
@@ -582,12 +608,14 @@ interface SkillMultiSelectProps {
   skills: Skill[];
   selectedIds: string[];
   onToggle: (skillId: string) => void;
+  buttonClassName?: string;
 }
 
 function SkillMultiSelect({
   skills,
   selectedIds,
   onToggle,
+  buttonClassName,
 }: SkillMultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -697,7 +725,8 @@ function SkillMultiSelect({
         disabled={!hasSkills}
         className={cn(
           "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60",
-          isOpen && hasSkills && "border-blue-400/70"
+          isOpen && hasSkills && "border-blue-400/70",
+          buttonClassName
         )}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
@@ -787,6 +816,7 @@ interface SkillSearchSelectProps {
   selectedId: string;
   onSelect: (skillId: string) => void;
   placeholder?: string;
+  buttonClassName?: string;
 }
 
 function SkillSearchSelect({
@@ -794,6 +824,7 @@ function SkillSearchSelect({
   selectedId,
   onSelect,
   placeholder = "Select skill...",
+  buttonClassName,
 }: SkillSearchSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -901,7 +932,8 @@ function SkillSearchSelect({
         disabled={!hasSkills}
         className={cn(
           "flex h-11 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 shadow-[0_0_0_1px_rgba(148,163,184,0.06)] transition focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60",
-          isOpen && hasSkills && "border-blue-400/70"
+          isOpen && hasSkills && "border-blue-400/70",
+          buttonClassName
         )}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
@@ -968,6 +1000,7 @@ interface OptionDropdownProps {
   options: ChoiceOption[];
   onChange: (value: string) => void;
   placeholder?: string;
+  variant?: "default" | "black";
 }
 
 function OptionDropdown({
@@ -975,14 +1008,19 @@ function OptionDropdown({
   options,
   onChange,
   placeholder,
+  variant = "default",
 }: OptionDropdownProps) {
+  const triggerClassName =
+    variant === "black"
+      ? "h-12 rounded-2xl border border-white/10 bg-black/80 px-4 text-sm font-medium text-white shadow-[0_22px_45px_-32px_rgba(15,23,42,0.9)] transition focus:ring-blue-500/70 hover:border-blue-500/40"
+      : "h-12 rounded-2xl border border-white/10 bg-gradient-to-r from-slate-950/90 via-slate-950/70 to-slate-950 px-4 text-sm font-medium text-zinc-100 shadow-[0_22px_45px_-32px_rgba(15,23,42,0.9)] transition focus:ring-blue-500/70 hover:border-blue-500/40";
   return (
     <Select
       value={value}
       onValueChange={onChange}
       placeholder={placeholder}
       className="w-full"
-      triggerClassName="h-12 rounded-2xl border border-white/10 bg-gradient-to-r from-slate-950/90 via-slate-950/70 to-slate-950 px-4 text-sm font-medium text-zinc-100 shadow-[0_22px_45px_-32px_rgba(15,23,42,0.9)] transition focus:ring-blue-500/70 hover:border-blue-500/40"
+      triggerClassName={triggerClassName}
       contentWrapperClassName="rounded-2xl border border-white/10 bg-[#020617]/95 backdrop-blur-xl shadow-[0_35px_60px_-40px_rgba(15,23,42,0.95)]"
     >
       <SelectContent className="max-h-72 space-y-1 p-2">
@@ -1082,19 +1120,95 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [newRoutineDescription, setNewRoutineDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const normalizeLookupCode = (value: string) => normalizeLookupKey(value);
+  const [priorityLookupMap, setPriorityLookupMap] =
+    useState<Record<string, number>>({});
+  const [energyLookupMap, setEnergyLookupMap] = useState<Record<string, number>>({});
   const router = useRouter();
 
-  const normalizeLookupCode = (value: string) => value.trim().toUpperCase();
+  const resolvePriorityPayloadValue = useCallback(
+    (
+      code: string,
+      overrides?: Record<string, number>
+    ) => {
+      const normalized = normalizeLookupCode(code);
+      const lookup = overrides ?? priorityLookupMap;
+      const id = lookup[normalized];
+      if (typeof id === "number") {
+        return id;
+      }
+      return normalized;
+    },
+    [priorityLookupMap]
+  );
 
-  const resolvePriorityPayloadValue = useCallback((code: string) => {
-    const normalized = normalizeLookupCode(code);
-    return normalized || DEFAULT_PRIORITY;
-  }, []);
+  const resolveEnergyPayloadValue = useCallback(
+    (
+      code: string,
+      overrides?: Record<string, number>
+    ) => {
+      const normalized = normalizeLookupCode(code);
+      const lookup = overrides ?? energyLookupMap;
+      const id = lookup[normalized];
+      if (typeof id === "number") {
+        return id;
+      }
+      return normalized;
+    },
+    [energyLookupMap]
+  );
 
-  const resolveEnergyPayloadValue = useCallback((code: string) => {
-    const normalized = normalizeLookupCode(code);
-    return normalized || DEFAULT_ENERGY;
-  }, []);
+  const loadLookupData = useCallback(
+    async (supabase: SupabaseClient) => {
+      try {
+        const [priorityRes, energyRes] = await Promise.all([
+          supabase.from("priority").select("id, name"),
+          supabase.from("energy").select("id, name"),
+        ]);
+
+        let priorityLookup = priorityLookupMap;
+        if (!priorityRes.error) {
+          priorityLookup = buildLookupMap(priorityRes.data as LookupRow[]);
+          setPriorityLookupMap(priorityLookup);
+        } else {
+          console.warn("Failed to load priority lookups:", priorityRes.error);
+        }
+
+        let energyLookup = energyLookupMap;
+        if (!energyRes.error) {
+          energyLookup = buildLookupMap(energyRes.data as LookupRow[]);
+          setEnergyLookupMap(energyLookup);
+        } else {
+          console.warn("Failed to load energy lookups:", energyRes.error);
+        }
+
+        return { priority: priorityLookup, energy: energyLookup };
+      } catch (err) {
+        console.error("Failed to load priority/energy lookups:", err);
+        return {
+          priority: priorityLookupMap,
+          energy: energyLookupMap,
+        };
+      }
+    },
+    [priorityLookupMap, energyLookupMap]
+  );
+
+  const ensureLookupData = useCallback(
+    async (supabase: SupabaseClient) => {
+      if (
+        Object.keys(priorityLookupMap).length > 0 &&
+        Object.keys(energyLookupMap).length > 0
+      ) {
+        return {
+          priority: priorityLookupMap,
+          energy: energyLookupMap,
+        };
+      }
+      return await loadLookupData(supabase);
+    },
+    [priorityLookupMap, energyLookupMap, loadLookupData]
+  );
 
   const resetGoalWizard = useCallback(() => {
     const initialProject = toDisplayDraftProject(createDraftProject());
@@ -1760,8 +1874,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           ? priorityCodeFromDisplay(formData.priority)
           : DEFAULT_PRIORITY;
       const resolvedEnergyCode = energyCodeFromDisplay(formData.energy);
-      const priorityPayloadValue = resolvePriorityPayloadValue(resolvedPriorityCode);
-      const energyPayloadValue = resolveEnergyPayloadValue(resolvedEnergyCode);
+      const lookupData = await ensureLookupData(supabase);
+      const priorityPayloadValue = resolvePriorityPayloadValue(
+        resolvedPriorityCode,
+        lookupData.priority
+      );
+      const energyPayloadValue = resolveEnergyPayloadValue(
+        resolvedEnergyCode,
+        lookupData.energy
+      );
 
       const insertData: {
         user_id: string;
@@ -2086,6 +2207,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
+        const lookupData = await ensureLookupData(supabase);
+        const priorityLookup = lookupData.priority;
+        const energyLookup = lookupData.energy;
+
         for (const draft of draftProjects) {
           const hasStart = draft.manualStart.trim().length > 0;
           const hasEnd = draft.manualEnd.trim().length > 0;
@@ -2167,8 +2292,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 return {
                   name: formattedTaskName,
                   stage: task.stage || DEFAULT_TASK_STAGE,
-                  priority: resolvePriorityPayloadValue(taskPriorityCode),
-                  energy: resolveEnergyPayloadValue(taskEnergyCode),
+                  priority: resolvePriorityPayloadValue(
+                    taskPriorityCode,
+                    priorityLookup
+                  ),
+                  energy: resolveEnergyPayloadValue(
+                    taskEnergyCode,
+                    energyLookup
+                  ),
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
                   skill_id: taskSkillId,
                   due_date:
@@ -2208,9 +2339,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             const projectPriority = priorityCodeFromDisplay(draft.priority);
             const projectEnergy = energyCodeFromDisplay(draft.energy);
             const projectPriorityValue = resolvePriorityPayloadValue(
-              projectPriority
+              projectPriority,
+              priorityLookup
             );
-            const projectEnergyValue = resolveEnergyPayloadValue(projectEnergy);
+            const projectEnergyValue = resolveEnergyPayloadValue(
+              projectEnergy,
+              energyLookup
+            );
 
             return {
               draftId: draft.id,
@@ -2264,8 +2399,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         const goalPriorityCode = priorityCodeFromDisplay(goalForm.priority);
         const goalEnergyCode = energyCodeFromDisplay(goalForm.energy);
-        const goalPriorityValue = resolvePriorityPayloadValue(goalPriorityCode);
-        const goalEnergyValue = resolveEnergyPayloadValue(goalEnergyCode);
+        const goalPriorityValue = resolvePriorityPayloadValue(
+          goalPriorityCode,
+          priorityLookup
+        );
+        const goalEnergyValue = resolveEnergyPayloadValue(
+          goalEnergyCode,
+          energyLookup
+        );
 
         const goalInput: GoalWizardRpcInput = {
           user_id: user.id,
@@ -2805,7 +2946,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   )
                                 }
                                 placeholder="Name this project"
-                                className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                className="h-11 rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
                               />
                             </div>
 
@@ -2815,6 +2956,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   Stage
                                 </Label>
                                 <OptionDropdown
+                                  variant="black"
                                   value={draft.stage}
                                   options={PROJECT_STAGE_OPTIONS}
                                   onChange={(value) =>
@@ -2843,7 +2985,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   inputMode="numeric"
                                   pattern="[0-9]*"
                                   placeholder="e.g. 90"
-                                  className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                                  className="h-11 rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
                                 />
                               </div>
                               <div className="space-y-2">
@@ -2851,6 +2993,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   Priority
                                 </Label>
                                 <OptionDropdown
+                                  variant="black"
                                   value={draft.priority}
                                   options={PRIORITY_OPTIONS}
                                   onChange={(value) =>
@@ -2868,6 +3011,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   Energy
                                 </Label>
                                 <OptionDropdown
+                                  variant="black"
                                   value={draft.energy}
                                   options={ENERGY_OPTIONS}
                                   onChange={(value) =>
@@ -2882,22 +3026,54 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                               </div>
                             </div>
 
-                            <div className="space-y-2">
-                              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                Why?
-                              </Label>
-                              <Textarea
-                                value={draft.why}
-                                onChange={(event) =>
-                                  handleDraftProjectChange(
-                                    draft.id,
-                                    "why",
-                                    event.target.value
-                                  )
-                                }
-                                placeholder="Outline the intent or outcome for this project"
-                                className="min-h-[88px] rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                              />
+                            <div className="space-y-4">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                    Skill
+                                  </Label>
+                                  {draft.skillId ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleDraftProjectSkillChange(
+                                          draft.id,
+                                          null
+                                        )
+                                      }
+                                      className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 transition hover:text-white"
+                                    >
+                                      Clear
+                                    </button>
+                                  ) : null}
+                                </div>
+                                  <SkillSearchSelect
+                                    skills={sortedSkills}
+                                    selectedId={draft.skillId ?? ""}
+                                    onSelect={(skillId) =>
+                                      handleDraftProjectSkillChange(draft.id, skillId)
+                                    }
+                                    placeholder="Assign a skill"
+                                    buttonClassName="rounded-full border border-white/10 bg-black/70 px-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70 hover:border-white/40"
+                                  />
+                                </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                                  Why?
+                                </Label>
+                                <Textarea
+                                  value={draft.why}
+                                  onChange={(event) =>
+                                    handleDraftProjectChange(
+                                      draft.id,
+                                      "why",
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Outline the intent or outcome for this project"
+                                  className="min-h-[88px] rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                                />
+                              </div>
                             </div>
 
                             <div className="space-y-3">
@@ -2922,34 +3098,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                               </div>
                               {projectAdvanced[draft.id] ? (
                                 <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                                  <div className="space-y-1">
-                                    <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                                      Skill link
-                                    </Label>
-                                    <Select
-                                      value={draft.skillId ?? ""}
-                                      onValueChange={(value) =>
-                                        handleDraftProjectSkillChange(
-                                          draft.id,
-                                          value ? value : null
-                                        )
-                                      }
-                                    >
-                                      <SelectTrigger className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                                        <SelectValue placeholder="Not linked" />
-                                      </SelectTrigger>
-                                      <SelectContent className="bg-[#0b101b] text-sm text-white">
-                                        <SelectItem value="">
-                                          <span className="text-zinc-400">Not linked</span>
-                                        </SelectItem>
-                                        {sortedSkills.map((skill) => (
-                                          <SelectItem key={skill.id} value={skill.id}>
-                                            {skill.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
                                   <div className="space-y-1">
                                     <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                                       Due date
