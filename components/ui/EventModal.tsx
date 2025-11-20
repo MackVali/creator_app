@@ -136,6 +136,22 @@ type NormalizedProjectPayload = {
   tasks: NormalizedTaskPayload[];
 };
 
+type LookupRow = {
+  id?: number | null;
+  name?: string | null;
+};
+
+const buildLookupMap = (rows?: LookupRow[] | null) => {
+  const map: Record<string, number> = {};
+  for (const row of rows ?? []) {
+    if (row?.id == null) continue;
+    const name = row.name?.trim();
+    if (!name) continue;
+    map[name.toUpperCase()] = row.id;
+  }
+  return map;
+};
+
 async function cleanupGoalHierarchy(
   supabase: SupabaseClient,
   goalId: string
@@ -326,14 +342,55 @@ async function persistLockedProjectPlacements({
   }
 }
 
-const PRIORITY_OPTIONS: ChoiceOption[] = [
-  { value: "NO", label: "No Priority" },
-  { value: "LOW", label: "Low" },
-  { value: "MEDIUM", label: "Medium" },
-  { value: "HIGH", label: "High" },
-  { value: "CRITICAL", label: "Critical" },
-  { value: "ULTRA-CRITICAL", label: "Ultra-Critical" },
-];
+const PRIORITY_META = [
+  { code: "NO", value: "No", label: "No Priority" },
+  { code: "LOW", value: "Low", label: "Low" },
+  { code: "MEDIUM", value: "Medium", label: "Medium" },
+  { code: "HIGH", value: "High", label: "High" },
+  { code: "CRITICAL", value: "Critical", label: "Critical" },
+  { code: "ULTRA-CRITICAL", value: "Ultra-Critical", label: "Ultra-Critical" },
+] as const;
+
+const PRIORITY_OPTIONS: ChoiceOption[] = PRIORITY_META.map(({ value, label }) => ({
+  value,
+  label,
+}));
+
+const PRIORITY_DISPLAY_BY_CODE: Record<string, string> = {};
+const PRIORITY_CODE_BY_DISPLAY: Record<string, string> = {};
+const PRIORITY_CODES = new Set<string>();
+for (const entry of PRIORITY_META) {
+  PRIORITY_DISPLAY_BY_CODE[entry.code] = entry.value;
+  PRIORITY_DISPLAY_BY_CODE[entry.code.toUpperCase()] = entry.value;
+  PRIORITY_CODE_BY_DISPLAY[entry.value] = entry.code;
+  PRIORITY_CODE_BY_DISPLAY[entry.value.toUpperCase()] = entry.code;
+  PRIORITY_CODE_BY_DISPLAY[entry.code] = entry.code;
+  PRIORITY_CODES.add(entry.code);
+}
+
+const displayPriorityFromCode = (code?: string | null): string => {
+  if (!code) {
+    return PRIORITY_OPTIONS[0].value;
+  }
+  const normalized = code.trim().toUpperCase();
+  return PRIORITY_DISPLAY_BY_CODE[normalized] ?? PRIORITY_OPTIONS[0].value;
+};
+
+const priorityCodeFromDisplay = (value?: string | null): string => {
+  if (!value) {
+    return DEFAULT_PRIORITY;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_PRIORITY;
+  }
+  const mapped = PRIORITY_CODE_BY_DISPLAY[trimmed];
+  if (mapped) {
+    return mapped;
+  }
+  const normalized = trimmed.toUpperCase();
+  return PRIORITY_CODES.has(normalized) ? normalized : DEFAULT_PRIORITY;
+};
 
 const renderFlameIcon = (level: FlameLevel) => {
   const FlameIcon = () => (
@@ -343,38 +400,69 @@ const renderFlameIcon = (level: FlameLevel) => {
   return FlameIcon;
 };
 
-const ENERGY_OPTIONS: ChoiceOption[] = [
-  {
-    value: "NO",
-    label: "No Energy",
-    renderIcon: renderFlameIcon("NO"),
-  },
-  {
-    value: "LOW",
-    label: "Low",
-    renderIcon: renderFlameIcon("LOW"),
-  },
-  {
-    value: "MEDIUM",
-    label: "Medium",
-    renderIcon: renderFlameIcon("MEDIUM"),
-  },
-  {
-    value: "HIGH",
-    label: "High",
-    renderIcon: renderFlameIcon("HIGH"),
-  },
-  {
-    value: "ULTRA",
-    label: "Ultra",
-    renderIcon: renderFlameIcon("ULTRA"),
-  },
-  {
-    value: "EXTREME",
-    label: "Extreme",
-    renderIcon: renderFlameIcon("EXTREME"),
-  },
-];
+const ENERGY_META = [
+  { code: "NO", value: "No", label: "No Energy", level: "NO" },
+  { code: "LOW", value: "Low", label: "Low", level: "LOW" },
+  { code: "MEDIUM", value: "Medium", label: "Medium", level: "MEDIUM" },
+  { code: "HIGH", value: "High", label: "High", level: "HIGH" },
+  { code: "ULTRA", value: "Ultra", label: "Ultra", level: "ULTRA" },
+  { code: "EXTREME", value: "Extreme", label: "Extreme", level: "EXTREME" },
+] as const;
+
+const ENERGY_OPTIONS: ChoiceOption[] = ENERGY_META.map((entry) => ({
+  value: entry.value,
+  label: entry.label,
+  renderIcon: renderFlameIcon(entry.level),
+}));
+
+const ENERGY_DISPLAY_BY_CODE: Record<string, string> = {};
+const ENERGY_CODE_BY_DISPLAY: Record<string, string> = {};
+const ENERGY_CODES = new Set<string>();
+for (const entry of ENERGY_META) {
+  ENERGY_DISPLAY_BY_CODE[entry.code] = entry.value;
+  ENERGY_DISPLAY_BY_CODE[entry.code.toUpperCase()] = entry.value;
+  ENERGY_CODE_BY_DISPLAY[entry.value] = entry.code;
+  ENERGY_CODE_BY_DISPLAY[entry.value.toUpperCase()] = entry.code;
+  ENERGY_CODE_BY_DISPLAY[entry.code] = entry.code;
+  ENERGY_CODES.add(entry.code);
+}
+
+const displayEnergyFromCode = (code?: string | null): string => {
+  if (!code) {
+    return ENERGY_OPTIONS[0].value;
+  }
+  const normalized = code.trim().toUpperCase();
+  return ENERGY_DISPLAY_BY_CODE[normalized] ?? ENERGY_OPTIONS[0].value;
+};
+
+const energyCodeFromDisplay = (value?: string | null): string => {
+  if (!value) {
+    return DEFAULT_ENERGY;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_ENERGY;
+  }
+  const mapped = ENERGY_CODE_BY_DISPLAY[trimmed];
+  if (mapped) {
+    return mapped;
+  }
+  const normalized = trimmed.toUpperCase();
+  return ENERGY_CODES.has(normalized) ? normalized : DEFAULT_ENERGY;
+};
+
+const toDisplayDraftTask = (task: DraftTask): DraftTask => ({
+  ...task,
+  priority: displayPriorityFromCode(task.priority),
+  energy: displayEnergyFromCode(task.energy),
+});
+
+const toDisplayDraftProject = (project: DraftProject): DraftProject => ({
+  ...project,
+  priority: displayPriorityFromCode(project.priority),
+  energy: displayEnergyFromCode(project.energy),
+  tasks: project.tasks.map(toDisplayDraftTask),
+});
 
 const PROJECT_STAGE_OPTIONS: ChoiceOption[] = [
   { value: "RESEARCH", label: "Research", description: "Gather insight and define the edges." },
@@ -429,8 +517,8 @@ interface GoalWizardFormState {
 
 const createInitialGoalWizardForm = (): GoalWizardFormState => ({
   name: "",
-  priority: DEFAULT_PRIORITY,
-  energy: DEFAULT_ENERGY,
+  priority: displayPriorityFromCode(DEFAULT_PRIORITY),
+  energy: displayEnergyFromCode(DEFAULT_ENERGY),
   monument_id: "",
   why: "",
   dueDate: "",
@@ -447,8 +535,8 @@ const createInitialFormState = (
 ): FormState => ({
   name: "",
   description: "",
-  priority: "NO",
-  energy: "NO",
+  priority: PRIORITY_OPTIONS[0].value,
+  energy: ENERGY_OPTIONS[0].value,
   goal_id: "",
   project_id: "",
   monument_id: "",
@@ -986,7 +1074,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     createInitialGoalWizardForm
   );
   const [draftProjects, setDraftProjects] = useState<DraftProject[]>(() => [
-    createDraftProject(),
+    toDisplayDraftProject(createDraftProject()),
   ]);
   const [showGoalAdvanced, setShowGoalAdvanced] = useState(false);
   const [projectAdvanced, setProjectAdvanced] = useState<Record<string, boolean>>({});
@@ -1010,10 +1098,78 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [newRoutineDescription, setNewRoutineDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [priorityLookupMap, setPriorityLookupMap] =
+    useState<Record<string, number>>({});
+  const [energyLookupMap, setEnergyLookupMap] = useState<Record<string, number>>({});
   const router = useRouter();
 
+  const normalizeLookupCode = (value: string) => value.trim().toUpperCase();
+
+  const resolvePriorityPayloadValue = useCallback(
+    (code: string) => {
+      const normalized = normalizeLookupCode(code);
+      const id = priorityLookupMap[normalized];
+      if (typeof id === "number") {
+        return id;
+      }
+      return normalized;
+    },
+    [priorityLookupMap]
+  );
+
+  const resolveEnergyPayloadValue = useCallback(
+    (code: string) => {
+      const normalized = normalizeLookupCode(code);
+      const id = energyLookupMap[normalized];
+      if (typeof id === "number") {
+        return id;
+      }
+      return normalized;
+    },
+    [energyLookupMap]
+  );
+
+  const loadLookupData = useCallback(
+    async (supabase: SupabaseClient) => {
+      try {
+        const [priorityRes, energyRes] = await Promise.all([
+          supabase.from("priority").select("id, name"),
+          supabase.from("energy").select("id, name"),
+        ]);
+
+        if (!priorityRes.error) {
+          setPriorityLookupMap(buildLookupMap(priorityRes.data as LookupRow[]));
+        } else {
+          console.warn("Failed to load priority lookups:", priorityRes.error);
+        }
+
+        if (!energyRes.error) {
+          setEnergyLookupMap(buildLookupMap(energyRes.data as LookupRow[]));
+        } else {
+          console.warn("Failed to load energy lookups:", energyRes.error);
+        }
+      } catch (err) {
+        console.error("Failed to load priority/energy lookups:", err);
+      }
+    },
+    []
+  );
+
+  const ensureLookupData = useCallback(
+    async (supabase: SupabaseClient) => {
+      if (
+        Object.keys(priorityLookupMap).length > 0 &&
+        Object.keys(energyLookupMap).length > 0
+      ) {
+        return;
+      }
+      await loadLookupData(supabase);
+    },
+    [priorityLookupMap, energyLookupMap, loadLookupData]
+  );
+
   const resetGoalWizard = useCallback(() => {
-    const initialProject = createDraftProject();
+    const initialProject = toDisplayDraftProject(createDraftProject());
     setGoalWizardStep("GOAL");
     setGoalForm(createInitialGoalWizardForm());
     setDraftProjects([initialProject]);
@@ -1096,6 +1252,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       setShowProjectAdvancedOptions(false);
     }
   }, [eventType, isOpen, resetGoalWizard]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      console.warn("Supabase client not available for priority/energy lookups.");
+      return;
+    }
+
+    void loadLookupData(supabase);
+  }, [isOpen, loadLookupData]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1407,7 +1574,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   };
 
   const handleAddDraftProject = () => {
-    const nextProject = createDraftProject();
+    const nextProject = toDisplayDraftProject(createDraftProject());
     setDraftProjects((prev) => [...prev, nextProject]);
     setProjectAdvanced((prev) => ({ ...prev, [nextProject.id]: false }));
     setTaskAdvanced((prev) => {
@@ -1447,7 +1614,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   };
 
   const handleAddTaskToDraft = (projectId: string) => {
-    const newTask = createDraftTask();
+    const newTask = toDisplayDraftTask(createDraftTask());
     setDraftProjects((prev) =>
       prev.map((draft) =>
         draft.id === projectId
@@ -1671,11 +1838,21 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
+      await ensureLookupData(supabase);
+
+      const resolvedPriorityCode =
+        eventType !== "HABIT"
+          ? priorityCodeFromDisplay(formData.priority)
+          : DEFAULT_PRIORITY;
+      const resolvedEnergyCode = energyCodeFromDisplay(formData.energy);
+      const priorityPayloadValue = resolvePriorityPayloadValue(resolvedPriorityCode);
+      const energyPayloadValue = resolveEnergyPayloadValue(resolvedEnergyCode);
+
       const insertData: {
         user_id: string;
         name: string;
-        priority?: string;
-        energy?: string;
+        priority?: string | number;
+        energy?: string | number;
         description?: string;
         goal_id?: string;
         project_id?: string;
@@ -1698,9 +1875,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         name: formatNameValue(formData.name.trim()),
       };
 
-      insertData.energy = formData.energy;
+      insertData.energy = energyPayloadValue;
       if (eventType !== "HABIT") {
-        insertData.priority = formData.priority;
+        insertData.priority = priorityPayloadValue;
       }
 
       if (
@@ -1927,9 +2104,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 startUTC: pendingManualPlacement.startUTC,
                 endUTC: pendingManualPlacement.endUTC,
                 durationMin: pendingManualPlacement.durationMin,
-                priority: insertData.priority ?? DEFAULT_PRIORITY,
+                priority: resolvedPriorityCode,
                 stage: insertData.stage ?? PROJECT_STAGE_OPTIONS[0].value,
-                energy: insertData.energy ?? DEFAULT_ENERGY,
+                energy: resolvedEnergyCode,
               },
             ],
           });
@@ -1994,6 +2171,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
+        await ensureLookupData(supabase);
+
         for (const draft of draftProjects) {
           const hasStart = draft.manualStart.trim().length > 0;
           const hasEnd = draft.manualEnd.trim().length > 0;
@@ -2035,6 +2214,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             | {
                 draftId: string;
                 payload: NormalizedProjectPayload;
+                priorityCode: string;
+                energyCode: string;
                 manualSchedule?:
                   | {
                       startUTC: string;
@@ -2067,12 +2248,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 const trimmedNotes = task.notes.trim();
                 const trimmedTaskDueDate = task.dueDate.trim();
                 const taskSkillId = task.skillId ? task.skillId : null;
+                const taskPriorityCode = priorityCodeFromDisplay(task.priority);
+                const taskEnergyCode = energyCodeFromDisplay(task.energy);
 
                 return {
                   name: formattedTaskName,
                   stage: task.stage || DEFAULT_TASK_STAGE,
-                  priority: task.priority || DEFAULT_PRIORITY,
-                  energy: task.energy || DEFAULT_ENERGY,
+                  priority: resolvePriorityPayloadValue(taskPriorityCode),
+                  energy: resolveEnergyPayloadValue(taskEnergyCode),
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
                   skill_id: taskSkillId,
                   due_date:
@@ -2109,13 +2292,20 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               }
             }
 
+            const projectPriority = priorityCodeFromDisplay(draft.priority);
+            const projectEnergy = energyCodeFromDisplay(draft.energy);
+            const projectPriorityValue = resolvePriorityPayloadValue(
+              projectPriority
+            );
+            const projectEnergyValue = resolveEnergyPayloadValue(projectEnergy);
+
             return {
               draftId: draft.id,
               payload: {
                 name: formattedName,
                 stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
-                priority: draft.priority || DEFAULT_PRIORITY,
-                energy: draft.energy || DEFAULT_ENERGY,
+                priority: projectPriorityValue,
+                energy: projectEnergyValue,
                 why: trimmedWhy.length > 0 ? trimmedWhy : null,
                 duration_min:
                   Number.isFinite(parsedDuration) && parsedDuration > 0
@@ -2126,6 +2316,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   trimmedProjectDueDate.length > 0 ? trimmedProjectDueDate : null,
                 tasks,
               } satisfies NormalizedProjectPayload,
+              priorityCode: projectPriority,
+              energyCode: projectEnergy,
               manualSchedule,
             };
           })
@@ -2135,6 +2327,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             ): project is {
               draftId: string;
               payload: NormalizedProjectPayload;
+              priorityCode: string;
+              energyCode: string;
               manualSchedule?:
                 | {
                     startUTC: string;
@@ -2155,11 +2349,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const selectedMonumentId = goalForm.monument_id.trim();
         const goalDueDate = goalForm.dueDate.trim();
 
+        const goalPriorityCode = priorityCodeFromDisplay(goalForm.priority);
+        const goalEnergyCode = energyCodeFromDisplay(goalForm.energy);
+        const goalPriorityValue = resolvePriorityPayloadValue(goalPriorityCode);
+        const goalEnergyValue = resolveEnergyPayloadValue(goalEnergyCode);
+
         const goalInput: GoalWizardRpcInput = {
           user_id: user.id,
           name: formatNameValue(trimmedGoalName),
-          priority: goalForm.priority || DEFAULT_PRIORITY,
-          energy: goalForm.energy || DEFAULT_ENERGY,
+          priority: goalPriorityValue,
+          energy: goalEnergyValue,
           monument_id: selectedMonumentId,
           why: goalWhy ? goalWhy : null,
           due_date: goalDueDate ? goalDueDate : null,
@@ -2223,9 +2422,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               startUTC: tuple.manualSchedule.startUTC,
               endUTC: tuple.manualSchedule.endUTC,
               durationMin: tuple.manualSchedule.durationMin,
-              priority: tuple.payload.priority || DEFAULT_PRIORITY,
+              priority: tuple.priorityCode || DEFAULT_PRIORITY,
               stage: tuple.payload.stage || PROJECT_STAGE_OPTIONS[0].value,
-              energy: tuple.payload.energy || DEFAULT_ENERGY,
+              energy: tuple.energyCode || DEFAULT_ENERGY,
               dueDate: tuple.payload.due_date ?? null,
             };
           })
@@ -2270,7 +2469,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setIsSaving(false);
       }
     },
-    [draftProjects, goalForm, onClose, resetGoalWizard, router, toast]
+    [
+      draftProjects,
+      goalForm,
+      onClose,
+      resetGoalWizard,
+      router,
+      toast,
+      ensureLookupData,
+      resolveEnergyPayloadValue,
+      resolvePriorityPayloadValue,
+    ]
   );
 
   const handleGoalFormSubmit = async (event: React.FormEvent) => {
@@ -3303,6 +3512,216 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               }
             />
           </FormSection>
+        ) : eventType === "PROJECT" ? (
+        <FormSection title="Project details">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                Name
+              </Label>
+              <Input
+                value={formData.name}
+                onChange={(event) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    name: formatNameValue(event.target.value),
+                  }))
+                }
+                placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
+                className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                required
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Priority
+                </Label>
+                <OptionDropdown
+                  value={formData.priority}
+                  options={PRIORITY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, priority: value })
+                  }
+                  placeholder="Select priority..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Energy
+                </Label>
+                <OptionDropdown
+                  value={formData.energy}
+                  options={ENERGY_OPTIONS}
+                  onChange={(value) =>
+                    setFormData({ ...formData, energy: value })
+                  }
+                  placeholder="Select energy..."
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                Stage
+              </p>
+              <Select
+                value={formData.stage}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, stage: value })
+                }
+                triggerClassName="h-12 px-4 text-left"
+                contentWrapperClassName="bg-[#0b1222]"
+              >
+                <SelectContent className="space-y-1">
+                  {PROJECT_STAGE_OPTIONS.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      label={option.label}
+                      className="px-4 py-3"
+                    >
+                      <span className="text-sm font-medium text-white">
+                        {option.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                Duration (minutes)
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={formData.duration_min}
+                onChange={(event) =>
+                  setFormData({
+                    ...formData,
+                    duration_min: event.target.value,
+                  })
+                }
+                className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                required
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Skills
+                </Label>
+                <SkillMultiSelect
+                  skills={sortedSkills}
+                  selectedIds={formData.skill_ids}
+                  onToggle={toggleSkill}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  Goal
+                </Label>
+                <Select
+                  value={formData.goal_id}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, goal_id: value })
+                  }
+                >
+                  <SelectContent>
+                    <SelectItem value="">Select goal...</SelectItem>
+                    {goals.map((goal) => (
+                      <SelectItem key={goal.id} value={goal.id}>
+                        {formatNameDisplay(goal.name)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                Why?
+              </Label>
+              <Textarea
+                value={formData.description}
+                onChange={(event) =>
+                  setFormData({ ...formData, description: event.target.value })
+                }
+                placeholder="Capture context or success criteria"
+                className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+              />
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-400">
+                  Advanced scheduling
+                </Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setShowProjectAdvancedOptions((prev) => !prev)
+                  }
+                  className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
+                >
+                  {showProjectAdvancedOptions ? "Hide" : "Show"}
+                </Button>
+              </div>
+              {showProjectAdvancedOptions ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                        Manual start time
+                      </Label>
+                      <Input
+                        type="datetime-local"
+                        value={formData.manual_start}
+                        onChange={(event) =>
+                          setFormData({
+                            ...formData,
+                            manual_start: event.target.value,
+                          })
+                        }
+                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
+                        Manual end time
+                      </Label>
+                      <Input
+                        type="datetime-local"
+                        value={formData.manual_end}
+                        onChange={(event) =>
+                          setFormData({
+                            ...formData,
+                            manual_end: event.target.value,
+                          })
+                        }
+                        className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-zinc-400">
+                    Provide both a start and end time to create a locked block that the scheduler will keep in place. Clear both fields to return this project to dynamic scheduling.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[11px] text-zinc-500">
+                  Lock this project into a fixed window by setting a manual start and end time.
+                </p>
+              )}
+            </div>
+          </div>
+        </FormSection>
         ) : eventType === "TASK" ? (
             <FormSection title="Task details">
               <div className="space-y-6">
@@ -3523,176 +3942,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       placeholder="Select energy..."
                     />
                   </div>
-                  {eventType === "PROJECT" ? (
-                    <>
-                      <div className="space-y-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                          Stage
-                        </p>
-                        <Select
-                          value={formData.stage}
-                          onValueChange={(value) =>
-                            setFormData({ ...formData, stage: value })
-                          }
-                          triggerClassName="h-12 px-4 text-left"
-                          contentWrapperClassName="bg-[#0b1222]"
-                        >
-                          <SelectContent className="space-y-1">
-                            {PROJECT_STAGE_OPTIONS.map((option) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                                label={option.label}
-                                className="px-4 py-3"
-                              >
-                                <span className="text-sm font-medium text-white">
-                                  {option.label}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Duration (minutes)
-                        </Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={formData.duration_min}
-                          onChange={(event) =>
-                            setFormData({
-                              ...formData,
-                              duration_min: event.target.value,
-                            })
-                          }
-                          className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Skills
-                        </Label>
-                        <SkillMultiSelect
-                          skills={sortedSkills}
-                          selectedIds={formData.skill_ids}
-                          onToggle={toggleSkill}
-                        />
-                      </div>
-                    </>
-                  ) : null}
+
                 </div>
               </FormSection>
 
-              {eventType === "PROJECT" ? (
-                <FormSection title="Context">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Goal
-                      </Label>
-                      <Select
-                        value={formData.goal_id}
-                        onValueChange={(value) =>
-                          setFormData({ ...formData, goal_id: value })
-                        }
-                      >
-                        <SelectContent>
-                          <SelectItem value="">Select goal...</SelectItem>
-                          {goals.map((goal) => (
-                            <SelectItem key={goal.id} value={goal.id}>
-                              {formatNameDisplay(goal.name)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                        Why?
-                      </Label>
-                      <Textarea
-                        value={formData.description}
-                        onChange={(event) =>
-                          setFormData({ ...formData, description: event.target.value })
-                        }
-                        placeholder="Capture context or success criteria"
-                        className="min-h-[96px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                      />
-                    </div>
-                  </div>
-                </FormSection>
-              ) : null}
 
-              {eventType === "PROJECT" ? (
-                <FormSection title="Scheduling">
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-zinc-400">
-                        Advanced options
-                      </Label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setShowProjectAdvancedOptions(prev => !prev)
-                        }
-                        className="h-7 rounded-full border border-white/10 bg-white/[0.04] px-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 hover:border-white/30 hover:text-white"
-                      >
-                        {showProjectAdvancedOptions ? "Hide" : "Show"}
-                      </Button>
-                    </div>
-                    {showProjectAdvancedOptions ? (
-                      <>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                              Manual start time
-                            </Label>
-                            <Input
-                              type="datetime-local"
-                              value={formData.manual_start}
-                              onChange={event =>
-                                setFormData({
-                                  ...formData,
-                                  manual_start: event.target.value,
-                                })
-                              }
-                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
-                              Manual end time
-                            </Label>
-                            <Input
-                              type="datetime-local"
-                              value={formData.manual_end}
-                              onChange={event =>
-                                setFormData({
-                                  ...formData,
-                                  manual_end: event.target.value,
-                                })
-                              }
-                              className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                            />
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-zinc-400">
-                          Provide both a start and end time to create a locked block that the scheduler will keep in place. Clear both fields to return this project to dynamic scheduling.
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-[11px] text-zinc-500">
-                        Lock this project into a fixed window by setting a manual start and end time.
-                      </p>
-                    )}
-                  </div>
-                </FormSection>
-              ) : null}
+
+
 
               {eventType === "TASK" ? null : (
                 <FormSection title="Context">
