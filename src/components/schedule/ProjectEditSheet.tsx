@@ -30,7 +30,7 @@ const toDatetimeLocalValue = (value?: string | null) => {
 };
 
 const PRIORITY_OPTIONS = [
-  { value: "NO", label: "No priority" },
+  { value: "NO", label: "No" },
   { value: "LOW", label: "Low" },
   { value: "MEDIUM", label: "Medium" },
   { value: "HIGH", label: "High" },

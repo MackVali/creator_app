@@ -2486,7 +2486,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         <form
           onSubmit={isGoalWizard ? handleGoalFormSubmit : handleStandardSubmit}
-          className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
+          className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-5 pt-5 sm:gap-6 sm:px-8 sm:pb-8 sm:pt-6"
         >
           {isGoalWizard ? (
             <>
@@ -2529,26 +2529,22 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               </div>
 
               {goalWizardStep === "GOAL" ? (
-                <>
-                  <FormSection title="Overview">
-                    <div className="grid gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Name
-                        </Label>
-                        <Input
-                          value={goalForm.name}
-                          onChange={(event) =>
-                            handleGoalFormChange("name", event.target.value)
-                          }
-                          placeholder="Name this goal"
-                          className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                        />
-                      </div>
+                <FormSection title="Goal details">
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                        Name
+                      </Label>
+                      <Input
+                        value={goalForm.name}
+                        onChange={(event) =>
+                          handleGoalFormChange("name", event.target.value)
+                        }
+                        placeholder="Name this goal"
+                        className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      />
                     </div>
-                  </FormSection>
 
-                  <FormSection title="Relations">
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
@@ -2559,15 +2555,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           onValueChange={(value) =>
                             handleGoalFormChange("monument_id", value)
                           }
-                          placeholder={loading ? "Loading monuments..." : "Select monument..."}
+                          placeholder={
+                            loading ? "Loading monuments..." : "Select monument..."
+                          }
                           triggerClassName="h-12"
                         >
                           <SelectContent>
                             {monuments.length === 0 ? (
                               <SelectItem value="" disabled>
-                                {loading
-                                  ? "Loading monuments..."
-                                  : "No monuments found"}
+                                {loading ? "Loading monuments..." : "No monuments found"}
                               </SelectItem>
                             ) : (
                               monuments.map((monument) => (
@@ -2580,7 +2576,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         </Select>
                       </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                             Priority
@@ -2646,9 +2642,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         ) : null}
                       </div>
                     </div>
-                  </FormSection>
 
-                  <FormSection>
                     <div className="space-y-2">
                       <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                         Why?
@@ -2659,11 +2653,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           handleGoalFormChange("why", event.target.value)
                         }
                         placeholder="Capture the motivation or vision for this goal"
-                        className="min-h-[120px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                        className="min-h-[110px] rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                       />
                     </div>
-                  </FormSection>
-                </>
+                  </div>
+                </FormSection>
               ) : null}
 
               {goalWizardStep === "PROJECTS" ? (
@@ -3309,6 +3303,159 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               }
             />
           </FormSection>
+        ) : eventType === "TASK" ? (
+            <FormSection title="Task details">
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                    Name
+                  </Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(event) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        name: formatNameValue(event.target.value),
+                      }))
+                    }
+                    placeholder={`Enter ${eventMeta.badge.toLowerCase()} name`}
+                    className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                    required
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Priority
+                    </Label>
+                    <OptionDropdown
+                      value={formData.priority}
+                      options={PRIORITY_OPTIONS}
+                      onChange={(value) =>
+                        setFormData({ ...formData, priority: value })
+                      }
+                      placeholder="Select priority..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Energy
+                    </Label>
+                    <OptionDropdown
+                      value={formData.energy}
+                      options={ENERGY_OPTIONS}
+                      onChange={(value) =>
+                        setFormData({ ...formData, energy: value })
+                      }
+                      placeholder="Select energy..."
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Duration (minutes)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={formData.duration_min}
+                      onChange={(event) =>
+                        setFormData({
+                          ...formData,
+                          duration_min: event.target.value,
+                        })
+                      }
+                      className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Stage
+                    </Label>
+                    <Select
+                      value={formData.stage}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, stage: value })
+                      }
+                      triggerClassName="h-12 px-4 text-left"
+                      contentWrapperClassName="bg-[#0b1222]"
+                    >
+                      <SelectContent className="space-y-1">
+                        {TASK_STAGE_OPTIONS.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            label={option.label}
+                            className="px-4 py-3"
+                          >
+                            <span className="text-sm font-medium text-white">
+                              {option.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Goal
+                    </Label>
+                    <Select
+                      value={formData.goal_id}
+                      onValueChange={handleGoalChange}
+                      placeholder="Select goal..."
+                    >
+                      <SelectContent>
+                        <SelectItem value="">Select goal...</SelectItem>
+                        {goals.map((goal) => (
+                          <SelectItem key={goal.id} value={goal.id}>
+                            {formatNameDisplay(goal.name)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                      Project
+                    </Label>
+                    <Select
+                      value={formData.project_id}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, project_id: value })
+                      }
+                    >
+                      <SelectContent>
+                        <SelectItem value="">Select project...</SelectItem>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {formatNameDisplay(project.name)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                    Skill
+                  </Label>
+                  <SkillSearchSelect
+                    skills={sortedSkills}
+                    selectedId={formData.skill_id}
+                    onSelect={handleTaskSkillSelect}
+                  />
+                </div>
+              </div>
+            </FormSection>
         ) : (
             <>
               <FormSection title="Overview">
@@ -3436,56 +3583,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                       </div>
                     </>
                   ) : null}
-                  {eventType === "TASK" ? (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Duration (minutes)
-                        </Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={formData.duration_min}
-                          onChange={(event) =>
-                            setFormData({
-                              ...formData,
-                              duration_min: event.target.value,
-                            })
-                          }
-                          className="h-11 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                          Stage
-                        </Label>
-                        <Select
-                          value={formData.stage}
-                          onValueChange={(value) =>
-                            setFormData({ ...formData, stage: value })
-                          }
-                          triggerClassName="h-12 px-4 text-left"
-                          contentWrapperClassName="bg-[#0b1222]"
-                        >
-                          <SelectContent className="space-y-1">
-                            {TASK_STAGE_OPTIONS.map((option) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                                label={option.label}
-                                className="px-4 py-3"
-                              >
-                                <span className="text-sm font-medium text-white">
-                                  {option.label}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </FormSection>
 
@@ -3597,7 +3694,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 </FormSection>
               ) : null}
 
-              {eventType === "TASK" ? (
+              {eventType === "TASK" ? null : (
                 <FormSection title="Context">
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
@@ -3651,7 +3748,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     />
                   </div>
                 </FormSection>
-              ) : null}
+              )}
             </>
           )}
 
