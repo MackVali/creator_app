@@ -575,6 +575,21 @@ export default function GoalsPage() {
     []
   );
 
+  const handleProjectDeleted = useCallback(
+    (goalId: string, projectId: string) => {
+      setGoals((prev) =>
+        prev.map((goal) => {
+          if (goal.id !== goalId) return goal;
+          return {
+            ...goal,
+            projects: goal.projects.filter((project) => project.id !== projectId),
+          };
+        })
+      );
+    },
+    []
+  );
+
   useEffect(() => {
     const editId = searchParams.get("edit");
     if (editId && goals.length > 0) {
@@ -1146,6 +1161,9 @@ export default function GoalsPage() {
                       onBoost={() => handleBoost(goal)}
                       onProjectUpdated={(projectId, updates) =>
                         handleProjectUpdated(goal.id, projectId, updates)
+                      }
+                      onProjectDeleted={(projectId) =>
+                        handleProjectDeleted(goal.id, projectId)
                       }
                     />
                   </div>

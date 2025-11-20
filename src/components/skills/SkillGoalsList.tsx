@@ -460,6 +460,21 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
     []
   );
 
+  const handleProjectDeleted = useCallback(
+    (goalId: string, projectId: string) => {
+      setGoals((prev) =>
+        prev.map((goal) => {
+          if (goal.id !== goalId) return goal;
+          return {
+            ...goal,
+            projects: goal.projects.filter((project) => project.id !== projectId),
+          };
+        })
+      );
+    },
+    []
+  );
+
   const content = useMemo(() => {
     if (loading) {
       return (
@@ -491,12 +506,15 @@ export function SkillGoalsList({ skillId }: { skillId: string }) {
               onProjectUpdated={(projectId, updates) =>
                 handleProjectUpdated(goal.id, projectId, updates)
               }
+              onProjectDeleted={(projectId) =>
+                handleProjectDeleted(goal.id, projectId)
+              }
             />
           </div>
         ))}
       </div>
     );
-  }, [loading, goals]);
+  }, [loading, goals, handleProjectDeleted]);
 
   return (
     <div className="skill-goals-list">

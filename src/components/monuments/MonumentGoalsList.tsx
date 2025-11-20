@@ -459,6 +459,21 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     []
   );
 
+  const handleProjectDeleted = useCallback(
+    (goalId: string, projectId: string) => {
+      setGoals((prev) =>
+        prev.map((goal) => {
+          if (goal.id !== goalId) return goal;
+          return {
+            ...goal,
+            projects: goal.projects.filter((project) => project.id !== projectId),
+          };
+        })
+      );
+    },
+    []
+  );
+
   const handleGoalOpenChange = useCallback((goalId: string, isOpen: boolean) => {
     setOpenGoalId((current) => {
       if (isOpen) {
@@ -509,6 +524,9 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               onProjectUpdated={(projectId, updates) =>
                 handleProjectUpdated(goal.id, projectId, updates)
               }
+              onProjectDeleted={(projectId) =>
+                handleProjectDeleted(goal.id, projectId)
+              }
               open={openGoalId === goal.id}
               onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
             />
@@ -516,7 +534,14 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
         ))}
       </div>
     );
-  }, [loading, goals, openGoalId, handleGoalOpenChange, handleProjectUpdated]);
+  }, [
+    loading,
+    goals,
+    openGoalId,
+    handleGoalOpenChange,
+    handleProjectUpdated,
+    handleProjectDeleted,
+  ]);
 
   return (
     <div className="monument-goals-list">
