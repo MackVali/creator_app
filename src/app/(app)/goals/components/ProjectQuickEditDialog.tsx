@@ -481,7 +481,7 @@ export function ProjectQuickEditDialog({
           <motion.div className="fixed inset-0 z-[120] pointer-events-none">
             <motion.div
               ref={contentRef}
-              className="pointer-events-auto flex h-full w-full flex-col rounded-2xl border border-white/10 bg-[#0b111c] text-white shadow-[0_35px_45px_-30px_rgba(0,0,0,0.85)]"
+              className="pointer-events-auto flex h-full w-full flex-col rounded-2xl border border-white/10 bg-black text-white shadow-[0_35px_45px_-30px_rgba(0,0,0,0.85)]"
               style={panelStyle}
               initial={origin ? { ...initialStyle } : undefined}
               animate={origin ? { ...finalStyle } : undefined}
@@ -518,7 +518,7 @@ export function ProjectQuickEditDialog({
                       onValueChange={setStage}
                       triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
                     >
-                      <SelectContent className="bg-[#0f172a] text-sm text-white">
+                      <SelectContent className="bg-black text-sm text-white">
                         {STAGE_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
@@ -534,7 +534,7 @@ export function ProjectQuickEditDialog({
                       onValueChange={(value) => setEnergy(value as Project["energy"])}
                       triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
                     >
-                      <SelectContent className="bg-[#0f172a] text-sm text-white">
+                      <SelectContent className="bg-black text-sm text-white">
                         {energySelectOptions.map((option) => (
                           <SelectItem key={option.id} value={option.label}>
                             {option.label}
@@ -554,7 +554,7 @@ export function ProjectQuickEditDialog({
                       onValueChange={setPriority}
                       triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
                     >
-                      <SelectContent className="bg-[#0f172a] text-sm text-white">
+                      <SelectContent className="bg-black text-sm text-white">
                         {prioritySelectOptions.map((option) => (
                           <SelectItem key={option.id} value={option.code}>
                             {option.label}
@@ -618,7 +618,7 @@ export function ProjectQuickEditDialog({
                     }
                     triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
                   >
-                    <SelectContent className="bg-[#0f172a] text-sm text-white">
+                    <SelectContent className="bg-black text-sm text-white">
                       <div className="p-2">
                         <Input
                           value={skillSearch}

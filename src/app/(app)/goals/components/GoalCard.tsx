@@ -361,7 +361,7 @@ function GoalCardImpl({
           </div>
 
           {open && (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02]">
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#030303] via-[#080808] to-[#1b1b1b] shadow-[0_35px_45px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.02)]">
               <ProjectsDropdown
                 id={`goal-${goal.id}`}
                 goalTitle={goal.title}
@@ -462,7 +462,7 @@ function CompactProjectsOverlay({
   );
 
   const basePanelClass =
-    "overflow-hidden rounded-2xl border border-white/15 bg-[#0b111c] shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)]";
+    "overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-b from-black via-slate-950 to-slate-900 shadow-[0_25px_50px_-20px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.06)]";
 
   if (isMobile || !anchorRect) {
     return createPortal(

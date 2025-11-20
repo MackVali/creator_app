@@ -136,22 +136,6 @@ type NormalizedProjectPayload = {
   tasks: NormalizedTaskPayload[];
 };
 
-type LookupRow = {
-  id?: number | null;
-  name?: string | null;
-};
-
-const buildLookupMap = (rows?: LookupRow[] | null) => {
-  const map: Record<string, number> = {};
-  for (const row of rows ?? []) {
-    if (row?.id == null) continue;
-    const name = row.name?.trim();
-    if (!name) continue;
-    map[name.toUpperCase()] = row.id;
-  }
-  return map;
-};
-
 async function cleanupGoalHierarchy(
   supabase: SupabaseClient,
   goalId: string
@@ -1098,75 +1082,19 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [newRoutineDescription, setNewRoutineDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [priorityLookupMap, setPriorityLookupMap] =
-    useState<Record<string, number>>({});
-  const [energyLookupMap, setEnergyLookupMap] = useState<Record<string, number>>({});
   const router = useRouter();
 
   const normalizeLookupCode = (value: string) => value.trim().toUpperCase();
 
-  const resolvePriorityPayloadValue = useCallback(
-    (code: string) => {
-      const normalized = normalizeLookupCode(code);
-      const id = priorityLookupMap[normalized];
-      if (typeof id === "number") {
-        return id;
-      }
-      return normalized;
-    },
-    [priorityLookupMap]
-  );
+  const resolvePriorityPayloadValue = useCallback((code: string) => {
+    const normalized = normalizeLookupCode(code);
+    return normalized || DEFAULT_PRIORITY;
+  }, []);
 
-  const resolveEnergyPayloadValue = useCallback(
-    (code: string) => {
-      const normalized = normalizeLookupCode(code);
-      const id = energyLookupMap[normalized];
-      if (typeof id === "number") {
-        return id;
-      }
-      return normalized;
-    },
-    [energyLookupMap]
-  );
-
-  const loadLookupData = useCallback(
-    async (supabase: SupabaseClient) => {
-      try {
-        const [priorityRes, energyRes] = await Promise.all([
-          supabase.from("priority").select("id, name"),
-          supabase.from("energy").select("id, name"),
-        ]);
-
-        if (!priorityRes.error) {
-          setPriorityLookupMap(buildLookupMap(priorityRes.data as LookupRow[]));
-        } else {
-          console.warn("Failed to load priority lookups:", priorityRes.error);
-        }
-
-        if (!energyRes.error) {
-          setEnergyLookupMap(buildLookupMap(energyRes.data as LookupRow[]));
-        } else {
-          console.warn("Failed to load energy lookups:", energyRes.error);
-        }
-      } catch (err) {
-        console.error("Failed to load priority/energy lookups:", err);
-      }
-    },
-    []
-  );
-
-  const ensureLookupData = useCallback(
-    async (supabase: SupabaseClient) => {
-      if (
-        Object.keys(priorityLookupMap).length > 0 &&
-        Object.keys(energyLookupMap).length > 0
-      ) {
-        return;
-      }
-      await loadLookupData(supabase);
-    },
-    [priorityLookupMap, energyLookupMap, loadLookupData]
-  );
+  const resolveEnergyPayloadValue = useCallback((code: string) => {
+    const normalized = normalizeLookupCode(code);
+    return normalized || DEFAULT_ENERGY;
+  }, []);
 
   const resetGoalWizard = useCallback(() => {
     const initialProject = toDisplayDraftProject(createDraftProject());
@@ -1252,17 +1180,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       setShowProjectAdvancedOptions(false);
     }
   }, [eventType, isOpen, resetGoalWizard]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      console.warn("Supabase client not available for priority/energy lookups.");
-      return;
-    }
-
-    void loadLookupData(supabase);
-  }, [isOpen, loadLookupData]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1838,8 +1755,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
-      await ensureLookupData(supabase);
-
       const resolvedPriorityCode =
         eventType !== "HABIT"
           ? priorityCodeFromDisplay(formData.priority)
@@ -2171,8 +2086,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
-        await ensureLookupData(supabase);
-
         for (const draft of draftProjects) {
           const hasStart = draft.manualStart.trim().length > 0;
           const hasEnd = draft.manualEnd.trim().length > 0;
@@ -2476,7 +2389,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       resetGoalWizard,
       router,
       toast,
-      ensureLookupData,
       resolveEnergyPayloadValue,
       resolvePriorityPayloadValue,
     ]
@@ -2785,7 +2697,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         </Select>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                             Priority
@@ -3054,7 +2966,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
                                     />
                                   </div>
-                                  <div className="grid gap-3 sm:grid-cols-2">
+                                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                                     <div className="space-y-1">
                                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                                         Manual start time
@@ -3176,7 +3088,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                                       />
                                     </div>
-                                    <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                                       <OptionDropdown
                                         value={task.stage}
                                         options={PROJECT_STAGE_OPTIONS}
@@ -3533,7 +3445,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Priority
@@ -3610,7 +3522,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Skills
@@ -3676,7 +3588,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               </div>
               {showProjectAdvancedOptions ? (
                 <>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                         Manual start time
@@ -3743,7 +3655,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   />
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Priority
