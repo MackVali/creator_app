@@ -1,3 +1,43 @@
+create or replace function public.lookup_priority_id(label text)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare
+  normalized text := upper(coalesce(nullif(label,''),'NO'));
+  resolved bigint;
+begin
+  select id into resolved
+  from public.priority
+  where upper(name) = normalized
+  limit 1;
+  if resolved is null then
+    select id into resolved
+    from public.priority
+    order by id asc
+    limit 1;
+  end if;
+  return resolved;
+end;
+$$;
+
+create or replace function public.lookup_energy_id(label text)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare
+  normalized text := upper(coalesce(nullif(label,''),'NO'));
+  resolved bigint;
+begin
+  select id into resolved
+  from public.energy
+  where upper(name) = normalized
+  limit 1;
+  if resolved is null then
+    select id into resolved
+    from public.energy
+    order by id asc
+    limit 1;
+  end if;
+  return resolved;
+end;
+$$;
+
 create or replace function public.create_goal_with_projects_and_tasks(
   goal_input jsonb,
   project_inputs jsonb
@@ -36,8 +76,8 @@ begin
   values (
     goal_user_id,
     coalesce(nullif(btrim(payload->>'name'), ''), 'Untitled Goal'),
-    coalesce(nullif(payload->>'priority', ''), 'NO'),
-    coalesce(nullif(payload->>'energy', ''), 'NO'),
+    public.lookup_priority_id(payload->>'priority'),
+    public.lookup_energy_id(payload->>'energy'),
     coalesce(
       nullif(payload->>'monument_id', ''),
       nullif(payload->>'monumentId', '')
@@ -62,9 +102,9 @@ begin
       goal_user_id,
       new_goal.id,
       project_elem->>'name',
-      coalesce(project_elem->>'stage', 'RESEARCH'),
-      coalesce(project_elem->>'priority', 'NO'),
-      coalesce(project_elem->>'energy', 'NO'),
+      coalesce(project_elem->>'stage', 'RESEARCH')::project_stage_enum,
+      public.lookup_priority_id(project_elem->>'priority'),
+      public.lookup_energy_id(project_elem->>'energy'),
       nullif(project_elem->>'why', ''),
       case
         when trim(coalesce(project_elem->>'duration_min', '')) ~ '^[0-9]+$'
@@ -113,9 +153,9 @@ begin
         new_goal.id,
         new_project.id,
         task_elem->>'name',
-        coalesce(task_elem->>'stage', 'PREPARE'),
-        coalesce(task_elem->>'priority', 'NO'),
-        coalesce(task_elem->>'energy', 'NO'),
+        coalesce(task_elem->>'stage', 'PREPARE')::task_stage_enum,
+        public.lookup_priority_id(task_elem->>'priority'),
+        public.lookup_energy_id(task_elem->>'energy'),
         nullif(task_elem->>'notes', ''),
         nullif(task_elem->>'skill_id', '')::uuid,
         nullif(task_elem->>'due_date', '')::timestamptz
