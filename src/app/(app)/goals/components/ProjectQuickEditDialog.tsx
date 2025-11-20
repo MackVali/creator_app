@@ -18,6 +18,7 @@ type ProjectQuickEditDialogProps = {
   origin?: ProjectCardMorphOrigin | null;
   onClose: () => void;
   onUpdated?: (projectId: string, updates: Partial<Project>) => void;
+  onDeleted?: (projectId: string) => void;
 };
 
 const ENERGY_OPTIONS: { value: Project["energy"]; label: string }[] = [
@@ -112,6 +113,7 @@ export function ProjectQuickEditDialog({
   origin,
   onClose,
   onUpdated,
+  onDeleted,
 }: ProjectQuickEditDialogProps) {
   const [mounted, setMounted] = useState(false);
   const [name, setName] = useState("");
@@ -127,6 +129,7 @@ export function ProjectQuickEditDialog({
   const [priorityOptions, setPriorityOptions] = useState<{ id: string | number; name: string }[]>([]);
   const [energyOptions, setEnergyOptions] = useState<{ id: string | number; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [morphReady, setMorphReady] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -164,6 +167,7 @@ export function ProjectQuickEditDialog({
   }, [project]);
 
   const supabase = getSupabaseBrowser();
+  const isBusy = saving || deleting;
 
   useEffect(() => {
     let active = true;
@@ -324,6 +328,7 @@ export function ProjectQuickEditDialog({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isBusy) return;
     if (!supabase) {
       setError("Supabase client not available.");
       return;
@@ -406,6 +411,59 @@ export function ProjectQuickEditDialog({
     onClose();
   };
 
+  const handleDelete = async () => {
+    if (deleting || !project) return;
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Delete this project? This cannot be undone."
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    if (!supabase) {
+      setError("Supabase client not available.");
+      return;
+    }
+    setError(null);
+    setDeleting(true);
+    let succeeded = false;
+    try {
+      const { error: skillError } = await supabase
+        .from("project_skills")
+        .delete()
+        .eq("project_id", project.id);
+      if (skillError) {
+        throw skillError;
+      }
+      const { error: taskError } = await supabase
+        .from("tasks")
+        .delete()
+        .eq("project_id", project.id);
+      if (taskError) {
+        throw taskError;
+      }
+      const { error: deleteError } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", project.id);
+      if (deleteError) {
+        throw deleteError;
+      }
+      onDeleted?.(project.id);
+      succeeded = true;
+      setDeleting(false);
+      onClose();
+    } catch (err) {
+      console.error("Failed to delete project", err);
+      setError("Failed to delete this project. Try again in a moment.");
+    } finally {
+      if (!succeeded) {
+        setDeleting(false);
+      }
+    }
+  };
+
   return createPortal(
     <AnimatePresence>
       {project ? (
@@ -449,7 +507,7 @@ export function ProjectQuickEditDialog({
                       onChange={(event) => setName(event.target.value)}
                       className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm"
                       placeholder="Update project name"
-                      disabled={saving}
+                      disabled={isBusy}
                     />
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -517,7 +575,7 @@ export function ProjectQuickEditDialog({
                       onChange={(event) => setDurationInput(event.target.value)}
                       className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm"
                       placeholder="e.g. 60"
-                      disabled={saving}
+                      disabled={isBusy}
                     />
                   </div>
                 </div>
@@ -531,7 +589,7 @@ export function ProjectQuickEditDialog({
                       value={dueDateInput}
                       onChange={(event) => setDueDateInput(event.target.value)}
                       className="h-11 rounded-xl border-white/10 bg-white/[0.04] text-sm text-white sm:flex-1"
-                      disabled={saving}
+                      disabled={isBusy}
                     />
                     {dueDateInput ? (
                       <Button
@@ -539,7 +597,7 @@ export function ProjectQuickEditDialog({
                         variant="ghost"
                         className="h-11 rounded-xl border border-white/10 bg-white/[0.02] px-4 text-xs text-white/70 hover:text-white"
                         onClick={() => setDueDateInput("")}
-                        disabled={saving}
+                        disabled={isBusy}
                       >
                         Clear
                       </Button>
@@ -592,14 +650,23 @@ export function ProjectQuickEditDialog({
                 <div className="flex items-center justify-end gap-3 border-t border-white/10 px-5 py-4">
                   <Button
                     type="button"
+                    variant="ghost"
+                    className="text-sm text-rose-400 hover:text-rose-200"
+                    onClick={handleDelete}
+                    disabled={isBusy}
+                  >
+                    Delete project
+                  </Button>
+                  <Button
+                    type="button"
                      variant="ghost"
                     className="text-sm text-white/70 hover:text-white"
                     onClick={onClose}
-                    disabled={saving}
+                    disabled={isBusy}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" className="rounded-full px-5 text-sm" disabled={saving}>
+                  <Button type="submit" className="rounded-full px-5 text-sm" disabled={isBusy}>
                     {saving ? "Saving..." : "Save changes"}
                   </Button>
                 </div>

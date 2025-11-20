@@ -71,6 +71,7 @@ interface GoalCardProps {
   showEmojiPrefix?: boolean;
   variant?: "default" | "compact";
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
+  onProjectDeleted?: (projectId: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -86,6 +87,7 @@ function GoalCardImpl({
   showEmojiPrefix = false,
   variant = "default",
   onProjectUpdated,
+  onProjectDeleted,
   open: openProp,
   onOpenChange,
 }: GoalCardProps) {
@@ -219,14 +221,15 @@ function GoalCardImpl({
           )}
         </div>
       </div>
-      <ProjectQuickEditDialog
-        project={editingProject}
-        origin={editingProjectOrigin}
-        onClose={closeProjectEditor}
-        onUpdated={(projectId, updates) =>
-          onProjectUpdated?.(projectId, updates)
-        }
-      />
+          <ProjectQuickEditDialog
+            project={editingProject}
+            origin={editingProjectOrigin}
+            onClose={closeProjectEditor}
+            onUpdated={(projectId, updates) =>
+              onProjectUpdated?.(projectId, updates)
+            }
+            onDeleted={(projectId) => onProjectDeleted?.(projectId)}
+          />
       </>
     );
   }
@@ -378,6 +381,7 @@ function GoalCardImpl({
         onUpdated={(projectId, updates) => {
           onProjectUpdated?.(projectId, updates);
         }}
+        onDeleted={(projectId) => onProjectDeleted?.(projectId)}
       />
     </>
   );
