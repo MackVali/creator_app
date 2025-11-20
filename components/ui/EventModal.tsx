@@ -1296,17 +1296,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   }, [eventType, isOpen, resetGoalWizard]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      console.warn("Supabase client not available for priority/energy lookups.");
-      return;
-    }
-
-    void loadLookupData(supabase);
-  }, [isOpen, loadLookupData]);
-
-  useEffect(() => {
     if (!isOpen) {
       resetGoalWizard();
       setRoutineOptions([]);
@@ -2541,7 +2530,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       resetGoalWizard,
       router,
       toast,
-      ensureLookupData,
       resolveEnergyPayloadValue,
       resolvePriorityPayloadValue,
     ]
@@ -2850,7 +2838,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                         </Select>
                       </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
                           <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                             Priority
@@ -3126,7 +3114,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
                                     />
                                   </div>
-                                  <div className="grid gap-3 sm:grid-cols-2">
+                                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                                     <div className="space-y-1">
                                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                                         Manual start time
@@ -3248,7 +3236,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                         className="h-10 rounded-lg border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                                       />
                                     </div>
-                                    <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                                       <OptionDropdown
                                         value={task.stage}
                                         options={PROJECT_STAGE_OPTIONS}
@@ -3605,7 +3593,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Priority
@@ -3682,7 +3670,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Skills
@@ -3748,7 +3736,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               </div>
               {showProjectAdvancedOptions ? (
                 <>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <Label className="text-[10px] font-semibold uppercase tracking-[0.25em] text-zinc-500">
                         Manual start time
@@ -3815,7 +3803,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   />
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Priority
