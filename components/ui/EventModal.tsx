@@ -864,7 +864,7 @@ function SkillMultiSelect({
                             });
                           }}
                           className={cn(
-                            "flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-xs text-zinc-200 transition hover:border-white/20 hover:bg-white/5",
+                            "flex w-full items-center justify-between rounded-lg border border-transparent px-2 py-1 text-[10px] text-zinc-200 transition hover:border-white/20 hover:bg-white/5",
                             isSelected && "border-blue-500/40 bg-blue-500/10 text-white"
                           )}
                         >
