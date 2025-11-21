@@ -32,7 +32,12 @@ import {
   setTimeInTimeZone,
   startOfDayInTimeZone,
 } from './timezone'
-import { normalizeCoordinates, resolveSunlightBounds, type GeoCoordinates } from './sunlight'
+import {
+  normalizeCoordinates,
+  resolveSunlightBounds,
+  type GeoCoordinates,
+  type SunlightBounds,
+} from './sunlight'
 import { normalizeSchedulerModePayload, type SchedulerModePayload } from './modes'
 
 type Client = SupabaseClient<Database>
@@ -1701,8 +1706,6 @@ async function scheduleHabitsForDay(params: {
             sunset: sunlightToday.sunset ?? null,
             dawn: sunlightToday.dawn ?? null,
             dusk: sunlightToday.dusk ?? null,
-            previousDusk:
-              sunlightPrevious.dusk ?? sunlightPrevious.sunset ?? null,
             nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
           }
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
@@ -1762,6 +1765,20 @@ async function scheduleHabitsForDay(params: {
       availableStartLocal: Date
     }> = []
 
+    const nightEligibleWindows =
+      daylightConstraint?.preference === 'NIGHT'
+        ? windows.filter((win) =>
+            windowFullyWithinNightSpan(
+              win,
+              day,
+              zone,
+              sunlightToday,
+              sunlightPrevious,
+              sunlightNext,
+            ),
+          )
+        : windows
+
     for (const attempt of attemptQueue) {
       const clonedAvailability = cloneAvailabilityMap(availability)
       const windowsForAttempt = await fetchCompatibleWindowsForItem(
@@ -1780,7 +1797,10 @@ async function scheduleHabitsForDay(params: {
           anchor: anchorPreference,
           restMode,
           userId,
-          preloadedWindows: windows,
+          preloadedWindows:
+            attempt.daylight?.preference === 'NIGHT'
+              ? nightEligibleWindows
+              : windows,
         }
       )
       if (windowsForAttempt.length > 0) {
@@ -2222,13 +2242,37 @@ function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number
   existing.splice(insertIndex, 0, startMs)
 }
 
+function windowFullyWithinNightSpan(
+  win: WindowLite,
+  date: Date,
+  timeZone: string,
+  todaySunlight: SunlightBounds,
+  previousSunlight: SunlightBounds,
+  nextSunlight: SunlightBounds,
+) {
+  const startLocal = resolveWindowStart(win, date, timeZone)
+  const endLocal = resolveWindowEnd(win, date, timeZone)
+  const startReference = win.fromPrevDay
+    ? previousSunlight.sunset ?? previousSunlight.dusk
+    : todaySunlight.sunset ?? todaySunlight.dusk
+  const endReference = win.fromPrevDay
+    ? todaySunlight.dawn ?? todaySunlight.sunrise
+    : nextSunlight.dawn ?? nextSunlight.sunrise
+  if (!startReference || !endReference) {
+    return false
+  }
+  return (
+    startLocal.getTime() >= startReference.getTime() &&
+    endLocal.getTime() <= endReference.getTime()
+  )
+}
+
 type DaylightConstraint = {
   preference: 'DAY' | 'NIGHT'
   sunrise: Date | null
   sunset: Date | null
   dawn: Date | null
   dusk: Date | null
-  previousDusk: Date | null
   nextDawn: Date | null
 }
 
@@ -2351,28 +2395,17 @@ async function fetchCompatibleWindowsForItem(
           backBoundMs = Math.min(backBoundMs, sunsetMs)
         }
       } else if (daylight.preference === 'NIGHT') {
-        const sunriseMs = daylight.sunrise?.getTime() ?? null
-        const duskMs = daylight.dusk?.getTime() ?? daylight.sunset?.getTime() ?? null
-        const previousDuskMs =
-          daylight.previousDusk?.getTime() ?? duskMs ?? null
-        const nextDawnMs = daylight.nextDawn?.getTime() ?? sunriseMs ?? null
-        const isEarlyMorning =
-          typeof sunriseMs === 'number' ? startMs < sunriseMs : false
-
-        if (isEarlyMorning) {
-          if (typeof previousDuskMs === 'number') {
-            frontBoundMs = Math.max(frontBoundMs, previousDuskMs)
-          }
-          if (typeof sunriseMs === 'number') {
-            backBoundMs = Math.min(backBoundMs, sunriseMs)
-          }
-        } else {
-          if (typeof duskMs === 'number') {
-            frontBoundMs = Math.max(frontBoundMs, duskMs)
-          }
-          if (typeof nextDawnMs === 'number') {
-            backBoundMs = Math.min(backBoundMs, nextDawnMs)
-          }
+        const thresholdBase = win.fromPrevDay
+          ? addDaysInTimeZone(date, -1, timeZone)
+          : date
+        const nightThreshold = setTimeInTimeZone(thresholdBase, timeZone, 19, 0)
+        const nightThresholdMs = nightThreshold.getTime()
+        if (Number.isFinite(nightThresholdMs)) {
+          frontBoundMs = Math.max(frontBoundMs, nightThresholdMs)
+        }
+        const nextDawnMs = daylight.nextDawn?.getTime() ?? null
+        if (typeof nextDawnMs === 'number') {
+          backBoundMs = Math.min(backBoundMs, nextDawnMs)
         }
       }
     }
