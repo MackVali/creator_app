@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useLayoutEffect,
+  type MouseEvent,
 } from "react";
 import dynamic from "next/dynamic";
 import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
@@ -74,6 +75,18 @@ interface GoalCardProps {
   onProjectDeleted?: (projectId: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  projectDropdownMode?: "default" | "tasks-only";
+  onTaskToggleCompletion?: (
+    goalId: string,
+    projectId: string,
+    taskId: string,
+    currentStage: string
+  ) => void;
+  onProjectHoldComplete?: (
+    goalId: string,
+    projectId: string,
+    stage: string
+  ) => void;
 }
 
 function GoalCardImpl({
@@ -90,6 +103,9 @@ function GoalCardImpl({
   onProjectDeleted,
   open: openProp,
   onOpenChange,
+  projectDropdownMode = "default",
+  onTaskToggleCompletion,
+  onProjectHoldComplete,
 }: GoalCardProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = typeof openProp === "boolean";
@@ -138,6 +154,49 @@ function GoalCardImpl({
   const toggle = useCallback(() => {
     setOpen(!open);
   }, [open, setOpen]);
+  const projectLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projectLongPressTriggeredRef = useRef(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const cancelProjectLongPress = useCallback(() => {
+    if (projectLongPressTimerRef.current) {
+      clearTimeout(projectLongPressTimerRef.current);
+      projectLongPressTimerRef.current = null;
+    }
+  }, []);
+  const triggerProjectHold = useCallback(() => {
+    if (!onProjectHoldComplete) return;
+    const project = goal.projects[0];
+    if (!project) return;
+    onProjectHoldComplete(goal.id, project.id, project.stage ?? "BUILD");
+  }, [goal, onProjectHoldComplete]);
+  const startProjectLongPress = useCallback(() => {
+    if (!onProjectHoldComplete) return;
+    cancelProjectLongPress();
+    projectLongPressTriggeredRef.current = false;
+    setIsHolding(true);
+    projectLongPressTimerRef.current = setTimeout(() => {
+      projectLongPressTimerRef.current = null;
+      projectLongPressTriggeredRef.current = true;
+      triggerProjectHold();
+    }, 650);
+  }, [cancelProjectLongPress, onProjectHoldComplete, triggerProjectHold]);
+  const handleProjectPointerUp = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      cancelProjectLongPress();
+      if (projectLongPressTriggeredRef.current) {
+        projectLongPressTriggeredRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      setIsHolding(false);
+    },
+    [cancelProjectLongPress]
+  );
+  const handleProjectPointerCancel = useCallback(() => {
+    cancelProjectLongPress();
+    projectLongPressTriggeredRef.current = false;
+    setIsHolding(false);
+  }, [cancelProjectLongPress]);
 
   const handleProjectLongPress = useCallback((project: Project, origin: ProjectCardMorphOrigin | null) => {
     setEditingProjectOrigin(origin ?? null);
@@ -150,6 +209,13 @@ function GoalCardImpl({
   }, []);
 
   const energy = energyAccent[goal.energy];
+  const isCompleted = goal.progress >= 100 || goal.status === "Completed";
+  const completionGradient =
+    "linear-gradient(135deg,rgba(6,78,59,0.96) 0%,rgba(4,120,87,0.94) 42%,rgba(16,185,129,0.9) 100%)";
+  const progressBarStyle = {
+    width: `${goal.progress}%`,
+    backgroundImage: isCompleted ? completionGradient : energy.bar,
+  };
   const createdAt = useMemo(() => {
     if (goal.createdAt) return new Date(goal.createdAt).toLocaleDateString();
     if (goal.updatedAt) return new Date(goal.updatedAt).toLocaleDateString();
@@ -165,9 +231,13 @@ function GoalCardImpl({
     const energy = energyAccent[goal.energy];
     const progressPct = Math.max(0, Math.min(100, Number(goal.progress ?? 0)));
     const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
-  const containerBase =
-    "group relative h-full rounded-2xl ring-1 ring-white/10 bg-gradient-to-b from-white/[0.03] to-white/[0.015] p-3 text-white min-h-[104px] shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]";
-  const containerClass = `${containerBase} aspect-[5/6]`;
+    const containerBase =
+      "group relative h-full rounded-2xl ring-1 ring-white/10 p-3 text-white min-h-[104px]";
+    const completedBg =
+      "bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-white shadow-[0_22px_42px_rgba(4,47,39,0.55),inset_0_1px_0_rgba(255,255,255,0.06)] ring-emerald-300/60";
+    const inProgressBg =
+      "bg-gradient-to-b from-white/[0.03] to-white/[0.015] shadow-[0_10px_26px_-14px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]";
+    const containerClass = `${containerBase} ${isCompleted ? completedBg : inProgressBg} aspect-[5/6]`;
     return (
       <>
       <div
@@ -184,9 +254,17 @@ function GoalCardImpl({
             onClick={toggle}
             aria-expanded={open}
             aria-controls={`goal-${goal.id}`}
+            onPointerDown={startProjectLongPress}
+            onPointerUp={handleProjectPointerUp}
+            onPointerCancel={handleProjectPointerCancel}
+            onPointerLeave={handleProjectPointerCancel}
             className="flex flex-col items-center gap-1.5 min-w-0 text-left"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)]">
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${
+                isCompleted ? "bg-black text-white" : "bg-white/5 text-white"
+              }`}
+            >
               {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
             </div>
             <h3
@@ -204,20 +282,23 @@ function GoalCardImpl({
             <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] w-full">
               <div
                 className="h-full rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
-                style={{ width: `${goal.progress}%`, backgroundImage: energy.bar }}
+                style={progressBarStyle}
               />
             </div>
           </button>
 
           {open && (
-            <CompactProjectsOverlay
-              goal={goal}
-              loading={loading}
-              onClose={toggle}
-              onProjectLongPress={handleProjectLongPress}
-              onProjectUpdated={onProjectUpdated}
-              anchorRect={overlayRect}
-            />
+          <CompactProjectsOverlay
+            goal={goal}
+            loading={loading}
+            onClose={toggle}
+            onProjectLongPress={handleProjectLongPress}
+            onProjectUpdated={onProjectUpdated}
+            anchorRect={overlayRect}
+            projectDropdownMode={projectDropdownMode}
+            goalId={goal.id}
+            onTaskToggleCompletion={onTaskToggleCompletion}
+          />
           )}
         </div>
       </div>
@@ -236,17 +317,34 @@ function GoalCardImpl({
 
   return (
     <>
-      <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-5 text-white transition hover:-translate-y-1 hover:border-white/30">
-        <div className="relative flex h-full flex-col gap-4">
+      <div className="group relative h-full rounded-[30px] border border-white/10 bg-white/[0.03] p-4 text-white transition hover:-translate-y-1 hover:border-white/30">
+        <div className="relative flex h-full flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
-            <button
-              onClick={toggle}
-              aria-expanded={open}
-              aria-controls={`goal-${goal.id}`}
-              className="flex flex-1 flex-col gap-3 text-left"
-            >
-            <div className="flex items-start gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-xl font-semibold">
+          <button
+            onClick={toggle}
+            aria-expanded={open}
+            aria-controls={`goal-${goal.id}`}
+            onPointerDown={startProjectLongPress}
+            onPointerUp={handleProjectPointerUp}
+            onPointerCancel={handleProjectPointerCancel}
+            onPointerLeave={handleProjectPointerCancel}
+            className="relative flex flex-1 flex-col gap-2 text-left overflow-hidden"
+          >
+            <div
+              className="pointer-events-none absolute inset-0 transition-[height] duration-500"
+              style={{
+                height: isCompleted || isHolding ? "100%" : "0%",
+                backgroundImage: completionGradient,
+                transformOrigin: "bottom",
+                zIndex: 0,
+              }}
+            />
+            <div className="relative z-10 flex items-start gap-3">
+              <div
+                className={`flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 text-xl font-semibold ${
+                  isCompleted ? "bg-black text-white" : "bg-white/5 text-white"
+                }`}
+              >
                 {goal.monumentEmoji ?? goal.emoji ?? goal.title.slice(0, 2)}
               </div>
               <div className="flex-1">
@@ -309,16 +407,13 @@ function GoalCardImpl({
                 </span>
               )}
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.25em] text-white/50">
                 <span>Progress</span>
                 <span>{goal.progress}%</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${goal.progress}%`, backgroundImage: energy.bar }}
-                />
+              <div className="h-full rounded-full" style={progressBarStyle} />
               </div>
             </div>
             {onBoost && (
@@ -369,6 +464,9 @@ function GoalCardImpl({
                 loading={loading}
                 onProjectLongPress={handleProjectLongPress}
                 onProjectUpdated={onProjectUpdated}
+                goalId={goal.id}
+                projectTasksOnly={projectDropdownMode === "tasks-only"}
+                onTaskToggleCompletion={onTaskToggleCompletion}
               />
             </div>
           )}
@@ -394,6 +492,14 @@ type CompactProjectsOverlayProps = {
   anchorRect: DOMRect | null;
   onProjectLongPress: (project: Project, origin: ProjectCardMorphOrigin | null) => void;
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
+  projectDropdownMode?: "default" | "tasks-only";
+  goalId: string;
+  onTaskToggleCompletion?: (
+    goalId: string,
+    projectId: string,
+    taskId: string,
+    currentStage: string
+  ) => void;
 };
 
 function CompactProjectsOverlay({
@@ -403,6 +509,9 @@ function CompactProjectsOverlay({
   anchorRect,
   onProjectLongPress,
   onProjectUpdated,
+  projectDropdownMode = "default",
+  goalId,
+  onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -449,16 +558,19 @@ function CompactProjectsOverlay({
   );
 
   const listContent = (
-    <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
-      <ProjectsDropdown
-        id={regionId}
-        goalTitle={goal.title}
-        projects={goal.projects}
-        loading={loading}
-        onProjectLongPress={onProjectLongPress}
-        onProjectUpdated={onProjectUpdated}
-      />
-    </div>
+      <div className="max-h-[60vh] overflow-y-auto px-3 pb-4 sm:max-h-[70vh] sm:px-5">
+        <ProjectsDropdown
+          id={regionId}
+          goalTitle={goal.title}
+          projects={goal.projects}
+          loading={loading}
+          onProjectLongPress={onProjectLongPress}
+          onProjectUpdated={onProjectUpdated}
+          projectTasksOnly={projectDropdownMode === "tasks-only"}
+          goalId={goalId}
+          onTaskToggleCompletion={onTaskToggleCompletion}
+        />
+      </div>
   );
 
   const basePanelClass =

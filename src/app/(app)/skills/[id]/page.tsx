@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { CalendarDays, Clock3, Target, ArrowLeft, Award } from "lucide-react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { FilteredGoalsGrid } from "@/components/goals/FilteredGoalsGrid";
-import { SkillGoalsList } from "@/components/skills/SkillGoalsList";
+import { SkillProjectsList } from "@/components/skills/SkillProjectsList";
 import {
   Card,
   CardContent,
@@ -605,10 +605,10 @@ export default function SkillDetailPage() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.18),_transparent_60%)]" />
             <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">Goals</p>
-                <h2 className="text-lg font-semibold text-white sm:text-xl">Projects driving this skill</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">PROJECTS</p>
+                <h2 className="text-lg font-semibold text-white sm:text-xl">Projects powering this skill</h2>
                 <p className="text-xs text-white/60 sm:text-sm">
-                  Explore the goal folders powering {skill.name} and see the projects pushing it forward.
+                  Every project that touches {skill.name}, rendered like the monument goals you already know.
                 </p>
               </div>
               <Button
@@ -621,7 +621,7 @@ export default function SkillDetailPage() {
               </Button>
             </header>
             <div className="relative mt-6 overflow-visible">
-              <SkillGoalsList skillId={id} />
+              <SkillProjectsList skillId={id} />
             </div>
           </section>
 
