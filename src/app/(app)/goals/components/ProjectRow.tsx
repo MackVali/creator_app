@@ -41,8 +41,12 @@ const projectStageToStatus = (stage: string): Project["status"] => {
 };
 
 export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps) {
-  const [open, setOpen] = useState(false);
-  const toggle = useCallback(() => setOpen((o) => !o), []);
+  const hasTasks = project.tasks.length > 0;
+  const [open, setOpen] = useState(hasTasks);
+  const toggle = useCallback(() => {
+    if (!hasTasks) return;
+    setOpen((o) => !o);
+  }, [hasTasks]);
   const [isBouncing, setIsBouncing] = useState(false);
   const [completionPending, setCompletionPending] = useState(false);
   const [localStatus, setLocalStatus] = useState<Project["status"]>(project.status);
@@ -82,7 +86,6 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
     []
   );
 
-  const hasTasks = project.tasks.length > 0;
   const [visibleTasks, hiddenCount] = useMemo(() => {
     const slice = project.tasks.slice(0, MAX_VISIBLE_TASKS);
     return [slice, project.tasks.length - slice.length] as const;
