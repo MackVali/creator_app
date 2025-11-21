@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
+import type { CatRow } from "@/lib/types/cat";
 
 export type HabitTypeOption = {
   label: string;
@@ -121,6 +122,7 @@ interface HabitFormFieldsProps {
   energyOptions: HabitEnergySelectOption[];
   skillsLoading: boolean;
   skillOptions: HabitSkillSelectOption[];
+  skillCategories?: CatRow[];
   skillError?: string | null;
   goalId?: string;
   goalOptions?: HabitGoalSelectOption[];
@@ -156,6 +158,9 @@ const WINDOW_EDGE_OPTIONS = [
   { value: "BACK", label: "Back" },
 ];
 
+const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
+const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
+
 const ANY_OPTION_ID = "__any__";
 
 export function HabitFormFields({
@@ -173,6 +178,7 @@ export function HabitFormFields({
   energyOptions,
   skillsLoading,
   skillOptions,
+  skillCategories = [],
   skillError,
   goalId = "none",
   goalOptions,
@@ -248,6 +254,77 @@ export function HabitFormFields({
       return labelMatch || valueMatch;
     });
   }, [skillOptions, skillSearchQuery]);
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    skillCategories.forEach((category) => {
+      const label = category.name?.trim() || "";
+      map.set(category.id, label);
+    });
+    return map;
+  }, [skillCategories]);
+
+  type SkillGroup = {
+    id: string;
+    label: string;
+    options: HabitSkillSelectOption[];
+  };
+
+  const skillOptionsForGrouping = filteredSkillOptions.filter(
+    (option) => option.value !== "none",
+  );
+
+  const groupedSkillOptions = useMemo(() => {
+    if (skillOptionsForGrouping.length === 0) {
+      return [];
+    }
+
+    const groups = new Map<string, SkillGroup>();
+    skillOptionsForGrouping.forEach((option) => {
+      const groupId = option.catId ?? UNCATEGORIZED_GROUP_ID;
+      const label =
+        groupId === UNCATEGORIZED_GROUP_ID
+          ? UNCATEGORIZED_GROUP_LABEL
+          : categoryLookup.get(groupId) || UNCATEGORIZED_GROUP_LABEL;
+      const existing = groups.get(groupId);
+      if (existing) {
+        existing.options.push(option);
+      } else {
+        groups.set(groupId, { id: groupId, label, options: [option] });
+      }
+    });
+
+    const ordered: SkillGroup[] = [];
+    skillCategories.forEach((category) => {
+      const group = groups.get(category.id);
+      if (group) {
+        ordered.push({
+          ...group,
+          label: category.name?.trim() || group.label,
+        });
+        groups.delete(category.id);
+      }
+    });
+
+    const uncategorizedGroup = groups.get(UNCATEGORIZED_GROUP_ID);
+    if (uncategorizedGroup) {
+      ordered.push({
+        ...uncategorizedGroup,
+        label: UNCATEGORIZED_GROUP_LABEL,
+      });
+      groups.delete(UNCATEGORIZED_GROUP_ID);
+    }
+
+    for (const group of groups.values()) {
+      ordered.push(group);
+    }
+
+    return ordered;
+  }, [skillOptionsForGrouping, skillCategories, categoryLookup]);
+
+  const specialSkillOptions = filteredSkillOptions.filter(
+    (option) => option.value === "none",
+  );
 
   const handleToggleRecurrenceDay = (day: number) => {
     const hasDay = recurrenceDays.includes(day);
@@ -460,34 +537,62 @@ export function HabitFormFields({
             <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
               <SelectValue placeholder="Choose the skill this habit grows" />
             </SelectTrigger>
-            <SelectContent className="bg-[#0b101b] text-sm text-white">
-              <div className="p-2">
-                <Input
-                  value={skillSearchQuery}
-                  onChange={(event) => setSkillSearchQuery(event.target.value)}
-                  placeholder="Search skills..."
-                  className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
-                />
-              </div>
-              {filteredSkillOptions.length > 0 ? (
-                filteredSkillOptions.map((option) => (
-                  <SelectItem
-                    key={`${option.value}-${option.label}`}
-                    value={option.value}
-                    disabled={option.disabled}
-                  >
-                    <div className="flex items-center gap-2">
-                      {option.icon ? <span>{option.icon}</span> : null}
-                      <span>{option.label}</span>
-                    </div>
-                  </SelectItem>
-                ))
-              ) : (
-                <div className="px-3 pb-3 text-xs text-white/60">
-                  No skills found.
+          <SelectContent className="bg-[#0b101b] text-sm text-white">
+            <div className="p-2">
+              <Input
+                value={skillSearchQuery}
+                onChange={(event) => setSkillSearchQuery(event.target.value)}
+                placeholder="Search skills..."
+                className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+              />
+            </div>
+            {specialSkillOptions.map((option) => (
+              <SelectItem
+                key={`${option.value}-${option.label}`}
+                value={option.value}
+                disabled={option.disabled}
+              >
+                <div className="flex items-center gap-2">
+                  {option.icon ? <span>{option.icon}</span> : null}
+                  <span>{option.label}</span>
                 </div>
-              )}
-            </SelectContent>
+              </SelectItem>
+            ))}
+            {filteredSkillOptions.length === 0 ? (
+              <div className="px-3 pb-3 text-xs text-white/60">
+                No skills found.
+              </div>
+            ) : (
+              groupedSkillOptions.map((group, index) => (
+                <div
+                  key={group.id}
+                  className={cn(
+                    "space-y-2 px-3 pb-3 pt-2 text-sm text-white",
+                    index === 0 ? "pt-0" : ""
+                  )}
+                >
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                    {group.label}
+                  </p>
+                  <div className="grid gap-1">
+                    {group.options.map((option) => (
+                      <SelectItem
+                        key={`${option.value}-${option.label}`}
+                        value={option.value}
+                        disabled={option.disabled}
+                        className="px-0 text-sm"
+                      >
+                        <div className="flex items-center gap-2">
+                          {option.icon ? <span>{option.icon}</span> : null}
+                          <span>{option.label}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </SelectContent>
           </Select>
           {skillError ? (
             <p className="text-xs text-red-300">{skillError}</p>

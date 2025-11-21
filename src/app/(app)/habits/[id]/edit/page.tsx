@@ -31,6 +31,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { getCatsForUser } from "@/lib/data/cats";
+import type { CatRow } from "@/lib/types/cat";
 
 function normalizeMessageTokens(maybeError?: unknown) {
   if (!maybeError || typeof maybeError !== "object") {
@@ -85,6 +87,8 @@ interface RoutineOption {
 interface SkillOption {
   id: string;
   name: string | null;
+  icon?: string | null;
+  catId?: string | null;
 }
 
 type RoutineSelectValue = string;
@@ -131,6 +135,7 @@ export default function EditHabitPage() {
   const [skillOptions, setSkillOptions] = useState<SkillOption[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [skillId, setSkillId] = useState<string>("none");
   const [habitLoading, setHabitLoading] = useState(true);
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
@@ -344,12 +349,14 @@ export default function EditHabitPage() {
   }, [goalMetadataSupported, supabase]);
 
   useEffect(() => {
+    if (!open) return;
     let active = true;
 
     const fetchSkills = async () => {
       if (!supabase) {
         if (active) {
           setSkillsLoading(false);
+          setSkillCategories([]);
           setSkillLoadError("Supabase client not available.");
         }
         return;
@@ -362,34 +369,46 @@ export default function EditHabitPage() {
         } = await supabase.auth.getUser();
 
         if (userError) throw userError;
-
         if (!user) {
           if (active) {
             setSkillOptions([]);
+            setSkillCategories([]);
             setSkillId("none");
             setSkillLoadError(null);
           }
           return;
         }
 
-        const { data, error: skillsError } = await supabase
+        const skillsPromise = supabase
           .from("skills")
-          .select("id, name")
+          .select("id, name, icon, cat_id")
           .eq("user_id", user.id)
           .order("name", { ascending: true });
+        const categoriesPromise = getCatsForUser(user.id, supabase);
 
-        if (skillsError) throw skillsError;
+        const [skillsResult, categoriesData] = await Promise.all([
+          skillsPromise,
+          categoriesPromise,
+        ]);
+
+        if (skillsResult.error) throw skillsResult.error;
 
         if (active) {
-          const safeSkills = data ?? [];
+          const safeSkills = (skillsResult.data ?? []).map((skill) => ({
+            id: skill.id,
+            name: skill.name ?? null,
+            icon: skill.icon ?? null,
+            catId: skill.cat_id ?? null,
+          }));
           setSkillOptions(safeSkills);
+          setSkillCategories(categoriesData);
           setSkillLoadError(null);
           setSkillId((current) => {
             if (current === "none") {
               return current;
             }
 
-            return safeSkills.some((skill) => skill.id === current)
+            return safeSkills.some((entry) => entry.id === current)
               ? current
               : "none";
           });
@@ -398,6 +417,7 @@ export default function EditHabitPage() {
         console.error("Failed to load skills:", err);
         if (active) {
           setSkillOptions([]);
+          setSkillCategories([]);
           setSkillLoadError("Unable to load your skills right now.");
         }
       } finally {
@@ -412,7 +432,7 @@ export default function EditHabitPage() {
     return () => {
       active = false;
     };
-  }, [supabase]);
+  }, [open, supabase]);
 
   const goalSelectOptions = useMemo<HabitGoalSelectOption[]>(() => {
     if (!goalMetadataSupported) {
@@ -486,6 +506,8 @@ export default function EditHabitPage() {
       ...skillOptions.map((skill) => ({
         value: skill.id,
         label: skill.name?.trim() ? skill.name : "Untitled skill",
+        icon: skill.icon ?? null,
+        catId: skill.catId ?? null,
       })),
     ];
   }, [skillOptions, skillsLoading]);
@@ -905,6 +927,7 @@ export default function EditHabitPage() {
                   energyOptions={energySelectOptions}
                   skillsLoading={skillsLoading}
                   skillOptions={skillSelectOptions}
+                  skillCategories={skillCategories}
                   skillError={skillLoadError}
                   goalId={goalId}
                   goalOptions={goalSelectOptions}

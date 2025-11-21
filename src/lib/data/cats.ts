@@ -1,8 +1,9 @@
 import { getSupabaseBrowser } from "../../../lib/supabase";
 import type { CatRow } from "../types/cat";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-export async function getCatsForUser(userId: string) {
-  const sb = getSupabaseBrowser();
+export async function getCatsForUser(userId: string, client?: SupabaseClient) {
+  const sb = client ?? getSupabaseBrowser();
   if (!sb) throw new Error("Supabase client not available");
 
   const { data, error } = await sb

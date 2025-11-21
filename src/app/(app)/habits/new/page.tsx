@@ -99,6 +99,7 @@ export default function NewHabitPage() {
       if (!supabase) {
         if (active) {
           setSkillsLoading(false);
+          setSkillCategories([]);
           setSkillLoadError("Supabase client not available.");
         }
         return;
@@ -115,23 +116,31 @@ export default function NewHabitPage() {
         if (!user) {
           if (active) {
             setSkills([]);
+            setSkillCategories([]);
             setSkillId("none");
             setSkillLoadError(null);
           }
           return;
         }
 
-        const { data, error: skillsError } = await supabase
+        const skillsPromise = supabase
           .from("skills")
-          .select("id, name, icon")
+          .select("id, name, icon, cat_id")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
+        const categoriesPromise = getCatsForUser(user.id, supabase);
 
-        if (skillsError) throw skillsError;
+        const [skillsResult, categoriesData] = await Promise.all([
+          skillsPromise,
+          categoriesPromise,
+        ]);
+
+        if (skillsResult.error) throw skillsResult.error;
 
         if (active) {
-          const safeSkills = (data ?? []) as SkillRow[];
+          const safeSkills = (skillsResult.data ?? []) as SkillRow[];
           setSkills(safeSkills);
+          setSkillCategories(categoriesData);
           setSkillLoadError(null);
           setSkillId((current) => {
             if (current === "none") return current;
@@ -144,6 +153,7 @@ export default function NewHabitPage() {
         console.error("Failed to load skills:", err);
         if (active) {
           setSkills([]);
+          setSkillCategories([]);
           setSkillLoadError("Unable to load your skills right now.");
           setSkillId("none");
         }
@@ -193,6 +203,7 @@ export default function NewHabitPage() {
           value: skill.id,
           label: skill.name,
           icon: skill.icon,
+          catId: skill.cat_id ?? null,
         })),
     ];
   }, [skills, skillsLoading]);
@@ -631,10 +642,11 @@ export default function NewHabitPage() {
                 locationContextId={locationContextId}
                 daylightPreference={daylightPreference}
                 windowEdgePreference={windowEdgePreference}
-                energyOptions={energySelectOptions}
-                skillsLoading={skillsLoading}
-                skillOptions={skillSelectOptions}
-                skillError={skillLoadError}
+              energyOptions={energySelectOptions}
+              skillsLoading={skillsLoading}
+              skillOptions={skillSelectOptions}
+              skillCategories={skillCategories}
+              skillError={skillLoadError}
                 goalId={goalId}
                 goalOptions={goalSelectOptions}
                 goalError={goalLoadError}
