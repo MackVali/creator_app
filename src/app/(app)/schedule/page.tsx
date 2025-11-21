@@ -91,6 +91,7 @@ import {
 } from '@/lib/scheduler/modes'
 import { createMemoNoteForHabit } from '@/lib/notesStorage'
 import { MemoNoteSheet } from '@/components/schedule/MemoNoteSheet'
+import { useProfile } from '@/lib/hooks/useProfile'
 
 type DayTransitionDirection = -1 | 0 | 1
 
@@ -2158,6 +2159,18 @@ export default function SchedulePage() {
     }
   }, [view])
 
+  const { profile, loading: profileLoading } = useProfile()
+  const profileTimeZone = useMemo(() => {
+    const raw = profile?.timezone
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (trimmed.length > 0) {
+        return trimmed
+      }
+    }
+    return null
+  }, [profile?.timezone])
+
   useEffect(() => {
     if (!skipNextDayAnimation) return
     const id = requestAnimationFrame(() => {
@@ -2182,7 +2195,12 @@ export default function SchedulePage() {
   useEffect(() => {
     try {
       const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
-      if (resolved && resolved.trim() && resolved !== localTimeZone) {
+      if (
+        !profileTimeZone &&
+        resolved &&
+        resolved.trim() &&
+        resolved !== localTimeZone
+      ) {
         setLocalTimeZone(resolved)
       }
     } catch (error) {
@@ -2190,7 +2208,13 @@ export default function SchedulePage() {
         console.warn('Unable to resolve local time zone', error)
       }
     }
-  }, [localTimeZone])
+  }, [localTimeZone, profileTimeZone])
+
+  useEffect(() => {
+    if (!profileTimeZone) return
+    if (profileTimeZone === localTimeZone) return
+    setLocalTimeZone(profileTimeZone)
+  }, [profileTimeZone, localTimeZone])
 
   useEffect(() => {
     if (initialDateWasValid) return
@@ -3498,7 +3522,8 @@ peekDataDepsRef.current = {
       }
 
       const localNow = new Date()
-      const timeZone: string | null = localTimeZone ?? null
+      const utcOffsetMinutes = -localNow.getTimezoneOffset()
+      const timeZone: string | null = profileTimeZone ?? null
 
       if (!background) {
         if (isSchedulingRef.current) return
@@ -3514,12 +3539,13 @@ peekDataDepsRef.current = {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            localTimeIso: localNow.toISOString(),
-            timeZone,
-            mode: resolvedModePayload,
-            writeThroughDays: args?.writeThroughDays ?? null,
-          }),
+        body: JSON.stringify({
+          localTimeIso: localNow.toISOString(),
+          timeZone,
+          utcOffsetMinutes,
+          mode: resolvedModePayload,
+          writeThroughDays: args?.writeThroughDays ?? null,
+        }),
         })
 
         if (background) {
@@ -3612,7 +3638,7 @@ peekDataDepsRef.current = {
     [
       userId,
       refreshScheduledProjectIds,
-      localTimeZone,
+      profileTimeZone,
       resolvedModePayload,
       loadInstancesRef,
     ]
@@ -4482,7 +4508,7 @@ peekDataDepsRef.current = {
               }
               const streakDays = Math.max(0, Math.round(placement.currentStreakDays ?? 0))
               const showHabitStreakBadge = streakDays >= 2
-              const streakLabel = `${streakDays} day${streakDays === 1 ? '' : 's'} streak`
+              const streakLabel = `${streakDays}x`
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
@@ -4654,12 +4680,12 @@ peekDataDepsRef.current = {
                 >
                   <motion.span
                     layoutId={habitLayoutTokens?.title}
-                    className="truncate text-sm font-medium leading-snug"
+                    className="truncate pr-8 text-sm font-medium leading-snug"
                   >
                     {placement.habitName}
                   </motion.span>
                   {showHabitStreakBadge ? (
-                    <span className="flex flex-shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                    <span className="pointer-events-none absolute right-3 top-2 flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-100">
                       <FlameEmber
                         level={streakDays >= 7 ? 'HIGH' : streakDays >= 4 ? 'MEDIUM' : 'LOW'}
                         size="xs"
