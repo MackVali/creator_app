@@ -6,6 +6,7 @@ import { ChevronDown } from "lucide-react";
 import type { Project } from "../types";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 
 export type ProjectCardMorphOrigin = {
   x: number;
@@ -141,6 +142,25 @@ export function ProjectRow({ project, onLongPress, onUpdated }: ProjectRowProps)
     setLocalStatus(nextStatus);
     setLocalStage(nextStage);
     onUpdated?.(project.id, { status: nextStatus, stage: nextStage });
+    if (shouldComplete) {
+      void recordProjectCompletion(
+        {
+          projectId: project.id,
+          projectSkillIds: project.skillIds,
+          taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+        },
+        "complete"
+      );
+    } else {
+      void recordProjectCompletion(
+        {
+          projectId: project.id,
+          projectSkillIds: project.skillIds,
+          taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+        },
+        "undo"
+      );
+    }
   }, [completionPending, lastActiveStage, localStage, localStatus, onUpdated, project.id]);
 
   const isCompleted = localStatus === "Done";
