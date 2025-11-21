@@ -526,7 +526,7 @@ export function HabitFormFields({
             htmlFor="habit-duration"
             className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
           >
-            Duration (minutes)
+            Duration
           </Label>
           <Input
             id="habit-duration"
@@ -536,7 +536,7 @@ export function HabitFormFields({
             step={1}
             value={duration}
             onChange={(event) => onDurationChange(event.target.value)}
-            placeholder="e.g. 25"
+            placeholder="x minutes"
             required
             className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
           />

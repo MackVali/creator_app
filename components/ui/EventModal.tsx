@@ -199,14 +199,21 @@ async function createGoalFallback(
   let createdGoalId: string | null = null;
   const createdProjectIds: string[] = [];
 
+  const fallbackGoalPriority = priorityCodeFromDisplay(
+    String(goalInput.priority ?? "")
+  );
+  const fallbackGoalEnergy = energyCodeFromDisplay(
+    String(goalInput.energy ?? "")
+  );
+
   try {
     const { data: goalRecord, error: goalError } = await supabase
       .from("goals")
       .insert({
         user_id: goalInput.user_id,
         name: goalInput.name,
-        priority: goalInput.priority,
-        energy: goalInput.energy,
+        priority: fallbackGoalPriority,
+        energy: fallbackGoalEnergy,
         monument_id: goalInput.monument_id,
         why: goalInput.why,
         due_date: goalInput.due_date,
@@ -222,6 +229,10 @@ async function createGoalFallback(
     createdGoalId = goalRecord.id;
 
     for (const project of projects) {
+      const projectPriorityCode = priorityCodeFromDisplay(
+        project.priority ?? ""
+      );
+      const projectEnergyCode = energyCodeFromDisplay(project.energy ?? "");
       const { data: projectRecord, error: projectError } = await supabase
         .from("projects")
         .insert({
@@ -229,8 +240,8 @@ async function createGoalFallback(
           goal_id: createdGoalId,
           name: project.name,
           stage: project.stage,
-          priority: project.priority,
-          energy: project.energy,
+          priority: projectPriorityCode,
+          energy: projectEnergyCode,
           why: project.why,
           duration_min: project.duration_min,
           due_date: project.due_date,
@@ -270,8 +281,8 @@ async function createGoalFallback(
               project_id: projectRecord.id,
               name: task.name,
               stage: task.stage,
-              priority: task.priority,
-              energy: task.energy,
+              priority: priorityCodeFromDisplay(task.priority ?? ""),
+              energy: energyCodeFromDisplay(task.energy ?? ""),
               notes: task.notes,
               skill_id: task.skill_id,
               due_date: task.due_date,
@@ -2207,10 +2218,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
-        const lookupData = await ensureLookupData(supabase);
-        const priorityLookup = lookupData.priority;
-        const energyLookup = lookupData.energy;
-
         for (const draft of draftProjects) {
           const hasStart = draft.manualStart.trim().length > 0;
           const hasEnd = draft.manualEnd.trim().length > 0;
@@ -2288,18 +2295,15 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 const taskSkillId = task.skillId ? task.skillId : null;
                 const taskPriorityCode = priorityCodeFromDisplay(task.priority);
                 const taskEnergyCode = energyCodeFromDisplay(task.energy);
+                const taskPriorityDisplay =
+                  displayPriorityFromCode(taskPriorityCode);
+                const taskEnergyDisplay = displayEnergyFromCode(taskEnergyCode);
 
                 return {
                   name: formattedTaskName,
                   stage: task.stage || DEFAULT_TASK_STAGE,
-                  priority: resolvePriorityPayloadValue(
-                    taskPriorityCode,
-                    priorityLookup
-                  ),
-                  energy: resolveEnergyPayloadValue(
-                    taskEnergyCode,
-                    energyLookup
-                  ),
+                  priority: taskPriorityDisplay,
+                  energy: taskEnergyDisplay,
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
                   skill_id: taskSkillId,
                   due_date:
@@ -2338,22 +2342,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
             const projectPriority = priorityCodeFromDisplay(draft.priority);
             const projectEnergy = energyCodeFromDisplay(draft.energy);
-            const projectPriorityValue = resolvePriorityPayloadValue(
-              projectPriority,
-              priorityLookup
-            );
-            const projectEnergyValue = resolveEnergyPayloadValue(
-              projectEnergy,
-              energyLookup
-            );
+            const projectPriorityDisplay =
+              displayPriorityFromCode(projectPriority);
+            const projectEnergyDisplay = displayEnergyFromCode(projectEnergy);
 
             return {
               draftId: draft.id,
               payload: {
                 name: formattedName,
                 stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
-                priority: projectPriorityValue,
-                energy: projectEnergyValue,
+                priority: projectPriorityDisplay,
+                energy: projectEnergyDisplay,
                 why: trimmedWhy.length > 0 ? trimmedWhy : null,
                 duration_min:
                   Number.isFinite(parsedDuration) && parsedDuration > 0
@@ -2399,20 +2398,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
         const goalPriorityCode = priorityCodeFromDisplay(goalForm.priority);
         const goalEnergyCode = energyCodeFromDisplay(goalForm.energy);
-        const goalPriorityValue = resolvePriorityPayloadValue(
-          goalPriorityCode,
-          priorityLookup
-        );
-        const goalEnergyValue = resolveEnergyPayloadValue(
-          goalEnergyCode,
-          energyLookup
-        );
 
         const goalInput: GoalWizardRpcInput = {
           user_id: user.id,
           name: formatNameValue(trimmedGoalName),
-          priority: goalPriorityValue,
-          energy: goalEnergyValue,
+          priority: displayPriorityFromCode(goalPriorityCode),
+          energy: displayEnergyFromCode(goalEnergyCode),
           monument_id: selectedMonumentId,
           why: goalWhy ? goalWhy : null,
           due_date: goalDueDate ? goalDueDate : null,
@@ -2971,7 +2962,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                               </div>
                               <div className="space-y-2">
                                 <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                                  Duration (minutes)
+                                  Duration
                                 </Label>
                                 <Input
                                   value={draft.duration}
@@ -2984,7 +2975,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                   }
                                   inputMode="numeric"
                                   pattern="[0-9]*"
-                                  placeholder="e.g. 90"
+                                  placeholder="x minutes"
                                   className="h-11 rounded-xl border border-white/10 bg-black/70 text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
                                 />
                               </div>
@@ -3653,7 +3644,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
 
             <div className="space-y-2">
               <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                Duration (minutes)
+                Duration
               </Label>
               <Input
                 type="number"
@@ -3835,7 +3826,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                      Duration (minutes)
+                      Duration
                     </Label>
                     <Input
                       type="number"
