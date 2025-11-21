@@ -3,6 +3,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import type { Database } from '../../../types/supabase'
 import {
   fetchBacklogNeedingSchedule,
+  cleanupTransientInstances,
   fetchInstancesForRange,
   type ScheduleInstance,
 } from './instanceRepo'
@@ -158,6 +159,7 @@ export async function scheduleBacklog(
     location?: GeoCoordinates | null
     mode?: SchedulerModePayload | null
     writeThroughDays?: number | null
+    utcOffsetMinutes?: number | null
   }
 ): Promise<ScheduleBacklogResult> {
   const supabase = await ensureClient(client)
@@ -180,6 +182,10 @@ export async function scheduleBacklog(
     if (durationMultiplier === 1) return value
     return Math.max(1, Math.round(value * durationMultiplier))
   }
+  const timeZoneOffsetMinutes =
+    typeof options?.utcOffsetMinutes === 'number' && Number.isFinite(options.utcOffsetMinutes)
+      ? options.utcOffsetMinutes
+      : null
 
   const missed = await fetchBacklogNeedingSchedule(userId, supabase)
   if (missed.error) {
@@ -311,6 +317,7 @@ export async function scheduleBacklog(
     goalWeight: number
     instanceId?: string | null
     preferred?: boolean
+    eventName: string
   }
 
   const queue: QueueItem[] = []
@@ -380,6 +387,7 @@ export async function scheduleBacklog(
       weight,
       goalWeight: def.goalWeight ?? 0,
       instanceId: m.id,
+      eventName: def.name || def.id,
     })
   }
 
@@ -434,6 +442,7 @@ export async function scheduleBacklog(
       weight: def.weight ?? 0,
       goalWeight: def.goalWeight ?? 0,
       preferred: projectMatchesSelectedMonument(def.id),
+      eventName: def.name || def.id,
     })
     queuedProjectIds.add(def.id)
   }
@@ -890,9 +899,10 @@ export async function scheduleBacklog(
       windowCache,
       client: supabase,
       sunlightLocation: location,
-        durationMultiplier,
-        restMode: isRestMode,
-        existingInstances,
+      timeZoneOffsetMinutes,
+      durationMultiplier,
+      restMode: isRestMode,
+      existingInstances,
         registerInstance: registerInstanceForOffsets,
         getWindowsForDay,
         getLastScheduledHabitStart: getHabitLastScheduledStart,
@@ -1087,6 +1097,30 @@ export async function scheduleBacklog(
     return aTime - bTime
   })
 
+  if (typeof supabase.from === 'function') {
+    const cleanupResult = await cleanupTransientInstances(userId, supabase)
+    if (cleanupResult.error) {
+      result.failures.push({
+        itemId: 'cleanup-transient-instances',
+        reason: 'error',
+        detail: cleanupResult.error,
+      })
+    }
+  }
+
+  if (
+    process.env.NODE_ENV !== 'production' ||
+    process.env.SCHEDULER_DEBUG === 'true'
+  ) {
+    const habitTimeline = result.timeline.filter(entry => entry.type === 'HABIT')
+    if (result.failures.length > 0 || habitTimeline.length > 0) {
+      console.info('scheduleBacklog result:', {
+        failures: result.failures,
+        habitTimeline,
+      })
+    }
+  }
+
   return result
 }
 
@@ -1263,6 +1297,7 @@ async function scheduleHabitsForDay(params: {
   windowCache: Map<string, WindowLite[]>
   client: Client
   sunlightLocation?: GeoCoordinates | null
+  timeZoneOffsetMinutes?: number | null
   durationMultiplier?: number
   restMode?: boolean
   existingInstances: ScheduleInstance[]
@@ -1283,6 +1318,7 @@ async function scheduleHabitsForDay(params: {
     windowCache,
     client,
     sunlightLocation,
+    timeZoneOffsetMinutes = null,
     durationMultiplier = 1,
     restMode = false,
     existingInstances,
@@ -1324,6 +1360,37 @@ async function scheduleHabitsForDay(params: {
   if (!habits.length) {
     await clearHabitOverrides()
     return result
+  }
+
+  const canceledInstanceIds = new Set<string>()
+  const cancelScheduledInstance = async (instance: ScheduleInstance) => {
+    if (!instance?.id) return false
+    try {
+      const cancel = await client
+        .from("schedule_instances")
+        .update({ status: "canceled" })
+        .eq("id", instance.id)
+        .select("id")
+        .single()
+      if (cancel.error) {
+        result.failures.push({
+          itemId: instance.source_id ?? instance.id,
+          reason: "error",
+          detail: cancel.error,
+        })
+        return false
+      }
+      canceledInstanceIds.add(instance.id)
+      return true
+    } catch (error) {
+      console.error("Failed to cancel habit instance during revalidation", error)
+      result.failures.push({
+        itemId: instance.source_id ?? instance.id,
+        reason: "error",
+        detail: error,
+      })
+      return false
+    }
   }
 
   const zone = timeZone || 'UTC'
@@ -1457,7 +1524,9 @@ async function scheduleHabitsForDay(params: {
     existingInstances.push(inst)
   }
 
-  const dayInstances = existingInstances.map(inst => ({ ...inst }))
+  const dayInstances = existingInstances
+    .map(inst => ({ ...inst }))
+    .filter(inst => !canceledInstanceIds.has(inst?.id ?? ""))
 
   const invalidHabitInstances: ScheduleInstance[] = []
   const seenInvalidIds = new Set<string>()
@@ -1649,11 +1718,25 @@ async function scheduleHabitsForDay(params: {
     }
   }
 
-  const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation)
+  const sunlightOptions =
+    typeof timeZoneOffsetMinutes === 'number'
+      ? { offsetMinutes: timeZoneOffsetMinutes }
+      : undefined
+  const sunlightToday = resolveSunlightBounds(day, zone, sunlightLocation, sunlightOptions)
   const previousDay = addDaysInTimeZone(day, -1, zone)
   const nextDay = addDaysInTimeZone(day, 1, zone)
-  const sunlightPrevious = resolveSunlightBounds(previousDay, zone, sunlightLocation)
-  const sunlightNext = resolveSunlightBounds(nextDay, zone, sunlightLocation)
+  const sunlightPrevious = resolveSunlightBounds(
+    previousDay,
+    zone,
+    sunlightLocation,
+    sunlightOptions,
+  )
+  const sunlightNext = resolveSunlightBounds(
+    nextDay,
+    zone,
+    sunlightLocation,
+    sunlightOptions,
+  )
 
   const sortedHabits = dueHabits.sort((a, b) => {
     const dueA = dueInfoByHabitId.get(a.id)
@@ -1668,7 +1751,9 @@ async function scheduleHabitsForDay(params: {
     return a.name.localeCompare(b.name)
   })
 
+  let existingInstance: ScheduleInstance | null = null
   for (const habit of sortedHabits) {
+    existingInstance = existingByHabitId.get(habit.id) ?? null
     const rawDuration = Number(habit.durationMinutes ?? 0)
     let durationMin =
       Number.isFinite(rawDuration) && rawDuration > 0
@@ -1692,6 +1777,25 @@ async function scheduleHabitsForDay(params: {
       typeof locationContextIdRaw === 'string' && locationContextIdRaw.trim().length > 0
         ? locationContextIdRaw.trim()
         : null
+    const hasExplicitLocationContext =
+      (typeof habit.locationContextId === 'string' && habit.locationContextId.trim().length > 0) ||
+      (typeof habit.locationContextValue === 'string' && habit.locationContextValue.trim().length > 0)
+    const existingWindowLocation = existingInstance?.window_id
+      ? windowsById
+          .get(existingInstance.window_id)
+          ?.location_context_value?.toUpperCase()
+          .trim() ?? null
+      : null
+    if (
+      existingInstance &&
+      !hasExplicitLocationContext &&
+      existingWindowLocation === 'WORK'
+    ) {
+      if (await cancelScheduledInstance(existingInstance)) {
+        existingByHabitId.delete(habit.id)
+        existingInstance = null
+      }
+    }
     const rawDaylight = habit.daylightPreference
       ? String(habit.daylightPreference).toUpperCase().trim()
       : 'ALL_DAY'
@@ -1706,8 +1810,15 @@ async function scheduleHabitsForDay(params: {
             sunset: sunlightToday.sunset ?? null,
             dawn: sunlightToday.dawn ?? null,
             dusk: sunlightToday.dusk ?? null,
+            previousSunset: sunlightPrevious.sunset ?? null,
+            previousDusk: sunlightPrevious.dusk ?? null,
             nextDawn: sunlightNext.dawn ?? sunlightNext.sunrise ?? null,
+            nextSunrise: sunlightNext.sunrise ?? null,
           }
+    const nightSunlightBundle =
+      daylightConstraint?.preference === 'NIGHT'
+        ? { today: sunlightToday, previous: sunlightPrevious, next: sunlightNext }
+        : null
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
     const isSyncHabit = normalizedType === 'SYNC'
     const allowsHabitOverlap = isSyncHabit
@@ -1768,7 +1879,7 @@ async function scheduleHabitsForDay(params: {
     const nightEligibleWindows =
       daylightConstraint?.preference === 'NIGHT'
         ? windows.filter((win) =>
-            windowFullyWithinNightSpan(
+            windowOverlapsNightSpan(
               win,
               day,
               zone,
@@ -1797,6 +1908,10 @@ async function scheduleHabitsForDay(params: {
           anchor: anchorPreference,
           restMode,
           userId,
+          enforceNightSpan: daylightConstraint?.preference === 'NIGHT',
+          nightSunlight: nightSunlightBundle,
+          requireLocationContextMatch: true,
+          hasExplicitLocationContext,
           preloadedWindows:
             attempt.daylight?.preference === 'NIGHT'
               ? nightEligibleWindows
@@ -2032,7 +2147,27 @@ async function scheduleHabitsForDay(params: {
       ? String(window.energy).toUpperCase()
       : resolvedEnergy
 
-    const existingInstance = existingByHabitId.get(habit.id) ?? null
+    existingInstance = existingByHabitId.get(habit.id) ?? null
+    if (existingInstance && daylightConstraint) {
+      const existingWindow = existingInstance.window_id
+        ? windowsById.get(existingInstance.window_id) ?? null
+        : null
+      const withinDaylight = doesInstanceRespectDaylight(
+        existingInstance,
+        daylightConstraint,
+        existingWindow,
+        day,
+        zone,
+        nightSunlightBundle,
+      )
+      if (!withinDaylight) {
+        if (await cancelScheduledInstance(existingInstance)) {
+          existingByHabitId.delete(habit.id)
+          existingInstance = null
+        }
+      }
+    }
+
     let needsUpdate = existingInstance
       ? existingInstance.window_id !== window.id ||
         existingInstance.start_utc !== candidateStartUTC ||
@@ -2075,6 +2210,7 @@ async function scheduleHabitsForDay(params: {
           duration_min: durationMinutes,
           energy: energyResolved,
           weight: 0,
+          eventName: habit.name || 'Habit',
         },
         windows: [
           {
@@ -2242,16 +2378,23 @@ function addAnchorStart(map: Map<string, number[]>, key: string, startMs: number
   existing.splice(insertIndex, 0, startMs)
 }
 
-function windowFullyWithinNightSpan(
+type NightSpan = {
+  start: Date
+  end: Date
+}
+
+type NightSunlightBundle = {
+  today: SunlightBounds
+  previous: SunlightBounds
+  next: SunlightBounds
+}
+
+function nightSpanForWindowFromSunlight(
   win: WindowLite,
-  date: Date,
-  timeZone: string,
   todaySunlight: SunlightBounds,
   previousSunlight: SunlightBounds,
   nextSunlight: SunlightBounds,
-) {
-  const startLocal = resolveWindowStart(win, date, timeZone)
-  const endLocal = resolveWindowEnd(win, date, timeZone)
+): NightSpan | null {
   const startReference = win.fromPrevDay
     ? previousSunlight.sunset ?? previousSunlight.dusk
     : todaySunlight.sunset ?? todaySunlight.dusk
@@ -2259,11 +2402,31 @@ function windowFullyWithinNightSpan(
     ? todaySunlight.dawn ?? todaySunlight.sunrise
     : nextSunlight.dawn ?? nextSunlight.sunrise
   if (!startReference || !endReference) {
-    return false
+    return null
   }
+  return { start: startReference, end: endReference }
+}
+
+function windowOverlapsNightSpan(
+  win: WindowLite,
+  date: Date,
+  timeZone: string,
+  todaySunlight: SunlightBounds,
+  previousSunlight: SunlightBounds,
+  nextSunlight: SunlightBounds,
+) {
+  const span = nightSpanForWindowFromSunlight(
+    win,
+    todaySunlight,
+    previousSunlight,
+    nextSunlight,
+  )
+  if (!span) return false
+  const startLocal = resolveWindowStart(win, date, timeZone)
+  const endLocal = resolveWindowEnd(win, date, timeZone)
   return (
-    startLocal.getTime() >= startReference.getTime() &&
-    endLocal.getTime() <= endReference.getTime()
+    startLocal.getTime() < span.end.getTime() &&
+    endLocal.getTime() > span.start.getTime()
   )
 }
 
@@ -2273,7 +2436,93 @@ type DaylightConstraint = {
   sunset: Date | null
   dawn: Date | null
   dusk: Date | null
+  previousSunset: Date | null
+  previousDusk: Date | null
   nextDawn: Date | null
+  nextSunrise: Date | null
+}
+
+function nightSpanForWindowFromConstraint(
+  win: WindowLite,
+  daylight: DaylightConstraint,
+): NightSpan | null {
+  const startReference = win.fromPrevDay
+    ? daylight.previousSunset ?? daylight.previousDusk
+    : daylight.sunset ?? daylight.dusk
+  const endReference = win.fromPrevDay
+    ? daylight.sunrise ?? daylight.dawn
+    : daylight.nextDawn ?? daylight.nextSunrise
+  if (!startReference || !endReference) {
+    return null
+  }
+  return { start: startReference, end: endReference }
+}
+
+function doesInstanceRespectDaylight(
+  instance: ScheduleInstance,
+  daylight: DaylightConstraint,
+  window: WindowLite | null,
+  date: Date,
+  timeZone: string,
+  nightSunlight: NightSunlightBundle | null,
+) {
+  const start = new Date(instance.start_utc ?? '')
+  const end = new Date(instance.end_utc ?? '')
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return true
+  }
+
+  if (daylight.preference === 'DAY') {
+    const sunriseMs = daylight.sunrise?.getTime() ?? daylight.dawn?.getTime()
+    const sunsetMs = daylight.sunset?.getTime() ?? daylight.dusk?.getTime()
+    if (typeof sunriseMs === 'number' && start.getTime() < sunriseMs) {
+      return false
+    }
+    if (typeof sunsetMs === 'number' && end.getTime() > sunsetMs) {
+      return false
+    }
+    return true
+  }
+
+  let span: NightSpan | null = null
+  if (window) {
+    span = nightSpanForWindowFromConstraint(window, daylight)
+    if (!span && nightSunlight) {
+      span = nightSpanForWindowFromSunlight(
+        window,
+        nightSunlight.today,
+        nightSunlight.previous,
+        nightSunlight.next,
+      )
+    }
+  }
+
+  let startBound: Date
+  let endBound: Date
+
+  if (span) {
+    startBound = span.start
+    endBound = span.end
+  } else {
+    const thresholdBase = window?.fromPrevDay
+      ? addDaysInTimeZone(date, -1, timeZone)
+      : date
+    startBound = setTimeInTimeZone(thresholdBase, timeZone, 19, 0)
+    const fallbackEnd =
+      daylight.nextDawn ??
+      daylight.nextSunrise ??
+      nightSunlight?.next.dawn ??
+      nightSunlight?.next.sunrise ??
+      setTimeInTimeZone(addDaysInTimeZone(date, 1, timeZone), timeZone, 6, 0)
+    endBound = fallbackEnd ?? new Date(startBound.getTime() + 6 * 60 * 60 * 1000)
+  }
+
+  const startMs = start.getTime()
+  const endMs = end.getTime()
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return true
+  if (startMs < startBound.getTime()) return false
+  if (endMs > endBound.getTime()) return false
+  return true
 }
 
 async function fetchCompatibleWindowsForItem(
@@ -2294,6 +2543,10 @@ async function fetchCompatibleWindowsForItem(
     restMode?: boolean
     userId?: string | null
     preloadedWindows?: WindowLite[]
+    enforceNightSpan?: boolean
+    nightSunlight?: NightSunlightBundle | null
+    requireLocationContextMatch?: boolean
+    hasExplicitLocationContext?: boolean
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -2313,7 +2566,7 @@ async function fetchCompatibleWindowsForItem(
   const now = options?.now ? new Date(options.now) : null
   const nowMs = now?.getTime()
   const durationMs = Math.max(0, item.duration_min) * 60000
-  const availability = options?.ignoreAvailability ? undefined : options?.availability
+    const availability = options?.ignoreAvailability ? undefined : options?.availability
 
   const desiredLocationId =
     typeof options?.locationContextId === 'string' && options.locationContextId.trim().length > 0
@@ -2365,6 +2618,15 @@ async function fetchCompatibleWindowsForItem(
         ? win.location_context_value.toUpperCase().trim()
         : null
 
+    const windowLocationIsWork = windowLocationValue === 'WORK'
+    if (
+      options?.requireLocationContextMatch &&
+      options.hasExplicitLocationContext === false &&
+      windowLocationIsWork
+    ) {
+      continue
+    }
+
     if (desiredLocationId || windowLocationId) {
       if (!desiredLocationId || !windowLocationId) continue
       if (windowLocationId !== desiredLocationId) continue
@@ -2384,6 +2646,8 @@ async function fetchCompatibleWindowsForItem(
     let frontBoundMs = typeof nowMs === 'number' ? Math.max(startMs, nowMs) : startMs
     let backBoundMs = endMs
 
+    const wantsNightSpan =
+      daylight?.preference === 'NIGHT' || options?.enforceNightSpan === true
     if (daylight) {
       if (daylight.preference === 'DAY') {
         const sunriseMs = daylight.sunrise?.getTime()
@@ -2394,7 +2658,25 @@ async function fetchCompatibleWindowsForItem(
         if (typeof sunsetMs === 'number') {
           backBoundMs = Math.min(backBoundMs, sunsetMs)
         }
-      } else if (daylight.preference === 'NIGHT') {
+      }
+    }
+    if (wantsNightSpan) {
+      let nightSpan: NightSpan | null = null
+      if (daylight?.preference === 'NIGHT') {
+        nightSpan = nightSpanForWindowFromConstraint(win, daylight)
+      }
+      if (!nightSpan && options?.nightSunlight) {
+        nightSpan = nightSpanForWindowFromSunlight(
+          win,
+          options.nightSunlight.today,
+          options.nightSunlight.previous,
+          options.nightSunlight.next,
+        )
+      }
+      if (nightSpan) {
+        frontBoundMs = Math.max(frontBoundMs, nightSpan.start.getTime())
+        backBoundMs = Math.min(backBoundMs, nightSpan.end.getTime())
+      } else {
         const thresholdBase = win.fromPrevDay
           ? addDaysInTimeZone(date, -1, timeZone)
           : date
@@ -2403,9 +2685,13 @@ async function fetchCompatibleWindowsForItem(
         if (Number.isFinite(nightThresholdMs)) {
           frontBoundMs = Math.max(frontBoundMs, nightThresholdMs)
         }
-        const nextDawnMs = daylight.nextDawn?.getTime() ?? null
-        if (typeof nextDawnMs === 'number') {
-          backBoundMs = Math.min(backBoundMs, nextDawnMs)
+        const fallbackNextDawnMs =
+          daylight?.nextDawn?.getTime() ??
+          options?.nightSunlight?.next.dawn?.getTime() ??
+          options?.nightSunlight?.next.sunrise?.getTime() ??
+          null
+        if (typeof fallbackNextDawnMs === 'number') {
+          backBoundMs = Math.min(backBoundMs, fallbackNextDawnMs)
         }
       }
     }
@@ -2646,6 +2932,7 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       preferred: options.projectMatchesMonument
         ? options.projectMatchesMonument(projectId)
         : false,
+      eventName: projectDef.name || projectId,
     }
 
     const windows = await fetchCompatibleWindowsForItem(

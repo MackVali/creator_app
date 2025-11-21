@@ -680,18 +680,21 @@ export interface Database {
           created_at: string;
           user_id: string | null;
           username: string;
+          timezone: string | null;
         };
         Insert: {
           id?: string;
           created_at?: string;
           user_id?: string | null;
           username: string;
+          timezone?: string | null;
         };
         Update: {
           id?: string;
           created_at?: string;
           user_id?: string | null;
           username?: string;
+          timezone?: string | null;
         };
       };
       linked_accounts: {
@@ -909,14 +912,15 @@ export interface Database {
           duration_min: number;
           status: Database['public']['Enums']['schedule_instance_status'];
           weight_snapshot: number;
-          energy_resolved: string;
-          completed_at: string | null;
-          locked: boolean;
-        };
-        Insert: {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
+        energy_resolved: string;
+        completed_at: string | null;
+        locked: boolean;
+        event_name: string | null;
+      };
+      Insert: {
+        id?: string;
+        created_at?: string;
+        updated_at?: string;
           user_id: string;
           source_type: Database['public']['Enums']['schedule_instance_source_type'];
           source_id: string;
@@ -924,16 +928,17 @@ export interface Database {
           start_utc: string;
           end_utc: string;
           duration_min: number;
-          status?: Database['public']['Enums']['schedule_instance_status'];
-          weight_snapshot: number;
-          energy_resolved: string;
-          completed_at?: string | null;
-          locked?: boolean;
-        };
-        Update: {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
+        status?: Database['public']['Enums']['schedule_instance_status'];
+        weight_snapshot: number;
+        energy_resolved: string;
+        completed_at?: string | null;
+        locked?: boolean;
+        event_name?: string | null;
+      };
+      Update: {
+        id?: string;
+        created_at?: string;
+        updated_at?: string;
           user_id?: string;
           source_type?: Database['public']['Enums']['schedule_instance_source_type'];
           source_id?: string;
@@ -941,13 +946,14 @@ export interface Database {
           start_utc?: string;
           end_utc?: string;
           duration_min?: number;
-          status?: Database['public']['Enums']['schedule_instance_status'];
-          weight_snapshot?: number;
-          energy_resolved?: string;
-          completed_at?: string | null;
-          locked?: boolean;
-        };
+        status?: Database['public']['Enums']['schedule_instance_status'];
+        weight_snapshot?: number;
+        energy_resolved?: string;
+        completed_at?: string | null;
+        locked?: boolean;
+        event_name?: string | null;
       };
+    };
       xp_events: {
         Row: {
           id: string;
