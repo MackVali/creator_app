@@ -12,6 +12,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import type { Project } from "../types";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
 type ProjectQuickEditDialogProps = {
   project: Project | null;
@@ -29,6 +30,24 @@ const ENERGY_OPTIONS: { value: Project["energy"]; label: string }[] = [
   { value: "Ultra", label: "Ultra" },
   { value: "Extreme", label: "Extreme" },
 ];
+
+const FLAME_LEVELS: FlameLevel[] = ["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"];
+
+type EnergySelectOption = {
+  id: string;
+  code: string;
+  label: string;
+  level: FlameLevel;
+};
+
+const flameLevelFromCode = (value?: string | null): FlameLevel => {
+  if (!value) {
+    return "NO";
+  }
+  const normalized = value.toUpperCase();
+  const candidate = normalized as FlameLevel;
+  return FLAME_LEVELS.includes(candidate) ? candidate : "NO";
+};
 
 const PRIORITY_OPTIONS = [
   { value: "NO", label: "None" },
@@ -233,23 +252,28 @@ export function ProjectQuickEditDialog({
     }));
   }, [priorityOptions]);
 
-  const energySelectOptions = useMemo(() => {
+  const energySelectOptions = useMemo<EnergySelectOption[]>(() => {
     if (energyOptions.length > 0) {
       return energyOptions.map((option) => {
-        const code =
-          typeof option.name === "string" ? option.name.toUpperCase() : "NO";
+        const candidate = typeof option.name === "string" ? option.name : "NO";
+        const code = candidate.toUpperCase();
         return {
           id: String(option.id),
           code,
           label: formatEnergyLabel(code),
+          level: flameLevelFromCode(code),
         };
       });
     }
-    return ENERGY_OPTIONS.map((option) => ({
-      id: option.value,
-      code: option.value,
-      label: option.label,
-    }));
+    return ENERGY_OPTIONS.map((option) => {
+      const code = option.value.toUpperCase();
+      return {
+        id: option.value,
+        code,
+        label: option.label,
+        level: flameLevelFromCode(code),
+      };
+    });
   }, [energyOptions]);
 
   useEffect(() => {
@@ -536,8 +560,11 @@ export function ProjectQuickEditDialog({
                     >
                       <SelectContent className="bg-black text-sm text-white">
                         {energySelectOptions.map((option) => (
-                          <SelectItem key={option.id} value={option.label}>
-                            {option.label}
+                          <SelectItem key={option.id} value={option.label} className="text-xs">
+                            <div className="flex items-center gap-2">
+                              <FlameEmber level={option.level} size="xs" />
+                              <span className="text-xs">{option.label}</span>
+                            </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
