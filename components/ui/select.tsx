@@ -136,7 +136,7 @@ const Select = React.forwardRef<HTMLDivElement, SelectProps>(
         {isOpen && (
           <div
             className={cn(
-              "absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0f172a] shadow-xl shadow-black/40",
+              "absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-black shadow-xl shadow-black/40",
               contentWrapperClassName
             )}
           >
