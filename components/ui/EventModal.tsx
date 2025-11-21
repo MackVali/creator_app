@@ -58,6 +58,8 @@ import {
   type Monument,
 } from "@/lib/queries/monuments";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import { getCatsForUser } from "@/lib/data/cats";
+import type { CatRow } from "@/lib/types/cat";
 import {
   DEFAULT_ENERGY,
   DEFAULT_PRIORITY,
@@ -501,6 +503,8 @@ const TASK_STAGE_OPTIONS: ChoiceOption[] = [
 
 const DEFAULT_SKILL_ICON = "✦";
 const getSkillIcon = (icon?: string | null) => icon?.trim() || DEFAULT_SKILL_ICON;
+const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
+const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
 
 interface FormState {
   name: string;
@@ -620,6 +624,7 @@ interface SkillMultiSelectProps {
   selectedIds: string[];
   onToggle: (skillId: string) => void;
   buttonClassName?: string;
+  categories?: CatRow[];
 }
 
 function SkillMultiSelect({
@@ -627,6 +632,7 @@ function SkillMultiSelect({
   selectedIds,
   onToggle,
   buttonClassName,
+  categories = [],
 }: SkillMultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -652,6 +658,69 @@ function SkillMultiSelect({
     );
   }, [sortedSkills, searchTerm]);
 
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, CatRow>();
+    categories.forEach((category) => {
+      map.set(category.id, category);
+    });
+    return map;
+  }, [categories]);
+
+  type CategoryGroup = {
+    id: string;
+    label: string;
+    skills: Skill[];
+  };
+
+  const groupedSkills = useMemo(() => {
+    const groups = new Map<string, CategoryGroup>();
+    filteredSkills.forEach((skill) => {
+      const groupId = skill.cat_id ?? UNCATEGORIZED_GROUP_ID;
+      const label =
+        groupId === UNCATEGORIZED_GROUP_ID
+          ? UNCATEGORIZED_GROUP_LABEL
+          : categoryLookup.get(groupId)?.name?.trim() ||
+            UNCATEGORIZED_GROUP_LABEL;
+      let group = groups.get(groupId);
+      if (!group) {
+        group = { id: groupId, label, skills: [] };
+        groups.set(groupId, group);
+      }
+      group.skills.push(skill);
+    });
+
+    if (groups.size === 0) {
+      return [];
+    }
+
+    const ordered: CategoryGroup[] = [];
+    const seen = new Set<string>();
+
+    categories.forEach((category) => {
+      const group = groups.get(category.id);
+      if (group) {
+        group.label = category.name?.trim() || group.label;
+        ordered.push(group);
+        seen.add(category.id);
+      }
+    });
+
+    const uncategorizedGroup = groups.get(UNCATEGORIZED_GROUP_ID);
+    if (uncategorizedGroup) {
+      ordered.push(uncategorizedGroup);
+      seen.add(UNCATEGORIZED_GROUP_ID);
+    }
+
+    for (const [groupId, group] of groups) {
+      if (!seen.has(groupId)) {
+        ordered.push(group);
+        seen.add(groupId);
+      }
+    }
+
+    return ordered;
+  }, [filteredSkills, categories, categoryLookup]);
+
   useEffect(() => {
     if (!isOpen) {
       setSearchTerm("");
@@ -663,6 +732,14 @@ function SkillMultiSelect({
       input?.focus();
       input?.select();
     });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node;
@@ -698,7 +775,6 @@ function SkillMultiSelect({
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      cancelAnimationFrame(frame);
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("touchstart", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
@@ -762,38 +838,47 @@ function SkillMultiSelect({
             />
           </div>
           <div className="max-h-60 overflow-y-auto">
-            {filteredSkills.length > 0 ? (
-              filteredSkills.map((skill) => {
-                const isSelected = selectedIds.includes(skill.id);
-                return (
-                  <button
-                    key={skill.id}
-                    type="button"
-                    onClick={() => {
-                      onToggle(skill.id);
-                      setSearchTerm("");
-                      requestAnimationFrame(() => {
-                        const input = searchInputRef.current;
-                        input?.focus();
-                      });
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/5",
-                      isSelected && "bg-blue-500/15 text-white"
-                    )}
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <span className="text-base leading-none">
-                        {getSkillIcon(skill.icon)}
-                      </span>
-                      <span className="truncate">{skill.name}</span>
-                    </span>
-                    {isSelected ? (
-                      <CheckSquare className="h-4 w-4 text-blue-400" />
-                    ) : null}
-                  </button>
-                );
-              })
+            {groupedSkills.length > 0 ? (
+              groupedSkills.map((group) => (
+                <div key={group.id} className="space-y-2 px-2 pb-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                    {group.label}
+                  </p>
+                  <div className="grid gap-2">
+                    {group.skills.map((skill) => {
+                      const isSelected = selectedIds.includes(skill.id);
+                      return (
+                        <button
+                          key={skill.id}
+                          type="button"
+                          onClick={() => {
+                            onToggle(skill.id);
+                            setSearchTerm("");
+                            requestAnimationFrame(() => {
+                              const input = searchInputRef.current;
+                              input?.focus();
+                            });
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-sm text-zinc-200 transition hover:border-white/20 hover:bg-white/5",
+                            isSelected && "border-blue-500/40 bg-blue-500/10 text-white"
+                          )}
+                        >
+                          <span className="flex items-center gap-2 truncate">
+                            <span className="text-base leading-none">
+                              {getSkillIcon(skill.icon)}
+                            </span>
+                            <span className="truncate">{skill.name}</span>
+                          </span>
+                          {isSelected ? (
+                            <CheckSquare className="h-4 w-4 text-blue-400" />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             ) : (
               <p className="px-3 py-2 text-xs text-zinc-500">
                 No skills match your search.
@@ -1121,6 +1206,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillError, setSkillError] = useState<string | null>(null);
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(false);
   const [routineLoadError, setRoutineLoadError] = useState<string | null>(
@@ -1367,11 +1453,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setSkillsLoading(true);
         setSkillError(null);
         try {
-          const skillsData = await getSkillsForUser(user.id);
+          const [skillsData, categoriesData] = await Promise.all([
+            getSkillsForUser(user.id),
+            getCatsForUser(user.id),
+          ]);
           setSkills(skillsData);
+          setSkillCategories(categoriesData);
         } catch (error) {
           console.error("Error loading skills:", error);
           setSkills([]);
+          setSkillCategories([]);
           setSkillError("Unable to load your skills right now.");
         } finally {
           setSkillsLoading(false);
@@ -1380,6 +1471,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setSkills([]);
         setSkillError(null);
         setSkillsLoading(false);
+        setSkillCategories([]);
       }
 
       if (eventType === "TASK") {
@@ -1554,6 +1646,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         value: skill.id,
         label: skill.name,
         icon: skill.icon ?? null,
+        catId: skill.cat_id ?? null,
       })),
     ];
   }, [skillsLoading, sortedSkills]);
@@ -3410,6 +3503,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               energyOptions={habitEnergyOptions}
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
+              skillCategories={skillCategories}
               skillError={skillError}
               goalId={formData.goal_id || "none"}
               goalOptions={habitGoalSelectOptions}
@@ -3670,6 +3764,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   skills={sortedSkills}
                   selectedIds={formData.skill_ids}
                   onToggle={toggleSkill}
+                  categories={skillCategories}
                 />
               </div>
               <div className="space-y-2">

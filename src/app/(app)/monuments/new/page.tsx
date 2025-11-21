@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useMemo, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { PageHeader } from "@/components/ui";
@@ -19,6 +19,11 @@ import {
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
+import { getCatsForUser } from "@/lib/data/cats";
+import type { CatRow } from "@/lib/types/cat";
+
+const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
+const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
 
 export default function AddMonumentPage() {
   const supabase = getSupabaseBrowser();
@@ -29,6 +34,7 @@ export default function AddMonumentPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableSkills, setAvailableSkills] = useState<SkillRow[]>([]);
+  const [categories, setCategories] = useState<CatRow[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillsError, setSkillsError] = useState<string | null>(null);
 
@@ -59,17 +65,24 @@ export default function AddMonumentPage() {
           return;
         }
 
-        const { data, error: fetchError } = await supabase
+        const skillsPromise = supabase
           .from("skills")
-          .select("id, name, icon")
+          .select("id, name, icon, cat_id")
           .eq("user_id", user.id)
           .order("name", { ascending: true });
+        const categoriesPromise = getCatsForUser(user.id, supabase);
 
-        if (fetchError) throw fetchError;
+        const [skillsResult, categoriesData] = await Promise.all([
+          skillsPromise,
+          categoriesPromise,
+        ]);
+
+        if (skillsResult.error) throw skillsResult.error;
 
         if (!cancelled) {
-          const safeSkills = (data ?? []) as SkillRow[];
+          const safeSkills = (skillsResult.data ?? []) as SkillRow[];
           setAvailableSkills(safeSkills);
+          setCategories(categoriesData);
           setSkills((prev) =>
             prev.filter((skillId) => safeSkills.some((skill) => skill.id === skillId)),
           );
@@ -78,6 +91,7 @@ export default function AddMonumentPage() {
         if (!cancelled) {
           console.error("Failed to load skills", err);
           setAvailableSkills([]);
+          setCategories([]);
           setSkillsError("Unable to load your skills right now.");
         }
       } finally {
@@ -98,6 +112,64 @@ export default function AddMonumentPage() {
       prev.includes(value) ? prev.filter((skill) => skill !== value) : [...prev, value],
     );
   };
+
+  type SkillGroup = {
+    id: string;
+    label: string;
+    skills: SkillRow[];
+  };
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach((category) => {
+      map.set(category.id, category.name?.trim() ?? "");
+    });
+    return map;
+  }, [categories]);
+
+  const groupedAvailableSkills = useMemo(() => {
+    const groups = new Map<string, SkillGroup>();
+    availableSkills.forEach((skill) => {
+      const groupId = skill.cat_id ?? UNCATEGORIZED_GROUP_ID;
+      const label =
+        groupId === UNCATEGORIZED_GROUP_ID
+          ? UNCATEGORIZED_GROUP_LABEL
+          : categoryLookup.get(groupId) || UNCATEGORIZED_GROUP_LABEL;
+      const existing = groups.get(groupId);
+      if (existing) {
+        existing.skills.push(skill);
+      } else {
+        groups.set(groupId, { id: groupId, label, skills: [skill] });
+      }
+    });
+
+    const ordered: SkillGroup[] = [];
+
+    categories.forEach((category) => {
+      const group = groups.get(category.id);
+      if (group) {
+        group.label = category.name?.trim() || group.label;
+        ordered.push({ id: category.id, label: group.label, skills: group.skills });
+        groups.delete(category.id);
+      }
+    });
+
+    const uncategorizedGroup = groups.get(UNCATEGORIZED_GROUP_ID);
+    if (uncategorizedGroup) {
+      ordered.push({
+        id: UNCATEGORIZED_GROUP_ID,
+        label: UNCATEGORIZED_GROUP_LABEL,
+        skills: uncategorizedGroup.skills,
+      });
+      groups.delete(UNCATEGORIZED_GROUP_ID);
+    }
+
+    for (const [groupId, group] of groups) {
+      ordered.push({ id: groupId, label: group.label, skills: group.skills });
+    }
+
+    return ordered;
+  }, [availableSkills, categories, categoryLookup]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -211,32 +283,47 @@ export default function AddMonumentPage() {
                     align="start"
                     className="min-w-[260px] border-white/10 bg-[#0b101b] text-white"
                   >
-                    {skillsLoading ? (
-                      <DropdownMenuItem disabled className="text-white/60">
-                        Loading skills…
-                      </DropdownMenuItem>
-                    ) : skillsError ? (
-                      <DropdownMenuItem disabled className="text-rose-200">
-                        {skillsError}
-                      </DropdownMenuItem>
-                    ) : availableSkills.length === 0 ? (
-                      <DropdownMenuItem disabled className="text-white/60">
-                        No skills found yet.
-                      </DropdownMenuItem>
-                    ) : (
-                      availableSkills.map((skill) => (
-                        <DropdownMenuCheckboxItem
-                          key={skill.id}
-                          checked={skills.includes(skill.id)}
-                          onCheckedChange={() => toggleSkill(skill.id)}
-                          className="gap-3 text-sm text-white"
-                        >
-                          <span className="text-base">{skill.icon ?? "•"}</span>
-                          <span>{skill.name}</span>
-                        </DropdownMenuCheckboxItem>
-                      ))
-                    )}
-                  </DropdownMenuContent>
+                  {skillsLoading ? (
+                    <DropdownMenuItem disabled className="text-white/60">
+                      Loading skills…
+                    </DropdownMenuItem>
+                  ) : skillsError ? (
+                    <DropdownMenuItem disabled className="text-rose-200">
+                      {skillsError}
+                    </DropdownMenuItem>
+                  ) : availableSkills.length === 0 ? (
+                    <DropdownMenuItem disabled className="text-white/60">
+                      No skills found yet.
+                    </DropdownMenuItem>
+                  ) : (
+                    groupedAvailableSkills.map((group, index) => (
+                      <div
+                        key={group.id}
+                        className={cn(
+                          "space-y-2 border-t border-white/5 px-3 pb-2 pt-3 text-sm text-white",
+                          index === 0 ? "border-t-0 pt-0" : ""
+                        )}
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/50">
+                          {group.label}
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {group.skills.map((skill) => (
+                            <DropdownMenuCheckboxItem
+                              key={skill.id}
+                              checked={skills.includes(skill.id)}
+                              onCheckedChange={() => toggleSkill(skill.id)}
+                              className="gap-3 text-sm text-white"
+                            >
+                              <span className="text-base">{skill.icon ?? "•"}</span>
+                              <span>{skill.name}</span>
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </DropdownMenuContent>
                 </DropdownMenu>
                 {skills.length > 0 ? (
                   <div className="flex flex-wrap gap-2">

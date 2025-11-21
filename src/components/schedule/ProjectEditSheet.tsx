@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import { getCatsForUser } from "@/lib/data/cats";
+import type { CatRow } from "@/lib/types/cat";
 import { ENERGY } from "@/lib/scheduler/config";
 import { cn } from "@/lib/utils";
 import { Lock, XIcon } from "lucide-react";
@@ -110,6 +113,11 @@ const STAGE_OPTIONS = [
   { value: "RELEASE", label: "Release" },
 ];
 
+const DEFAULT_SKILL_ICON = "✦";
+const getSkillIcon = (icon?: string | null) => icon?.trim() || DEFAULT_SKILL_ICON;
+const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
+const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
+
 type GoalOption = {
   value: string;
   label: string;
@@ -162,6 +170,13 @@ export function ProjectEditSheet({
   const [manualScheduleError, setManualScheduleError] = useState<string | null>(null);
   const [manualScheduleSaving, setManualScheduleSaving] = useState(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const [skillOptions, setSkillOptions] = useState<Skill[]>([]);
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [initialSkillId, setInitialSkillId] = useState<string | null>(null);
+  const [skillSearch, setSkillSearch] = useState("");
 
   const resetState = useCallback(() => {
     setName("");
@@ -179,6 +194,13 @@ export function ProjectEditSheet({
     setManualEnd("");
     setManualScheduleError(null);
     setManualScheduleSaving(false);
+    setSkillOptions([]);
+    setSkillCategories([]);
+    setSkillsLoading(true);
+    setSkillLoadError(null);
+    setSelectedSkillId(null);
+    setInitialSkillId(null);
+    setSkillSearch("");
   }, []);
 
   const loadProject = useCallback(async () => {
@@ -189,6 +211,7 @@ export function ProjectEditSheet({
     }
     setLoading(true);
     setGoalsLoading(true);
+    setSkillsLoading(true);
     setError(null);
 
     try {
@@ -281,6 +304,36 @@ export function ProjectEditSheet({
         }),
       );
       setGoalsLoading(false);
+      try {
+        const [skillsData, categoriesData] = await Promise.all([
+          getSkillsForUser(user.id),
+          getCatsForUser(user.id, supabase),
+        ]);
+        setSkillOptions(skillsData);
+        setSkillCategories(categoriesData);
+        setSkillLoadError(null);
+      } catch (skillErr) {
+        console.error("Failed to load skills:", skillErr);
+        setSkillOptions([]);
+        setSkillCategories([]);
+        setSkillLoadError("Unable to load your skills right now.");
+      }
+
+      const { data: projectSkillsData, error: projectSkillsError } = await supabase
+        .from("project_skills")
+        .select("skill_id")
+        .eq("project_id", projectId)
+        .limit(1);
+
+      if (projectSkillsError) {
+        console.error("Failed to load project skill relation:", projectSkillsError);
+        setSelectedSkillId(null);
+        setInitialSkillId(null);
+      } else {
+        const primarySkillId = projectSkillsData?.[0]?.skill_id ?? null;
+        setSelectedSkillId(primarySkillId);
+        setInitialSkillId(primarySkillId);
+      }
       if (lockedResponse.error) {
         console.error("Failed to load locked schedule instance:", lockedResponse.error);
         setLockedInstance(null);
@@ -307,6 +360,7 @@ export function ProjectEditSheet({
     } finally {
       setLoading(false);
       setGoalsLoading(false);
+      setSkillsLoading(false);
     }
   }, [projectId, supabase]);
 
@@ -318,6 +372,10 @@ export function ProjectEditSheet({
     }
   }, [open, projectId, loadProject, resetState]);
 
+  useEffect(() => {
+    setSkillSearch("");
+  }, [skillOptions, skillsLoading]);
+
   const disableSubmit = useMemo(() => {
     if (!projectId) return true;
     if (!name.trim()) return true;
@@ -325,6 +383,75 @@ export function ProjectEditSheet({
     if (duration && Number(duration) <= 0) return true;
     return false;
   }, [projectId, name, saving, loading, duration]);
+
+  const filteredSkills = useMemo(() => {
+    const term = skillSearch.trim().toLowerCase();
+    if (!term) {
+      return skillOptions;
+    }
+
+    return skillOptions.filter((skill) =>
+      (skill.name ?? "").toLowerCase().includes(term) ||
+      (skill.icon ?? "").toLowerCase().includes(term)
+    );
+  }, [skillOptions, skillSearch]);
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    skillCategories.forEach((category) => {
+      map.set(category.id, category.name?.trim() ?? "");
+    });
+    return map;
+  }, [skillCategories]);
+
+  type SkillGroup = {
+    id: string;
+    label: string;
+    skills: Skill[];
+  };
+
+  const groupedSkills = useMemo(() => {
+    if (filteredSkills.length === 0) {
+      return [];
+    }
+
+    const groups = new Map<string, SkillGroup>();
+    filteredSkills.forEach((skill) => {
+      const groupId = skill.cat_id ?? UNCATEGORIZED_GROUP_ID;
+      const label =
+        groupId === UNCATEGORIZED_GROUP_ID
+          ? UNCATEGORIZED_GROUP_LABEL
+          : categoryLookup.get(groupId) ?? UNCATEGORIZED_GROUP_LABEL;
+      const existing = groups.get(groupId);
+      if (existing) {
+        existing.skills.push(skill);
+      } else {
+        groups.set(groupId, { id: groupId, label, skills: [skill] });
+      }
+    });
+
+    const ordered: SkillGroup[] = [];
+    skillCategories.forEach((category) => {
+      const group = groups.get(category.id);
+      if (group) {
+        group.label = category.name?.trim() || group.label;
+        ordered.push(group);
+        groups.delete(category.id);
+      }
+    });
+
+    const uncategorizedGroup = groups.get(UNCATEGORIZED_GROUP_ID);
+    if (uncategorizedGroup) {
+      ordered.push(uncategorizedGroup);
+      groups.delete(UNCATEGORIZED_GROUP_ID);
+    }
+
+    for (const group of groups.values()) {
+      ordered.push(group);
+    }
+
+    return ordered;
+  }, [filteredSkills, skillCategories, categoryLookup]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -360,15 +487,34 @@ export function ProjectEditSheet({
         goal_id: goalId === "none" ? null : goalId,
       };
 
-      const { error: updateError } = await supabase
-        .from("projects")
-        .update(payload)
-        .eq("id", projectId)
-        .eq("user_id", user.id);
+    const { error: updateError } = await supabase
+      .from("projects")
+      .update(payload)
+      .eq("id", projectId)
+      .eq("user_id", user.id);
 
-      if (updateError) {
-        throw updateError;
+    if (updateError) {
+      throw updateError;
+    }
+
+    if (selectedSkillId !== initialSkillId) {
+      const { error: skillDeleteError } = await supabase
+        .from("project_skills")
+        .delete()
+        .eq("project_id", projectId);
+      if (skillDeleteError) {
+        throw skillDeleteError;
       }
+      if (selectedSkillId) {
+        const { error: skillInsertError } = await supabase
+          .from("project_skills")
+          .insert({ project_id: projectId, skill_id: selectedSkillId });
+        if (skillInsertError) {
+          throw skillInsertError;
+        }
+      }
+      setInitialSkillId(selectedSkillId);
+    }
 
       if (onSaved) {
         await onSaved();
@@ -595,28 +741,93 @@ export function ProjectEditSheet({
                       {value.charAt(0) + value.slice(1).toLowerCase()}
                     </SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-                Estimated duration (minutes)
-              </Label>
-              <Input
-                value={duration}
-                onChange={(event) => setDuration(event.target.value)}
-                placeholder="60"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
-                disabled={loading}
-              />
-            </div>
+              </SelectContent>
+            </Select>
           </div>
-
           <div className="space-y-2">
             <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
-              Goal
+              Estimated duration (minutes)
+            </Label>
+            <Input
+              value={duration}
+              onChange={(event) => setDuration(event.target.value)}
+              placeholder="60"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              className="border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+            Skill relation
+          </Label>
+          <Select
+            value={selectedSkillId ?? "none"}
+            onValueChange={(value) =>
+              setSelectedSkillId(value === "none" ? null : value)
+            }
+            disabled={skillsLoading && skillOptions.length === 0}
+          >
+            <SelectTrigger className="border-white/20 bg-white/5 text-sm text-white">
+              <SelectValue placeholder="Choose a linked skill" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#05070c] text-white">
+              <div className="p-2">
+                <Input
+                  value={skillSearch}
+                  onChange={(event) => setSkillSearch(event.target.value)}
+                  placeholder="Search skills..."
+                  className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                />
+              </div>
+              <SelectItem value="none">No linked skill</SelectItem>
+              {filteredSkills.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-white/60">
+                  {skillsLoading ? "Loading skills…" : "No skills match your search."}
+                </div>
+              ) : (
+                groupedSkills.map((group, index) => (
+                  <Fragment key={group.id}>
+                    <div
+                      className={cn(
+                        "px-3 pt-2",
+                        index === 0 ? "pt-0" : ""
+                      )}
+                    >
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                        {group.label}
+                      </p>
+                    </div>
+                    {group.skills.map((skill) => (
+                      <SelectItem
+                        key={skill.id}
+                        value={skill.id}
+                        className="px-3 text-sm"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="text-base leading-none">
+                            {getSkillIcon(skill.icon)}
+                          </span>
+                          <span>{skill.name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </Fragment>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          {skillLoadError ? (
+            <p className="text-xs text-rose-400">{skillLoadError}</p>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs uppercase tracking-[0.2em] text-white/60">
+            Goal
             </Label>
             <Select
               value={

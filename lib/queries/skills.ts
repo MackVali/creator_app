@@ -4,6 +4,7 @@ export interface Skill {
   id: string;
   name: string;
   icon?: string | null;
+  cat_id?: string | null;
 }
 
 export async function getSkillsForUser(userId: string): Promise<Skill[]> {
@@ -14,7 +15,7 @@ export async function getSkillsForUser(userId: string): Promise<Skill[]> {
 
   const { data, error } = await supabase
     .from("skills")
-    .select("id, name, icon")
+    .select("id, name, icon, cat_id")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -23,9 +24,10 @@ export async function getSkillsForUser(userId: string): Promise<Skill[]> {
     throw error;
   }
 
-  return (data ?? []).map(({ id, name, icon }) => ({
+  return (data ?? []).map(({ id, name, icon, cat_id }) => ({
     id,
     name,
     icon: icon ?? null,
+    cat_id: cat_id ?? null,
   }));
 }

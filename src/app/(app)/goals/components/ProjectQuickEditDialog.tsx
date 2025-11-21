@@ -1,7 +1,14 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
@@ -9,8 +16,10 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { getSkillsForUser } from "@/lib/queries/skills";
+import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
+import { getCatsForUser } from "@/lib/data/cats";
 import type { Project } from "../types";
+import type { CatRow } from "@/lib/types/cat";
 import type { ProjectCardMorphOrigin } from "./ProjectRow";
 import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 
@@ -67,6 +76,9 @@ const STAGE_OPTIONS = [
 ];
 
 const DEFAULT_STAGE = "BUILD";
+
+const UNCATEGORIZED_GROUP_ID = "__uncategorized__";
+const UNCATEGORIZED_GROUP_LABEL = "Uncategorized";
 
 const toDateInputValue = (iso?: string | null) => {
   if (!iso) return "";
@@ -143,8 +155,9 @@ export function ProjectQuickEditDialog({
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [initialSkillId, setInitialSkillId] = useState<string | null>(null);
   const [dueDateInput, setDueDateInput] = useState("");
-  const [skillOptions, setSkillOptions] = useState<{ id: string; name: string; icon?: string | null }[]>([]);
+  const [skillOptions, setSkillOptions] = useState<Skill[]>([]);
   const [skillSearch, setSkillSearch] = useState("");
+  const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [priorityOptions, setPriorityOptions] = useState<{ id: string | number; name: string }[]>([]);
   const [energyOptions, setEnergyOptions] = useState<{ id: string | number; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
@@ -231,6 +244,64 @@ export function ProjectQuickEditDialog({
     );
   }, [skillOptions, skillSearch]);
 
+  type SkillGroup = {
+    id: string;
+    label: string;
+    skills: Skill[];
+  };
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    skillCategories.forEach((category) => {
+      map.set(category.id, category.name?.trim() ?? "");
+    });
+    return map;
+  }, [skillCategories]);
+
+  const groupedSkills = useMemo(() => {
+    if (filteredSkills.length === 0) {
+      return [];
+    }
+
+    const groups = new Map<string, SkillGroup>();
+    filteredSkills.forEach((skill) => {
+      const groupId = skill.cat_id ?? UNCATEGORIZED_GROUP_ID;
+      const label =
+        groupId === UNCATEGORIZED_GROUP_ID
+          ? UNCATEGORIZED_GROUP_LABEL
+          : categoryLookup.get(groupId) || UNCATEGORIZED_GROUP_LABEL;
+      const existing = groups.get(groupId);
+      if (existing) {
+        existing.skills.push(skill);
+      } else {
+        groups.set(groupId, { id: groupId, label, skills: [skill] });
+      }
+    });
+
+    const ordered: SkillGroup[] = [];
+
+    skillCategories.forEach((category) => {
+      const group = groups.get(category.id);
+      if (group) {
+        group.label = category.name?.trim() || group.label;
+        ordered.push(group);
+        groups.delete(category.id);
+      }
+    });
+
+    const uncategorizedGroup = groups.get(UNCATEGORIZED_GROUP_ID);
+    if (uncategorizedGroup) {
+      ordered.push(uncategorizedGroup);
+      groups.delete(UNCATEGORIZED_GROUP_ID);
+    }
+
+    for (const group of groups.values()) {
+      ordered.push(group);
+    }
+
+    return ordered;
+  }, [filteredSkills, skillCategories, categoryLookup]);
+
   const prioritySelectOptions = useMemo(() => {
     if (priorityOptions.length > 0) {
       return priorityOptions.map((option) => {
@@ -286,11 +357,19 @@ export function ProjectQuickEditDialog({
           data: { user },
         } = await client.auth.getUser();
         if (!user) return;
-        const skillList = await getSkillsForUser(user.id);
+        const [skillsData, categoriesData] = await Promise.all([
+          getSkillsForUser(user.id),
+          getCatsForUser(user.id, client),
+        ]);
         if (!active) return;
-        setSkillOptions(skillList);
+        setSkillOptions(skillsData);
+        setSkillCategories(categoriesData);
       } catch (err) {
         console.error("Failed to load skill options", err);
+        if (active) {
+          setSkillOptions([]);
+          setSkillCategories([]);
+        }
       }
     };
     if (project) {
@@ -652,15 +731,35 @@ export function ProjectQuickEditDialog({
                           onChange={(event) => setSkillSearch(event.target.value)}
                           placeholder="Search skills…"
                           className="h-9 rounded-lg border-white/10 bg-white/10 text-xs"
+                          onKeyDown={(event) => event.stopPropagation()}
                         />
                       </div>
                       <SelectItem value="none">No linked skill</SelectItem>
-                      {filteredSkills.map((skill) => (
-                        <SelectItem key={skill.id} value={skill.id}>
-                          {skill.icon ? `${skill.icon} ` : ""}
-                          {skill.name}
-                        </SelectItem>
-                      ))}
+                      {filteredSkills.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-white/60">
+                          No skills match your search.
+                        </div>
+                      ) : (
+                        groupedSkills.map((group) => (
+                          <Fragment key={group.id}>
+                            <div className="px-3 pt-2">
+                              <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">
+                                {group.label}
+                              </p>
+                            </div>
+                            {group.skills.map((skill) => (
+                              <SelectItem
+                                key={skill.id}
+                                value={skill.id}
+                                className="px-3 text-sm"
+                              >
+                                {skill.icon ? `${skill.icon} ` : ""}
+                                {skill.name}
+                              </SelectItem>
+                            ))}
+                          </Fragment>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
