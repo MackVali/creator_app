@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import { getSkillsForUser, type Skill } from "@/lib/queries/skills";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { Project } from "../types";
@@ -510,6 +511,29 @@ export function ProjectQuickEditDialog({
       emoji: nextEmoji,
       dueDate: dueDateValue ?? undefined,
     });
+    if (project) {
+      const wasRelease = project.stage === "RELEASE";
+      const isRelease = nextStage === "RELEASE";
+      if (!wasRelease && isRelease) {
+        void recordProjectCompletion(
+          {
+            projectId: project.id,
+            projectSkillIds: project.skillIds,
+            taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+          },
+          "complete"
+        );
+      } else if (wasRelease && !isRelease) {
+        void recordProjectCompletion(
+          {
+            projectId: project.id,
+            projectSkillIds: project.skillIds,
+            taskSkillIds: (project.tasks ?? []).map((task) => task.skillId),
+          },
+          "undo"
+        );
+      }
+    }
     setSaving(false);
     onClose();
   };

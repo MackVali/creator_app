@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { projectWeight, taskWeight, type TaskLite, type ProjectLite, dueDateUrgencyBoost } from "@/lib/scheduler/weight";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -592,6 +593,9 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       const supabase = getSupabaseBrowser();
       if (!supabase) return;
 
+      const goalSnapshot = projects.find((goal) => goal.id === goalId);
+      const originalProject = goalSnapshot?.projects.find((project) => project.id === projectId);
+
       const nextStage = currentStage === "RELEASE" ? "BUILD" : "RELEASE";
 
       try {
@@ -643,18 +647,40 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
                   )
                 : 0;
 
-            return decorate({
-              ...goal,
-              projects: updatedProjects,
-              progress: goalProgress,
-            });
-          })
-        );
+          return decorate({
+            ...goal,
+            projects: updatedProjects,
+            progress: goalProgress,
+          });
+        })
+      );
       } catch (err) {
         console.error("Failed to toggle project completion", err);
       }
+
+      if (nextStage === "RELEASE" && originalProject) {
+        void recordProjectCompletion(
+          {
+            projectId,
+            projectSkillIds: originalProject.skillIds,
+            taskSkillIds: (originalProject.tasks ?? []).map((task) => task.skillId),
+          },
+          "complete"
+        );
+      }
+
+      if (currentStage === "RELEASE" && nextStage !== "RELEASE" && originalProject) {
+        void recordProjectCompletion(
+          {
+            projectId,
+            projectSkillIds: originalProject.skillIds,
+            taskSkillIds: (originalProject.tasks ?? []).map((task) => task.skillId),
+          },
+          "undo"
+        );
+      }
     },
-    [decorate]
+    [decorate, projects]
   );
 
   const handleGoalOpenChange = useCallback(
