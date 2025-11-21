@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import {
@@ -25,33 +26,6 @@ const SUMMARY_STYLES = [
   {
     accent: "from-amber-500/25 via-amber-500/5 to-transparent",
     glow: "bg-amber-500/40",
-  },
-];
-
-const CARD_STYLES = [
-  {
-    iconBg: "bg-amber-500/15 text-amber-200",
-    ctaClass: "bg-amber-500/20 text-amber-100 hover:bg-amber-500/30",
-  },
-  {
-    iconBg: "bg-emerald-500/15 text-emerald-200",
-    ctaClass: "bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30",
-  },
-  {
-    iconBg: "bg-sky-500/15 text-sky-200",
-    ctaClass: "bg-sky-500/20 text-sky-100 hover:bg-sky-500/30",
-  },
-  {
-    iconBg: "bg-indigo-500/15 text-indigo-200",
-    ctaClass: "bg-indigo-500/20 text-indigo-100 hover:bg-indigo-500/30",
-  },
-  {
-    iconBg: "bg-purple-500/15 text-purple-200",
-    ctaClass: "bg-purple-500/20 text-purple-100 hover:bg-purple-500/30",
-  },
-  {
-    iconBg: "bg-rose-500/15 text-rose-200",
-    ctaClass: "bg-rose-500/20 text-rose-100 hover:bg-rose-500/30",
   },
 ];
 
@@ -152,6 +126,84 @@ function buildHabitStreakPills(habit: Habit): HabitStreakPill[] {
     { icon: "🏆", text: `${formatStreakDays(longestStreak)} best` },
     { icon: "🕒", text: lastLog },
   ];
+}
+
+type HabitCompactCardProps = {
+  habit: Habit;
+};
+
+function HabitCompactCard({ habit }: HabitCompactCardProps) {
+  const initials = habit.name.charAt(0).toUpperCase();
+  const routineName = habit.routine?.name?.trim() ?? null;
+  const habitType = formatTitleCase(habit.habit_type);
+  const recurrence = formatTitleCase(habit.recurrence);
+  const energy = formatTitleCase(habit.energy);
+  const tags = [habitType, recurrence, energy].filter(Boolean) as string[];
+  const currentStreak = normalizeStreakDays(habit.current_streak_days);
+  const longestStreak = normalizeStreakDays(habit.longest_streak_days);
+  const lastLogLabel = formatLastCompletionLabel(habit.last_completed_at);
+
+  return (
+    <article className="relative flex h-full min-h-[200px] w-full flex-col gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[#150700]/90 px-3 py-3 text-white shadow-[0_18px_45px_-25px_rgba(0,0,0,0.9)] transition hover:border-white/30 hover:bg-[#1f0c04]">
+      <div
+        className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_80%)] opacity-70"
+        aria-hidden
+      />
+      <div className="relative z-10 flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-lg font-semibold text-amber-100 shadow-[inset_0_-1px_0_rgba(255,255,255,0.2)]">
+              {initials}
+            </div>
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.35em] text-amber-100/70">
+                {routineName ? "Routine" : "Solo habit"}
+              </p>
+              <h3 className="text-[0.95rem] font-semibold leading-tight text-white line-clamp-2">
+                {habit.name}
+              </h3>
+              {routineName && (
+                <p className="text-[0.65rem] text-amber-100/80">{routineName}</p>
+              )}
+            </div>
+          </div>
+          <Link
+            href={`/habits/${habit.id}/edit`}
+            className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/[0.05] px-2 py-1 text-[0.55rem] font-semibold uppercase tracking-[0.35em] text-white/80 transition hover:border-white/40 hover:bg-white/[0.15]"
+          >
+            Edit
+            <span aria-hidden>→</span>
+          </Link>
+        </div>
+        {habit.description && (
+          <p className="text-[0.65rem] text-white/70 line-clamp-2">
+            {habit.description}
+          </p>
+        )}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 text-[0.55rem] uppercase tracking-[0.3em] text-white/70">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 font-semibold"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="mt-auto space-y-1 text-white/80">
+          <div className="flex items-center justify-between text-[0.6rem] uppercase tracking-[0.3em] text-amber-50/80">
+            <span>Streak</span>
+            <span>{lastLogLabel}</span>
+          </div>
+          <p className="text-[0.85rem] font-semibold text-white">
+            {formatStreakDays(currentStreak)} · Best {formatStreakDays(longestStreak)}
+          </p>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 export default function HabitsPage() {
@@ -334,7 +386,18 @@ export default function HabitsPage() {
     ];
   }, [habits, routines, standaloneHabits]);
 
-  const hasHabits = routines.length > 0 || standaloneHabits.length > 0;
+  const habitPages = useMemo(() => {
+    const sorted = [...habits].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+    const pages: Habit[][] = [];
+    for (let i = 0; i < sorted.length; i += 6) {
+      pages.push(sorted.slice(i, i + 6));
+    }
+    return pages;
+  }, [habits]);
+
+  const hasHabits = habitPages.length > 0;
 
   return (
     <ProtectedRoute>
@@ -401,394 +464,50 @@ export default function HabitsPage() {
           )}
 
           {loading ? (
-            <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="relative flex h-full flex-col gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6"
-                >
-                  <Skeleton className="h-12 w-12 rounded-xl" />
-                  <div className="space-y-2">
-                    <Skeleton className="h-5 w-3/4" />
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-2/3" />
-                  </div>
-                  <Skeleton className="mt-2 h-3 w-24" />
-                </div>
-              ))}
+            <div className="space-y-4">
+              <SectionHeader
+                title="Habits & rituals"
+                description="Pull your habits into a swipeable deck and keep streaks visible at a glance."
+                className="text-white"
+              />
+              <div className="grid auto-cols-[minmax(220px,1fr)] grid-flow-col gap-5 overflow-hidden pb-6 sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 lg:grid-cols-3">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div
+                    key={`skeleton-${index}`}
+                    className="h-[240px] min-w-[200px] rounded-2xl border border-white/10 bg-white/[0.03] shadow-[0_20px_40px_-20px_rgba(0,0,0,0.85)]"
+                  />
+                ))}
+              </div>
             </div>
           ) : hasHabits ? (
-            <>
-              {routines.length > 0 && (
-                <>
-                  <SectionHeader
-                    title="Routines"
-                    description={
-                      habits.length === 0
-                        ? "Bundle habits together to build your momentum."
-                        : `${Math.max(habits.length - standaloneHabits.length, 0)} habit${
-                            Math.max(habits.length - standaloneHabits.length, 0) === 1
-                              ? ""
-                              : "s"
-                          } flowing through structured routines.`
-                    }
-                    className="text-white"
-                  />
-
-                  <div className="space-y-6">
-                    {routines.map((routine, routineIndex) => {
-                      const latestRoutineUpdate =
-                        routine.latestHabitUpdate ?? routine.updated_at;
-                      const routineHabitCount = routine.habits.length;
-
-                      return (
-                        <article
-                          key={routine.id}
-                          className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_18px_45px_-25px_rgba(15,23,42,0.6)] transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_28px_55px_-20px_rgba(15,23,42,0.7)]"
-                        >
-                          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_60%)] opacity-0 transition duration-300 group-hover:opacity-100" />
-                          <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                            <div className="space-y-2">
-                              <h3 className="text-2xl font-semibold tracking-tight text-white">
-                                {routine.name}
-                              </h3>
-                              {routine.description && (
-                                <p className="text-sm text-white/70">{routine.description}</p>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
-                              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium uppercase tracking-wide">
-                                {routineHabitCount} {routineHabitCount === 1 ? "habit" : "habits"}
-                              </span>
-                              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium uppercase tracking-wide">
-                                Updated {formatRelativeTime(latestRoutineUpdate)}
-                              </span>
-                            </div>
-                          </div>
-
-                          <ul className="relative mt-6 grid gap-4 md:grid-cols-2">
-                            {routine.habits.map((habit, habitIndex) => {
-                              const palette =
-                                CARD_STYLES[(routineIndex + habitIndex) % CARD_STYLES.length];
-                              const initials = habit.name.charAt(0).toUpperCase();
-                              const habitType = formatTitleCase(habit.habit_type);
-                              const recurrence = formatTitleCase(habit.recurrence);
-                              const hasDuration =
-                                typeof habit.duration_minutes === "number" &&
-                                habit.duration_minutes > 0;
-                              const durationLabel = hasDuration
-                                ? `${habit.duration_minutes} min`
-                                : null;
-                              const energyLabel = formatTitleCase(habit.energy);
-                              const tags = [habitType, recurrence, energyLabel]
-                                .filter(Boolean) as string[];
-                              const skillIcon = habit.skill?.icon?.trim();
-                              const skillName = habit.skill?.name ?? null;
-                              const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
-                              const skillDisplayLabel = skillName ?? "No skill linked yet";
-                              const isTempHabit =
-                                (habit.habit_type ?? "").toUpperCase() === "TEMP";
-                              const goalName = habit.goal?.name?.trim() ?? null;
-                              const completionTarget =
-                                typeof habit.completion_target === "number" &&
-                                Number.isFinite(habit.completion_target)
-                                  ? habit.completion_target
-                                  : null;
-                              const locationLabel = getHabitLocationLabel(habit);
-                              const streakPills = buildHabitStreakPills(habit);
-
-                              return (
-                                <li
-                                  key={habit.id}
-                                  className="relative flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition duration-300 hover:border-white/20 hover:bg-white/[0.05]"
-                                >
-                                  <div className="flex items-start justify-between gap-4">
-                                    <div className="flex items-center gap-3">
-                                      <span
-                                        className={`flex h-10 w-10 items-center justify-center rounded-lg text-lg font-semibold ${palette.iconBg}`}
-                                      >
-                                        {initials}
-                                      </span>
-                                      <div className="space-y-1">
-                                        <p className="text-base font-semibold text-white">
-                                          {habit.name}
-                                        </p>
-                                        {habit.description && (
-                                          <p className="text-xs text-white/60">{habit.description}</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <Link
-                                      href={`/habits/${habit.id}/edit`}
-                                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
-                                    >
-                                      Edit
-                                      <span aria-hidden>→</span>
-                                    </Link>
-                                  </div>
-
-                                  {tags.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 text-[0.7rem] uppercase tracking-wide text-white/60">
-                                      {tags.map((tag) => (
-                                        <span
-                                          key={tag}
-                                          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium"
-                                        >
-                                          {tag}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  <div className="flex flex-wrap gap-3 text-xs text-white/60">
-                                    <span className="flex items-center gap-2">
-                                      <span className="text-base">{skillDisplayIcon}</span>
-                                      <span>
-                                        {skillName ? (
-                                          <>
-                                            Skill · <span className="text-white/80">{skillName}</span>
-                                          </>
-                                        ) : (
-                                          skillDisplayLabel
-                                        )}
-                                      </span>
-                                    </span>
-                                    {isTempHabit && goalName ? (
-                                      <span className="flex items-center gap-2">
-                                        <span className="text-base">🎯</span>
-                                        <span>
-                                          Goal · <span className="text-white/80">{goalName}</span>
-                                        </span>
-                                      </span>
-                                    ) : null}
-                                    {durationLabel && (
-                                      <span className="flex items-center gap-2">
-                                        <span className="text-base">⏱️</span>
-                                        <span>{durationLabel}</span>
-                                      </span>
-                                    )}
-                                    {energyLabel && (
-                                      <span className="flex items-center gap-2">
-                                        <span className="text-base">🔥</span>
-                                        <span>Energy • {energyLabel}</span>
-                                      </span>
-                                    )}
-                                    {isTempHabit && completionTarget ? (
-                                      <span className="flex items-center gap-2">
-                                        <span className="text-base">✅</span>
-                                        <span>{completionTarget} completions</span>
-                                      </span>
-                                    ) : null}
-                                    <span className="flex items-center gap-2">
-                                      <span className="text-base">📍</span>
-                                      <span>
-                                        Location ·{" "}
-                                        <span className="text-white/80">{locationLabel}</span>
-                                      </span>
-                                    </span>
-                                  </div>
-                                  <div className="mt-3 flex flex-wrap gap-2 text-[0.7rem] text-white/80">
-                                    {streakPills.map(({ icon, text }) => (
-                                      <span
-                                        key={`${habit.id}-${icon}`}
-                                        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium"
-                                      >
-                                        <span className="text-base">{icon}</span>
-                                        <span>{text}</span>
-                                      </span>
-                                    ))}
-                                  </div>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {standaloneHabits.length > 0 && (
-                <>
-                  <SectionHeader
-                    title={
-                      routines.length > 0 ? "Individual habits" : "Your daily rhythm"
-                    }
-                    description={
-                      routines.length > 0
-                        ? "Habits that haven’t joined a routine yet."
-                        : "Track streaks, consistency, and the rituals that keep you moving."
-                    }
-                    className="text-white"
-                  />
-
-                  <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-                    {standaloneHabits.map((habit, index) => {
-                      const palette = CARD_STYLES[index % CARD_STYLES.length];
-                      const initials = habit.name.charAt(0).toUpperCase();
-                      const habitType = formatTitleCase(habit.habit_type);
-                      const recurrence = formatTitleCase(habit.recurrence);
-                      const hasDuration =
-                        typeof habit.duration_minutes === "number" &&
-                        habit.duration_minutes > 0;
-                      const durationLabel = hasDuration
-                        ? `${habit.duration_minutes} min`
-                        : null;
-                      const energyLabel = formatTitleCase(habit.energy);
-                      const skillIcon = habit.skill?.icon?.trim();
-                      const skillName = habit.skill?.name ?? null;
-                      const skillDisplayIcon = skillIcon || (skillName ? "🧠" : "➕");
-                      const skillDisplayLabel = skillName ?? "No skill linked yet";
-                      const isTempHabit =
-                        (habit.habit_type ?? "").toUpperCase() === "TEMP";
-                      const goalName = habit.goal?.name?.trim() ?? null;
-                      const completionTarget =
-                        typeof habit.completion_target === "number" &&
-                        Number.isFinite(habit.completion_target)
-                          ? habit.completion_target
-                          : null;
-                      const locationLabel = getHabitLocationLabel(habit);
-                      const streakPills = buildHabitStreakPills(habit);
-
-                      return (
-                        <article
-                          key={habit.id}
-                          className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 shadow-[0_18px_45px_-25px_rgba(15,23,42,0.6)] transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_28px_55px_-20px_rgba(15,23,42,0.7)]"
-                        >
-                          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_60%)] opacity-0 transition duration-300 group-hover:opacity-100" />
-                          <div className="relative flex items-start justify-between gap-4">
-                            <div className="flex items-start gap-3">
-                              <div
-                                className={`flex h-12 w-12 items-center justify-center rounded-xl text-2xl font-semibold ${palette.iconBg}`}
-                              >
-                                {initials}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                {habitType && (
-                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
-                                    {habitType}
-                                  </span>
-                                )}
-                                {recurrence && (
-                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
-                                    {recurrence}
-                                  </span>
-                                )}
-                                {durationLabel && (
-                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
-                                    {durationLabel}
-                                  </span>
-                                )}
-                                {energyLabel && (
-                                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-white/70">
-                                    Energy: {energyLabel}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <Link
-                              href={`/habits/${habit.id}/edit`}
-                              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
-                            >
-                              Edit
-                              <span aria-hidden>→</span>
-                            </Link>
-                          </div>
-
-                          <div className="relative mt-6 space-y-3">
-                            <h3 className="text-xl font-semibold tracking-tight text-white">
-                              {habit.name}
-                            </h3>
-                            {habit.description && (
-                              <p className="text-sm text-white/70">{habit.description}</p>
-                            )}
-                          </div>
-
-                          <div className="relative mt-6 space-y-3 text-xs text-white/60">
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">{skillDisplayIcon}</span>
-                              <span>
-                                {skillName ? (
-                                  <>
-                                    Skill · <span className="text-white/80">{skillName}</span>
-                                  </>
-                                ) : (
-                                  skillDisplayLabel
-                                )}
-                              </span>
-                            </div>
-                            {isTempHabit && goalName ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-base">🎯</span>
-                                <span>
-                                  Goal · <span className="text-white/80">{goalName}</span>
-                                </span>
-                              </div>
-                            ) : null}
-                            {durationLabel && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-base">⏱️</span>
-                                <span>Planned for {durationLabel}</span>
-                              </div>
-                            )}
-                            {energyLabel && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-base">🔥</span>
-                                <span>Energy • {energyLabel}</span>
-                              </div>
-                            )}
-                            {isTempHabit && completionTarget ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-base">✅</span>
-                                <span>{completionTarget} completions</span>
-                              </div>
-                            ) : null}
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">📍</span>
-                              <span>
-                                Location · <span className="text-white/80">{locationLabel}</span>
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="relative mt-6 flex flex-wrap gap-3 border-t border-white/5 pt-5 text-xs text-white/60">
-                            <div className="flex flex-1 flex-wrap items-center gap-2 text-[0.75rem] text-white/80">
-                              {streakPills.map(({ icon, text }) => (
-                                <span
-                                  key={`${habit.id}-${icon}`}
-                                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 font-medium"
-                                >
-                                  <span className="text-base">{icon}</span>
-                                  <span>{text}</span>
-                                </span>
-                              ))}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Link
-                                href={`/habits/${habit.id}/edit`}
-                                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-white/70 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
-                              >
-                                Edit habit
-                                <span aria-hidden>→</span>
-                              </Link>
-                              <button
-                                type="button"
-                                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${palette.ctaClass}`}
-                                disabled
-                              >
-                                <span>Mark complete</span>
-                                <span aria-hidden>→</span>
-                              </button>
-                            </div>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </>
+            <div className="space-y-4">
+              <SectionHeader
+                title="Habit stream"
+                description="Scroll through these compact streak cards to keep tabs on every routine."
+                className="text-white"
+              />
+              <div className="relative">
+                <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
+                  Swipe to browse
+                  <ArrowRight className="h-3 w-3" />
+                </div>
+                <div className="grid auto-cols-[minmax(640px,1fr)] grid-flow-col gap-5 overflow-x-auto pb-6 pr-1 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none lg:grid-cols-3">
+                  {habitPages.map((page, pageIndex) => (
+                    <div
+                      key={`habit-page-${pageIndex}`}
+                      className="snap-start sm:[scroll-snap-align:unset]"
+                      style={{ minWidth: "min(100vw-2rem, 720px)" }}
+                    >
+                      <div className="grid grid-cols-3 gap-3">
+                        {page.map((habit) => (
+                          <HabitCompactCard key={habit.id} habit={habit} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03]">
               <HabitsEmptyState onAction={() => router.push("/habits/new")} />
