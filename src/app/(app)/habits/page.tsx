@@ -128,6 +128,57 @@ function buildHabitStreakPills(habit: Habit): HabitStreakPill[] {
   ];
 }
 
+const RECURRENCE_LABELS: Record<string, string> = {
+  none: "No set cadence",
+  daily: "Daily",
+  weekly: "Weekly",
+  "bi-weekly": "Bi-weekly",
+  monthly: "Monthly",
+  "bi-monthly": "Bi-monthly",
+  yearly: "Yearly",
+  "every x days": "Every X days",
+};
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function getHabitRecurrenceLabel(value?: string | null) {
+  const normalized = value?.toLowerCase().trim() ?? "";
+  if (normalized && RECURRENCE_LABELS[normalized]) {
+    return RECURRENCE_LABELS[normalized];
+  }
+  if (normalized) {
+    return formatTitleCase(normalized) ?? normalized;
+  }
+  return RECURRENCE_LABELS["none"];
+}
+
+function formatHabitRecurrenceDays(days?: number[] | null) {
+  if (!days || days.length === 0) {
+    return null;
+  }
+
+  const normalized = Array.from(
+    new Set(
+      days
+        .map((day) => Number(day))
+        .filter((day): day is number => Number.isFinite(day))
+        .map((day) => {
+          const remainder = day % 7;
+          return remainder < 0 ? remainder + 7 : remainder;
+        })
+    )
+  );
+
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  return normalized
+    .sort((a, b) => a - b)
+    .map((day) => WEEKDAY_LABELS[day])
+    .join(" · ");
+}
+
 type HabitCompactCardProps = {
   habit: Habit;
 };
@@ -142,6 +193,11 @@ function HabitCompactCard({ habit }: HabitCompactCardProps) {
   const avatarLabel = skillIcon
     ? `${habit.skill?.name ?? "Related skill"} icon`
     : `${habit.name} initial`;
+  const recurrenceLabel = getHabitRecurrenceLabel(habit.recurrence);
+  const recurrenceDaysLabel = formatHabitRecurrenceDays(habit.recurrence_days);
+  const recurrenceDisplay = recurrenceDaysLabel
+    ? `${recurrenceLabel} · ${recurrenceDaysLabel}`
+    : recurrenceLabel;
 
   return (
     <article className="relative flex h-full min-h-[140px] w-full flex-col gap-1 overflow-hidden rounded-2xl border border-white/10 bg-[#150700]/90 px-3 py-2 text-white shadow-[0_18px_45px_-25px_rgba(0,0,0,0.9)] transition hover:border-white/30 hover:bg-[#1f0c04] sm:px-3 sm:py-3">
@@ -184,13 +240,19 @@ function HabitCompactCard({ habit }: HabitCompactCardProps) {
             {habit.description}
           </p>
         )}
-        <div className="mt-auto space-y-0.5 text-white/80">
-          <p className="text-[0.55rem] uppercase tracking-[0.35em] text-amber-50/80">
-            Streak
-          </p>
-          <p className="text-[0.75rem] font-semibold text-white">
-            {formatStreakDays(currentStreak)} · Best {formatStreakDays(longestStreak)}
-          </p>
+        <div className="mt-auto flex flex-col gap-2 text-white/80">
+          <p className="text-[0.7rem] font-semibold text-white">{recurrenceDisplay}</p>
+          <div className="mt-auto space-y-0.5">
+            <p className="text-[0.55rem] uppercase tracking-[0.35em] text-amber-50/80">
+              Streak
+            </p>
+            <p className="text-[0.75rem] font-semibold text-white">
+              {formatStreakDays(currentStreak)} ·{" "}
+              <span aria-hidden="true">🔥</span>
+              <span className="sr-only"> best streak </span>
+              {formatStreakDays(longestStreak)}
+            </p>
+          </div>
         </div>
       </div>
     </article>

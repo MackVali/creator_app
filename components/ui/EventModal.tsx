@@ -138,11 +138,6 @@ type NormalizedProjectPayload = {
   tasks: NormalizedTaskPayload[];
 };
 
-type LookupRow = {
-  id?: number | null;
-  name?: string | null;
-};
-
 const normalizeLookupKey = (value?: string | null) => {
   if (!value) {
     return "";
@@ -151,17 +146,6 @@ const normalizeLookupKey = (value?: string | null) => {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
-};
-
-const buildLookupMap = (rows?: LookupRow[] | null) => {
-  const map: Record<string, number> = {};
-  for (const row of rows ?? []) {
-    if (row?.id == null) continue;
-    const normalized = normalizeLookupKey(row.name);
-    if (!normalized) continue;
-    map[normalized] = row.id;
-  }
-  return map;
 };
 
 async function cleanupGoalHierarchy(
@@ -1038,94 +1022,17 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const normalizeLookupCode = (value: string) => normalizeLookupKey(value);
-  const [priorityLookupMap, setPriorityLookupMap] =
-    useState<Record<string, number>>({});
-  const [energyLookupMap, setEnergyLookupMap] = useState<Record<string, number>>({});
   const router = useRouter();
 
-  const resolvePriorityPayloadValue = useCallback(
-    (
-      code: string,
-      overrides?: Record<string, number>
-    ) => {
-      const normalized = normalizeLookupCode(code);
-      const lookup = overrides ?? priorityLookupMap;
-      const id = lookup[normalized];
-      if (typeof id === "number") {
-        return id;
-      }
-      return normalized;
-    },
-    [priorityLookupMap]
-  );
+  const resolvePriorityPayloadValue = useCallback((code: string) => {
+    const normalized = normalizeLookupCode(code);
+    return normalized || DEFAULT_PRIORITY;
+  }, []);
 
-  const resolveEnergyPayloadValue = useCallback(
-    (
-      code: string,
-      overrides?: Record<string, number>
-    ) => {
-      const normalized = normalizeLookupCode(code);
-      const lookup = overrides ?? energyLookupMap;
-      const id = lookup[normalized];
-      if (typeof id === "number") {
-        return id;
-      }
-      return normalized;
-    },
-    [energyLookupMap]
-  );
-
-  const loadLookupData = useCallback(
-    async (supabase: SupabaseClient) => {
-      try {
-        const [priorityRes, energyRes] = await Promise.all([
-          supabase.from("priority").select("id, name"),
-          supabase.from("energy").select("id, name"),
-        ]);
-
-        let priorityLookup = priorityLookupMap;
-        if (!priorityRes.error) {
-          priorityLookup = buildLookupMap(priorityRes.data as LookupRow[]);
-          setPriorityLookupMap(priorityLookup);
-        } else {
-          console.warn("Failed to load priority lookups:", priorityRes.error);
-        }
-
-        let energyLookup = energyLookupMap;
-        if (!energyRes.error) {
-          energyLookup = buildLookupMap(energyRes.data as LookupRow[]);
-          setEnergyLookupMap(energyLookup);
-        } else {
-          console.warn("Failed to load energy lookups:", energyRes.error);
-        }
-
-        return { priority: priorityLookup, energy: energyLookup };
-      } catch (err) {
-        console.error("Failed to load priority/energy lookups:", err);
-        return {
-          priority: priorityLookupMap,
-          energy: energyLookupMap,
-        };
-      }
-    },
-    [priorityLookupMap, energyLookupMap]
-  );
-
-  const ensureLookupData = useCallback(
-    async (supabase: SupabaseClient) => {
-      if (
-        Object.keys(priorityLookupMap).length > 0 &&
-        Object.keys(energyLookupMap).length > 0
-      ) {
-        return {
-          priority: priorityLookupMap,
-          energy: energyLookupMap,
-        };
-      }
-      return await loadLookupData(supabase);
-    },
-    [priorityLookupMap, energyLookupMap, loadLookupData]
-  );
+  const resolveEnergyPayloadValue = useCallback((code: string) => {
+    const normalized = normalizeLookupCode(code);
+    return normalized || DEFAULT_ENERGY;
+  }, []);
 
   const resetGoalWizard = useCallback(() => {
     const initialProject = toDisplayDraftProject(createDraftProject());
@@ -1801,15 +1708,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           ? priorityCodeFromDisplay(formData.priority)
           : DEFAULT_PRIORITY;
       const resolvedEnergyCode = energyCodeFromDisplay(formData.energy);
-      const lookupData = await ensureLookupData(supabase);
       const priorityPayloadValue = resolvePriorityPayloadValue(
-        resolvedPriorityCode,
-        lookupData.priority
+        resolvedPriorityCode
       );
-      const energyPayloadValue = resolveEnergyPayloadValue(
-        resolvedEnergyCode,
-        lookupData.energy
-      );
+      const energyPayloadValue = resolveEnergyPayloadValue(resolvedEnergyCode);
 
       const insertData: {
         user_id: string;
@@ -2430,16 +2332,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         setIsSaving(false);
       }
     },
-    [
-      draftProjects,
-      goalForm,
-      onClose,
-      resetGoalWizard,
-      router,
-      toast,
-      resolveEnergyPayloadValue,
-      resolvePriorityPayloadValue,
-    ]
+    [draftProjects, goalForm, onClose, resetGoalWizard, router, toast]
   );
 
   const handleGoalFormSubmit = async (event: React.FormEvent) => {
