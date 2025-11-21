@@ -102,7 +102,7 @@ function normalizeStreakDays(value?: number | null) {
 }
 
 function formatStreakDays(days: number) {
-  return `${days} day${days === 1 ? "" : "s"}`;
+  return `${days}x`;
 }
 
 function formatLastCompletionLabel(value?: string | null) {
@@ -133,71 +133,62 @@ type HabitCompactCardProps = {
 };
 
 function HabitCompactCard({ habit }: HabitCompactCardProps) {
-  const initials = habit.name.charAt(0).toUpperCase();
   const routineName = habit.routine?.name?.trim() ?? null;
-  const habitType = formatTitleCase(habit.habit_type);
-  const recurrence = formatTitleCase(habit.recurrence);
-  const energy = formatTitleCase(habit.energy);
-  const tags = [habitType, recurrence, energy].filter(Boolean) as string[];
   const currentStreak = normalizeStreakDays(habit.current_streak_days);
   const longestStreak = normalizeStreakDays(habit.longest_streak_days);
-  const lastLogLabel = formatLastCompletionLabel(habit.last_completed_at);
+  const skillIcon = habit.skill?.icon?.trim();
+  const initials = habit.name.charAt(0).toUpperCase();
+  const avatarContent = skillIcon || initials;
+  const avatarLabel = skillIcon
+    ? `${habit.skill?.name ?? "Related skill"} icon`
+    : `${habit.name} initial`;
 
   return (
-    <article className="relative flex h-full min-h-[200px] w-full flex-col gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[#150700]/90 px-3 py-3 text-white shadow-[0_18px_45px_-25px_rgba(0,0,0,0.9)] transition hover:border-white/30 hover:bg-[#1f0c04]">
+    <article className="relative flex h-full min-h-[140px] w-full flex-col gap-1 overflow-hidden rounded-2xl border border-white/10 bg-[#150700]/90 px-3 py-2 text-white shadow-[0_18px_45px_-25px_rgba(0,0,0,0.9)] transition hover:border-white/30 hover:bg-[#1f0c04] sm:px-3 sm:py-3">
       <div
         className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_80%)] opacity-70"
         aria-hidden
       />
-      <div className="relative z-10 flex flex-col gap-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-lg font-semibold text-amber-100 shadow-[inset_0_-1px_0_rgba(255,255,255,0.2)]">
-              {initials}
+      <div className="relative z-10 flex flex-col gap-1">
+        <div className="flex items-start justify-between gap-1">
+          <div className="flex items-center gap-1">
+            <div
+              title={avatarLabel}
+              aria-label={avatarLabel}
+              className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-base font-semibold text-amber-100 shadow-[inset_0_-1px_0_rgba(255,255,255,0.2)]"
+            >
+              {avatarContent}
             </div>
             <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.35em] text-amber-100/70">
+              <p className="text-[0.35rem] uppercase tracking-[0.4em] text-amber-100/70">
                 {routineName ? "Routine" : "Solo habit"}
               </p>
-              <h3 className="text-[0.95rem] font-semibold leading-tight text-white line-clamp-2">
+              <h3 className="text-[0.85rem] font-semibold leading-tight text-white line-clamp-2">
                 {habit.name}
               </h3>
               {routineName && (
-                <p className="text-[0.65rem] text-amber-100/80">{routineName}</p>
+                <p className="text-[0.55rem] text-amber-100/80">{routineName}</p>
               )}
             </div>
           </div>
           <Link
             href={`/habits/${habit.id}/edit`}
-            className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/[0.05] px-2 py-1 text-[0.55rem] font-semibold uppercase tracking-[0.35em] text-white/80 transition hover:border-white/40 hover:bg-white/[0.15]"
+            className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/[0.05] px-2 py-0.5 text-[0.55rem] font-semibold uppercase tracking-[0.3em] text-white/80 transition hover:border-white/40 hover:bg-white/[0.15]"
           >
             Edit
             <span aria-hidden>→</span>
           </Link>
         </div>
         {habit.description && (
-          <p className="text-[0.65rem] text-white/70 line-clamp-2">
+          <p className="text-[0.55rem] text-white/70 line-clamp-2">
             {habit.description}
           </p>
         )}
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 text-[0.55rem] uppercase tracking-[0.3em] text-white/70">
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 font-semibold"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="mt-auto space-y-1 text-white/80">
-          <div className="flex items-center justify-between text-[0.6rem] uppercase tracking-[0.3em] text-amber-50/80">
-            <span>Streak</span>
-            <span>{lastLogLabel}</span>
-          </div>
-          <p className="text-[0.85rem] font-semibold text-white">
+        <div className="mt-auto space-y-0.5 text-white/80">
+          <p className="text-[0.55rem] uppercase tracking-[0.35em] text-amber-50/80">
+            Streak
+          </p>
+          <p className="text-[0.75rem] font-semibold text-white">
             {formatStreakDays(currentStreak)} · Best {formatStreakDays(longestStreak)}
           </p>
         </div>
@@ -498,7 +489,7 @@ export default function HabitsPage() {
                       className="snap-start sm:[scroll-snap-align:unset]"
                       style={{ minWidth: "min(100vw-2rem, 720px)" }}
                     >
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-3 gap-2 sm:gap-3">
                         {page.map((habit) => (
                           <HabitCompactCard key={habit.id} habit={habit} />
                         ))}
