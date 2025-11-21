@@ -444,7 +444,7 @@ export function HabitFormFields({
             </SelectContent>
           </Select>
           {showRecurrenceDayPicker ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
               {DAYS_OF_WEEK.map((day) => {
                 const isSelected = recurrenceDays.includes(day.value);
                 return (
@@ -453,7 +453,7 @@ export function HabitFormFields({
                     type="button"
                     onClick={() => handleToggleRecurrenceDay(day.value)}
                     className={cn(
-                      "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                      "rounded-full border px-3 py-1 text-center text-xs font-semibold uppercase tracking-[0.2em] transition",
                       isSelected
                         ? "border-blue-400/60 bg-blue-500/20 text-white"
                         : "border-white/10 bg-white/[0.05] text-white/70 hover:border-white/20 hover:text-white",
