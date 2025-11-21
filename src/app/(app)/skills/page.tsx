@@ -19,13 +19,14 @@ import { getSkillsForUser } from "../../../lib/data/skills";
 import { createRecord, deleteRecord, updateRecord } from "@/lib/db";
 import type { SkillRow } from "@/lib/types/skill";
 import {
-  Plus,
-  MoreVertical,
+  ArrowRight,
   ChevronRight,
-  Sparkles,
+  Clock3,
   FolderKanban,
   Goal,
-  Clock3,
+  MoreVertical,
+  Plus,
+  Sparkles,
 } from "lucide-react";
 
 interface Monument {
@@ -41,6 +42,98 @@ function useDebounce<T>(value: T, delay: number) {
     return () => clearTimeout(handler);
   }, [value, delay]);
   return debounced;
+}
+
+type SkillCompactCardProps = {
+  skill: Skill;
+  categoryName?: string | null;
+  linkedMonument?: string | null;
+  startEdit: (skill: Skill) => void;
+  handleRemoveSkill: (id: string) => void;
+};
+
+function SkillCompactCard({
+  skill,
+  categoryName,
+  linkedMonument,
+  startEdit,
+  handleRemoveSkill,
+}: SkillCompactCardProps) {
+  const createdLabel = skill.created_at
+    ? `Added ${new Date(skill.created_at).toLocaleDateString()}`
+    : "Not logged yet";
+
+  return (
+    <Link
+      href={`/skills/${skill.id}`}
+      className="group relative flex min-h-[175px] flex-col gap-2 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0e18]/90 p-3 text-white transition hover:border-white/30 hover:bg-[#13162b]"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(255,255,255,0.08),_transparent_70%)] opacity-40" aria-hidden />
+      <div className="relative z-10 flex items-start justify-between gap-3">
+        <span
+          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-lg text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+          role="img"
+          aria-label={`Skill: ${skill.name}`}
+        >
+          {skill.icon}
+        </span>
+        <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-white/60">
+          Lv {skill.level}
+        </span>
+      </div>
+      <h3 className="relative z-10 text-sm font-semibold leading-tight text-white line-clamp-2">
+        {skill.name}
+      </h3>
+      <div className="relative z-10 flex flex-wrap gap-1 text-[0.55rem] uppercase tracking-[0.3em] text-white/70">
+        <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5">
+          {categoryName || "Uncategorized"}
+        </span>
+        {linkedMonument && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
+            <Goal className="h-3 w-3" aria-hidden="true" />
+            {linkedMonument}
+          </span>
+        )}
+      </div>
+      <p className="relative z-10 text-[0.65rem] text-white/60">{createdLabel}</p>
+      <ChevronRight className="relative z-10 self-end text-white/40 transition group-hover:text-white/70" />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white/60 transition hover:border-white/30 hover:text-white"
+            aria-label="More"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-40 border border-white/10 bg-[#0f111a]/95 text-white">
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startEdit(skill);
+            }}
+          >
+            Edit skill
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleRemoveSkill(skill.id);
+            }}
+          >
+            Remove skill
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </Link>
+  );
 }
 
 function SkillsPageContent() {
@@ -149,6 +242,14 @@ function SkillsPageContent() {
     }
     return data;
   }, [searchFiltered, selectedCat, sort]);
+
+  const skillPages = useMemo(() => {
+    const pages: Skill[][] = [];
+    for (let i = 0; i < filtered.length; i += 6) {
+      pages.push(filtered.slice(i, i + 6));
+    }
+    return pages;
+  }, [filtered]);
 
   const allCats = useMemo(() => {
     const base = [...categories];
@@ -448,92 +549,42 @@ function SkillsPageContent() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filtered.map((skill) => {
-                const categoryName = categoryLookup.get(skill.cat_id || "uncategorized");
-                const linkedMonument = skill.monument_id
-                  ? monumentLookup.get(skill.monument_id)
-                  : null;
-                return (
-                  <Link
-                    key={skill.id}
-                    href={`/skills/${skill.id}`}
-                    className="group relative flex items-center justify-between overflow-hidden rounded-2xl border border-white/10 bg-[#0b0d17]/90 p-5 text-left shadow-[0_30px_90px_-65px_rgba(79,70,229,0.7)] transition hover:border-white/20 hover:bg-[#111425]"
-                  >
-                    <div className="absolute inset-0">
-                      <div className="absolute -left-20 top-0 h-48 w-48 rounded-full bg-[radial-gradient(circle,_rgba(129,140,248,0.22),_transparent_65%)] opacity-40 transition group-hover:opacity-80" />
-                    </div>
-                    <div className="relative flex items-center gap-5">
-                      <span
-                        className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 text-3xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] ring-1 ring-white/15"
-                        role="img"
-                        aria-label={`Skill: ${skill.name}`}
-                      >
-                        {skill.icon}
-                      </span>
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-semibold text-white">{skill.name}</h3>
-                          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white/70">
-                            Lv {skill.level}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">
-                          <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white/70">
-                            {categoryName || "Uncategorized"}
-                          </span>
-                          {linkedMonument && (
-                            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-emerald-200">
-                              <Goal className="h-3 w-3" aria-hidden="true" />
-                              {linkedMonument}
-                            </span>
-                          )}
-                        </div>
-                        {skill.created_at && (
-                          <p className="text-xs text-white/50">
-                            Added {new Date(skill.created_at).toLocaleDateString()}
-                          </p>
-                        )}
+              <div className="relative">
+                <div className="pointer-events-none absolute -top-8 right-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-white/60 sm:hidden">
+                  Swipe to browse
+                  <ArrowRight className="h-3 w-3" />
+                </div>
+                <div className="grid auto-cols-[minmax(640px,1fr)] grid-flow-col gap-4 overflow-x-auto pb-6 pr-1 snap-x snap-mandatory sm:auto-cols-auto sm:grid-cols-2 sm:grid-flow-row sm:overflow-visible sm:pb-0 sm:snap-none">
+                  {skillPages.map((page, pageIndex) => (
+                    <div
+                      key={`skills-page-${pageIndex}`}
+                      className="snap-start sm:[scroll-snap-align:unset]"
+                      style={{ minWidth: "min(100vw-2rem, 720px)" }}
+                    >
+                      <div className="grid grid-cols-3 gap-3">
+                        {page.map((skill) => {
+                          const categoryName = categoryLookup.get(
+                            skill.cat_id || "uncategorized"
+                          );
+                          const linkedMonument = skill.monument_id
+                            ? monumentLookup.get(skill.monument_id)
+                            : null;
+                          return (
+                            <SkillCompactCard
+                              key={skill.id}
+                              skill={skill}
+                              categoryName={categoryName}
+                              linkedMonument={linkedMonument}
+                              startEdit={startEdit}
+                              handleRemoveSkill={handleRemoveSkill}
+                            />
+                          );
+                        })}
                       </div>
                     </div>
-                    <ChevronRight className="relative h-5 w-5 text-white/40 transition group-hover:translate-x-1 group-hover:text-white/70" />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/70 opacity-100 transition hover:text-white focus-visible:ring-2 focus-visible:ring-white/60 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
-                          aria-label="More"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-40 border border-white/10 bg-[#0f111a]/95 text-white backdrop-blur">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            startEdit(skill);
-                          }}
-                        >
-                          Edit skill
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleRemoveSkill(skill.id);
-                          }}
-                        >
-                          Remove skill
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </Link>
-                );
-              })}
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -563,4 +614,3 @@ export default function SkillsPage() {
     </ProtectedRoute>
   );
 }
-
