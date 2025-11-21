@@ -548,7 +548,7 @@ export default function PlanGoalPage() {
                           </div>
                           <div className="space-y-2">
                             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                              Duration (minutes)
+                              Duration
                             </Label>
                             <Input
                               value={draft.duration}
@@ -561,7 +561,7 @@ export default function PlanGoalPage() {
                               }
                               inputMode="numeric"
                               pattern="[0-9]*"
-                              placeholder="e.g. 90"
+                              placeholder="x minutes"
                               className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-zinc-500 focus:border-blue-400/60 focus-visible:ring-0"
                             />
                           </div>
