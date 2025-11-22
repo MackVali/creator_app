@@ -269,6 +269,7 @@ export interface Profile {
   scheduling_link?: string | null;
   contact_email_public?: string | null;
   contact_phone_public?: string | null;
+  timezone?: string | null;
   availability_last_synced_at?: string | null;
   active_theme_settings_id?: string | null;
   prefers_dark_mode?: boolean;

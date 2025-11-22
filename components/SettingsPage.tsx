@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ReactNode, useEffect, useState } from "react";
+import React, { ReactNode, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/lib/hooks/useProfile";
@@ -24,6 +24,74 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+const FALLBACK_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Madrid",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Asia/Singapore",
+  "Asia/Kolkata",
+  "Australia/Sydney",
+];
+
+const getLocalTimeZone = () => {
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (resolved && resolved.trim()) {
+      return resolved;
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Unable to resolve local time zone", error);
+    }
+  }
+  return "UTC";
+};
+
+type IntlWithSupportedValues = typeof Intl & {
+  supportedValuesOf?: (input: string) => string[];
+};
+
+const getSupportedTimeZones = () => {
+  const intl = Intl as IntlWithSupportedValues;
+  if (typeof intl.supportedValuesOf === "function") {
+    try {
+      const zones = intl.supportedValuesOf("timeZone");
+      if (Array.isArray(zones) && zones.length > 0) {
+        return zones;
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Unable to resolve supported time zones", error);
+      }
+    }
+  }
+  return FALLBACK_TIMEZONES;
+};
+
+const formatTimeZoneLabel = (timeZone: string) => {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+      timeZoneName: "short",
+    });
+    const parts = formatter.formatToParts(new Date());
+    const zoneName = parts.find((part) => part.type === "timeZoneName")?.value ?? "";
+    return zoneName && zoneName !== timeZone ? `${timeZone} (${zoneName})` : timeZone;
+  } catch {
+    return timeZone;
+  }
+};
+
 export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
@@ -36,6 +104,19 @@ export default function SettingsPage() {
     darkMode: false,
     notifications: false,
   });
+  const [timezone, setTimezone] = useState<string>(() => getLocalTimeZone());
+  const [savingTimezone, setSavingTimezone] = useState(false);
+  const baseTimeZones = useMemo(() => getSupportedTimeZones(), []);
+  const timezoneOptions = useMemo(() => {
+    const zones =
+      timezone && !baseTimeZones.includes(timezone)
+        ? [timezone, ...baseTimeZones]
+        : baseTimeZones;
+    return zones.map((tz) => ({
+      value: tz,
+      label: formatTimeZoneLabel(tz),
+    }));
+  }, [baseTimeZones, timezone]);
   const router = useRouter();
 
   useEffect(() => {
@@ -75,10 +156,16 @@ export default function SettingsPage() {
     if (profile) {
       setDarkMode(profile.prefers_dark_mode ?? false);
       setNotifications(profile.notifications_enabled ?? true);
+      const profileTimezone =
+        profile.timezone && profile.timezone.trim().length > 0
+          ? profile.timezone
+          : getLocalTimeZone();
+      setTimezone(profileTimezone);
       setPreferenceError(null);
     } else {
       setDarkMode(false);
       setNotifications(true);
+      setTimezone(getLocalTimeZone());
     }
   }, [profile]);
 
@@ -128,6 +215,30 @@ export default function SettingsPage() {
     }
 
     setSavingPreference((prev) => ({ ...prev, notifications: false }));
+  };
+
+  const handleTimezoneChange = async (nextTimezone: string) => {
+    if (!userId || savingTimezone) return;
+    if (!nextTimezone || nextTimezone === timezone) return;
+
+    setPreferenceError(null);
+    const previousValue = timezone;
+    setTimezone(nextTimezone);
+    setSavingTimezone(true);
+
+    const { error: timezoneError } = await updateProfilePreferences(userId, {
+      timezone: nextTimezone,
+    });
+
+    if (timezoneError) {
+      console.error("Failed to update timezone preference:", timezoneError);
+      setTimezone(previousValue);
+      setPreferenceError("We couldn't save your preferences. Please try again.");
+    } else {
+      await refreshProfile();
+    }
+
+    setSavingTimezone(false);
   };
 
   const initials = loading
@@ -202,6 +313,15 @@ export default function SettingsPage() {
             onChange={handleNotificationsToggle}
             ariaLabel="Toggle notifications"
             disabled={!userId || savingPreference.notifications}
+          />
+          <SettingsSelectRow
+            icon={Globe2}
+            title="Timezone"
+            description="Scheduling, reminders, and analytics follow this setting."
+            value={timezone}
+            options={timezoneOptions}
+            onChange={handleTimezoneChange}
+            disabled={!userId || savingTimezone}
           />
           <SettingsStaticRow
             icon={Globe2}
@@ -548,6 +668,53 @@ function SettingsToggleRow({
         ariaLabel={ariaLabel}
         disabled={disabled}
       />
+    </div>
+  );
+}
+
+type SettingsSelectRowProps = {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+};
+
+function SettingsSelectRow({
+  icon: Icon,
+  title,
+  description,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: SettingsSelectRowProps) {
+  return (
+    <div className="flex flex-col gap-4 border-t border-white/5 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex gap-4">
+        <SettingsIcon icon={Icon} />
+        <div>
+          <p className="font-medium leading-tight text-[var(--text)]">{title}</p>
+          <p className="text-sm text-[var(--muted)]">{description}</p>
+        </div>
+      </div>
+      <div className="sm:min-w-[220px]">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          aria-label={title}
+          className="w-full rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-[var(--text)] transition hover:border-white/30 focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }

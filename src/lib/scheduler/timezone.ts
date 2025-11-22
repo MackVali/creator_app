@@ -27,7 +27,7 @@ type DateParts = {
   second: number
 }
 
-function getDateTimeParts(date: Date, timeZone: string): DateParts {
+export function getDateTimeParts(date: Date, timeZone: string): DateParts {
   const formatter = getFormatter(timeZone)
   const parts = formatter.formatToParts(date)
   const result: Partial<DateParts> = {}

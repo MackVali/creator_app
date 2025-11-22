@@ -23,6 +23,7 @@ type PlaceParams = {
     duration_min: number
     energy: string
     weight: number
+    eventName: string
   }
   windows: Array<{
     id: string
@@ -184,6 +185,7 @@ export async function placeItemInWindows(params: PlaceParams): Promise<Placement
       startUTC: best.start.toISOString(),
       endUTC: addMin(best.start, item.duration_min).toISOString(),
       reuseInstanceId,
+      eventName: item.eventName,
     },
     client
   )
@@ -197,10 +199,11 @@ async function persistPlacement(
     startUTC: string
     endUTC: string
     reuseInstanceId?: string | null
+    eventName: string
   },
   client?: Client
 ) {
-  const { userId, item, windowId, startUTC, endUTC, reuseInstanceId } = params
+  const { userId, item, windowId, startUTC, endUTC, reuseInstanceId, eventName } = params
   if (reuseInstanceId) {
     return await rescheduleInstance(
       reuseInstanceId,
@@ -211,6 +214,7 @@ async function persistPlacement(
         durationMin: item.duration_min,
         weightSnapshot: item.weight,
         energyResolved: item.energy,
+        eventName,
       },
       client
     )
@@ -227,6 +231,7 @@ async function persistPlacement(
       durationMin: item.duration_min,
       weightSnapshot: item.weight,
       energyResolved: item.energy,
+      eventName,
     },
     client
   )

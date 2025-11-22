@@ -1,6 +1,10 @@
 import SunCalc from 'suncalc'
 
-import { addDaysInTimeZone, setTimeInTimeZone } from './timezone'
+import {
+  addDaysInTimeZone,
+  getDateTimeParts,
+  setTimeInTimeZone,
+} from './timezone'
 
 export type GeoCoordinates = {
   latitude: number
@@ -12,6 +16,10 @@ export type SunlightBounds = {
   sunset: Date | null
   dawn: Date | null
   dusk: Date | null
+}
+
+type SunlightBoundsOptions = {
+  offsetMinutes?: number | null
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -28,29 +36,70 @@ export function normalizeCoordinates(
   return { latitude: lat, longitude: lng }
 }
 
+function hasValidOffset(value?: number | null): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function buildMiddayReference(date: Date, offsetMs: number) {
+  const parts = getDateTimeParts(date, 'UTC')
+  const base = Date.UTC(parts.year, parts.month - 1, parts.day, 12, 0, 0, 0)
+  return new Date(base - offsetMs)
+}
+
 export function resolveSunlightBounds(
   date: Date,
   timeZone: string,
   coordinates?: GeoCoordinates | null,
+  options?: SunlightBoundsOptions,
 ): SunlightBounds {
+  const offsetCandidate = options?.offsetMinutes
+  const offsetMinutes = hasValidOffset(offsetCandidate) ? offsetCandidate : null
+  const useOffset = offsetMinutes !== null && timeZone === 'UTC'
+  const offsetMs = offsetMinutes !== null ? offsetMinutes * 60000 : 0
+
   if (coordinates && isFiniteNumber(coordinates.latitude) && isFiniteNumber(coordinates.longitude)) {
     try {
-      const times = SunCalc.getTimes(date, coordinates.latitude, coordinates.longitude)
+      const referenceDate = useOffset
+        ? buildMiddayReference(date, offsetMs)
+        : setTimeInTimeZone(date, timeZone, 12, 0)
+      const times = SunCalc.getTimes(
+        referenceDate,
+        coordinates.latitude,
+        coordinates.longitude,
+      )
+      const normalize = (value: Date | null | undefined) => {
+        if (!value) return null
+        if (useOffset) {
+          return new Date(value.getTime())
+        }
+        const parts = getDateTimeParts(value, timeZone)
+        const normalized = setTimeInTimeZone(
+          value,
+          timeZone,
+          parts.hour,
+          parts.minute,
+        )
+        normalized.setSeconds(parts.second, value.getMilliseconds())
+        return normalized
+      }
       return {
-        sunrise: times.sunriseEnd ?? times.sunrise ?? null,
-        sunset: times.sunset ?? null,
-        dawn: times.sunrise ?? null,
-        dusk: times.dusk ?? times.sunset ?? null,
+        sunrise: normalize(times.sunriseEnd ?? times.sunrise ?? null),
+        sunset: normalize(times.sunset ?? null),
+        dawn: normalize(times.sunrise ?? null),
+        dusk: normalize(times.dusk ?? times.sunset ?? null),
       }
     } catch (error) {
       console.warn('SunCalc failed to resolve sunlight bounds', error)
     }
   }
 
-  const sunrise = setTimeInTimeZone(date, timeZone, 6, 0)
-  const sunset = setTimeInTimeZone(date, timeZone, 18, 0)
-  const dawn = setTimeInTimeZone(date, timeZone, 5, 30)
-  const dusk = setTimeInTimeZone(date, timeZone, 18, 30)
+  const adjustForOffset = (value: Date) =>
+    useOffset ? new Date(value.getTime() - offsetMs) : value
+
+  const sunrise = adjustForOffset(setTimeInTimeZone(date, timeZone, 6, 0))
+  const sunset = adjustForOffset(setTimeInTimeZone(date, timeZone, 18, 0))
+  const dawn = adjustForOffset(setTimeInTimeZone(date, timeZone, 5, 30))
+  const dusk = adjustForOffset(setTimeInTimeZone(date, timeZone, 18, 30))
   return { sunrise, sunset, dawn, dusk }
 }
 
@@ -58,11 +107,12 @@ export function resolveSunlightSpan(
   date: Date,
   timeZone: string,
   coordinates?: GeoCoordinates | null,
+  options?: SunlightBoundsOptions,
 ): { previous: SunlightBounds; current: SunlightBounds; next: SunlightBounds } {
-  const current = resolveSunlightBounds(date, timeZone, coordinates)
+  const current = resolveSunlightBounds(date, timeZone, coordinates, options)
   const previousDate = addDaysInTimeZone(date, -1, timeZone)
   const nextDate = addDaysInTimeZone(date, 1, timeZone)
-  const previous = resolveSunlightBounds(previousDate, timeZone, coordinates)
-  const next = resolveSunlightBounds(nextDate, timeZone, coordinates)
+  const previous = resolveSunlightBounds(previousDate, timeZone, coordinates, options)
+  const next = resolveSunlightBounds(nextDate, timeZone, coordinates, options)
   return { previous, current, next }
 }

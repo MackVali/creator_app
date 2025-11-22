@@ -22,6 +22,24 @@ async function main() {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
   const now = new Date();
+  const utcOffsetMinutes = -now.getTimezoneOffset();
+
+  let userTimeZone: string | null = null;
+  try {
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!profileError && profile?.timezone && typeof profile.timezone === "string") {
+      const trimmed = profile.timezone.trim();
+      if (trimmed) {
+        userTimeZone = trimmed;
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to read profile timezone", error);
+  }
 
   console.log(`Running scheduler for user ${userId} at ${now.toISOString()}`);
   const markResult = await markMissedAndQueue(userId, now, supabase);
@@ -31,6 +49,8 @@ async function main() {
     const scheduleResult = await scheduleBacklog(userId, now, supabase, {
       mode: { type: "REGULAR" },
       writeThroughDays: writeThroughDaysArg,
+      timeZone: userTimeZone,
+      utcOffsetMinutes,
     });
 
     console.log(JSON.stringify(scheduleResult, null, 2));

@@ -82,6 +82,20 @@ serve(async req => {
 
 async function resolveUserTimeZone(client: Client, userId: string) {
   try {
+    const { data: profile, error: profileError } = await client
+      .from('profiles')
+      .select('timezone')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!profileError && profile?.timezone) {
+      const tz = String(profile.timezone).trim()
+      if (tz) return tz
+    }
+  } catch (error) {
+    console.error('resolveUserTimeZone profile lookup failed', error)
+  }
+
+  try {
     const { data, error } = await client.auth.admin.getUserById(userId)
     if (error) {
       console.error('resolveUserTimeZone error', error)
@@ -151,6 +165,7 @@ async function scheduleBacklog(
     weight: number
     goalWeight: number
     instanceId?: string | null
+    eventName: string
   }
 
   const timeZone = normalizeTimeZone(timeZoneValue)
@@ -209,6 +224,7 @@ async function scheduleBacklog(
       weight,
       goalWeight: def.goalWeight ?? 0,
       instanceId: instance.id,
+      eventName: def.name || def.id,
     })
   }
 
@@ -255,6 +271,7 @@ async function scheduleBacklog(
         weight,
         goalWeight: project.goalWeight ?? 0,
         instanceId: reuse?.id,
+        eventName: project.name || project.id,
       }
       queue.push(entry)
       queueByProject.set(project.id, entry)
@@ -277,6 +294,7 @@ async function scheduleBacklog(
       weight: fallbackProject?.weight ?? weight,
       goalWeight: fallbackProject?.goalWeight ?? 0,
       instanceId: inst.id,
+      eventName: fallbackProject?.name ?? projectId,
     }
     queue.push(entry)
     queueByProject.set(projectId, entry)
@@ -916,7 +934,7 @@ async function fetchWindowsForDate(
 async function placeItemInWindows(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number; eventName: string },
   windows: Array<{
     id: string
     startLocal: Date
@@ -998,7 +1016,8 @@ async function placeItemInWindows(
           window.id,
           startDate,
           item.duration_min,
-          reuseInstanceId
+          reuseInstanceId,
+          item.eventName
         )
       }
 
@@ -1019,7 +1038,8 @@ async function placeItemInWindows(
         window.id,
         startDate,
         item.duration_min,
-        reuseInstanceId
+        reuseInstanceId,
+        item.eventName
       )
     }
   }
@@ -1030,11 +1050,12 @@ async function placeItemInWindows(
 async function persistPlacement(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number; eventName: string },
   windowId: string,
   start: Date,
   durationMin: number,
-  reuseInstanceId?: string | null
+  reuseInstanceId?: string | null,
+  eventName?: string
 ): Promise<ScheduleInstance | null> {
   const startUTC = start.toISOString()
   const endUTC = addMin(start, durationMin).toISOString()
@@ -1047,20 +1068,31 @@ async function persistPlacement(
       durationMin,
       weightSnapshot: item.weight,
       energyResolved: item.energy,
+      eventName: eventName ?? item.eventName,
     })
   }
 
-  return await createInstance(client, userId, item, windowId, startUTC, endUTC, durationMin)
+  return await createInstance(
+    client,
+    userId,
+    item,
+    windowId,
+    startUTC,
+    endUTC,
+    durationMin,
+    eventName ?? item.eventName
+  )
 }
 
 async function createInstance(
   client: Client,
   userId: string,
-  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number },
+  item: { id: string; sourceType: 'PROJECT'; duration_min: number; energy: string; weight: number; eventName: string },
   windowId: string,
   startUTC: string,
   endUTC: string,
-  durationMin: number
+  durationMin: number,
+  eventName?: string
 ) {
   const { data, error } = await client
     .from('schedule_instances')
@@ -1075,6 +1107,7 @@ async function createInstance(
       status: 'scheduled',
       weight_snapshot: item.weight,
       energy_resolved: item.energy,
+      event_name: eventName ?? item.eventName,
     })
     .select('*')
     .single()
@@ -1097,6 +1130,7 @@ async function rescheduleInstance(
     durationMin: number
     weightSnapshot: number
     energyResolved: string
+    eventName?: string
   }
 ): Promise<ScheduleInstance | null> {
   const { data, error } = await client
@@ -1110,6 +1144,7 @@ async function rescheduleInstance(
       weight_snapshot: input.weightSnapshot,
       energy_resolved: input.energyResolved,
       completed_at: null,
+      event_name: input.eventName ?? null,
     })
     .eq('id', id)
     .select('*')

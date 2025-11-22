@@ -3736,6 +3736,73 @@ describe("scheduleBacklog", () => {
     expect(habitEntries).toHaveLength(0);
   });
 
+  it("skips work windows when the habit has no location context", async () => {
+    instances = [];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-work",
+        label: "Focused Work",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "11:00",
+        days: [5],
+        location_context_id: null,
+        location_context_value: "WORK",
+        location_context_name: "Work",
+      },
+    ]);
+
+    const habit: HabitScheduleItem = {
+      id: "habit-locationless",
+      name: "Focused practice",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "HABIT",
+      windowId: "win-work",
+      energy: "LOW",
+      recurrence: "daily",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: "win-work",
+        label: "Focused Work",
+        energy: "LOW",
+        startLocal: "09:00",
+        endLocal: "11:00",
+        days: [5],
+        locationContextId: null,
+        locationContextValue: "WORK",
+        locationContextName: "Work",
+      },
+    };
+
+    fetchHabitsForScheduleSpy.mockResolvedValue([habit]);
+
+    const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
+    placeMock.mockClear();
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    expect(placeMock).not.toHaveBeenCalled();
+    expect(result.failures).toContainEqual({
+      itemId: habit.id,
+      reason: "NO_WINDOW",
+    });
+    const habitEntries = result.timeline.filter(entry => entry.type === "HABIT");
+    expect(habitEntries).toHaveLength(0);
+  });
+
   it("schedules habits into windows when location context matches", async () => {
     instances = [];
     (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});

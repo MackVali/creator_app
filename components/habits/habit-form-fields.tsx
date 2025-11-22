@@ -408,41 +408,42 @@ export function HabitFormFields({
         </div>
       ) : null}
 
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div className="space-y-3">
-          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-            Type
-          </Label>
-          <Select value={habitType} onValueChange={onHabitTypeChange}>
-            <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-              <SelectValue placeholder="Choose a type" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#0b101b] text-sm text-white">
-              {typeOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-4 sm:gap-6 max-[360px]:grid-cols-1">
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Type
+            </Label>
+            <Select value={habitType} onValueChange={onHabitTypeChange}>
+              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectValue placeholder="Choose a type" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                {typeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="space-y-3">
-          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-            Recurrence
-          </Label>
-          <Select value={recurrence} onValueChange={onRecurrenceChange}>
-            <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-              <SelectValue placeholder="How often will you do this?" />
-            </SelectTrigger>
-            <SelectContent className="bg-[#0b101b] text-sm text-white">
-              {recurrenceOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Recurrence
+            </Label>
+            <Select value={recurrence} onValueChange={onRecurrenceChange}>
+              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectValue placeholder="How often will you do this?" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                {recurrenceOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           {showRecurrenceDayPicker ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
               {DAYS_OF_WEEK.map((day) => {
@@ -468,6 +469,7 @@ export function HabitFormFields({
             </div>
           ) : null}
         </div>
+      </div>
 
         {isTempHabit ? (
           <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
@@ -525,126 +527,137 @@ export function HabitFormFields({
           </div>
         ) : null}
 
-        <div className="space-y-3">
-          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-            Skill focus
-          </Label>
-          <Select
-            value={skillId}
-            onValueChange={onSkillChange}
-            disabled={skillsLoading && skillOptions.length <= 1}
-          >
-            <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-              <SelectValue placeholder="Choose the skill this habit grows" />
-            </SelectTrigger>
-          <SelectContent className="bg-[#0b101b] text-sm text-white">
-            <div className="p-2">
-              <Input
-                value={skillSearchQuery}
-                onChange={(event) => setSkillSearchQuery(event.target.value)}
-                placeholder="Search skills..."
-                className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
-              />
-            </div>
-            {specialSkillOptions.map((option) => (
-              <SelectItem
-                key={`${option.value}-${option.label}`}
-                value={option.value}
-                disabled={option.disabled}
-              >
-                <div className="flex items-center gap-2">
-                  {option.icon ? <span>{option.icon}</span> : null}
-                  <span>{option.label}</span>
-                </div>
-              </SelectItem>
-            ))}
-            {filteredSkillOptions.length === 0 ? (
-              <div className="px-3 pb-3 text-xs text-white/60">
-                No skills found.
-              </div>
-            ) : (
-              groupedSkillOptions.map((group, index) => (
-                <div
-                  key={group.id}
-                  className={cn(
-                    "space-y-2 px-3 pb-3 pt-2 text-sm text-white",
-                    index === 0 ? "pt-0" : ""
-                  )}
-                >
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
-                    {group.label}
-                  </p>
-                  <div className="grid gap-1">
-                    {group.options.map((option) => (
-                      <SelectItem
-                        key={`${option.value}-${option.label}`}
-                        value={option.value}
-                        disabled={option.disabled}
-                        className="px-0 text-sm"
-                      >
-                        <div className="flex items-center gap-2">
-                          {option.icon ? <span>{option.icon}</span> : null}
-                          <span>{option.label}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </div>
-                </div>
-              ))
-            )}
-          </SelectContent>
-          </Select>
-          {skillError ? (
-            <p className="text-xs text-red-300">{skillError}</p>
-          ) : null}
-        </div>
-
-        <div className="space-y-3">
-          <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-            Energy
-          </Label>
-          <Select value={energy} onValueChange={onEnergyChange}>
-            <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-              <SelectValue placeholder="Choose the energy this habit needs" />
-            </SelectTrigger>
+        <div className="grid grid-cols-2 gap-4 sm:gap-6 max-[360px]:grid-cols-1">
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Skill focus
+            </Label>
+            <Select
+              value={skillId}
+              onValueChange={onSkillChange}
+              disabled={skillsLoading && skillOptions.length <= 1}
+            >
+              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectValue placeholder="Choose the skill this habit grows" />
+              </SelectTrigger>
             <SelectContent className="bg-[#0b101b] text-sm text-white">
-              {energyOptions.map((option) => (
+              <div className="p-2">
+                <Input
+                  value={skillSearchQuery}
+                  onChange={(event) => setSkillSearchQuery(event.target.value)}
+                  placeholder="Search skills..."
+                  className="h-9 rounded-lg border border-white/10 bg-white/5 text-xs placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"
+                />
+              </div>
+              {specialSkillOptions.map((option) => (
                 <SelectItem
                   key={`${option.value}-${option.label}`}
                   value={option.value}
                   disabled={option.disabled}
                 >
-                  <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    {option.icon ? <span>{option.icon}</span> : null}
                     <span>{option.label}</span>
-                    {option.description ? (
-                      <span className="text-xs text-white/60">{option.description}</span>
-                    ) : null}
                   </div>
                 </SelectItem>
               ))}
+              {filteredSkillOptions.length === 0 ? (
+                <div className="px-3 pb-3 text-xs text-white/60">
+                  No skills found.
+                </div>
+              ) : (
+                groupedSkillOptions.map((group, index) => (
+                  <div
+                    key={group.id}
+                    className={cn(
+                      "space-y-2 px-3 pb-3 pt-2 text-sm text-white",
+                      index === 0 ? "pt-0" : ""
+                    )}
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">
+                      {group.label}
+                    </p>
+                    <div className="grid gap-1">
+                      {group.options.map((option) => (
+                        <SelectItem
+                          key={`${option.value}-${option.label}`}
+                          value={option.value}
+                          disabled={option.disabled}
+                          className="px-0 text-sm"
+                        >
+                          <div className="flex items-center gap-2">
+                            {option.icon ? <span>{option.icon}</span> : null}
+                            <span>{option.label}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </SelectContent>
-          </Select>
+            </Select>
+            {skillError ? (
+              <p className="text-xs text-red-300">{skillError}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+              Energy
+            </Label>
+            <Select value={energy} onValueChange={onEnergyChange}>
+              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                <SelectValue placeholder="Choose the energy this habit needs" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0b101b] text-sm text-white">
+                {energyOptions.map((option) => (
+                  <SelectItem
+                    key={`${option.value}-${option.label}`}
+                    value={option.value}
+                    disabled={option.disabled}
+                  >
+                    <div className="flex flex-col">
+                      <span>{option.label}</span>
+                      {option.description ? (
+                        <span className="text-xs text-white/60">{option.description}</span>
+                      ) : null}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          <Label
-            htmlFor="habit-duration"
-            className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
-          >
-            Duration
-          </Label>
-          <Input
-            id="habit-duration"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            step={1}
-            value={duration}
-            onChange={(event) => onDurationChange(event.target.value)}
-            placeholder="x minutes"
-            required
-            className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
-          />
+        <div
+          className={
+            footerSlot
+              ? "grid grid-cols-2 gap-4 sm:gap-6 max-[360px]:grid-cols-1"
+              : "space-y-3"
+          }
+        >
+          <div className="space-y-3">
+            <Label
+              htmlFor="habit-duration"
+              className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70"
+            >
+              Duration
+            </Label>
+            <Input
+              id="habit-duration"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              value={duration}
+              onChange={(event) => onDurationChange(event.target.value)}
+              placeholder="x minutes"
+              required
+              className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/50 focus:border-blue-400/60 focus-visible:ring-0"
+            />
+          </div>
+          {footerSlot ? <div className="space-y-3">{footerSlot}</div> : null}
         </div>
       </div>
 
@@ -791,7 +804,6 @@ export function HabitFormFields({
         ) : null}
       </div>
 
-      {footerSlot}
     </div>
   );
 }
