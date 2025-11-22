@@ -28,7 +28,7 @@ import {
   HabitFormFields,
   HABIT_RECURRENCE_OPTIONS,
   HABIT_TYPE_OPTIONS,
-  HABIT_ENERGY_OPTIONS,
+  type HabitEnergySelectOption,
   type HabitSkillSelectOption,
   type HabitGoalSelectOption,
 } from "@/components/habits/habit-form-fields";
@@ -87,6 +87,19 @@ type ChoiceOption = {
   icon?: LucideIcon;
   iconClassName?: string;
   renderIcon?: (selected: boolean) => ReactNode;
+  disabled?: boolean;
+};
+
+type PriorityDefinition = {
+  id: string;
+  name: string;
+  order_index: number | null;
+};
+
+type EnergyDefinition = {
+  id: string;
+  name: string;
+  order_index: number | null;
 };
 
 type RoutineOption = {
@@ -185,12 +198,10 @@ async function createGoalFallback(
   let createdGoalId: string | null = null;
   const createdProjectIds: string[] = [];
 
-  const fallbackGoalPriority = priorityCodeFromDisplay(
-    String(goalInput.priority ?? "")
-  );
-  const fallbackGoalEnergy = energyCodeFromDisplay(
-    String(goalInput.energy ?? "")
-  );
+  const fallbackGoalPriority =
+    (goalInput.priority && String(goalInput.priority).trim()) || DEFAULT_PRIORITY;
+  const fallbackGoalEnergy =
+    (goalInput.energy && String(goalInput.energy).trim()) || DEFAULT_ENERGY;
 
   try {
     const { data: goalRecord, error: goalError } = await supabase
@@ -215,10 +226,10 @@ async function createGoalFallback(
     createdGoalId = goalRecord.id;
 
     for (const project of projects) {
-      const projectPriorityCode = priorityCodeFromDisplay(
-        project.priority ?? ""
-      );
-      const projectEnergyCode = energyCodeFromDisplay(project.energy ?? "");
+      const projectPriorityCode =
+        (project.priority && String(project.priority).trim()) || DEFAULT_PRIORITY;
+      const projectEnergyCode =
+        (project.energy && String(project.energy).trim()) || DEFAULT_ENERGY;
       const { data: projectRecord, error: projectError } = await supabase
         .from("projects")
         .insert({
@@ -267,8 +278,10 @@ async function createGoalFallback(
               project_id: projectRecord.id,
               name: task.name,
               stage: task.stage,
-              priority: priorityCodeFromDisplay(task.priority ?? ""),
-              energy: energyCodeFromDisplay(task.energy ?? ""),
+              priority:
+                (task.priority && String(task.priority).trim()) || DEFAULT_PRIORITY,
+              energy:
+                (task.energy && String(task.energy).trim()) || DEFAULT_ENERGY,
               notes: task.notes,
               skill_id: task.skill_id,
               due_date: task.due_date,
@@ -350,54 +363,38 @@ async function persistLockedProjectPlacements({
 }
 
 const PRIORITY_META = [
-  { code: "NO", value: "No", label: "No Priority" },
-  { code: "LOW", value: "Low", label: "Low" },
-  { code: "MEDIUM", value: "Medium", label: "Medium" },
-  { code: "HIGH", value: "High", label: "High" },
-  { code: "CRITICAL", value: "Critical", label: "Critical" },
-  { code: "ULTRA-CRITICAL", value: "Ultra-Critical", label: "Ultra-Critical" },
+  { code: "NO", label: "No Priority" },
+  { code: "LOW", label: "Low Priority" },
+  { code: "MEDIUM", label: "Medium Priority" },
+  { code: "HIGH", label: "High Priority" },
+  { code: "CRITICAL", label: "Critical Priority" },
+  { code: "ULTRA-CRITICAL", label: "Ultra Critical Priority" },
 ] as const;
 
-const PRIORITY_OPTIONS: ChoiceOption[] = PRIORITY_META.map(({ value, label }) => ({
-  value,
-  label,
-}));
+const DEFAULT_PRIORITY_DEFINITIONS: PriorityDefinition[] = PRIORITY_META.map(
+  (entry, index) => ({
+    id: String(index + 1),
+    name: entry.label,
+    order_index: index,
+  })
+);
 
-const PRIORITY_DISPLAY_BY_CODE: Record<string, string> = {};
-const PRIORITY_CODE_BY_DISPLAY: Record<string, string> = {};
-const PRIORITY_CODES = new Set<string>();
-for (const entry of PRIORITY_META) {
-  PRIORITY_DISPLAY_BY_CODE[entry.code] = entry.value;
-  PRIORITY_DISPLAY_BY_CODE[entry.code.toUpperCase()] = entry.value;
-  PRIORITY_CODE_BY_DISPLAY[entry.value] = entry.code;
-  PRIORITY_CODE_BY_DISPLAY[entry.value.toUpperCase()] = entry.code;
-  PRIORITY_CODE_BY_DISPLAY[entry.code] = entry.code;
-  PRIORITY_CODES.add(entry.code);
-}
+const ENERGY_META = [
+  { code: "NO", label: "No Energy", level: "NO" as FlameLevel },
+  { code: "LOW", label: "Low Energy", level: "LOW" as FlameLevel },
+  { code: "MEDIUM", label: "Medium Energy", level: "MEDIUM" as FlameLevel },
+  { code: "HIGH", label: "High Energy", level: "HIGH" as FlameLevel },
+  { code: "ULTRA", label: "Ultra Energy", level: "ULTRA" as FlameLevel },
+  { code: "EXTREME", label: "Extreme Energy", level: "EXTREME" as FlameLevel },
+] as const;
 
-const displayPriorityFromCode = (code?: string | null): string => {
-  if (!code) {
-    return PRIORITY_OPTIONS[0].value;
-  }
-  const normalized = code.trim().toUpperCase();
-  return PRIORITY_DISPLAY_BY_CODE[normalized] ?? PRIORITY_OPTIONS[0].value;
-};
-
-const priorityCodeFromDisplay = (value?: string | null): string => {
-  if (!value) {
-    return DEFAULT_PRIORITY;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return DEFAULT_PRIORITY;
-  }
-  const mapped = PRIORITY_CODE_BY_DISPLAY[trimmed];
-  if (mapped) {
-    return mapped;
-  }
-  const normalized = trimmed.toUpperCase();
-  return PRIORITY_CODES.has(normalized) ? normalized : DEFAULT_PRIORITY;
-};
+const DEFAULT_ENERGY_DEFINITIONS: EnergyDefinition[] = ENERGY_META.map(
+  (entry, index) => ({
+    id: String(index + 1),
+    name: entry.label,
+    order_index: index,
+  })
+);
 
 const renderFlameIcon = (level: FlameLevel) => {
   const FlameIcon = () => (
@@ -407,69 +404,124 @@ const renderFlameIcon = (level: FlameLevel) => {
   return FlameIcon;
 };
 
-const ENERGY_META = [
-  { code: "NO", value: "No", label: "No Energy", level: "NO" },
-  { code: "LOW", value: "Low", label: "Low", level: "LOW" },
-  { code: "MEDIUM", value: "Medium", label: "Medium", level: "MEDIUM" },
-  { code: "HIGH", value: "High", label: "High", level: "HIGH" },
-  { code: "ULTRA", value: "Ultra", label: "Ultra", level: "ULTRA" },
-  { code: "EXTREME", value: "Extreme", label: "Extreme", level: "EXTREME" },
-] as const;
-
-const ENERGY_OPTIONS: ChoiceOption[] = ENERGY_META.map((entry) => ({
-  value: entry.value,
-  label: entry.label,
-  renderIcon: renderFlameIcon(entry.level),
-}));
-
-const ENERGY_DISPLAY_BY_CODE: Record<string, string> = {};
-const ENERGY_CODE_BY_DISPLAY: Record<string, string> = {};
-const ENERGY_CODES = new Set<string>();
-for (const entry of ENERGY_META) {
-  ENERGY_DISPLAY_BY_CODE[entry.code] = entry.value;
-  ENERGY_DISPLAY_BY_CODE[entry.code.toUpperCase()] = entry.value;
-  ENERGY_CODE_BY_DISPLAY[entry.value] = entry.code;
-  ENERGY_CODE_BY_DISPLAY[entry.value.toUpperCase()] = entry.code;
-  ENERGY_CODE_BY_DISPLAY[entry.code] = entry.code;
-  ENERGY_CODES.add(entry.code);
-}
-
-const displayEnergyFromCode = (code?: string | null): string => {
-  if (!code) {
-    return ENERGY_OPTIONS[0].value;
-  }
-  const normalized = code.trim().toUpperCase();
-  return ENERGY_DISPLAY_BY_CODE[normalized] ?? ENERGY_OPTIONS[0].value;
+const normalizeSelectionLabel = (value?: string | null) => {
+  if (!value) return "";
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 };
 
-const energyCodeFromDisplay = (value?: string | null): string => {
-  if (!value) {
-    return DEFAULT_ENERGY;
+const resolveSelectValue = (
+  currentValue: string,
+  options: ChoiceOption[],
+  stripWord?: string
+): string => {
+  if (options.length === 0) {
+    return currentValue;
   }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return DEFAULT_ENERGY;
+  const optionIds = new Set(options.map((option) => option.value));
+  if (optionIds.has(currentValue)) {
+    return currentValue;
   }
-  const mapped = ENERGY_CODE_BY_DISPLAY[trimmed];
-  if (mapped) {
-    return mapped;
+  const normalized = normalizeSelectionLabel(currentValue);
+  if (normalized) {
+    for (const option of options) {
+      const normalizedLabel = normalizeSelectionLabel(option.label);
+      if (normalizedLabel === normalized) {
+        return option.value;
+      }
+      if (stripWord) {
+        const stripped = normalizedLabel.replace(stripWord, "");
+        if (stripped === normalized) {
+          return option.value;
+        }
+      }
+    }
   }
-  const normalized = trimmed.toUpperCase();
-  return ENERGY_CODES.has(normalized) ? normalized : DEFAULT_ENERGY;
+  return options[0]?.value ?? currentValue;
 };
 
-const toDisplayDraftTask = (task: DraftTask): DraftTask => ({
-  ...task,
-  priority: displayPriorityFromCode(task.priority),
-  energy: displayEnergyFromCode(task.energy),
-});
+const matchPriorityCodeFromLabel = (label: string): string | null => {
+  const normalized = normalizeSelectionLabel(label).replace("PRIORITY", "");
+  for (const entry of PRIORITY_META) {
+    const normalizedLabel = normalizeSelectionLabel(entry.label).replace(
+      "PRIORITY",
+      ""
+    );
+    if (normalizedLabel === normalized || entry.code === normalized) {
+      return entry.code;
+    }
+  }
+  return null;
+};
 
-const toDisplayDraftProject = (project: DraftProject): DraftProject => ({
-  ...project,
-  priority: displayPriorityFromCode(project.priority),
-  energy: displayEnergyFromCode(project.energy),
-  tasks: project.tasks.map(toDisplayDraftTask),
-});
+const matchEnergyCodeFromLabel = (label: string): string | null => {
+  const normalized = normalizeSelectionLabel(label).replace("ENERGY", "");
+  for (const entry of ENERGY_META) {
+    const normalizedLabel = normalizeSelectionLabel(entry.label).replace(
+      "ENERGY",
+      ""
+    );
+    if (normalizedLabel === normalized || entry.code === normalized) {
+      return entry.code;
+    }
+  }
+  return null;
+};
+
+const inferPriorityCodeFromLabel = (label: string): string =>
+  matchPriorityCodeFromLabel(label) ?? DEFAULT_PRIORITY;
+
+const inferEnergyCodeFromLabel = (label: string): string =>
+  matchEnergyCodeFromLabel(label) ?? DEFAULT_ENERGY;
+
+const priorityCodeToOptionId = (
+  code: string,
+  definitions: PriorityDefinition[]
+): string | null => {
+  const normalized = normalizeSelectionLabel(code);
+  const match = definitions.find((entry) => {
+    const labelNormalized = normalizeSelectionLabel(entry.name);
+    return (
+      labelNormalized === normalized || String(entry.id).toUpperCase() === normalized
+    );
+  });
+  return match ? match.id : null;
+};
+
+const energyCodeToOptionId = (
+  code: string,
+  definitions: EnergyDefinition[]
+): string | null => {
+  const normalized = normalizeSelectionLabel(code);
+  const match = definitions.find((entry) => {
+    const labelNormalized = normalizeSelectionLabel(entry.name);
+    return (
+      labelNormalized === normalized || String(entry.id).toUpperCase() === normalized
+    );
+  });
+  return match ? match.id : null;
+};
+
+const legacyPriorityCodeFromSelection = (
+  value: string,
+  options: ChoiceOption[]
+): string => {
+  const option = options.find((entry) => entry.value === value);
+  if (!option) {
+    return DEFAULT_PRIORITY;
+  }
+  return inferPriorityCodeFromLabel(option.label);
+};
+
+const legacyEnergyCodeFromSelection = (
+  value: string,
+  options: ChoiceOption[]
+): string => {
+  const option = options.find((entry) => entry.value === value);
+  if (!option) {
+    return DEFAULT_ENERGY;
+  }
+  return inferEnergyCodeFromLabel(option.label);
+};
 
 const PROJECT_STAGE_OPTIONS: ChoiceOption[] = [
   { value: "RESEARCH", label: "Research", description: "Gather insight and define the edges." },
@@ -526,8 +578,8 @@ interface GoalWizardFormState {
 
 const createInitialGoalWizardForm = (): GoalWizardFormState => ({
   name: "",
-  priority: displayPriorityFromCode(DEFAULT_PRIORITY),
-  energy: displayEnergyFromCode(DEFAULT_ENERGY),
+  priority: "",
+  energy: "",
   monument_id: "",
   why: "",
   dueDate: "",
@@ -544,8 +596,8 @@ const createInitialFormState = (
 ): FormState => ({
   name: "",
   description: "",
-  priority: PRIORITY_OPTIONS[0].value,
-  energy: ENERGY_OPTIONS[0].value,
+  priority: "",
+  energy: "",
   goal_id: "",
   project_id: "",
   monument_id: "",
@@ -901,6 +953,7 @@ interface OptionDropdownProps {
   onChange: (value: string) => void;
   placeholder?: string;
   variant?: "default" | "black";
+  itemSize?: "default" | "compact";
 }
 
 function OptionDropdown({
@@ -909,11 +962,20 @@ function OptionDropdown({
   onChange,
   placeholder,
   variant = "default",
+  itemSize = "default",
 }: OptionDropdownProps) {
   const triggerClassName =
     variant === "black"
       ? "h-12 rounded-2xl border border-white/10 bg-black/80 px-4 text-sm font-medium text-white shadow-[0_22px_45px_-32px_rgba(15,23,42,0.9)] transition focus:ring-blue-500/70 hover:border-blue-500/40"
       : "h-12 rounded-2xl border border-white/10 bg-gradient-to-r from-slate-950/90 via-slate-950/70 to-slate-950 px-4 text-sm font-medium text-zinc-100 shadow-[0_22px_45px_-32px_rgba(15,23,42,0.9)] transition focus:ring-blue-500/70 hover:border-blue-500/40";
+  const itemBaseClass =
+    itemSize === "compact"
+      ? "group relative rounded-lg border border-transparent bg-white/[0.01] px-3 py-2 text-left text-xs"
+      : "group relative rounded-xl border border-transparent bg-white/[0.02] px-4 py-3 text-left";
+  const iconWrapperClass =
+    itemSize === "compact"
+      ? "flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.01] text-[11px] text-zinc-400 transition"
+      : "flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.02] text-zinc-400 transition";
   return (
     <Select
       value={value}
@@ -946,26 +1008,34 @@ function OptionDropdown({
               key={option.value}
               value={option.value}
               label={option.label}
+              disabled={option.disabled}
               className={cn(
-                "group relative rounded-xl border border-transparent bg-white/[0.02] px-4 py-3 text-left transition",
-                "hover:border-blue-500/40 hover:bg-white/[0.05]",
+                itemBaseClass,
+                "transition hover:border-blue-500/40 hover:bg-white/[0.05]",
                 selected &&
                   "border-blue-500/60 bg-blue-500/20 shadow-[0_18px_45px_-30px_rgba(59,130,246,0.6)]"
               )}
             >
-              <div className="flex items-start gap-4">
+              <div
+                className={cn(
+                  "flex items-start",
+                  itemSize === "compact" ? "gap-3" : "gap-4"
+                )}
+              >
                 {iconNode ? (
                   <span
-                    className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.02] text-zinc-400 transition",
-                      selected && "bg-blue-500/20 text-blue-300"
-                    )}
+                    className={cn(iconWrapperClass, selected && "bg-blue-500/20 text-blue-300")}
                   >
                     {iconNode}
                   </span>
                 ) : null}
                 <div className="flex flex-col">
-                  <span className="text-sm font-semibold text-zinc-100">
+                  <span
+                    className={cn(
+                      "font-semibold text-zinc-100",
+                      itemSize === "compact" ? "text-xs" : "text-sm"
+                    )}
+                  >
                     {option.label}
                   </span>
                 </div>
@@ -996,7 +1066,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     createInitialGoalWizardForm
   );
   const [draftProjects, setDraftProjects] = useState<DraftProject[]>(() => [
-    toDisplayDraftProject(createDraftProject()),
+    createDraftProject(),
   ]);
   const [showGoalAdvanced, setShowGoalAdvanced] = useState(false);
   const [projectAdvanced, setProjectAdvanced] = useState<Record<string, boolean>>({});
@@ -1016,26 +1086,86 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [routineLoadError, setRoutineLoadError] = useState<string | null>(
     null
   );
+  const [priorityDefinitions, setPriorityDefinitions] = useState<PriorityDefinition[]>([]);
+  const [energyDefinitions, setEnergyDefinitions] = useState<EnergyDefinition[]>([]);
+  const [priorityOptionsLoading, setPriorityOptionsLoading] = useState(false);
+  const [priorityOptionsError, setPriorityOptionsError] = useState<string | null>(null);
+  const [energyOptionsLoading, setEnergyOptionsLoading] = useState(false);
+  const [energyOptionsError, setEnergyOptionsError] = useState<string | null>(null);
   const [routineId, setRoutineId] = useState<string>("none");
   const [newRoutineName, setNewRoutineName] = useState("");
   const [newRoutineDescription, setNewRoutineDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const normalizeLookupCode = (value: string) => normalizeLookupKey(value);
   const router = useRouter();
 
-  const resolvePriorityPayloadValue = useCallback((code: string) => {
-    const normalized = normalizeLookupCode(code);
-    return normalized || DEFAULT_PRIORITY;
-  }, []);
+  const sortedSkills = useMemo(
+    () =>
+      [...skills].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      ),
+    [skills]
+  );
 
-  const resolveEnergyPayloadValue = useCallback((code: string) => {
-    const normalized = normalizeLookupCode(code);
-    return normalized || DEFAULT_ENERGY;
-  }, []);
+  const priorityChoiceOptions = useMemo<ChoiceOption[]>(() => {
+    if (priorityDefinitions.length === 0) {
+      return [];
+    }
+    return priorityDefinitions.map((priority) => {
+      const rawLabel = priority.name?.trim() || String(priority.id);
+      const matchedCode = matchPriorityCodeFromLabel(rawLabel);
+      const displayLabel =
+        matchedCode ?? rawLabel.toUpperCase().replace(/\s+/g, " ");
+      return {
+        value: priority.id,
+        label: displayLabel,
+      } satisfies ChoiceOption;
+    });
+  }, [priorityDefinitions]);
+
+  const energyChoiceOptions = useMemo<ChoiceOption[]>(() => {
+    if (energyDefinitions.length === 0) {
+      return [];
+    }
+    return energyDefinitions.map((energy) => {
+      const rawLabel = energy.name?.trim() || String(energy.id);
+      const matchedCode = matchEnergyCodeFromLabel(rawLabel);
+      const displayLabel =
+        matchedCode ?? rawLabel.toUpperCase().replace(/\s+/g, " ");
+      const level =
+        ENERGY_META.find(
+          (entry) => entry.code === (matchedCode ?? inferEnergyCodeFromLabel(rawLabel))
+        )?.level ?? "LOW";
+      return {
+        value: energy.id,
+        label: displayLabel,
+        renderIcon: renderFlameIcon(level),
+      } satisfies ChoiceOption;
+    });
+  }, [energyDefinitions]);
+
+  const habitEnergySelectOptions = useMemo<HabitEnergySelectOption[]>(() => {
+    if (energyChoiceOptions.length === 0) {
+      return [];
+    }
+    return energyChoiceOptions.map((option) => ({
+      value: option.value,
+      label: option.label,
+    }));
+  }, [energyChoiceOptions]);
+
+  const resolvePriorityPayloadValue = useCallback(
+    (value: string) => resolveSelectValue(value, priorityChoiceOptions, "PRIORITY"),
+    [priorityChoiceOptions]
+  );
+
+  const resolveEnergyPayloadValue = useCallback(
+    (value: string) => resolveSelectValue(value, energyChoiceOptions, "ENERGY"),
+    [energyChoiceOptions]
+  );
 
   const resetGoalWizard = useCallback(() => {
-    const initialProject = toDisplayDraftProject(createDraftProject());
+    const initialProject = createDraftProject();
     setGoalWizardStep("GOAL");
     setGoalForm(createInitialGoalWizardForm());
     setDraftProjects([initialProject]);
@@ -1146,6 +1276,101 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     formData.manual_start,
     formData.manual_end,
     showProjectAdvancedOptions,
+  ]);
+
+  const loadPriorityEnergyOptions = useCallback(async () => {
+    setPriorityOptionsLoading(true);
+    setEnergyOptionsLoading(true);
+    setPriorityOptionsError(null);
+    setEnergyOptionsError(null);
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        throw new Error("Supabase client not available");
+      }
+
+      const [priorityRes, energyRes] = await Promise.all([
+        supabase
+          .from("priority")
+          .select("id, name, order_index")
+          .order("order_index", { ascending: true })
+          .order("name", { ascending: true }),
+        supabase
+          .from("energy")
+          .select("id, name, order_index")
+          .order("order_index", { ascending: true })
+          .order("name", { ascending: true }),
+      ]);
+
+      if (priorityRes.error || energyRes.error) {
+        throw new Error(
+          `Failed to load priority/energy options: ${priorityRes.error?.message ?? ""} ${
+            energyRes.error?.message ?? ""
+          }`
+        );
+      }
+
+      const priorities = (priorityRes.data ?? []).map((row) => ({
+        id: String(row.id),
+        name: row.name?.trim() || "Priority",
+        order_index: row.order_index ?? null,
+      }));
+      const energies = (energyRes.data ?? []).map((row) => ({
+        id: String(row.id),
+        name: row.name?.trim() || "Energy",
+        order_index: row.order_index ?? null,
+      }));
+
+      if (priorities.length === 0) {
+        setPriorityDefinitions(DEFAULT_PRIORITY_DEFINITIONS);
+        setPriorityOptionsError("No priority rows found. Showing defaults.");
+      } else {
+        setPriorityDefinitions(priorities);
+        setPriorityOptionsError(null);
+      }
+
+      if (energies.length === 0) {
+        setEnergyDefinitions(DEFAULT_ENERGY_DEFINITIONS);
+        setEnergyOptionsError("No energy rows found. Showing defaults.");
+      } else {
+        setEnergyDefinitions(energies);
+        setEnergyOptionsError(null);
+      }
+    } catch (error) {
+      console.error("Error loading priority/energy options:", error);
+      setPriorityDefinitions(DEFAULT_PRIORITY_DEFINITIONS);
+      setEnergyDefinitions(DEFAULT_ENERGY_DEFINITIONS);
+      setPriorityOptionsError("Unable to load priority options. Using defaults.");
+      setEnergyOptionsError("Unable to load energy options. Using defaults.");
+    } finally {
+      setPriorityOptionsLoading(false);
+      setEnergyOptionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPriorityEnergyOptions();
+  }, [loadPriorityEnergyOptions]);
+
+  useEffect(() => {
+    if (
+      isOpen &&
+      !priorityOptionsLoading &&
+      !energyOptionsLoading &&
+      ((priorityDefinitions.length === 0 && !priorityOptionsError) ||
+        (energyDefinitions.length === 0 && !energyOptionsError))
+    ) {
+      void loadPriorityEnergyOptions();
+    }
+  }, [
+    isOpen,
+    priorityDefinitions.length,
+    energyDefinitions.length,
+    priorityOptionsLoading,
+    energyOptionsLoading,
+    priorityOptionsError,
+    energyOptionsError,
+    loadPriorityEnergyOptions,
   ]);
 
   const loadFormData = useCallback(async () => {
@@ -1267,18 +1492,41 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     }
   }, [eventType]);
 
-  const sortedSkills = useMemo(
-    () =>
-      [...skills].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-      ),
-    [skills]
-  );
+  const priorityDropdownOptions = priorityChoiceOptions.length
+    ? priorityChoiceOptions
+    : [
+        {
+          value: "__priority_loading__",
+          label:
+            priorityOptionsError ??
+            (priorityOptionsLoading ? "Loading priority options…" : "No priority options available"),
+          disabled: true,
+        },
+      ];
 
-  const habitEnergyOptions = useMemo(
-    () => HABIT_ENERGY_OPTIONS,
-    []
-  );
+  const energyDropdownOptions = energyChoiceOptions.length
+    ? energyChoiceOptions
+    : [
+        {
+          value: "__energy_loading__",
+          label:
+            energyOptionsError ??
+            (energyOptionsLoading ? "Loading energy options…" : "No energy options available"),
+          disabled: true,
+        },
+      ];
+
+  const habitEnergyOptions = habitEnergySelectOptions.length
+    ? habitEnergySelectOptions
+    : [
+        {
+          value: "__habit_energy_loading__",
+          label:
+            energyOptionsError ??
+            (energyOptionsLoading ? "Loading energy options…" : "No energy options available"),
+          disabled: true,
+        },
+      ];
 
   const habitGoalSelectOptions = useMemo<HabitGoalSelectOption[]>(() => {
     if (loading && eventType === "HABIT") {
@@ -1378,6 +1626,90 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     ];
   }, [skillsLoading, sortedSkills]);
 
+  useEffect(() => {
+    if (priorityChoiceOptions.length === 0) {
+      return;
+    }
+
+    setFormData((prev) => {
+      const resolved = resolveSelectValue(prev.priority, priorityChoiceOptions, "PRIORITY");
+      return resolved === prev.priority ? prev : { ...prev, priority: resolved };
+    });
+
+    setGoalForm((prev) => {
+      const resolved = resolveSelectValue(prev.priority, priorityChoiceOptions, "PRIORITY");
+      return resolved === prev.priority ? prev : { ...prev, priority: resolved };
+    });
+
+    setDraftProjects((prev) => {
+      let changedAny = false;
+      const nextProjects = prev.map((draft) => {
+        const nextPriority = resolveSelectValue(draft.priority, priorityChoiceOptions, "PRIORITY");
+        let changed = nextPriority !== draft.priority;
+        const nextTasks = draft.tasks.map((task) => {
+          const nextTaskPriority = resolveSelectValue(
+            task.priority,
+            priorityChoiceOptions,
+            "PRIORITY"
+          );
+          if (nextTaskPriority !== task.priority) {
+            changed = true;
+            return { ...task, priority: nextTaskPriority };
+          }
+          return task;
+        });
+        if (changed) {
+          changedAny = true;
+          return { ...draft, priority: nextPriority, tasks: nextTasks };
+        }
+        return draft;
+      });
+      return changedAny ? nextProjects : prev;
+    });
+  }, [priorityChoiceOptions]);
+
+  useEffect(() => {
+    if (energyChoiceOptions.length === 0) {
+      return;
+    }
+
+    setFormData((prev) => {
+      const resolved = resolveSelectValue(prev.energy, energyChoiceOptions, "ENERGY");
+      return resolved === prev.energy ? prev : { ...prev, energy: resolved };
+    });
+
+    setGoalForm((prev) => {
+      const resolved = resolveSelectValue(prev.energy, energyChoiceOptions, "ENERGY");
+      return resolved === prev.energy ? prev : { ...prev, energy: resolved };
+    });
+
+    setDraftProjects((prev) => {
+      let changedAny = false;
+      const nextProjects = prev.map((draft) => {
+        const nextEnergy = resolveSelectValue(draft.energy, energyChoiceOptions, "ENERGY");
+        let changed = nextEnergy !== draft.energy;
+        const nextTasks = draft.tasks.map((task) => {
+          const nextTaskEnergy = resolveSelectValue(
+            task.energy,
+            energyChoiceOptions,
+            "ENERGY"
+          );
+          if (nextTaskEnergy !== task.energy) {
+            changed = true;
+            return { ...task, energy: nextTaskEnergy };
+          }
+          return task;
+        });
+        if (changed) {
+          changedAny = true;
+          return { ...draft, energy: nextEnergy, tasks: nextTasks };
+        }
+        return draft;
+      });
+      return changedAny ? nextProjects : prev;
+    });
+  }, [energyChoiceOptions]);
+
   const handleTaskSkillToggle = (skillId: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -1439,7 +1771,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   };
 
   const handleAddDraftProject = () => {
-    const nextProject = toDisplayDraftProject(createDraftProject());
+    const nextProject = createDraftProject();
     setDraftProjects((prev) => [...prev, nextProject]);
     setProjectAdvanced((prev) => ({ ...prev, [nextProject.id]: false }));
     setTaskAdvanced((prev) => {
@@ -1479,7 +1811,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   };
 
   const handleAddTaskToDraft = (projectId: string) => {
-    const newTask = toDisplayDraftTask(createDraftTask());
+    const newTask = createDraftTask();
     setDraftProjects((prev) =>
       prev.map((draft) =>
         draft.id === projectId
@@ -1703,15 +2035,38 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         return;
       }
 
+      if (energyChoiceOptions.length === 0) {
+        toast.error(
+          "Loading",
+          "Energy options are still loading. Please try again in a moment."
+        );
+        return;
+      }
+
+      if (eventType !== "HABIT" && priorityChoiceOptions.length === 0) {
+        toast.error(
+          "Loading",
+          "Priority options are still loading. Please try again in a moment."
+        );
+        return;
+      }
+
+      const resolvedPriorityValue =
+        eventType !== "HABIT"
+          ? resolvePriorityPayloadValue(formData.priority)
+          : "";
+      const resolvedEnergyValue = resolveEnergyPayloadValue(formData.energy);
       const resolvedPriorityCode =
         eventType !== "HABIT"
-          ? priorityCodeFromDisplay(formData.priority)
+          ? legacyPriorityCodeFromSelection(
+              resolvedPriorityValue,
+              priorityChoiceOptions
+            )
           : DEFAULT_PRIORITY;
-      const resolvedEnergyCode = energyCodeFromDisplay(formData.energy);
-      const priorityPayloadValue = resolvePriorityPayloadValue(
-        resolvedPriorityCode
+      const resolvedEnergyCode = legacyEnergyCodeFromSelection(
+        resolvedEnergyValue,
+        energyChoiceOptions
       );
-      const energyPayloadValue = resolveEnergyPayloadValue(resolvedEnergyCode);
 
       const insertData: {
         user_id: string;
@@ -1740,9 +2095,28 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         name: formatNameValue(formData.name.trim()),
       };
 
-      insertData.energy = energyPayloadValue;
-      if (eventType !== "HABIT") {
-        insertData.priority = priorityPayloadValue;
+      if (eventType === "HABIT") {
+        insertData.energy = resolvedEnergyCode;
+      } else {
+        const energyId = Number(resolvedEnergyValue);
+        if (!Number.isFinite(energyId)) {
+          toast.error(
+            "Energy unavailable",
+            "We couldn’t determine the energy option. Please reopen the modal and try again."
+          );
+          return;
+        }
+        insertData.energy = energyId;
+
+        const priorityId = Number(resolvedPriorityValue);
+        if (!Number.isFinite(priorityId)) {
+          toast.error(
+            "Priority unavailable",
+            "We couldn’t determine the priority option. Please reopen the modal and try again."
+          );
+          return;
+        }
+        insertData.priority = priorityId;
       }
 
       if (
@@ -2036,6 +2410,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           return;
         }
 
+        if (priorityChoiceOptions.length === 0 || energyChoiceOptions.length === 0) {
+          toast.error(
+            "Loading",
+            "Priority and energy options are still loading. Please try again in a moment."
+          );
+          return;
+        }
+
         for (const draft of draftProjects) {
           const hasStart = draft.manualStart.trim().length > 0;
           const hasEnd = draft.manualEnd.trim().length > 0;
@@ -2111,17 +2493,14 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 const trimmedNotes = task.notes.trim();
                 const trimmedTaskDueDate = task.dueDate.trim();
                 const taskSkillId = task.skillId ? task.skillId : null;
-                const taskPriorityCode = priorityCodeFromDisplay(task.priority);
-                const taskEnergyCode = energyCodeFromDisplay(task.energy);
-                const taskPriorityDisplay =
-                  displayPriorityFromCode(taskPriorityCode);
-                const taskEnergyDisplay = displayEnergyFromCode(taskEnergyCode);
+                const taskPriorityValue = resolvePriorityPayloadValue(task.priority);
+                const taskEnergyValue = resolveEnergyPayloadValue(task.energy);
 
                 return {
                   name: formattedTaskName,
                   stage: task.stage || DEFAULT_TASK_STAGE,
-                  priority: taskPriorityDisplay,
-                  energy: taskEnergyDisplay,
+                  priority: taskPriorityValue,
+                  energy: taskEnergyValue,
                   notes: trimmedNotes.length > 0 ? trimmedNotes : null,
                   skill_id: taskSkillId,
                   due_date:
@@ -2158,19 +2537,24 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               }
             }
 
-            const projectPriority = priorityCodeFromDisplay(draft.priority);
-            const projectEnergy = energyCodeFromDisplay(draft.energy);
-            const projectPriorityDisplay =
-              displayPriorityFromCode(projectPriority);
-            const projectEnergyDisplay = displayEnergyFromCode(projectEnergy);
+            const projectPriorityValue = resolvePriorityPayloadValue(draft.priority);
+            const projectEnergyValue = resolveEnergyPayloadValue(draft.energy);
+            const projectPriorityCode = legacyPriorityCodeFromSelection(
+              projectPriorityValue,
+              priorityChoiceOptions
+            );
+            const projectEnergyCode = legacyEnergyCodeFromSelection(
+              projectEnergyValue,
+              energyChoiceOptions
+            );
 
             return {
               draftId: draft.id,
               payload: {
                 name: formattedName,
                 stage: draft.stage || PROJECT_STAGE_OPTIONS[0].value,
-                priority: projectPriorityDisplay,
-                energy: projectEnergyDisplay,
+                priority: projectPriorityValue,
+                energy: projectEnergyValue,
                 why: trimmedWhy.length > 0 ? trimmedWhy : null,
                 duration_min:
                   Number.isFinite(parsedDuration) && parsedDuration > 0
@@ -2181,8 +2565,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                   trimmedProjectDueDate.length > 0 ? trimmedProjectDueDate : null,
                 tasks,
               } satisfies NormalizedProjectPayload,
-              priorityCode: projectPriority,
-              energyCode: projectEnergy,
+              priorityCode: projectPriorityCode,
+              energyCode: projectEnergyCode,
               manualSchedule,
             };
           })
@@ -2214,14 +2598,22 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         const selectedMonumentId = goalForm.monument_id.trim();
         const goalDueDate = goalForm.dueDate.trim();
 
-        const goalPriorityCode = priorityCodeFromDisplay(goalForm.priority);
-        const goalEnergyCode = energyCodeFromDisplay(goalForm.energy);
+        const goalPriorityValue = resolvePriorityPayloadValue(goalForm.priority);
+        const goalEnergyValue = resolveEnergyPayloadValue(goalForm.energy);
+        const goalPriorityCode = legacyPriorityCodeFromSelection(
+          goalPriorityValue,
+          priorityChoiceOptions
+        );
+        const goalEnergyCode = legacyEnergyCodeFromSelection(
+          goalEnergyValue,
+          energyChoiceOptions
+        );
 
         const goalInput: GoalWizardRpcInput = {
           user_id: user.id,
           name: formatNameValue(trimmedGoalName),
-          priority: displayPriorityFromCode(goalPriorityCode),
-          energy: displayEnergyFromCode(goalEnergyCode),
+          priority: goalPriorityValue,
+          energy: goalEnergyValue,
           monument_id: selectedMonumentId,
           why: goalWhy ? goalWhy : null,
           due_date: goalDueDate ? goalDueDate : null,
@@ -2643,27 +3035,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                           <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                             Priority
                           </Label>
-                          <OptionDropdown
-                            value={goalForm.priority}
-                            options={PRIORITY_OPTIONS}
-                            onChange={(value) =>
-                              handleGoalFormChange("priority", value)
-                            }
-                            placeholder="Select priority..."
-                          />
+                    <OptionDropdown
+                      value={goalForm.priority}
+                      options={priorityDropdownOptions}
+                      onChange={(value) =>
+                        handleGoalFormChange("priority", value)
+                      }
+                      placeholder="Select priority..."
+                      itemSize="compact"
+                    />
                         </div>
                         <div className="space-y-2">
                           <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                             Energy
                           </Label>
-                          <OptionDropdown
-                            value={goalForm.energy}
-                            options={ENERGY_OPTIONS}
-                            onChange={(value) =>
-                              handleGoalFormChange("energy", value)
-                            }
-                            placeholder="Select energy..."
-                          />
+                    <OptionDropdown
+                      value={goalForm.energy}
+                      options={energyDropdownOptions}
+                      onChange={(value) =>
+                        handleGoalFormChange("energy", value)
+                      }
+                      placeholder="Select energy..."
+                      itemSize="compact"
+                    />
                         </div>
                       </div>
 
@@ -2792,37 +3186,39 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                 <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
                                   Priority
                                 </Label>
-                                <OptionDropdown
-                                  variant="black"
-                                  value={draft.priority}
-                                  options={PRIORITY_OPTIONS}
-                                  onChange={(value) =>
-                                    handleDraftProjectChange(
-                                      draft.id,
-                                      "priority",
-                                      value
-                                    )
-                                  }
-                                  placeholder="Select priority..."
-                                />
+                                  <OptionDropdown
+                                    variant="black"
+                                    value={draft.priority}
+                                    options={priorityDropdownOptions}
+                                    onChange={(value) =>
+                                      handleDraftProjectChange(
+                                        draft.id,
+                                        "priority",
+                                        value
+                                      )
+                                    }
+                                    placeholder="Select priority..."
+                                    itemSize="compact"
+                                  />
                               </div>
                               <div className="space-y-2">
                                 <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
                                   Energy
                                 </Label>
-                                <OptionDropdown
-                                  variant="black"
-                                  value={draft.energy}
-                                  options={ENERGY_OPTIONS}
-                                  onChange={(value) =>
-                                    handleDraftProjectChange(
-                                      draft.id,
-                                      "energy",
-                                      value
-                                    )
-                                  }
-                                  placeholder="Select energy..."
-                                />
+                                  <OptionDropdown
+                                    variant="black"
+                                    value={draft.energy}
+                                    options={energyDropdownOptions}
+                                    onChange={(value) =>
+                                      handleDraftProjectChange(
+                                        draft.id,
+                                        "energy",
+                                        value
+                                      )
+                                    }
+                                    placeholder="Select energy..."
+                                    itemSize="compact"
+                                  />
                               </div>
                             </div>
 
@@ -3056,7 +3452,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                       />
                                       <OptionDropdown
                                         value={task.priority}
-                                        options={PRIORITY_OPTIONS}
+                                        options={priorityDropdownOptions}
                                         onChange={(value) =>
                                           handleTaskChange(
                                             draft.id,
@@ -3066,10 +3462,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                           )
                                         }
                                         placeholder="Priority"
+                                        itemSize="compact"
                                       />
                                       <OptionDropdown
                                         value={task.energy}
-                                        options={ENERGY_OPTIONS}
+                                        options={energyDropdownOptions}
                                         onChange={(value) =>
                                           handleTaskChange(
                                             draft.id,
@@ -3079,6 +3476,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                                           )
                                         }
                                         placeholder="Energy"
+                                        itemSize="compact"
                                       />
                                     </div>
                                     <div className="space-y-1">
@@ -3403,27 +3801,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Priority
                 </Label>
-                <OptionDropdown
-                  value={formData.priority}
-                  options={PRIORITY_OPTIONS}
-                  onChange={(value) =>
-                    setFormData({ ...formData, priority: value })
-                  }
-                  placeholder="Select priority..."
-                />
+                  <OptionDropdown
+                    value={formData.priority}
+                    options={priorityDropdownOptions}
+                    onChange={(value) =>
+                      setFormData({ ...formData, priority: value })
+                    }
+                    placeholder="Select priority..."
+                    itemSize="compact"
+                  />
               </div>
               <div className="space-y-2">
                 <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                   Energy
                 </Label>
-                <OptionDropdown
-                  value={formData.energy}
-                  options={ENERGY_OPTIONS}
-                  onChange={(value) =>
-                    setFormData({ ...formData, energy: value })
-                  }
-                  placeholder="Select energy..."
-                />
+                  <OptionDropdown
+                    value={formData.energy}
+                    options={energyDropdownOptions}
+                    onChange={(value) =>
+                      setFormData({ ...formData, energy: value })
+                    }
+                    placeholder="Select energy..."
+                    itemSize="compact"
+                  />
               </div>
             </div>
 
@@ -3614,27 +4014,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Priority
                     </Label>
-                    <OptionDropdown
-                      value={formData.priority}
-                      options={PRIORITY_OPTIONS}
-                      onChange={(value) =>
-                        setFormData({ ...formData, priority: value })
-                      }
-                      placeholder="Select priority..."
-                    />
+                  <OptionDropdown
+                    value={formData.priority}
+                    options={priorityDropdownOptions}
+                    onChange={(value) =>
+                      setFormData({ ...formData, priority: value })
+                    }
+                    placeholder="Select priority..."
+                    itemSize="compact"
+                  />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Energy
                     </Label>
-                    <OptionDropdown
-                      value={formData.energy}
-                      options={ENERGY_OPTIONS}
-                      onChange={(value) =>
-                        setFormData({ ...formData, energy: value })
-                      }
-                      placeholder="Select energy..."
-                    />
+                  <OptionDropdown
+                    value={formData.energy}
+                    options={energyDropdownOptions}
+                    onChange={(value) =>
+                      setFormData({ ...formData, energy: value })
+                    }
+                    placeholder="Select energy..."
+                    itemSize="compact"
+                  />
                   </div>
                 </div>
 
@@ -3789,27 +4191,29 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Priority
                     </Label>
-                    <OptionDropdown
-                      value={formData.priority}
-                      options={PRIORITY_OPTIONS}
-                      onChange={(value) =>
-                        setFormData({ ...formData, priority: value })
-                      }
-                      placeholder="Select priority..."
-                    />
+                      <OptionDropdown
+                        value={formData.priority}
+                        options={priorityDropdownOptions}
+                        onChange={(value) =>
+                          setFormData({ ...formData, priority: value })
+                        }
+                        placeholder="Select priority..."
+                        itemSize="compact"
+                      />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[13px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                       Energy
                     </Label>
-                    <OptionDropdown
-                      value={formData.energy}
-                      options={ENERGY_OPTIONS}
-                      onChange={(value) =>
-                        setFormData({ ...formData, energy: value })
-                      }
-                      placeholder="Select energy..."
-                    />
+                      <OptionDropdown
+                        value={formData.energy}
+                        options={energyDropdownOptions}
+                        onChange={(value) =>
+                          setFormData({ ...formData, energy: value })
+                        }
+                        placeholder="Select energy..."
+                        itemSize="compact"
+                      />
                   </div>
 
                 </div>
