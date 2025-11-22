@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { markMissedAndQueue, scheduleBacklog } from '@/lib/scheduler/reschedule'
@@ -6,19 +7,27 @@ import {
   normalizeSchedulerModePayload,
   type SchedulerModePayload,
 } from '@/lib/scheduler/modes'
+import type { Database } from '@/types/supabase'
+import type { Database } from '@/types/supabase'
 
 export const runtime = 'nodejs'
 
 type SchedulerRunContext = {
   localNow: Date | null
   timeZone: string | null
+  utcOffsetMinutes: number | null
   mode: SchedulerModePayload
   writeThroughDays: number | null
 }
 
 export async function POST(request: Request) {
-  const { localNow, timeZone: requestTimeZone, mode, writeThroughDays } =
-    await readRunRequestContext(request)
+  const {
+    localNow,
+    timeZone: requestTimeZone,
+    utcOffsetMinutes,
+    mode,
+    writeThroughDays,
+  } = await readRunRequestContext(request)
   const supabase = await createClient()
   if (!supabase) {
     return NextResponse.json(
@@ -60,11 +69,18 @@ export async function POST(request: Request) {
     )
   }
 
-  const userTimeZone = requestTimeZone ?? extractUserTimeZone(user)
+  const profileTimeZone = await resolveProfileTimeZone(
+    schedulingClient,
+    user.id,
+  )
+  const metadataTimeZone = extractUserTimeZone(user)
+  const userTimeZone =
+    requestTimeZone ?? profileTimeZone ?? metadataTimeZone
   const coordinates = extractUserCoordinates(user)
   const scheduleResult = await scheduleBacklog(user.id, now, schedulingClient, {
     timeZone: userTimeZone,
     location: coordinates,
+    utcOffsetMinutes,
     mode,
     writeThroughDays,
   })
@@ -145,6 +161,7 @@ async function readRunRequestContext(request: Request): Promise<SchedulerRunCont
     const payload = (await request.json()) as {
       localTimeIso?: unknown
       timeZone?: unknown
+      utcOffsetMinutes?: unknown
       mode?: unknown
       writeThroughDays?: unknown
     }
@@ -175,7 +192,18 @@ async function readRunRequestContext(request: Request): Promise<SchedulerRunCont
       }
     }
 
-    return { localNow, timeZone, mode, writeThroughDays }
+    let utcOffsetMinutes: number | null = null
+    const offsetCandidate = payload?.utcOffsetMinutes
+    if (typeof offsetCandidate === 'number' && Number.isFinite(offsetCandidate)) {
+      utcOffsetMinutes = offsetCandidate
+    } else if (typeof offsetCandidate === 'string') {
+      const parsed = Number.parseFloat(offsetCandidate)
+      if (Number.isFinite(parsed)) {
+        utcOffsetMinutes = parsed
+      }
+    }
+
+    return { localNow, timeZone, utcOffsetMinutes, mode, writeThroughDays }
   } catch (error) {
     console.warn('Failed to parse scheduler run payload', error)
     return { localNow: null, timeZone: null, mode: { type: 'REGULAR' }, writeThroughDays: null }
@@ -187,4 +215,27 @@ export async function GET() {
     { error: 'method not allowed' },
     { status: 405, headers: { Allow: 'POST' } }
   )
+}
+
+async function resolveProfileTimeZone(
+  client: SupabaseClient<Database> | null,
+  userId: string,
+) {
+  if (!client) return null
+  try {
+    const { data, error } = await client
+      .from('profiles')
+      .select('timezone')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (error) {
+      console.warn('Failed to resolve profile timezone', error)
+      return null
+    }
+    const timezone = typeof data?.timezone === 'string' ? data.timezone.trim() : ''
+    if (timezone) return timezone
+  } catch (error) {
+    console.warn('Failed to resolve profile timezone', error)
+  }
+  return null
 }

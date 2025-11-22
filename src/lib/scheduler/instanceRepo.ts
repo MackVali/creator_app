@@ -70,6 +70,7 @@ export async function createInstance(
     durationMin: number
     weightSnapshot?: number
     energyResolved: string
+    eventName?: string | null
     locked?: boolean
   },
   client?: Client
@@ -89,6 +90,7 @@ export async function createInstance(
       weight_snapshot: input.weightSnapshot ?? 0,
       energy_resolved: input.energyResolved,
       locked: input.locked ?? false,
+      event_name: input.eventName ?? null,
     })
     .select('*')
     .single()
@@ -103,6 +105,7 @@ export async function rescheduleInstance(
     durationMin: number
     weightSnapshot?: number
     energyResolved: string
+    eventName?: string | null
     locked?: boolean
   },
   client?: Client
@@ -122,11 +125,12 @@ export async function rescheduleInstance(
       start_utc: input.startUTC,
       end_utc: input.endUTC,
       duration_min: input.durationMin,
-      status: 'scheduled',
-      weight_snapshot: input.weightSnapshot ?? 0,
-      energy_resolved: input.energyResolved,
-      completed_at: null,
-    }
+    status: 'scheduled',
+    weight_snapshot: input.weightSnapshot ?? 0,
+    energy_resolved: input.energyResolved,
+    completed_at: null,
+    event_name: input.eventName ?? null,
+  }
   if (typeof input.locked === 'boolean') {
     payload.locked = input.locked
   }
@@ -190,4 +194,19 @@ export async function fetchBacklogNeedingSchedule(
     .eq('user_id', userId)
     .eq('status', 'missed')
     .order('weight_snapshot', { ascending: false })
+}
+
+export async function cleanupTransientInstances(
+  userId: string,
+  client?: Client
+) {
+  const supabase = await ensureClient(client)
+  const query = supabase.from('schedule_instances')
+  if (!query || typeof query.delete !== 'function') {
+    return { data: null, error: null }
+  }
+  return query
+    .delete()
+    .eq('user_id', userId)
+    .in('status', ['missed', 'canceled'])
 }

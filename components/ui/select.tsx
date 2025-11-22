@@ -209,25 +209,36 @@ interface SelectItemProps {
   selectedValue?: string;
   className?: string;
   label?: string;
+  disabled?: boolean;
 }
 
 const SelectItem = React.forwardRef<HTMLDivElement, SelectItemProps>(
-  ({ value, children, onSelect, selectedValue, className, label }, ref) => {
+  (
+    { value, children, onSelect, selectedValue, className, label, disabled },
+    ref
+  ) => {
     const context = React.useContext(SelectContext);
     const labelText = label ?? getLabelText(children);
     const resolvedOnSelect = onSelect ?? context.onSelect;
     const resolvedSelectedValue = selectedValue ?? context.selectedValue;
+    const isDisabled = Boolean(disabled);
 
     return (
       <div
         ref={ref}
         className={cn(
           "flex w-full cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm text-zinc-200 transition hover:bg-white/10 hover:text-white",
+          isDisabled && "cursor-not-allowed opacity-50",
           resolvedSelectedValue === value &&
             "bg-blue-500/20 text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35)]",
           className
         )}
-        onClick={() => resolvedOnSelect?.(value, labelText || value)}
+        role="option"
+        aria-disabled={isDisabled}
+        onClick={() => {
+          if (isDisabled) return;
+          resolvedOnSelect?.(value, labelText || value);
+        }}
       >
         {children}
       </div>

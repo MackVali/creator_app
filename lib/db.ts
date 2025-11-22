@@ -201,7 +201,7 @@ export async function getProfileByUserId(
 export async function updateProfilePreferences(
   userId: string,
   preferences: Partial<
-    Pick<Profile, "prefers_dark_mode" | "notifications_enabled">
+    Pick<Profile, "prefers_dark_mode" | "notifications_enabled" | "timezone">
   >,
 ): Promise<{ data: Profile | null; error: PostgrestError | null }> {
   const supabase = getSupabaseBrowser();
