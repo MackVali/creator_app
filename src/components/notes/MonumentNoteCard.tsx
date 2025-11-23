@@ -32,7 +32,7 @@ export function MonumentNoteCard({ note, monumentId }: MonumentNoteCardProps) {
           "items-center justify-center bg-white text-center"
         )}
       >
-        <p className="line-clamp-2 text-base font-semibold leading-snug text-slate-900 drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)] transition group-hover:text-slate-950">
+        <p className="line-clamp-2 text-[11px] font-semibold leading-snug tracking-tight text-slate-900 drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)] transition group-hover:text-slate-950">
           {titleLine}
         </p>
       </div>
