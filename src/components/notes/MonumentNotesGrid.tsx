@@ -4,11 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { MonumentNote } from "@/lib/types/monument-note";
 import { cn } from "@/lib/utils";
-import { MonumentNoteCard } from "./MonumentNoteCard";
+import { getMonumentNotes } from "@/lib/monumentNotesStorage";
+import {
+  MonumentNoteCard,
+  monumentNoteTileInnerClass,
+  monumentNoteTileOuterClass,
+} from "./MonumentNoteCard";
 
 interface MonumentNotesGridProps {
   monumentId: string;
@@ -17,25 +21,54 @@ interface MonumentNotesGridProps {
 
 export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGridProps) {
   const [showAllNotes, setShowAllNotes] = useState(false);
+  const [notes, setNotes] = useState<MonumentNote[]>(initialNotes ?? []);
+  const [isLoading, setIsLoading] = useState(false);
+  const initialNoteCount = initialNotes?.length ?? 0;
 
   useEffect(() => {
     setShowAllNotes(false);
+    setNotes(initialNotes ?? []);
   }, [monumentId, initialNotes]);
 
-  const notes = initialNotes ?? [];
+  useEffect(() => {
+    let isMounted = true;
+    async function loadNotes() {
+      if (!monumentId) return;
+      setIsLoading(true);
+      const fetched = await getMonumentNotes(monumentId);
+      if (!isMounted) return;
+      const shouldReplace = fetched.length > 0 || initialNoteCount === 0;
+      if (shouldReplace) {
+        setNotes(fetched);
+      }
+      setIsLoading(false);
+    }
+    loadNotes();
+    return () => {
+      isMounted = false;
+    };
+  }, [monumentId, initialNoteCount]);
+
   const hasNotes = notes.length > 0;
   const hasMoreNotes = notes.length > 3;
   const visibleNotes = showAllNotes ? notes : notes.slice(0, 3);
 
   return (
     <div className="space-y-4">
-      {!hasNotes ? (
-        <Card className="rounded-3xl border border-white/70 bg-white/80 p-6 text-slate-700 shadow-[0_28px_70px_-36px_rgba(148,163,184,0.55)] backdrop-blur-xl">
-          <p className="text-sm font-medium text-slate-900">No notes yet</p>
-          <p className="mt-2 text-xs text-slate-600">
-            Capture your first thought here and keep ideas close at hand.
-          </p>
-        </Card>
+      {!hasNotes && !isLoading ? (
+        <div className={cn(monumentNoteTileOuterClass, "max-w-md")}>
+          <div
+            className={cn(
+              monumentNoteTileInnerClass,
+              "flex flex-col justify-center gap-1 bg-white text-center"
+            )}
+          >
+            <p className="text-sm font-semibold text-slate-900">No notes yet</p>
+            <p className="text-xs font-medium text-slate-600">
+              Capture your first thought here and keep ideas close at hand.
+            </p>
+          </div>
+        </div>
       ) : null}
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
@@ -57,27 +90,23 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
           return (
             <Link
               href={`/monuments/${monumentId}/notes/new`}
-              className={cn("group block", spanClass)}
+              className={cn(monumentNoteTileOuterClass, spanClass)}
               aria-label={hasNotes ? "Add note" : "Create note"}
             >
-              <Card
+              <div
                 className={cn(
-                  "border border-white/70 bg-white/60 text-slate-700 shadow-[0_18px_48px_-28px_rgba(148,163,184,0.45)] backdrop-blur-xl transition hover:border-white hover:bg-white/80 hover:text-slate-900",
-                  isBarVariant
-                    ? "flex h-12 items-center justify-center rounded-2xl py-0"
-                    : "flex h-full items-center justify-center rounded-3xl py-0 min-h-[6.75rem]"
+                  monumentNoteTileInnerClass,
+                  "items-center justify-center gap-2 text-center",
+                  isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
                 )}
               >
-                <CardContent
-                  className={cn(
-                    "flex items-center justify-center text-slate-800",
-                    isBarVariant ? "px-4 py-2" : "p-4"
-                  )}
-                >
-                  <Plus className={cn(isBarVariant ? "h-4 w-4" : "h-5 w-5")} />
-                  <span className="sr-only">{hasNotes ? "Add note" : "Create note"}</span>
-                </CardContent>
-              </Card>
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950/10 text-slate-900">
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                </div>
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                  {hasNotes ? "Add note" : "Create note"}
+                </span>
+              </div>
             </Link>
           );
         })()}
