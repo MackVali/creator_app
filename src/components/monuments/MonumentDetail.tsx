@@ -42,8 +42,8 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
   ] as const;
 
   return (
-    <main className="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <main className="overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 overflow-x-hidden">
         <Button
           asChild
           variant="ghost"
@@ -99,20 +99,20 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             </div>
           </div>
 
-          <div className="relative mt-6 flex gap-3">
+          <div className="relative mt-6 flex flex-wrap gap-1.5">
             {quickFacts.map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
-                className="group flex flex-1 basis-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
+                className="group flex flex-1 basis-0 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
               >
-                <span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/80">
-                  <Icon className="size-3.5" aria-hidden="true" />
+                <span className="flex size-5 items-center justify-center rounded-full bg-white/10 text-white/70">
+                  <Icon className="size-2.5" aria-hidden="true" />
                 </span>
                 <div className="flex flex-col leading-tight">
-                  <span className="text-[9px] font-semibold uppercase tracking-[0.28em] text-white/50">
+                  <span className="text-[7px] font-semibold uppercase tracking-[0.28em] text-white/45">
                     {label}
                   </span>
-                  <span className="text-xs font-semibold text-white sm:text-sm">
+                  <span className="text-[10px] font-semibold text-white/85 sm:text-xs">
                     {value}
                   </span>
                 </div>
