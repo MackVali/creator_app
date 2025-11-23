@@ -8,6 +8,10 @@ import { NoteCard } from "./NoteCard";
 import type { Note } from "@/lib/types/note";
 import { getNotes } from "@/lib/notesStorage";
 import { cn } from "@/lib/utils";
+import {
+  monumentNoteTileInnerClass,
+  monumentNoteTileOuterClass,
+} from "./MonumentNoteCard";
 
 type MemoNoteGroup = {
   containerId: string;
@@ -230,7 +234,7 @@ export function NotesGrid({ skillId }: NotesGridProps) {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {memoGroups.map((group) => (
           <MemoFolderCard key={group.habitId} group={group} skillId={skillId} />
         ))}
@@ -259,27 +263,23 @@ export function NotesGrid({ skillId }: NotesGridProps) {
           return (
             <Link
               href={`/skills/${skillId}/notes/new`}
-              className={cn("group block", spanClass)}
+              className={cn(monumentNoteTileOuterClass, spanClass)}
               aria-label={hasAnyNotes ? "Add note" : "Create note"}
             >
-              <Card
+              <div
                 className={cn(
-                  "gap-0 border border-white/70 bg-white/60 text-slate-700 shadow-[0_18px_48px_-28px_rgba(148,163,184,0.45)] backdrop-blur-xl transition hover:border-white hover:bg-white/80 hover:text-slate-900",
-                  isBarVariant
-                    ? "flex h-12 items-center justify-center rounded-2xl py-0"
-                    : "flex h-full items-center justify-center rounded-3xl py-0 min-h-[6.75rem]"
+                  monumentNoteTileInnerClass,
+                  "items-center justify-center gap-2 text-center",
+                  isBarVariant ? "min-h-[4.5rem] flex-row text-left" : "flex-col"
                 )}
               >
-                <CardContent
-                  className={cn(
-                    "flex items-center justify-center text-slate-800",
-                    isBarVariant ? "px-4 py-2" : "p-4"
-                  )}
-                >
-                  <Plus className={cn(isBarVariant ? "h-4 w-4" : "h-5 w-5")} />
-                  <span className="sr-only">{hasAnyNotes ? "Add note" : "Create note"}</span>
-                </CardContent>
-              </Card>
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950/10 text-slate-900">
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                </div>
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                  {hasAnyNotes ? "Add note" : "Create note"}
+                </span>
+              </div>
             </Link>
           );
         })()}

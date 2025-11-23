@@ -580,24 +580,26 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </div>
-          <dl className="relative mt-8 grid gap-3 sm:grid-cols-3">
-            {stats.map(({ label, value, description, icon: Icon }) => (
+          <div className="relative mt-8 flex flex-wrap gap-3">
+            {stats.map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
-                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition hover:border-white/20 hover:bg-white/10"
+                className="group flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
               >
-                <div className="pointer-events-none absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.14),_transparent_60%)] opacity-0 transition group-hover:opacity-100" />
-                <dt className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-white/60">
-                  <span className="flex size-7 items-center justify-center rounded-full bg-white/10 text-white/70">
-                    <Icon className="size-4" aria-hidden="true" />
+                <span className="flex size-8 items-center justify-center rounded-full bg-white/10 text-white/80">
+                  <Icon className="size-4" aria-hidden="true" />
+                </span>
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/50">
+                    {label}
                   </span>
-                  {label}
-                </dt>
-                <dd className="mt-2 text-lg font-semibold text-white">{value}</dd>
-                <p className="mt-2 text-xs text-white/60">{description}</p>
+                  <span className="text-sm font-semibold text-white sm:text-base">
+                    {value}
+                  </span>
+                </div>
               </div>
             ))}
-          </dl>
+          </div>
         </section>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
