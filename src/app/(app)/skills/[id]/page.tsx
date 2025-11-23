@@ -580,20 +580,20 @@ export default function SkillDetailPage() {
               </div>
             </div>
           </div>
-          <div className="relative mt-8 flex flex-wrap gap-3">
+          <div className="relative mt-8 flex gap-2">
             {stats.map(({ label, value, icon: Icon }) => (
               <div
                 key={label}
-                className="group flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
+                className="group flex min-w-0 flex-1 basis-0 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
               >
-                <span className="flex size-8 items-center justify-center rounded-full bg-white/10 text-white/80">
-                  <Icon className="size-4" aria-hidden="true" />
+                <span className="flex size-6 items-center justify-center rounded-full bg-white/10 text-white/80">
+                  <Icon className="size-3" aria-hidden="true" />
                 </span>
-                <div className="flex flex-col leading-tight">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/50">
+                <div className="flex min-w-0 flex-col leading-tight">
+                  <span className="text-[8px] font-semibold uppercase tracking-[0.26em] text-white/50">
                     {label}
                   </span>
-                  <span className="text-sm font-semibold text-white sm:text-base">
+                  <span className="truncate text-[11px] font-semibold text-white">
                     {value}
                   </span>
                 </div>
