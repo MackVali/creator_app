@@ -99,8 +99,8 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
           </div>
         </section>
 
-        <div className="grid gap-6 xl:auto-rows-min xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
+        <div className="grid w-full grid-cols-1 gap-6 xl:auto-rows-min xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+          <section className="relative w-full overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_55%)]" />
             <header className="relative flex items-center justify-between">
               <h2 className="text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
@@ -120,7 +120,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             </div>
           </section>
 
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
+          <section className="relative w-full overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060606] via-[#101011] to-[#19191b] p-6 shadow-[0_28px_90px_-48px_rgba(0,0,0,0.78)] sm:p-7">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_60%)]" />
             <header className="relative flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
@@ -140,7 +140,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
             </div>
           </section>
 
-          <div className="xl:col-span-2">
+          <div className="w-full xl:col-span-2">
             <ActivityPanel monumentId={id} />
           </div>
         </div>
