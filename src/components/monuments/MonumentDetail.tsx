@@ -70,54 +70,32 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
               >
                 {monument.emoji || "\uD83D\uDDFC\uFE0F"}
               </span>
-              <div className="space-y-3">
+              <div className="flex-1 space-y-4">
                 <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
                   {monument.title}
                 </h1>
-                <p className="max-w-xl text-sm text-white/70 sm:text-base">
-                  Track the momentum of this monument with goals and notes that feel as polished as the vision.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                asChild
-                size="sm"
-                className="rounded-full bg-white px-5 text-slate-900 shadow-sm transition hover:bg-white/90"
-              >
-                <Link href={`/monuments/${id}/edit`}>Edit monument</Link>
-              </Button>
-              <Button
-                asChild
-                size="sm"
-                variant="outline"
-                aria-label="Add note"
-                className="rounded-full border-white/20 bg-transparent px-4 text-white/80 backdrop-blur hover:border-white/30 hover:bg-white/10"
-              >
-                <Link href={`/monuments/${id}/notes/new`}>Add note</Link>
-              </Button>
-            </div>
-          </div>
-
-          <div className="relative mt-6 flex flex-wrap gap-1.5">
-            {quickFacts.map(({ label, value, icon: Icon }) => (
-              <div
-                key={label}
-                className="group flex flex-1 basis-0 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
-              >
-                <span className="flex size-5 items-center justify-center rounded-full bg-white/10 text-white/70">
-                  <Icon className="size-2.5" aria-hidden="true" />
-                </span>
-                <div className="flex flex-col leading-tight">
-                  <span className="text-[7px] font-semibold uppercase tracking-[0.28em] text-white/45">
-                    {label}
-                  </span>
-                  <span className="text-[10px] font-semibold text-white/85 sm:text-xs">
-                    {value}
-                  </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {quickFacts.map(({ label, value, icon: Icon }) => (
+                    <div
+                      key={label}
+                      className="group flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10"
+                    >
+                      <span className="flex size-5 items-center justify-center rounded-full bg-white/10 text-white/70">
+                        <Icon className="size-2.5" aria-hidden="true" />
+                      </span>
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-[7px] font-semibold uppercase tracking-[0.28em] text-white/45">
+                          {label}
+                        </span>
+                        <span className="text-[10px] font-semibold text-white/85 sm:text-xs">
+                          {value}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            </div>
           </div>
         </section>
 

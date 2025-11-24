@@ -54,7 +54,7 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
   const visibleNotes = showAllNotes ? notes : notes.slice(0, 3);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-full">
       {!hasNotes && !isLoading ? (
         <div className={cn(monumentNoteTileOuterClass, "max-w-md")}>
           <div
@@ -71,7 +71,7 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
         </div>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div className="grid w-full max-w-full grid-cols-3 gap-2.5 px-1.5 sm:grid-cols-4 sm:gap-3 sm:px-0 lg:grid-cols-5 xl:grid-cols-6">
         {visibleNotes.map((note) => (
           <MonumentNoteCard key={note.id} note={note} monumentId={monumentId} />
         ))}

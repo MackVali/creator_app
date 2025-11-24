@@ -125,6 +125,8 @@ const TASK_STAGE_MAP: Record<string, string> = {
 
 const NORMALIZED_PRIORITY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"]);
 const NORMALIZED_ENERGY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"]);
+const GOAL_GRID_CLASS =
+  "grid w-full max-w-full grid-cols-3 gap-2.5 px-1.5 sm:grid-cols-3 sm:px-2 sm:gap-3 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 
 const normalizePriorityCode = (value?: string | null): string => {
   if (typeof value !== "string") return "NO";
@@ -496,7 +498,7 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
   const content = useMemo(() => {
     if (loading) {
       return (
-        <div className="-mx-2 grid grid-cols-3 gap-2.5 px-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className={GOAL_GRID_CLASS}>
           {Array.from({ length: 9 }).map((_, i) => (
             <Skeleton key={i} className="h-[100px] w-full rounded-2xl bg-white/10" />
           ))}
@@ -512,7 +514,7 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     }
 
     return (
-      <div className="-mx-3 grid grid-cols-3 gap-2.5 px-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div className={GOAL_GRID_CLASS}>
         {goals.map((goal) => (
           <div key={goal.id} className="goal-card-wrapper relative z-0 w-full isolate min-w-0">
             <GoalCard
