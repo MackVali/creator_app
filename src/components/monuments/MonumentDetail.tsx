@@ -78,11 +78,21 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
           </div>
           <div className="relative flex flex-row gap-4 sm:flex-row sm:items-start sm:gap-6">
             <span
-              className="flex h-[60px] w-[60px] items-center justify-center rounded-2xl bg-white/10 text-3xl text-white shadow-inner sm:h-[72px] sm:w-[72px] sm:text-4xl"
+              className="relative flex h-[60px] w-[60px] items-center justify-center rounded-2xl border border-white/20 bg-gradient-to-b from-[#040404] via-[#08080a] to-black text-3xl text-white shadow-[0_25px_45px_rgba(0,0,0,0.65)] sm:h-[72px] sm:w-[72px] sm:text-4xl"
               role="img"
               aria-label={`Monument: ${monument.title}`}
             >
-              {monument.emoji || "\uD83D\uDDFC\uFE0F"}
+              <span
+                aria-hidden="true"
+                className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.55),_rgba(255,255,255,0.05))]"
+              />
+              <span
+                aria-hidden="true"
+                className="absolute inset-[2px] rounded-[18px] bg-gradient-to-b from-white/20 via-white/5 to-white/0 opacity-80"
+              />
+              <span className="relative z-10 drop-shadow-[0_6px_12px_rgba(0,0,0,0.5)]">
+                {monument.emoji || "\uD83D\uDDFC\uFE0F"}
+              </span>
             </span>
             <div className="flex flex-1 flex-col gap-2">
               <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
@@ -92,7 +102,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
                 {quickFacts.map(({ label, value, icon: Icon }) => (
                   <div
                     key={label}
-                    className="group flex items-center gap-0.5 rounded-full border border-white/10 bg-white/5 px-1 py-0.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-white/25 hover:bg-white/10 sm:gap-1 sm:px-2 sm:py-1"
+                    className="group flex items-center gap-0.5 rounded-full border border-black bg-white/5 px-1 py-0.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur transition hover:border-black hover:bg-white/10 sm:gap-1 sm:px-2 sm:py-1"
                   >
                     <span className="flex size-3 items-center justify-center rounded-full bg-white/10 text-white/70 sm:size-5">
                       <Icon className="h-1.5 w-1.5 sm:h-2.5 sm:w-2.5" aria-hidden="true" />
@@ -131,7 +141,7 @@ export function MonumentDetail({ monument, notes }: MonumentDetailProps) {
                 asChild
                 size="sm"
                 variant="outline"
-                className="rounded-full border-white/20 bg-white/5 px-4 text-white backdrop-blur hover:border-white/30 hover:bg-white/10"
+                className="rounded-full border border-black bg-white/5 px-4 text-white backdrop-blur hover:border-black hover:bg-white/10"
               >
                 <Link href="/goals/new">New goal</Link>
               </Button>
