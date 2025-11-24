@@ -232,7 +232,7 @@ function GoalCardImpl({
     const progressPct = Math.max(0, Math.min(100, Number(goal.progress ?? 0)));
     const lightness = Math.round(88 - progressPct * 0.78); // 0% -> 88% (light gray), 100% -> ~10% (near black)
     const containerBase =
-      "group relative h-full rounded-2xl ring-1 ring-white/10 p-3 text-white min-h-[104px]";
+      "group relative h-full rounded-2xl ring-1 ring-white/10 p-3 text-white min-h-[96px]";
     const completedBg =
       "bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-white shadow-[0_22px_42px_rgba(4,47,39,0.55),inset_0_1px_0_rgba(255,255,255,0.06)] ring-emerald-300/60";
     const inProgressBg =
@@ -258,7 +258,7 @@ function GoalCardImpl({
             onPointerUp={handleProjectPointerUp}
             onPointerCancel={handleProjectPointerCancel}
             onPointerLeave={handleProjectPointerCancel}
-            className="flex flex-col items-center gap-1.5 min-w-0 text-left"
+            className="flex flex-1 flex-col items-center gap-1 min-w-0 text-center"
           >
             <div
               className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-base font-semibold shadow-[inset_0_-1px_0_rgba(255,255,255,0.06),_0_6px_12px_rgba(0,0,0,0.35)] ${
@@ -269,17 +269,13 @@ function GoalCardImpl({
             </div>
             <h3
               id={`goal-${goal.id}-label`}
-              className="max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.5em]"
+              className="max-w-full px-1 text-center text-[8px] leading-snug font-semibold line-clamp-2 break-words min-h-[2.4em]"
               title={goal.title}
               style={{ hyphens: "auto" }}
             >
               {goal.title}
             </h3>
-            <div className="flex items-center gap-1.5 text-[6px] tracking-normal text-white/60">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `hsl(0 0% ${lightness}%)` }} aria-hidden="true" />
-              <span>{goal.progress}%</span>
-            </div>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] w-full">
+            <div className="mt-1 h-[0.65rem] w-full overflow-hidden rounded-full bg-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
               <div
                 className="h-full rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"
                 style={progressBarStyle}

@@ -123,10 +123,12 @@ const TASK_STAGE_MAP: Record<string, string> = {
   PERFECT: "Perfect",
 };
 
+const COMPLETED_PROJECT_STAGES = new Set(["RELEASE", "COMPLETE", "COMPLETED", "DONE"]);
+
 const NORMALIZED_PRIORITY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "CRITICAL", "ULTRA-CRITICAL"]);
 const NORMALIZED_ENERGY_VALUES = new Set(["NO", "LOW", "MEDIUM", "HIGH", "ULTRA", "EXTREME"]);
 const GOAL_GRID_CLASS =
-  "grid w-full max-w-full grid-cols-3 gap-2.5 px-1.5 sm:grid-cols-3 sm:px-2 sm:gap-3 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
+  "goal-grid grid w-full max-w-full grid-cols-[repeat(auto-fit,_minmax(110px,_1fr))] gap-2 px-0.5 sm:grid-cols-3 sm:px-2 sm:gap-3 md:grid-cols-4 md:-mx-3 md:px-3 lg:grid-cols-5 xl:grid-cols-6";
 
 const normalizePriorityCode = (value?: string | null): string => {
   if (typeof value !== "string") return "NO";
@@ -160,6 +162,11 @@ const extractLookupId = (
     return field;
   }
   return null;
+};
+
+const isProjectStageComplete = (stage?: string | null): boolean => {
+  if (typeof stage !== "string") return false;
+  return COMPLETED_PROJECT_STAGES.has(stage.toUpperCase());
 };
 
 function mapSchedulerPriority(priority?: string | null): string {
@@ -340,7 +347,10 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
             });
             const total = normalizedTasks.length;
             const done = normalizedTasks.filter((t) => t.stage === "PERFECT").length;
-            const progress = total ? Math.round((done / total) * 100) : 0;
+            let progress = total ? Math.round((done / total) * 100) : 0;
+            if (isProjectStageComplete(p.stage)) {
+              progress = 100;
+            }
             const status = projectStageToStatus(p.stage ?? "BUILD");
             const schedulerTasks: TaskLite[] = normalizedTasks.map(toSchedulerTask);
             const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
@@ -394,22 +404,26 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
             };
           });
 
-          const progress =
+          const status = g.status ? goalStatusToStatus(g.status) : undefined;
+          let derivedProgress =
             projList.length > 0
               ? Math.round(
                   projList.reduce((sum, p) => sum + p.progress, 0) / projList.length
                 )
               : 0;
-          const status = g.status ? goalStatusToStatus(g.status) : progress >= 100 ? "Completed" : "Active";
+          const normalizedStatus = status ?? (derivedProgress >= 100 ? "Completed" : "Active");
+          if (normalizedStatus === "Completed") {
+            derivedProgress = 100;
+          }
 
           const base: Goal = {
             id: g.id,
             title: g.name,
             priority: mapPriority(g.priority),
             energy: mapEnergy(g.energy),
-            progress,
-            status,
-            active: g.active ?? status === "Active",
+            progress: derivedProgress,
+            status: normalizedStatus,
+            active: g.active ?? normalizedStatus === "Active",
             createdAt: g.created_at,
             updatedAt: g.created_at,
             dueDate: g.due_date ?? undefined,
@@ -552,6 +566,40 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
         /* Prevent lift/overlap across browsers */
         .monument-goals-list .group { transform: none !important; will-change: auto !important; z-index: 0 !important; }
         .monument-goals-list .group:hover { transform: none !important; }
+        @media (max-width: 520px) {
+          .monument-goals-list .goal-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.4rem;
+            padding-left: 0;
+            padding-right: 0;
+          }
+          .monument-goals-list [data-variant='compact'] {
+            padding: 0.55rem 0.4rem;
+            border-radius: 1rem;
+            min-height: 90px;
+            aspect-ratio: auto;
+          }
+          .monument-goals-list [data-variant='compact'] button {
+            gap: 0.45rem;
+          }
+          .monument-goals-list [data-variant='compact'] button > div:first-of-type {
+            height: 1.85rem;
+            width: 1.85rem;
+            border-radius: 0.85rem;
+            font-size: 0.7rem;
+          }
+          .monument-goals-list [data-variant='compact'] h3 {
+            font-size: 0.45rem;
+            line-height: 1.1;
+            min-height: 0;
+            max-height: 2.2em;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        }
         /* Avoid Safari/iOS clipping issues on small screens */
         @media (min-width: 640px) {
           .monument-goals-list .goal-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }

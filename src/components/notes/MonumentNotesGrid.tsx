@@ -71,20 +71,19 @@ export function MonumentNotesGrid({ monumentId, initialNotes }: MonumentNotesGri
         </div>
       ) : null}
 
-      <div className="grid w-full max-w-full grid-cols-3 gap-2.5 px-1.5 sm:grid-cols-4 sm:gap-3 sm:px-0 lg:grid-cols-5 xl:grid-cols-6">
+      <div className="grid w-full max-w-full grid-cols-2 gap-2.5 px-0 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {visibleNotes.map((note) => (
           <MonumentNoteCard key={note.id} note={note} monumentId={monumentId} />
         ))}
 
         {(() => {
-          const remainder = visibleNotes.length % 3;
+          const columns = 2;
+          const remainder = visibleNotes.length % columns;
           const spanClass = !hasNotes
-            ? "col-span-3"
+            ? "col-span-2"
             : remainder === 0
-              ? "col-span-3"
-              : remainder === 1
-                ? "col-span-2"
-                : "col-span-1";
+              ? "col-span-2"
+              : "col-span-1";
           const isBarVariant = hasNotes && remainder === 0;
 
           return (
