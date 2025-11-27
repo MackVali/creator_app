@@ -16,6 +16,7 @@ import {
   RefreshCcw,
   PanelsTopLeft,
   Gauge,
+  Sparkles,
 } from "lucide-react";
 import {
   Sheet,
@@ -110,6 +111,7 @@ export function ScheduleTopBar({
       icon: RefreshCcw,
       onClick: () => router.push("/schedule/scheduler"),
     },
+    { label: "NEXUS", icon: Sparkles, onClick: () => router.push("/schedule/nexus") },
     { label: "Windows", icon: PanelsTopLeft, onClick: () => router.push("/windows") },
     { label: "Today", icon: Calendar, onClick: onToday },
   ];
