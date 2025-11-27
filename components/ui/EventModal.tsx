@@ -1290,16 +1290,8 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       }
 
       const [priorityRes, energyRes] = await Promise.all([
-        supabase
-          .from("priority")
-          .select("id, name, order_index")
-          .order("order_index", { ascending: true })
-          .order("name", { ascending: true }),
-        supabase
-          .from("energy")
-          .select("id, name, order_index")
-          .order("order_index", { ascending: true })
-          .order("name", { ascending: true }),
+        supabase.from("priority").select("id, name").order("name", { ascending: true }),
+        supabase.from("energy").select("id, name").order("name", { ascending: true }),
       ]);
 
       if (priorityRes.error || energyRes.error) {
@@ -1313,12 +1305,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       const priorities = (priorityRes.data ?? []).map((row) => ({
         id: String(row.id),
         name: row.name?.trim() || "Priority",
-        order_index: row.order_index ?? null,
+        order_index: null,
       }));
       const energies = (energyRes.data ?? []).map((row) => ({
         id: String(row.id),
         name: row.name?.trim() || "Energy",
-        order_index: row.order_index ?? null,
+        order_index: null,
       }));
 
       if (priorities.length === 0) {
