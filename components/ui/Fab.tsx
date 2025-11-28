@@ -332,14 +332,14 @@ export function Fab({
     if (diffY < -40) {
       if (!isOpen) {
         setIsOpen(true);
-      } else if (menuSection === "blank") {
-        setMenuSection("content");
+      } else if (menuSection === "content") {
+        setMenuSection("blank");
       }
       skipClickRef.current = true;
       return;
     }
-    if (isOpen && diffY > 40 && menuSection === "content") {
-      setMenuSection("blank");
+    if (isOpen && diffY > 40 && menuSection === "blank") {
+      setMenuSection("content");
       skipClickRef.current = true;
       return;
     }
@@ -354,10 +354,10 @@ export function Fab({
     if (isOpen) {
       if (
         Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER &&
-        ((menuSection === "content" && event.deltaY > 0) ||
-          (menuSection === "blank" && event.deltaY < 0))
+        ((menuSection === "content" && event.deltaY < 0) ||
+          (menuSection === "blank" && event.deltaY > 0))
       ) {
-        setMenuSection(event.deltaY > 0 ? "blank" : "content");
+        setMenuSection(event.deltaY < 0 ? "blank" : "content");
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -420,13 +420,13 @@ export function Fab({
       return;
     }
     if (Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER) {
-      if (event.deltaY > 0 && menuSection === "content") {
+      if (event.deltaY < 0 && menuSection === "content") {
         setMenuSection("blank");
         event.preventDefault();
         event.stopPropagation();
         return;
       }
-      if (event.deltaY < 0 && menuSection === "blank") {
+      if (event.deltaY > 0 && menuSection === "blank") {
         setMenuSection("content");
         event.preventDefault();
         event.stopPropagation();
@@ -629,12 +629,12 @@ export function Fab({
     menuVerticalStartRef.current = null;
 
     if (absDiffY > 40 && absDiffY >= Math.abs(diffX)) {
-      if (diffY > 0 && menuSection === "content") {
+      if (diffY < 0 && menuSection === "content") {
         setMenuSection("blank");
         setSwipeProgress(0);
         return;
       }
-      if (diffY < 0 && menuSection === "blank") {
+      if (diffY > 0 && menuSection === "blank") {
         setMenuSection("content");
         return;
       }
