@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Fab } from "@/components/ui/Fab";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { DayTimeline } from "./DayTimeline";
 
@@ -20,6 +21,8 @@ interface FocusTimelineProps {
 
 export function FocusTimelineFab() {
   const [isMounted, setIsMounted] = useState(false);
+  const pathname = usePathname();
+  const isSchedulePage = pathname?.startsWith("/schedule") ?? false;
 
   useEffect(() => {
     setIsMounted(true);
@@ -34,6 +37,7 @@ export function FocusTimelineFab() {
       data-testid="focus-timeline-fab"
       className="fixed bottom-6 right-6 z-[2147483647] sm:bottom-8 sm:right-8"
       menuVariant="timeline"
+      swipeUpToOpen={isSchedulePage}
     />,
     document.body
   );

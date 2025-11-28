@@ -1,23 +1,42 @@
 "use client";
 
-import { useState, useEffect, useRef, type HTMLAttributes } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type HTMLAttributes,
+} from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, X } from "lucide-react";
+import { Loader2, Plus, Search, X } from "lucide-react";
 import { EventModal } from "./EventModal";
 import { NoteModal } from "./NoteModal";
 import { ComingSoonModal } from "./ComingSoonModal";
 import { PostModal } from "./PostModal";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   menuVariant?: "default" | "timeline";
+  swipeUpToOpen?: boolean;
 }
+
+type FabSearchResult = {
+  id: string;
+  name: string;
+  type: "PROJECT" | "HABIT";
+  nextScheduledAt: string | null;
+  scheduleInstanceId: string | null;
+  durationMinutes: number | null;
+};
 
 export function Fab({
   className = "",
   menuVariant = "default",
+  swipeUpToOpen = false,
   ...wrapperProps
 }: FabProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -28,13 +47,108 @@ export function Fab({
   const [showPost, setShowPost] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const [menuPage, setMenuPage] = useState(0);
+  const [menuSection, setMenuSection] = useState<"content" | "blank">(
+    "content"
+  );
   const [touchStartX, setTouchStartX] = useState(0);
   const [swipeProgress, setSwipeProgress] = useState(0);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<FabSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<FabSearchResult | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+  const [isSavingReschedule, setIsSavingReschedule] = useState(false);
+  const menuVerticalStartRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const skipClickRef = useRef(false);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const [menuWidth, setMenuWidth] = useState<number | null>(null);
   const router = useRouter();
+  const VERTICAL_WHEEL_TRIGGER = 20;
+  const HORIZONTAL_WHEEL_TRIGGER = 10;
 
   const clampColorValue = (value: number) => Math.min(255, Math.max(0, value));
+
+  const getResultSortValue = useCallback((value: string | null) => {
+    if (!value) return Number.POSITIVE_INFINITY;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+  }, []);
+
+  const sortSearchResults = useCallback(
+    (items: FabSearchResult[]) =>
+      [...items].sort((a, b) => {
+        const timeA = getResultSortValue(a.nextScheduledAt);
+        const timeB = getResultSortValue(b.nextScheduledAt);
+        if (timeA === timeB) {
+          return a.name.localeCompare(b.name);
+        }
+        return timeA - timeB;
+      }),
+    [getResultSortValue]
+  );
+
+  const formatDateInput = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+      date.getDate()
+    ).padStart(2, "0")}`;
+
+  const formatTimeInput = (date: Date) =>
+    `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+
+  const fetchNextScheduledInstance = useCallback(
+    async (sourceId: string, sourceType: "PROJECT" | "HABIT") => {
+      const params = new URLSearchParams({ sourceId, sourceType });
+      const response = await fetch(`/api/schedule/instances/next?${params.toString()}`);
+      if (!response.ok) {
+        return null;
+      }
+      const payload = (await response.json().catch(() => null)) as
+        | { instanceId: string | null; startUtc: string | null }
+        | null;
+      return payload ?? null;
+    },
+    []
+  );
+
+  const notifySchedulerOfChange = useCallback(async () => {
+    try {
+      const timeZone =
+        typeof Intl !== "undefined"
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone ?? null
+          : null;
+      const payload = {
+        localNow: new Date().toISOString(),
+        timeZone,
+        utcOffsetMinutes: -new Date().getTimezoneOffset(),
+        mode: { type: "REGULAR" },
+        writeThroughDays: 1,
+      };
+      await fetch("/api/scheduler/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.error("Failed to notify scheduler", error);
+    }
+  }, []);
+
+  const resetSearchState = useCallback(() => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError(null);
+    setIsSearching(false);
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+      searchAbortRef.current = null;
+    }
+  }, []);
 
   const getMenuBackgroundStyles = () => {
     const progress = menuPage === 1 ? 1 - swipeProgress : swipeProgress;
@@ -132,6 +246,7 @@ export function Fab({
 
   const { primary, secondary, menuClassName, itemAlignmentClass } =
     menuConfigs[menuVariant];
+  const menuContainerHeight = primary.length * 56;
 
   const menuVariants = {
     closed: {
@@ -186,15 +301,311 @@ export function Fab({
   };
 
   const toggleMenu = () => {
-    setIsOpen(!isOpen);
+    setIsOpen(prev => !prev);
   };
 
+  const handleFabButtonClick = () => {
+    if (skipClickRef.current) {
+      skipClickRef.current = false;
+      return;
+    }
+    toggleMenu();
+  };
+
+  const interpretWheelGesture = (deltaY: number) => {
+    if (deltaY < -VERTICAL_WHEEL_TRIGGER) {
+      setIsOpen(true);
+      return true;
+    }
+    return false;
+  };
+
+  const handleFabButtonTouchStart = (event: React.TouchEvent<HTMLButtonElement>) => {
+    if (!swipeUpToOpen) return;
+    setTouchStartY(event.touches[0].clientY);
+  };
+
+  const handleFabButtonTouchEnd = (event: React.TouchEvent<HTMLButtonElement>) => {
+    if (!swipeUpToOpen || touchStartY === null) return;
+    const diffY = event.changedTouches[0].clientY - touchStartY;
+    setTouchStartY(null);
+    if (diffY < -40) {
+      if (!isOpen) {
+        setIsOpen(true);
+      } else if (menuSection === "blank") {
+        setMenuSection("content");
+      }
+      skipClickRef.current = true;
+      return;
+    }
+    if (isOpen && diffY > 40 && menuSection === "content") {
+      setMenuSection("blank");
+      skipClickRef.current = true;
+      return;
+    }
+  };
+
+  const handleFabButtonTouchCancel = () => {
+    if (!swipeUpToOpen) return;
+    setTouchStartY(null);
+  };
+
+  const handleFabButtonWheel = (event: React.WheelEvent<HTMLButtonElement>) => {
+    if (isOpen) {
+      if (
+        Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER &&
+        ((menuSection === "content" && event.deltaY > 0) ||
+          (menuSection === "blank" && event.deltaY < 0))
+      ) {
+        setMenuSection(event.deltaY > 0 ? "blank" : "content");
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+    if (!swipeUpToOpen) return;
+    if (interpretWheelGesture(event.deltaY)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  const handleOpenReschedule = (result: FabSearchResult) => {
+    setRescheduleTarget(result);
+    setRescheduleError(
+      result.scheduleInstanceId ? null : "This event has no upcoming scheduled time."
+    );
+    const baseDate = result.nextScheduledAt ? new Date(result.nextScheduledAt) : new Date();
+    if (Number.isNaN(baseDate.getTime())) {
+      const now = new Date();
+      setRescheduleDate(formatDateInput(now));
+      setRescheduleTime(formatTimeInput(now));
+      return;
+    }
+    setRescheduleDate(formatDateInput(baseDate));
+    setRescheduleTime(formatTimeInput(baseDate));
+  };
+
+  const handleHorizontalMenuWheel = (
+    deltaX: number,
+    deltaY: number,
+    shiftKey: boolean
+  ) => {
+    if (menuSection !== "content") return false;
+    let horizontalDelta = deltaX;
+    if (horizontalDelta === 0 && shiftKey) {
+      horizontalDelta = deltaY;
+    }
+    if (Math.abs(horizontalDelta) < HORIZONTAL_WHEEL_TRIGGER) return false;
+    if (horizontalDelta < 0 && menuPage === 0) {
+      setMenuPage(1);
+      return true;
+    }
+    if (horizontalDelta > 0 && menuPage === 1) {
+      setMenuPage(0);
+      return true;
+    }
+    return false;
+  };
+
+  const handleMenuWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const handledHorizontal = handleHorizontalMenuWheel(
+      event.deltaX,
+      event.deltaY,
+      event.shiftKey
+    );
+    if (handledHorizontal) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER) {
+      if (event.deltaY > 0 && menuSection === "content") {
+        setMenuSection("blank");
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (event.deltaY < 0 && menuSection === "blank") {
+        setMenuSection("content");
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+    if (!swipeUpToOpen) return;
+    if (interpretWheelGesture(event.deltaY)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  const handleCloseReschedule = () => {
+    if (isSavingReschedule) return;
+    setRescheduleTarget(null);
+    setRescheduleError(null);
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setMenuSection("content");
+      setMenuPage(0);
+      resetSearchState();
+      setRescheduleTarget(null);
+    }
+  }, [isOpen, resetSearchState]);
+
+  useEffect(() => {
+    return () => {
+      if (searchAbortRef.current) {
+        searchAbortRef.current.abort();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || menuSection !== "content") return;
+    const node = menuRef.current;
+    if (!node) return;
+    const frame = requestAnimationFrame(() => {
+      const rect = node.getBoundingClientRect();
+      if (rect.width > 0) {
+        setMenuWidth(rect.width);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isOpen, menuSection, primary.length]);
+
+  useEffect(() => {
+    if (!isOpen || menuSection !== "blank") {
+      return;
+    }
+    if (typeof window === "undefined") return;
+
+    const controller = new AbortController();
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = controller;
+
+    setIsSearching(true);
+    setSearchError(null);
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const trimmed = searchQuery.trim();
+        const params = new URLSearchParams();
+        if (trimmed.length > 0) {
+          params.set("q", trimmed);
+        }
+        const url = params.toString().length > 0
+          ? `/api/schedule/search?${params.toString()}`
+          : "/api/schedule/search";
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`Request failed: ${response.status}`);
+        }
+        const payload = (await response.json()) as { results?: FabSearchResult[] };
+        if (!controller.signal.aborted) {
+          setSearchResults(sortSearchResults(payload.results ?? []));
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("FAB menu search failed", error);
+        setSearchError("Unable to load results");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearching(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [isOpen, menuSection, searchQuery, sortSearchResults]);
+
+  const handleRescheduleSave = useCallback(async () => {
+    if (!rescheduleTarget || !rescheduleDate || !rescheduleTime) {
+      setRescheduleError("Select both date and time");
+      return;
+    }
+    if (!rescheduleTarget.scheduleInstanceId) {
+      setRescheduleError("No scheduled instance available to update.");
+      return;
+    }
+    const parsed = new Date(`${rescheduleDate}T${rescheduleTime}`);
+    if (Number.isNaN(parsed.getTime())) {
+      setRescheduleError("Invalid date or time");
+      return;
+    }
+    setIsSavingReschedule(true);
+    setRescheduleError(null);
+    try {
+      const response = await fetch(
+        `/api/schedule/instances/${rescheduleTarget.scheduleInstanceId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startUtc: parsed.toISOString() }),
+        }
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to update schedule");
+      }
+      const payload = (await response.json().catch(() => null)) as
+        | { startUtc?: string | null }
+        | null;
+      let nextStart = payload?.startUtc ?? parsed.toISOString();
+      let nextInstanceId = rescheduleTarget.scheduleInstanceId;
+
+      if (rescheduleTarget.type === "HABIT") {
+        const refreshed = await fetchNextScheduledInstance(rescheduleTarget.id, "HABIT");
+        if (refreshed) {
+          nextStart = refreshed.startUtc ?? nextStart;
+          nextInstanceId = refreshed.instanceId ?? nextInstanceId;
+        }
+      }
+
+      setSearchResults(prev =>
+        sortSearchResults(
+          prev.map(item =>
+            item.id === rescheduleTarget.id && item.type === rescheduleTarget.type
+              ? {
+                  ...item,
+                  nextScheduledAt: nextStart,
+                  scheduleInstanceId: nextInstanceId,
+                }
+              : item
+          )
+        )
+      );
+      void notifySchedulerOfChange();
+      setIsSavingReschedule(false);
+      setRescheduleTarget(null);
+    } catch (error) {
+      console.error("Failed to reschedule", error);
+      setRescheduleError(error instanceof Error ? error.message : "Unable to update schedule");
+      setIsSavingReschedule(false);
+    }
+  }, [
+    fetchNextScheduledInstance,
+    rescheduleDate,
+    rescheduleTime,
+    rescheduleTarget,
+    sortSearchResults,
+    notifySchedulerOfChange,
+  ]);
+
   const handleTouchStart = (e: React.TouchEvent) => {
+    menuVerticalStartRef.current = e.touches[0].clientY;
+    if (menuSection !== "content") return;
     setTouchStartX(e.touches[0].clientX);
     setSwipeProgress(0);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (menuSection !== "content") return;
     const currentX = e.touches[0].clientX;
     const diff = currentX - touchStartX;
     if (menuPage === 0 && diff < 0) {
@@ -207,7 +618,30 @@ export function Fab({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    const diff = e.changedTouches[0].clientX - touchStartX;
+    const startY = menuVerticalStartRef.current;
+    const diffY =
+      startY === null ? 0 : e.changedTouches[0].clientY - startY;
+    const absDiffY = Math.abs(diffY);
+    const diffX =
+      menuSection === "content"
+        ? e.changedTouches[0].clientX - touchStartX
+        : 0;
+    menuVerticalStartRef.current = null;
+
+    if (absDiffY > 40 && absDiffY >= Math.abs(diffX)) {
+      if (diffY > 0 && menuSection === "content") {
+        setMenuSection("blank");
+        setSwipeProgress(0);
+        return;
+      }
+      if (diffY < 0 && menuSection === "blank") {
+        setMenuSection("content");
+        return;
+      }
+    }
+
+    if (menuSection !== "content") return;
+    const diff = diffX;
     if (diff < -50) setMenuPage(1);
     if (diff > 50) setMenuPage(0);
     setSwipeProgress(0);
@@ -215,6 +649,7 @@ export function Fab({
 
   // Close menu when clicking outside
   useEffect(() => {
+    if (rescheduleTarget) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (
         isOpen &&
@@ -231,7 +666,7 @@ export function Fab({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isOpen]);
+  }, [isOpen, rescheduleTarget]);
 
   return (
     <div className={cn("relative", className)} {...wrapperProps}>
@@ -252,42 +687,60 @@ export function Fab({
               transition: "background-image 0.1s linear, border-color 0.1s linear",
               transformOrigin:
                 menuVariant === "timeline" ? "bottom right" : "bottom center",
+              minHeight: menuContainerHeight,
+              height: menuContainerHeight,
+              maxHeight: menuContainerHeight,
+              minWidth: menuWidth ?? undefined,
+              width: menuWidth ?? undefined,
+              maxWidth: menuWidth ?? undefined,
             }}
             variants={menuVariants}
             initial="closed"
             animate="open"
             exit="closed"
+            onWheel={handleMenuWheel}
           >
-            {menuPage === 0
-              ? primary.map((event) => (
-                  <motion.button
-                    key={event.label}
-                    variants={itemVariants}
-                    onClick={() => handleEventClick(event.eventType)}
-                    className={cn(
-                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-                      itemAlignmentClass,
-                      event.color
-                    )}
-                  >
-                    <span className="text-sm opacity-80">add</span>{" "}
-                    <span className="text-lg font-bold">{event.label}</span>
-                  </motion.button>
-                ))
-              : secondary.map((event) => (
-                  <motion.button
-                    key={event.label}
-                    variants={itemVariants}
-                    onClick={() => handleExtraClick(event.label)}
-                    className={cn(
-                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
-                      itemAlignmentClass
-                    )}
-                  >
-                    <span className="text-sm opacity-80">add</span>{" "}
-                    <span className="text-lg font-bold">{event.label}</span>
-                  </motion.button>
-                ))}
+            {menuSection === "blank" ? (
+              <FabSearchPanel
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                results={searchResults}
+                isSearching={isSearching}
+                error={searchError}
+                onSelectResult={handleOpenReschedule}
+              />
+            ) : menuPage === 0 ? (
+              primary.map((event) => (
+                <motion.button
+                  key={event.label}
+                  variants={itemVariants}
+                  onClick={() => handleEventClick(event.eventType)}
+                  className={cn(
+                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+                    itemAlignmentClass,
+                    event.color
+                  )}
+                >
+                  <span className="text-sm opacity-80">add</span>{" "}
+                  <span className="text-lg font-bold">{event.label}</span>
+                </motion.button>
+              ))
+            ) : (
+              secondary.map((event) => (
+                <motion.button
+                  key={event.label}
+                  variants={itemVariants}
+                  onClick={() => handleExtraClick(event.label)}
+                  className={cn(
+                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
+                    itemAlignmentClass
+                  )}
+                >
+                  <span className="text-sm opacity-80">add</span>{" "}
+                  <span className="text-lg font-bold">{event.label}</span>
+                </motion.button>
+              ))
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -295,11 +748,15 @@ export function Fab({
       {/* FAB Button - Restored to your original styling */}
       <motion.button
         ref={buttonRef}
-        onClick={toggleMenu}
+        onClick={handleFabButtonClick}
         aria-label={isOpen ? "Close add events menu" : "Add new item"}
         className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition ${
           isOpen ? "rotate-45" : ""
         }`}
+        onTouchStart={handleFabButtonTouchStart}
+        onTouchEnd={handleFabButtonTouchEnd}
+        onTouchCancel={handleFabButtonTouchCancel}
+        onWheel={handleFabButtonWheel}
         whileTap={{ scale: 0.9 }}
         transition={{ type: "spring", stiffness: 500, damping: 25 }}
         style={{
@@ -329,6 +786,204 @@ export function Fab({
         onClose={() => setComingSoon(null)}
         label={comingSoon || ""}
       />
+      <FabRescheduleOverlay
+        open={Boolean(rescheduleTarget)}
+        target={rescheduleTarget}
+        dateValue={rescheduleDate}
+        timeValue={rescheduleTime}
+        error={rescheduleError}
+        isSaving={isSavingReschedule}
+        onDateChange={setRescheduleDate}
+        onTimeChange={setRescheduleTime}
+        onClose={handleCloseReschedule}
+        onSave={handleRescheduleSave}
+      />
     </div>
+  );
+}
+
+type FabSearchPanelProps = {
+  query: string;
+  onQueryChange: (value: string) => void;
+  results: FabSearchResult[];
+  isSearching: boolean;
+  error: string | null;
+  onSelectResult: (result: FabSearchResult) => void;
+};
+
+function FabSearchPanel({
+  query,
+  onQueryChange,
+  results,
+  isSearching,
+  error,
+  onSelectResult,
+}: FabSearchPanelProps) {
+  const hasResults = results.length > 0;
+
+  return (
+    <div className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white" style={{ backgroundColor: "rgba(0,0,0,0.75)" }}>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+          Search projects & habits
+        </p>
+        <div className="relative mt-2">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Search by name"
+            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+            aria-label="Search projects and habits"
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto pr-1">
+        {isSearching ? (
+          <div className="flex h-32 items-center justify-center text-white/60">
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-red-500/20 bg-red-900/40 px-4 py-4 text-center text-sm text-red-100">
+            {error}
+          </div>
+        ) : hasResults ? (
+          <div className="flex flex-col">
+            {results.map((result) => (
+              <button
+                key={`${result.type}-${result.id}`}
+                type="button"
+                onClick={() => onSelectResult(result)}
+                className="relative flex flex-col items-start gap-1 border border-white/5 bg-black/60 px-3 py-2 text-left text-white/85 transition hover:bg-black/70 first:rounded-t-lg last:rounded-b-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+              >
+                <span className="block w-full break-words pr-0 text-[12px] font-medium leading-snug tracking-wide text-white">
+                  {result.name}
+                </span>
+                <span className="absolute right-3 top-1 text-[4px] uppercase tracking-[0.4em] text-white/45">
+                  {result.type === "PROJECT" ? "Project" : "Habit"}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-6 text-center text-sm text-white/60">
+            Start typing to search every project and habit.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type FabRescheduleOverlayProps = {
+  open: boolean;
+  target: FabSearchResult | null;
+  dateValue: string;
+  timeValue: string;
+  error: string | null;
+  isSaving: boolean;
+  onDateChange: (value: string) => void;
+  onTimeChange: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+};
+
+function FabRescheduleOverlay({
+  open,
+  target,
+  dateValue,
+  timeValue,
+  error,
+  isSaving,
+  onDateChange,
+  onTimeChange,
+  onClose,
+  onSave,
+}: FabRescheduleOverlayProps) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          className="fixed inset-0 z-[2147483647] bg-black/60 backdrop-blur"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.div
+            className="absolute left-1/2 top-1/2 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-white/10 bg-[#050507]/95 p-5 text-white shadow-2xl"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 260, damping: 22 }}
+            onClick={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute right-4 top-4 rounded-full border border-white/10 p-1 text-white/70 transition hover:text-white"
+              aria-label="Close reschedule menu"
+              disabled={isSaving}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.35em] text-white/40">Reschedule</p>
+              <h3 className="text-lg font-semibold leading-tight">{target?.name ?? "Event"}</h3>
+            </div>
+            <div className="mt-4 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs uppercase tracking-[0.2em] text-white/55">
+                  Due date
+                </label>
+                <input
+                  type="date"
+                  value={dateValue}
+                  onChange={(event) => onDateChange(event.target.value)}
+                  className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs uppercase tracking-[0.2em] text-white/55">
+                  Time due
+                </label>
+                <input
+                  type="time"
+                  value={timeValue}
+                  onChange={(event) => onTimeChange(event.target.value)}
+                  className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                />
+              </div>
+              {error && (
+                <div className="rounded-xl border border-red-500/20 bg-red-900/30 px-3 py-2 text-sm text-red-100">
+                  {error}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={onClose}
+                  className="text-white/70 hover:bg-white/10"
+                  disabled={isSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={onSave}
+                  disabled={isSaving || !target?.scheduleInstanceId}
+                  className="bg-white/90 text-black hover:bg-white"
+                >
+                  {isSaving ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>,
+    document.body
   );
 }
