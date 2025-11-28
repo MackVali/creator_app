@@ -13,11 +13,13 @@ import { cn } from "@/lib/utils";
 interface FabProps extends HTMLAttributes<HTMLDivElement> {
   className?: string;
   menuVariant?: "default" | "timeline";
+  swipeUpToOpen?: boolean;
 }
 
 export function Fab({
   className = "",
   menuVariant = "default",
+  swipeUpToOpen = false,
   ...wrapperProps
 }: FabProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -28,11 +30,18 @@ export function Fab({
   const [showPost, setShowPost] = useState(false);
   const [comingSoon, setComingSoon] = useState<string | null>(null);
   const [menuPage, setMenuPage] = useState(0);
+  const [menuSection, setMenuSection] = useState<"content" | "blank">(
+    "content"
+  );
   const [touchStartX, setTouchStartX] = useState(0);
   const [swipeProgress, setSwipeProgress] = useState(0);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const skipClickRef = useRef(false);
   const router = useRouter();
+  const VERTICAL_WHEEL_TRIGGER = 20;
+  const HORIZONTAL_WHEEL_TRIGGER = 10;
 
   const clampColorValue = (value: number) => Math.min(255, Math.max(0, value));
 
@@ -186,15 +195,138 @@ export function Fab({
   };
 
   const toggleMenu = () => {
-    setIsOpen(!isOpen);
+    setIsOpen(prev => !prev);
   };
 
+  const handleFabButtonClick = () => {
+    if (skipClickRef.current) {
+      skipClickRef.current = false;
+      return;
+    }
+    toggleMenu();
+  };
+
+  const interpretWheelGesture = (deltaY: number) => {
+    if (deltaY < -VERTICAL_WHEEL_TRIGGER) {
+      setIsOpen(true);
+      return true;
+    }
+    return false;
+  };
+
+  const handleFabButtonTouchStart = (event: React.TouchEvent<HTMLButtonElement>) => {
+    if (!swipeUpToOpen) return;
+    setTouchStartY(event.touches[0].clientY);
+  };
+
+  const handleFabButtonTouchEnd = (event: React.TouchEvent<HTMLButtonElement>) => {
+    if (!swipeUpToOpen || touchStartY === null) return;
+    const diffY = event.changedTouches[0].clientY - touchStartY;
+    setTouchStartY(null);
+    if (diffY < -40) {
+      if (isOpen) {
+        setMenuSection("blank");
+      } else {
+        setIsOpen(true);
+      }
+      skipClickRef.current = true;
+    }
+  };
+
+  const handleFabButtonTouchCancel = () => {
+    if (!swipeUpToOpen) return;
+    setTouchStartY(null);
+  };
+
+  const handleFabButtonWheel = (event: React.WheelEvent<HTMLButtonElement>) => {
+    if (isOpen) {
+      if (
+        Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER &&
+        menuSection === "content" &&
+        event.deltaY < 0
+      ) {
+        setMenuSection("blank");
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+    if (!swipeUpToOpen) return;
+    if (interpretWheelGesture(event.deltaY)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  const handleHorizontalMenuWheel = (
+    deltaX: number,
+    deltaY: number,
+    shiftKey: boolean
+  ) => {
+    if (menuSection !== "content") return false;
+    let horizontalDelta = deltaX;
+    if (horizontalDelta === 0 && shiftKey) {
+      horizontalDelta = deltaY;
+    }
+    if (Math.abs(horizontalDelta) < HORIZONTAL_WHEEL_TRIGGER) return false;
+    if (horizontalDelta < 0 && menuPage === 0) {
+      setMenuPage(1);
+      return true;
+    }
+    if (horizontalDelta > 0 && menuPage === 1) {
+      setMenuPage(0);
+      return true;
+    }
+    return false;
+  };
+
+  const handleMenuWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const handledHorizontal = handleHorizontalMenuWheel(
+      event.deltaX,
+      event.deltaY,
+      event.shiftKey
+    );
+    if (handledHorizontal) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (Math.abs(event.deltaY) >= VERTICAL_WHEEL_TRIGGER) {
+      if (event.deltaY < 0 && menuSection === "content") {
+        setMenuSection("blank");
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (event.deltaY > 0 && menuSection === "blank") {
+        setMenuSection("content");
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+    if (!swipeUpToOpen) return;
+    if (interpretWheelGesture(event.deltaY)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setMenuSection("content");
+      setMenuPage(0);
+    }
+  }, [isOpen]);
+
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (menuSection !== "content") return;
     setTouchStartX(e.touches[0].clientX);
     setSwipeProgress(0);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (menuSection !== "content") return;
     const currentX = e.touches[0].clientX;
     const diff = currentX - touchStartX;
     if (menuPage === 0 && diff < 0) {
@@ -207,6 +339,7 @@ export function Fab({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (menuSection !== "content") return;
     const diff = e.changedTouches[0].clientX - touchStartX;
     if (diff < -50) setMenuPage(1);
     if (diff > 50) setMenuPage(0);
@@ -257,37 +390,42 @@ export function Fab({
             initial="closed"
             animate="open"
             exit="closed"
+            onWheel={handleMenuWheel}
           >
-            {menuPage === 0
-              ? primary.map((event) => (
-                  <motion.button
-                    key={event.label}
-                    variants={itemVariants}
-                    onClick={() => handleEventClick(event.eventType)}
-                    className={cn(
-                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
-                      itemAlignmentClass,
-                      event.color
-                    )}
-                  >
-                    <span className="text-sm opacity-80">add</span>{" "}
-                    <span className="text-lg font-bold">{event.label}</span>
-                  </motion.button>
-                ))
-              : secondary.map((event) => (
-                  <motion.button
-                    key={event.label}
-                    variants={itemVariants}
-                    onClick={() => handleExtraClick(event.label)}
-                    className={cn(
-                      "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
-                      itemAlignmentClass
-                    )}
-                  >
-                    <span className="text-sm opacity-80">add</span>{" "}
-                    <span className="text-lg font-bold">{event.label}</span>
-                  </motion.button>
-                ))}
+            {menuSection === "blank" ? (
+              <div className="w-full min-h-[210px]" aria-hidden="true" />
+            ) : menuPage === 0 ? (
+              primary.map((event) => (
+                <motion.button
+                  key={event.label}
+                  variants={itemVariants}
+                  onClick={() => handleEventClick(event.eventType)}
+                  className={cn(
+                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 whitespace-nowrap",
+                    itemAlignmentClass,
+                    event.color
+                  )}
+                >
+                  <span className="text-sm opacity-80">add</span>{" "}
+                  <span className="text-lg font-bold">{event.label}</span>
+                </motion.button>
+              ))
+            ) : (
+              secondary.map((event) => (
+                <motion.button
+                  key={event.label}
+                  variants={itemVariants}
+                  onClick={() => handleExtraClick(event.label)}
+                  className={cn(
+                    "w-full px-6 py-3 text-white font-medium transition-colors duration-200 border-b border-gray-700 last:border-b-0 hover:bg-gray-800 whitespace-nowrap",
+                    itemAlignmentClass
+                  )}
+                >
+                  <span className="text-sm opacity-80">add</span>{" "}
+                  <span className="text-lg font-bold">{event.label}</span>
+                </motion.button>
+              ))
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -295,11 +433,15 @@ export function Fab({
       {/* FAB Button - Restored to your original styling */}
       <motion.button
         ref={buttonRef}
-        onClick={toggleMenu}
+        onClick={handleFabButtonClick}
         aria-label={isOpen ? "Close add events menu" : "Add new item"}
         className={`relative flex items-center justify-center h-14 w-14 rounded-full text-white shadow-lg hover:scale-110 transition ${
           isOpen ? "rotate-45" : ""
         }`}
+        onTouchStart={handleFabButtonTouchStart}
+        onTouchEnd={handleFabButtonTouchEnd}
+        onTouchCancel={handleFabButtonTouchCancel}
+        onWheel={handleFabButtonWheel}
         whileTap={{ scale: 0.9 }}
         transition={{ type: "spring", stiffness: 500, damping: 25 }}
         style={{
