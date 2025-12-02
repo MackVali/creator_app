@@ -825,7 +825,7 @@ function FabSearchPanel({
     <div className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white" style={{ backgroundColor: "rgba(0,0,0,0.75)" }}>
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-          Search projects & habits
+          NEXUS
         </p>
         <div className="relative mt-2">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
