@@ -877,11 +877,6 @@ export default function EditHabitPage() {
       return;
     }
 
-    if (!supabase) {
-      setError("Supabase client not available.");
-      return;
-    }
-
     const confirmed = window.confirm(
       "Delete this habit? This action cannot be undone."
     );
@@ -894,33 +889,21 @@ export default function EditHabitPage() {
     setError(null);
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const response = await fetch(`/api/habits/${habitId}`, {
+        method: "DELETE",
+      });
 
-      if (userError) {
-        throw userError;
+      const payload = (await response.json().catch(() => ({}))) as
+        | { error?: string; id?: string }
+        | undefined;
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ?? "Unable to delete the habit right now."
+        );
       }
 
-      if (!user) {
-        setError("You need to be signed in to delete a habit.");
-        return;
-      }
-
-      const { data: deletedHabit, error: deleteError } = await supabase
-        .from("habits")
-        .delete()
-        .eq("id", habitId)
-        .eq("user_id", user.id)
-        .select("id")
-        .maybeSingle();
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      if (!deletedHabit?.id) {
+      if (!payload?.id) {
         throw new Error("Unable to delete the habit right now.");
       }
 
