@@ -145,6 +145,7 @@ export default function EditHabitPage() {
   const [goalId, setGoalId] = useState<string>("none");
   const [completionTarget, setCompletionTarget] = useState("10");
   const [goalMetadataSupported, setGoalMetadataSupported] = useState(true);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const energySelectOptions = useMemo<HabitEnergySelectOption[]>(
     () => HABIT_ENERGY_OPTIONS,
@@ -870,6 +871,73 @@ export default function EditHabitPage() {
     }
   }
 
+  async function handleDeleteHabit() {
+    if (!habitId) {
+      setError("Missing habit identifier.");
+      return;
+    }
+
+    if (!supabase) {
+      setError("Supabase client not available.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this habit? This action cannot be undone."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    setError(null);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        setError("You need to be signed in to delete a habit.");
+        return;
+      }
+
+      const { data: deletedHabit, error: deleteError } = await supabase
+        .from("habits")
+        .delete()
+        .eq("id", habitId)
+        .eq("user_id", user.id)
+        .select("id")
+        .maybeSingle();
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      if (!deletedHabit?.id) {
+        throw new Error("Unable to delete the habit right now.");
+      }
+
+      router.push("/habits");
+      router.refresh();
+    } catch (err) {
+      console.error("Failed to delete habit:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to delete the habit right now."
+      );
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-[#05070c] pb-16 text-white">
@@ -1030,8 +1098,17 @@ export default function EditHabitPage() {
                 ) : null}
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button type="submit" disabled={loading} className="text-white">
+                  <Button type="submit" disabled={loading || deleteLoading} className="text-white">
                     {loading ? "Saving changes…" : "Save changes"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={loading || deleteLoading}
+                    className="text-white"
+                    onClick={handleDeleteHabit}
+                  >
+                    {deleteLoading ? "Deleting…" : "Delete habit"}
                   </Button>
                   <Button type="button" variant="ghost" className="text-white/70 hover:text-white" onClick={() => router.push("/habits")}>Cancel</Button>
                 </div>
