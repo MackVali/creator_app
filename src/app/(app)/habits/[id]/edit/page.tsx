@@ -1099,7 +1099,7 @@ export default function EditHabitPage() {
                     type="button"
                     variant="destructive"
                     disabled={loading || deleteLoading}
-                    className="text-white"
+                    className="bg-red-600 text-white hover:bg-red-500"
                     onClick={handleDeleteHabit}
                   >
                     {deleteLoading ? "Deleting…" : "Delete habit"}
