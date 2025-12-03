@@ -701,7 +701,7 @@ export function Fab({
             onWheel={handleMenuWheel}
           >
             {menuSection === "blank" ? (
-              <FabSearchPanel
+              <FabNexus
                 query={searchQuery}
                 onQueryChange={setSearchQuery}
                 results={searchResults}
@@ -802,7 +802,7 @@ export function Fab({
   );
 }
 
-type FabSearchPanelProps = {
+type FabNexusProps = {
   query: string;
   onQueryChange: (value: string) => void;
   results: FabSearchResult[];
@@ -811,32 +811,27 @@ type FabSearchPanelProps = {
   onSelectResult: (result: FabSearchResult) => void;
 };
 
-function FabSearchPanel({
+function FabNexus({
   query,
   onQueryChange,
   results,
   isSearching,
   error,
   onSelectResult,
-}: FabSearchPanelProps) {
+}: FabNexusProps) {
   const hasResults = results.length > 0;
 
   return (
     <div className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white" style={{ backgroundColor: "rgba(0,0,0,0.75)" }}>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-          Search projects & habits
-        </p>
-        <div className="relative mt-2">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search by name"
-            className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-            aria-label="Search projects and habits"
-          />
-        </div>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+        <input
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="search NEXUS"
+          className="h-10 w-full rounded-lg border border-white/10 bg-black/60 pl-10 pr-3 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+          aria-label="Search NEXUS"
+        />
       </div>
       <div className="flex-1 overflow-y-auto pr-1">
         {isSearching ? (
