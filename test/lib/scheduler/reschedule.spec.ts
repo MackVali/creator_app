@@ -26,6 +26,11 @@ describe("scheduleBacklog", () => {
   type BacklogResponse = Awaited<ReturnType<typeof instanceRepo.fetchBacklogNeedingSchedule>>;
   type InstancesResponse = Awaited<ReturnType<typeof instanceRepo.fetchInstancesForRange>>;
   type ScheduleBacklogClient = Parameters<typeof scheduleBacklog>[2];
+  type ProjectPlacementCall = {
+    id: string;
+    reuseInstanceId: string | null;
+    ignoreIds: string[];
+  };
 
   const createInstanceRecord = (overrides: Partial<ScheduleInstance> = {}): ScheduleInstance =>
     ({
@@ -347,10 +352,14 @@ describe("scheduleBacklog", () => {
     (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([overlappingWindow]);
     vi.spyOn(repo, "fetchWindowsSnapshot").mockResolvedValue([overlappingWindow]);
 
-    const placementCalls: Array<{ id: string; reuseInstanceId: string | null }> = [];
+    const placementCalls: ProjectPlacementCall[] = [];
     (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
-      async ({ item, reuseInstanceId }) => {
-        placementCalls.push({ id: item.id, reuseInstanceId: reuseInstanceId ?? null });
+      async ({ item, reuseInstanceId, ignoreProjectIds }) => {
+        placementCalls.push({
+          id: item.id,
+          reuseInstanceId: reuseInstanceId ?? null,
+          ignoreIds: Array.from(ignoreProjectIds ?? []).sort(),
+        });
         return {
           data: createInstanceRecord({
             id: `inst-${item.id}`,
@@ -380,6 +389,116 @@ describe("scheduleBacklog", () => {
     expect(placementCalls[0]).toEqual({
       id: "proj-light",
       reuseInstanceId: "inst-light",
+      ignoreIds: ["proj-light"],
+    });
+  });
+
+  it("repositions overlapping projects even when they belong to different windows", async () => {
+    const { client } = createSupabaseMock();
+
+    const windowLeft: repo.WindowLite = {
+      id: "win-left",
+      label: "Focus",
+      energy: "LOW",
+      start_local: "09:00",
+      end_local: "11:00",
+      days: [2],
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+    };
+
+    const windowRight: repo.WindowLite = {
+      id: "win-right",
+      label: "Deep Work",
+      energy: "LOW",
+      start_local: "09:30",
+      end_local: "11:30",
+      days: [2],
+      location_context_id: null,
+      location_context_value: null,
+      location_context_name: null,
+    };
+
+    instances = [
+      createInstanceRecord({
+        id: "inst-alpha",
+        source_id: "proj-alpha",
+        start_utc: "2024-01-02T09:00:00Z",
+        end_utc: "2024-01-02T10:30:00Z",
+        window_id: windowLeft.id,
+        weight_snapshot: 70,
+      }),
+      createInstanceRecord({
+        id: "inst-beta",
+        source_id: "proj-beta",
+        start_utc: "2024-01-02T09:30:00Z",
+        end_utc: "2024-01-02T11:00:00Z",
+        window_id: windowRight.id,
+        weight_snapshot: 15,
+      }),
+    ];
+
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({
+      "proj-alpha": {
+        id: "proj-alpha",
+        name: "Alpha",
+        priority: "HIGH",
+        stage: "RESEARCH",
+        energy: "LOW",
+        duration_min: 90,
+      },
+      "proj-beta": {
+        id: "proj-beta",
+        name: "Beta",
+        priority: "LOW",
+        stage: "RESEARCH",
+        energy: "LOW",
+        duration_min: 90,
+      },
+    });
+
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      windowLeft,
+      windowRight,
+    ]);
+    vi.spyOn(repo, "fetchWindowsSnapshot").mockResolvedValue([windowLeft, windowRight]);
+
+    const placementCalls: ProjectPlacementCall[] = [];
+    (placement.placeItemInWindows as unknown as vi.Mock).mockImplementation(
+      async ({ item, reuseInstanceId, ignoreProjectIds }) => {
+        placementCalls.push({
+          id: item.id,
+          reuseInstanceId: reuseInstanceId ?? null,
+          ignoreIds: Array.from(ignoreProjectIds ?? []).sort(),
+        });
+        return {
+          data: createInstanceRecord({
+            id: `inst-${item.id}`,
+            source_id: item.id,
+            status: "scheduled",
+            start_utc: "2024-01-02T12:00:00Z",
+            end_utc: "2024-01-02T13:00:00Z",
+            window_id: windowRight.id,
+            weight_snapshot: item.weight,
+            energy_resolved: "LOW",
+          }),
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        };
+      },
+    );
+
+    const base = new Date("2024-01-02T07:00:00Z");
+    await scheduleBacklog(userId, base, client, { writeThroughDays: 1 });
+
+    expect(placementCalls.length).toBeGreaterThan(0);
+    expect(placementCalls[0]).toEqual({
+      id: "proj-beta",
+      reuseInstanceId: "inst-beta",
+      ignoreIds: ["proj-beta"],
     });
   });
 
@@ -3440,12 +3559,14 @@ describe("scheduleBacklog", () => {
 
     expect(result.failures).toHaveLength(0);
     expect(result.error).toBeUndefined();
-    expect(ignoreSets.length).toBeGreaterThan(0);
-    for (const ignoreSet of ignoreSets) {
+    expect(ignoreSets.length).toBe(placementResults.length);
+    ignoreSets.forEach((ignoreSet, index) => {
       expect(ignoreSet).toBeDefined();
-      expect(ignoreSet?.has("proj-alpha")).toBe(true);
-      expect(ignoreSet?.has("proj-beta")).toBe(true);
-    }
+      const projectId = placementResults[index]?.projectId;
+      expect(projectId).toBeDefined();
+      expect(ignoreSet?.size).toBe(1);
+      expect(ignoreSet?.has(projectId)).toBe(true);
+    });
     expect(new Set(placementResults.map(entry => entry.projectId))).toEqual(
       new Set(["proj-alpha", "proj-beta"]),
     );

@@ -585,84 +585,72 @@ export async function scheduleBacklog(
   ) => {
     const conflicts: ScheduleInstance[] = []
     const seen = new Set<string>()
-    const groups = new Map<string | null, ScheduleInstance[]>()
-    for (const inst of instances) {
-      if (!inst) continue
-      if (inst.status !== 'scheduled') continue
-      const key = inst.window_id ?? null
-      const list = groups.get(key)
-      if (list) {
-        list.push(inst)
-      } else {
-        groups.set(key, [inst])
-      }
-    }
-
-    for (const list of groups.values()) {
-      list.sort(
+    const sorted = instances
+      .filter(inst => inst && inst.status === 'scheduled')
+      .sort(
         (a, b) => new Date(a.start_utc ?? '').getTime() - new Date(b.start_utc ?? '').getTime()
       )
-      let last: ScheduleInstance | null = null
-      for (const current of list) {
-        if (!last) {
-          last = current
-          continue
-        }
-        if (!overlaps(last, current)) {
-          last = current
-          continue
-        }
-        if (allowsOverlap(last, current, habitOverlapMap)) {
-          last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
-            ? last
-            : current
-          continue
-        }
-        let removal: ScheduleInstance | null = null
-        const lastIsProject = last.source_type === 'PROJECT'
-        const currentIsProject = current.source_type === 'PROJECT'
-        const lastLocked = last.locked === true
-        const currentLocked = current.locked === true
-        if (lastLocked && currentLocked) {
-          last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
-            ? last
-            : current
-          continue
-        }
-        if (lastLocked && currentIsProject) {
-          removal = current
-        } else if (currentLocked && lastIsProject) {
+
+    let last: ScheduleInstance | null = null
+    for (const current of sorted) {
+      if (!last) {
+        last = current
+        continue
+      }
+      if (!overlaps(last, current)) {
+        last = current
+        continue
+      }
+      if (allowsOverlap(last, current, habitOverlapMap)) {
+        last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
+          ? last
+          : current
+        continue
+      }
+      let removal: ScheduleInstance | null = null
+      const lastIsProject = last.source_type === 'PROJECT'
+      const currentIsProject = current.source_type === 'PROJECT'
+      const lastLocked = last.locked === true
+      const currentLocked = current.locked === true
+      if (lastLocked && currentLocked) {
+        last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
+          ? last
+          : current
+        continue
+      }
+      if (lastLocked && currentIsProject) {
+        removal = current
+      } else if (currentLocked && lastIsProject) {
+        removal = last
+      } else {
+        if (lastIsProject && !currentIsProject) {
           removal = last
-        } else {
-          if (lastIsProject && !currentIsProject) {
+        } else if (!lastIsProject && currentIsProject) {
+          removal = current
+        } else if (lastIsProject && currentIsProject) {
+          const lastWeight = projectWeightForInstance(last)
+          const currentWeight = projectWeightForInstance(current)
+          if (lastWeight < currentWeight) {
             removal = last
-          } else if (!lastIsProject && currentIsProject) {
+          } else if (currentWeight < lastWeight) {
             removal = current
-          } else if (lastIsProject && currentIsProject) {
-            const lastWeight = projectWeightForInstance(last)
-            const currentWeight = projectWeightForInstance(current)
-            if (lastWeight < currentWeight) {
-              removal = last
-            } else if (currentWeight < lastWeight) {
-              removal = current
-            } else {
-              const lastStart = new Date(last.start_utc ?? '').getTime()
-              const currentStart = new Date(current.start_utc ?? '').getTime()
-              removal = currentStart < lastStart ? last : current
-            }
+          } else {
+            const lastStart = new Date(last.start_utc ?? '').getTime()
+            const currentStart = new Date(current.start_utc ?? '').getTime()
+            removal = currentStart < lastStart ? last : current
           }
         }
-        if (removal && removal.source_type === 'PROJECT' && !seen.has(removal.id)) {
-          conflicts.push(removal)
-          seen.add(removal.id)
-          if (removal.id === last.id) {
-            last = current
-          }
-        } else {
-          last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
-            ? last
-            : current
+      }
+      if (removal && removal.source_type === 'PROJECT' && !seen.has(removal.id)) {
+        conflicts.push(removal)
+        seen.add(removal.id)
+        if (removal.id === last.id) {
+          last = current
         }
+      } else {
+        last = new Date(last.end_utc ?? '').getTime() >= new Date(current.end_utc ?? '').getTime()
+          ? last
+          : current
       }
     }
     return conflicts
@@ -810,8 +798,6 @@ export async function scheduleBacklog(
     reuseInstanceByProject.delete(item.id)
   }
 
-  const ignoreProjectIds = new Set(finalQueueProjectIds)
-
   const compareQueueItems = (a: QueueItem, b: QueueItem) => {
     const preferredDiff =
       Number(b.preferred === true) - Number(a.preferred === true)
@@ -953,7 +939,6 @@ export async function scheduleBacklog(
         dayWindows,
         windowAvailability,
         scheduledProjectIds,
-        ignoreProjectIds,
         projectItemMap,
         supabase,
         timeZone,
@@ -1000,7 +985,7 @@ export async function scheduleBacklog(
         date: day,
         client: supabase,
         reuseInstanceId: item.instanceId,
-        ignoreProjectIds,
+        ignoreProjectIds: new Set([item.id]),
         notBefore: offset === 0 ? baseDate : undefined,
         existingInstances: dayInstances.length > 0 ? dayInstances : undefined,
       })
@@ -2883,7 +2868,6 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       dayWindows: WindowLite[]
       windowAvailability: Map<string, WindowAvailabilityBounds>
       scheduledProjectIds: Set<string>
-      ignoreProjectIds: Set<string>
       projectItemMap: Record<string, (typeof projectItems)[number]>
       supabase: Client
       timeZone: string
@@ -2962,7 +2946,7 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
       date: options.day,
       client: options.supabase,
       reuseInstanceId: conflict.id,
-      ignoreProjectIds: options.ignoreProjectIds,
+      ignoreProjectIds: new Set([projectId]),
       notBefore: options.offset === 0 ? options.baseDate : undefined,
       existingInstances,
     })
