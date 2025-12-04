@@ -912,10 +912,10 @@ function FabNexus({
                   )}
                 >
                   <div className="flex w-full items-start justify-between gap-3">
-                    <span className="block flex-1 break-words pr-0 text-[12px] font-medium leading-snug tracking-wide text-white">
+                    <span className="block flex-[3] basis-3/4 break-words pr-0 text-[12px] font-medium leading-snug tracking-wide text-white min-w-0">
                       {result.name}
                     </span>
-                    <div className="flex flex-col items-end gap-1 text-right">
+                    <div className="flex flex-col items-end gap-1 text-right flex-[1] basis-1/4 min-w-0">
                       <div className="flex items-center gap-1">
                         {result.isCompleted ? (
                           <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/80">
@@ -926,7 +926,7 @@ function FabNexus({
                           {result.type === "PROJECT" ? "Project" : "Habit"}
                         </span>
                       </div>
-                      <span className="text-[4px] uppercase tracking-[0.4em] text-white/50">
+                      <span className="text-[4px] uppercase tracking-[0.4em] text-white/50 break-words leading-tight">
                         {statusText}
                       </span>
                     </div>
