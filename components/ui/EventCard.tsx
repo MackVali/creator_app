@@ -47,9 +47,11 @@ export function EventCard({ title, start, end, icon, muted = false, onClick, sty
             <Icon className="w-4 h-4 text-white/70" aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className={`text-[17px] font-medium tracking-tight truncate ${
-              muted ? 'text-zinc-400' : 'text-zinc-200'
-            }`}>
+            <h3
+              className={`text-[17px] font-medium tracking-tight leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate ${
+                muted ? 'text-zinc-400' : 'text-zinc-200'
+              }`}
+            >
               {title}
             </h3>
           </div>

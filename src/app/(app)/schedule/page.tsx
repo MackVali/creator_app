@@ -127,6 +127,9 @@ const VERTICAL_SCROLL_SLOPE = 1.35
 const SCHEDULE_CARD_LONG_PRESS_MS = 650
 const LONG_PRESS_FEEDBACK_DURATION_MS = 280
 const LONG_PRESS_ACTION_DELAY_MS = 120
+const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 22
+const HABIT_STREAK_BADGE_TOP_MARGIN_PX = 8
+const HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX = 2
 
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
@@ -1150,12 +1153,12 @@ function applyTimelineLayoutStyle(
 
 function getTimelineCardCornerClass(mode: TimelineCardLayoutMode) {
   if (mode === 'paired-left') {
-    return 'rounded-l-[var(--radius-lg)] rounded-r-none'
+    return 'rounded-l-[var(--schedule-instance-radius)] rounded-r-none'
   }
   if (mode === 'paired-right') {
-    return 'rounded-r-[var(--radius-lg)] rounded-l-none'
+    return 'rounded-r-[var(--schedule-instance-radius)] rounded-l-none'
   }
-  return 'rounded-[var(--radius-lg)]'
+  return 'rounded-[var(--schedule-instance-radius)]'
 }
 
 function buildDayTimelineModel({
@@ -1955,6 +1958,22 @@ export default function SchedulePage() {
     if (!editInstanceId) return null
     return instances.find(instance => instance.id === editInstanceId) ?? null
   }, [editInstanceId, instances])
+
+  useEffect(() => {
+    setPendingInstanceStatuses(prev => {
+      if (prev.size === 0) return prev
+      const activeIds = new Set(instances.map(instance => instance.id))
+      let changed = false
+      const next = new Map(prev)
+      for (const key of prev.keys()) {
+        if (!activeIds.has(key)) {
+          next.delete(key)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [instances])
   const clearScheduleData = useCallback(() => {
     setWindowSnapshot([])
     setWindows([])
@@ -1968,6 +1987,7 @@ export default function SchedulePage() {
     setProjectGoalRelations({})
     setHabits([])
     setScheduledProjectIds(new Set())
+    setPendingInstanceStatuses(new Map())
     setPendingBacklogTaskIds(new Set())
     backlogTaskPreviousStageRef.current = new Map()
     scheduleDatasetRef.current = null
@@ -4487,6 +4507,11 @@ peekDataDepsRef.current = {
               }
               const topStyle = toTimelinePosition(startOffsetMinutes)
               const heightStyle = toTimelinePosition(durationMinutes)
+              const habitHeightPx = Math.max(durationMinutes * modelPxPerMin, 0)
+              const shouldWrapHabitTitle = Number(durationMinutes) >= 30
+              const habitTitleClass = shouldWrapHabitTitle
+                ? 'pr-8 text-sm font-medium leading-snug line-clamp-2 sm:line-clamp-1 sm:truncate'
+                : 'truncate pr-8 text-sm font-medium leading-snug'
               const habitStatus = getHabitCompletionStatus(
                 dayViewDateKey,
                 placement.habitId
@@ -4509,6 +4534,51 @@ peekDataDepsRef.current = {
               const streakDays = Math.max(0, Math.round(placement.currentStreakDays ?? 0))
               const showHabitStreakBadge = streakDays >= 2
               const streakLabel = `${streakDays}x`
+              let streakBadgeStyle: CSSProperties | undefined
+              if (showHabitStreakBadge) {
+                const availableHeight =
+                  habitHeightPx - HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX
+                let streakBadgeHeightPx = HABIT_STREAK_BADGE_BASE_HEIGHT_PX
+                if (
+                  availableHeight <
+                  HABIT_STREAK_BADGE_BASE_HEIGHT_PX + HABIT_STREAK_BADGE_TOP_MARGIN_PX
+                ) {
+                  streakBadgeHeightPx = Math.max(
+                    0,
+                    availableHeight - HABIT_STREAK_BADGE_TOP_MARGIN_PX
+                  )
+                }
+                let streakBadgeScale = 1
+                if (
+                  streakBadgeHeightPx > 0 &&
+                  streakBadgeHeightPx < HABIT_STREAK_BADGE_BASE_HEIGHT_PX
+                ) {
+                  streakBadgeScale =
+                    streakBadgeHeightPx / HABIT_STREAK_BADGE_BASE_HEIGHT_PX
+                } else if (streakBadgeHeightPx <= 0) {
+                  streakBadgeScale = 0
+                }
+                let streakBadgeTopPx = HABIT_STREAK_BADGE_TOP_MARGIN_PX
+                const overflow =
+                  streakBadgeTopPx +
+                  streakBadgeHeightPx +
+                  HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX -
+                  habitHeightPx
+                if (overflow > 0) {
+                  streakBadgeTopPx = Math.max(
+                    HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX,
+                    streakBadgeTopPx - overflow
+                  )
+                }
+                streakBadgeStyle = {
+                  top: `${streakBadgeTopPx}px`,
+                  transform:
+                    streakBadgeScale < 0.999
+                      ? `scale(${streakBadgeScale})`
+                      : undefined,
+                  transformOrigin: 'top right',
+                }
+              }
               const scheduledCardBackground =
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
@@ -4680,12 +4750,15 @@ peekDataDepsRef.current = {
                 >
                   <motion.span
                     layoutId={habitLayoutTokens?.title}
-                    className="truncate pr-8 text-sm font-medium leading-snug"
+                    className={habitTitleClass}
                   >
                     {placement.habitName}
                   </motion.span>
                   {showHabitStreakBadge ? (
-                    <span className="pointer-events-none absolute right-3 top-2 flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-100">
+                    <span
+                      className="pointer-events-none absolute right-3 top-2 flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.18em] text-amber-100"
+                      style={streakBadgeStyle}
+                    >
                       <FlameEmber
                         level={streakDays >= 7 ? 'HIGH' : streakDays >= 4 ? 'MEDIUM' : 'LOW'}
                         size="xs"
@@ -4706,6 +4779,7 @@ peekDataDepsRef.current = {
                 0,
                 (end.getTime() - start.getTime()) / 60000
               )
+              const shouldWrapProjectTitle = Number(durationMinutes) >= 30
               const topStyle = toTimelinePosition(startOffsetMinutes)
               const heightStyle = toTimelinePosition(durationMinutes)
               const isExpanded = expandedProjects.has(projectId)
@@ -4864,6 +4938,9 @@ peekDataDepsRef.current = {
               const projectEnergyLevel = resolveEnergyLevel(project.energy)
               const cardEnergyLevel: FlameLevel =
                 instanceEnergyLevel ?? projectEnergyLevel ?? 'NO'
+              const projectTitleInnerClass = shouldWrapProjectTitle
+                ? 'min-w-0 leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate'
+                : 'min-w-0 leading-tight truncate'
               return (
                 <motion.div
                   key={instance.id}
@@ -4914,7 +4991,7 @@ peekDataDepsRef.current = {
                           canExpand || (canToggle && !isPending)
                             ? ' cursor-pointer'
                             : ''
-                        }${isPending ? ' opacity-60' : ''}`}
+                        }`}
                         style={projectCardStyle}
                         initial={
                           prefersReducedMotion ? false : { opacity: 0, y: 4 }
@@ -4965,7 +5042,9 @@ peekDataDepsRef.current = {
                               className="block text-sm font-medium"
                             >
                               <span className="flex min-w-0 items-center gap-2">
-                                <span className="truncate">{project.name}</span>
+                                <span className={projectTitleInnerClass}>
+                                  {project.name}
+                                </span>
                                 {isLockedProject ? (
                                   <Lock className="h-3.5 w-3.5 text-white/80" aria-label="Locked project" />
                                 ) : null}
@@ -5082,8 +5161,13 @@ peekDataDepsRef.current = {
                               height: `${heightPercent}%`,
                               ...sharedCardStyle,
                             }
+                            const allowTaskTitleWrap =
+                              taskCard.displayDurationMinutes >= 30
+                            const taskTitleClass = allowTaskTitleWrap
+                              ? 'text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate'
+                              : 'text-sm font-medium leading-tight truncate'
                             const baseTaskClasses =
-                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2 select-none'
+                              'absolute left-0 right-0 flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2 select-none'
                             const shinyTaskClasses =
                               'bg-[linear-gradient(135deg,_rgba(52,52,60,0.95)_0%,_rgba(82,84,94,0.92)_40%,_rgba(158,162,174,0.88)_100%)] text-zinc-50 shadow-[0_18px_38px_rgba(8,8,12,0.55)] ring-1 ring-white/20 backdrop-blur'
                             const completedTaskClasses =
@@ -5218,7 +5302,7 @@ peekDataDepsRef.current = {
                                 data-completed={isCompleted ? 'true' : 'false'}
                                 className={`${cardClasses}${
                                   canToggle && !isPending ? ' cursor-pointer' : ''
-                                }${isPending ? ' opacity-60' : ''}`}
+                                }`}
                                 style={tStyle}
                                 onPointerDown={event => {
                                   if (!instanceId) return
@@ -5290,7 +5374,7 @@ peekDataDepsRef.current = {
                                 <div className="flex flex-col">
                                   <motion.span
                                     layoutId={nestedLayoutTokens?.title}
-                                    className="truncate text-sm font-medium"
+                                    className={taskTitleClass}
                                   >
                                     {task.name}
                                   </motion.span>
@@ -5333,16 +5417,20 @@ peekDataDepsRef.current = {
                 const startOffsetMinutes = startMin - modelStartHour * 60
                 const durationMinutes = Math.max(
                   0,
-                (end.getTime() - start.getTime()) / 60000
-              )
-              const style: CSSProperties = {
-                ...TIMELINE_CARD_BOUNDS,
-                top: toTimelinePosition(startOffsetMinutes),
-                height: toTimelinePosition(durationMinutes),
-                boxShadow: 'var(--elev-card)',
-                outline: '1px solid var(--event-border)',
-                outlineOffset: '-1px',
-              }
+                  (end.getTime() - start.getTime()) / 60000
+                )
+                const style: CSSProperties = {
+                  ...TIMELINE_CARD_BOUNDS,
+                  top: toTimelinePosition(startOffsetMinutes),
+                  height: toTimelinePosition(durationMinutes),
+                  boxShadow: 'var(--elev-card)',
+                  outline: '1px solid var(--event-border)',
+                  outlineOffset: '-1px',
+                }
+                const shouldWrapStandaloneTitle = Number(durationMinutes) >= 30
+                const standaloneTitleClass = shouldWrapStandaloneTitle
+                  ? 'text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate'
+                  : 'text-sm font-medium leading-tight truncate'
               const progress = (task as { progress?: number }).progress ?? 0
               const standaloneEnergyLevel: FlameLevel =
                 resolveEnergyLevel(task.energy) ?? 'NO'
@@ -5353,16 +5441,15 @@ peekDataDepsRef.current = {
                 status === 'completed' || status === 'scheduled'
               const isCompleted = status === 'completed'
               const standaloneBaseClass =
-                'absolute flex items-center justify-between rounded-[var(--radius-lg)] px-3 py-2'
+                'absolute flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2'
               const standaloneScheduledClass =
                 `${standaloneBaseClass} text-zinc-900 shadow-[0_12px_28px_rgba(24,24,27,0.35)] ring-1 ring-white/60 bg-[linear-gradient(135deg,_rgba(255,255,255,0.95)_0%,_rgba(229,231,235,0.92)_45%,_rgba(148,163,184,0.88)_100%)]`
               const standaloneCompletedClass =
                 `${standaloneBaseClass} text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)] ring-1 ring-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)]`
-                const standaloneClassName = [
-                  isCompleted ? standaloneCompletedClass : standaloneScheduledClass,
-                  canToggle && !isPending ? 'cursor-pointer' : '',
-                  isPending ? 'opacity-60' : '',
-                ]
+              const standaloneClassName = [
+                isCompleted ? standaloneCompletedClass : standaloneScheduledClass,
+                canToggle && !isPending ? 'cursor-pointer' : '',
+              ]
                   .filter(Boolean)
                   .join(' ')
                 const standaloneLongPressActive = longPressBounceId === instance.id
@@ -5439,7 +5526,7 @@ peekDataDepsRef.current = {
                   <div className="flex flex-col">
                     <motion.span
                       layoutId={layoutTokens.title}
-                      className="truncate text-sm font-medium"
+                      className={standaloneTitleClass}
                     >
                       {task.name}
                     </motion.span>
