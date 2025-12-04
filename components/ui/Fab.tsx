@@ -857,15 +857,15 @@ function FabNexus({
   const getStatusText = (result: FabSearchResult) => {
     if (result.type === "PROJECT" && result.isCompleted) {
       const completedLabel = formatDateTime(result.completedAt);
-      return completedLabel ? `Completed • ${completedLabel}` : "Completed";
+      return completedLabel ? `Completed ${completedLabel}` : "Completed";
     }
     if (result.nextScheduledAt) {
       const scheduledLabel = formatDateTime(result.nextScheduledAt);
-      return scheduledLabel ? `Scheduled • ${scheduledLabel}` : "Scheduled";
+      return scheduledLabel ? `Scheduled ${scheduledLabel}` : "Scheduled";
     }
     if (result.type === "HABIT" && result.nextDueAt) {
       const dueLabel = formatDateTime(result.nextDueAt, { dateStyle: "medium" });
-      return dueLabel ? `Due • ${dueLabel}` : "Due soon";
+      return dueLabel ? `Due ${dueLabel}` : "Due soon";
     }
     return "No upcoming schedule";
   };
