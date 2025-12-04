@@ -1,5 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+import type { HabitScheduleItem } from "@/lib/scheduler/habits";
+import { evaluateHabitDueOnDate } from "@/lib/scheduler/habitRecurrence";
+import {
+  addDaysInTimeZone,
+  normalizeTimeZone,
+  startOfDayInTimeZone,
+} from "@/lib/scheduler/timezone";
 
 type SearchResult = {
   id: string;
@@ -8,7 +15,40 @@ type SearchResult = {
   nextScheduledAt: string | null;
   scheduleInstanceId: string | null;
   durationMinutes: number | null;
+  nextDueAt: string | null;
+  completedAt: string | null;
+  isCompleted: boolean;
 };
+
+type HabitSearchRecord = {
+  id: string;
+  name?: string | null;
+  habit_type?: string | null;
+  recurrence?: string | null;
+  recurrence_days?: number[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_completed_at?: string | null;
+  next_due_override?: string | null;
+  window_id?: string | null;
+  window?: {
+    id?: string | null;
+    label?: string | null;
+    energy?: string | null;
+    start_local?: string | null;
+    end_local?: string | null;
+    days?: number[] | null;
+  } | null;
+};
+
+type ScheduleSummary = {
+  nextScheduledId: string | null;
+  nextScheduledStart: string | null;
+  nextScheduledDuration: number | null;
+  latestCompletedAt: string | null;
+};
+
+const MAX_HABIT_DUE_LOOKAHEAD_DAYS = 730;
 
 function normalizeQuery(value: string | null): string {
   if (!value) return "";
@@ -33,6 +73,8 @@ export async function GET(request: NextRequest) {
   const query = normalizeQuery(searchParams.get("q"));
   const likeQuery = query ? `%${query.replace(/%/g, "\\%").replace(/_/g, "\\_")}%` : null;
 
+  const timeZone = await resolveUserTimezone(supabase, user.id);
+  const normalizedTimeZone = normalizeTimeZone(timeZone);
   const baseProjectQuery = supabase
     .from("projects")
     .select("id,name")
@@ -42,7 +84,9 @@ export async function GET(request: NextRequest) {
 
   const baseHabitQuery = supabase
     .from("habits")
-    .select("id,name")
+    .select(
+      "id,name,habit_type,recurrence,recurrence_days,created_at,updated_at,last_completed_at,next_due_override,window_id,window:windows(id,label,start_local,end_local,days)"
+    )
     .eq("user_id", user.id)
     .order("name", { ascending: true })
     .limit(25);
@@ -69,22 +113,18 @@ export async function GET(request: NextRequest) {
     .map(habit => habit?.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-  const lookup = new Map<
-    string,
-    { startUtc: string | null; instanceId: string | null; durationMinutes: number | null }
-  >();
+  const lookup = new Map<string, ScheduleSummary>();
 
   if (projectIds.length + habitIds.length > 0) {
     const sourceIds = [...projectIds, ...habitIds];
-    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
     const { data: scheduleRows, error: scheduleError } = await supabase
       .from("schedule_instances")
-      .select("id, source_id, source_type, start_utc, duration_min, status")
+      .select("id, source_id, source_type, start_utc, duration_min, status, completed_at")
       .eq("user_id", user.id)
       .in("source_id", sourceIds)
       .in("source_type", ["PROJECT", "HABIT"])
-      .eq("status", "scheduled")
-      .gte("start_utc", nowIso)
+      .in("status", ["scheduled", "completed"])
       .order("start_utc", { ascending: true });
 
     if (scheduleError) {
@@ -93,18 +133,48 @@ export async function GET(request: NextRequest) {
       for (const row of scheduleRows ?? []) {
         if (!row?.source_id) continue;
         const key = `${row.source_type}:${row.source_id}`;
-        const current = lookup.get(key);
-        const nextPayload = {
-          startUtc: typeof row.start_utc === "string" ? row.start_utc : null,
-          instanceId: row.id ?? null,
-          durationMinutes:
-            typeof row.duration_min === "number" && Number.isFinite(row.duration_min)
-              ? row.duration_min
-              : null,
-        };
-        if (!current?.startUtc || (nextPayload.startUtc ?? "") < current.startUtc) {
-          lookup.set(key, nextPayload);
+        const summary =
+          lookup.get(key) ?? {
+            nextScheduledId: null,
+            nextScheduledStart: null,
+            nextScheduledDuration: null,
+            latestCompletedAt: null,
+          };
+        if (row.status === "scheduled") {
+          const startUtc = typeof row.start_utc === "string" ? row.start_utc : null;
+          const startMs = startUtc ? Date.parse(startUtc) : Number.NaN;
+          if (
+            startUtc &&
+            Number.isFinite(startMs) &&
+            startMs >= nowMs &&
+            (!summary.nextScheduledStart ||
+              startMs < Date.parse(summary.nextScheduledStart))
+          ) {
+            summary.nextScheduledId = row.id ?? null;
+            summary.nextScheduledStart = startUtc;
+            summary.nextScheduledDuration =
+              typeof row.duration_min === "number" && Number.isFinite(row.duration_min)
+                ? row.duration_min
+                : null;
+          }
+        } else if (row.status === "completed") {
+          const completedIso =
+            typeof row.completed_at === "string" && row.completed_at.length > 0
+              ? row.completed_at
+              : typeof row.start_utc === "string"
+                ? row.start_utc
+                : null;
+          const completedMs = completedIso ? Date.parse(completedIso) : Number.NaN;
+          if (
+            completedIso &&
+            Number.isFinite(completedMs) &&
+            (!summary.latestCompletedAt ||
+              completedMs > Date.parse(summary.latestCompletedAt))
+          ) {
+            summary.latestCompletedAt = completedIso;
+          }
         }
+        lookup.set(key, summary);
       }
     }
   }
@@ -114,41 +184,155 @@ export async function GET(request: NextRequest) {
   for (const project of projectsResponse.data ?? []) {
     if (!project?.id) continue;
     const key = `PROJECT:${project.id}`;
+    const summary = lookup.get(key);
     results.push({
       id: project.id,
       name: project.name?.trim() || "Untitled project",
       type: "PROJECT",
-      nextScheduledAt: lookup.get(key)?.startUtc ?? null,
-      scheduleInstanceId: lookup.get(key)?.instanceId ?? null,
-      durationMinutes: lookup.get(key)?.durationMinutes ?? null,
+      nextScheduledAt: summary?.nextScheduledStart ?? null,
+      scheduleInstanceId: summary?.nextScheduledId ?? null,
+      durationMinutes: summary?.nextScheduledDuration ?? null,
+      nextDueAt: null,
+      completedAt: summary?.latestCompletedAt ?? null,
+      isCompleted: typeof summary?.latestCompletedAt === "string",
     });
   }
 
   for (const habit of habitsResponse.data ?? []) {
     if (!habit?.id) continue;
     const key = `HABIT:${habit.id}`;
+    const summary = lookup.get(key);
+    const habitRecord = habit as HabitSearchRecord;
+    const nextDueAt = computeHabitNextDue(habitRecord, normalizedTimeZone);
     results.push({
       id: habit.id,
       name: habit.name?.trim() || "Untitled habit",
       type: "HABIT",
-      nextScheduledAt: lookup.get(key)?.startUtc ?? null,
-      scheduleInstanceId: lookup.get(key)?.instanceId ?? null,
-      durationMinutes: lookup.get(key)?.durationMinutes ?? null,
+      nextScheduledAt: summary?.nextScheduledStart ?? null,
+      scheduleInstanceId: summary?.nextScheduledId ?? null,
+      durationMinutes: summary?.nextScheduledDuration ?? null,
+      nextDueAt,
+      completedAt: null,
+      isCompleted: false,
     });
   }
 
-  const getSortValue = (value: string | null) => {
-    if (!value) return Number.POSITIVE_INFINITY;
-    const parsed = Date.parse(value);
+  const getSortValue = (result: SearchResult) => {
+    if (result.isCompleted) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const candidate =
+      result.nextScheduledAt ?? (result.type === "HABIT" ? result.nextDueAt : null);
+    if (!candidate) return Number.POSITIVE_INFINITY;
+    const parsed = Date.parse(candidate);
     return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
   };
 
   results.sort((a, b) => {
-    const timeA = getSortValue(a.nextScheduledAt);
-    const timeB = getSortValue(b.nextScheduledAt);
+    if (a.isCompleted !== b.isCompleted) {
+      return a.isCompleted ? 1 : -1;
+    }
+    const timeA = getSortValue(a);
+    const timeB = getSortValue(b);
     if (timeA === timeB) return a.name.localeCompare(b.name);
     return timeA - timeB;
   });
 
   return NextResponse.json({ results });
+}
+
+async function resolveUserTimezone(
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,
+  userId: string
+) {
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("timezone")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error) {
+      console.warn("Failed to resolve profile timezone for FAB search", error);
+    }
+    const value = typeof data?.timezone === "string" ? data.timezone.trim() : "";
+    return value || "UTC";
+  } catch (error) {
+    console.warn("Failed to resolve profile timezone for FAB search", error);
+    return "UTC";
+  }
+}
+
+function buildHabitScheduleItem(record: HabitSearchRecord): HabitScheduleItem {
+  return {
+    id: record.id,
+    name: record.name ?? "Habit",
+    durationMinutes: null,
+    createdAt: record.created_at ?? null,
+    updatedAt: record.updated_at ?? null,
+    lastCompletedAt: record.last_completed_at ?? null,
+    currentStreakDays: 0,
+    longestStreakDays: 0,
+    habitType: record.habit_type ?? "HABIT",
+    windowId: record.window_id ?? null,
+    energy: null,
+    recurrence: record.recurrence ?? null,
+    recurrenceDays: record.recurrence_days ?? null,
+    skillId: null,
+    goalId: null,
+    completionTarget: null,
+    locationContextId: null,
+    locationContextValue: null,
+    locationContextName: null,
+    daylightPreference: null,
+    windowEdgePreference: null,
+    nextDueOverride: record.next_due_override ?? null,
+    window: record.window
+      ? {
+          id: record.window.id ?? record.window_id ?? record.id,
+          label: record.window.label ?? null,
+          energy: record.window.energy ?? null,
+          startLocal: record.window.start_local ?? "00:00",
+          endLocal: record.window.end_local ?? "00:00",
+          days: record.window.days ?? null,
+          locationContextId: null,
+          locationContextValue: null,
+          locationContextName: null,
+        }
+      : null,
+  };
+}
+
+function parseIsoDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function computeHabitNextDue(record: HabitSearchRecord, timeZone: string): string | null {
+  try {
+    const habit = buildHabitScheduleItem(record);
+    const zone = timeZone || "UTC";
+    const today = startOfDayInTimeZone(new Date(), zone);
+    const windowDays = record.window?.days ?? null;
+    const nextDueOverride = parseIsoDate(record.next_due_override);
+    for (let offset = 0; offset <= MAX_HABIT_DUE_LOOKAHEAD_DAYS; offset += 1) {
+      const day = offset === 0 ? today : addDaysInTimeZone(today, offset, zone);
+      const dueInfo = evaluateHabitDueOnDate({
+        habit,
+        date: day,
+        timeZone: zone,
+        windowDays,
+        lastScheduledStart: undefined,
+        nextDueOverride,
+      });
+      if (dueInfo.isDue) {
+        const dueDate = dueInfo.dueStart ?? day;
+        return dueDate.toISOString();
+      }
+    }
+    return nextDueOverride ? nextDueOverride.toISOString() : null;
+  } catch (error) {
+    console.error("Failed to compute next due date for habit search result", error);
+    return record.next_due_override ?? null;
+  }
 }

@@ -31,6 +31,9 @@ type FabSearchResult = {
   nextScheduledAt: string | null;
   scheduleInstanceId: string | null;
   durationMinutes: number | null;
+  nextDueAt: string | null;
+  completedAt: string | null;
+  isCompleted: boolean;
 };
 
 export function Fab({
@@ -74,17 +77,23 @@ export function Fab({
 
   const clampColorValue = (value: number) => Math.min(255, Math.max(0, value));
 
-  const getResultSortValue = useCallback((value: string | null) => {
-    if (!value) return Number.POSITIVE_INFINITY;
-    const parsed = Date.parse(value);
+  const getResultSortValue = useCallback((item: FabSearchResult) => {
+    if (item.isCompleted) return Number.POSITIVE_INFINITY;
+    const candidate =
+      item.nextScheduledAt ?? (item.type === "HABIT" ? item.nextDueAt : null);
+    if (!candidate) return Number.POSITIVE_INFINITY;
+    const parsed = Date.parse(candidate);
     return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
   }, []);
 
   const sortSearchResults = useCallback(
     (items: FabSearchResult[]) =>
       [...items].sort((a, b) => {
-        const timeA = getResultSortValue(a.nextScheduledAt);
-        const timeB = getResultSortValue(b.nextScheduledAt);
+        if (a.isCompleted !== b.isCompleted) {
+          return a.isCompleted ? 1 : -1;
+        }
+        const timeA = getResultSortValue(a);
+        const timeB = getResultSortValue(b);
         if (timeA === timeB) {
           return a.name.localeCompare(b.name);
         }
@@ -109,7 +118,7 @@ export function Fab({
         return null;
       }
       const payload = (await response.json().catch(() => null)) as
-        | { instanceId: string | null; startUtc: string | null }
+        | { instanceId: string | null; startUtc: string | null; durationMinutes?: number | null }
         | null;
       return payload ?? null;
     },
@@ -371,6 +380,9 @@ export function Fab({
   };
 
   const handleOpenReschedule = (result: FabSearchResult) => {
+    if (result.type === "PROJECT" && result.isCompleted) {
+      return;
+    }
     setRescheduleTarget(result);
     setRescheduleError(
       result.scheduleInstanceId ? null : "This event has no upcoming scheduled time."
@@ -558,12 +570,19 @@ export function Fab({
         | null;
       let nextStart = payload?.startUtc ?? parsed.toISOString();
       let nextInstanceId = rescheduleTarget.scheduleInstanceId;
+      let nextDuration = rescheduleTarget.durationMinutes;
 
       if (rescheduleTarget.type === "HABIT") {
         const refreshed = await fetchNextScheduledInstance(rescheduleTarget.id, "HABIT");
         if (refreshed) {
           nextStart = refreshed.startUtc ?? nextStart;
           nextInstanceId = refreshed.instanceId ?? nextInstanceId;
+          if (
+            typeof refreshed.durationMinutes === "number" &&
+            Number.isFinite(refreshed.durationMinutes)
+          ) {
+            nextDuration = refreshed.durationMinutes;
+          }
         }
       }
 
@@ -575,6 +594,7 @@ export function Fab({
                   ...item,
                   nextScheduledAt: nextStart,
                   scheduleInstanceId: nextInstanceId,
+                  durationMinutes: nextDuration,
                 }
               : item
           )
@@ -821,6 +841,35 @@ function FabNexus({
 }: FabNexusProps) {
   const hasResults = results.length > 0;
 
+  const formatDateTime = (value: string | null, options?: Intl.DateTimeFormatOptions) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    try {
+      return new Intl.DateTimeFormat(undefined, options ?? { dateStyle: "medium", timeStyle: "short" }).format(
+        date
+      );
+    } catch {
+      return date.toLocaleString();
+    }
+  };
+
+  const getStatusText = (result: FabSearchResult) => {
+    if (result.type === "PROJECT" && result.isCompleted) {
+      const completedLabel = formatDateTime(result.completedAt);
+      return completedLabel ? `Completed • ${completedLabel}` : "Completed";
+    }
+    if (result.nextScheduledAt) {
+      const scheduledLabel = formatDateTime(result.nextScheduledAt);
+      return scheduledLabel ? `Scheduled • ${scheduledLabel}` : "Scheduled";
+    }
+    if (result.type === "HABIT" && result.nextDueAt) {
+      const dueLabel = formatDateTime(result.nextDueAt, { dateStyle: "medium" });
+      return dueLabel ? `Due • ${dueLabel}` : "Due soon";
+    }
+    return "No upcoming schedule";
+  };
+
   return (
     <div className="flex h-full w-full flex-col gap-3 px-4 py-4 text-white" style={{ backgroundColor: "rgba(0,0,0,0.75)" }}>
       <div className="relative">
@@ -844,21 +893,47 @@ function FabNexus({
           </div>
         ) : hasResults ? (
           <div className="flex flex-col">
-            {results.map((result) => (
-              <button
-                key={`${result.type}-${result.id}`}
-                type="button"
-                onClick={() => onSelectResult(result)}
-                className="relative flex flex-col items-start gap-1 border border-white/5 bg-black/60 px-3 py-2 text-left text-white/85 transition hover:bg-black/70 first:rounded-t-lg last:rounded-b-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
-              >
-                <span className="block w-full break-words pr-0 text-[12px] font-medium leading-snug tracking-wide text-white">
-                  {result.name}
-                </span>
-                <span className="absolute right-3 top-1 text-[4px] uppercase tracking-[0.4em] text-white/45">
-                  {result.type === "PROJECT" ? "Project" : "Habit"}
-                </span>
-              </button>
-            ))}
+            {results.map(result => {
+              const isDisabled = result.type === "PROJECT" && result.isCompleted;
+              const statusText = getStatusText(result);
+              return (
+                <button
+                  key={`${result.type}-${result.id}`}
+                  type="button"
+                  onClick={() => {
+                    if (isDisabled) return;
+                    onSelectResult(result);
+                  }}
+                  disabled={isDisabled}
+                  aria-disabled={isDisabled}
+                  className={cn(
+                    "flex flex-col gap-1 border border-white/5 bg-black/60 px-3 py-2 text-left text-white/85 transition hover:bg-black/70 first:rounded-t-lg last:rounded-b-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+                    isDisabled && "cursor-not-allowed opacity-60 hover:bg-black/60"
+                  )}
+                >
+                  <div className="flex w-full items-start justify-between gap-3">
+                    <span className="block flex-1 break-words pr-0 text-[12px] font-medium leading-snug tracking-wide text-white">
+                      {result.name}
+                    </span>
+                    <div className="flex flex-col items-end gap-1 text-right">
+                      <div className="flex items-center gap-1">
+                        {result.isCompleted ? (
+                          <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/80">
+                            Done
+                          </span>
+                        ) : null}
+                        <span className="text-[4px] uppercase tracking-[0.4em] text-white/45">
+                          {result.type === "PROJECT" ? "Project" : "Habit"}
+                        </span>
+                      </div>
+                      <span className="text-[4px] uppercase tracking-[0.4em] text-white/50">
+                        {statusText}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-6 text-center text-sm text-white/60">
