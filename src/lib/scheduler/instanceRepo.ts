@@ -183,6 +183,67 @@ export async function updateInstanceStatus(
     .eq('id', id)
 }
 
+type ProjectInstanceSyncResult = {
+  updated: number
+  error: null | { message: string }
+}
+
+export async function completePendingProjectInstances(
+  projectId: string,
+  options?: {
+    completedAtUTC?: string
+    skipInstanceIds?: string[]
+  },
+  client?: Client
+): Promise<ProjectInstanceSyncResult> {
+  const supabase = await ensureClient(client)
+  const skip = new Set(
+    (options?.skipInstanceIds ?? []).filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    ),
+  )
+
+  const { data, error } = await supabase
+    .from('schedule_instances')
+    .select('id')
+    .eq('source_type', 'PROJECT')
+    .eq('source_id', projectId)
+    .eq('status', 'scheduled')
+
+  if (error) {
+    return {
+      updated: 0,
+      error: { message: error.message ?? 'Failed to load project schedule instances' },
+    }
+  }
+
+  const idsToUpdate = (data ?? [])
+    .map(row => row.id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0 && !skip.has(id))
+
+  if (idsToUpdate.length === 0) {
+    return { updated: 0, error: null }
+  }
+
+  const completedAt = options?.completedAtUTC ?? new Date().toISOString()
+  const { error: updateError } = await supabase
+    .from('schedule_instances')
+    .update({
+      status: 'completed',
+      completed_at: completedAt,
+    })
+    .in('id', idsToUpdate)
+
+  if (updateError) {
+    return {
+      updated: 0,
+      error: { message: updateError.message ?? 'Failed to update project schedule instances' },
+    }
+  }
+
+  return { updated: idsToUpdate.length, error: null }
+}
+
 export async function fetchBacklogNeedingSchedule(
   userId: string,
   client?: Client

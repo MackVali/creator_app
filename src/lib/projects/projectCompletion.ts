@@ -1,5 +1,8 @@
 import { getSupabaseBrowser } from "@/lib/supabase";
-import { updateInstanceStatus } from "@/lib/scheduler/instanceRepo";
+import {
+  completePendingProjectInstances,
+  updateInstanceStatus,
+} from "@/lib/scheduler/instanceRepo";
 
 const PROJECT_XP_AMOUNT = 3;
 
@@ -61,7 +64,8 @@ async function findProjectInstance(
 async function updateProjectInstanceStatus(
   projectId: string,
   action: ProjectCompletionAction,
-  supabase: ReturnType<typeof getSupabaseBrowser>
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  completedAtOverride?: string | null
 ): Promise<string | null> {
   const instance = await findProjectInstance(projectId, supabase);
   if (!instance) {
@@ -72,7 +76,7 @@ async function updateProjectInstanceStatus(
   const options =
     action === "complete"
       ? {
-          completedAtUTC: new Date().toISOString(),
+          completedAtUTC: completedAtOverride ?? new Date().toISOString(),
         }
       : undefined;
 
@@ -87,6 +91,33 @@ async function updateProjectInstanceStatus(
   } catch (error) {
     console.error("Failed to update project schedule instance status", error);
     return instance.id;
+  }
+}
+
+async function updateProjectCompletionFlag(
+  projectId: string,
+  action: ProjectCompletionAction,
+  supabase: ReturnType<typeof getSupabaseBrowser>,
+  completedAtOverride?: string | null
+) {
+  const timestamp = new Date().toISOString();
+  const completedAt =
+    action === "complete" ? completedAtOverride ?? timestamp : null;
+
+  try {
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        completed_at: completedAt,
+        updated_at: timestamp,
+      })
+      .eq("id", projectId);
+
+    if (error) {
+      throw error;
+    }
+  } catch (error) {
+    console.error("Failed to persist project completion flag", error);
   }
 }
 
@@ -195,12 +226,28 @@ export async function recordProjectCompletion(
   }
 
   const userId = authData.user.id;
+  const completionTimestamp = action === "complete" ? new Date().toISOString() : null;
   const skillIds = collectUniqueSkillIds(context.projectSkillIds, context.taskSkillIds);
   const scheduleInstanceId = await updateProjectInstanceStatus(
     context.projectId,
     action,
-    supabase
+    supabase,
+    completionTimestamp
   );
+  if (action === "complete") {
+    const { error } = await completePendingProjectInstances(
+      context.projectId,
+      {
+        completedAtUTC: completionTimestamp ?? undefined,
+        skipInstanceIds: scheduleInstanceId ? [scheduleInstanceId] : undefined,
+      },
+      supabase
+    );
+    if (error) {
+      console.error("Failed to sync project schedule instances after completion", error);
+    }
+  }
+  await updateProjectCompletionFlag(context.projectId, action, supabase, completionTimestamp);
   const monumentIds = await fetchMonumentIdsForSkills(userId, skillIds, supabase);
 
   await awardProjectXp(context.projectId, skillIds, monumentIds, scheduleInstanceId, action);
