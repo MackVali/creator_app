@@ -894,8 +894,23 @@ function FabNexus({
         ) : hasResults ? (
           <div className="flex flex-col">
             {results.map(result => {
-              const isDisabled = result.type === "PROJECT" && result.isCompleted;
+              const isCompletedProject = result.type === "PROJECT" && result.isCompleted;
+              const isDisabled = isCompletedProject;
               const statusText = getStatusText(result);
+              const cardClassName = cn(
+                "flex flex-col gap-1 rounded-lg border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
+                isCompletedProject
+                  ? "border-emerald-300/60 bg-[linear-gradient(135deg,_rgba(6,78,59,0.96)_0%,_rgba(4,120,87,0.94)_42%,_rgba(16,185,129,0.9)_100%)] text-emerald-50 shadow-[0_22px_42px_rgba(4,47,39,0.55)]"
+                  : "border-white/5 bg-black/60 text-white/85 hover:bg-black/70",
+                isDisabled && "cursor-not-allowed"
+              );
+              const nameTextClass = isCompletedProject ? "text-emerald-50" : "text-white";
+              const metaLabelClass = isCompletedProject
+                ? "text-[4px] uppercase tracking-[0.4em] text-emerald-100/70"
+                : "text-[4px] uppercase tracking-[0.4em] text-white/45";
+              const statusLabelClass = isCompletedProject
+                ? "text-[4px] uppercase tracking-[0.4em] text-emerald-100/80 break-words leading-tight"
+                : "text-[4px] uppercase tracking-[0.4em] text-white/50 break-words leading-tight";
               return (
                 <button
                   key={`${result.type}-${result.id}`}
@@ -906,27 +921,26 @@ function FabNexus({
                   }}
                   disabled={isDisabled}
                   aria-disabled={isDisabled}
-                  className={cn(
-                    "flex flex-col gap-1 border border-white/5 bg-black/60 px-3 py-2 text-left text-white/85 transition hover:bg-black/70 first:rounded-t-lg last:rounded-b-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40",
-                    isDisabled && "cursor-not-allowed opacity-60 hover:bg-black/60"
-                  )}
+                  className={cardClassName}
                 >
                   <div className="flex w-full items-start justify-between gap-3">
-                    <span className="block flex-[3] basis-3/4 break-words pr-0 text-[12px] font-medium leading-snug tracking-wide text-white min-w-0">
-                      {result.name}
+                    <span className="block flex-[3] basis-3/4 break-words pr-0 text-[12px] font-medium leading-snug tracking-wide min-w-0">
+                      <span
+                        className={cn(
+                          "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
+                          nameTextClass
+                        )}
+                      >
+                        {result.name}
+                      </span>
                     </span>
                     <div className="flex flex-col items-end gap-1 text-right flex-[1] basis-1/4 min-w-0">
                       <div className="flex items-center gap-1">
-                        {result.isCompleted ? (
-                          <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/80">
-                            Done
-                          </span>
-                        ) : null}
-                        <span className="text-[4px] uppercase tracking-[0.4em] text-white/45">
-                          {result.type === "PROJECT" ? "Project" : "Habit"}
-                        </span>
+                      <span className={metaLabelClass}>
+                        {result.type === "PROJECT" ? "Project" : "Habit"}
+                      </span>
                       </div>
-                      <span className="text-[4px] uppercase tracking-[0.4em] text-white/50 break-words leading-tight">
+                      <span className={statusLabelClass}>
                         {statusText}
                       </span>
                     </div>
