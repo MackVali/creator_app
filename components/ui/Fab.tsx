@@ -925,7 +925,12 @@ function FabNexus({
                 >
                   <div className="flex w-full items-start justify-between gap-3">
                     <span className="block flex-[3] basis-3/4 break-words pr-0 text-[12px] font-medium leading-snug tracking-wide min-w-0">
-                      <span className={cn("block truncate text-[12px] font-medium leading-snug tracking-wide", nameTextClass)}>
+                      <span
+                        className={cn(
+                          "block line-clamp-2 break-words text-[12px] font-medium leading-snug tracking-wide",
+                          nameTextClass
+                        )}
+                      >
                         {result.name}
                       </span>
                     </span>
