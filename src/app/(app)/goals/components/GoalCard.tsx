@@ -288,13 +288,14 @@ function GoalCardImpl({
             goal={goal}
             loading={loading}
             onClose={toggle}
-            onProjectLongPress={handleProjectLongPress}
-            onProjectUpdated={onProjectUpdated}
-            anchorRect={overlayRect}
-            projectDropdownMode={projectDropdownMode}
-            goalId={goal.id}
-            onTaskToggleCompletion={onTaskToggleCompletion}
-          />
+          onProjectLongPress={handleProjectLongPress}
+          onProjectUpdated={onProjectUpdated}
+          anchorRect={overlayRect}
+          projectDropdownMode={projectDropdownMode}
+          goalId={goal.id}
+          onEdit={onEdit}
+          onTaskToggleCompletion={onTaskToggleCompletion}
+        />
           )}
         </div>
       </div>
@@ -490,6 +491,7 @@ type CompactProjectsOverlayProps = {
   onProjectUpdated?: (projectId: string, updates: Partial<Project>) => void;
   projectDropdownMode?: "default" | "tasks-only";
   goalId: string;
+  onEdit?: () => void;
   onTaskToggleCompletion?: (
     goalId: string,
     projectId: string,
@@ -507,6 +509,7 @@ function CompactProjectsOverlay({
   onProjectUpdated,
   projectDropdownMode = "default",
   goalId,
+  onEdit,
   onTaskToggleCompletion,
 }: CompactProjectsOverlayProps) {
   const [mounted, setMounted] = useState(false);
@@ -543,13 +546,35 @@ function CompactProjectsOverlay({
       >
         {goal.title}
       </h4>
-      <button
-        type="button"
-        onClick={onClose}
-        className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80 transition hover:border-white/30 hover:text-white"
-      >
-        Close
-      </button>
+      <div className="flex items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Goal actions"
+              className="rounded-full border border-white/15 bg-white/10 p-1.5 text-white/70 transition hover:border-white/40 hover:text-white"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="z-[80]">
+            <DropdownMenuItem
+              onSelect={() => {
+                onEdit?.();
+              }}
+            >
+              EDIT GOAL
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80 transition hover:border-white/30 hover:text-white"
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 

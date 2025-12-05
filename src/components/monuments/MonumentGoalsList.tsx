@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
+import { GoalDrawer, type GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { projectWeight, taskWeight, type TaskLite, type ProjectLite, dueDateUrgencyBoost } from "@/lib/scheduler/weight";
 import { getSkillsForUser } from "@/lib/queries/skills";
+import { getMonumentsForUser } from "@/lib/queries/monuments";
+import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -286,6 +289,14 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [monuments, setMonuments] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    setOpenGoalId(null);
+  }, [monumentId]);
 
   const decorate = useCallback((goal: Goal) => {
     return {
@@ -309,11 +320,21 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           setLoading(false);
           return;
         }
+        setUserId(user.id);
 
-        const [rows, skills] = await Promise.all([
+        const [rows, skills, userMonuments] = await Promise.all([
           fetchGoalsWithRelationsForMonument(monumentId, user.id),
           getSkillsForUser(user.id).catch(() => []),
+          getMonumentsForUser(user.id).catch(() => []),
         ]);
+
+        setMonuments(
+          userMonuments.map((monument) => ({
+            id: monument.id,
+            title: monument.title,
+            emoji: monument.emoji ?? null,
+          }))
+        );
 
         const skillIconLookup = new Map(skills.map(skill => [skill.id, skill.icon ?? null]));
         const resolveSkillEmoji = (skillId?: string | null) => {
@@ -502,6 +523,34 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     });
   }, []);
 
+  const handleGoalEdit = useCallback((goal: Goal) => {
+    setEditingGoal(goal);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleGoalUpdated = useCallback(
+    async (updatedGoal: Goal, context: GoalUpdateContext) => {
+      setGoals((prev) =>
+        prev.map((goal) => (goal.id === updatedGoal.id ? decorate(updatedGoal) : goal))
+      );
+
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      try {
+        await persistGoalUpdate({
+          supabase,
+          goal: updatedGoal,
+          context,
+          userId,
+          onUserResolved: setUserId,
+        });
+      } catch (err) {
+        console.error("Error updating goal from monument detail:", err);
+      }
+    },
+    [decorate, userId]
+  );
+
   useEffect(() => {
     if (!openGoalId) return;
     if (!goals.some((goal) => goal.id === openGoalId)) {
@@ -537,6 +586,7 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               showCreatedAt={false}
               showEmojiPrefix={false}
               variant="compact"
+              onEdit={() => handleGoalEdit(goal)}
               onProjectUpdated={(projectId, updates) =>
                 handleProjectUpdated(goal.id, projectId, updates)
               }
@@ -605,6 +655,18 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
           .monument-goals-list .goal-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
         }
       `}</style>
+      <GoalDrawer
+        open={drawerOpen && Boolean(editingGoal)}
+        onClose={() => {
+          setDrawerOpen(false);
+          setEditingGoal(null);
+        }}
+        onAdd={() => {}}
+        initialGoal={editingGoal}
+        monuments={monuments}
+        onUpdate={handleGoalUpdated}
+        hideProjects
+      />
     </div>
   );
 }

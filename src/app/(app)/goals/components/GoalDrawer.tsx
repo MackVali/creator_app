@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, Plus, X } from "lucide-react";
 import {
   Sheet,
@@ -14,7 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import FlameEmber, { type FlameLevel } from "@/components/FlameEmber";
 import { cn } from "@/lib/utils";
 import type { Goal, Project, Task } from "../types";
 
@@ -33,7 +34,8 @@ interface GoalDrawerProps {
   initialGoal?: Goal | null;
   /** Callback when updating an existing goal */
   onUpdate?(goal: Goal, context: GoalUpdateContext): void;
-  monuments?: { id: string; title: string }[];
+  monuments?: { id: string; title: string; emoji?: string | null }[];
+  hideProjects?: boolean;
 }
 
 const PRIORITY_OPTIONS: {
@@ -61,22 +63,13 @@ const PRIORITY_OPTIONS: {
 const ENERGY_OPTIONS: {
   value: Goal["energy"];
   label: string;
-  accent: string;
 }[] = [
-  { value: "No", label: "No", accent: "bg-white/10" },
-  { value: "Low", label: "Low", accent: "from-emerald-400/30 to-teal-500/20" },
-  {
-    value: "Medium",
-    label: "Medium",
-    accent: "from-sky-400/30 to-indigo-500/20",
-  },
-  { value: "High", label: "High", accent: "from-indigo-500/30 to-violet-500/20" },
-  { value: "Ultra", label: "Ultra", accent: "from-fuchsia-500/30 to-rose-500/20" },
-  {
-    value: "Extreme",
-    label: "Extreme",
-    accent: "from-orange-500/30 to-amber-500/20",
-  },
+  { value: "No", label: "No" },
+  { value: "Low", label: "Low" },
+  { value: "Medium", label: "Medium" },
+  { value: "High", label: "High" },
+  { value: "Ultra", label: "Ultra" },
+  { value: "Extreme", label: "Extreme" },
 ];
 
 const PROJECT_STAGE_OPTIONS = [
@@ -178,10 +171,12 @@ export function GoalDrawer({
   initialGoal,
   onUpdate,
   monuments = [],
+  hideProjects = false,
 }: GoalDrawerProps) {
   const formId = "goal-editor-form";
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
+  const [hasCustomEmoji, setHasCustomEmoji] = useState(false);
   const [priority, setPriority] = useState<Goal["priority"]>("Low");
   const [energy, setEnergy] = useState<Goal["energy"]>("No");
   const [active, setActive] = useState(true);
@@ -192,18 +187,34 @@ export function GoalDrawer({
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
+  const monumentSelectionRef = useRef<string>("");
 
   const editing = Boolean(initialGoal);
 
+  const getMonumentEmojiById = useCallback(
+    (id?: string | null) => {
+      if (!id) return null;
+      const match = monuments.find((monument) => monument.id === id);
+      return match?.emoji ?? null;
+    },
+    [monuments]
+  );
+
   useEffect(() => {
     if (initialGoal) {
+      const monumentDefaultEmoji = getMonumentEmojiById(initialGoal.monumentId ?? null);
+      const initialEmojiValue = initialGoal.emoji || monumentDefaultEmoji || "";
       setTitle(initialGoal.title);
-      setEmoji(initialGoal.emoji || "");
+      setEmoji(initialEmojiValue);
+      setHasCustomEmoji(
+        Boolean(initialGoal.emoji && initialGoal.emoji !== monumentDefaultEmoji)
+      );
       setPriority(initialGoal.priority);
       setEnergy(initialGoal.energy);
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
       setMonumentId(initialGoal.monumentId || "");
+      monumentSelectionRef.current = initialGoal.monumentId || "";
       setDueDateInput(toDateInputValue(initialGoal.dueDate));
       setShowAdvanced(Boolean(initialGoal.dueDate));
       setProjectsState(
@@ -230,21 +241,42 @@ export function GoalDrawer({
     } else {
       setTitle("");
       setEmoji("");
+      setHasCustomEmoji(false);
       setPriority("Low");
       setEnergy("No");
       setActive(true);
       setWhy("");
       setMonumentId("");
+      monumentSelectionRef.current = "";
       setDueDateInput("");
       setShowAdvanced(false);
       setProjectsState([]);
     }
     setRemovedProjectIds([]);
     setRemovedTaskIds([]);
-  }, [initialGoal, open]);
+  }, [initialGoal, open, getMonumentEmojiById]);
+
+  useEffect(() => {
+    if (monumentSelectionRef.current === monumentId) {
+      return;
+    }
+    monumentSelectionRef.current = monumentId;
+    if (!monumentId) {
+      setEmoji("");
+      setHasCustomEmoji(false);
+      return;
+    }
+    const defaultEmoji = getMonumentEmojiById(monumentId);
+    if (defaultEmoji) {
+      setEmoji(defaultEmoji);
+      setHasCustomEmoji(false);
+    }
+  }, [monumentId, getMonumentEmojiById]);
 
   const monumentOptions = useMemo(() => {
-    if (!monuments.length) return [] as { id: string; title: string }[];
+    if (!monuments.length) {
+      return [] as { id: string; title: string; emoji?: string | null }[];
+    }
     return [...monuments].sort((a, b) => a.title.localeCompare(b.title));
   }, [monuments]);
 
@@ -520,158 +552,118 @@ export function GoalDrawer({
       }}
     >
       <SheetContent
-        side="right"
-        className="border-l border-white/10 bg-[#060911]/95 text-white shadow-[0_40px_120px_-60px_rgba(99,102,241,0.65)] sm:max-w-xl"
+        side="center"
+        className="h-[90vh] w-full max-w-3xl border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
       >
-        <SheetHeader className="px-6 pt-8">
-          <div className="flex items-center justify-between gap-3">
-            <SheetTitle className="text-left text-2xl font-semibold tracking-tight text-white">
-              {editing ? "Edit goal" : "Create a goal"}
-            </SheetTitle>
-            {editing ? (
-              <Button
-                form={formId}
-                type="submit"
-                size="sm"
-                disabled={!canSubmit}
-                className={cn(
-                  "relative hidden overflow-hidden rounded-lg border border-white/10 text-sm font-semibold text-white transition-[filter,transform,box-shadow] duration-300",
-                  "bg-[linear-gradient(135deg,#9ca3af_0%,#6b7280_22%,#1f2937_58%,#0b0f19_100%)] bg-[length:250%_250%] shadow-[0_18px_42px_-26px_rgba(8,13,23,0.85)]",
-                  "hover:scale-[1.02] hover:brightness-110 hover:shadow-[0_24px_60px_-30px_rgba(8,13,23,0.95)] active:scale-[0.98]",
-                  "motion-safe:animate-[steel-shimmer_6s_linear_infinite] motion-reduce:animate-none motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:hover:brightness-100",
-                  "disabled:animate-none disabled:brightness-100 disabled:opacity-60 disabled:shadow-none",
-                  "sm:inline-flex"
-                )}
-              >
-                Save changes
-              </Button>
-            ) : null}
-          </div>
-          <SheetDescription className="text-left text-sm text-white/60">
-            Shape the focus, energy, and storyline for this goal. Everything you
-            update is saved instantly once you hit save.
-          </SheetDescription>
+        <SheetHeader className="border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
+          <SheetTitle className="text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
+            {editing ? "Edit goal" : "Create a goal"}
+          </SheetTitle>
         </SheetHeader>
         <form id={formId} onSubmit={submit} className="flex h-full flex-col">
-          <div className="flex-1 space-y-8 overflow-y-auto px-6 pb-8 pt-6">
+          <div className="flex-1 space-y-8 overflow-y-auto px-6 pb-10 pt-6 sm:px-8 sm:pb-12">
             <div className="grid grid-cols-1 gap-6">
-              <div className="grid grid-cols-[90px,1fr] gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="goal-emoji" className="text-white/70">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="goal-title"
+                  className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60"
+                >
+                  Title<span className="text-rose-300"> *</span>
+                </Label>
+                <Input
+                  id="goal-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                  placeholder="Name the ambition..."
+                  className="h-12 rounded-xl border-white/20 bg-white/5 text-base text-white placeholder:text-white/40"
+                />
+              </div>
+
+              <div className="flex flex-row gap-4 sm:grid sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-1 flex-shrink-0 w-[25%] sm:w-full">
+                  <Label
+                    htmlFor="goal-emoji"
+                    className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60"
+                  >
                     Emoji
                   </Label>
                   <Input
                     id="goal-emoji"
                     value={emoji}
-                    onChange={(e) => setEmoji(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setEmoji(value);
+                      setHasCustomEmoji(value.trim().length > 0);
+                    }}
                     maxLength={2}
                     placeholder="✨"
-                    className="h-12 rounded-xl border-white/10 bg-white/[0.04] text-center text-xl"
+                    className="h-12 rounded-xl border-white/20 bg-white/5 text-center text-xl text-white"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="goal-title" className="text-white/70">
-                    Title<span className="text-rose-300"> *</span>
+                <div className="space-y-2 sm:col-span-1 flex-grow w-[75%] sm:w-full">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                    Monument link
                   </Label>
-                  <Input
-                    id="goal-title"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    required
-                    placeholder="Name the ambition..."
-                    className="h-12 rounded-xl border-white/10 bg-white/[0.04] text-base"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-white/70">Monument link</Label>
-                <Select
-                  value={monumentId}
-                  onValueChange={(value) => setMonumentId(value)}
-                  placeholder="Not linked"
-                  className="w-full"
-                  triggerClassName="h-11 rounded-xl border-white/10 bg-white/[0.04]"
-                >
-                  <SelectContent>
-                    <SelectItem value="" label="Not linked">
-                      <span className="text-sm text-white/70">Not linked</span>
-                    </SelectItem>
-                    {monumentOptions.map((monument) => (
-                      <SelectItem key={monument.id} value={monument.id}>
-                        {monument.title}
+                  <Select
+                    value={monumentId}
+                    onValueChange={(value) => setMonumentId(value)}
+                    placeholder="Not linked"
+                    className="w-full"
+                    triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                  >
+                    <SelectContent>
+                      <SelectItem value="" label="Not linked">
+                        <span className="text-sm text-white/70">Not linked</span>
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-3">
-                <Label className="text-white/70">Priority</Label>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                  {PRIORITY_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setPriority(option.value)}
-                      className={cn(
-                        "rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition",
-                        "hover:border-indigo-400/60 hover:bg-indigo-500/10",
-                        priority === option.value &&
-                          "border-indigo-400/60 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.3)]"
-                      )}
-                    >
-                      <div className="text-sm font-semibold text-white">
-                        {option.label}
-                      </div>
-                      <p className="mt-1 text-xs text-white/60">
-                        {option.description}
-                      </p>
-                    </button>
-                  ))}
+                      {monumentOptions.map((monument) => (
+                        <SelectItem key={monument.id} value={monument.id}>
+                          {monument.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-
-              <div className="space-y-3">
-                <Label className="text-white/70">Energy required</Label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {ENERGY_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setEnergy(option.value)}
-                      className={cn(
-                        "rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-sm transition",
-                        "hover:border-sky-400/50 hover:bg-sky-500/10",
-                        energy === option.value &&
-                          "border-sky-400/70 bg-gradient-to-r text-white",
-                        energy === option.value && option.accent
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+              <div className="flex flex-row gap-4 sm:grid sm:grid-cols-2">
+                <div className="space-y-3 flex-1">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                    Priority
+                  </Label>
+                  <Select value={priority} onValueChange={(value) => setPriority(value as Goal["priority"])}>
+                    <SelectTrigger className="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white">
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#0f172a] text-sm text-white">
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <span className="font-semibold">{option.label.toUpperCase()}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
 
-              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                <div>
-                  <p className="text-sm font-medium text-white">Goal visibility</p>
-                  <p className="text-xs text-white/60">
-                    Inactive goals tuck themselves away from your main lists.
-                  </p>
+                <div className="space-y-3 flex-1">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                    Energy required
+                  </Label>
+                  <Select value={energy} onValueChange={(value) => setEnergy(value as Goal["energy"])}>
+                    <SelectTrigger className="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white">
+                      <SelectValue placeholder="Select energy level" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#0f172a] text-sm text-white">
+                      {ENERGY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <div className="flex items-center gap-2">
+                            <FlameEmber level={option.value.toUpperCase() as FlameLevel} size="xs" />
+                            <span>{option.label.toUpperCase()}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Button
-                  type="button"
-                  variant={active ? "default" : "outline"}
-                  className={cn(
-                    "rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide",
-                    active ? "bg-emerald-500 text-black" : "text-white/80"
-                  )}
-                  onClick={() => setActive((prev) => !prev)}
-                >
-                  {active ? "Active" : "Inactive"}
-                </Button>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
@@ -720,7 +712,10 @@ export function GoalDrawer({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="goal-why" className="text-white/70">
+                <Label
+                  htmlFor="goal-why"
+                  className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60"
+                >
                   Why?
                 </Label>
                 <Textarea
@@ -728,47 +723,50 @@ export function GoalDrawer({
                   value={why}
                   onChange={(e) => setWhy(e.target.value)}
                   placeholder="Capture the purpose or narrative behind this goal."
-                  className="min-h-[120px] rounded-xl border-white/10 bg-white/[0.04] text-sm"
+                  className="min-h-[120px] rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
                 />
               </div>
 
-              <div className="space-y-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <Label className="text-white/70">Projects &amp; tasks</Label>
-                    <p className="text-xs text-white/60">
-                      Manage the projects and tasks connected to this goal without
-                      leaving the page.
-                    </p>
+              {!hideProjects && (
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                        Projects &amp; tasks
+                      </Label>
+                      <p className="text-xs text-white/55">
+                        Manage the projects and tasks connected to this goal without
+                        leaving the page.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 rounded-full border-white/20 bg-white/[0.04] text-xs font-medium text-white/80 hover:border-indigo-400/50 hover:text-white"
+                      onClick={handleAddProject}
+                    >
+                      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                      Add project
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 rounded-full border-white/20 bg-white/[0.04] text-xs font-medium text-white/80 hover:border-indigo-400/50 hover:text-white"
-                    onClick={handleAddProject}
-                  >
-                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    Add project
-                  </Button>
-                </div>
 
-                {projectsState.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-white/60">
-                    No projects linked yet. Add one to keep your plan in sync with
-                    this goal.
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {projectsState.map((project, index) => {
-                      const stageValue =
-                        project.stage ?? projectStatusToStage(project.status);
-                      const projectDueDateValue = toDateInputValue(project.dueDate);
-                      return (
-                        <div
-                          key={project.id}
-                          className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
-                        >
+                  {projectsState.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-white/60">
+                      No projects linked yet. Add one to keep your plan in sync with
+                      this goal.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {projectsState.map((project, index) => {
+                        const stageValue =
+                          project.stage ?? projectStatusToStage(project.status);
+                        const projectDueDateValue = toDateInputValue(project.dueDate);
+                        return (
+                          <div
+                            key={project.id}
+                            className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                          >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 space-y-2">
                               <div className="flex items-center justify-between gap-3">
@@ -788,7 +786,7 @@ export function GoalDrawer({
                                   )
                                 }
                                 placeholder="Name this project"
-                                className="h-11 rounded-xl border-white/10 bg-white/[0.05] text-sm"
+                                className="h-11 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
                               />
                             </div>
                             <Button
@@ -813,7 +811,7 @@ export function GoalDrawer({
                                 onValueChange={(value) =>
                                   handleProjectStageChange(project.id, value)
                                 }
-                                triggerClassName="h-10 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
+                                triggerClassName="h-10 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
                               >
                                 <SelectContent className="bg-[#0f172a] text-sm text-white">
                                   {PROJECT_STAGE_OPTIONS.map((option) => (
@@ -836,7 +834,7 @@ export function GoalDrawer({
                                     value as Goal["energy"]
                                   )
                                 }
-                                triggerClassName="h-10 rounded-xl border-white/10 bg-white/[0.04] text-left text-sm"
+                                triggerClassName="h-10 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
                               >
                                 <SelectContent className="bg-[#0f172a] text-sm text-white">
                                   {ENERGY_OPTIONS.map((option) => (
@@ -866,7 +864,7 @@ export function GoalDrawer({
                                     onChange={(event) =>
                                       handleProjectDueDateChange(project.id, event.target.value)
                                     }
-                                    className="h-10 rounded-xl border-white/15 bg-white/[0.05] text-sm text-white sm:flex-1"
+                                    className="h-10 rounded-xl border-white/20 bg-white/5 text-sm text-white sm:flex-1"
                                   />
                                   {projectDueDateValue ? (
                                     <Button
@@ -999,6 +997,7 @@ export function GoalDrawer({
                   </div>
                 )}
               </div>
+              )}
             </div>
           </div>
           <SheetFooter className="border-t border-white/10 bg-[#05070c]/60">
@@ -1017,6 +1016,26 @@ export function GoalDrawer({
             </div>
           </SheetFooter>
         </form>
+        <SheetFooter className="border-t border-white/10 bg-white/[0.02] px-6 py-4 sm:px-8">
+          <div className="flex w-full items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-sm text-white/70 hover:text-white"
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form={formId}
+              className="bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60"
+              disabled={!canSubmit}
+            >
+              Save goal
+            </Button>
+          </div>
+        </SheetFooter>
       </SheetContent>
     </Sheet>
   );
