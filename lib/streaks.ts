@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 
 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 const DAILY_RECURRENCES = new Set(["daily", "none", "everyday", ""]);
@@ -45,13 +46,27 @@ function addMonths(base: Date, months: number) {
 }
 
 function parseEveryDays(value: string) {
-  const match = /^every\s+(\d+)\s+day/i.exec(value);
+  const match = /^every\s+(\d+)\s+days?/i.exec(value);
   if (!match) return null;
   const raw = Number(match[1]);
   return Number.isFinite(raw) && raw > 0 ? raw : null;
 }
 
-function nextDeadline(previous: Date, recurrence: string) {
+function resolveDayInterval(
+  recurrence: string,
+  recurrenceDays?: number[] | null
+): number | null {
+  if (recurrence === "every x days") {
+    return resolveEveryXDaysInterval(recurrence, recurrenceDays);
+  }
+  return parseEveryDays(recurrence);
+}
+
+function nextDeadline(
+  previous: Date,
+  recurrence: string,
+  recurrenceDays?: number[] | null
+) {
   if (DAILY_RECURRENCES.has(recurrence)) {
     return addDays(previous, 1);
   }
@@ -64,10 +79,12 @@ function nextDeadline(previous: Date, recurrence: string) {
       return addMonths(previous, 1);
     case "bi-monthly":
       return addMonths(previous, 2);
+    case "every 6 months":
+      return addMonths(previous, 6);
     case "yearly":
       return addMonths(previous, 12);
     default: {
-      const everyDays = parseEveryDays(recurrence);
+      const everyDays = resolveDayInterval(recurrence, recurrenceDays);
       if (typeof everyDays === "number") {
         return addDays(previous, everyDays);
       }
@@ -76,8 +93,13 @@ function nextDeadline(previous: Date, recurrence: string) {
   }
 }
 
-function isWithinWindow(prev: Date, next: Date, recurrence: string) {
-  const deadline = nextDeadline(prev, recurrence);
+function isWithinWindow(
+  prev: Date,
+  next: Date,
+  recurrence: string,
+  recurrenceDays?: number[] | null
+) {
+  const deadline = nextDeadline(prev, recurrence, recurrenceDays);
   return next.getTime() <= deadline.getTime() + TWELVE_HOURS_MS;
 }
 
@@ -87,7 +109,8 @@ function toCompletionDate(row: HabitCompletionRow): Date | null {
 
 export function computeHabitStreakMetrics(
   rows: HabitCompletionRow[],
-  recurrenceRaw: string | null | undefined
+  recurrenceRaw: string | null | undefined,
+  recurrenceDays?: number[] | null
 ): HabitStreakMetrics {
   const recurrence = normalizeRecurrence(recurrenceRaw);
   const timestamps = rows
@@ -110,7 +133,7 @@ export function computeHabitStreakMetrics(
   for (const timestamp of timestamps) {
     if (!previous) {
       current = 1;
-    } else if (isWithinWindow(previous, timestamp, recurrence)) {
+    } else if (isWithinWindow(previous, timestamp, recurrence, recurrenceDays)) {
       current += 1;
     } else {
       current = 1;
@@ -141,7 +164,7 @@ export async function refreshHabitStreak(
     await Promise.all([
       supabase
         .from("habits")
-        .select("id, recurrence")
+        .select("id, recurrence, recurrence_days")
         .eq("id", habitId)
         .eq("user_id", userId)
         .single(),
@@ -165,7 +188,8 @@ export async function refreshHabitStreak(
 
   const metrics = computeHabitStreakMetrics(
     (completions ?? []) as HabitCompletionRow[],
-    habit.recurrence ?? null
+    habit.recurrence ?? null,
+    habit.recurrence_days ?? null
   );
 
   await supabase

@@ -11,7 +11,7 @@ create type "public"."priority_enum" as enum ('NO', 'LOW', 'MEDIUM', 'HIGH', 'CR
 
 create type "public"."project_stage_enum" as enum ('RESEARCH', 'TEST', 'BUILD', 'REFINE', 'RELEASE');
 
-create type "public"."recurrence_enum" as enum ('daily', 'weekly', 'bi-weekly', 'monthly', 'bi-monthly', 'yearly', 'every x days');
+create type "public"."recurrence_enum" as enum ('daily', 'weekly', 'bi-weekly', 'monthly', 'every 6 months', 'yearly', 'every x days');
 
 create type "public"."task_stage_enum" as enum ('PREPARE', 'PRODUCE', 'PERFECT');
 

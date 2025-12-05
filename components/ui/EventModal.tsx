@@ -71,6 +71,8 @@ import {
 } from "@/lib/drafts/projects";
 import { projectWeight } from "@/lib/scheduler/weight";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
+import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
+import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@/types/supabase";
 
@@ -560,6 +562,7 @@ interface FormState {
   location_context_id: string;
   daylight_preference: string;
   window_edge_preference: string;
+  window_id: string;
   completion_target: string;
   manual_start: string;
   manual_end: string;
@@ -617,6 +620,7 @@ const createInitialFormState = (
   location_context_id: "",
   daylight_preference: "ALL_DAY",
   window_edge_preference: "FRONT",
+  window_id: "",
   completion_target: eventType === "HABIT" ? "10" : "",
   manual_start: "",
   manual_end: "",
@@ -1618,6 +1622,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     ];
   }, [skillsLoading, sortedSkills]);
 
+  const {
+    windowOptions: habitWindowOptions,
+    windowsLoading: habitWindowsLoading,
+    windowError: habitWindowError,
+  } = useHabitWindows();
+
   useEffect(() => {
     if (priorityChoiceOptions.length === 0) {
       return;
@@ -2081,6 +2091,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         location_context_id?: string | null;
         daylight_preference?: string | null;
         window_edge_preference?: string | null;
+        window_id?: string | null;
         completion_target?: number | null;
       } = {
         user_id: user.id,
@@ -2185,21 +2196,24 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           insertData.completion_target = null;
         }
         const normalizedRecurrence = formData.recurrence.toLowerCase().trim();
-        if (
-          normalizedRecurrence === "every x days" &&
-          formData.recurrence_days.length === 0
-        ) {
+        const everyXDaysInterval =
+          normalizedRecurrence === "every x days"
+            ? resolveEveryXDaysInterval(
+                formData.recurrence,
+                formData.recurrence_days
+              )
+            : null;
+        if (normalizedRecurrence === "every x days" && !everyXDaysInterval) {
           toast.error(
-            "Days required",
-            "Select at least one day for this habit."
+            "Interval required",
+            "Set how many days should pass between completions."
           );
           return;
         }
 
         const recurrenceDaysValue =
-          normalizedRecurrence === "every x days" &&
-          formData.recurrence_days.length > 0
-            ? formData.recurrence_days
+          normalizedRecurrence === "every x days" && everyXDaysInterval
+            ? [everyXDaysInterval]
             : null;
 
         insertData.recurrence =
@@ -2236,6 +2250,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
             : null;
         insertData.window_edge_preference =
           (formData.window_edge_preference || "FRONT").toUpperCase();
+        insertData.window_id =
+          formData.window_id && formData.window_id.length > 0
+            ? formData.window_id
+            : null;
 
         if (formData.type?.toUpperCase() === "MEMO" && !insertData.skill_id) {
           toast.error(
@@ -3610,6 +3628,10 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
               windowEdgePreference={
                 formData.window_edge_preference || "FRONT"
               }
+              windowId={formData.window_id && formData.window_id.length > 0 ? formData.window_id : "none"}
+              windowOptions={habitWindowOptions}
+              windowsLoading={habitWindowsLoading}
+              windowError={habitWindowError}
               energyOptions={habitEnergyOptions}
               skillsLoading={skillsLoading}
               skillOptions={habitSkillSelectOptions}
@@ -3680,6 +3702,12 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 setFormData((prev) => ({
                   ...prev,
                   window_edge_preference: value.toUpperCase(),
+                }))
+              }
+              onWindowChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  window_id: value === "none" ? "" : value,
                 }))
               }
               footerSlot={

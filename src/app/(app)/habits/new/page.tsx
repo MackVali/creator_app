@@ -27,8 +27,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
+import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { SkillRow } from "@/lib/types/skill";
+import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 
 interface RoutineOption {
   id: string;
@@ -67,6 +69,7 @@ export default function NewHabitPage() {
   const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
+  const [windowId, setWindowId] = useState<string>("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -88,6 +91,7 @@ export default function NewHabitPage() {
     () => HABIT_ENERGY_OPTIONS,
     []
   );
+  const { windowOptions, windowsLoading, windowError } = useHabitWindows();
 
   useEffect(() => {
     let active = true;
@@ -448,8 +452,14 @@ export default function NewHabitPage() {
       return;
     }
 
-    if (recurrence.toLowerCase().trim() === "every x days" && recurrenceDays.length === 0) {
-      setError("Please select at least one day for this recurrence.");
+    const normalizedRecurrence = recurrence.toLowerCase().trim();
+    const everyXDaysInterval =
+      normalizedRecurrence === "every x days"
+        ? resolveEveryXDaysInterval(recurrence, recurrenceDays)
+        : null;
+
+    if (normalizedRecurrence === "every x days" && !everyXDaysInterval) {
+      setError("Set how many days should pass between completions.");
       return;
     }
 
@@ -507,12 +517,12 @@ export default function NewHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const normalizedRecurrence = recurrence.toLowerCase().trim();
       const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
       const recurrenceDaysValue =
-        normalizedRecurrence === "every x days" && recurrenceDays.length > 0
-          ? recurrenceDays
+        normalizedRecurrence === "every x days" && everyXDaysInterval
+          ? [everyXDaysInterval]
           : null;
+      const windowIdValue = windowId === "none" ? null : windowId;
       const goalIdValue = goalId === "none" ? null : goalId;
       let routineIdToUse: string | null = null;
 
@@ -580,6 +590,7 @@ export default function NewHabitPage() {
             ? daylightPreference
             : null,
         window_edge_preference: windowEdgePreference,
+        window_id: windowIdValue,
         goal_id: isTempHabit ? goalIdValue : null,
         completion_target: parsedCompletionTarget,
       };
@@ -639,9 +650,13 @@ export default function NewHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
-                locationContextId={locationContextId}
-                daylightPreference={daylightPreference}
-                windowEdgePreference={windowEdgePreference}
+              locationContextId={locationContextId}
+              daylightPreference={daylightPreference}
+              windowEdgePreference={windowEdgePreference}
+              windowId={windowId}
+              windowOptions={windowOptions}
+              windowsLoading={windowsLoading}
+              windowError={windowError}
               energyOptions={energySelectOptions}
               skillsLoading={skillsLoading}
               skillOptions={skillSelectOptions}
@@ -661,13 +676,14 @@ export default function NewHabitPage() {
                 onEnergyChange={setEnergy}
                 onDurationChange={setDuration}
                 onSkillChange={setSkillId}
-                onLocationContextIdChange={setLocationContextId}
-                onDaylightPreferenceChange={(value) =>
-                  setDaylightPreference(value.toUpperCase())
-                }
-                onWindowEdgePreferenceChange={(value) =>
-                  setWindowEdgePreference(value.toUpperCase())
-                }
+              onLocationContextIdChange={setLocationContextId}
+              onDaylightPreferenceChange={(value) =>
+                setDaylightPreference(value.toUpperCase())
+              }
+              onWindowEdgePreferenceChange={(value) =>
+                setWindowEdgePreference(value.toUpperCase())
+              }
+              onWindowChange={(value) => setWindowId(value)}
                 footerSlot={
                   <div className="space-y-4">
                     <div className="space-y-3">

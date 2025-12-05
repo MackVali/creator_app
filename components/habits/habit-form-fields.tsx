@@ -16,6 +16,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import type { CatRow } from "@/lib/types/cat";
+import type { HabitWindowSelectOption } from "@/lib/hooks/useHabitWindows";
+import {
+  DEFAULT_EVERY_X_DAYS_INTERVAL,
+  ensureEveryXDaysInterval,
+  resolveEveryXDaysInterval,
+} from "@/lib/recurrence";
 
 export type HabitTypeOption = {
   label: string;
@@ -78,14 +84,14 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
 ];
 
 export const HABIT_RECURRENCE_OPTIONS: HabitRecurrenceOption[] = [
-  { label: "No set cadence", value: "none" },
-  { label: "Daily", value: "daily" },
-  { label: "Weekly", value: "weekly" },
-  { label: "Bi-weekly", value: "bi-weekly" },
-  { label: "Monthly", value: "monthly" },
-  { label: "Bi-monthly", value: "bi-monthly" },
-  { label: "Yearly", value: "yearly" },
-  { label: "Every X Days", value: "every x days" },
+  { label: "NO SET CADENCE", value: "none" },
+  { label: "DAILY", value: "daily" },
+  { label: "WEEKLY", value: "weekly" },
+  { label: "BI-WEEKLY", value: "bi-weekly" },
+  { label: "MONTHLY", value: "monthly" },
+  { label: "6 MONTHS", value: "every 6 months" },
+  { label: "YEARLY", value: "yearly" },
+  { label: "EVERY X DAYS", value: "every x days" },
 ];
 
 export const HABIT_ENERGY_OPTIONS: HabitEnergySelectOption[] = [
@@ -95,16 +101,6 @@ export const HABIT_ENERGY_OPTIONS: HabitEnergySelectOption[] = [
   { value: "HIGH", label: "High", description: "Needs momentum and intention." },
   { value: "ULTRA", label: "Ultra", description: "Best when you're in full flow." },
   { value: "EXTREME", label: "Extreme", description: "Reserve for peak energy." },
-];
-
-const DAYS_OF_WEEK = [
-  { value: 0, label: "Sun", fullLabel: "Sunday" },
-  { value: 1, label: "Mon", fullLabel: "Monday" },
-  { value: 2, label: "Tue", fullLabel: "Tuesday" },
-  { value: 3, label: "Wed", fullLabel: "Wednesday" },
-  { value: 4, label: "Thu", fullLabel: "Thursday" },
-  { value: 5, label: "Fri", fullLabel: "Friday" },
-  { value: 6, label: "Sat", fullLabel: "Saturday" },
 ];
 
 interface HabitFormFieldsProps {
@@ -141,6 +137,11 @@ interface HabitFormFieldsProps {
   onLocationContextIdChange?: (id: string | null) => void;
   onDaylightPreferenceChange?: (value: string) => void;
   onWindowEdgePreferenceChange?: (value: string) => void;
+  windowId?: string;
+  windowOptions?: HabitWindowSelectOption[];
+  windowsLoading?: boolean;
+  windowError?: string | null;
+  onWindowChange?: (value: string) => void;
   typeOptions?: HabitTypeOption[];
   recurrenceOptions?: HabitRecurrenceOption[];
   footerSlot?: ReactNode;
@@ -175,6 +176,10 @@ export function HabitFormFields({
   locationContextId = null,
   daylightPreference = "ALL_DAY",
   windowEdgePreference = "FRONT",
+  windowId = "none",
+  windowOptions = [],
+  windowsLoading = false,
+  windowError,
   energyOptions,
   skillsLoading,
   skillOptions,
@@ -197,15 +202,29 @@ export function HabitFormFields({
   onLocationContextIdChange,
   onDaylightPreferenceChange,
   onWindowEdgePreferenceChange,
+  onWindowChange,
   typeOptions = HABIT_TYPE_OPTIONS,
   recurrenceOptions = HABIT_RECURRENCE_OPTIONS,
   footerSlot,
   showDescriptionField = true,
 }: HabitFormFieldsProps) {
   const normalizedRecurrence = recurrence.toLowerCase().trim();
-  const showRecurrenceDayPicker = normalizedRecurrence === "every x days";
+  const showRecurrenceIntervalInput = normalizedRecurrence === "every x days";
   const normalizedHabitType = habitType.toUpperCase();
   const isTempHabit = normalizedHabitType === "TEMP";
+  const everyXDaysInterval =
+    resolveEveryXDaysInterval(recurrence, recurrenceDays) ??
+    DEFAULT_EVERY_X_DAYS_INTERVAL;
+
+  useEffect(() => {
+    if (showRecurrenceIntervalInput && recurrenceDays.length === 0) {
+      onRecurrenceDaysChange([DEFAULT_EVERY_X_DAYS_INTERVAL]);
+    }
+  }, [
+    onRecurrenceDaysChange,
+    recurrenceDays.length,
+    showRecurrenceIntervalInput,
+  ]);
 
   const goalSelectOptions = (goalOptions && goalOptions.length > 0
     ? goalOptions
@@ -326,14 +345,6 @@ export function HabitFormFields({
     (option) => option.value === "none",
   );
 
-  const handleToggleRecurrenceDay = (day: number) => {
-    const hasDay = recurrenceDays.includes(day);
-    const next = hasDay
-      ? recurrenceDays.filter((value) => value !== day)
-      : [...recurrenceDays, day].sort((a, b) => a - b);
-    onRecurrenceDaysChange(next);
-  };
-
   const locationOptionsById = useMemo(() => {
     return new Map(locationOptions.map((option) => [option.id, option]));
   }, [locationOptions]);
@@ -345,6 +356,24 @@ export function HabitFormFields({
   const windowEdgeValue = (windowEdgePreference ?? "FRONT")
     .toUpperCase()
     .trim();
+  const normalizedWindowId =
+    typeof windowId === "string" && windowId.trim().length > 0
+      ? windowId
+      : "none";
+  const hasWindowSelection =
+    normalizedWindowId !== "none" &&
+    windowOptions.some((option) => option.id === normalizedWindowId);
+  const resolvedWindowOptions = hasWindowSelection
+    ? windowOptions
+    : normalizedWindowId !== "none"
+      ? [
+          ...windowOptions,
+          {
+            id: normalizedWindowId,
+            label: "Selected window (unavailable)",
+          },
+        ]
+      : windowOptions;
 
   const handleAddCustomLocation = async () => {
     const name = customLocationName;
@@ -444,28 +473,29 @@ export function HabitFormFields({
                 ))}
               </SelectContent>
             </Select>
-          {showRecurrenceDayPicker ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-              {DAYS_OF_WEEK.map((day) => {
-                const isSelected = recurrenceDays.includes(day.value);
-                return (
-                  <button
-                    key={day.value}
-                    type="button"
-                    onClick={() => handleToggleRecurrenceDay(day.value)}
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-center text-xs font-semibold uppercase tracking-[0.2em] transition",
-                      isSelected
-                        ? "border-blue-400/60 bg-blue-500/20 text-white"
-                        : "border-white/10 bg-white/[0.05] text-white/70 hover:border-white/20 hover:text-white",
-                    )}
-                    aria-pressed={isSelected}
-                    aria-label={day.fullLabel}
-                  >
-                    {day.label}
-                  </button>
-                );
-              })}
+          {showRecurrenceIntervalInput ? (
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Interval (days)
+              </Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={everyXDaysInterval}
+                  onChange={(event) => {
+                    const normalizedValue =
+                      ensureEveryXDaysInterval(event.target.value) ??
+                      DEFAULT_EVERY_X_DAYS_INTERVAL;
+                    onRecurrenceDaysChange([normalizedValue]);
+                  }}
+                  className="h-11 w-32 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                />
+                <span className="text-xs uppercase tracking-[0.3em] text-white/60">
+                  days between completions
+                </span>
+              </div>
             </div>
           ) : null}
         </div>
@@ -749,6 +779,36 @@ export function HabitFormFields({
                   Custom locations sync across your habits and windows.
                 </p>
               </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Preferred window
+              </Label>
+              <Select
+                value={normalizedWindowId}
+                onValueChange={(value) => onWindowChange?.(value)}
+                disabled={windowsLoading}
+              >
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="Lock this habit to a window" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  <SelectItem value="none">No preferred window</SelectItem>
+                  {resolvedWindowOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-white/60">
+                Keep this habit anchored to a specific window. We’ll skip other
+                windows when placing it.
+              </p>
+              {windowError ? (
+                <p className="text-xs text-amber-300/90">{windowError}</p>
+              ) : null}
             </div>
 
             <div className="space-y-3">

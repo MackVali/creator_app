@@ -18,6 +18,8 @@ import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import { cn } from "@/lib/utils";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
+import { resolveEveryXDaysInterval } from "@/lib/recurrence";
+import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 import { XIcon } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import {
@@ -95,7 +97,7 @@ function isGoalMetadataError(maybeError?: unknown) {
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
   const baseColumns =
-    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference, location_context_id, next_due_override";
+    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference, location_context_id, next_due_override, window_id";
 
   const columns = [
     baseColumns,
@@ -171,6 +173,7 @@ export function HabitEditSheet({
   );
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
+  const [windowId, setWindowId] = useState<string>("none");
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(true);
   const [routineLoadError, setRoutineLoadError] = useState<string | null>(null);
@@ -200,6 +203,7 @@ export function HabitEditSheet({
     () => HABIT_ENERGY_OPTIONS,
     [],
   );
+  const { windowOptions, windowsLoading, windowError } = useHabitWindows();
 
   const resetForm = useCallback(() => {
     setName("");
@@ -212,6 +216,7 @@ export function HabitEditSheet({
     setLocationContextId(null);
     setDaylightPreference("ALL_DAY");
     setWindowEdgePreference("FRONT");
+    setWindowId("none");
     setRoutineOptions([]);
     setRoutineLoadError(null);
     setRoutinesLoading(true);
@@ -703,13 +708,21 @@ export function HabitEditSheet({
           setName(data.name ?? "");
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
-          setRecurrence(data.recurrence ?? "none");
+          const rawRecurrence = data.recurrence ?? "none";
+          setRecurrence(rawRecurrence);
           const safeRecurrenceDays = Array.isArray(data.recurrence_days)
             ? data.recurrence_days
                 .map((value: unknown) => Number(value))
-                .filter((value: number) => Number.isFinite(value))
+                .filter((value: number) => Number.isFinite(value) && value > 0)
+                .map((value: number) => Math.round(value))
             : [];
-          setRecurrenceDays(safeRecurrenceDays);
+          const everyXDaysInterval =
+            rawRecurrence.toLowerCase().trim() === "every x days"
+              ? resolveEveryXDaysInterval(rawRecurrence, safeRecurrenceDays)
+              : null;
+          setRecurrenceDays(
+            everyXDaysInterval ? [everyXDaysInterval] : safeRecurrenceDays,
+          );
           setDuration(
             typeof data.duration_minutes === "number"
               ? String(data.duration_minutes)
@@ -746,6 +759,7 @@ export function HabitEditSheet({
               ? data.location_context_id
               : null,
           );
+          setWindowId(data.window_id ?? "none");
           setDaylightPreference(
             data.daylight_preference
               ? String(data.daylight_preference).toUpperCase()
@@ -912,8 +926,19 @@ export function HabitEditSheet({
 
         const trimmedDescription = description.trim();
         const recurrenceValue = recurrence.toLowerCase().trim();
+        const everyXDaysInterval =
+          recurrenceValue === "every x days"
+            ? resolveEveryXDaysInterval(recurrenceValue, recurrenceDays)
+            : null;
+        if (recurrenceValue === "every x days" && !everyXDaysInterval) {
+          setError("Set how many days should pass between completions.");
+          setSaving(false);
+          return;
+        }
         const recurrenceDaysValue =
-          recurrenceValue === "every x days" ? recurrenceDays : null;
+          recurrenceValue === "every x days" && everyXDaysInterval
+            ? [everyXDaysInterval]
+            : null;
         const parsedDuration = Number(duration);
         const durationMinutes =
           duration && Number.isFinite(parsedDuration)
@@ -941,6 +966,7 @@ export function HabitEditSheet({
           }
         }
 
+        const resolvedWindowId = windowId === "none" ? null : windowId;
         const basePayload: Record<string, unknown> = {
           name: name.trim(),
           description: trimmedDescription || null,
@@ -956,6 +982,7 @@ export function HabitEditSheet({
               ? daylightPreference
               : null,
           window_edge_preference: windowEdgePreference,
+          window_id: resolvedWindowId,
         };
 
         if (goalMetadataSupported) {
@@ -1104,6 +1131,10 @@ export function HabitEditSheet({
             locationContextId={locationContextId}
             daylightPreference={daylightPreference}
             windowEdgePreference={windowEdgePreference}
+            windowId={windowId}
+            windowOptions={windowOptions}
+            windowsLoading={windowsLoading}
+            windowError={windowError}
             energyOptions={energySelectOptions}
             skillsLoading={skillsLoading}
             skillOptions={skillSelectOptions}
@@ -1130,6 +1161,7 @@ export function HabitEditSheet({
             onWindowEdgePreferenceChange={(value) =>
               setWindowEdgePreference(value.toUpperCase())
             }
+            onWindowChange={setWindowId}
             showDescriptionField={false}
             footerSlot={routineFooter}
           />

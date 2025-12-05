@@ -29,15 +29,15 @@ const SUMMARY_STYLES = [
 ];
 
 const RECURRENCE_FILTERS = [
-  { value: "all", label: "All cadences" },
-  { value: "none", label: "No cadence" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "bi-weekly", label: "Bi-weekly" },
-  { value: "monthly", label: "Monthly" },
-  { value: "bi-monthly", label: "Bi-monthly" },
-  { value: "yearly", label: "Yearly" },
-  { value: "every x days", label: "Every X days" },
+  { value: "all", label: "ALL CADENCES" },
+  { value: "none", label: "NO CADENCE" },
+  { value: "daily", label: "DAILY" },
+  { value: "weekly", label: "WEEKLY" },
+  { value: "bi-weekly", label: "BI-WEEKLY" },
+  { value: "monthly", label: "MONTHLY" },
+  { value: "every 6 months", label: "6 MONTHS" },
+  { value: "yearly", label: "YEARLY" },
+  { value: "every x days", label: "EVERY X DAYS" },
 ];
 
 type HabitRoutineGroup = {
@@ -140,14 +140,15 @@ function buildHabitStreakPills(habit: Habit): HabitStreakPill[] {
 }
 
 const RECURRENCE_LABELS: Record<string, string> = {
-  none: "No set cadence",
-  daily: "Daily",
-  weekly: "Weekly",
-  "bi-weekly": "Bi-weekly",
-  monthly: "Monthly",
-  "bi-monthly": "Bi-monthly",
-  yearly: "Yearly",
-  "every x days": "Every X days",
+  none: "NO SET CADENCE",
+  daily: "DAILY",
+  weekly: "WEEKLY",
+  "bi-weekly": "BI-WEEKLY",
+  monthly: "MONTHLY",
+  "every 6 months": "6 MONTHS",
+  "bi-monthly": "BI-MONTHLY",
+  yearly: "YEARLY",
+  "every x days": "EVERY X DAYS",
 };
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

@@ -8,6 +8,7 @@ import {
   startOfDayInTimeZone,
   weekdayInTimeZone,
 } from './timezone'
+import { resolveEveryXDaysInterval } from '@/lib/recurrence'
 
 export type HabitDueEvaluation = {
   isDue: boolean
@@ -31,6 +32,7 @@ const DAY_INTERVALS: Record<string, number> = {
 const MONTH_INTERVALS: Record<string, number> = {
   monthly: 1,
   'bi-monthly': 2,
+  'every 6 months': 6,
   yearly: 12,
 }
 
@@ -63,10 +65,20 @@ function normalizeDayList(days?: number[] | null) {
 }
 
 function parseEveryDays(value: string) {
-  const match = /^every\s+(\d+)\s+day/i.exec(value)
+  const match = /^every\s+(\d+)\s+days?/i.exec(value)
   if (!match) return null
   const raw = Number(match[1])
   return Number.isFinite(raw) && raw > 0 ? raw : null
+}
+
+function resolveCustomDayInterval(
+  recurrence: string,
+  recurrenceDays?: number[] | null,
+) {
+  if (recurrence === 'every x days') {
+    return resolveEveryXDaysInterval(recurrence, recurrenceDays)
+  }
+  return parseEveryDays(recurrence)
 }
 
 function isDailyRecurrence(recurrence: string) {
@@ -77,8 +89,10 @@ function computeChoreDueStart(
   lastCompletedStart: Date,
   recurrence: string,
   timeZone: string,
+  recurrenceDays?: number[] | null,
 ) {
-  const dayInterval = DAY_INTERVALS[recurrence] ?? parseEveryDays(recurrence)
+  const dayInterval =
+    DAY_INTERVALS[recurrence] ?? resolveCustomDayInterval(recurrence, recurrenceDays)
   if (typeof dayInterval === 'number' && dayInterval > 0) {
     return addDaysInTimeZone(lastCompletedStart, dayInterval, timeZone)
   }
@@ -127,7 +141,8 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
       ? resolvedRecurrenceDays
       : resolvedWindowDays
 
-  const dayInterval = DAY_INTERVALS[recurrence] ?? parseEveryDays(recurrence)
+  const dayInterval =
+    DAY_INTERVALS[recurrence] ?? resolveCustomDayInterval(recurrence, habit.recurrenceDays)
   const monthInterval = MONTH_INTERVALS[recurrence]
   const requiresCompletionInterval =
     habitType === 'CHORE' &&
@@ -151,7 +166,7 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
       return { isDue: true, dueStart: dayStart }
     }
 
-    const dueStart = computeChoreDueStart(lastStart, recurrence, zone)
+    const dueStart = computeChoreDueStart(lastStart, recurrence, zone, habit.recurrenceDays)
     if (!dueStart) {
       return { isDue: true, dueStart: dayStart }
     }
@@ -220,12 +235,13 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
     }
     case 'monthly':
     case 'bi-monthly':
+    case 'every 6 months':
     case 'yearly': {
       const monthsDiff = differenceInCalendarMonthsInTimeZone(anchorStart, dayStart, zone)
       if (monthsDiff < 0) {
         return { isDue: false, dueStart: null }
       }
-      const interval = recurrence === 'monthly' ? 1 : recurrence === 'bi-monthly' ? 2 : 12
+      const interval = MONTH_INTERVALS[recurrence] ?? 12
       if (monthsDiff % interval !== 0) {
         return { isDue: false, dueStart: null }
       }
@@ -238,7 +254,7 @@ export function evaluateHabitDueOnDate(params: EvaluateParams): HabitDueEvaluati
       return { isDue: true, dueStart: dayStart }
     }
     default: {
-      const everyDays = parseEveryDays(recurrence)
+      const everyDays = resolveCustomDayInterval(recurrence, habit.recurrenceDays)
       if (typeof everyDays === 'number' && everyDays > 1) {
         const diffDays = differenceInCalendarDaysInTimeZone(anchorStart, dayStart, zone)
         if (diffDays < 0 || diffDays % everyDays !== 0) {

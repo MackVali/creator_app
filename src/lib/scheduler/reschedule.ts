@@ -48,6 +48,7 @@ const BASE_LOOKAHEAD_DAYS = 28
 const LOOKAHEAD_PER_ITEM_DAYS = 7
 const MAX_LOOKAHEAD_DAYS = 365
 const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS
+const LOCATION_CLEANUP_DAYS = 7
 const COMPLETED_RETENTION_DAYS = 3
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
@@ -133,6 +134,42 @@ async function ensureClient(client?: Client): Promise<Client> {
   }
 
   throw new Error('Supabase client not available')
+}
+
+const normalizeLocationContextValue = (value?: string | null) => {
+  if (typeof value !== 'string') return null
+  const normalized = value.toUpperCase().trim()
+  if (!normalized || normalized === 'ANY') return null
+  return normalized
+}
+
+const doesWindowMatchHabitLocation = (
+  habit: HabitScheduleItem | undefined,
+  windowRecord: WindowLite | null,
+) => {
+  if (!windowRecord) return true
+  const windowLocationId =
+    typeof windowRecord.location_context_id === 'string' &&
+    windowRecord.location_context_id.trim().length > 0
+      ? windowRecord.location_context_id.trim()
+      : null
+  const windowLocationValue = normalizeLocationContextValue(
+    windowRecord.location_context_value ?? null,
+  )
+  const windowRequiresLocation = Boolean(windowLocationId || windowLocationValue)
+  if (!windowRequiresLocation) return true
+  if (!habit) return false
+  const habitLocationId =
+    typeof habit.locationContextId === 'string' && habit.locationContextId.trim().length > 0
+      ? habit.locationContextId.trim()
+      : null
+  const habitLocationValue = normalizeLocationContextValue(habit.locationContextValue ?? null)
+  const habitHasLocation = Boolean(habitLocationId || habitLocationValue)
+  if (!habitHasLocation) return false
+  if (habitLocationId) {
+    return windowLocationId === habitLocationId
+  }
+  return habitLocationValue ? windowLocationValue === habitLocationValue : true
 }
 
 export async function markMissedAndQueue(
@@ -545,6 +582,7 @@ export async function scheduleBacklog(
     }
   }
 
+
   const overlaps = (a: ScheduleInstance, b: ScheduleInstance) => {
     const aStart = new Date(a.start_utc ?? '').getTime()
     const aEnd = new Date(a.end_utc ?? '').getTime()
@@ -914,8 +952,12 @@ export async function scheduleBacklog(
   const maxOffset = restrictProjectsToToday
     ? Math.min(Math.max(persistedDayLimit, 1), 1)
     : persistedDayLimit
+  const cleanupOffsetLimit = Math.max(
+    maxOffset,
+    Math.min(persistedDayLimit, LOCATION_CLEANUP_DAYS),
+  )
 
-  for (let offset = 0; offset < maxOffset; offset += 1) {
+  for (let offset = 0; offset < cleanupOffsetLimit; offset += 1) {
     let windowAvailability = windowAvailabilityByDay.get(offset)
     if (!windowAvailability) {
       windowAvailability = new Map<string, WindowAvailabilityBounds>()
@@ -923,131 +965,173 @@ export async function scheduleBacklog(
     }
 
     const day = offset === 0 ? baseStart : addDaysInTimeZone(baseStart, offset, timeZone)
-    if (offset < habitWriteLookaheadDays && offset < persistedDayLimit) {
+    await prepareWindowsForDay(day)
+    const dayInstances = getDayInstances(offset)
+    const allowSchedulingToday = offset < maxOffset
+    const shouldScheduleHabits =
+      allowSchedulingToday &&
+      offset < habitWriteLookaheadDays &&
+      offset < persistedDayLimit
+    if (shouldScheduleHabits) {
       await ensureHabitPlacementsForDay(offset, day, windowAvailability)
     } else {
-      await prepareWindowsForDay(day)
-    }
-    const dayInstances = getDayInstances(offset)
-    const dayWindows = getWindowsForDay(day)
-    const conflictProjects = collectProjectOverlapConflicts(dayInstances, habitAllowsOverlap)
-    for (const conflict of conflictProjects) {
-      const resolution = await attemptProjectConflictPlacement(conflict, {
-        day,
-        offset,
-        dayInstances,
-        dayWindows,
-        windowAvailability,
-        scheduledProjectIds,
-        projectItemMap,
-        supabase,
-        timeZone,
-        baseDate,
-        restMode: isRestMode,
-        windowCache,
-        userId,
-        result,
-        dayOffsetFor,
-        registerInstanceForOffsets,
-        projectMatchesMonument: projectMatchesSelectedMonument,
-      })
-      if (resolution === 'NO_WINDOW' || resolution === 'NO_FIT') {
-        result.failures.push({
-          itemId: conflict.source_id ?? conflict.id,
-          reason: resolution,
-        })
-      }
-    }
-
-    for (const item of queue) {
-      if (scheduledProjectIds.has(item.id)) continue
-
-      const windows = await fetchCompatibleWindowsForItem(
-        supabase,
-        day,
-        item,
-        timeZone,
-        {
-          availability: windowAvailability,
-          now: offset === 0 ? baseDate : undefined,
-          cache: windowCache,
-          restMode: isRestMode,
-          userId,
-          preloadedWindows: dayWindows,
-        }
+      const hasHabitInstances = dayInstances.some(
+        inst => inst?.source_type === 'HABIT' && inst.status === 'scheduled',
       )
-      if (windows.length === 0) continue
-
-      const placed = await placeItemInWindows({
-        userId,
-        item,
-        windows,
-        date: day,
-        client: supabase,
-        reuseInstanceId: item.instanceId,
-        ignoreProjectIds: new Set([item.id]),
-        notBefore: offset === 0 ? baseDate : undefined,
-        existingInstances: dayInstances.length > 0 ? dayInstances : undefined,
-      })
-
-      if (!('status' in placed)) {
-        if (placed.error !== 'NO_FIT') {
-          result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
-        }
-        continue
-      }
-
-      if (placed.error) {
-        result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
-        continue
-      }
-
-      if (placed.data) {
-        result.placed.push(placed.data)
-        const placementWindow = findPlacementWindow(
-          windows,
-          placed.data
-        )
-        if (placementWindow?.key) {
-          const placementEnd = new Date(placed.data.end_utc)
-          const existingBounds = windowAvailability.get(placementWindow.key)
-          if (existingBounds) {
-            const nextFront = Math.min(
-              placementEnd.getTime(),
-              existingBounds.back.getTime(),
-            )
-            existingBounds.front = new Date(nextFront)
-            if (existingBounds.front.getTime() > existingBounds.back.getTime()) {
-              existingBounds.back = new Date(existingBounds.front)
-            }
-          } else {
-            const endLocal = placementWindow.endLocal ?? placementEnd
-            windowAvailability.set(placementWindow.key, {
-              front: placementEnd,
-              back: new Date(endLocal),
-            })
-          }
-        }
-        keptInstancesByProject.delete(item.id)
-        const decision: ScheduleDraftPlacement['decision'] = item.instanceId
-          ? 'rescheduled'
-          : 'new'
-        result.timeline.push({
-          type: 'PROJECT',
-          instance: placed.data,
-          projectId: placed.data.source_id ?? item.id,
-          decision,
-          scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? offset,
-          availableStartLocal: placementWindow?.availableStartLocal
-            ? placementWindow.availableStartLocal.toISOString()
-            : undefined,
-          windowStartLocal: placementWindow?.startLocal
-            ? placementWindow.startLocal.toISOString()
-            : undefined,
-          locked: placed.data.locked ?? undefined,
+      if (hasHabitInstances) {
+        const cleanupResult = await scheduleHabitsForDay({
+          userId,
+          habits,
+          day,
+          offset,
+          timeZone,
+          availability: windowAvailability,
+          baseDate,
+          windowCache,
+          client: supabase,
+          sunlightLocation: location,
+          timeZoneOffsetMinutes,
+          durationMultiplier,
+          restMode: isRestMode,
+          existingInstances: dayInstances,
+          registerInstance: registerInstanceForOffsets,
+          getWindowsForDay,
+          getLastScheduledHabitStart: getHabitLastScheduledStart,
+          recordHabitScheduledStart,
+          habitMap: habitById,
+          allowScheduling: false,
         })
-        scheduledProjectIds.add(item.id)
-        registerInstanceForOffsets(placed.data)
+        if (cleanupResult.failures.length > 0) {
+          result.failures.push(...cleanupResult.failures)
+        }
+      }
+    }
+    const dayWindows = getWindowsForDay(day)
+    if (allowSchedulingToday) {
+      const conflictProjects = collectProjectOverlapConflicts(dayInstances, habitAllowsOverlap)
+      for (const conflict of conflictProjects) {
+        const resolution = await attemptProjectConflictPlacement(conflict, {
+          day,
+          offset,
+          dayInstances,
+          dayWindows,
+          windowAvailability,
+          scheduledProjectIds,
+          projectItemMap,
+          supabase,
+          timeZone,
+          baseDate,
+          restMode: isRestMode,
+          windowCache,
+          userId,
+          result,
+          dayOffsetFor,
+          registerInstanceForOffsets,
+          projectMatchesMonument: projectMatchesSelectedMonument,
+        })
+        if (resolution === 'NO_WINDOW' || resolution === 'NO_FIT') {
+          result.failures.push({
+            itemId: conflict.source_id ?? conflict.id,
+            reason: resolution,
+          })
+        }
+      }
+
+      for (const item of queue) {
+        if (scheduledProjectIds.has(item.id)) continue
+
+        const windows = await fetchCompatibleWindowsForItem(
+          supabase,
+          day,
+          item,
+          timeZone,
+          {
+            availability: windowAvailability,
+            now: offset === 0 ? baseDate : undefined,
+            cache: windowCache,
+            restMode: isRestMode,
+            userId,
+            preloadedWindows: dayWindows,
+          }
+        )
+        if (windows.length === 0) continue
+
+        const placed = await placeItemInWindows({
+          userId,
+          item,
+          windows,
+          date: day,
+          client: supabase,
+          reuseInstanceId: item.instanceId,
+          ignoreProjectIds: new Set([item.id]),
+          notBefore: offset === 0 ? baseDate : undefined,
+          existingInstances: dayInstances.length > 0 ? dayInstances : undefined,
+        })
+
+        if (!('status' in placed)) {
+          if (placed.error !== 'NO_FIT') {
+            result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
+          }
+          continue
+        }
+
+        if (placed.error) {
+          result.failures.push({ itemId: item.id, reason: 'error', detail: placed.error })
+          continue
+        }
+
+        if (placed.data) {
+          result.placed.push(placed.data)
+          const placementWindow = findPlacementWindow(
+            windows,
+            placed.data
+          )
+          if (placementWindow?.key) {
+            const placementEnd = new Date(placed.data.end_utc)
+            const existingBounds = windowAvailability.get(placementWindow.key)
+            if (existingBounds) {
+              const nextFront = Math.min(
+                placementEnd.getTime(),
+                existingBounds.back.getTime(),
+              )
+              existingBounds.front = new Date(nextFront)
+              if (existingBounds.front.getTime() > existingBounds.back.getTime()) {
+                existingBounds.back = new Date(existingBounds.front)
+              }
+            } else {
+              const endLocal = placementWindow.endLocal ?? placementEnd
+              windowAvailability.set(placementWindow.key, {
+                front: placementEnd,
+                back: new Date(endLocal),
+              })
+            }
+          }
+          keptInstancesByProject.delete(item.id)
+          const decision: ScheduleDraftPlacement['decision'] = item.instanceId
+            ? 'rescheduled'
+            : 'new'
+          result.timeline.push({
+            type: 'PROJECT',
+            instance: placed.data,
+            projectId: placed.data.source_id ?? item.id,
+            decision,
+            scheduledDayOffset: dayOffsetFor(placed.data.start_utc) ?? offset,
+            availableStartLocal: placementWindow?.availableStartLocal
+              ? placementWindow.availableStartLocal.toISOString()
+              : undefined,
+            windowStartLocal: placementWindow?.startLocal
+              ? placementWindow.startLocal.toISOString()
+              : undefined,
+            locked: placed.data.locked ?? undefined,
+          })
+          scheduledProjectIds.add(item.id)
+
+          if (item.instanceId) {
+            removeInstanceFromBuckets(item.instanceId)
+          }
+          upsertInstance(dayInstances, placed.data)
+          registerInstanceForOffsets(placed.data)
+        }
       }
     }
   }
@@ -1291,6 +1375,7 @@ async function scheduleHabitsForDay(params: {
   getLastScheduledHabitStart: (habitId: string) => Date | null
   recordHabitScheduledStart: (habitId: string, start: Date | string) => void
   habitMap: Map<string, HabitScheduleItem>
+  allowScheduling?: boolean
 }): Promise<HabitScheduleDayResult> {
   const {
     userId,
@@ -1312,6 +1397,7 @@ async function scheduleHabitsForDay(params: {
     getLastScheduledHabitStart,
     recordHabitScheduledStart,
     habitMap,
+    allowScheduling = true,
   } = params
 
   const result: HabitScheduleDayResult = {
@@ -1513,7 +1599,25 @@ async function scheduleHabitsForDay(params: {
     .map(inst => ({ ...inst }))
     .filter(inst => !canceledInstanceIds.has(inst?.id ?? ""))
 
+  const cacheKey = dateCacheKey(day)
+  let windows = windowCache.get(cacheKey)
+  if (!windows) {
+    windows = getWindowsForDay(day)
+    windowCache.set(cacheKey, windows)
+  }
+
+  if (!windows || windows.length === 0) {
+    await clearHabitOverrides()
+    return result
+  }
+
+  const windowsById = new Map<string, WindowLite>()
+  for (const win of windows) {
+    windowsById.set(win.id, win)
+  }
+
   const invalidHabitInstances: ScheduleInstance[] = []
+  const locationMismatchInstances: ScheduleInstance[] = []
   const seenInvalidIds = new Set<string>()
   for (let index = dayInstances.length - 1; index >= 0; index -= 1) {
     const instance = dayInstances[index]
@@ -1524,6 +1628,19 @@ async function scheduleHabitsForDay(params: {
     if (!habitId) continue
     const habit = habitMap.get(habitId)
     if (!habit) continue
+    const windowRecord = instance.window_id ? windowsById.get(instance.window_id) ?? null : null
+    const hasLocationMatch = doesWindowMatchHabitLocation(habit, windowRecord)
+    if (!hasLocationMatch) {
+      if (!seenInvalidIds.has(instance.id ?? `${habitId}:location`)) {
+        locationMismatchInstances.push(instance)
+        seenInvalidIds.add(instance.id ?? `${habitId}:location`)
+      }
+      dayInstances.splice(index, 1)
+      if (existingByHabitId.get(habitId)?.id === instance.id) {
+        existingByHabitId.delete(habitId)
+      }
+      continue
+    }
     const nextDueOverride = parseNextDueOverride(habit.nextDueOverride)
     const instanceStart = new Date(instance.start_utc ?? '')
     if (Number.isNaN(instanceStart.getTime())) continue
@@ -1555,6 +1672,9 @@ async function scheduleHabitsForDay(params: {
   if (invalidHabitInstances.length > 0) {
     duplicatesToCancel.push(...invalidHabitInstances)
   }
+  if (locationMismatchInstances.length > 0) {
+    duplicatesToCancel.push(...locationMismatchInstances)
+  }
 
   if (duplicatesToCancel.length > 0) {
     for (const duplicate of duplicatesToCancel) {
@@ -1576,6 +1696,10 @@ async function scheduleHabitsForDay(params: {
         duplicate.status = 'canceled'
       }
     }
+  }
+
+  if (!allowScheduling) {
+    return result
   }
 
   const dueHabits: HabitScheduleItem[] = []
@@ -1606,23 +1730,6 @@ async function scheduleHabitsForDay(params: {
   if (dueHabits.length === 0) {
     await clearHabitOverrides()
     return result
-  }
-
-  const cacheKey = dateCacheKey(day)
-  let windows = windowCache.get(cacheKey)
-  if (!windows) {
-    windows = getWindowsForDay(day)
-    windowCache.set(cacheKey, windows)
-  }
-
-  if (!windows || windows.length === 0) {
-    await clearHabitOverrides()
-    return result
-  }
-
-  const windowsById = new Map<string, WindowLite>()
-  for (const win of windows) {
-    windowsById.set(win.id, win)
   }
 
   const windowEntries = windows
@@ -1753,10 +1860,11 @@ async function scheduleHabitsForDay(params: {
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
     const locationContextSource = habit.locationContextValue ?? habit.window?.locationContextValue ?? null
-    const locationContext =
+    const normalizedLocationContext =
       locationContextSource && typeof locationContextSource === 'string'
         ? locationContextSource.toUpperCase().trim()
         : null
+    const locationContext = normalizedLocationContext === 'ANY' ? null : normalizedLocationContext
     const locationContextIdRaw = habit.locationContextId ?? habit.window?.locationContextId ?? null
     const locationContextId =
       typeof locationContextIdRaw === 'string' && locationContextIdRaw.trim().length > 0
@@ -1764,18 +1872,34 @@ async function scheduleHabitsForDay(params: {
         : null
     const hasExplicitLocationContext =
       (typeof habit.locationContextId === 'string' && habit.locationContextId.trim().length > 0) ||
-      (typeof habit.locationContextValue === 'string' && habit.locationContextValue.trim().length > 0)
-    const existingWindowLocation = existingInstance?.window_id
-      ? windowsById
-          .get(existingInstance.window_id)
-          ?.location_context_value?.toUpperCase()
-          .trim() ?? null
+      (typeof habit.locationContextValue === 'string' &&
+        habit.locationContextValue.trim().length > 0 &&
+        habit.locationContextValue.toUpperCase().trim() !== 'ANY')
+    const existingWindowRecord = existingInstance?.window_id
+      ? windowsById.get(existingInstance.window_id) ?? null
       : null
-    if (
+    const existingWindowLocationId =
+      typeof existingWindowRecord?.location_context_id === 'string' &&
+      existingWindowRecord.location_context_id.trim().length > 0
+        ? existingWindowRecord.location_context_id.trim()
+        : null
+    const existingWindowLocationValue =
+      existingWindowRecord?.location_context_value &&
+      existingWindowRecord.location_context_value.length > 0
+        ? existingWindowRecord.location_context_value.toUpperCase().trim()
+        : null
+    const existingWindowHasLocation =
+      Boolean(existingWindowLocationId) || Boolean(existingWindowLocationValue)
+    const hasLocationMismatch =
       existingInstance &&
-      !hasExplicitLocationContext &&
-      existingWindowLocation === 'WORK'
-    ) {
+      hasExplicitLocationContext &&
+      ((locationContextId && existingWindowLocationId !== locationContextId) ||
+        (!locationContextId &&
+          locationContext &&
+          existingWindowLocationValue !== locationContext))
+    const hasLocationlessMismatch =
+      existingInstance && !hasExplicitLocationContext && existingWindowHasLocation
+    if (hasLocationMismatch || hasLocationlessMismatch) {
       if (await cancelScheduledInstance(existingInstance)) {
         existingByHabitId.delete(habit.id)
         existingInstance = null
@@ -1835,21 +1959,24 @@ async function scheduleHabitsForDay(params: {
       attemptQueue.push({ locationId: normalizedId, locationValue: normalizedValue, daylight })
     }
 
+    const hasLocationRequirement = Boolean(locationContextId || locationContext)
     enqueueAttempt(locationContextId, locationContext, daylightConstraint)
-    if (locationContextId || locationContext) {
+    if (hasLocationRequirement) {
       enqueueAttempt(locationContextId, null, daylightConstraint)
       enqueueAttempt(null, locationContext, daylightConstraint)
+    } else {
       enqueueAttempt(null, null, daylightConstraint)
     }
     if (daylightConstraint) {
       enqueueAttempt(locationContextId, locationContext, null)
-      if (locationContextId || locationContext) {
+      if (hasLocationRequirement) {
         enqueueAttempt(locationContextId, null, null)
         enqueueAttempt(null, locationContext, null)
+      } else {
+        enqueueAttempt(null, null, null)
       }
-      enqueueAttempt(null, null, null)
     }
-    if (!locationContextId && !locationContext && !daylightConstraint) {
+    if (!hasLocationRequirement && !daylightConstraint) {
       enqueueAttempt(null, null, null)
     }
 
@@ -2557,10 +2684,11 @@ async function fetchCompatibleWindowsForItem(
     typeof options?.locationContextId === 'string' && options.locationContextId.trim().length > 0
       ? options.locationContextId.trim()
       : null
-  const desiredLocationValue =
+  const desiredLocationValueRaw =
     options?.locationContextValue && options.locationContextValue.length > 0
       ? options.locationContextValue.toUpperCase().trim()
       : null
+  const desiredLocationValue = desiredLocationValueRaw === 'ANY' ? null : desiredLocationValueRaw
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
 
@@ -2602,14 +2730,13 @@ async function fetchCompatibleWindowsForItem(
       win.location_context_value && win.location_context_value.length > 0
         ? win.location_context_value.toUpperCase().trim()
         : null
+    const windowHasLocation = Boolean(windowLocationId || windowLocationValue)
+    const attemptHasLocation = Boolean(desiredLocationId || desiredLocationValue)
 
-    const windowLocationIsWork = windowLocationValue === 'WORK'
-    if (
-      options?.requireLocationContextMatch &&
-      options.hasExplicitLocationContext === false &&
-      windowLocationIsWork
-    ) {
-      continue
+    if (options?.requireLocationContextMatch) {
+      if (!attemptHasLocation && windowHasLocation) {
+        continue
+      }
     }
 
     if (desiredLocationId || windowLocationId) {
