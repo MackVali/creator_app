@@ -521,7 +521,7 @@ async function fetchProjectsMap(client: Client, userId: string): Promise<Record<
 
   const [lookups, { data, error }] = await Promise.all([
     getLookupMaps(client),
-    client.from('projects').select(columns).eq('user_id', userId),
+    client.from('projects').select(columns).eq('user_id', userId).is('completed_at', null),
   ])
 
   if (error) {

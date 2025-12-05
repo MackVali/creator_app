@@ -439,7 +439,7 @@ export async function fetchProjectsMap(
 
   const [lookups, { data, error }] = await Promise.all([
     fetchPriorityEnergyLookups(supabase),
-    supabase.from('projects').select(columns),
+    supabase.from('projects').select(columns).is('completed_at', null),
   ]);
 
   if (error) throw error;

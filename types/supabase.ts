@@ -179,6 +179,7 @@ export interface Database {
           user_id: string | null;
           duration_min: number | null;
           effective_duration_min: number | null;
+          completed_at: string | null;
         };
         Insert: {
           id?: string;
@@ -191,6 +192,7 @@ export interface Database {
           user_id?: string | null;
           duration_min?: number | null;
           effective_duration_min?: number | null;
+          completed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -203,6 +205,7 @@ export interface Database {
           user_id?: string | null;
           duration_min?: number | null;
           effective_duration_min?: number | null;
+          completed_at?: string | null;
         };
       };
       tasks: {
