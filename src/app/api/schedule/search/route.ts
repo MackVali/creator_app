@@ -41,6 +41,12 @@ type HabitSearchRecord = {
   } | null;
 };
 
+type ProjectSearchRecord = {
+  id: string;
+  name?: string | null;
+  completed_at?: string | null;
+};
+
 type ScheduleSummary = {
   nextScheduledId: string | null;
   nextScheduledStart: string | null;
@@ -77,7 +83,7 @@ export async function GET(request: NextRequest) {
   const normalizedTimeZone = normalizeTimeZone(timeZone);
   const baseProjectQuery = supabase
     .from("projects")
-    .select("id,name")
+    .select("id,name,completed_at")
     .eq("user_id", user.id)
     .order("name", { ascending: true })
     .limit(25);
@@ -183,8 +189,14 @@ export async function GET(request: NextRequest) {
 
   for (const project of projectsResponse.data ?? []) {
     if (!project?.id) continue;
+    const projectRecord = project as ProjectSearchRecord;
     const key = `PROJECT:${project.id}`;
     const summary = lookup.get(key);
+    const projectCompletedAt =
+      typeof projectRecord.completed_at === "string" && projectRecord.completed_at.length > 0
+        ? projectRecord.completed_at
+        : null;
+    const completedAt = projectCompletedAt ?? summary?.latestCompletedAt ?? null;
     results.push({
       id: project.id,
       name: project.name?.trim() || "Untitled project",
@@ -193,8 +205,8 @@ export async function GET(request: NextRequest) {
       scheduleInstanceId: summary?.nextScheduledId ?? null,
       durationMinutes: summary?.nextScheduledDuration ?? null,
       nextDueAt: null,
-      completedAt: summary?.latestCompletedAt ?? null,
-      isCompleted: typeof summary?.latestCompletedAt === "string",
+      completedAt,
+      isCompleted: typeof completedAt === "string",
     });
   }
 
