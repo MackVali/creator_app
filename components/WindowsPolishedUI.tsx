@@ -4,16 +4,13 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react"
 import {
   CalendarDays,
-  Clock,
-  Copy,
+  ChevronDown,
   Flame as FlameIcon,
-  MoreVertical,
   PencilLine,
   Plus,
   RefreshCw,
@@ -168,6 +165,7 @@ export default function WindowsPolishedUI({
   const [searchDebounced, setSearchDebounced] = useState("")
   const [sort, setSort] = useState<SortOption>("start")
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [expandedDays, setExpandedDays] = useState<Set<Day>>(new Set())
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.toLowerCase()), 200)
@@ -226,7 +224,26 @@ export default function WindowsPolishedUI({
     Boolean(searchDebounced)
 
   const filteredCount = filtered.length
-  const allEmpty = !loading && filteredCount === 0
+  const dayBuckets = useMemo(() => {
+    const base = dayOrder.reduce((acc, day) => {
+      acc[day] = []
+      return acc
+    }, {} as Record<Day, WindowItem[]>)
+    filtered.forEach((window) => {
+      window.days.forEach((day) => {
+        if (base[day]) {
+          base[day].push(window)
+        }
+      })
+    })
+    dayOrder.forEach((day) => {
+      base[day] = base[day].sort((a, b) => a.start.localeCompare(b.start))
+    })
+    return dayOrder.map((day) => ({
+      day,
+      windows: base[day],
+    }))
+  }, [filtered])
 
   function resetFilters() {
     setStatusFilter("all")
@@ -234,6 +251,15 @@ export default function WindowsPolishedUI({
     setEnergyFilter("all")
     setSearch("")
     setSort("start")
+  }
+  
+  function toggleDayExpansion(day: Day) {
+    setExpandedDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(day)) next.delete(day)
+      else next.add(day)
+      return next
+    })
   }
 
   const [editing, setEditing] = useState<WindowItem | null>(null)
@@ -284,22 +310,32 @@ export default function WindowsPolishedUI({
         <HeaderBar
           active={stats.active}
           highlightEnergy={stats.topEnergy}
-          onNew={() => setDrawerOpen(true)}
+          onNew={() => {
+            setEditing(null)
+            setDrawerOpen(true)
+          }}
           hasActiveFilters={hasActiveFilters}
           onOpenFilters={() => setFiltersOpen(true)}
           total={stats.total}
         />
         <section className="relative space-y-4">
           {loading && <LoadingSkeleton />}
-          {!loading && filteredCount > 0 && (
-            <div className="grid gap-4 md:grid-cols-2">
-              {filtered.map((w) => (
-                <WindowCard
-                  key={w.id}
-                  item={w}
-                  onDelete={() => setConfirmDelete(w)}
-                  onEdit={() => {
-                    setEditing(w)
+          {!loading && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {dayBuckets.map(({ day, windows: dayWindows }) => (
+                <DayCard
+                  key={day}
+                  day={day}
+                  expanded={expandedDays.has(day)}
+                  windows={dayWindows}
+                  onToggle={() => toggleDayExpansion(day)}
+                  onEdit={(window) => {
+                    setEditing(window)
+                    setDrawerOpen(true)
+                  }}
+                  onDelete={(window) => setConfirmDelete(window)}
+                  onRequestAdd={() => {
+                    setEditing(null)
                     setDrawerOpen(true)
                   }}
                   resolveLocationLabel={resolveLocationLabel}
@@ -307,7 +343,6 @@ export default function WindowsPolishedUI({
               ))}
             </div>
           )}
-          {allEmpty && <EmptyState onNew={() => setDrawerOpen(true)} />}
         </section>
       </div>
       {filtersOpen && (
@@ -371,44 +406,75 @@ function HeaderBar({
 }) {
   const energyLabel = highlightEnergy
     ? `${highlightEnergy.charAt(0).toUpperCase()}${highlightEnergy.slice(1)}`
-    : "–"
+    : "Adaptive"
+  const focusRatio = total > 0 ? Math.round((active / Math.max(total, 1)) * 100) : 0
+  const statCards = [
+    {
+      icon: <SunMedium className="h-4 w-4" />,
+      label: "Active windows",
+      value: `${active}`,
+    },
+    {
+      icon: <CalendarDays className="h-4 w-4" />,
+      label: "Planned total",
+      value: `${total}`,
+    },
+    {
+      icon: <Sparkles className="h-4 w-4" />,
+      label: "Focus ratio",
+      value: `${focusRatio}%`,
+    },
+    {
+      icon: <FlameIcon className="h-4 w-4" />,
+      label: "Peak energy",
+      value: energyLabel,
+    },
+  ]
   return (
-    <header className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] px-8 py-10 shadow-[0_30px_80px_rgba(15,23,42,0.45)] backdrop-blur">
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-[45%] bg-[radial-gradient(circle_at_left,_rgba(129,140,248,0.16),_transparent_70%)]" />
-      <div className="pointer-events-none absolute -right-10 top-1/2 h-40 w-40 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,_rgba(52,211,153,0.25),_transparent_70%)] blur-xl" />
-      <div className="relative flex flex-col gap-8">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
-            <Sparkles className="h-4 w-4" />
-            Windows
+    <header className="relative overflow-hidden rounded-[32px] border border-emerald-400/25 bg-gradient-to-br from-[#041d13] via-[#03110c] to-[#010404] px-8 py-10 text-white shadow-[0_40px_120px_rgba(1,15,9,0.7)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.35),_transparent_60%)]" />
+      <div className="pointer-events-none absolute -left-12 bottom-0 h-56 w-56 rounded-full bg-emerald-500/20 blur-[120px]" />
+      <div className="pointer-events-none absolute -right-14 top-4 h-64 w-64 rounded-full bg-teal-400/25 blur-[140px]" />
+      <div className="relative flex flex-col gap-10 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-2xl space-y-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.4em] text-emerald-100/80">
+            <Sparkles className="h-3 w-3" /> Window studio
           </div>
-          <h1 className="mt-4 text-3xl font-semibold text-white md:text-4xl">
-            Shape your ideal week
-          </h1>
-          <p className="mt-3 max-w-xl text-sm text-slate-300">
-            Build time blocks that match your energy. Prioritize the windows that move you
-            forward and keep everything else in sight.
-          </p>
-          <button
-            className="mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-sky-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:shadow-indigo-500/50"
-            onClick={onNew}
-            type="button"
-          >
-            <Plus className="h-4 w-4" />
-            New window
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex w-full items-center gap-3">
+              <button
+                className="inline-flex h-10 flex-1 min-w-[140px] items-center justify-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-wide text-white shadow-[0_20px_45px_rgba(16,185,129,0.4)] transition hover:scale-[1.01] appearance-none focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                style={{
+                  backgroundImage: "linear-gradient(120deg, #10b981, #22c55e, #65f389)",
+                  border: "none",
+                }}
+                onClick={onNew}
+                type="button"
+              >
+                <Plus className="h-4 w-4" />
+                New window
+              </button>
+              <FiltersLauncher
+                className="flex-1 min-w-[140px] shrink-0 !border-white/20 !bg-white/5 !text-white !whitespace-nowrap"
+                hasFilters={hasActiveFilters}
+                onOpen={onOpenFilters}
+              />
+            </div>
+            <div className="rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.35em] text-emerald-100/80">
+              {active} active · {total} total
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatCard icon={<SunMedium className="h-3.5 w-3.5" />} label="Active" value={`${active}`} />
-            <StatCard icon={<CalendarDays className="h-3.5 w-3.5" />} label="Total" value={`${total}`} />
-            <StatCard icon={<FlameIcon className="h-3.5 w-3.5" />} label="Peak energy" value={energyLabel} />
+        <div className="w-full max-w-md rounded-[28px] border border-white/15 bg-black/20 p-6 backdrop-blur">
+          <div className="flex items-center justify-between text-xs uppercase tracking-[0.35em] text-emerald-100/70">
+            <span>Weekly snapshot</span>
+            <span className="text-white/80">Live</span>
           </div>
-          <FiltersLauncher
-            className="w-full justify-center sm:w-auto"
-            hasFilters={hasActiveFilters}
-            onOpen={onOpenFilters}
-          />
+          <div className="mt-4 grid grid-cols-4 gap-2">
+            {statCards.map((card) => (
+              <StatCard key={card.label} icon={card.icon} label={card.label} value={card.value} />
+            ))}
+          </div>
         </div>
       </div>
     </header>
@@ -425,15 +491,15 @@ function StatCard({
   value: string
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.07] px-3 py-1.5 shadow-[0_15px_35px_rgba(15,23,42,0.35)]">
-      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.12] text-indigo-200">
+    <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent px-2 py-2 text-left shadow-[0_15px_30px_rgba(1,11,7,0.35)]">
+      <span className="flex h-5 w-5 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-100">
         {icon}
       </span>
-      <div className="flex items-baseline gap-1">
-        <span className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-300">
+      <div>
+        <p className="text-[0.45rem] font-semibold uppercase tracking-[0.3em] text-emerald-50/70">
           {label}
-        </span>
-        <span className="text-sm font-semibold text-white">{value}</span>
+        </p>
+        <p className="text-sm font-semibold text-white/90 leading-tight">{value}</p>
       </div>
     </div>
   )
@@ -470,10 +536,10 @@ function FiltersLauncher({ hasFilters, onOpen, className }: FiltersLauncherProps
   return (
     <button
       className={classNames(
-        "inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-wide transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+        "inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-wide transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70",
         hasFilters
-          ? "bg-indigo-500/80 text-white shadow-[0_0_15px_rgba(99,102,241,0.45)] hover:bg-indigo-500"
-          : "border border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20 hover:text-white",
+          ? "bg-emerald-500/80 text-white shadow-[0_0_20px_rgba(16,185,129,0.45)] hover:bg-emerald-500"
+          : "border border-white/15 bg-white/10 text-white/80 hover:border-white/30 hover:text-white",
         className,
       )}
       onClick={onOpen}
@@ -733,158 +799,167 @@ function EnergyChip({
   )
 }
 
-function WindowCard({
-  item,
+interface DayCardProps {
+  day: Day
+  windows: WindowItem[]
+  expanded: boolean
+  onToggle: () => void
+  onEdit: (window: WindowItem) => void
+  onDelete: (window: WindowItem) => void
+  onRequestAdd: () => void
+  resolveLocationLabel: (value?: string | null) => string | null
+}
+
+function DayCard({
+  day,
+  windows,
+  expanded,
+  onToggle,
+  onEdit,
+  onDelete,
+  onRequestAdd,
+  resolveLocationLabel,
+}: DayCardProps) {
+  const windowCount = windows.length
+  const activeCount = windows.filter((window) => window.active).length
+  const timeRange = windowCount
+    ? `${windows[0].start} – ${windows[windows.length - 1].end}`
+    : null
+  const summary = windowCount
+    ? `${windowCount} window${windowCount > 1 ? "s" : ""}`
+    : "No windows yet"
+  const helper = windowCount
+    ? `${activeCount} active${timeRange ? ` • ${timeRange}` : ""}`
+    : "Click below to add a window for this day."
+
+  return (
+    <article className="flex flex-col rounded-3xl border border-white/10 bg-white/[0.05] p-5 shadow-[0_25px_60px_rgba(15,23,42,0.35)] backdrop-blur">
+      <button
+        aria-expanded={expanded}
+        className="flex w-full items-start justify-between gap-4 rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-3 text-left transition hover:border-indigo-400/40 hover:bg-white/[0.06]"
+        onClick={onToggle}
+        type="button"
+      >
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-indigo-200/80">
+            {day}
+          </p>
+          <p className="mt-2 text-lg font-semibold text-white">{summary}</p>
+          <p className="text-xs text-slate-400">{helper}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {windowCount > 0 && (
+            <span className="rounded-full bg-white/[0.08] px-3 py-1 text-xs font-semibold text-slate-100">
+              {activeCount} active
+            </span>
+          )}
+          <ChevronDown
+            className={classNames(
+              "h-5 w-5 text-slate-300 transition",
+              expanded && "rotate-180",
+            )}
+          />
+        </div>
+      </button>
+      {expanded && (
+        <div className="mt-4 border-t border-white/5 pt-4">
+          {windowCount === 0 ? (
+            <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-slate-300">
+              <p>No windows scheduled for {day}.</p>
+              <button
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-100 transition hover:border-indigo-400/40 hover:bg-indigo-500/10"
+                onClick={onRequestAdd}
+                type="button"
+              >
+                <Plus className="h-3.5 w-3.5" /> Create window
+              </button>
+            </div>
+          ) : (
+            <div className="-mx-1 overflow-x-auto pb-2">
+              <div className="flex gap-3 px-1 py-1 text-left [scrollbar-width:thin] md:[scrollbar-width:auto]">
+                {windows.map((window) => (
+                  <DayWindowEntry
+                    key={`${window.id}-${day}`}
+                    window={window}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    resolveLocationLabel={resolveLocationLabel}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  )
+}
+
+function DayWindowEntry({
+  window,
   onEdit,
   onDelete,
   resolveLocationLabel,
 }: {
-  item: WindowItem
-  onEdit: () => void
-  onDelete: () => void
+  window: WindowItem
+  onEdit: (window: WindowItem) => void
+  onDelete: (window: WindowItem) => void
   resolveLocationLabel: (value?: string | null) => string | null
 }) {
-  const [menu, setMenu] = useState(false)
-  const cardRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!cardRef.current?.contains(e.target as Node)) setMenu(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenu(false)
-    }
-    document.addEventListener("click", onDoc)
-    document.addEventListener("keydown", onKey)
-    return () => {
-      document.removeEventListener("click", onDoc)
-      document.removeEventListener("keydown", onKey)
-    }
-  }, [])
-
-  const startPct = (toMins(item.start) / 1440) * 100
-  const endPct = (toMins(item.end) / 1440) * 100
-  const daySummary =
-    item.days.length === 7 ? "Every day" : item.days.join(" · ")
-  const displayLocation = resolveLocationLabel(item.location)
+  const displayLocation = resolveLocationLabel(window.location)
+  const startPct = (toMins(window.start) / 1440) * 100
+  const endPct = (toMins(window.end) / 1440) * 100
 
   return (
-    <article
-      ref={cardRef}
-      className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] p-6 shadow-[0_25px_60px_rgba(15,23,42,0.4)] backdrop-blur transition hover:border-indigo-400/50 hover:bg-white/[0.08]"
-    >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0 transition group-hover:opacity-100" />
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <h3 className="text-xl font-semibold text-white">{item.name}</h3>
-              <StatusBadge active={Boolean(item.active)} />
-            </div>
-            <p className="text-sm text-slate-300">{daySummary}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-indigo-400/40 hover:text-white"
-              onClick={onEdit}
-              type="button"
-            >
-              <PencilLine className="h-4 w-4" />
-              Edit
-            </button>
-            <button
-              aria-expanded={menu}
-              aria-haspopup="menu"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.02] text-slate-300 transition hover:border-indigo-400/40 hover:text-white"
-              onClick={() => setMenu((m) => !m)}
-              type="button"
-            >
-              <MoreVertical className="h-4 w-4" />
-            </button>
-          </div>
+    <div className="flex min-w-[210px] max-w-[240px] shrink-0 flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-3 shadow-[0_12px_30px_rgba(15,23,42,0.35)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-white leading-tight">{window.name}</p>
+          <p className="text-[0.7rem] text-slate-400">
+            {window.start} – {window.end}
+          </p>
         </div>
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
-            <span className="inline-flex items-center gap-2 font-medium text-indigo-100">
-              <Clock className="h-4 w-4" />
-              {item.start} – {item.end}
-            </span>
-            <span className="hidden h-4 w-px bg-white/10 sm:block" />
-            <span className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
-              <CalendarDays className="h-4 w-4" />
-              {daySummary}
-            </span>
-          </div>
-          <TimelineMini end={endPct} start={startPct} />
-          <div className="flex flex-wrap gap-2">
-            {dayOrder.map((d) => (
-              <span
-                key={d}
-                className={classNames(
-                  "flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold uppercase tracking-wide",
-                  item.days.includes(d)
-                    ? "border-transparent bg-indigo-500/30 text-indigo-100 shadow-[0_0_10px_rgba(99,102,241,0.35)]"
-                    : "border-white/10 bg-white/[0.03] text-slate-500",
-                )}
-              >
-                {d[0]}
-              </span>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-            {item.energy && (
-              <span className="inline-flex items-center gap-2 rounded-full bg-indigo-500/15 px-3 py-1 text-indigo-100">
-                <FlameEmber
-                  level={item.energy.toUpperCase() as FlameLevel}
-                  size="sm"
-                />
-                <span className="capitalize">{item.energy}</span>
-              </span>
-            )}
-            {displayLocation && (
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 text-slate-200">
-                <Sparkles className="h-3 w-3" />
-                {displayLocation}
-              </span>
-            )}
-          </div>
-        </div>
+        <StatusBadge active={Boolean(window.active)} />
       </div>
-      {menu && (
-        <div
-          className="absolute right-6 top-16 z-20 w-44 overflow-hidden rounded-2xl border border-white/10 bg-[#050a16]/95 shadow-xl"
-          role="menu"
-        >
-          <button
-            className="flex w-full items-center gap-2 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.06]"
-            onClick={() => {
-              setMenu(false)
-              onEdit()
-            }}
-            type="button"
-          >
-            <PencilLine className="h-4 w-4" /> Edit
-          </button>
-          <button
-            className="flex w-full items-center gap-2 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/[0.06]"
-            onClick={() => setMenu(false)}
-            type="button"
-          >
-            <Copy className="h-4 w-4" /> Duplicate
-          </button>
-          <button
-            className="flex w-full items-center gap-2 px-4 py-3 text-sm text-rose-300 transition hover:bg-rose-500/10"
-            onClick={() => {
-              setMenu(false)
-              onDelete()
-            }}
-            type="button"
-          >
-            <Trash2 className="h-4 w-4" /> Delete
-          </button>
+      <div className="mt-2">
+        <TimelineMini end={endPct} start={startPct} />
+      </div>
+      <div className="mt-2 space-y-1 text-[0.7rem] text-slate-300">
+        <div className="flex items-center gap-1 text-[0.65rem] uppercase tracking-wide text-slate-400">
+          <span className="rounded-full bg-white/[0.05] px-2 py-0.5">{window.days.length === 7 ? "All week" : window.days.join(" · ")}</span>
         </div>
-      )}
-    </article>
+        {window.energy && (
+          <div className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-indigo-100">
+            <FlameEmber level={window.energy.toUpperCase() as FlameLevel} size="xs" />
+            <span className="capitalize">{window.energy}</span>
+          </div>
+        )}
+        {displayLocation && (
+          <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.02] px-2 py-0.5 text-slate-200">
+            <Sparkles className="h-3 w-3" />
+            <span className="truncate text-[0.7rem]">{displayLocation}</span>
+          </div>
+        )}
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.02] text-slate-200 transition hover:border-indigo-400/40 hover:text-white"
+          onClick={() => onEdit(window)}
+          type="button"
+          aria-label={`Edit ${window.name}`}
+        >
+          <PencilLine className="h-4 w-4" />
+        </button>
+        <button
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.02] text-slate-200 transition hover:border-rose-400/40 hover:text-white"
+          onClick={() => onDelete(window)}
+          type="button"
+          aria-label={`Delete ${window.name}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -892,7 +967,7 @@ function StatusBadge({ active }: { active: boolean }) {
   return (
     <span
       className={classNames(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide",
         active
           ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
           : "border-slate-500/40 bg-slate-500/10 text-slate-300",
@@ -900,7 +975,7 @@ function StatusBadge({ active }: { active: boolean }) {
     >
       <span
         className={classNames(
-          "h-2.5 w-2.5 rounded-full",
+          "h-2 w-2 rounded-full",
           active
             ? "bg-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
             : "bg-slate-400",
@@ -1268,39 +1343,18 @@ function ConfirmSheet({
   )
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] px-8 py-20 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-500/15 text-4xl">
-        🪟
-      </div>
-      <h3 className="mt-6 text-xl font-semibold text-white">No windows yet</h3>
-      <p className="mt-2 max-w-md text-sm text-slate-300">
-        Start by defining the time blocks that match your energy and availability.
-      </p>
-      <button
-        className="mt-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2.5 text-sm font-semibold text-slate-100 transition hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white"
-        onClick={onNew}
-        type="button"
-      >
-        <Plus className="h-4 w-4" /> Create your first window
-      </button>
-    </div>
-  )
-}
-
 function LoadingSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {Array.from({ length: 4 }).map((_, i) => (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {dayOrder.map((day) => (
         <div
-          key={i}
+          key={day}
           className="animate-pulse overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-6"
         >
-          <div className="h-5 w-40 rounded-full bg-white/10" />
-          <div className="mt-4 h-3 rounded-full bg-white/10" />
-          <div className="mt-3 h-3 rounded-full bg-white/10" />
-          <div className="mt-6 h-2 rounded-full bg-white/10" />
+          <div className="h-4 w-16 rounded-full bg-white/10" />
+          <div className="mt-4 h-3 w-32 rounded-full bg-white/10" />
+          <div className="mt-2 h-3 w-24 rounded-full bg-white/10" />
+          <div className="mt-6 h-20 rounded-2xl border border-dashed border-white/10 bg-white/5" />
         </div>
       ))}
     </div>
