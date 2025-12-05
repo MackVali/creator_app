@@ -50,13 +50,10 @@ export function ProjectsDropdown({
     <div
       id={id}
       role="region"
-      aria-labelledby={`${id}-label`}
+      aria-label={`Projects for ${goalTitle}`}
       className="overflow-hidden px-5 pb-5 pt-4"
     >
       <div className="space-y-4 text-sm text-white/70">
-        <h4 className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
-          Task threads for {goalTitle}
-        </h4>
         {loading ? (
           <Progress
             value={100}
@@ -80,7 +77,7 @@ export function ProjectsDropdown({
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-white/20 px-4 py-3 text-sm text-white/60">
-              No task threads for these projects yet.
+              No tasks available for these projects yet.
             </div>
           )
         ) : projects.length > 0 ? (

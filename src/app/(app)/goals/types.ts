@@ -29,6 +29,8 @@ export interface Project {
 
 export interface Goal {
   id: string;
+  /** Optional parent goal id when rendering derived goal views (e.g., skill details) */
+  parentGoalId?: string | null;
   title: string;
   emoji?: string;
   dueDate?: string;

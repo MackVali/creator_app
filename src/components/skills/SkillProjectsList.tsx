@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
+import { GoalDrawer, type GoalUpdateContext } from "@/app/(app)/goals/components/GoalDrawer";
 import type { Goal, Project } from "@/app/(app)/goals/types";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +12,7 @@ import { projectWeight, taskWeight, type TaskLite, type ProjectLite, dueDateUrge
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
+import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -278,6 +280,15 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Goal[]>([]);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [monumentOptions, setMonumentOptions] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [baseGoals, setBaseGoals] = useState<Goal[]>([]);
+
+  useEffect(() => {
+    setOpenGoalId(null);
+  }, [skillId]);
 
   const decorate = useCallback((goal: Goal) => {
     return {
@@ -286,205 +297,220 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     };
   }, []);
 
-  useEffect(() => {
-    const load = async () => {
-      const supabase = getSupabaseBrowser();
-      if (!supabase || !skillId) {
+  const loadProjects = useCallback(async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase || !skillId) {
+      setProjects([]);
+      setBaseGoals([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setProjects([]);
+        setBaseGoals([]);
+        setUserId(null);
         setLoading(false);
         return;
       }
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) {
-          setProjects([]);
-          setLoading(false);
-          return;
-        }
+      setUserId(user.id);
 
-        const [rows, monuments, skills] = await Promise.all([
-          fetchGoalsWithRelations(user.id),
-          getMonumentsForUser(user.id).catch(() => []),
-          getSkillsForUser(user.id).catch(() => []),
-        ]);
-        const monumentEmojiLookup = new Map(monuments.map((m) => [m.id, m.emoji ?? null]));
-        const skillIconLookup = new Map(skills.map((skill) => [skill.id, skill.icon ?? null]));
-        const skillEmoji = skillIconLookup.get(skillId) ?? null;
-        const resolveSkillEmoji = (skillId?: string | null) => {
-          if (!skillId) return null;
-          return skillIconLookup.get(skillId) ?? null;
-        };
+      const [rows, monuments, skills] = await Promise.all([
+        fetchGoalsWithRelations(user.id),
+        getMonumentsForUser(user.id).catch(() => []),
+        getSkillsForUser(user.id).catch(() => []),
+      ]);
+      setMonumentOptions(
+        monuments.map((monument) => ({
+          id: monument.id,
+          title: monument.title,
+          emoji: monument.emoji ?? null,
+        }))
+      );
+      const monumentEmojiLookup = new Map(monuments.map((m) => [m.id, m.emoji ?? null]));
+      const skillIconLookup = new Map(skills.map((skill) => [skill.id, skill.icon ?? null]));
+      const skillEmoji = skillIconLookup.get(skillId) ?? null;
+      const resolveSkillEmoji = (skillId?: string | null) => {
+        if (!skillId) return null;
+        return skillIconLookup.get(skillId) ?? null;
+      };
 
-        const mappedGoals: Goal[] = rows.map((g) => {
-          const goalSkills = new Set<string>();
-          const projList: Project[] = (g.projects ?? []).map((p) => {
-            const normalizedTasks = (p.tasks ?? []).map((task) => {
-              const normalized = {
-                id: task.id,
-                name: task.name,
-                stage: task.stage,
-                skillId: task.skill_id ?? null,
-                priorityCode: task.priority ?? null,
-                isNew: false,
-              };
-              if (normalized.skillId) {
-                goalSkills.add(normalized.skillId);
-              }
-              return normalized;
-            });
-            const projectSkillIds: string[] = [];
-            (p.project_skills ?? []).forEach((record) => {
-              if (record?.skill_id) {
-                goalSkills.add(record.skill_id);
-                projectSkillIds.push(record.skill_id);
-              }
-            });
-            const total = normalizedTasks.length;
-            const done = normalizedTasks.filter((t) => t.stage === "PERFECT").length;
-            const progress = total ? Math.round((done / total) * 100) : 0;
-            const status = projectStageToStatus(p.stage ?? "BUILD");
-            const schedulerTasks: TaskLite[] = normalizedTasks.map(toSchedulerTask);
-            const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
-            const projectWeightValue = projectWeight(
-              toSchedulerProject({
-                id: p.id,
-                priorityCode: p.priority ?? undefined,
-                stage: p.stage ?? undefined,
-                dueDate: p.due_date ?? null,
-              }),
-              relatedTaskWeightSum
-            );
-            const normalizedTaskSkillIds = normalizedTasks
-              .map((task) => task.skillId)
-              .filter((value): value is string => Boolean(value));
-            const projectEmoji =
-              projectSkillIds
-                .map(resolveSkillEmoji)
-                .find((emoji): emoji is string => Boolean(emoji)) ??
-              normalizedTaskSkillIds
-                .map(resolveSkillEmoji)
-                .find((emoji): emoji is string => Boolean(emoji)) ??
-              null;
-            const rawEnergy = extractLookupName(p.energy);
-            const rawPriority = extractLookupName(p.priority);
-            const energyCode = normalizeEnergyCode(rawEnergy);
-            const priorityCode = normalizePriorityCode(rawPriority);
-            const energyId = extractLookupId(p.energy);
-            const priorityId = extractLookupId(p.priority);
-            return {
-              id: p.id,
-              name: p.name,
-              status,
-              progress,
-              energy: mapEnergy(energyCode),
-              energyCode,
-              dueDate: p.due_date ?? null,
-              durationMinutes:
-                typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
-                  ? p.duration_min
-                  : null,
-              skillIds: projectSkillIds,
-              emoji: projectEmoji,
-              stage: p.stage ?? "BUILD",
-              priorityCode,
-              energyId,
-              priorityId,
-              weight: projectWeightValue,
+      const mappedGoals: Goal[] = rows.map((g) => {
+        const goalSkills = new Set<string>();
+        const projList: Project[] = (g.projects ?? []).map((p) => {
+          const normalizedTasks = (p.tasks ?? []).map((task) => {
+            const normalized = {
+              id: task.id,
+              name: task.name,
+              stage: task.stage,
+              skillId: task.skill_id ?? null,
+              priorityCode: task.priority ?? null,
               isNew: false,
-              tasks: normalizedTasks,
             };
+            if (normalized.skillId) {
+              goalSkills.add(normalized.skillId);
+            }
+            return normalized;
           });
-
-          const progress =
-            projList.length > 0
-              ? Math.round(
-                  projList.reduce((sum, p) => sum + p.progress, 0) / projList.length
-                )
-              : 0;
-          const status = g.status ? goalStatusToStatus(g.status) : progress >= 100 ? "Completed" : "Active";
-
-          const base: Goal = {
-            id: g.id,
-            title: g.name,
-            priority: mapPriority(g.priority),
-            energy: mapEnergy(g.energy),
-            progress,
+          const projectSkillIds: string[] = [];
+          (p.project_skills ?? []).forEach((record) => {
+            if (record?.skill_id) {
+              goalSkills.add(record.skill_id);
+              projectSkillIds.push(record.skill_id);
+            }
+          });
+          const total = normalizedTasks.length;
+          const done = normalizedTasks.filter((t) => t.stage === "PERFECT").length;
+          const progress = total ? Math.round((done / total) * 100) : 0;
+          const status = projectStageToStatus(p.stage ?? "BUILD");
+          const schedulerTasks: TaskLite[] = normalizedTasks.map(toSchedulerTask);
+          const relatedTaskWeightSum = schedulerTasks.reduce((sum, t) => sum + taskWeight(t), 0);
+          const projectWeightValue = projectWeight(
+            toSchedulerProject({
+              id: p.id,
+              priorityCode: p.priority ?? undefined,
+              stage: p.stage ?? undefined,
+              dueDate: p.due_date ?? null,
+            }),
+            relatedTaskWeightSum
+          );
+          const normalizedTaskSkillIds = normalizedTasks
+            .map((task) => task.skillId)
+            .filter((value): value is string => Boolean(value));
+          const projectEmoji =
+            projectSkillIds
+              .map(resolveSkillEmoji)
+              .find((emoji): emoji is string => Boolean(emoji)) ??
+            normalizedTaskSkillIds
+              .map(resolveSkillEmoji)
+              .find((emoji): emoji is string => Boolean(emoji)) ??
+            null;
+          const rawEnergy = extractLookupName(p.energy);
+          const rawPriority = extractLookupName(p.priority);
+          const energyCode = normalizeEnergyCode(rawEnergy);
+          const priorityCode = normalizePriorityCode(rawPriority);
+          const energyId = extractLookupId(p.energy);
+          const priorityId = extractLookupId(p.priority);
+          return {
+            id: p.id,
+            name: p.name,
             status,
-            active: g.active ?? status === "Active",
-            createdAt: g.created_at,
-            updatedAt: g.created_at,
-            dueDate: g.due_date ?? undefined,
-            projects: projList,
-            monumentId: g.monument_id ?? null,
-            monumentEmoji: monumentEmojiLookup.get(g.monument_id ?? "") ?? null,
-            priorityCode: g.priority ?? null,
-            weightBoost: g.weight_boost ?? 0,
-            skills: Array.from(goalSkills),
-            why: g.why || undefined,
+            progress,
+            energy: mapEnergy(energyCode),
+            energyCode,
+            dueDate: p.due_date ?? null,
+            durationMinutes:
+              typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
+                ? p.duration_min
+                : null,
+            skillIds: projectSkillIds,
+            emoji: projectEmoji,
+            stage: p.stage ?? "BUILD",
+            priorityCode,
+            energyId,
+            priorityId,
+            weight: projectWeightValue,
+            isNew: false,
+            tasks: normalizedTasks,
           };
-          return decorate(base);
         });
 
-        const skillProjects: Goal[] = [];
-        mappedGoals.forEach((goal) => {
-          const relevantProjects = goal.projects.filter((project) => {
-            const hasProjectSkill = project.skillIds?.includes(skillId);
-            const hasTaskSkill = project.tasks.some((task) => task.skillId === skillId);
-            return Boolean(hasProjectSkill || hasTaskSkill);
-          });
+        const progressValue =
+          projList.length > 0
+            ? Math.round(
+                projList.reduce((sum, project) => sum + project.progress, 0) / projList.length
+              )
+            : 0;
+        const status = g.status ? goalStatusToStatus(g.status) : progressValue >= 100 ? "Completed" : "Active";
 
-          relevantProjects.forEach((project) => {
-            const fallbackMonumentEmoji = monumentEmojiLookup.get(goal.monumentId ?? "") ?? null;
-            const icon = skillEmoji ?? fallbackMonumentEmoji;
-            const projectGoal: Goal = {
-              id: project.id,
-              title: project.name,
-              emoji: project.emoji ?? null,
-              priority: mapPriority(project.priorityCode ?? "NO"),
-              energy: mapEnergy(project.energyCode ?? "NO"),
-              progress: project.progress,
-              status: project.status === "Done" ? "Completed" : "Active",
-              active: project.status !== "Done",
-              createdAt: goal.createdAt,
-              updatedAt: goal.updatedAt,
-              dueDate: project.dueDate ?? undefined,
-              projects: [project],
-              monumentId: goal.monumentId ?? null,
-              monumentEmoji: icon,
-              priorityCode: project.priorityCode ?? null,
-              weightBoost: goal.weightBoost ?? 0,
-              skills: project.skillIds,
-              why: goal.why,
-              energyId: project.energyId,
-              priorityId: project.priorityId,
-              weight: project.weight ?? 0,
-            };
-            skillProjects.push(decorate(projectGoal));
-          });
+        const base: Goal = {
+          id: g.id,
+          title: g.name,
+          priority: mapPriority(g.priority),
+          energy: mapEnergy(g.energy),
+          progress: progressValue,
+          status,
+          active: g.active ?? status === "Active",
+          createdAt: g.created_at,
+          updatedAt: g.created_at,
+          dueDate: g.due_date ?? undefined,
+          projects: projList,
+          monumentId: g.monument_id ?? null,
+          monumentEmoji: monumentEmojiLookup.get(g.monument_id ?? "") ?? null,
+          priorityCode: g.priority ?? null,
+          weightBoost: g.weight_boost ?? 0,
+          skills: Array.from(goalSkills),
+          why: g.why || undefined,
+        };
+        return decorate(base);
+      });
+
+      setBaseGoals(mappedGoals);
+
+      const skillProjects: Goal[] = [];
+      mappedGoals.forEach((goal) => {
+        const relevantProjects = goal.projects.filter((project) => {
+          const hasProjectSkill = project.skillIds?.includes(skillId);
+          const hasTaskSkill = project.tasks.some((task) => task.skillId === skillId);
+          return Boolean(hasProjectSkill || hasTaskSkill);
         });
 
-        skillProjects.sort((a, b) => {
-          const weightDiff = (b.weight ?? 0) - (a.weight ?? 0);
-          if (weightDiff !== 0) return weightDiff;
-          const aUpdated = Date.parse(a.updatedAt);
-          const bUpdated = Date.parse(b.updatedAt);
-          if (Number.isFinite(aUpdated) && Number.isFinite(bUpdated) && aUpdated !== bUpdated) {
-            return bUpdated - aUpdated;
-          }
-          return a.title.localeCompare(b.title);
+        relevantProjects.forEach((project) => {
+          const fallbackMonumentEmoji = monumentEmojiLookup.get(goal.monumentId ?? "") ?? null;
+          const icon = skillEmoji ?? fallbackMonumentEmoji;
+          const projectGoal: Goal = {
+            id: project.id,
+            parentGoalId: goal.id,
+            title: project.name,
+            emoji: project.emoji ?? null,
+            priority: mapPriority(project.priorityCode ?? "NO"),
+            energy: mapEnergy(project.energyCode ?? "NO"),
+            progress: project.progress,
+            status: project.status === "Done" ? "Completed" : "Active",
+            active: project.status !== "Done",
+            createdAt: goal.createdAt,
+            updatedAt: goal.updatedAt,
+            dueDate: project.dueDate ?? undefined,
+            projects: [project],
+            monumentId: goal.monumentId ?? null,
+            monumentEmoji: icon,
+            priorityCode: project.priorityCode ?? null,
+            weightBoost: goal.weightBoost ?? 0,
+            skills: project.skillIds ?? goal.skills,
+            why: goal.why,
+          };
+          skillProjects.push(decorate(projectGoal));
         });
+      });
 
-        setProjects(skillProjects);
-      } catch (err) {
-        console.error("Error loading skill projects", err);
-        setProjects([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [skillId, decorate]);
+      skillProjects.sort((a, b) => {
+        const weightDiff = (b.weight ?? 0) - (a.weight ?? 0);
+        if (weightDiff !== 0) return weightDiff;
+        const aUpdated = Date.parse(a.updatedAt);
+        const bUpdated = Date.parse(b.updatedAt);
+        if (Number.isFinite(aUpdated) && Number.isFinite(bUpdated) && aUpdated !== bUpdated) {
+          return bUpdated - aUpdated;
+        }
+        return a.title.localeCompare(b.title);
+      });
+
+      setProjects(skillProjects);
+    } catch (err) {
+      console.error("Error loading skill projects", err);
+      setProjects([]);
+      setBaseGoals([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [decorate, skillId]);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   const handleProjectUpdated = useCallback(
     (goalId: string, projectId: string, updates: Partial<Project>) => {
@@ -506,6 +532,17 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const handleProjectDeleted = useCallback((goalId: string) => {
     setProjects((prev) => prev.filter((goal) => goal.id !== goalId));
   }, []);
+
+  const handleGoalEdit = useCallback(
+    (goal: Goal) => {
+      const parentId = goal.parentGoalId ?? goal.id;
+      const sourceGoal = baseGoals.find((item) => item.id === parentId);
+      if (!sourceGoal) return;
+      setEditingGoal(sourceGoal);
+      setDrawerOpen(true);
+    },
+    [baseGoals]
+  );
 
   const handleTaskToggleCompletion = useCallback(
     async (
@@ -683,6 +720,26 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     [decorate, projects]
   );
 
+  const handleGoalUpdated = useCallback(
+    async (updatedGoal: Goal, context: GoalUpdateContext) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      try {
+        await persistGoalUpdate({
+          supabase,
+          goal: updatedGoal,
+          context,
+          userId,
+          onUserResolved: setUserId,
+        });
+        await loadProjects();
+      } catch (err) {
+        console.error("Error updating goal from skill view:", err);
+      }
+    },
+    [loadProjects, userId]
+  );
+
   const handleGoalOpenChange = useCallback(
     (goalId: string, isOpen: boolean) => {
       if (isOpen) {
@@ -738,6 +795,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
               showEmojiPrefix={false}
               variant="compact"
               projectDropdownMode="tasks-only"
+              onEdit={() => handleGoalEdit(goal)}
               open={openGoalId === goal.id}
               onOpenChange={(isOpen) => handleGoalOpenChange(goal.id, isOpen)}
               onProjectUpdated={(projectId, updates) =>
@@ -772,6 +830,18 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
           .skill-projects-list .skill-project-card-wrapper { isolation: isolate; content-visibility: auto; contain-intrinsic-size: 300px 1px; }
         }
       `}</style>
+      <GoalDrawer
+        open={drawerOpen && Boolean(editingGoal)}
+        onClose={() => {
+          setDrawerOpen(false);
+          setEditingGoal(null);
+        }}
+        initialGoal={editingGoal}
+        monuments={monumentOptions}
+        onAdd={() => {}}
+        onUpdate={handleGoalUpdated}
+        hideProjects
+      />
     </div>
   );
 }
