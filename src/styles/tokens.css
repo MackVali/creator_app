@@ -6,6 +6,7 @@
     --elev-overlay: 0 6px 20px rgba(0,0,0,.16);
     --radius-lg: 12px;
     --radius-xl: 20px;
+    --schedule-instance-radius: 8px;
     --event-bg: var(--surface-2);
     --event-border: rgba(255,255,255,.08);
     --timeline-now: var(--accent, #A020F0);

@@ -143,7 +143,14 @@ export function useLocationContexts() {
         .filter((option): option is LocationContextOption => Boolean(option))
         .filter((option) => option.value !== ANY_OPTION.value);
 
-      setContexts(mapped);
+      const uniqueByValue = new Map<string, LocationContextOption>();
+      mapped.forEach((option) => {
+        if (!uniqueByValue.has(option.value)) {
+          uniqueByValue.set(option.value, option);
+        }
+      });
+
+      setContexts(Array.from(uniqueByValue.values()));
     } catch (err) {
       if (isLocationMetadataError(err)) {
         console.warn("Location metadata not available; using default contexts.");

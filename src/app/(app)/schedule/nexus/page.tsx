@@ -159,15 +159,15 @@ const PROJECT_STAGE_OPTIONS = [
 ];
 
 const HABIT_RECURRENCE_PRESETS = [
-  "Daily",
-  "Weekly",
-  "Bi-weekly",
-  "Monthly",
-  "Bi-monthly",
-  "Quarterly",
-  "Yearly",
-  "Every X days",
-  "None",
+  "DAILY",
+  "WEEKLY",
+  "BI-WEEKLY",
+  "MONTHLY",
+  "6 MONTHS",
+  "QUARTERLY",
+  "YEARLY",
+  "EVERY X DAYS",
+  "NONE",
 ];
 
 const FLAME_LEVELS = ENERGY.LIST as FlameLevel[];
@@ -180,6 +180,7 @@ const VIRTUAL_RECURRENCE_DAY_OFFSETS: Record<string, number> = {
   "bi-weekly": 14,
   monthly: 30,
   "bi-monthly": 60,
+  "every 6 months": 180,
   quarterly: 90,
   yearly: 365,
 };

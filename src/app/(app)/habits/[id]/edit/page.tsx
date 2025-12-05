@@ -30,9 +30,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
+import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 import { getSupabaseBrowser } from "@/lib/supabase";
 import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
+import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 
 function normalizeMessageTokens(maybeError?: unknown) {
   if (!maybeError || typeof maybeError !== "object") {
@@ -64,7 +66,7 @@ function isGoalMetadataError(maybeError?: unknown) {
 
 function buildHabitSelectColumns(includeGoalMetadata: boolean) {
   const baseColumns =
-    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference";
+    "id, name, description, habit_type, recurrence, recurrence_days, duration_minutes, energy, routine_id, skill_id, daylight_preference, window_edge_preference, window_id";
 
   const columns = [
     baseColumns,
@@ -124,6 +126,7 @@ export default function EditHabitPage() {
   const [locationContextId, setLocationContextId] = useState<string | null>(null);
   const [daylightPreference, setDaylightPreference] = useState("ALL_DAY");
   const [windowEdgePreference, setWindowEdgePreference] = useState("FRONT");
+  const [windowId, setWindowId] = useState<string>("none");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
@@ -150,6 +153,7 @@ export default function EditHabitPage() {
     () => HABIT_ENERGY_OPTIONS,
     []
   );
+  const { windowOptions, windowsLoading, windowError } = useHabitWindows();
 
   useEffect(() => {
     let active = true;
@@ -599,13 +603,21 @@ export default function EditHabitPage() {
           setName(data.name ?? "");
           setDescription(data.description ?? "");
           setHabitType(data.habit_type ?? HABIT_TYPE_OPTIONS[0].value);
-          setRecurrence(data.recurrence ?? "none");
+          const rawRecurrence = data.recurrence ?? "none";
+          setRecurrence(rawRecurrence);
           const safeRecurrenceDays = Array.isArray(data.recurrence_days)
             ? data.recurrence_days
                 .map((value) => Number(value))
-                .filter((value) => Number.isFinite(value))
+                .filter((value) => Number.isFinite(value) && value > 0)
+                .map((value) => Math.round(value))
             : [];
-          setRecurrenceDays(safeRecurrenceDays);
+          const everyXDaysInterval =
+            rawRecurrence.toLowerCase().trim() === "every x days"
+              ? resolveEveryXDaysInterval(rawRecurrence, safeRecurrenceDays)
+              : null;
+          setRecurrenceDays(
+            everyXDaysInterval ? [everyXDaysInterval] : safeRecurrenceDays
+          );
           setDuration(
             typeof data.duration_minutes === "number"
               ? String(data.duration_minutes)
@@ -652,6 +664,7 @@ export default function EditHabitPage() {
               ? String(data.window_edge_preference).toUpperCase()
               : "FRONT"
           );
+          setWindowId(data.window_id ?? "none");
         }
       } catch (err) {
         console.error("Failed to load habit:", err);
@@ -700,8 +713,14 @@ export default function EditHabitPage() {
       return;
     }
 
-    if (recurrence.toLowerCase().trim() === "every x days" && recurrenceDays.length === 0) {
-      setError("Please select at least one day for this recurrence.");
+    const normalizedRecurrence = recurrence.toLowerCase().trim();
+    const everyXDaysInterval =
+      normalizedRecurrence === "every x days"
+        ? resolveEveryXDaysInterval(recurrence, recurrenceDays)
+        : null;
+
+    if (normalizedRecurrence === "every x days" && !everyXDaysInterval) {
+      setError("Set how many days should pass between completions.");
       return;
     }
 
@@ -760,12 +779,12 @@ export default function EditHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-      const normalizedRecurrence = recurrence.toLowerCase().trim();
-      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
-      const recurrenceDaysValue =
-        normalizedRecurrence === "every x days" && recurrenceDays.length > 0
-          ? recurrenceDays
-          : null;
+    const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
+    const recurrenceDaysValue =
+      normalizedRecurrence === "every x days" && everyXDaysInterval
+        ? [everyXDaysInterval]
+        : null;
+    const windowIdValue = windowId === "none" ? null : windowId;
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -831,6 +850,7 @@ export default function EditHabitPage() {
             ? daylightPreference
             : null,
         window_edge_preference: windowEdgePreference,
+        window_id: windowIdValue,
       };
 
       if (goalMetadataSupported) {
@@ -921,10 +941,14 @@ export default function EditHabitPage() {
                 duration={duration}
                 energy={energy}
                 skillId={skillId}
-                locationContextId={locationContextId}
-                  daylightPreference={daylightPreference}
-                  windowEdgePreference={windowEdgePreference}
-                  energyOptions={energySelectOptions}
+            locationContextId={locationContextId}
+            daylightPreference={daylightPreference}
+            windowEdgePreference={windowEdgePreference}
+            windowId={windowId}
+            windowOptions={windowOptions}
+            windowsLoading={windowsLoading}
+            windowError={windowError}
+            energyOptions={energySelectOptions}
                   skillsLoading={skillsLoading}
                   skillOptions={skillSelectOptions}
                   skillCategories={skillCategories}
@@ -943,13 +967,14 @@ export default function EditHabitPage() {
                   onEnergyChange={setEnergy}
                   onDurationChange={setDuration}
                   onSkillChange={setSkillId}
-                  onLocationContextIdChange={setLocationContextId}
-                  onDaylightPreferenceChange={(value) =>
-                    setDaylightPreference(value.toUpperCase())
-                  }
-                  onWindowEdgePreferenceChange={(value) =>
-                    setWindowEdgePreference(value.toUpperCase())
-                  }
+            onLocationContextIdChange={setLocationContextId}
+            onDaylightPreferenceChange={(value) =>
+              setDaylightPreference(value.toUpperCase())
+            }
+            onWindowEdgePreferenceChange={(value) =>
+              setWindowEdgePreference(value.toUpperCase())
+            }
+            onWindowChange={(value) => setWindowId(value)}
                   showDescriptionField={false}
                   footerSlot={
                     <div className="space-y-4">
