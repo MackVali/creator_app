@@ -54,6 +54,8 @@ const COMPLETED_RETENTION_DAYS = 3
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
   HABIT: 1,
+  RELAXER: 1,
+  PRACTICE: 1,
   TEMP: 1,
   MEMO: 2,
   SYNC: 3,

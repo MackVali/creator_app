@@ -62,6 +62,16 @@ export const HABIT_TYPE_OPTIONS: HabitTypeOption[] = [
     description: "Momentum-building routines.",
   },
   {
+    label: "Relaxer",
+    value: "RELAXER",
+    description: "Grounding rituals to restore energy.",
+  },
+  {
+    label: "Practice",
+    value: "PRACTICE",
+    description: "Skill reps that keep you sharp.",
+  },
+  {
     label: "Temp",
     value: "TEMP",
     description: "Temporary pushes tied to a goal.",
