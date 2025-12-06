@@ -876,6 +876,7 @@ export interface Database {
           start_local: string;
           end_local: string;
           energy: string;
+          window_kind: string;
           location_context_id: string | null;
         };
         Insert: {
@@ -887,6 +888,7 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy?: string;
+          window_kind?: string;
           location_context_id?: string | null;
         };
         Update: {
@@ -898,6 +900,7 @@ export interface Database {
           start_local?: string;
           end_local?: string;
           energy?: string;
+          window_kind?: string;
           location_context_id?: string | null;
         };
       };

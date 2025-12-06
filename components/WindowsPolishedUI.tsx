@@ -35,6 +35,7 @@ function classNames(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ")
 }
 
+export type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE"
 type Energy = "no" | "low" | "medium" | "high" | "ultra" | "extreme"
 type Day = "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat"
 type SortOption = "az" | "start" | "end" | "active"
@@ -59,6 +60,7 @@ export interface WindowItem {
   energy?: Energy
   location?: string
   active?: boolean
+  kind?: WindowKind
 }
 
 interface Props {
@@ -90,6 +92,7 @@ const mockWindows: WindowItem[] = [
     energy: "high",
     location: "Home Studio",
     active: true,
+    kind: "DEFAULT",
   },
   {
     id: "2",
@@ -100,6 +103,7 @@ const mockWindows: WindowItem[] = [
     energy: "ultra",
     location: "Fitness Club",
     active: false,
+    kind: "PRACTICE",
   },
   {
     id: "3",
@@ -110,6 +114,7 @@ const mockWindows: WindowItem[] = [
     energy: "medium",
     location: "Library",
     active: true,
+    kind: "BREAK",
   },
 ]
 
@@ -909,6 +914,7 @@ function DayWindowEntry({
   const displayLocation = resolveLocationLabel(window.location)
   const startPct = (toMins(window.start) / 1440) * 100
   const endPct = (toMins(window.end) / 1440) * 100
+  const kind = window.kind ?? "DEFAULT"
 
   return (
     <div className="flex min-w-[210px] max-w-[240px] shrink-0 flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-3 shadow-[0_12px_30px_rgba(15,23,42,0.35)]">
@@ -928,6 +934,23 @@ function DayWindowEntry({
         <div className="flex items-center gap-1 text-[0.65rem] uppercase tracking-wide text-slate-400">
           <span className="rounded-full bg-white/[0.05] px-2 py-0.5">{window.days.length === 7 ? "All week" : window.days.join(" · ")}</span>
         </div>
+        {kind !== "DEFAULT" && (
+          <div
+            className={classNames(
+              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wide",
+              kind === "BREAK"
+                ? "border-amber-400/40 bg-amber-500/15 text-amber-100"
+                : "border-sky-400/40 bg-sky-500/10 text-sky-100",
+            )}
+          >
+            {kind === "BREAK" ? (
+              <SunMedium className="h-3 w-3" />
+            ) : (
+              <Sparkles className="h-3 w-3" />
+            )}
+            <span>{kind === "BREAK" ? "Break" : "Practice"}</span>
+          </div>
+        )}
         {window.energy && (
           <div className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-indigo-100">
             <FlameEmber level={window.energy.toUpperCase() as FlameLevel} size="xs" />
@@ -1023,6 +1046,7 @@ function createDefaultWindow(): WindowItem {
     energy: "no",
     location: "ANY",
     active: true,
+    kind: "DEFAULT",
   }
 }
 
@@ -1051,6 +1075,11 @@ function Drawer({
     null,
   )
   const [savingCustomLocation, setSavingCustomLocation] = useState(false)
+  const windowKindOptions: Array<{ value: WindowKind; label: string; description: string }> = [
+    { value: "DEFAULT", label: "Default", description: "Use this window for normal scheduling." },
+    { value: "BREAK", label: "Break", description: "Reserve time so projects and habits skip this period." },
+    { value: "PRACTICE", label: "Practice", description: "Highlight a focused practice block without pausing scheduling." },
+  ]
 
   useEffect(() => {
     if (initial) setForm({ ...initial })
@@ -1246,6 +1275,30 @@ function Drawer({
                 Custom locations sync across all of your windows and habits.
               </p>
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Window type
+            </label>
+            <select
+              className="mt-2 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white focus:border-indigo-400 focus:outline-none focus:ring-0"
+              value={form.kind ?? "DEFAULT"}
+              onChange={(e) =>
+                setForm({ ...form, kind: e.target.value.toUpperCase() as WindowKind })
+              }
+            >
+              {windowKindOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-slate-400">
+              {
+                windowKindOptions.find((option) => option.value === (form.kind ?? "DEFAULT"))
+                  ?.description
+              }
+            </p>
           </div>
           <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
             <div>
