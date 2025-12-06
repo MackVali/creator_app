@@ -4583,6 +4583,10 @@ peekDataDepsRef.current = {
                 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
               const choreCardBackground =
                 'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
+              const relaxerCardBackground =
+                'radial-gradient(circle at 8% -18%, rgba(16, 185, 129, 0.32), transparent 60%), linear-gradient(138deg, rgba(4, 56, 33, 0.94) 0%, rgba(4, 120, 87, 0.88) 46%, rgba(16, 185, 129, 0.78) 100%)'
+              const practiceCardBackground =
+                'radial-gradient(circle at 12% -20%, rgba(244, 114, 182, 0.34), transparent 58%), linear-gradient(138deg, rgba(88, 28, 92, 0.94) 0%, rgba(190, 24, 93, 0.88) 45%, rgba(244, 114, 182, 0.78) 100%)'
               const syncCardBackground =
                 'radial-gradient(circle at 12% -20%, rgba(209, 213, 219, 0.32), transparent 58%), linear-gradient(135deg, rgba(39, 42, 48, 0.92) 0%, rgba(107, 114, 128, 0.82) 45%, rgba(209, 213, 219, 0.7) 100%)'
               const memoCardBackground =
@@ -4600,6 +4604,16 @@ peekDataDepsRef.current = {
                 '0 18px 36px rgba(56, 16, 24, 0.38)',
                 '0 8px 18px rgba(76, 20, 32, 0.26)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+              ].join(', ')
+              const relaxerShadow = [
+                '0 20px 40px rgba(3, 47, 39, 0.52)',
+                '0 10px 22px rgba(2, 119, 84, 0.32)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+              ].join(', ')
+              const practiceShadow = [
+                '0 22px 44px rgba(82, 23, 74, 0.48)',
+                '0 10px 24px rgba(190, 24, 93, 0.32)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
               ].join(', ')
               const syncShadow = [
                 '0 18px 36px rgba(58, 44, 14, 0.32)',
@@ -4648,6 +4662,16 @@ peekDataDepsRef.current = {
                 cardShadow = choreShadow
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-rose-200/45'
+              } else if (normalizedHabitType === 'RELAXER') {
+                cardBackground = relaxerCardBackground
+                cardShadow = relaxerShadow
+                cardOutline = '1px solid rgba(52, 211, 153, 0.55)'
+                habitBorderClass = 'border-emerald-200/60'
+              } else if (normalizedHabitType === 'PRACTICE') {
+                cardBackground = practiceCardBackground
+                cardShadow = practiceShadow
+                cardOutline = '1px solid rgba(249, 168, 212, 0.55)'
+                habitBorderClass = 'border-pink-200/60'
               } else if (normalizedHabitType === 'SYNC') {
                 cardBackground = syncCardBackground
                 cardShadow = syncShadow

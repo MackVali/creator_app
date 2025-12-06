@@ -15,6 +15,8 @@ import {
   Clock,
   ChevronDown,
   FolderKanban,
+  Leaf,
+  PenSquare,
   Plus,
   Repeat,
   Sparkles,
@@ -2863,6 +2865,28 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
           accent: "from-cyan-500/25 via-cyan-500/10 to-transparent",
           iconBg: "border-cyan-500/40 bg-cyan-500/10 text-cyan-100",
           icon: Clock,
+        };
+      }
+
+      if (formData.type === "RELAXER") {
+        return {
+          title: "Create New Relaxer",
+          badge: "Relaxer",
+          eyebrow: "Reset",
+          accent: "from-emerald-500/30 via-emerald-500/10 to-transparent",
+          iconBg: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+          icon: Leaf,
+        };
+      }
+
+      if (formData.type === "PRACTICE") {
+        return {
+          title: "Create New Practice",
+          badge: "Practice",
+          eyebrow: "Reps",
+          accent: "from-pink-500/30 via-pink-500/10 to-transparent",
+          iconBg: "border-pink-500/40 bg-pink-500/10 text-pink-100",
+          icon: PenSquare,
         };
       }
     }
