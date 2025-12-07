@@ -130,6 +130,16 @@ const LONG_PRESS_ACTION_DELAY_MS = 120
 const HABIT_STREAK_BADGE_BASE_HEIGHT_PX = 22
 const HABIT_STREAK_BADGE_TOP_MARGIN_PX = 8
 const HABIT_STREAK_BADGE_BOTTOM_MARGIN_PX = 2
+const HABIT_COMPACT_SHADOW_HEIGHT_PX = 96
+const HABIT_COMPACT_SHADOW =
+  '0 14px 32px rgba(6, 8, 20, 0.52), 0 6px 16px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+const TIMELINE_COMPACT_CARD_HEIGHT_PX = 56
+const TIMELINE_COMPACT_CARD_SHADOW =
+  '0 14px 28px rgba(6, 8, 20, 0.45), 0 8px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
+const TIMELINE_COMPACT_CARD_COMPLETED_SHADOW =
+  '0 16px 32px rgba(2, 32, 24, 0.5), 0 8px 18px rgba(1, 55, 34, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+const TIMELINE_STACK_BASE_Z_INDEX = 30
+const TIMELINE_STACK_SCALE = 10
 
 const TIMELINE_CSS_VARIABLES: CSSProperties = {
   '--timeline-label-column': TIMELINE_LABEL_COLUMN_FALLBACK,
@@ -535,6 +545,19 @@ type MemoNoteDraftState = {
 
 function isValidDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime())
+}
+
+function getDayMinuteOffset(date: Date) {
+  const timestamp = date.getTime()
+  if (!Number.isFinite(timestamp)) return 0
+  const baseMinutes = date.getHours() * 60 + date.getMinutes()
+  return baseMinutes + date.getSeconds() / 60 + date.getMilliseconds() / 60000
+}
+
+function computeTimelineStackingIndex(startOffsetMinutes: number) {
+  if (!Number.isFinite(startOffsetMinutes)) return TIMELINE_STACK_BASE_Z_INDEX
+  const safeOffset = Math.max(0, startOffsetMinutes)
+  return Math.round(TIMELINE_STACK_BASE_Z_INDEX + safeOffset * TIMELINE_STACK_SCALE)
 }
 
 function taskMatchesProjectInstance(
@@ -4495,8 +4518,7 @@ peekDataDepsRef.current = {
                   displayEnd = alignedEnd
                 }
               }
-              const startMin =
-                displayStart.getHours() * 60 + displayStart.getMinutes()
+              const startMin = getDayMinuteOffset(displayStart)
               const startOffsetMinutes = startMin - modelStartHour * 60
               let durationMinutes = Math.max(
                 0,
@@ -4680,12 +4702,18 @@ peekDataDepsRef.current = {
               }
               const layoutMode = habitLayouts[index] ?? 'full'
               const habitCornerClass = getTimelineCardCornerClass(layoutMode)
+              const useCompactShadow =
+                habitHeightPx <= HABIT_COMPACT_SHADOW_HEIGHT_PX
+              const habitCardShadow = useCompactShadow
+                ? HABIT_COMPACT_SHADOW
+                : cardShadow
+              const stackingZIndex = computeTimelineStackingIndex(startOffsetMinutes)
               const cardStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
                   ...TIMELINE_CARD_BOUNDS,
                   top: topStyle,
                   height: heightStyle,
-                  boxShadow: cardShadow,
+                  boxShadow: habitCardShadow,
                   outline: cardOutline,
                   outlineOffset: '-1px',
                   background: cardBackground,
@@ -4738,16 +4766,18 @@ peekDataDepsRef.current = {
                 return null
               }
 
+              const layeredCardStyle = { ...cardStyle, zIndex: stackingZIndex }
+
               return (
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
                   layoutId={habitLayoutTokens?.card}
-                  className={`absolute z-30 flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
+                  className={`absolute flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
                   role="button"
                   tabIndex={options?.disableInteractions ? -1 : 0}
                   aria-pressed={isHabitCompleted}
                   aria-disabled={options?.disableInteractions ?? false}
-                  style={cardStyle}
+                  style={layeredCardStyle}
                   onClick={() => {
                     if (shouldBlockClickFromLongPress()) return
                     handleHabitPrimaryAction()
@@ -4797,7 +4827,7 @@ peekDataDepsRef.current = {
             {modelProjectInstances.map(({ instance, project, start, end }, index) => {
               if (!isValidDate(start) || !isValidDate(end)) return null
               const projectId = project.id
-              const startMin = start.getHours() * 60 + start.getMinutes()
+              const startMin = getDayMinuteOffset(start)
               const startOffsetMinutes = startMin - modelStartHour * 60
               const durationMinutes = Math.max(
                 0,
@@ -4848,6 +4878,14 @@ peekDataDepsRef.current = {
               const goalRelationText =
                 goalRelationName && goalRelationName.length > 0 ? goalRelationName : null
               const collapsedCardPaddingClass = goalRelationText ? 'pt-4 pb-2' : 'py-2'
+              const projectDurationMs = Math.max(
+                end.getTime() - start.getTime(),
+                1
+              )
+              const projectHeightPx = Math.max(
+                durationMinutes * modelPxPerMin,
+                1
+              )
               const positionStyle: CSSProperties = applyTimelineLayoutStyle(
                 {
                   ...TIMELINE_CARD_BOUNDS,
@@ -4857,20 +4895,18 @@ peekDataDepsRef.current = {
                 layoutMode,
                 { animate: !prefersReducedMotion }
               )
+              const stackingZIndex = computeTimelineStackingIndex(startOffsetMinutes)
+              const layeredPositionStyle = { ...positionStyle, zIndex: stackingZIndex }
+              const useCompactProjectShadow =
+                projectHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX
+              const sharedCardShadow = useCompactProjectShadow
+                ? TIMELINE_COMPACT_CARD_SHADOW
+                : '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
               const sharedCardStyle: CSSProperties = {
-                boxShadow:
-                  '0 28px 58px rgba(3, 3, 6, 0.66), 0 10px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                boxShadow: sharedCardShadow,
                 outline: '1px solid rgba(10, 10, 12, 0.85)',
                 outlineOffset: '-1px',
               }
-              const projectDurationMs = Math.max(
-                end.getTime() - start.getTime(),
-                1
-              )
-              const projectHeightPx = Math.max(
-                durationMinutes * modelPxPerMin,
-                1
-              )
               const minHeightRatio = Math.min(1, 4 / projectHeightPx)
               const backlogTasks = modelTasksByProjectId[projectId] ?? []
               const safeMinHeightRatio = minHeightRatio > 0 ? minHeightRatio : 1
@@ -4945,11 +4981,14 @@ peekDataDepsRef.current = {
               const projectBackground = isCompleted
                 ? 'radial-gradient(circle at 2% 0%, rgba(16, 185, 129, 0.28), transparent 58%), linear-gradient(140deg, rgba(6, 78, 59, 0.95) 0%, rgba(4, 120, 87, 0.92) 44%, rgba(16, 185, 129, 0.88) 100%)'
                 : 'radial-gradient(circle at 0% 0%, rgba(120, 126, 138, 0.28), transparent 58%), linear-gradient(140deg, rgba(8, 8, 10, 0.96) 0%, rgba(22, 22, 26, 0.94) 42%, rgba(88, 90, 104, 0.6) 100%)'
+              const resolvedProjectShadow = isCompleted
+                ? useCompactProjectShadow
+                  ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
+                  : '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
+                : sharedCardShadow
               const projectCardStyle: CSSProperties = {
                 ...sharedCardStyle,
-                boxShadow: isCompleted
-                  ? '0 26px 52px rgba(2, 32, 24, 0.6), 0 12px 28px rgba(1, 55, 34, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
-                  : sharedCardStyle.boxShadow,
+                boxShadow: resolvedProjectShadow,
                 outline: isCompleted
                   ? '1px solid rgba(16, 185, 129, 0.55)'
                   : sharedCardStyle.outline,
@@ -4970,7 +5009,7 @@ peekDataDepsRef.current = {
                   key={instance.id}
                   data-schedule-instance-id={instance.id}
                   className="absolute"
-                  style={positionStyle}
+                  style={layeredPositionStyle}
                   layout={!prefersReducedMotion}
                   transition={
                     prefersReducedMotion
@@ -5437,33 +5476,46 @@ peekDataDepsRef.current = {
             <AnimatePresence initial={false}>
               {modelStandaloneTaskInstances.map(({ instance, task, start, end }) => {
                 if (!isValidDate(start) || !isValidDate(end)) return null
-                const startMin = start.getHours() * 60 + start.getMinutes()
+                const startMin = getDayMinuteOffset(start)
                 const startOffsetMinutes = startMin - modelStartHour * 60
                 const durationMinutes = Math.max(
                   0,
                   (end.getTime() - start.getTime()) / 60000
                 )
+                const progress = (task as { progress?: number }).progress ?? 0
+                const standaloneEnergyLevel: FlameLevel =
+                  resolveEnergyLevel(task.energy) ?? 'NO'
+                const pendingStatus = pendingInstanceStatuses.get(instance.id)
+                const isPending = pendingStatus !== undefined
+                const status = pendingStatus ?? instance.status ?? 'scheduled'
+                const canToggle =
+                  status === 'completed' || status === 'scheduled'
+                const isCompleted = status === 'completed'
+                const standaloneHeightPx = Math.max(durationMinutes * modelPxPerMin, 0)
+                const useCompactStandaloneShadow =
+                  standaloneHeightPx <= TIMELINE_COMPACT_CARD_HEIGHT_PX
+                const baseStandaloneShadow = useCompactStandaloneShadow
+                  ? TIMELINE_COMPACT_CARD_SHADOW
+                  : 'var(--elev-card)'
+                const completedStandaloneShadow = useCompactStandaloneShadow
+                  ? TIMELINE_COMPACT_CARD_COMPLETED_SHADOW
+                  : '0 22px 42px rgba(4, 47, 39, 0.55)'
                 const style: CSSProperties = {
                   ...TIMELINE_CARD_BOUNDS,
                   top: toTimelinePosition(startOffsetMinutes),
                   height: toTimelinePosition(durationMinutes),
-                  boxShadow: 'var(--elev-card)',
+                  boxShadow: isCompleted
+                    ? completedStandaloneShadow
+                    : baseStandaloneShadow,
                   outline: '1px solid var(--event-border)',
                   outlineOffset: '-1px',
                 }
+                const stackingZIndex = computeTimelineStackingIndex(startOffsetMinutes)
+                const layeredStyle = { ...style, zIndex: stackingZIndex }
                 const shouldWrapStandaloneTitle = Number(durationMinutes) >= 30
                 const standaloneTitleClass = shouldWrapStandaloneTitle
                   ? 'text-sm font-medium leading-tight line-clamp-2 sm:line-clamp-1 sm:truncate'
                   : 'text-sm font-medium leading-tight truncate'
-              const progress = (task as { progress?: number }).progress ?? 0
-              const standaloneEnergyLevel: FlameLevel =
-                resolveEnergyLevel(task.energy) ?? 'NO'
-              const pendingStatus = pendingInstanceStatuses.get(instance.id)
-              const isPending = pendingStatus !== undefined
-              const status = pendingStatus ?? instance.status ?? 'scheduled'
-              const canToggle =
-                status === 'completed' || status === 'scheduled'
-              const isCompleted = status === 'completed'
               const standaloneBaseClass =
                 'absolute flex items-center justify-between rounded-[var(--schedule-instance-radius)] px-3 py-2'
               const standaloneScheduledClass =
@@ -5512,7 +5564,7 @@ peekDataDepsRef.current = {
                   aria-disabled={!canToggle || isPending}
                   data-completed={isCompleted ? 'true' : 'false'}
                   className={standaloneClassName}
-                  style={style}
+                  style={layeredStyle}
                   onPointerDown={event => {
                     handleInstancePointerDown(event, instance.id, handleStandaloneTaskPrimaryAction)
                   }}
