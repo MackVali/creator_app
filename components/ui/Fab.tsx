@@ -636,15 +636,6 @@ export function Fab({
     if (!target) {
       return;
     }
-    if (typeof window !== "undefined") {
-      const typeLabel = target.type === "HABIT" ? "habit" : "project";
-      const confirmed = window.confirm(
-        `Delete this ${typeLabel}? This cannot be undone.`
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
     setDeleteError(null);
     setIsDeletingEvent(true);
     try {
@@ -1055,12 +1046,25 @@ function FabRescheduleOverlay({
   onDelete,
 }: FabRescheduleOverlayProps) {
   if (typeof document === "undefined") return null;
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  useEffect(() => {
+    setConfirmingDelete(false);
+  }, [open, target?.id]);
   const combinedErrors = [error, deleteError].filter(
     (message): message is string => typeof message === "string" && message.length > 0
   );
   const disableActions = isSaving || isDeleting;
   const deleteLabel =
     target?.type === "HABIT" ? "Habit" : target?.type === "PROJECT" ? "Project" : "Event";
+  const handleDeleteClick = () => {
+    if (disableActions || !target) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setConfirmingDelete(false);
+    void onDelete();
+  };
   return createPortal(
     <AnimatePresence>
       {open ? (
@@ -1129,17 +1133,27 @@ function FabRescheduleOverlay({
                   <Button
                     type="button"
                     variant="destructive"
-                    onClick={onDelete}
+                    onClick={handleDeleteClick}
                     disabled={disableActions || !target}
-                    className="bg-red-600 text-white hover:bg-red-500"
+                    className={cn(
+                      "bg-red-600 text-white hover:bg-red-500 transition",
+                      confirmingDelete && "border border-white/40 bg-red-700"
+                    )}
                   >
-                    {isDeleting ? "Deleting…" : `Delete ${deleteLabel}`}
+                    {isDeleting
+                      ? "Deleting…"
+                      : confirmingDelete
+                        ? `Confirm delete ${deleteLabel}`
+                        : `Delete ${deleteLabel}`}
                   </Button>
                   <div className="flex items-center justify-end gap-2">
                     <Button
                       type="button"
                       variant="ghost"
-                      onClick={onClose}
+                      onClick={() => {
+                        setConfirmingDelete(false);
+                        onClose();
+                      }}
                       className="text-white/70 hover:bg-white/10"
                       disabled={disableActions}
                     >
