@@ -1124,34 +1124,36 @@ function FabRescheduleOverlay({
                   ))}
                 </div>
               )}
-              <div className="space-y-3 pt-2">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={onDelete}
-                  disabled={disableActions || !target}
-                  className="w-full justify-center"
-                >
-                  {isDeleting ? "Deleting…" : `Delete ${deleteLabel}`}
-                </Button>
-                <div className="flex items-center justify-end gap-2">
+              <div className="pt-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <Button
                     type="button"
-                    variant="ghost"
-                    onClick={onClose}
-                    className="text-white/70 hover:bg-white/10"
-                    disabled={disableActions}
+                    variant="destructive"
+                    onClick={onDelete}
+                    disabled={disableActions || !target}
+                    className="self-start bg-red-600 text-white hover:bg-red-500 sm:self-auto"
                   >
-                    Cancel
+                    {isDeleting ? "Deleting…" : `Delete ${deleteLabel}`}
                   </Button>
-                  <Button
-                    type="button"
-                    onClick={onSave}
-                    disabled={disableActions || !target?.scheduleInstanceId}
-                    className="bg-white/90 text-black hover:bg-white"
-                  >
-                    {isSaving ? "Saving…" : "Save"}
-                  </Button>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={onClose}
+                      className="text-white/70 hover:bg-white/10"
+                      disabled={disableActions}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={onSave}
+                      disabled={disableActions || !target?.scheduleInstanceId}
+                      className="bg-white/90 text-black hover:bg-white"
+                    >
+                      {isSaving ? "Saving…" : "Save"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
