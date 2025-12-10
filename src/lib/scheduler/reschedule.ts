@@ -17,6 +17,7 @@ import {
   fetchGoalsForUser,
   windowsForDateFromSnapshot,
   type WindowLite,
+  type WindowKind,
 } from './repo'
 import { placeItemInWindows } from './placement'
 import { ENERGY } from './config'
@@ -172,6 +173,26 @@ const doesWindowMatchHabitLocation = (
     return windowLocationId === habitLocationId
   }
   return habitLocationValue ? windowLocationValue === habitLocationValue : true
+}
+
+const normalizeHabitTypeValue = (value?: string | null) => {
+  const raw = (value ?? 'HABIT').toUpperCase()
+  return raw === 'ASYNC' ? 'SYNC' : raw
+}
+
+const doesWindowAllowHabitType = (
+  habit: HabitScheduleItem | undefined,
+  windowRecord: WindowLite | null,
+) => {
+  if (!windowRecord) return true
+  const kind: WindowKind = windowRecord.window_kind ?? 'DEFAULT'
+  if (kind === 'BREAK') {
+    return normalizeHabitTypeValue(habit?.habitType) === 'RELAXER'
+  }
+  if (kind === 'PRACTICE') {
+    return normalizeHabitTypeValue(habit?.habitType) === 'PRACTICE'
+  }
+  return true
 }
 
 export async function markMissedAndQueue(
@@ -1054,6 +1075,7 @@ export async function scheduleBacklog(
             restMode: isRestMode,
             userId,
             preloadedWindows: dayWindows,
+            allowedWindowKinds: ['DEFAULT'],
           }
         )
         if (windows.length === 0) continue
@@ -1620,6 +1642,7 @@ async function scheduleHabitsForDay(params: {
 
   const invalidHabitInstances: ScheduleInstance[] = []
   const locationMismatchInstances: ScheduleInstance[] = []
+  const typeMismatchInstances: ScheduleInstance[] = []
   const seenInvalidIds = new Set<string>()
   for (let index = dayInstances.length - 1; index >= 0; index -= 1) {
     const instance = dayInstances[index]
@@ -1636,6 +1659,18 @@ async function scheduleHabitsForDay(params: {
       if (!seenInvalidIds.has(instance.id ?? `${habitId}:location`)) {
         locationMismatchInstances.push(instance)
         seenInvalidIds.add(instance.id ?? `${habitId}:location`)
+      }
+      dayInstances.splice(index, 1)
+      if (existingByHabitId.get(habitId)?.id === instance.id) {
+        existingByHabitId.delete(habitId)
+      }
+      continue
+    }
+    const hasWindowTypeMatch = doesWindowAllowHabitType(habit, windowRecord)
+    if (!hasWindowTypeMatch) {
+      if (!seenInvalidIds.has(instance.id ?? `${habitId}:window_kind`)) {
+        typeMismatchInstances.push(instance)
+        seenInvalidIds.add(instance.id ?? `${habitId}:window_kind`)
       }
       dayInstances.splice(index, 1)
       if (existingByHabitId.get(habitId)?.id === instance.id) {
@@ -1676,6 +1711,9 @@ async function scheduleHabitsForDay(params: {
   }
   if (locationMismatchInstances.length > 0) {
     duplicatesToCancel.push(...locationMismatchInstances)
+  }
+  if (typeMismatchInstances.length > 0) {
+    duplicatesToCancel.push(...typeMismatchInstances)
   }
 
   if (duplicatesToCancel.length > 0) {
@@ -1901,7 +1939,9 @@ async function scheduleHabitsForDay(params: {
           existingWindowLocationValue !== locationContext))
     const hasLocationlessMismatch =
       existingInstance && !hasExplicitLocationContext && existingWindowHasLocation
-    if (hasLocationMismatch || hasLocationlessMismatch) {
+    const hasWindowTypeMismatch =
+      existingInstance && !doesWindowAllowHabitType(habit, existingWindowRecord)
+    if (hasLocationMismatch || hasLocationlessMismatch || hasWindowTypeMismatch) {
       if (await cancelScheduledInstance(existingInstance)) {
         existingByHabitId.delete(habit.id)
         existingInstance = null
@@ -1930,13 +1970,19 @@ async function scheduleHabitsForDay(params: {
       daylightConstraint?.preference === 'NIGHT'
         ? { today: sunlightToday, previous: sunlightPrevious, next: sunlightNext }
         : null
-    const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
+    const normalizedType = normalizeHabitTypeValue(habit.habitType)
     const isSyncHabit = normalizedType === 'SYNC'
     const allowsHabitOverlap = isSyncHabit
     const anchorRaw = habit.windowEdgePreference
       ? String(habit.windowEdgePreference).toUpperCase().trim()
       : 'FRONT'
     const anchorPreference = anchorRaw === 'BACK' ? 'BACK' : 'FRONT'
+    const allowedWindowKinds: WindowKind[] =
+      normalizedType === 'RELAXER'
+        ? ['DEFAULT', 'BREAK']
+        : normalizedType === 'PRACTICE'
+          ? ['DEFAULT', 'PRACTICE']
+          : ['DEFAULT']
 
     const attemptKeys = new Set<string>()
     const attemptQueue: Array<{
@@ -2030,6 +2076,7 @@ async function scheduleHabitsForDay(params: {
             attempt.daylight?.preference === 'NIGHT'
               ? nightEligibleWindows
               : windows,
+          allowedWindowKinds,
         }
       )
       if (windowsForAttempt.length > 0) {
@@ -2661,6 +2708,7 @@ async function fetchCompatibleWindowsForItem(
     nightSunlight?: NightSunlightBundle | null
     requireLocationContextMatch?: boolean
     hasExplicitLocationContext?: boolean
+    allowedWindowKinds?: WindowKind[]
   }
 ) {
   const cacheKey = dateCacheKey(date)
@@ -2693,6 +2741,10 @@ async function fetchCompatibleWindowsForItem(
   const desiredLocationValue = desiredLocationValueRaw === 'ANY' ? null : desiredLocationValueRaw
   const daylight = options?.daylight ?? null
   const anchorPreference = options?.anchor === 'BACK' ? 'BACK' : 'FRONT'
+  const allowedWindowKindSet =
+    options?.allowedWindowKinds && options.allowedWindowKinds.length > 0
+      ? new Set(options.allowedWindowKinds)
+      : null
 
   const compatible = [] as Array<{
     id: string
@@ -2706,6 +2758,10 @@ async function fetchCompatibleWindowsForItem(
   const restMode = options?.restMode ?? false
 
   for (const win of windows) {
+    const windowKind: WindowKind = win.window_kind ?? 'DEFAULT'
+    if (allowedWindowKindSet && !allowedWindowKindSet.has(windowKind)) {
+      continue
+    }
     let energyRaw = win.energy ? String(win.energy).toUpperCase().trim() : ''
     if (restMode) {
       energyRaw = energyRaw === 'NO' ? 'NO' : 'LOW'
@@ -3060,6 +3116,7 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
         restMode: options.restMode,
         userId: options.userId,
         preloadedWindows: options.dayWindows,
+        allowedWindowKinds: ['DEFAULT'],
       }
     )
 
