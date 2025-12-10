@@ -1125,13 +1125,13 @@ function FabRescheduleOverlay({
                 </div>
               )}
               <div className="pt-2">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <Button
                     type="button"
                     variant="destructive"
                     onClick={onDelete}
                     disabled={disableActions || !target}
-                    className="self-start bg-red-600 text-white hover:bg-red-500 sm:self-auto"
+                    className="bg-red-600 text-white hover:bg-red-500"
                   >
                     {isDeleting ? "Deleting…" : `Delete ${deleteLabel}`}
                   </Button>
