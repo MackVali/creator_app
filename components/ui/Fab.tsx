@@ -64,7 +64,9 @@ export function Fab({
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isSavingReschedule, setIsSavingReschedule] = useState(false);
+  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const menuVerticalStartRef = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -384,6 +386,7 @@ export function Fab({
       return;
     }
     setRescheduleTarget(result);
+    setDeleteError(null);
     setRescheduleError(
       result.scheduleInstanceId ? null : "This event has no upcoming scheduled time."
     );
@@ -453,9 +456,10 @@ export function Fab({
   };
 
   const handleCloseReschedule = () => {
-    if (isSavingReschedule) return;
+    if (isSavingReschedule || isDeletingEvent) return;
     setRescheduleTarget(null);
     setRescheduleError(null);
+    setDeleteError(null);
   };
 
   useEffect(() => {
@@ -464,6 +468,8 @@ export function Fab({
       setMenuPage(0);
       resetSearchState();
       setRescheduleTarget(null);
+      setDeleteError(null);
+      setIsDeletingEvent(false);
     }
   }, [isOpen, resetSearchState]);
 
@@ -537,6 +543,9 @@ export function Fab({
   }, [isOpen, menuSection, searchQuery, sortSearchResults]);
 
   const handleRescheduleSave = useCallback(async () => {
+    if (isDeletingEvent) {
+      return;
+    }
     if (!rescheduleTarget || !rescheduleDate || !rescheduleTime) {
       setRescheduleError("Select both date and time");
       return;
@@ -603,6 +612,7 @@ export function Fab({
       void notifySchedulerOfChange();
       setIsSavingReschedule(false);
       setRescheduleTarget(null);
+      setDeleteError(null);
     } catch (error) {
       console.error("Failed to reschedule", error);
       setRescheduleError(error instanceof Error ? error.message : "Unable to update schedule");
@@ -610,12 +620,63 @@ export function Fab({
     }
   }, [
     fetchNextScheduledInstance,
+    isDeletingEvent,
     rescheduleDate,
     rescheduleTime,
     rescheduleTarget,
     sortSearchResults,
     notifySchedulerOfChange,
   ]);
+
+  const handleDeleteEvent = useCallback(async () => {
+    if (isDeletingEvent) {
+      return;
+    }
+    const target = rescheduleTarget;
+    if (!target) {
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const typeLabel = target.type === "HABIT" ? "habit" : "project";
+      const confirmed = window.confirm(
+        `Delete this ${typeLabel}? This cannot be undone.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setDeleteError(null);
+    setIsDeletingEvent(true);
+    try {
+      const typeSegment = target.type === "HABIT" ? "habit" : "project";
+      const response = await fetch(
+        `/api/schedule/events/${typeSegment}/${target.id}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to delete this event");
+      }
+      setSearchResults(prev =>
+        prev.filter(
+          item => !(item.id === target.id && item.type === target.type)
+        )
+      );
+      setRescheduleTarget(null);
+      setRescheduleDate("");
+      setRescheduleTime("");
+      setRescheduleError(null);
+      setDeleteError(null);
+      void notifySchedulerOfChange();
+    } catch (error) {
+      console.error("Failed to delete schedule event", error);
+      setDeleteError(
+        error instanceof Error ? error.message : "Unable to delete this event"
+      );
+    } finally {
+      setIsDeletingEvent(false);
+    }
+  }, [isDeletingEvent, notifySchedulerOfChange, rescheduleTarget]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     menuVerticalStartRef.current = e.touches[0].clientY;
@@ -812,11 +873,14 @@ export function Fab({
         dateValue={rescheduleDate}
         timeValue={rescheduleTime}
         error={rescheduleError}
+        deleteError={deleteError}
         isSaving={isSavingReschedule}
+        isDeleting={isDeletingEvent}
         onDateChange={setRescheduleDate}
         onTimeChange={setRescheduleTime}
         onClose={handleCloseReschedule}
         onSave={handleRescheduleSave}
+        onDelete={handleDeleteEvent}
       />
     </div>
   );
@@ -965,11 +1029,14 @@ type FabRescheduleOverlayProps = {
   dateValue: string;
   timeValue: string;
   error: string | null;
+  deleteError: string | null;
   isSaving: boolean;
+  isDeleting: boolean;
   onDateChange: (value: string) => void;
   onTimeChange: (value: string) => void;
   onClose: () => void;
   onSave: () => void;
+  onDelete: () => void;
 };
 
 function FabRescheduleOverlay({
@@ -978,13 +1045,22 @@ function FabRescheduleOverlay({
   dateValue,
   timeValue,
   error,
+  deleteError,
   isSaving,
+  isDeleting,
   onDateChange,
   onTimeChange,
   onClose,
   onSave,
+  onDelete,
 }: FabRescheduleOverlayProps) {
   if (typeof document === "undefined") return null;
+  const combinedErrors = [error, deleteError].filter(
+    (message): message is string => typeof message === "string" && message.length > 0
+  );
+  const disableActions = isSaving || isDeleting;
+  const deleteLabel =
+    target?.type === "HABIT" ? "Habit" : target?.type === "PROJECT" ? "Project" : "Event";
   return createPortal(
     <AnimatePresence>
       {open ? (
@@ -1008,7 +1084,7 @@ function FabRescheduleOverlay({
               onClick={onClose}
               className="absolute right-4 top-4 rounded-full border border-white/10 p-1 text-white/70 transition hover:text-white"
               aria-label="Close reschedule menu"
-              disabled={isSaving}
+              disabled={disableActions}
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -1026,6 +1102,7 @@ function FabRescheduleOverlay({
                   value={dateValue}
                   onChange={(event) => onDateChange(event.target.value)}
                   className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                  disabled={disableActions}
                 />
               </div>
               <div className="space-y-1">
@@ -1037,31 +1114,45 @@ function FabRescheduleOverlay({
                   value={timeValue}
                   onChange={(event) => onTimeChange(event.target.value)}
                   className="h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none"
+                  disabled={disableActions}
                 />
               </div>
-              {error && (
+              {combinedErrors.length > 0 && (
                 <div className="rounded-xl border border-red-500/20 bg-red-900/30 px-3 py-2 text-sm text-red-100">
-                  {error}
+                  {combinedErrors.map((message, index) => (
+                    <p key={`${message}-${index}`}>{message}</p>
+                  ))}
                 </div>
               )}
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="space-y-3 pt-2">
                 <Button
                   type="button"
-                  variant="ghost"
-                  onClick={onClose}
-                  className="text-white/70 hover:bg-white/10"
-                  disabled={isSaving}
+                  variant="destructive"
+                  onClick={onDelete}
+                  disabled={disableActions || !target}
+                  className="w-full justify-center"
                 >
-                  Cancel
+                  {isDeleting ? "Deleting…" : `Delete ${deleteLabel}`}
                 </Button>
-                <Button
-                  type="button"
-                  onClick={onSave}
-                  disabled={isSaving || !target?.scheduleInstanceId}
-                  className="bg-white/90 text-black hover:bg-white"
-                >
-                  {isSaving ? "Saving…" : "Save"}
-                </Button>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={onClose}
+                    className="text-white/70 hover:bg-white/10"
+                    disabled={disableActions}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={onSave}
+                    disabled={disableActions || !target?.scheduleInstanceId}
+                    className="bg-white/90 text-black hover:bg-white"
+                  >
+                    {isSaving ? "Saving…" : "Save"}
+                  </Button>
+                </div>
               </div>
             </div>
           </motion.div>
