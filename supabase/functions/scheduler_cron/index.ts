@@ -798,6 +798,12 @@ async function fetchCompatibleWindowsForItem(
   }> = []
 
   for (const window of windows) {
+    const windowKind = typeof window.window_kind === 'string'
+      ? window.window_kind.toUpperCase().trim()
+      : 'DEFAULT'
+    if (windowKind === 'BREAK' || windowKind === 'PRACTICE') {
+      continue
+    }
     const energyRaw = window.energy ? String(window.energy).toUpperCase().trim() : ''
     const hasEnergyLabel = energyRaw.length > 0
     const energyLabel = hasEnergyLabel ? energyRaw : null
@@ -870,6 +876,7 @@ type WindowRecord = {
   end_local: string
   days: number[] | null
   fromPrevDay?: boolean
+  window_kind?: string | null
 }
 
 async function fetchWindowsForDate(
@@ -881,7 +888,7 @@ async function fetchWindowsForDate(
   const weekday = weekdayInTimeZone(date, timeZone)
   const prevWeekday = (weekday + 6) % 7
 
-  const columns = 'id, label, energy, start_local, end_local, days'
+  const columns = 'id, label, energy, start_local, end_local, days, window_kind'
 
   const [
     { data: today, error: errToday },

@@ -4,18 +4,29 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+type WindowKind = "DEFAULT" | "BREAK" | "PRACTICE";
+export type HabitWindowKind = WindowKind;
+
 type WindowRow = {
   id: string;
   label: string | null;
   start_local: string | null;
   end_local: string | null;
   days: number[] | null;
+  window_kind: string | null;
 };
 
 export type HabitWindowSelectOption = {
   id: string;
   label: string;
+  kind: WindowKind;
 };
+
+function normalizeWindowKind(value: string | null | undefined): WindowKind {
+  if (!value) return "DEFAULT";
+  const normalized = value.toUpperCase().trim();
+  return normalized === "BREAK" || normalized === "PRACTICE" ? normalized : "DEFAULT";
+}
 
 function formatTime(value: string | null) {
   if (!value) return "--:--";
@@ -38,6 +49,7 @@ function mapWindowRow(row: WindowRow): HabitWindowSelectOption {
   return {
     id: row.id,
     label: `${name} (${daysLabel} · ${timeLabel})`,
+    kind: normalizeWindowKind(row.window_kind),
   };
 }
 
@@ -83,7 +95,7 @@ export function useHabitWindows() {
 
         const { data, error } = await supabase
           .from("windows")
-          .select("id, label, start_local, end_local, days")
+          .select("id, label, start_local, end_local, days, window_kind")
           .eq("user_id", user.id)
           .order("created_at", { ascending: true });
 

@@ -154,6 +154,10 @@ function normalizeStageValue(
   return trimmed.length > 0 ? trimmed.toUpperCase() : fallback;
 }
 
+export type WindowKind = 'DEFAULT' | 'BREAK' | 'PRACTICE';
+
+const WINDOW_KIND_SET = new Set<WindowKind>(['DEFAULT', 'BREAK', 'PRACTICE']);
+
 export type WindowLite = {
   id: string;
   label: string;
@@ -165,6 +169,7 @@ export type WindowLite = {
   location_context_value: string | null;
   location_context_name: string | null;
   fromPrevDay?: boolean;
+  window_kind: WindowKind;
 };
 
 type WindowRecord = {
@@ -175,6 +180,7 @@ type WindowRecord = {
   end_local?: string | null;
   days?: number[] | null;
   location_context_id?: string | null;
+  window_kind?: string | null;
   location_context?: {
     id?: string | null;
     value?: string | null;
@@ -197,6 +203,14 @@ type TaskRecord = {
   } | null;
 };
 
+function normalizeWindowKind(value?: string | null): WindowKind {
+  if (!value) return 'DEFAULT';
+  const normalized = value.toUpperCase().trim();
+  return WINDOW_KIND_SET.has(normalized as WindowKind)
+    ? (normalized as WindowKind)
+    : 'DEFAULT';
+}
+
 function mapWindowRecord(record: WindowRecord): WindowLite {
   const value = record.location_context?.value
     ? String(record.location_context.value).toUpperCase().trim()
@@ -213,6 +227,7 @@ function mapWindowRecord(record: WindowRecord): WindowLite {
     location_context_id: record.location_context_id ?? null,
     location_context_value: value,
     location_context_name: label,
+    window_kind: normalizeWindowKind(record.window_kind),
   };
 }
 
@@ -341,7 +356,7 @@ export async function fetchWindowsForDate(
   const weekday = weekdayInTimeZone(date, normalizedTimeZone);
   const prevWeekday = (weekday + 6) % 7;
   const contextJoin = 'location_context:location_contexts(id, value, label)';
-  const columns = `id, label, energy, start_local, end_local, days, location_context_id, ${contextJoin}`;
+  const columns = `id, label, energy, start_local, end_local, days, location_context_id, window_kind, ${contextJoin}`;
 
   const userId = options?.userId ?? null;
   const selectWindows = () => supabase.from('windows').select(columns);
@@ -393,7 +408,7 @@ export async function fetchWindowsSnapshot(
   const contextJoin = 'location_context:location_contexts(id, value, label)';
   const { data, error } = await supabase
     .from('windows')
-    .select(`id, label, energy, start_local, end_local, days, location_context_id, ${contextJoin}`)
+    .select(`id, label, energy, start_local, end_local, days, location_context_id, window_kind, ${contextJoin}`)
     .eq('user_id', userId);
 
   if (error) throw error;
@@ -415,7 +430,7 @@ export async function fetchAllWindows(client?: Client): Promise<WindowLite[]> {
   const contextJoin = 'location_context:location_contexts(id, value, label)';
   const { data, error } = await supabase
     .from('windows')
-    .select(`id, label, energy, start_local, end_local, days, location_context_id, ${contextJoin}`);
+    .select(`id, label, energy, start_local, end_local, days, location_context_id, window_kind, ${contextJoin}`);
 
   if (error) throw error;
 

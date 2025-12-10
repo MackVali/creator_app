@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useLocationContexts } from "@/lib/hooks/useLocationContexts";
 import type { CatRow } from "@/lib/types/cat";
-import type { HabitWindowSelectOption } from "@/lib/hooks/useHabitWindows";
+import type { HabitWindowSelectOption, HabitWindowKind } from "@/lib/hooks/useHabitWindows";
 import {
   DEFAULT_EVERY_X_DAYS_INTERVAL,
   ensureEveryXDaysInterval,
@@ -366,24 +366,37 @@ export function HabitFormFields({
   const windowEdgeValue = (windowEdgePreference ?? "FRONT")
     .toUpperCase()
     .trim();
+  const filteredWindowOptions = useMemo(() => {
+    return windowOptions.filter((option) => {
+      if (option.kind === "BREAK") {
+        return normalizedHabitType === "RELAXER";
+      }
+      if (option.kind === "PRACTICE") {
+        return normalizedHabitType === "PRACTICE";
+      }
+      return true;
+    });
+  }, [windowOptions, normalizedHabitType]);
+
   const normalizedWindowId =
     typeof windowId === "string" && windowId.trim().length > 0
       ? windowId
       : "none";
   const hasWindowSelection =
     normalizedWindowId !== "none" &&
-    windowOptions.some((option) => option.id === normalizedWindowId);
-  const resolvedWindowOptions = hasWindowSelection
-    ? windowOptions
+    filteredWindowOptions.some((option) => option.id === normalizedWindowId);
+  const resolvedWindowOptions: HabitWindowSelectOption[] = hasWindowSelection
+    ? filteredWindowOptions
     : normalizedWindowId !== "none"
       ? [
-          ...windowOptions,
+          ...filteredWindowOptions,
           {
             id: normalizedWindowId,
-            label: "Selected window (unavailable)",
+            label: "Selected window (incompatible)",
+            kind: "DEFAULT" as HabitWindowKind,
           },
         ]
-      : windowOptions;
+      : filteredWindowOptions;
 
   const handleAddCustomLocation = async () => {
     const name = customLocationName;
