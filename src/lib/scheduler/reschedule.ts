@@ -1487,6 +1487,34 @@ async function scheduleHabitsForDay(params: {
       return false
     }
   }
+  const missScheduledInstance = async (instance: ScheduleInstance) => {
+    if (!instance?.id) return false
+    try {
+      const miss = await client
+        .from('schedule_instances')
+        .update({ status: 'missed' })
+        .eq('id', instance.id)
+        .select('id')
+        .single()
+      if (miss.error) {
+        result.failures.push({
+          itemId: instance.source_id ?? instance.id,
+          reason: 'error',
+          detail: miss.error,
+        })
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error('Failed to mark habit instance missed during revalidation', error)
+      result.failures.push({
+        itemId: instance.source_id ?? instance.id,
+        reason: 'error',
+        detail: error,
+      })
+      return false
+    }
+  }
 
   const zone = timeZone || 'UTC'
   const dayStart = startOfDayInTimeZone(day, zone)
@@ -1709,9 +1737,6 @@ async function scheduleHabitsForDay(params: {
   if (invalidHabitInstances.length > 0) {
     duplicatesToCancel.push(...invalidHabitInstances)
   }
-  if (locationMismatchInstances.length > 0) {
-    duplicatesToCancel.push(...locationMismatchInstances)
-  }
   if (typeMismatchInstances.length > 0) {
     duplicatesToCancel.push(...typeMismatchInstances)
   }
@@ -1734,6 +1759,16 @@ async function scheduleHabitsForDay(params: {
         })
       } else {
         duplicate.status = 'canceled'
+      }
+    }
+  }
+
+  if (locationMismatchInstances.length > 0) {
+    for (const mismatch of locationMismatchInstances) {
+      if (!mismatch?.id) continue
+      const marked = await missScheduledInstance(mismatch)
+      if (marked) {
+        mismatch.status = 'missed'
       }
     }
   }
@@ -1899,13 +1934,13 @@ async function scheduleHabitsForDay(params: {
     let scheduledDurationMs = baseDurationMs
 
     const resolvedEnergy = (habit.energy ?? habit.window?.energy ?? 'NO').toUpperCase()
-    const locationContextSource = habit.locationContextValue ?? habit.window?.locationContextValue ?? null
+    const locationContextSource = habit.locationContextValue ?? null
     const normalizedLocationContext =
       locationContextSource && typeof locationContextSource === 'string'
         ? locationContextSource.toUpperCase().trim()
         : null
     const locationContext = normalizedLocationContext === 'ANY' ? null : normalizedLocationContext
-    const locationContextIdRaw = habit.locationContextId ?? habit.window?.locationContextId ?? null
+    const locationContextIdRaw = habit.locationContextId ?? null
     const locationContextId =
       typeof locationContextIdRaw === 'string' && locationContextIdRaw.trim().length > 0
         ? locationContextIdRaw.trim()
@@ -1941,7 +1976,12 @@ async function scheduleHabitsForDay(params: {
       existingInstance && !hasExplicitLocationContext && existingWindowHasLocation
     const hasWindowTypeMismatch =
       existingInstance && !doesWindowAllowHabitType(habit, existingWindowRecord)
-    if (hasLocationMismatch || hasLocationlessMismatch || hasWindowTypeMismatch) {
+    if (hasLocationMismatch || hasLocationlessMismatch) {
+      if (await missScheduledInstance(existingInstance)) {
+        existingByHabitId.delete(habit.id)
+        existingInstance = null
+      }
+    } else if (hasWindowTypeMismatch) {
       if (await cancelScheduledInstance(existingInstance)) {
         existingByHabitId.delete(habit.id)
         existingInstance = null
@@ -1989,11 +2029,13 @@ async function scheduleHabitsForDay(params: {
       locationId: string | null
       locationValue: string | null
       daylight: DaylightConstraint | null
+      enforceLocation: boolean
     }> = []
     const enqueueAttempt = (
       locationId: string | null,
       locationValue: string | null,
       daylight: DaylightConstraint | null,
+      options?: { enforceLocation?: boolean },
     ) => {
       const normalizedId =
         locationId && locationId.trim().length > 0 ? locationId.trim() : null
@@ -2001,10 +2043,16 @@ async function scheduleHabitsForDay(params: {
         locationValue && locationValue.length > 0
           ? locationValue.toUpperCase().trim()
           : null
-      const key = `${normalizedId ?? 'null'}|${normalizedValue ?? 'null'}|${daylight?.preference ?? 'null'}`
+      const enforceLocation = options?.enforceLocation ?? true
+      const key = `${normalizedId ?? 'null'}|${normalizedValue ?? 'null'}|${daylight?.preference ?? 'null'}|${enforceLocation ? 'strict' : 'relaxed'}`
       if (attemptKeys.has(key)) return
       attemptKeys.add(key)
-      attemptQueue.push({ locationId: normalizedId, locationValue: normalizedValue, daylight })
+      attemptQueue.push({
+        locationId: normalizedId,
+        locationValue: normalizedValue,
+        daylight,
+        enforceLocation,
+      })
     }
 
     const hasLocationRequirement = Boolean(locationContextId || locationContext)
@@ -2022,6 +2070,10 @@ async function scheduleHabitsForDay(params: {
         enqueueAttempt(null, locationContext, null)
       } else {
         enqueueAttempt(null, null, null)
+      }
+      if (hasLocationRequirement) {
+        enqueueAttempt(null, null, daylightConstraint, { enforceLocation: false })
+        enqueueAttempt(null, null, null, { enforceLocation: false })
       }
     }
     if (!hasLocationRequirement && !daylightConstraint) {
@@ -2070,7 +2122,8 @@ async function scheduleHabitsForDay(params: {
           userId,
           enforceNightSpan: daylightConstraint?.preference === 'NIGHT',
           nightSunlight: nightSunlightBundle,
-          requireLocationContextMatch: true,
+          requireLocationContextMatch:
+            attempt.enforceLocation || !hasExplicitLocationContext,
           hasExplicitLocationContext,
           preloadedWindows:
             attempt.daylight?.preference === 'NIGHT'
