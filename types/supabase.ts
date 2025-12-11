@@ -14,8 +14,6 @@ export interface Database {
           id: string;
           created_at: string;
           is_current: boolean;
-          priority_id: number;
-          energy_id: number;
           stage_id: number;
           monument_id: string;
           Title: string;
@@ -25,8 +23,6 @@ export interface Database {
           id?: string;
           created_at?: string;
           is_current?: boolean;
-          priority_id: number;
-          energy_id: number;
           stage_id: number;
           monument_id: string;
           Title?: string;
@@ -36,8 +32,6 @@ export interface Database {
           id?: string;
           created_at?: string;
           is_current?: boolean;
-          priority_id?: number;
-          energy_id?: number;
           stage_id?: number;
           monument_id?: string;
           Title?: string;
@@ -171,8 +165,6 @@ export interface Database {
         Row: {
           id: string;
           created_at: string;
-          energy_id: number | null;
-          priority_id: number | null;
           goal_id: string | null;
           stage_id: number;
           Title: string;
@@ -184,8 +176,6 @@ export interface Database {
         Insert: {
           id?: string;
           created_at?: string;
-          energy_id?: number | null;
-          priority_id?: number | null;
           goal_id?: string | null;
           stage_id: number;
           Title?: string;
@@ -197,8 +187,6 @@ export interface Database {
         Update: {
           id?: string;
           created_at?: string;
-          energy_id?: number | null;
-          priority_id?: number | null;
           goal_id?: string | null;
           stage_id?: number;
           Title?: string;
@@ -212,8 +200,6 @@ export interface Database {
         Row: {
           id: string;
           created_at: string;
-          priority_id: number | null;
-          energy_id: number | null;
           stage_id: number;
           project_id: string;
           Title: string;
@@ -222,8 +208,6 @@ export interface Database {
         Insert: {
           id?: string;
           created_at?: string;
-          priority_id?: number | null;
-          energy_id?: number | null;
           stage_id?: number;
           project_id: string;
           Title?: string;
@@ -232,8 +216,6 @@ export interface Database {
         Update: {
           id?: string;
           created_at?: string;
-          priority_id?: number | null;
-          energy_id?: number | null;
           stage_id?: number;
           project_id?: string;
           Title?: string;
