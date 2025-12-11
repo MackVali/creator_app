@@ -439,6 +439,7 @@ type SchedulerTimelineEntry =
       availableStartLocal: string | null
       windowStartLocal: string | null
       clipped: boolean
+      practiceContextId?: string | null
     }
 
 type SchedulerTimelinePlacement =
@@ -463,6 +464,7 @@ type SchedulerTimelinePlacement =
       energyLabel: (typeof ENERGY.LIST)[number]
       decision: SchedulerTimelineEntry['decision']
       clipped: boolean
+      practiceContextId: string | null
     }
 
 type SchedulerDebugState = {
@@ -527,6 +529,7 @@ type HabitTimelinePlacement = {
   habitName: string
   habitType: HabitScheduleItem['habitType']
   skillId: string | null
+  practiceContextId: string | null
   currentStreakDays: number
   instanceId: string | null
   start: Date
@@ -889,12 +892,23 @@ function computeHabitPlacementsForDay({
         continue
       }
       const timelinePlacement = timelineHabitPlacements.get(timelineKey)
-
+      const rawPlacementHabitType = habit.habitType ?? 'HABIT'
+      const normalizedHabitType = rawPlacementHabitType === 'ASYNC' ? 'SYNC' : rawPlacementHabitType
+      const preferredPracticeContextId = habit.skillMonumentId ?? null
+      let resolvedPracticeContextId = preferredPracticeContextId
+      if (!resolvedPracticeContextId) {
+        resolvedPracticeContextId = instance.practice_context_monument_id ?? null
+      }
+      if (!resolvedPracticeContextId && timelinePlacement?.practiceContextId) {
+        resolvedPracticeContextId = timelinePlacement.practiceContextId
+      }
       placements.push({
         habitId: habit.id,
         habitName: habit.name,
         habitType: habit.habitType,
         skillId: habit.skillId ?? null,
+        practiceContextId:
+          normalizedHabitType === 'PRACTICE' ? resolvedPracticeContextId ?? null : null,
         currentStreakDays: Math.max(
           0,
           Number.isFinite(habit.currentStreakDays)
@@ -1515,6 +1529,10 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
         typeof habitEntry.energyResolved === 'string' && habitEntry.energyResolved.trim().length > 0
           ? habitEntry.energyResolved
           : null
+      const practiceContextId =
+        typeof habitEntry.practiceContextId === 'string' && habitEntry.practiceContextId.length > 0
+          ? habitEntry.practiceContextId
+          : null
       const scheduledDayOffset =
         typeof value.scheduledDayOffset === 'number' && Number.isFinite(value.scheduledDayOffset)
           ? value.scheduledDayOffset
@@ -1547,6 +1565,7 @@ function parseSchedulerTimeline(input: unknown): SchedulerTimelineEntry[] {
         availableStartLocal,
         windowStartLocal,
         clipped,
+        practiceContextId,
       })
       continue
     }
@@ -2657,6 +2676,17 @@ export default function SchedulePage() {
     return map
   }, [skills])
 
+  const practiceContextDisplayById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const monument of monuments) {
+      if (!monument?.id) continue
+      const title = monument.title ?? 'Practice context'
+      const display = monument.emoji ? `${monument.emoji} ${title}` : title
+      map.set(monument.id, display)
+    }
+    return map
+  }, [monuments])
+
   useEffect(() => {
     const snapshots = backlogTaskPreviousStageRef.current
     for (const [taskId] of snapshots) {
@@ -2860,6 +2890,12 @@ export default function SchedulePage() {
             ? entry.energyResolved
             : habit?.window?.energy ?? null
         const energyLabel = normalizeEnergyLabel(energySource)
+        const habitTypeValue = (habit?.habitType ?? 'HABIT').toUpperCase()
+        const normalizedHabitType = habitTypeValue === 'ASYNC' ? 'SYNC' : habitTypeValue
+        let placementPracticeContextId = entry.practiceContextId ?? null
+        if (normalizedHabitType === 'PRACTICE' && habit?.skillMonumentId) {
+          placementPracticeContextId = habit.skillMonumentId
+        }
 
         placements.push({
           type: 'HABIT',
@@ -2871,6 +2907,7 @@ export default function SchedulePage() {
           energyLabel,
           decision: entry.decision,
           clipped: entry.clipped ?? false,
+          practiceContextId: placementPracticeContextId,
         })
       }
     }
@@ -4607,10 +4644,10 @@ peekDataDepsRef.current = {
                 'radial-gradient(circle at 10% -25%, rgba(248, 113, 113, 0.32), transparent 58%), linear-gradient(135deg, rgba(67, 26, 26, 0.9) 0%, rgba(127, 29, 29, 0.85) 45%, rgba(220, 38, 38, 0.72) 100%)'
               const relaxerCardBackground =
                 'radial-gradient(circle at 8% -18%, rgba(16, 185, 129, 0.32), transparent 60%), linear-gradient(138deg, rgba(4, 56, 33, 0.94) 0%, rgba(4, 120, 87, 0.88) 46%, rgba(16, 185, 129, 0.78) 100%)'
-              const practiceCardBackground =
-                'radial-gradient(circle at 12% -20%, rgba(244, 114, 182, 0.34), transparent 58%), linear-gradient(138deg, rgba(88, 28, 92, 0.94) 0%, rgba(190, 24, 93, 0.88) 45%, rgba(244, 114, 182, 0.78) 100%)'
               const syncCardBackground =
                 'radial-gradient(circle at 12% -20%, rgba(209, 213, 219, 0.32), transparent 58%), linear-gradient(135deg, rgba(39, 42, 48, 0.92) 0%, rgba(107, 114, 128, 0.82) 45%, rgba(209, 213, 219, 0.7) 100%)'
+              const practiceCardBackground =
+                'radial-gradient(circle at 6% -14%, rgba(54, 57, 66, 0.38), transparent 60%), linear-gradient(142deg, rgba(4, 4, 6, 0.98) 0%, rgba(18, 18, 22, 0.95) 44%, rgba(68, 72, 92, 0.72) 100%)'
               const memoCardBackground =
                 'radial-gradient(circle at 8% -18%, rgba(192, 132, 252, 0.34), transparent 60%), linear-gradient(138deg, rgba(59, 7, 100, 0.94) 0%, rgba(99, 37, 141, 0.88) 46%, rgba(168, 85, 247, 0.74) 100%)'
               const memoCompletedBackground =
@@ -4632,15 +4669,15 @@ peekDataDepsRef.current = {
                 '0 10px 22px rgba(2, 119, 84, 0.32)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
               ].join(', ')
-              const practiceShadow = [
-                '0 22px 44px rgba(82, 23, 74, 0.48)',
-                '0 10px 24px rgba(190, 24, 93, 0.32)',
-                'inset 0 1px 0 rgba(255, 255, 255, 0.14)',
-              ].join(', ')
               const syncShadow = [
                 '0 18px 36px rgba(58, 44, 14, 0.32)',
                 '0 8px 18px rgba(82, 62, 18, 0.24)',
                 'inset 0 1px 0 rgba(255, 255, 255, 0.12)',
+              ].join(', ')
+              const practiceShadow = [
+                '0 30px 60px rgba(2, 2, 6, 0.72)',
+                '0 12px 28px rgba(0, 0, 0, 0.48)',
+                'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
               ].join(', ')
               const memoShadow = [
                 '0 22px 44px rgba(76, 29, 149, 0.42)',
@@ -4692,14 +4729,21 @@ peekDataDepsRef.current = {
               } else if (normalizedHabitType === 'PRACTICE') {
                 cardBackground = practiceCardBackground
                 cardShadow = practiceShadow
-                cardOutline = '1px solid rgba(249, 168, 212, 0.55)'
-                habitBorderClass = 'border-pink-200/60'
+                cardOutline = '1px solid rgba(8, 8, 12, 0.92)'
+                habitBorderClass = 'border-slate-500/50'
               } else if (normalizedHabitType === 'SYNC') {
                 cardBackground = syncCardBackground
                 cardShadow = syncShadow
                 cardOutline = '1px solid rgba(0, 0, 0, 0.85)'
                 habitBorderClass = 'border-amber-200/45'
               }
+              const practiceContextIdForPlacement =
+                normalizedHabitType === 'PRACTICE' ? placement.practiceContextId ?? null : null
+              const practiceContextLabel =
+                practiceContextIdForPlacement
+                  ? practiceContextDisplayById.get(practiceContextIdForPlacement) ?? null
+                  : null
+              const habitPaddingClass = practiceContextLabel ? 'pt-4 pb-2' : 'py-2'
               const layoutMode = habitLayouts[index] ?? 'full'
               const habitCornerClass = getTimelineCardCornerClass(layoutMode)
               const useCompactShadow =
@@ -4772,7 +4816,7 @@ peekDataDepsRef.current = {
                 <motion.div
                   key={`habit-${placement.habitId}-${index}`}
                   layoutId={habitLayoutTokens?.card}
-                  className={`absolute flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 py-2 text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
+                  className={`absolute flex h-full items-center justify-between gap-3 ${habitCornerClass} border px-3 ${habitPaddingClass} text-white shadow-[0_18px_38px_rgba(8,12,32,0.52)] backdrop-blur transition-[background,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${habitBorderClass} cursor-pointer select-none`}
                   role="button"
                   tabIndex={options?.disableInteractions ? -1 : 0}
                   aria-pressed={isHabitCompleted}
@@ -4802,6 +4846,13 @@ peekDataDepsRef.current = {
                   }
                   exit={prefersReducedMotion ? undefined : { opacity: 0, y: 4 }}
                 >
+                  {practiceContextLabel ? (
+                    <div className="pointer-events-none absolute right-3 top-0 max-w-[60%] text-right leading-tight">
+                      <span className="truncate text-[9px] font-semibold text-white/80">
+                        {practiceContextLabel}
+                      </span>
+                    </div>
+                  ) : null}
                   <motion.span
                     layoutId={habitLayoutTokens?.title}
                     className={habitTitleClass}

@@ -32,9 +32,11 @@ export function selectPracticeContext({
   let bestContextScore = Number.NEGATIVE_INFINITY
   let bestLastPracticedScore = Number.NEGATIVE_INFINITY
   let bestRotationPenalty = Number.NEGATIVE_INFINITY
+  let bestIsActionable = false
 
   for (const contextId of contexts) {
     const contextScore = (contextEventCounts.get(contextId) ?? 0) * 10
+    const hasSchedulableTasks = (contextTaskCounts.get(contextId) ?? 0) > 0
 
     const last = lastPracticedAt.get(contextId) ?? null
     let lastPracticedScore = 0
@@ -55,18 +57,38 @@ export function selectPracticeContext({
     const rotationPenalty =
       !isOnlyValidOption && lastContextUsed && lastContextUsed === contextId ? -100 : 0
 
-    if (
-      contextScore > bestContextScore ||
-      (contextScore === bestContextScore &&
-        lastPracticedScore > bestLastPracticedScore) ||
-      (contextScore === bestContextScore &&
-        lastPracticedScore === bestLastPracticedScore &&
-        rotationPenalty > bestRotationPenalty)
-    ) {
+    const scoresEqual =
+      contextScore === bestContextScore &&
+      lastPracticedScore === bestLastPracticedScore &&
+      rotationPenalty === bestRotationPenalty
+
+    let shouldUpdate = false
+    if (contextScore > bestContextScore) {
+      shouldUpdate = true
+    } else if (contextScore === bestContextScore) {
+      if (lastPracticedScore > bestLastPracticedScore) {
+        shouldUpdate = true
+      } else if (lastPracticedScore === bestLastPracticedScore) {
+        if (rotationPenalty > bestRotationPenalty) {
+          shouldUpdate = true
+        } else if (scoresEqual) {
+          if (hasSchedulableTasks && !bestIsActionable) {
+            shouldUpdate = true
+          } else if (hasSchedulableTasks === bestIsActionable) {
+            if (!bestId || contextId.localeCompare(bestId) < 0) {
+              shouldUpdate = true
+            }
+          }
+        }
+      }
+    }
+
+    if (shouldUpdate) {
       bestId = contextId
       bestContextScore = contextScore
       bestLastPracticedScore = lastPracticedScore
       bestRotationPenalty = rotationPenalty
+      bestIsActionable = hasSchedulableTasks
     }
   }
 

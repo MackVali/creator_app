@@ -106,6 +106,21 @@ describe("scheduleBacklog", () => {
       return { select };
     });
     const update = vi.fn(() => ({ eq }));
+    const buildQueryChain = () => {
+      const chain = {
+        eq: vi.fn(() => chain),
+        not: vi.fn(() => chain),
+        order: vi.fn(() => chain),
+        limit: vi.fn(async () => ({
+          data: [],
+          error: null,
+          count: null,
+          status: 200,
+          statusText: "OK",
+        })),
+      };
+      return chain;
+    };
     const insert = vi.fn((input: unknown) => ({
       select: vi.fn(() => ({
         single: vi.fn(async () => ({
@@ -123,6 +138,13 @@ describe("scheduleBacklog", () => {
           select: vi.fn(() => ({
             eq: vi.fn(async () => skillsResponse),
           })),
+        };
+      }
+      if (table === "schedule_instances") {
+        return {
+          update,
+          insert,
+          select: vi.fn(() => buildQueryChain()),
         };
       }
       return { update, insert };
@@ -4004,6 +4026,377 @@ describe("scheduleBacklog", () => {
 
     const habitEntries = result.timeline.filter((entry) => entry.type === "HABIT");
     expect(habitEntries.length).toBeGreaterThan(0);
+  });
+
+  it("schedules practice habits without a recurrence multiple times in practice windows", async () => {
+    instances = [];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-practice",
+        label: "Practice",
+        energy: "LOW",
+        start_local: "15:00",
+        end_local: "16:00",
+        days: [2],
+        window_kind: "PRACTICE",
+      },
+    ]);
+
+    const practiceHabit: HabitScheduleItem = {
+      id: "habit-practice",
+      name: "Scale reps",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "PRACTICE",
+      windowId: "win-practice",
+      energy: "LOW",
+      recurrence: null,
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: "win-practice",
+        label: "Practice",
+        energy: "LOW",
+        startLocal: "15:00",
+        endLocal: "16:00",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([practiceHabit]);
+
+    const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
+    placeMock.mockReset();
+    placeMock.mockImplementation(async ({ item, windows }) => {
+      const startLocal = windows?.[0]?.availableStartLocal ?? new Date("2024-01-02T09:00:00Z");
+      const duration = item.duration_min ?? 30;
+      const startUtc = new Date(startLocal);
+      const endUtc = new Date(startUtc.getTime() + duration * 60000);
+      return {
+        data: createInstanceRecord({
+          id: `inst-${item.id}-${startUtc.getTime()}`,
+          source_id: item.id,
+          source_type: "HABIT",
+          start_utc: startUtc.toISOString(),
+          end_utc: endUtc.toISOString(),
+          duration_min: duration,
+          window_id: windows?.[0]?.id ?? "win-practice",
+          energy_resolved: item.energy ?? "LOW",
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    const practiceEntries = result.timeline.filter(
+      (entry) => entry.type === "HABIT" && entry.habit.id === practiceHabit.id,
+    );
+    expect(practiceEntries).toHaveLength(2);
+    const earliestOffset = Math.min(
+      ...practiceEntries.map((entry) => entry.scheduledDayOffset ?? Number.POSITIVE_INFINITY),
+    );
+    const sameDayEntries = practiceEntries.filter(
+      (entry) => entry.scheduledDayOffset === earliestOffset,
+    );
+    expect(sameDayEntries).toHaveLength(2);
+    expect(
+      practiceEntries.every(
+        (entry) =>
+          typeof entry.scheduledDayOffset === "number" && entry.scheduledDayOffset < 7,
+      ),
+    ).toBe(true);
+  });
+
+  it("uses the habit skill monument as the practice context when scheduling", async () => {
+    instances = [];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-practice",
+        label: "Practice",
+        energy: "LOW",
+        start_local: "15:00",
+        end_local: "16:00",
+        days: [2],
+        window_kind: "PRACTICE",
+      },
+    ]);
+
+    const practiceHabit: HabitScheduleItem = {
+      id: "habit-practice-context",
+      name: "Context reps",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "PRACTICE",
+      windowId: "win-practice",
+      energy: "LOW",
+      recurrence: null,
+      recurrenceDays: null,
+      skillId: "skill-context",
+      skillMonumentId: "monument-skill",
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: "win-practice",
+        label: "Practice",
+        energy: "LOW",
+        startLocal: "15:00",
+        endLocal: "16:00",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([practiceHabit]);
+
+    const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
+    placeMock.mockReset();
+    placeMock.mockImplementation(async ({ item, windows }) => {
+      expect(item.practiceContextId).toBe("monument-skill");
+      const startLocal = windows?.[0]?.availableStartLocal ?? new Date("2024-01-02T09:00:00Z");
+      const duration = item.duration_min ?? 30;
+      const startUtc = new Date(startLocal);
+      const endUtc = new Date(startUtc.getTime() + duration * 60000);
+      return {
+        data: createInstanceRecord({
+          id: `inst-${item.id}-${startUtc.getTime()}`,
+          source_id: item.id,
+          source_type: "HABIT",
+          start_utc: startUtc.toISOString(),
+          end_utc: endUtc.toISOString(),
+          duration_min: duration,
+          window_id: windows?.[0]?.id ?? "win-practice",
+          energy_resolved: item.energy ?? "LOW",
+          practice_context_monument_id: item.practiceContextId ?? null,
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    const practiceEntries = result.timeline.filter(
+      (entry) => entry.type === "HABIT" && entry.habit.id === practiceHabit.id,
+    );
+    expect(practiceEntries.length).toBeGreaterThan(0);
+    expect(
+      practiceEntries.every((entry) => entry.habit.practiceContextId === "monument-skill"),
+    ).toBe(true);
+  });
+
+  it("cancels practice habit instances beyond the 7-day lookahead", async () => {
+    const { client, update } = createSupabaseMock();
+    instances = [
+      createInstanceRecord({
+        id: "inst-practice-future",
+        source_id: "habit-practice-future",
+        source_type: "HABIT",
+        start_utc: "2024-01-10T09:00:00Z",
+        end_utc: "2024-01-10T09:30:00Z",
+        duration_min: 30,
+        window_id: "win-practice",
+        energy_resolved: "LOW",
+      }),
+    ];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchReadyTasks as unknown as vi.Mock).mockResolvedValue([]);
+    (repo.fetchProjectSkillsForProjects as unknown as vi.Mock).mockResolvedValue({});
+    vi.spyOn(repo, "fetchWindowsSnapshot").mockResolvedValue([
+      {
+        id: "win-practice",
+        label: "Practice",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "09:30",
+        days: [2],
+        window_kind: "PRACTICE",
+      },
+    ]);
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-practice",
+        label: "Practice",
+        energy: "LOW",
+        start_local: "09:00",
+        end_local: "09:30",
+        days: [2],
+        window_kind: "PRACTICE",
+      },
+    ]);
+
+    const practiceHabit: HabitScheduleItem = {
+      id: "habit-practice-future",
+      name: "Scale drills",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "PRACTICE",
+      windowId: "win-practice",
+      energy: "LOW",
+      recurrence: null,
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: "win-practice",
+        label: "Practice",
+        energy: "LOW",
+        startLocal: "09:00",
+        endLocal: "09:30",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([practiceHabit]);
+
+    const result = await scheduleBacklog(userId, baseDate, client);
+
+    expect(result.failures).toEqual([]);
+    expect(
+      result.timeline.some(
+        (entry) => entry.type === "HABIT" && entry.instanceId === "inst-practice-future",
+      ),
+    ).toBe(false);
+    expect(update).toHaveBeenCalled();
+    expect(update.mock.calls.some((call) => call?.[0]?.status === "canceled")).toBe(true);
+  });
+
+  it("does not register failures once all practice windows are filled", async () => {
+    instances = [];
+    (repo.fetchProjectsMap as unknown as vi.Mock).mockResolvedValue({});
+    (repo.fetchWindowsForDate as unknown as vi.Mock).mockResolvedValue([
+      {
+        id: "win-practice-single",
+        label: "Practice",
+        energy: "LOW",
+        start_local: "15:00",
+        end_local: "15:30",
+        days: [2],
+        window_kind: "PRACTICE",
+      },
+    ]);
+
+    const practiceHabit: HabitScheduleItem = {
+      id: "habit-practice-single",
+      name: "Single block practice",
+      durationMinutes: 30,
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-01T00:00:00Z",
+      lastCompletedAt: null,
+      habitType: "PRACTICE",
+      windowId: "win-practice-single",
+      energy: "LOW",
+      recurrence: "none",
+      recurrenceDays: null,
+      skillId: null,
+      goalId: null,
+      completionTarget: null,
+      locationContextId: null,
+      locationContextValue: null,
+      locationContextName: null,
+      daylightPreference: null,
+      windowEdgePreference: null,
+      window: {
+        id: "win-practice-single",
+        label: "Practice",
+        energy: "LOW",
+        startLocal: "15:00",
+        endLocal: "15:30",
+        days: [2],
+        locationContextId: null,
+        locationContextValue: null,
+        locationContextName: null,
+      },
+    };
+    fetchHabitsForScheduleSpy.mockResolvedValue([practiceHabit]);
+
+    const placeMock = placement.placeItemInWindows as unknown as vi.Mock;
+    placeMock.mockReset();
+    placeMock.mockImplementation(async ({ item, windows }) => {
+      const startLocal = windows?.[0]?.availableStartLocal ?? new Date("2024-01-02T09:00:00Z");
+      const duration = item.duration_min ?? 30;
+      const startUtc = new Date(startLocal);
+      const endUtc = new Date(startUtc.getTime() + duration * 60000);
+      return {
+        data: createInstanceRecord({
+          id: `inst-${item.id}-${startUtc.getTime()}`,
+          source_id: item.id,
+          source_type: "HABIT",
+          start_utc: startUtc.toISOString(),
+          end_utc: endUtc.toISOString(),
+          duration_min: duration,
+          window_id: windows?.[0]?.id ?? "win-practice-single",
+          energy_resolved: item.energy ?? "LOW",
+        }),
+        error: null,
+        count: null,
+        status: 201,
+        statusText: "Created",
+      };
+    });
+
+    const { client: supabase } = createSupabaseMock();
+    const result = await scheduleBacklog(userId, baseDate, supabase);
+
+    const failuresForHabit = result.failures.filter(
+      (failure) => failure.itemId === practiceHabit.id && failure.reason === "NO_WINDOW",
+    );
+    expect(failuresForHabit).toHaveLength(0);
+    const practiceEntries = result.timeline.filter(
+      (entry) => entry.type === "HABIT" && entry.habit.id === practiceHabit.id,
+    );
+    expect(practiceEntries).toHaveLength(1);
+    const earliestOffset = Math.min(
+      ...practiceEntries.map((entry) => entry.scheduledDayOffset ?? Number.POSITIVE_INFINITY),
+    );
+    const sameDayEntries = practiceEntries.filter(
+      (entry) => entry.scheduledDayOffset === earliestOffset,
+    );
+    expect(sameDayEntries).toHaveLength(1);
+    expect(
+      practiceEntries.every(
+        (entry) =>
+          typeof entry.scheduledDayOffset === "number" && entry.scheduledDayOffset < 7,
+      ),
+    ).toBe(true);
   });
 
   it("anchors scheduling to the provided user timezone", async () => {

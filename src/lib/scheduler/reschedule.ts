@@ -52,6 +52,7 @@ const MAX_LOOKAHEAD_DAYS = 365
 const HABIT_WRITE_LOOKAHEAD_DAYS = BASE_LOOKAHEAD_DAYS
 const LOCATION_CLEANUP_DAYS = 7
 const COMPLETED_RETENTION_DAYS = 3
+const PRACTICE_LOOKAHEAD_DAYS = 7
 
 const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
@@ -1567,8 +1568,17 @@ async function scheduleHabitsForDay(params: {
   const syncUsageByWindow = new Map<string, { start: number; end: number }[]>()
   const anchorSegmentsByWindowKey = new Map<string, { start: number; end: number }[]>()
   const habitTypeById = new Map<string, string>()
+  const repeatablePracticeIds = new Set<string>()
   for (const habit of habits) {
-    habitTypeById.set(habit.id, (habit.habitType ?? 'HABIT').toUpperCase())
+    const normalizedType = normalizeHabitTypeValue(habit.habitType)
+    habitTypeById.set(habit.id, normalizedType)
+    if (normalizedType === 'PRACTICE') {
+      const recurrenceRaw =
+        typeof habit.recurrence === 'string' ? habit.recurrence.toLowerCase().trim() : ''
+      if (!recurrenceRaw || recurrenceRaw === 'none') {
+        repeatablePracticeIds.add(habit.id)
+      }
+    }
   }
 
   const addSyncUsage = (key: string, startMs: number, endMs: number) => {
@@ -1670,6 +1680,15 @@ async function scheduleHabitsForDay(params: {
 
   for (const [habitId, bucket] of scheduledHabitBuckets) {
     bucket.sort((a, b) => startValueForInstance(a) - startValueForInstance(b))
+    if (repeatablePracticeIds.has(habitId)) {
+      if (bucket.length > 0) {
+        existingByHabitId.set(habitId, bucket[0])
+      }
+      for (const instance of bucket) {
+        carryoverInstances.push(instance)
+      }
+      continue
+    }
     const keeper = bucket.shift()
     if (keeper) {
       existingByHabitId.set(habitId, keeper)
@@ -1688,6 +1707,35 @@ async function scheduleHabitsForDay(params: {
   const dayInstances = existingInstances
     .map(inst => ({ ...inst }))
     .filter(inst => !canceledInstanceIds.has(inst?.id ?? ""))
+
+  const practiceOverflowInstances: ScheduleInstance[] = []
+  if (offset >= PRACTICE_LOOKAHEAD_DAYS) {
+    for (let index = dayInstances.length - 1; index >= 0; index -= 1) {
+      const instance = dayInstances[index]
+      if (!instance) continue
+      if (instance.source_type !== 'HABIT') continue
+      if (instance.status !== 'scheduled') continue
+      const habitId = instance.source_id ?? null
+      if (!habitId) continue
+      const normalizedType =
+        habitTypeById.get(habitId) ?? normalizeHabitTypeValue(habitMap.get(habitId)?.habitType)
+      if (normalizedType !== 'PRACTICE') continue
+      practiceOverflowInstances.push(instance)
+      dayInstances.splice(index, 1)
+      if (existingByHabitId.get(habitId)?.id === instance.id) {
+        existingByHabitId.delete(habitId)
+      }
+    }
+    if (practiceOverflowInstances.length > 0) {
+      for (const overflow of practiceOverflowInstances) {
+        if (!overflow?.id) continue
+        const canceled = await cancelScheduledInstance(overflow)
+        if (canceled) {
+          overflow.status = 'canceled'
+        }
+      }
+    }
+  }
 
   const cacheKey = dateCacheKey(day)
   let windows = windowCache.get(cacheKey)
@@ -1815,8 +1863,50 @@ async function scheduleHabitsForDay(params: {
     return result
   }
 
+  const practiceInstanceQueues = new Map<string, ScheduleInstance[]>()
+  if (repeatablePracticeIds.size > 0) {
+    for (const instance of dayInstances) {
+      if (!instance || instance.source_type !== 'HABIT') continue
+      const habitId = instance.source_id ?? null
+      if (!habitId || !repeatablePracticeIds.has(habitId)) continue
+      const queue = practiceInstanceQueues.get(habitId)
+      if (queue) {
+        queue.push(instance)
+      } else {
+        practiceInstanceQueues.set(habitId, [instance])
+      }
+    }
+    for (const queue of practiceInstanceQueues.values()) {
+      queue.sort((a, b) => startValueForInstance(a) - startValueForInstance(b))
+    }
+  }
+  const takeExistingPracticeInstance = (habitId: string) => {
+    const queue = practiceInstanceQueues.get(habitId)
+    if (!queue || queue.length === 0) {
+      practiceInstanceQueues.delete(habitId)
+      return null
+    }
+    const nextInstance = queue.shift() ?? null
+    if (!queue.length) {
+      practiceInstanceQueues.delete(habitId)
+    }
+    return nextInstance ?? null
+  }
+
   const dueHabits: HabitScheduleItem[] = []
   for (const habit of habits) {
+    const normalizedType = normalizeHabitTypeValue(habit.habitType)
+    if (normalizedType === 'PRACTICE') {
+      if (process.env.NODE_ENV === 'test' && habit.id === 'habit-practice') {
+        console.log('practice offset check', { offset })
+      }
+    }
+    if (normalizedType === 'PRACTICE' && offset >= PRACTICE_LOOKAHEAD_DAYS) {
+      if (process.env.NODE_ENV === 'test' && habit.id === 'habit-practice') {
+        console.log('skip practice due to offset', offset)
+      }
+      continue
+    }
     const windowDays = habit.window?.days ?? null
     const nextDueOverride = parseNextDueOverride(habit.nextDueOverride)
     const overrideDayStart =
@@ -1826,9 +1916,14 @@ async function scheduleHabitsForDay(params: {
       date: day,
       timeZone: zone,
       windowDays,
-      lastScheduledStart: getLastScheduledHabitStart(habit.id),
+      lastScheduledStart: repeatablePracticeIds.has(habit.id)
+        ? null
+        : getLastScheduledHabitStart(habit.id),
       nextDueOverride,
     })
+    if (normalizedType === 'PRACTICE' && process.env.NODE_ENV === 'test' && habit.id === 'habit-practice') {
+      console.log('practice due info', { offset, isDue: dueInfo.isDue })
+    }
     if (!dueInfo.isDue) continue
     if (
       overrideDayStart &&
@@ -1943,7 +2038,7 @@ async function scheduleHabitsForDay(params: {
     sunlightOptions,
   )
 
-  const sortedHabits = dueHabits.sort((a, b) => {
+  const sortedHabits = [...dueHabits].sort((a, b) => {
     const dueA = dueInfoByHabitId.get(a.id)
     const dueB = dueInfoByHabitId.get(b.id)
     const dueDiff = (dueA?.dueStart?.getTime() ?? defaultDueMs) - (dueB?.dueStart?.getTime() ?? defaultDueMs)
@@ -1956,9 +2051,18 @@ async function scheduleHabitsForDay(params: {
     return a.name.localeCompare(b.name)
   })
 
-  let existingInstance: ScheduleInstance | null = null
-  for (const habit of sortedHabits) {
-    existingInstance = existingByHabitId.get(habit.id) ?? null
+  const practicePlacementCounts = new Map<string, number>()
+  const habitQueue = [...sortedHabits]
+  while (habitQueue.length > 0) {
+    const habit = habitQueue.shift()
+    if (!habit) continue
+    const isRepeatablePractice = repeatablePracticeIds.has(habit.id)
+    let existingInstance: ScheduleInstance | null = null
+    if (isRepeatablePractice) {
+      existingInstance = takeExistingPracticeInstance(habit.id)
+    } else {
+      existingInstance = existingByHabitId.get(habit.id) ?? null
+    }
     const rawDuration = Number(habit.durationMinutes ?? 0)
     let durationMin =
       Number.isFinite(rawDuration) && rawDuration > 0
@@ -2179,6 +2283,9 @@ async function scheduleHabitsForDay(params: {
     }
 
     if (compatibleWindows.length === 0) {
+      if (isRepeatablePractice) {
+        continue
+      }
       result.failures.push({ itemId: habit.id, reason: 'NO_WINDOW' })
       continue
     }
@@ -2380,56 +2487,57 @@ async function scheduleHabitsForDay(params: {
     }
 
     if (normalizedType === 'PRACTICE') {
-      const contextCounts = countContextEventsBefore(
-        dayInstances,
-        startCandidate,
-        dayStartMs,
-        dayEndMs,
-        habitMap,
-        taskContextById,
-        getProjectGoalMonumentId,
-      )
-      const lastPracticeContextId = findLastPracticeContextBefore(
-        dayInstances,
-        startCandidate,
-        habitTypeById,
-        habitMap,
-        taskContextById,
-        getProjectGoalMonumentId,
-      )
-      const candidateSet = new Set<string>()
-      for (const contextId of contextTaskCounts.keys()) {
-        if (contextId) {
-          candidateSet.add(contextId)
+      const habitSkillContextId = habit.skillMonumentId ?? null
+      if (habitSkillContextId) {
+        practiceContextId = habitSkillContextId
+      } else {
+        const contextCounts = countContextEventsBefore(
+          dayInstances,
+          startCandidate,
+          dayStartMs,
+          dayEndMs,
+          habitMap,
+          taskContextById,
+          getProjectGoalMonumentId,
+        )
+        const lastPracticeContextId = findLastPracticeContextBefore(
+          dayInstances,
+          startCandidate,
+          habitTypeById,
+          habitMap,
+          taskContextById,
+          getProjectGoalMonumentId,
+        )
+        const candidateSet = new Set<string>()
+        for (const contextId of contextTaskCounts.keys()) {
+          if (contextId) {
+            candidateSet.add(contextId)
+          }
         }
-      }
-      for (const contextId of contextCounts.keys()) {
-        if (contextId) {
-          candidateSet.add(contextId)
+        for (const contextId of contextCounts.keys()) {
+          if (contextId) {
+            candidateSet.add(contextId)
+          }
         }
-      }
-      for (const contextId of practiceHistory.keys()) {
-        if (contextId) {
-          candidateSet.add(contextId)
+        for (const contextId of practiceHistory.keys()) {
+          if (contextId) {
+            candidateSet.add(contextId)
+          }
         }
-      }
-      if (lastPracticeContextId) {
-        candidateSet.add(lastPracticeContextId)
-      }
-      if (habit.skillMonumentId) {
-        candidateSet.add(habit.skillMonumentId)
-      }
-      const candidateContextIds = Array.from(candidateSet)
-      const selectedContext =
-        selectPracticeContext({
+        if (lastPracticeContextId) {
+          candidateSet.add(lastPracticeContextId)
+        }
+        const candidateContextIds = Array.from(candidateSet)
+        const selectedContext = selectPracticeContext({
           candidateContextIds,
           contextEventCounts: contextCounts,
           contextTaskCounts,
           lastPracticedAt: practiceHistory,
           lastContextUsed: lastPracticeContextId,
           windowStart: new Date(startCandidate),
-        }) ?? habit.skillMonumentId ?? null
-      practiceContextId = selectedContext
+        })
+        practiceContextId = selectedContext ?? null
+      }
     } else {
       practiceContextId = null
     }
@@ -2455,7 +2563,9 @@ async function scheduleHabitsForDay(params: {
       ? String(window.energy).toUpperCase()
       : resolvedEnergy
 
-    existingInstance = existingByHabitId.get(habit.id) ?? null
+    if (!isRepeatablePractice) {
+      existingInstance = existingByHabitId.get(habit.id) ?? null
+    }
     if (existingInstance && daylightConstraint) {
       const existingWindow = existingInstance.window_id
         ? windowsById.get(existingInstance.window_id) ?? null
@@ -2598,6 +2708,9 @@ async function scheduleHabitsForDay(params: {
     const startDate = new Date(persisted.start_utc)
     const endDate = new Date(persisted.end_utc)
     recordHabitScheduledStart(habit.id, startDate)
+    if (isRepeatablePractice) {
+      practicePlacementCounts.set(habit.id, (practicePlacementCounts.get(habit.id) ?? 0) + 1)
+    }
     if (normalizedType === 'PRACTICE' && practiceContextId) {
       practiceHistory.set(practiceContextId, new Date(startDate))
     }
@@ -2654,6 +2767,10 @@ async function scheduleHabitsForDay(params: {
       windowStartLocal: windowStartLocal.toISOString(),
       instanceId,
     })
+
+    if (isRepeatablePractice) {
+      habitQueue.push(habit)
+    }
   }
 
   result.placements.sort((a, b) => {
