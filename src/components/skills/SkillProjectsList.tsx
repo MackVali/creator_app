@@ -16,6 +16,8 @@ import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
+  priority_code?: string | null;
+  energy_code?: string | null;
   projects?: {
     id: string;
     name: string;
@@ -40,21 +42,31 @@ type GoalRowWithRelations = GoalRow & {
   }[];
 };
 
-function mapPriority(priority: string): Goal["priority"] {
-  switch (priority) {
-    case "HIGH":
-    case "CRITICAL":
+function mapPriority(
+  priority: { name?: string | null } | string | null | undefined
+): Goal["priority"] {
+  const normalized = extractLookupName(priority)?.toUpperCase();
+  switch (normalized) {
+    case "NO":
+      return "No";
     case "ULTRA-CRITICAL":
+      return "Ultra-Critical";
+    case "CRITICAL":
+      return "Critical";
+    case "HIGH":
       return "High";
     case "MEDIUM":
       return "Medium";
+    case "LOW":
+      return "Low";
     default:
       return "Low";
   }
 }
 
-function mapEnergy(energy: string): Goal["energy"] {
-  switch (energy) {
+function mapEnergy(energy: { name?: string | null } | string | null | undefined): Goal["energy"] {
+  const normalized = extractLookupName(energy)?.toUpperCase();
+  switch (normalized) {
     case "LOW":
       return "Low";
     case "MEDIUM":
@@ -237,7 +249,7 @@ async function fetchGoalsWithRelations(userId: string) {
   const supabase = getSupabaseBrowser();
   if (!supabase) return [] as GoalRowWithRelations[];
   const baseSelect =
-    "id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
   const selectWithRelations = `
     ${baseSelect},
     projects (
@@ -283,8 +295,8 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [monumentOptions, setMonumentOptions] = useState<{ id: string; title: string; emoji: string | null }[]>([]);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [baseGoals, setBaseGoals] = useState<Goal[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     setOpenGoalId(null);
@@ -295,6 +307,56 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       ...goal,
       weight: computeGoalWeight(goal),
     };
+  }, []);
+
+  const fetchGoalForEditing = useCallback(async (goal: Goal) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return goal;
+    try {
+      const { data, error } = await supabase
+        .from("goals")
+        .select(
+          "priority, energy, monument_id, due_date, why, active, status, priority_lookup:priority(name), energy_lookup:energy(name)"
+        )
+        .eq("id", goal.id)
+        .single();
+      if (error || !data) {
+        return goal;
+      }
+      const priorityName =
+        typeof data.priority_lookup?.name === "string"
+          ? data.priority_lookup.name
+          : null;
+      const energyName =
+        typeof data.energy_lookup?.name === "string"
+          ? data.energy_lookup.name
+          : null;
+      const priorityCode = priorityName
+        ? priorityName.toUpperCase()
+        : typeof data.priority === "string"
+          ? data.priority.toUpperCase()
+          : null;
+      const energyCode = energyName
+        ? energyName.toUpperCase()
+        : typeof data.energy === "string"
+          ? data.energy.toUpperCase()
+          : null;
+      return {
+        ...goal,
+        priority: priorityCode ? mapPriority(priorityCode) : goal.priority,
+        priorityCode: priorityCode ?? goal.priorityCode ?? null,
+        energy: energyCode ? mapEnergy(energyCode) : goal.energy,
+        energyCode: energyCode ?? goal.energyCode ?? null,
+        monumentId: data.monument_id ?? goal.monumentId ?? null,
+        dueDate: data.due_date ?? goal.dueDate,
+        why: data.why ?? goal.why,
+        active: typeof data.active === "boolean" ? data.active : goal.active,
+        status: data.status ? goalStatusToStatus(data.status) : goal.status,
+      };
+    } catch (err) {
+      console.error("Failed to fetch goal for editing", err);
+      return goal;
+    }
   }, []);
 
   const loadProjects = useCallback(async () => {
@@ -427,11 +489,21 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
             : 0;
         const status = g.status ? goalStatusToStatus(g.status) : progressValue >= 100 ? "Completed" : "Active";
 
+        const goalPrioritySource =
+          g.priority_code ?? extractLookupName(g.priority);
+        const normalizedGoalPriorityCode = goalPrioritySource
+          ? goalPrioritySource.toUpperCase()
+          : null;
+        const goalEnergySource =
+          g.energy_code ?? extractLookupName(g.energy);
+        const normalizedGoalEnergyCode = goalEnergySource
+          ? goalEnergySource.toUpperCase()
+          : null;
         const base: Goal = {
           id: g.id,
           title: g.name,
-          priority: mapPriority(g.priority),
-          energy: mapEnergy(g.energy),
+          priority: mapPriority(goalPrioritySource),
+          energy: mapEnergy(goalEnergySource),
           progress: progressValue,
           status,
           active: g.active ?? status === "Active",
@@ -441,7 +513,8 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
           projects: projList,
           monumentId: g.monument_id ?? null,
           monumentEmoji: monumentEmojiLookup.get(g.monument_id ?? "") ?? null,
-          priorityCode: g.priority ?? null,
+          priorityCode: normalizedGoalPriorityCode,
+          energyCode: normalizedGoalEnergyCode,
           weightBoost: g.weight_boost ?? 0,
           skills: Array.from(goalSkills),
           why: g.why || undefined,
@@ -479,6 +552,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
             monumentId: goal.monumentId ?? null,
             monumentEmoji: icon,
             priorityCode: project.priorityCode ?? null,
+            energyCode: project.energyCode ?? goal.energyCode ?? null,
             weightBoost: goal.weightBoost ?? 0,
             skills: project.skillIds ?? goal.skills,
             why: goal.why,
@@ -538,10 +612,13 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
       const parentId = goal.parentGoalId ?? goal.id;
       const sourceGoal = baseGoals.find((item) => item.id === parentId);
       if (!sourceGoal) return;
-      setEditingGoal(sourceGoal);
-      setDrawerOpen(true);
+      setEditingGoal(null);
+      void fetchGoalForEditing(sourceGoal).then((fresh) => {
+        setEditingGoal(fresh);
+        setDrawerOpen(true);
+      });
     },
-    [baseGoals]
+    [baseGoals, fetchGoalForEditing]
   );
 
   const handleTaskToggleCompletion = useCallback(
@@ -831,7 +908,8 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
         }
       `}</style>
       <GoalDrawer
-        open={drawerOpen && Boolean(editingGoal)}
+        key={editingGoal?.id ?? (drawerOpen ? "goal-editor" : "goal-editor-closed")}
+        open={drawerOpen}
         onClose={() => {
           setDrawerOpen(false);
           setEditingGoal(null);

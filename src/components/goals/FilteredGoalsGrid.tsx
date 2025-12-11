@@ -38,20 +38,40 @@ function GridSkeleton() {
   );
 }
 
-function mapPriority(priority: string): Goal["priority"] {
+type LookupValue = { name?: string | null } | string | null | undefined;
+
+const extractLookupName = (value: LookupValue): string | null => {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && "name" in value) {
+    const name = value.name;
+    return typeof name === "string" ? name : null;
+  }
+  return null;
+};
+
+function mapPriority(priorityInput: LookupValue): Goal["priority"] {
+  const priority = extractLookupName(priorityInput)?.toUpperCase();
   switch (priority) {
-    case "HIGH":
-    case "CRITICAL":
     case "ULTRA-CRITICAL":
+      return "Ultra-Critical";
+    case "CRITICAL":
+      return "Critical";
+    case "HIGH":
       return "High";
     case "MEDIUM":
       return "Medium";
+    case "LOW":
+      return "Low";
+    case "NO":
+      return "No";
     default:
       return "Low";
   }
 }
 
-function mapEnergy(energy: string): Goal["energy"] {
+function mapEnergy(energyInput: LookupValue): Goal["energy"] {
+  const energy = extractLookupName(energyInput)?.toUpperCase();
   switch (energy) {
     case "LOW":
       return "Low";
@@ -184,7 +204,9 @@ export function FilteredGoalsGrid({
       const mapped: Goal[] = goals.map((g) => {
         const status = goalStatusToStatus(g.status);
         const isActive = g.active ?? status === "Active";
-        const priority = mapPriority(g.priority);
+        const prioritySource = g.priority_code ?? g.priority;
+        const energySource = g.energy_code ?? g.energy;
+        const priority = mapPriority(prioritySource);
         const rawWeight =
           typeof g.weight_snapshot === "number"
             ? g.weight_snapshot
@@ -200,7 +222,11 @@ export function FilteredGoalsGrid({
           id: g.id,
           title: g.name,
           priority,
-          energy: mapEnergy(g.energy),
+          priorityCode:
+            (prioritySource ? prioritySource.toUpperCase() : null) ?? null,
+          energy: mapEnergy(energySource),
+          energyCode:
+            (energySource ? energySource.toUpperCase() : null) ?? null,
           progress: 0,
           status,
           active: isActive,

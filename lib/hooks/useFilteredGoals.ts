@@ -59,7 +59,7 @@ export function useFilteredGoals({
       let goalsData: GoalItem[] = [];
 
       const selectBase =
-        "id,name,priority,energy,monument_id,created_at,status,active,due_date";
+        "id,name,priority,energy,priority_code,energy_code,monument_id,created_at,status,active,due_date";
       const selectWithWeight = `${selectBase},weight_snapshot,weight`;
 
       const shouldFallbackToBase = (error: PostgrestError | null) => {
