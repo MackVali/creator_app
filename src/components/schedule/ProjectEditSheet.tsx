@@ -50,20 +50,9 @@ const PRIORITY_OPTION_LOOKUP = PRIORITY_OPTIONS.reduce<Record<string, string>>(
 );
 const PRIORITY_NUMERIC_PATTERN = /^\d+$/;
 
-const buildLookupMap = (
-  rows: Array<{ id?: number | null; name?: string | null }> | null | undefined,
-) => {
-  const map: Record<string, string> = {};
-  for (const row of rows ?? []) {
-    if (row?.id == null || typeof row.name !== "string") continue;
-    map[String(row.id)] = row.name.toUpperCase();
-  }
-  return map;
-};
-
 const resolvePriorityOption = (
   raw: unknown,
-  lookup: Record<string, string>,
+  lookup: Record<string, string> = {},
 ): string => {
   let candidate: string | null = null;
   if (typeof raw === "number") {
@@ -84,7 +73,7 @@ const resolvePriorityOption = (
 
 const resolveEnergyValue = (
   raw: unknown,
-  lookup: Record<string, string>,
+  lookup: Record<string, string> = {},
 ): (typeof ENERGY.LIST)[number] => {
   let candidate: string | null = null;
   if (typeof raw === "number") {
@@ -225,13 +214,7 @@ export function ProjectEditSheet({
         throw new Error("You must be signed in to edit a project.");
       }
 
-    const [
-      projectResponse,
-      goalsResponse,
-      lockedResponse,
-      priorityResponse,
-      energyResponse,
-    ] = await Promise.all([
+    const [projectResponse, goalsResponse, lockedResponse] = await Promise.all([
       supabase
         .from("projects")
         .select("id, name, priority, stage, energy, duration_min, goal_id")
@@ -252,8 +235,6 @@ export function ProjectEditSheet({
         .eq("locked", true)
         .order("start_utc", { ascending: true })
         .limit(1),
-      supabase.from("priority").select("id, name"),
-      supabase.from("energy").select("id, name"),
     ]);
 
       if (projectResponse.error) throw projectResponse.error;
@@ -263,23 +244,10 @@ export function ProjectEditSheet({
         throw new Error("Project not found.");
       }
 
-      const priorityLookup = priorityResponse.error
-        ? {}
-        : buildLookupMap(priorityResponse.data as LookupRow[]);
-      if (priorityResponse.error) {
-        console.warn("Failed to load priority lookup values", priorityResponse.error);
-      }
-      const energyLookup = energyResponse.error
-        ? {}
-        : buildLookupMap(energyResponse.data as LookupRow[]);
-      if (energyResponse.error) {
-        console.warn("Failed to load energy lookup values", energyResponse.error);
-      }
-
       setName(projectData.name ?? "");
-      setPriority(resolvePriorityOption(projectData.priority, priorityLookup));
+      setPriority(resolvePriorityOption(projectData.priority));
       setStage(projectData.stage ?? STAGE_OPTIONS[0].value);
-      const normalizedEnergy = resolveEnergyValue(projectData.energy, energyLookup);
+      const normalizedEnergy = resolveEnergyValue(projectData.energy);
       setEnergy(normalizedEnergy);
       setDuration(
         typeof projectData.duration_min === "number"

@@ -9,24 +9,18 @@ export interface BaseTable {
 // Core tables
 export interface Goals extends BaseTable {
   is_current: boolean;
-  priority_id: number;
-  energy_id: number;
   stage_id: number;
   monument_id: number;
   Title: string;
 }
 
 export interface Projects extends BaseTable {
-  energy_id: number | null;
-  priority_id: number | null;
   goal_id: number | null;
   stage_id: number;
   Title: string;
 }
 
 export interface Tasks extends BaseTable {
-  energy_id: number | null;
-  priority_id: number | null;
   project_id: number | null;
   stage_id: number;
   Title: string;

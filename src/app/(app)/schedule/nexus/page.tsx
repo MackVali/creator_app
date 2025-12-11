@@ -52,9 +52,7 @@ type ProjectRow = {
   description?: string | null;
   why?: string | null;
   energy?: string | null;
-  energy_id?: number | string | null;
   priority?: string | null;
-  priority_id?: number | string | null;
   stage?: string | null;
   stage_id?: number | string | null;
   goal_id?: string | null;
@@ -74,9 +72,7 @@ type HabitRow = {
   Title?: string | null;
   description?: string | null;
   energy?: string | null;
-  energy_id?: number | string | null;
   priority?: string | null;
-  priority_id?: number | string | null;
   skill_id?: string | null;
   goal_id?: string | null;
   recurrence?: string | null;
@@ -215,11 +211,6 @@ type NormalizedGoal = {
   monument_id: string | null;
 };
 
-type PriorityRow = {
-  id: unknown;
-  name?: string | null;
-};
-
 type ScheduleInstanceRow = {
   id: string;
   source_id?: string | null;
@@ -273,7 +264,7 @@ function normalizeEnergy(value: unknown): FlameLevel | null {
   return null;
 }
 
-function buildPriorityLookup(rows: PriorityRow[]): Map<string, string> {
+function buildPriorityLookup(rows: Array<{ id?: unknown; name?: string | null }> = []): Map<string, string> {
   const lookup = new Map<string, string>();
   DEFAULT_PRIORITY_PRESETS.forEach(({ code, label }, index) => {
     lookup.set(code, label);
@@ -481,22 +472,6 @@ export default function NexusPage() {
           return [] as CatRow[];
         });
 
-        const priorityPromise = supabase
-          .from("priority")
-          .select("id, name")
-          .order("id", { ascending: true })
-          .then(result => {
-            if (result.error) {
-              console.warn("Failed to load priority lookup", result.error);
-              return [] as PriorityRow[];
-            }
-            return (result.data ?? []) as PriorityRow[];
-          })
-          .catch((err) => {
-            console.warn("Priority lookup unavailable", err);
-            return [] as PriorityRow[];
-          });
-
         const schedulePromise = fetchAllRows<ScheduleInstanceRow>((from, to) =>
           supabase
             .from("schedule_instances")
@@ -508,7 +483,7 @@ export default function NexusPage() {
             .range(from, to)
         );
 
-        const [projectRows, habitRowsData, goalRows, monumentRows, skillRows, categoryRows, priorityRows, scheduleRows] =
+        const [projectRows, habitRowsData, goalRows, monumentRows, skillRows, categoryRows, scheduleRows] =
           await Promise.all([
             fetchAllRows<ProjectRow>((from, to) =>
               supabase
@@ -537,7 +512,6 @@ export default function NexusPage() {
             monumentsPromise,
             skillsPromise,
             categoriesPromise,
-            priorityPromise,
             schedulePromise,
           ]);
 
@@ -556,7 +530,7 @@ export default function NexusPage() {
         const skillLookup = new Map(
           (skillRows ?? []).map((skill) => [skill.id, skill])
         );
-        const priorityLookup = buildPriorityLookup(priorityRows);
+        const priorityLookup = buildPriorityLookup();
 
         setMonuments(monumentRows ?? []);
         setSkills(skillRows ?? []);
@@ -631,13 +605,8 @@ export default function NexusPage() {
           const goal = project.goal_id ? goalMap.get(project.goal_id) : null;
           const monumentId = goal?.monument_id ?? null;
           const monument = monumentId ? monumentLookup.get(monumentId) : null;
-          const projectEnergy = normalizeEnergy(
-            pickFirstString(project.energy, project.energy_id)
-          );
-          const projectPriority = normalizePriority(
-            project.priority ?? project.priority_id ?? null,
-            priorityLookup
-          );
+          const projectEnergy = normalizeEnergy(project.energy);
+          const projectPriority = normalizePriority(project.priority, priorityLookup);
           const nextScheduledAt = projectScheduleLookup.get(project.id) ?? null;
           const weightSnapshot = projectWeightSnapshotLookup.get(project.id) ?? null;
           return {
@@ -670,9 +639,7 @@ export default function NexusPage() {
           const goal = habit.goal_id ? goalMap.get(habit.goal_id) : null;
           const monumentId = goal?.monument_id ?? null;
           const monument = monumentId ? monumentLookup.get(monumentId) : null;
-          const habitEnergy = normalizeEnergy(
-            pickFirstString(habit.energy, habit.energy_id)
-          );
+          const habitEnergy = normalizeEnergy(habit.energy);
           const nextScheduledAt = habitScheduleLookup.get(habit.id) ?? null;
           return {
             type: "habit",

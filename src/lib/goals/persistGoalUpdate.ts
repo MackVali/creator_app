@@ -51,6 +51,21 @@ const normalizeStage = (stage?: string | null, status?: Project["status"]) => {
   return projectStatusToStage(status ?? "In-Progress");
 };
 
+const GOAL_CODE_COLUMN_TOKENS = ["priority_code", "energy_code"];
+const PG_COLUMN_MISSING_CODE = "42703";
+
+export function isGoalCodeColumnMissingError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const cast = error as { message?: string; code?: string };
+  const message = typeof cast.message === "string" ? cast.message.toLowerCase() : "";
+  if (!message && !cast.code) return false;
+  if (cast.code && cast.code !== PG_COLUMN_MISSING_CODE) return false;
+  if (message.length === 0 && cast.code !== PG_COLUMN_MISSING_CODE) {
+    return false;
+  }
+  return GOAL_CODE_COLUMN_TOKENS.some((token) => message.includes(token));
+}
+
 async function syncProjectsAndTasks(
   supabase: SupabaseClient,
   userId: string,
@@ -180,21 +195,39 @@ export async function persistGoalUpdate({
   userId,
   onUserResolved,
 }: PersistGoalOptions) {
-  const { error } = await supabase
-    .from("goals")
-    .update({
-      name: goal.title,
-      priority: PRIORITY_TO_DB[goal.priority] ?? "LOW",
-      priority_code: PRIORITY_TO_DB[goal.priority] ?? "LOW",
-      energy: energyToDbValue(goal.energy),
-      energy_code: energyToDbValue(goal.energy),
-      active: goal.active,
-      status: STATUS_TO_DB[goal.status] ?? "ACTIVE",
-      why: goal.why ?? null,
-      monument_id: goal.monumentId || null,
-      due_date: goal.dueDate ?? null,
-    })
-    .eq("id", goal.id);
+  const priorityDb = PRIORITY_TO_DB[goal.priority] ?? "LOW";
+  const energyDb = energyToDbValue(goal.energy);
+
+  const sharedFields = {
+    name: goal.title,
+    active: goal.active,
+    status: STATUS_TO_DB[goal.status] ?? "ACTIVE",
+    why: goal.why ?? null,
+    monument_id: goal.monumentId || null,
+    due_date: goal.dueDate ?? null,
+  };
+
+  const buildEnumPayload = (includeCodeColumns: boolean) => {
+    const payload: Record<string, unknown> = {
+      ...sharedFields,
+      priority: priorityDb,
+      energy: energyDb,
+    };
+    if (includeCodeColumns) {
+      payload.priority_code = priorityDb;
+      payload.energy_code = energyDb;
+    }
+    return payload;
+  };
+
+  const attemptUpdate = (payload: Record<string, unknown>) =>
+    supabase.from("goals").update(payload).eq("id", goal.id);
+
+  let { error } = await attemptUpdate(buildEnumPayload(true));
+  if (error && isGoalCodeColumnMissingError(error)) {
+    console.warn("Goal code columns missing during update, retrying without them.");
+    ({ error } = await attemptUpdate(buildEnumPayload(false)));
+  }
 
   if (error) {
     console.error("Error updating goal:", error);

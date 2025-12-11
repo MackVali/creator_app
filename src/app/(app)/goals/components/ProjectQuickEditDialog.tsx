@@ -159,8 +159,6 @@ export function ProjectQuickEditDialog({
   const [skillOptions, setSkillOptions] = useState<Skill[]>([]);
   const [skillSearch, setSkillSearch] = useState("");
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
-  const [priorityOptions, setPriorityOptions] = useState<{ id: string | number; name: string }[]>([]);
-  const [energyOptions, setEnergyOptions] = useState<{ id: string | number; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -201,39 +199,6 @@ export function ProjectQuickEditDialog({
 
   const supabase = getSupabaseBrowser();
   const isBusy = saving || deleting;
-
-  useEffect(() => {
-    let active = true;
-    const loadLookups = async () => {
-      const client = getSupabaseBrowser();
-      if (!client) return;
-      try {
-        const [priorityRes, energyRes] = await Promise.all([
-          client.from("priority").select("id,name"),
-          client.from("energy").select("id,name"),
-        ]);
-        if (!active) return;
-        setPriorityOptions(
-          (priorityRes.data ?? []).map((row) => ({
-            id: row.id,
-            name: row.name ?? "",
-          }))
-        );
-        setEnergyOptions(
-          (energyRes.data ?? []).map((row) => ({
-            id: row.id,
-            name: row.name ?? "",
-          }))
-        );
-      } catch (err) {
-        console.error("Failed to load priority/energy lookups", err);
-      }
-    };
-    loadLookups();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const filteredSkills = useMemo(() => {
     if (!skillSearch.trim()) return skillOptions;
@@ -303,50 +268,29 @@ export function ProjectQuickEditDialog({
     return ordered;
   }, [filteredSkills, skillCategories, categoryLookup]);
 
-  const prioritySelectOptions = useMemo(() => {
-    if (priorityOptions.length > 0) {
-      return priorityOptions.map((option) => {
-        const code =
-          typeof option.name === "string" ? option.name.toUpperCase() : "NO";
-        return {
-          id: String(option.id),
-          code,
-          label:
-            PRIORITY_OPTIONS.find((opt) => opt.value === code)?.label ??
-            code.charAt(0) + code.slice(1).toLowerCase(),
-        };
-      });
-    }
-    return PRIORITY_OPTIONS.map((option) => ({
-      id: option.value,
-      code: option.value,
-      label: option.label,
-    }));
-  }, [priorityOptions]);
+  const prioritySelectOptions = useMemo(
+    () =>
+      PRIORITY_OPTIONS.map((option) => ({
+        id: option.value,
+        code: option.value,
+        label: option.label,
+      })),
+    []
+  );
 
-  const energySelectOptions = useMemo<EnergySelectOption[]>(() => {
-    if (energyOptions.length > 0) {
-      return energyOptions.map((option) => {
-        const candidate = typeof option.name === "string" ? option.name : "NO";
-        const code = candidate.toUpperCase();
+  const energySelectOptions = useMemo<EnergySelectOption[]>(
+    () =>
+      ENERGY_OPTIONS.map((option) => {
+        const code = energyToDbValue(option.value);
         return {
-          id: String(option.id),
+          id: option.value,
           code,
-          label: formatEnergyLabel(code),
+          label: option.label,
           level: flameLevelFromCode(code),
         };
-      });
-    }
-    return ENERGY_OPTIONS.map((option) => {
-      const code = option.value.toUpperCase();
-      return {
-        id: option.value,
-        code,
-        label: option.label,
-        level: flameLevelFromCode(code),
-      };
-    });
-  }, [energyOptions]);
+      }),
+    []
+  );
 
   useEffect(() => {
     let active = true;
@@ -455,25 +399,18 @@ export function ProjectQuickEditDialog({
       parsedDuration = Math.max(1, Math.round(numeric));
     }
     const energyCode = energyToDbValue(energy);
-    const energyLookup = energySelectOptions.find(
-      (option) => option.code === energyCode
-    );
-    const priorityLookup = prioritySelectOptions.find(
-      (option) => option.code === priority
-    );
-    const nextEnergyId = energyLookup?.id ?? project.energyId ?? null;
-    const nextPriorityId = priorityLookup?.id ?? project.priorityId ?? null;
+    const priorityCode = priority;
     const dueDateValue = fromDateInputValue(dueDateInput);
     const { error: updateError } = await supabase
-      .from("projects")
-      .update({
-        name: trimmed,
-        stage: nextStage,
-        energy: nextEnergyId,
-        priority: nextPriorityId,
-        duration_min: parsedDuration,
-        due_date: dueDateValue,
-      })
+        .from("projects")
+        .update({
+          name: trimmed,
+          stage: nextStage,
+          energy: energyCode,
+          priority: priorityCode,
+          duration_min: parsedDuration,
+          due_date: dueDateValue,
+        })
       .eq("id", project.id);
     if (updateError) {
       setError("Failed to update this project. Try again in a moment.");
@@ -503,9 +440,7 @@ export function ProjectQuickEditDialog({
       status: projectStageToStatus(nextStage),
       energy,
       energyCode,
-      energyId: nextEnergyId,
-      priorityId: nextPriorityId,
-      priorityCode: priority,
+      priorityCode,
       durationMinutes: parsedDuration,
       skillIds: selectedSkillId ? [selectedSkillId] : [],
       emoji: nextEmoji,

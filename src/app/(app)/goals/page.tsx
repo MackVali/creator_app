@@ -18,6 +18,7 @@ import { EmptyState } from "./components/EmptyState";
 import { GoalDrawer, type GoalUpdateContext } from "./components/GoalDrawer";
 import type { Goal, Project } from "./types";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { persistGoalUpdate, isGoalCodeColumnMissingError } from "@/lib/goals/persistGoalUpdate";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
@@ -88,6 +89,23 @@ function projectStatusToStage(status: Project["status"]): string {
       return "RELEASE";
     default:
       return "BUILD";
+  }
+}
+
+function priorityToDbValue(priority: Goal["priority"]): string {
+  switch (priority) {
+    case "Ultra-Critical":
+      return "ULTRA-CRITICAL";
+    case "Critical":
+      return "CRITICAL";
+    case "High":
+      return "HIGH";
+    case "Medium":
+      return "MEDIUM";
+    case "Low":
+      return "LOW";
+    default:
+      return "NO";
   }
 }
 
@@ -162,18 +180,6 @@ function extractLookupValue(
   return null;
 }
 
-function extractLookupId(
-  field: { id?: string | number | null } | string | number | null | undefined
-): string | number | null {
-  if (field && typeof field === "object" && "id" in field) {
-    return field.id ?? null;
-  }
-  if (typeof field === "string" || typeof field === "number") {
-    return field;
-  }
-  return null;
-}
-
 const TASK_STAGE_MAP: Record<string, string> = {
   PREPARE: "Prepare",
   PRODUCE: "Produce",
@@ -244,8 +250,8 @@ type GoalRowWithRelations = GoalRow & {
     id: string;
     name: string;
     goal_id: string;
-    priority: { id?: string | number | null; name?: string | null } | string | null;
-    energy: { id?: string | number | null; name?: string | null } | string | null;
+    priority: string | null;
+    energy: string | null;
     stage: string | null;
     duration_min?: number | null;
     created_at: string;
@@ -273,8 +279,8 @@ async function fetchGoalsWithRelations(
     ${baseSelect},
     projects (
       id, name, goal_id, stage, duration_min, created_at, due_date,
-      priority:priority(name),
-      energy:energy(name),
+      priority,
+      energy,
       tasks (
         id, project_id, stage, name, skill_id, priority
       ),
@@ -735,8 +741,6 @@ export default function GoalsPage() {
               null;
             const rawEnergy = extractLookupValue(p.energy);
             const rawPriority = extractLookupValue(p.priority);
-            const energyId = extractLookupId(p.energy);
-            const priorityId = extractLookupId(p.priority);
             const energyCode = normalizeProjectEnergyCode(rawEnergy);
             const priorityCode = normalizeProjectPriority(rawPriority);
             return {
@@ -755,8 +759,6 @@ export default function GoalsPage() {
               emoji: projectEmoji,
               stage: p.stage ?? "BUILD",
               priorityCode,
-              energyId,
-              priorityId,
               weight: projectWeightValue,
               isNew: false,
               tasks: normalizedTasks,
@@ -962,12 +964,8 @@ export default function GoalsPage() {
       }
 
       // Insert the goal first
-      const priorityDb =
-        _goal.priority === "High"
-          ? "HIGH"
-          : _goal.priority === "Medium"
-          ? "MEDIUM"
-          : "LOW";
+      const priorityDb = priorityToDbValue(_goal.priority);
+      const energyDb = energyToDbValue(_goal.energy);
       const statusDb =
         _goal.status === "Completed"
           ? "COMPLETED"
@@ -977,21 +975,36 @@ export default function GoalsPage() {
           ? "INACTIVE"
           : "ACTIVE";
 
-      const { data: inserted, error: insertErr } = await supabase
-        .from("goals")
-        .insert({
-          user_id: user.id,
-          name: _goal.title.trim(),
-          priority: priorityDb,
-          energy: energyToDbValue(_goal.energy),
-          active: _goal.active,
-          status: statusDb,
-          why: _goal.why ?? null,
-          monument_id: _goal.monumentId || null,
-          due_date: _goal.dueDate ?? null,
-        })
-        .select("id, created_at, weight, weight_boost, monument_id, due_date")
-        .single();
+      const performInsert = (includeCodeColumns: boolean) =>
+        supabase
+          .from("goals")
+          .insert({
+            user_id: user.id,
+            name: _goal.title.trim(),
+            priority: priorityDb,
+            energy: energyDb,
+            active: _goal.active,
+            status: statusDb,
+            why: _goal.why ?? null,
+            monument_id: _goal.monumentId || null,
+            due_date: _goal.dueDate ?? null,
+            ...(includeCodeColumns
+              ? {
+                  priority_code: priorityDb,
+                  energy_code: energyDb,
+                }
+              : {}),
+          })
+          .select("id, created_at, weight, weight_boost, monument_id, due_date")
+          .single();
+
+      let insertResult = await performInsert(true);
+      if (insertResult.error && isGoalCodeColumnMissingError(insertResult.error)) {
+        console.warn("Goal code columns missing during insert, retrying without them.");
+        insertResult = await performInsert(false);
+      }
+
+      const { data: inserted, error: insertErr } = insertResult;
 
       if (insertErr || !inserted) {
         console.error("Error inserting goal:", insertErr);
@@ -1222,56 +1235,13 @@ export default function GoalsPage() {
             const supabase = getSupabaseBrowser();
             if (supabase) {
               try {
-                const { error } = await supabase
-                  .from("goals")
-                  .update({
-                    name: goal.title,
-                    priority:
-                      goal.priority === "High"
-                        ? "HIGH"
-                        : goal.priority === "Medium"
-                        ? "MEDIUM"
-                        : "LOW",
-                    energy: energyToDbValue(goal.energy),
-                    active: goal.active,
-                    status:
-                      goal.status === "Completed"
-                        ? "COMPLETED"
-                        : goal.status === "Overdue"
-                        ? "OVERDUE"
-                        : goal.status === "Inactive"
-                        ? "INACTIVE"
-                        : "ACTIVE",
-                    why: goal.why ?? null,
-                    monument_id: goal.monumentId || null,
-                    due_date: goal.dueDate ?? null,
-                  })
-                  .eq("id", goal.id);
-
-                if (error) {
-                  console.error("Error updating goal:", error);
-                }
-
-                if (context) {
-                  let ownerId = userId;
-                  if (!ownerId) {
-                    const {
-                      data: authData,
-                      error: authError,
-                    } = await supabase.auth.getUser();
-                    if (authError) {
-                      console.error("Error fetching user for updates:", authError);
-                    }
-                    ownerId = authData.user?.id ?? null;
-                    if (ownerId) {
-                      setUserId(ownerId);
-                    }
-                  }
-
-                  if (ownerId) {
-                    await syncProjectsAndTasks(supabase, ownerId, goal.id, context);
-                  }
-                }
+                await persistGoalUpdate({
+                  supabase,
+                  goal,
+                  context,
+                  userId,
+                  onUserResolved: setUserId,
+                });
               } catch (err) {
                 console.error("Unexpected error updating goal:", err);
               }
