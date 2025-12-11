@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { isValidUuid, resolveLocationContextId } from "@/lib/location-metadata";
 import { resolveEveryXDaysInterval } from "@/lib/recurrence";
 import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
+import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
 import { XIcon } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import {
@@ -59,6 +60,9 @@ type SkillOption = {
   name: string | null;
   icon?: string | null;
   catId?: string | null;
+  monumentId?: string | null;
+  monumentLabel?: string | null;
+  monumentEmoji?: string | null;
 };
 
 type GoalOption = {
@@ -66,6 +70,11 @@ type GoalOption = {
   name: string;
   description?: string | null;
 };
+
+const MAX_PRACTICE_ENERGY =
+  HABIT_ENERGY_OPTIONS[HABIT_ENERGY_OPTIONS.length - 1]?.value ??
+  HABIT_ENERGY_OPTIONS[0]?.value ??
+  "NO";
 
 function normalizeMessageTokens(maybeError?: unknown) {
   if (!maybeError || typeof maybeError !== "object") {
@@ -184,6 +193,9 @@ export function HabitEditSheet({
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
+  const [monumentLookup, setMonumentLookup] = useState<Map<string, Monument>>(
+    () => new Map()
+  );
   const [skillId, setSkillId] = useState<string>("none");
   const [goalOptions, setGoalOptions] = useState<GoalOption[]>([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
@@ -433,25 +445,46 @@ export function HabitEditSheet({
 
         const skillsPromise = supabase
           .from("skills")
-          .select("id, name, icon, cat_id")
+          .select("id, name, icon, cat_id, monument_id")
           .eq("user_id", user.id)
           .order("name", { ascending: true });
         const categoriesPromise = getCatsForUser(user.id, supabase);
+        const monumentsPromise = getMonumentsForUser(user.id).catch((err) => {
+          console.error("Failed to load monuments for practice contexts:", err);
+          return [] as Monument[];
+        });
 
-        const [skillsResult, categoriesData] = await Promise.all([
+        const [skillsResult, categoriesData, monumentsData] = await Promise.all([
           skillsPromise,
           categoriesPromise,
+          monumentsPromise,
         ]);
 
         if (skillsResult.error) throw skillsResult.error;
 
         if (active) {
-          const safeSkills = (skillsResult.data ?? []).map((skill) => ({
-            id: skill.id,
-            name: skill.name ?? null,
-            icon: skill.icon ?? null,
-            catId: skill.cat_id ?? null,
-          }));
+          const nextMonuments = new Map<string, Monument>();
+          monumentsData.forEach((monument) => {
+            if (monument?.id) {
+              nextMonuments.set(monument.id, monument);
+            }
+          });
+          setMonumentLookup(nextMonuments);
+          const safeSkills = (skillsResult.data ?? []).map((skill) => {
+            const monumentId = skill.monument_id ?? null;
+            const monumentDetails = monumentId
+              ? nextMonuments.get(monumentId) ?? null
+              : null;
+            return {
+              id: skill.id,
+              name: skill.name ?? null,
+              icon: skill.icon ?? null,
+              catId: skill.cat_id ?? null,
+              monumentId,
+              monumentLabel: monumentDetails?.title ?? null,
+              monumentEmoji: monumentDetails?.emoji ?? null,
+            };
+          });
           setSkillOptions(safeSkills);
           setSkillCategories(categoriesData);
           setSkillLoadError(null);
@@ -560,6 +593,12 @@ export function HabitEditSheet({
     ];
   }, [goalMetadataSupported, goalOptions, goalsLoading]);
 
+  useEffect(() => {
+    if (habitType.toUpperCase() === "PRACTICE" && energy !== MAX_PRACTICE_ENERGY) {
+      setEnergy(MAX_PRACTICE_ENERGY);
+    }
+  }, [energy, habitType]);
+
   const skillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
     if (skillsLoading) {
       return [
@@ -590,6 +629,9 @@ export function HabitEditSheet({
         label: skill.name?.trim() ? skill.name : "Untitled skill",
         icon: skill.icon ?? null,
         catId: skill.catId ?? null,
+        monumentId: skill.monumentId ?? null,
+        monumentLabel: skill.monumentLabel ?? null,
+        monumentEmoji: skill.monumentEmoji ?? null,
       })),
     ];
   }, [skillOptions, skillsLoading]);
@@ -924,19 +966,27 @@ export function HabitEditSheet({
           routineIdToUse = routineId;
         }
 
+        const normalizedHabitType = habitType.toUpperCase();
+        const isPracticeHabit = normalizedHabitType === "PRACTICE";
         const trimmedDescription = description.trim();
-        const recurrenceValue = recurrence.toLowerCase().trim();
+        const normalizedRecurrence = recurrence.toLowerCase().trim();
         const everyXDaysInterval =
-          recurrenceValue === "every x days"
-            ? resolveEveryXDaysInterval(recurrenceValue, recurrenceDays)
+          normalizedRecurrence === "every x days"
+            ? resolveEveryXDaysInterval(recurrence, recurrenceDays)
             : null;
-        if (recurrenceValue === "every x days" && !everyXDaysInterval) {
+        if (
+          !isPracticeHabit &&
+          normalizedRecurrence === "every x days" &&
+          !everyXDaysInterval
+        ) {
           setError("Set how many days should pass between completions.");
           setSaving(false);
           return;
         }
         const recurrenceDaysValue =
-          recurrenceValue === "every x days" && everyXDaysInterval
+          !isPracticeHabit &&
+          normalizedRecurrence === "every x days" &&
+          everyXDaysInterval
             ? [everyXDaysInterval]
             : null;
         const parsedDuration = Number(duration);
@@ -967,14 +1017,17 @@ export function HabitEditSheet({
         }
 
         const resolvedWindowId = windowId === "none" ? null : windowId;
+        const recurrencePayload =
+          isPracticeHabit ? "none" : normalizedRecurrence === "none" ? null : recurrence;
+
         const basePayload: Record<string, unknown> = {
           name: name.trim(),
           description: trimmedDescription || null,
           habit_type: habitType,
-          recurrence: recurrenceValue,
-          recurrence_days: recurrenceDaysValue,
+          recurrence: recurrencePayload,
+          recurrence_days: isPracticeHabit ? null : recurrenceDaysValue,
           duration_minutes: durationMinutes,
-          energy,
+        energy: isPracticeHabit ? MAX_PRACTICE_ENERGY : energy,
           routine_id: routineIdToUse,
           skill_id: skillId === "none" ? null : skillId,
           daylight_preference:

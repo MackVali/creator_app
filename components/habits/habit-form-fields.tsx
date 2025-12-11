@@ -45,6 +45,10 @@ export type HabitSkillSelectOption = {
   value: string;
   label: string;
   icon?: string | null;
+  catId?: string | null;
+  monumentId?: string | null;
+  monumentLabel?: string | null;
+  monumentEmoji?: string | null;
   disabled?: boolean;
 };
 
@@ -222,6 +226,7 @@ export function HabitFormFields({
   const showRecurrenceIntervalInput = normalizedRecurrence === "every x days";
   const normalizedHabitType = habitType.toUpperCase();
   const isTempHabit = normalizedHabitType === "TEMP";
+  const isPracticeHabit = normalizedHabitType === "PRACTICE";
   const everyXDaysInterval =
     resolveEveryXDaysInterval(recurrence, recurrenceDays) ??
     DEFAULT_EVERY_X_DAYS_INTERVAL;
@@ -235,6 +240,12 @@ export function HabitFormFields({
     recurrenceDays.length,
     showRecurrenceIntervalInput,
   ]);
+
+  useEffect(() => {
+    if (isPracticeHabit && normalizedRecurrence !== "none") {
+      onRecurrenceChange("none");
+    }
+  }, [isPracticeHabit, normalizedRecurrence, onRecurrenceChange]);
 
   const goalSelectOptions = (goalOptions && goalOptions.length > 0
     ? goalOptions
@@ -423,6 +434,11 @@ export function HabitFormFields({
     }
   };
 
+  const selectedSkillOption = useMemo(() => {
+    if (!skillId) return null;
+    return skillOptions.find((option) => option.value === skillId) ?? null;
+  }, [skillId, skillOptions]);
+
   return (
     <div className="space-y-8">
       <div className="space-y-3">
@@ -461,7 +477,12 @@ export function HabitFormFields({
       ) : null}
 
       <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4 sm:gap-6 max-[360px]:grid-cols-1">
+        <div
+          className={cn(
+            "grid gap-4 sm:gap-6 max-[360px]:grid-cols-1",
+            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1",
+          )}
+        >
           <div className="space-y-3">
             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
               Type
@@ -480,49 +501,51 @@ export function HabitFormFields({
             </Select>
           </div>
 
-          <div className="space-y-3">
-            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-              Recurrence
-            </Label>
-            <Select value={recurrence} onValueChange={onRecurrenceChange}>
-              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                <SelectValue placeholder="How often will you do this?" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#0b101b] text-sm text-white">
-                {recurrenceOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          {showRecurrenceIntervalInput ? (
-            <div className="space-y-2">
+          {!isPracticeHabit ? (
+            <div className="space-y-3">
               <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-                Interval (days)
+                Recurrence
               </Label>
-              <div className="flex items-center gap-3">
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={everyXDaysInterval}
-                  onChange={(event) => {
-                    const normalizedValue =
-                      ensureEveryXDaysInterval(event.target.value) ??
-                      DEFAULT_EVERY_X_DAYS_INTERVAL;
-                    onRecurrenceDaysChange([normalizedValue]);
-                  }}
-                  className="h-11 w-32 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
-                />
-                <span className="text-xs uppercase tracking-[0.3em] text-white/60">
-                  days between completions
-                </span>
-              </div>
+              <Select value={recurrence} onValueChange={onRecurrenceChange}>
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="How often will you do this?" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {recurrenceOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {showRecurrenceIntervalInput ? (
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                    Interval (days)
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={everyXDaysInterval}
+                      onChange={(event) => {
+                        const normalizedValue =
+                          ensureEveryXDaysInterval(event.target.value) ??
+                          DEFAULT_EVERY_X_DAYS_INTERVAL;
+                        onRecurrenceDaysChange([normalizedValue]);
+                      }}
+                      className="h-11 w-32 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white focus:border-blue-400/60 focus-visible:ring-0"
+                    />
+                    <span className="text-xs uppercase tracking-[0.3em] text-white/60">
+                      days between completions
+                    </span>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
-      </div>
 
         {isTempHabit ? (
           <div className="space-y-6 rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
@@ -580,7 +603,12 @@ export function HabitFormFields({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-4 sm:gap-6 max-[360px]:grid-cols-1">
+        <div
+          className={cn(
+            "grid gap-4 sm:gap-6 max-[360px]:grid-cols-1",
+            !isPracticeHabit ? "grid-cols-2" : "grid-cols-1",
+          )}
+        >
           <div className="space-y-3">
             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
               Skill focus
@@ -655,32 +683,57 @@ export function HabitFormFields({
             ) : null}
           </div>
 
-          <div className="space-y-3">
-            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
-              Energy
-            </Label>
-            <Select value={energy} onValueChange={onEnergyChange}>
-              <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
-                <SelectValue placeholder="Choose the energy this habit needs" />
-              </SelectTrigger>
-              <SelectContent className="bg-[#0b101b] text-sm text-white">
-                {energyOptions.map((option) => (
-                  <SelectItem
-                    key={`${option.value}-${option.label}`}
-                    value={option.value}
-                    disabled={option.disabled}
-                  >
-                    <div className="flex flex-col">
-                      <span>{option.label}</span>
-                      {option.description ? (
-                        <span className="text-xs text-white/60">{option.description}</span>
-                      ) : null}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isPracticeHabit ? (
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-sm text-white">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-white/60">
+                Practice context
+              </p>
+              {selectedSkillOption?.monumentId ? (
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  {selectedSkillOption.monumentEmoji ? (
+                    <span>{selectedSkillOption.monumentEmoji}</span>
+                  ) : null}
+                  <span>
+                    {selectedSkillOption.monumentLabel ??
+                      "Linked monument"}
+                  </span>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-white/60">
+                  Link this skill to a monument to anchor practice blocks to a context.
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {!isPracticeHabit ? (
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">
+                Energy
+              </Label>
+              <Select value={energy} onValueChange={onEnergyChange}>
+                <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
+                  <SelectValue placeholder="Choose the energy this habit needs" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0b101b] text-sm text-white">
+                  {energyOptions.map((option) => (
+                    <SelectItem
+                      key={`${option.value}-${option.label}`}
+                      value={option.value}
+                      disabled={option.disabled}
+                    >
+                      <div className="flex flex-col">
+                        <span>{option.label}</span>
+                        {option.description ? (
+                          <span className="text-xs text-white/60">{option.description}</span>
+                        ) : null}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
         </div>
 
         <div
@@ -732,22 +785,20 @@ export function HabitFormFields({
               </Label>
               <Select
                 value={locationValue}
-                onValueChange={(value) =>
-                  {
-                    if (value === ANY_OPTION_ID) {
-                      onLocationContextIdChange?.(null);
-                      return;
-                    }
-
-                    const option = locationOptionsById.get(value);
-                    if (!option) {
-                      onLocationContextIdChange?.(null);
-                      return;
-                    }
-
-                    onLocationContextIdChange?.(option.id);
+                onValueChange={(value) => {
+                  if (value === ANY_OPTION_ID) {
+                    onLocationContextIdChange?.(null);
+                    return;
                   }
-                }
+
+                  const option = locationOptionsById.get(value);
+                  if (!option) {
+                    onLocationContextIdChange?.(null);
+                    return;
+                  }
+
+                  onLocationContextIdChange?.(option.id);
+                }}
                 disabled={locationOptionsLoading}
               >
                 <SelectTrigger className="h-11 rounded-xl border border-white/10 bg-white/[0.05] text-left text-sm text-white focus:border-blue-400/60 focus-visible:ring-0">
@@ -780,8 +831,8 @@ export function HabitFormFields({
                   <Input
                     value={customLocationName}
                     onChange={(event) => {
-                      setCustomLocationName(event.target.value)
-                      setCustomLocationError(null)
+                      setCustomLocationName(event.target.value);
+                      setCustomLocationError(null);
                     }}
                     placeholder="e.g. Gym or Studio"
                     className="h-10 rounded-lg border-white/10 bg-white/[0.05] text-sm text-white placeholder:text-white/40 focus:border-blue-400/60 focus-visible:ring-0"

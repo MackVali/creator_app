@@ -41,6 +41,7 @@ import {
   type SunlightBounds,
 } from './sunlight'
 import { normalizeSchedulerModePayload, type SchedulerModePayload } from './modes'
+import { selectPracticeContext } from './practiceContextSelector'
 
 type Client = SupabaseClient<Database>
 
@@ -56,7 +57,7 @@ const HABIT_TYPE_PRIORITY: Record<string, number> = {
   CHORE: 0,
   HABIT: 1,
   RELAXER: 1,
-  PRACTICE: 1,
+  PRACTICE: -1,
   TEMP: 1,
   MEMO: 2,
   SYNC: 3,
@@ -97,6 +98,7 @@ type HabitDraftPlacement = {
     durationMin: number
     energyResolved: string | null
     clipped?: boolean
+    practiceContextId?: string | null
   }
   decision: 'kept' | 'new' | 'rescheduled'
   scheduledDayOffset?: number
@@ -263,6 +265,23 @@ export async function scheduleBacklog(
     const normalizedType = (habit.habitType ?? 'HABIT').toUpperCase()
     habitAllowsOverlap.set(habit.id, normalizedType === 'SYNC')
     habitById.set(habit.id, habit)
+  }
+  const taskContextById = new Map<string, string | null>()
+  const contextTaskCounts = new Map<string, number>()
+  for (const task of tasks) {
+    const contextId = task.skill_monument_id
+      ? String(task.skill_monument_id).trim()
+      : null
+    if (!contextId) continue
+    taskContextById.set(task.id, contextId)
+    contextTaskCounts.set(contextId, (contextTaskCounts.get(contextId) ?? 0) + 1)
+  }
+  let practiceHistory = new Map<string, Date>()
+  try {
+    practiceHistory = await fetchPracticeContextHistory(userId, supabase)
+  } catch (error) {
+    console.error('Failed to load practice context history', error)
+    practiceHistory = new Map()
   }
   const habitLastScheduledStart = new Map<string, Date>()
   const recordHabitScheduledStart = (
@@ -950,12 +969,16 @@ export async function scheduleBacklog(
       durationMultiplier,
       restMode: isRestMode,
       existingInstances,
-        registerInstance: registerInstanceForOffsets,
-        getWindowsForDay,
-        getLastScheduledHabitStart: getHabitLastScheduledStart,
-        recordHabitScheduledStart,
-        habitMap: habitById,
-      })
+      registerInstance: registerInstanceForOffsets,
+      getWindowsForDay,
+      getLastScheduledHabitStart: getHabitLastScheduledStart,
+      recordHabitScheduledStart,
+      habitMap: habitById,
+      taskContextById,
+      contextTaskCounts,
+      practiceHistory,
+      getProjectGoalMonumentId,
+    })
 
     if (dayResult.placements.length > 0) {
       result.timeline.push(...dayResult.placements)
@@ -1022,6 +1045,10 @@ export async function scheduleBacklog(
           getLastScheduledHabitStart: getHabitLastScheduledStart,
           recordHabitScheduledStart,
           habitMap: habitById,
+          taskContextById,
+          contextTaskCounts,
+          practiceHistory,
+          getProjectGoalMonumentId,
           allowScheduling: false,
         })
         if (cleanupResult.failures.length > 0) {
@@ -1399,6 +1426,10 @@ async function scheduleHabitsForDay(params: {
   getLastScheduledHabitStart: (habitId: string) => Date | null
   recordHabitScheduledStart: (habitId: string, start: Date | string) => void
   habitMap: Map<string, HabitScheduleItem>
+  taskContextById: Map<string, string | null>
+  contextTaskCounts: Map<string, number>
+  practiceHistory: Map<string, Date>
+  getProjectGoalMonumentId: (projectId: string) => string | null
   allowScheduling?: boolean
 }): Promise<HabitScheduleDayResult> {
   const {
@@ -1421,6 +1452,10 @@ async function scheduleHabitsForDay(params: {
     getLastScheduledHabitStart,
     recordHabitScheduledStart,
     habitMap,
+    taskContextById,
+    contextTaskCounts,
+    practiceHistory,
+    getProjectGoalMonumentId,
     allowScheduling = true,
   } = params
 
@@ -1518,6 +1553,9 @@ async function scheduleHabitsForDay(params: {
 
   const zone = timeZone || 'UTC'
   const dayStart = startOfDayInTimeZone(day, zone)
+  const dayEnd = addDaysInTimeZone(dayStart, 1, zone)
+  const dayStartMs = dayStart.getTime()
+  const dayEndMs = dayEnd.getTime()
   const defaultDueMs = dayStart.getTime()
   const baseNowMs = offset === 0 ? baseDate.getTime() : null
   const anchorStartsByWindowKey = new Map<string, number[]>()
@@ -2021,8 +2059,9 @@ async function scheduleHabitsForDay(params: {
       normalizedType === 'RELAXER'
         ? ['DEFAULT', 'BREAK']
         : normalizedType === 'PRACTICE'
-          ? ['DEFAULT', 'PRACTICE']
+          ? ['PRACTICE']
           : ['DEFAULT']
+    let practiceContextId: string | null = null
 
     const attemptKeys = new Set<string>()
     const attemptQueue: Array<{
@@ -2340,6 +2379,61 @@ async function scheduleHabitsForDay(params: {
       continue
     }
 
+    if (normalizedType === 'PRACTICE') {
+      const contextCounts = countContextEventsBefore(
+        dayInstances,
+        startCandidate,
+        dayStartMs,
+        dayEndMs,
+        habitMap,
+        taskContextById,
+        getProjectGoalMonumentId,
+      )
+      const lastPracticeContextId = findLastPracticeContextBefore(
+        dayInstances,
+        startCandidate,
+        habitTypeById,
+        habitMap,
+        taskContextById,
+        getProjectGoalMonumentId,
+      )
+      const candidateSet = new Set<string>()
+      for (const contextId of contextTaskCounts.keys()) {
+        if (contextId) {
+          candidateSet.add(contextId)
+        }
+      }
+      for (const contextId of contextCounts.keys()) {
+        if (contextId) {
+          candidateSet.add(contextId)
+        }
+      }
+      for (const contextId of practiceHistory.keys()) {
+        if (contextId) {
+          candidateSet.add(contextId)
+        }
+      }
+      if (lastPracticeContextId) {
+        candidateSet.add(lastPracticeContextId)
+      }
+      if (habit.skillMonumentId) {
+        candidateSet.add(habit.skillMonumentId)
+      }
+      const candidateContextIds = Array.from(candidateSet)
+      const selectedContext =
+        selectPracticeContext({
+          candidateContextIds,
+          contextEventCounts: contextCounts,
+          contextTaskCounts,
+          lastPracticedAt: practiceHistory,
+          lastContextUsed: lastPracticeContextId,
+          windowStart: new Date(startCandidate),
+        }) ?? habit.skillMonumentId ?? null
+      practiceContextId = selectedContext
+    } else {
+      practiceContextId = null
+    }
+
     scheduledDurationMs = endCandidate - startCandidate
     if (scheduledDurationMs <= 0) {
       continue
@@ -2390,6 +2484,14 @@ async function scheduleHabitsForDay(params: {
         (existingInstance.energy_resolved ?? '').toUpperCase() !== energyResolved
       : true
 
+    if (normalizedType === 'PRACTICE') {
+      const existingContext = existingInstance?.practice_context_monument_id ?? null
+      const desiredContext = practiceContextId ?? null
+      if (existingContext !== desiredContext) {
+        needsUpdate = true
+      }
+    }
+
     if (!needsUpdate && existingInstance) {
       const overlapsExisting = dayInstances.some(inst => {
         if (!inst) return false
@@ -2425,6 +2527,7 @@ async function scheduleHabitsForDay(params: {
           energy: energyResolved,
           weight: 0,
           eventName: habit.name || 'Habit',
+          practiceContextId: normalizedType === 'PRACTICE' ? practiceContextId ?? null : undefined,
         },
         windows: [
           {
@@ -2485,9 +2588,19 @@ async function scheduleHabitsForDay(params: {
       continue
     }
 
+    if (normalizedType === 'PRACTICE') {
+      const desiredContext = practiceContextId ?? null
+      if (persisted.practice_context_monument_id !== desiredContext) {
+        persisted.practice_context_monument_id = desiredContext
+      }
+    }
+
     const startDate = new Date(persisted.start_utc)
     const endDate = new Date(persisted.end_utc)
     recordHabitScheduledStart(habit.id, startDate)
+    if (normalizedType === 'PRACTICE' && practiceContextId) {
+      practiceHistory.set(practiceContextId, new Date(startDate))
+    }
     const startUTC = startDate.toISOString()
     const endUTC = endDate.toISOString()
 
@@ -2533,6 +2646,7 @@ async function scheduleHabitsForDay(params: {
         durationMin: resolvedDuration,
         energyResolved: persistedEnergy,
         clipped,
+        practiceContextId: normalizedType === 'PRACTICE' ? (practiceContextId ?? null) : null,
       },
       decision,
       scheduledDayOffset: offset,
@@ -3096,6 +3210,115 @@ function resolveWindowEnd(win: WindowLite, date: Date, timeZone: string) {
     end = setTimeInTimeZone(nextDay, timeZone, hour, minute)
   }
   return end
+}
+
+function resolveInstanceContext(
+  instance: ScheduleInstance | null | undefined,
+  habitMap: Map<string, HabitScheduleItem>,
+  taskContextById: Map<string, string | null>,
+  getProjectGoalMonumentId: (projectId: string) => string | null,
+): string | null {
+  if (!instance) return null
+  if (instance.practice_context_monument_id) {
+    return instance.practice_context_monument_id
+  }
+  const sourceId = instance.source_id ?? null
+  if (!sourceId) return null
+  if (instance.source_type === 'HABIT') {
+    const habit = habitMap.get(sourceId)
+    return habit?.skillMonumentId ?? null
+  }
+  if (instance.source_type === 'TASK') {
+    return taskContextById.get(sourceId) ?? null
+  }
+  if (instance.source_type === 'PROJECT') {
+    return getProjectGoalMonumentId(sourceId) ?? null
+  }
+  return null
+}
+
+function countContextEventsBefore(
+  instances: ScheduleInstance[],
+  beforeMs: number,
+  dayStartMs: number,
+  dayEndMs: number,
+  habitMap: Map<string, HabitScheduleItem>,
+  taskContextById: Map<string, string | null>,
+  getProjectGoalMonumentId: (projectId: string) => string | null,
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const inst of instances) {
+    if (!inst) continue
+    const startMs = new Date(inst.start_utc ?? '').getTime()
+    if (!Number.isFinite(startMs)) continue
+    if (startMs >= beforeMs || startMs < dayStartMs || startMs >= dayEndMs) continue
+    const contextId = resolveInstanceContext(inst, habitMap, taskContextById, getProjectGoalMonumentId)
+    if (!contextId) continue
+    counts.set(contextId, (counts.get(contextId) ?? 0) + 1)
+  }
+  return counts
+}
+
+function findLastPracticeContextBefore(
+  instances: ScheduleInstance[],
+  beforeMs: number,
+  habitTypeById: Map<string, string>,
+  habitMap: Map<string, HabitScheduleItem>,
+  taskContextById: Map<string, string | null>,
+  getProjectGoalMonumentId: (projectId: string) => string | null,
+): string | null {
+  let latest: { startMs: number; contextId: string } | null = null
+  for (const inst of instances) {
+    if (!inst) continue
+    if (inst.source_type !== 'HABIT') continue
+    const habitId = inst.source_id ?? null
+    if (!habitId) continue
+    const habitType = habitTypeById.get(habitId)
+    if (habitType !== 'PRACTICE') continue
+    const startMs = new Date(inst.start_utc ?? '').getTime()
+    if (!Number.isFinite(startMs) || startMs >= beforeMs) continue
+    const contextId = resolveInstanceContext(inst, habitMap, taskContextById, getProjectGoalMonumentId)
+    if (!contextId) continue
+    if (!latest || startMs > latest.startMs) {
+      latest = { startMs, contextId }
+    }
+  }
+  return latest?.contextId ?? null
+}
+
+async function fetchPracticeContextHistory(userId: string, client?: Client) {
+  const supabase = await ensureClient(client)
+  const MAX_RECORDS = 250
+  const { data, error } = await supabase
+    .from('schedule_instances')
+    .select('practice_context_monument_id, completed_at, end_utc')
+    .eq('user_id', userId)
+    .eq('source_type', 'HABIT')
+    .eq('status', 'completed')
+    .not('practice_context_monument_id', 'is', null)
+    .order('completed_at', { ascending: false })
+    .limit(MAX_RECORDS)
+
+  if (error) {
+    throw error
+  }
+
+  const history = new Map<string, Date>()
+  for (const record of (data ?? []) as Array<{
+    practice_context_monument_id: string | null
+    completed_at: string | null
+    end_utc: string | null
+  }>) {
+    const contextId = record.practice_context_monument_id
+    if (!contextId || history.has(contextId)) continue
+    const timestamp = record.completed_at ?? record.end_utc
+    if (!timestamp) continue
+    const date = new Date(timestamp)
+    if (Number.isNaN(date.getTime())) continue
+    history.set(contextId, date)
+  }
+
+  return history
 }
   const attemptProjectConflictPlacement = async (
     conflict: ScheduleInstance,

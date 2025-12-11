@@ -24,6 +24,7 @@ type PlaceParams = {
     energy: string
     weight: number
     eventName: string
+    practiceContextId?: string | null
   }
   windows: Array<{
     id: string
@@ -215,6 +216,7 @@ async function persistPlacement(
         weightSnapshot: item.weight,
         energyResolved: item.energy,
         eventName,
+        practiceContextId: item.practiceContextId,
       },
       client
     )
@@ -232,6 +234,7 @@ async function persistPlacement(
       weightSnapshot: item.weight,
       energyResolved: item.energy,
       eventName,
+      practiceContextId: item.practiceContextId,
     },
     client
   )
