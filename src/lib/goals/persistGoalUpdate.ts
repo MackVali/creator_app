@@ -10,6 +10,7 @@ const STATUS_TO_DB: Record<Goal["status"], string> = {
 };
 
 const PRIORITY_TO_DB: Record<Goal["priority"], string> = {
+  No: "NO",
   Low: "LOW",
   Medium: "MEDIUM",
   High: "HIGH",
@@ -184,7 +185,9 @@ export async function persistGoalUpdate({
     .update({
       name: goal.title,
       priority: PRIORITY_TO_DB[goal.priority] ?? "LOW",
+      priority_code: PRIORITY_TO_DB[goal.priority] ?? "LOW",
       energy: energyToDbValue(goal.energy),
+      energy_code: energyToDbValue(goal.energy),
       active: goal.active,
       status: STATUS_TO_DB[goal.status] ?? "ACTIVE",
       why: goal.why ?? null,

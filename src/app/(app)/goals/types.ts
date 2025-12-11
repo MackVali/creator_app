@@ -35,7 +35,7 @@ export interface Goal {
   emoji?: string;
   dueDate?: string;
   estimatedCompletionAt?: string | null;
-  priority: "Low" | "Medium" | "High" | "Critical" | "Ultra-Critical";
+  priority: "No" | "Low" | "Medium" | "High" | "Critical" | "Ultra-Critical";
   energy: "No" | "Low" | "Medium" | "High" | "Ultra" | "Extreme";
   progress: number; // 0-100
   status: "Active" | "Completed" | "Overdue" | "Inactive";
@@ -46,6 +46,7 @@ export interface Goal {
   monumentId?: string | null;
   monumentEmoji?: string | null;
   priorityCode?: string | null;
+  energyCode?: string | null;
   /** Associated skill IDs */
   skills?: string[];
   weight?: number;

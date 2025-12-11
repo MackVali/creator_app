@@ -29,21 +29,31 @@ import {
   dueDateUrgencyBoost,
 } from "@/lib/scheduler/weight";
 
-function mapPriority(priority: string): Goal["priority"] {
-  switch (priority) {
-    case "HIGH":
-    case "CRITICAL":
+function mapPriority(
+  priority: { name?: string | null } | string | null | undefined
+): Goal["priority"] {
+  const normalized = extractLookupValue(priority)?.toUpperCase();
+  switch (normalized) {
+    case "NO":
+      return "No";
     case "ULTRA-CRITICAL":
+      return "Ultra-Critical";
+    case "CRITICAL":
+      return "Critical";
+    case "HIGH":
       return "High";
     case "MEDIUM":
       return "Medium";
+    case "LOW":
+      return "Low";
     default:
       return "Low";
   }
 }
 
-function mapEnergy(energy: string): Goal["energy"] {
-  switch (energy) {
+function mapEnergy(energy: { name?: string | null } | string | null | undefined): Goal["energy"] {
+  const normalized = extractLookupValue(energy)?.toUpperCase();
+  switch (normalized) {
     case "LOW":
       return "Low";
     case "MEDIUM":
@@ -258,7 +268,7 @@ async function fetchGoalsWithRelations(
   userId: string
 ): Promise<GoalRowWithRelations[]> {
   const baseSelect =
-    "id, name, priority, energy, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
   const selectWithRelations = `
     ${baseSelect},
     projects (
@@ -776,11 +786,21 @@ export default function GoalsPage() {
             }
             return latest;
           }, null);
+          const goalPriorityCode =
+            g.priority_code ?? extractLookupValue(g.priority);
+          const normalizedGoalPriorityCode = goalPriorityCode
+            ? goalPriorityCode.toUpperCase()
+            : null;
+          const goalEnergyCode =
+            g.energy_code ?? extractLookupValue(g.energy);
+          const normalizedGoalEnergyCode = goalEnergyCode
+            ? goalEnergyCode.toUpperCase()
+            : null;
           const baseGoal: Goal = {
             id: g.id,
             title: g.name,
-            priority: mapPriority(g.priority),
-            energy: mapEnergy(g.energy),
+            priority: mapPriority(goalPriorityCode ?? null),
+            energy: mapEnergy(goalEnergyCode ?? null),
             progress,
             status,
             active: g.active ?? status === "Active",
@@ -789,7 +809,8 @@ export default function GoalsPage() {
             dueDate: g.due_date ?? undefined,
             projects: projList,
             monumentId: g.monument_id ?? null,
-            priorityCode: g.priority ?? null,
+            priorityCode: normalizedGoalPriorityCode,
+            energyCode: normalizedGoalEnergyCode,
             weightBoost: g.weight_boost ?? 0,
             skills: Array.from(goalSkills),
             why: g.why || undefined,

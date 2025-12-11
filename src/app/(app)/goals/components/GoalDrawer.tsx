@@ -44,6 +44,11 @@ const PRIORITY_OPTIONS: {
   description: string;
 }[] = [
   {
+    value: "No",
+    label: "No",
+    description: "Keep this goal available without pulling focus.",
+  },
+  {
     value: "Low",
     label: "Low",
     description: "A gentle intention you can ease into.",
@@ -58,7 +63,69 @@ const PRIORITY_OPTIONS: {
     label: "High",
     description: "Make room and rally your focus here.",
   },
+  {
+    value: "Critical",
+    label: "Critical",
+    description: "Top of the stack—treat like a burning deadline.",
+  },
+  {
+    value: "Ultra-Critical",
+    label: "Ultra-Critical",
+    description: "Emergency mode. Everything else yields until this moves.",
+  },
 ];
+
+const PRIORITY_CODE_TO_LABEL: Record<string, Goal["priority"]> = {
+  NO: "No",
+  LOW: "Low",
+  MEDIUM: "Medium",
+  HIGH: "High",
+  CRITICAL: "Critical",
+  "ULTRA-CRITICAL": "Ultra-Critical",
+};
+
+const PRIORITY_LABEL_TO_CODE: Record<Goal["priority"], string> = {
+  No: "NO",
+  Low: "LOW",
+  Medium: "MEDIUM",
+  High: "HIGH",
+  Critical: "CRITICAL",
+  "Ultra-Critical": "ULTRA-CRITICAL",
+};
+
+type PriorityCodeInput = string | { name?: string | null } | null | undefined;
+
+const normalizePriorityCodeInput = (code?: PriorityCodeInput): string | null => {
+  if (!code) return null;
+  if (typeof code === "string") {
+    return code.toUpperCase();
+  }
+  if (typeof code === "object" && "name" in code) {
+    const value = code.name;
+    if (typeof value === "string") {
+      return value.toUpperCase();
+    }
+  }
+  return null;
+};
+
+const priorityLabelFromCode = (
+  code?: PriorityCodeInput,
+  fallback: Goal["priority"] = "Low"
+): Goal["priority"] => {
+  const normalized = normalizePriorityCodeInput(code);
+  if (!normalized) return fallback;
+  return PRIORITY_CODE_TO_LABEL[normalized] ?? fallback;
+};
+
+const energyLabelFromCode = (
+  code?: string | null,
+  fallback: Goal["energy"] = "No"
+): Goal["energy"] => {
+  if (!code) return fallback;
+  const normalized = code.toUpperCase();
+  return ENERGY_CODE_TO_LABEL[normalized] ?? fallback;
+};
 
 const ENERGY_OPTIONS: {
   value: Goal["energy"];
@@ -71,6 +138,24 @@ const ENERGY_OPTIONS: {
   { value: "Ultra", label: "Ultra" },
   { value: "Extreme", label: "Extreme" },
 ];
+
+const ENERGY_CODE_TO_LABEL: Record<string, Goal["energy"]> = {
+  NO: "No",
+  LOW: "Low",
+  MEDIUM: "Medium",
+  HIGH: "High",
+  ULTRA: "Ultra",
+  EXTREME: "Extreme",
+};
+
+const ENERGY_LABEL_TO_CODE: Record<Goal["energy"], string> = {
+  No: "NO",
+  Low: "LOW",
+  Medium: "MEDIUM",
+  High: "HIGH",
+  Ultra: "ULTRA",
+  Extreme: "EXTREME",
+};
 
 const PROJECT_STAGE_OPTIONS = [
   { value: "RESEARCH", label: "Research" },
@@ -202,6 +287,10 @@ export function GoalDrawer({
 
   useEffect(() => {
     if (initialGoal) {
+      const resolvedPriority = priorityLabelFromCode(
+        initialGoal.priorityCode,
+        initialGoal.priority
+      );
       const monumentDefaultEmoji = getMonumentEmojiById(initialGoal.monumentId ?? null);
       const initialEmojiValue = initialGoal.emoji || monumentDefaultEmoji || "";
       setTitle(initialGoal.title);
@@ -209,8 +298,9 @@ export function GoalDrawer({
       setHasCustomEmoji(
         Boolean(initialGoal.emoji && initialGoal.emoji !== monumentDefaultEmoji)
       );
-      setPriority(initialGoal.priority);
-      setEnergy(initialGoal.energy);
+      setPriority(resolvedPriority);
+      const resolvedEnergy = energyLabelFromCode(initialGoal.energyCode, initialGoal.energy);
+      setEnergy(resolvedEnergy);
       setActive(initialGoal.active ?? true);
       setWhy(initialGoal.why || "");
       setMonumentId(initialGoal.monumentId || "");
@@ -505,24 +595,28 @@ export function GoalDrawer({
 
     const goalProgress = computeGoalProgress(preparedProjects);
 
-    const context: GoalUpdateContext = {
-      projects: projectsState.map((project) => ({
-        ...project,
-        tasks: project.tasks.map((task) => ({ ...task })),
-      })),
+  const context: GoalUpdateContext = {
+    projects: projectsState.map((project) => ({
+      ...project,
+      tasks: project.tasks.map((task) => ({ ...task })),
+    })),
       removedProjectIds,
       removedTaskIds,
     };
 
-    const normalizedGoalDueDate = fromDateInputValue(dueDateInput);
+  const normalizedGoalDueDate = fromDateInputValue(dueDateInput);
+  const normalizedPriorityCode = PRIORITY_LABEL_TO_CODE[priority] ?? "LOW";
+  const normalizedEnergyCode = ENERGY_LABEL_TO_CODE[energy] ?? "NO";
 
-    const nextGoal: Goal = {
-      id: initialGoal?.id || Date.now().toString(),
-      title: title.trim(),
-      emoji: emoji.trim() || undefined,
-      dueDate: normalizedGoalDueDate,
-      priority,
-      energy,
+  const nextGoal: Goal = {
+    id: initialGoal?.id || Date.now().toString(),
+    title: title.trim(),
+    emoji: emoji.trim() || undefined,
+    dueDate: normalizedGoalDueDate,
+    priority,
+    priorityCode: normalizedPriorityCode,
+    energy,
+    energyCode: normalizedEnergyCode,
       progress: goalProgress,
       status: computedStatus,
       active: computedActive,
@@ -646,7 +740,7 @@ export function GoalDrawer({
 
                 <div className="space-y-3 flex-1">
                   <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-                    Energy required
+                    Energy
                   </Label>
                   <Select value={energy} onValueChange={(value) => setEnergy(value as Goal["energy"])}>
                     <SelectTrigger className="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white">
@@ -1000,21 +1094,6 @@ export function GoalDrawer({
               )}
             </div>
           </div>
-          <SheetFooter className="border-t border-white/10 bg-[#05070c]/60">
-            <div className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-              <Button
-                type="button"
-                variant="ghost"
-                className="justify-start text-white/70 hover:text-white"
-                onClick={onClose}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!canSubmit} className="w-full sm:w-auto">
-                {editing ? "Save changes" : "Create goal"}
-              </Button>
-            </div>
-          </SheetFooter>
         </form>
         <SheetFooter className="border-t border-white/10 bg-white/[0.02] px-6 py-4 sm:px-8">
           <div className="flex w-full items-center justify-between gap-3">
