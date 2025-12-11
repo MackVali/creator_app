@@ -72,6 +72,7 @@ export async function createInstance(
     energyResolved: string
     eventName?: string | null
     locked?: boolean
+    practiceContextId?: string | null
   },
   client?: Client
 ) {
@@ -91,6 +92,7 @@ export async function createInstance(
       energy_resolved: input.energyResolved,
       locked: input.locked ?? false,
       event_name: input.eventName ?? null,
+      practice_context_monument_id: input.practiceContextId ?? null,
     })
     .select('*')
     .single()
@@ -107,6 +109,7 @@ export async function rescheduleInstance(
     energyResolved: string
     eventName?: string | null
     locked?: boolean
+    practiceContextId?: string | null
   },
   client?: Client
 ) {
@@ -130,6 +133,9 @@ export async function rescheduleInstance(
     energy_resolved: input.energyResolved,
     completed_at: null,
     event_name: input.eventName ?? null,
+  }
+  if (typeof input.practiceContextId !== 'undefined') {
+    payload.practice_context_monument_id = input.practiceContextId ?? null
   }
   if (typeof input.locked === 'boolean') {
     payload.locked = input.locked

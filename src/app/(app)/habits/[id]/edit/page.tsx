@@ -36,6 +36,12 @@ import { getCatsForUser } from "@/lib/data/cats";
 import type { CatRow } from "@/lib/types/cat";
 import { useHabitWindows } from "@/lib/hooks/useHabitWindows";
 
+const MAX_PRACTICE_ENERGY =
+  HABIT_ENERGY_OPTIONS[HABIT_ENERGY_OPTIONS.length - 1]?.value ??
+  HABIT_ENERGY_OPTIONS[0]?.value ??
+  "NO";
+import { getMonumentsForUser, type Monument } from "@/lib/queries/monuments";
+
 function normalizeMessageTokens(maybeError?: unknown) {
   if (!maybeError || typeof maybeError !== "object") {
     return "";
@@ -91,6 +97,9 @@ interface SkillOption {
   name: string | null;
   icon?: string | null;
   catId?: string | null;
+  monumentId?: string | null;
+  monumentLabel?: string | null;
+  monumentEmoji?: string | null;
 }
 
 type RoutineSelectValue = string;
@@ -139,6 +148,9 @@ export default function EditHabitPage() {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillLoadError, setSkillLoadError] = useState<string | null>(null);
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
+  const [monumentLookup, setMonumentLookup] = useState<Map<string, Monument>>(
+    () => new Map()
+  );
   const [skillId, setSkillId] = useState<string>("none");
   const [habitLoading, setHabitLoading] = useState(true);
   const [habitLoadError, setHabitLoadError] = useState<string | null>(null);
@@ -385,25 +397,46 @@ export default function EditHabitPage() {
 
         const skillsPromise = supabase
           .from("skills")
-          .select("id, name, icon, cat_id")
+          .select("id, name, icon, cat_id, monument_id")
           .eq("user_id", user.id)
           .order("name", { ascending: true });
         const categoriesPromise = getCatsForUser(user.id, supabase);
+        const monumentsPromise = getMonumentsForUser(user.id).catch((err) => {
+          console.error("Failed to load monuments for practice contexts:", err);
+          return [] as Monument[];
+        });
 
-        const [skillsResult, categoriesData] = await Promise.all([
+        const [skillsResult, categoriesData, monumentsData] = await Promise.all([
           skillsPromise,
           categoriesPromise,
+          monumentsPromise,
         ]);
 
         if (skillsResult.error) throw skillsResult.error;
 
         if (active) {
-          const safeSkills = (skillsResult.data ?? []).map((skill) => ({
-            id: skill.id,
-            name: skill.name ?? null,
-            icon: skill.icon ?? null,
-            catId: skill.cat_id ?? null,
-          }));
+          const nextMonuments = new Map<string, Monument>();
+          monumentsData.forEach((monument) => {
+            if (monument?.id) {
+              nextMonuments.set(monument.id, monument);
+            }
+          });
+          setMonumentLookup(nextMonuments);
+          const safeSkills = (skillsResult.data ?? []).map((skill) => {
+            const monumentId = skill.monument_id ?? null;
+            const monumentDetails = monumentId
+              ? nextMonuments.get(monumentId) ?? null
+              : null;
+            return {
+              id: skill.id,
+              name: skill.name ?? null,
+              icon: skill.icon ?? null,
+              catId: skill.cat_id ?? null,
+              monumentId,
+              monumentLabel: monumentDetails?.title ?? null,
+              monumentEmoji: monumentDetails?.emoji ?? null,
+            };
+          });
           setSkillOptions(safeSkills);
           setSkillCategories(categoriesData);
           setSkillLoadError(null);
@@ -482,6 +515,18 @@ export default function EditHabitPage() {
     ];
   }, [goalMetadataSupported, goalOptions, goalsLoading]);
 
+  useEffect(() => {
+    const normalizedType = habitType.toUpperCase();
+    if (normalizedType === "PRACTICE") {
+      if (energy !== MAX_PRACTICE_ENERGY) {
+        setEnergy(MAX_PRACTICE_ENERGY);
+      }
+      if (recurrence.toLowerCase() !== "none") {
+        setRecurrence("none");
+      }
+    }
+  }, [energy, habitType, recurrence]);
+
   const skillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
     if (skillsLoading) {
       return [
@@ -512,6 +557,9 @@ export default function EditHabitPage() {
         label: skill.name?.trim() ? skill.name : "Untitled skill",
         icon: skill.icon ?? null,
         catId: skill.catId ?? null,
+        monumentId: skill.monumentId ?? null,
+        monumentLabel: skill.monumentLabel ?? null,
+        monumentEmoji: skill.monumentEmoji ?? null,
       })),
     ];
   }, [skillOptions, skillsLoading]);
@@ -719,11 +767,18 @@ export default function EditHabitPage() {
         ? resolveEveryXDaysInterval(recurrence, recurrenceDays)
         : null;
 
-    if (normalizedRecurrence === "every x days" && !everyXDaysInterval) {
+    const normalizedHabitType = habitType.toUpperCase();
+    const isTempHabit = normalizedHabitType === "TEMP";
+    const isPracticeHabit = normalizedHabitType === "PRACTICE";
+
+    if (
+      !isPracticeHabit &&
+      normalizedRecurrence === "every x days" &&
+      !everyXDaysInterval
+    ) {
       setError("Set how many days should pass between completions.");
       return;
     }
-
     if (habitType.toUpperCase() === "MEMO" && skillId === "none") {
       setError("Memo habits need to stay connected to a skill so their notes are saved.");
       return;
@@ -734,8 +789,6 @@ export default function EditHabitPage() {
       return;
     }
 
-    const normalizedHabitType = habitType.toUpperCase();
-    const isTempHabit = normalizedHabitType === "TEMP";
     const goalMetadataRequired = goalMetadataSupported && isTempHabit;
 
     let parsedCompletionTarget: number | null = null;
@@ -779,12 +832,14 @@ export default function EditHabitPage() {
       }
 
       const trimmedDescription = description.trim();
-    const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
-    const recurrenceDaysValue =
-      normalizedRecurrence === "every x days" && everyXDaysInterval
-        ? [everyXDaysInterval]
-        : null;
-    const windowIdValue = windowId === "none" ? null : windowId;
+      const recurrenceValue = normalizedRecurrence === "none" ? null : recurrence;
+      const recurrenceDaysValue =
+        !isPracticeHabit &&
+        normalizedRecurrence === "every x days" &&
+        everyXDaysInterval
+          ? [everyXDaysInterval]
+          : null;
+      const windowIdValue = windowId === "none" ? null : windowId;
       let routineIdToUse: string | null = null;
 
       if (routineId === "__create__") {
@@ -839,10 +894,10 @@ export default function EditHabitPage() {
         name: name.trim(),
         description: trimmedDescription || null,
         habit_type: habitType,
-        recurrence: recurrenceValue,
-        recurrence_days: recurrenceDaysValue,
+        recurrence: isPracticeHabit ? "none" : recurrenceValue,
+        recurrence_days: isPracticeHabit ? null : recurrenceDaysValue,
         duration_minutes: durationMinutes,
-        energy,
+        energy: isPracticeHabit ? MAX_PRACTICE_ENERGY : energy,
         routine_id: routineIdToUse,
         skill_id: skillId === "none" ? null : skillId,
         daylight_preference:

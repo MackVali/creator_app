@@ -400,6 +400,9 @@ const DEFAULT_ENERGY_DEFINITIONS: EnergyDefinition[] = ENERGY_META.map(
   })
 );
 
+const MAX_PRACTICE_ENERGY_CODE =
+  ENERGY_META[ENERGY_META.length - 1]?.code ?? DEFAULT_ENERGY;
+
 const renderFlameIcon = (level: FlameLevel) => {
   const FlameIcon = () => (
     <FlameEmber level={level} size="sm" className="shrink-0" />
@@ -1269,6 +1272,20 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   }, [isOpen, resetGoalWizard]);
 
   useEffect(() => {
+    if (
+      eventType === "HABIT" &&
+      formData.type.toUpperCase() === "PRACTICE" &&
+      formData.recurrence.toLowerCase() !== "none"
+    ) {
+      setFormData((prev) => ({
+        ...prev,
+        recurrence: "none",
+        recurrence_days: [],
+      }));
+    }
+  }, [eventType, formData.recurrence, formData.type]);
+
+  useEffect(() => {
     if (eventType !== "PROJECT") return;
     if (
       (formData.manual_start.trim().length > 0 ||
@@ -1384,9 +1401,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      if (eventType === "GOAL") {
+      if (eventType === "GOAL" || eventType === "HABIT") {
         const monumentsData = await getMonumentsForUser(user.id);
         setMonuments(monumentsData);
+      } else {
+        setMonuments([]);
       }
 
       if (eventType === "PROJECT" || eventType === "TASK") {
@@ -1590,6 +1609,16 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     ];
   }, [routineOptions, routinesLoading]);
 
+  const monumentLookup = useMemo(() => {
+    const map = new Map<string, Monument>();
+    monuments.forEach((monument) => {
+      if (monument.id) {
+        map.set(monument.id, monument);
+      }
+    });
+    return map;
+  }, [monuments]);
+
   const habitSkillSelectOptions = useMemo<HabitSkillSelectOption[]>(() => {
     if (skillsLoading) {
       return [
@@ -1615,14 +1644,23 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         value: "none",
         label: "No skill focus",
       },
-      ...sortedSkills.map((skill) => ({
-        value: skill.id,
-        label: skill.name,
-        icon: skill.icon ?? null,
-        catId: skill.cat_id ?? null,
-      })),
+      ...sortedSkills.map((skill) => {
+        const monumentId = skill.monument_id ?? null;
+        const monumentDetails = monumentId
+          ? monumentLookup.get(monumentId) ?? null
+          : null;
+        return {
+          value: skill.id,
+          label: skill.name,
+          icon: skill.icon ?? null,
+          catId: skill.cat_id ?? null,
+          monumentId,
+          monumentLabel: monumentDetails?.title ?? null,
+          monumentEmoji: monumentDetails?.emoji ?? null,
+        };
+      }),
     ];
-  }, [skillsLoading, sortedSkills]);
+  }, [monumentLookup, skillsLoading, sortedSkills]);
 
   const {
     windowOptions: habitWindowOptions,
@@ -2164,6 +2202,7 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         insertData.type = formData.type;
         insertData.habit_type = formData.type;
         const normalizedHabitType = (formData.type ?? "").toUpperCase();
+        const isPracticeHabit = normalizedHabitType === "PRACTICE";
         const selectedGoalId =
           formData.goal_id && formData.goal_id.trim().length > 0
             ? formData.goal_id
@@ -2205,7 +2244,11 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
                 formData.recurrence_days
               )
             : null;
-        if (normalizedRecurrence === "every x days" && !everyXDaysInterval) {
+        if (
+          !isPracticeHabit &&
+          normalizedRecurrence === "every x days" &&
+          !everyXDaysInterval
+        ) {
           toast.error(
             "Interval required",
             "Set how many days should pass between completions."
@@ -2214,13 +2257,18 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
 
         const recurrenceDaysValue =
-          normalizedRecurrence === "every x days" && everyXDaysInterval
+          !isPracticeHabit &&
+          normalizedRecurrence === "every x days" &&
+          everyXDaysInterval
             ? [everyXDaysInterval]
             : null;
 
-        insertData.recurrence =
-          normalizedRecurrence === "none" ? null : formData.recurrence;
-        insertData.recurrence_days = recurrenceDaysValue;
+        insertData.recurrence = isPracticeHabit
+          ? "none"
+          : normalizedRecurrence === "none"
+            ? null
+            : formData.recurrence;
+        insertData.recurrence_days = isPracticeHabit ? null : recurrenceDaysValue;
         insertData.skill_id = formData.skill_id ? formData.skill_id : null;
 
         let resolvedLocationContextId: string | null = null;
@@ -2301,6 +2349,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         }
 
         insertData.routine_id = routineIdToUse;
+        insertData.energy = isPracticeHabit
+          ? MAX_PRACTICE_ENERGY_CODE
+          : resolvedEnergyCode;
       }
 
       if (duration !== undefined) {
