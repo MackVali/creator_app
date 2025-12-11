@@ -23,6 +23,7 @@ export const TIMELINE_GRID_LEFT_FALLBACK = `var(--timeline-label-column, ${TIMEL
 export const TIMELINE_GRID_RIGHT_FALLBACK = `var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK})`;
 export const TIMELINE_CARD_LEFT_FALLBACK = `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`;
 export const TIMELINE_CARD_RIGHT_FALLBACK = `max(calc(var(--timeline-right-gutter, ${TIMELINE_RIGHT_GUTTER_FALLBACK}) - 1rem), 0px)`;
+const NOW_LINE_LAYER_Z_INDEX = 50000;
 
 interface DayTimelineProps {
   startHour?: number;
@@ -229,28 +230,31 @@ export function DayTimeline({
       {showNowLine && (
         <>
             <div
-              className="now-line pointer-events-none absolute z-[400] mix-blend-screen"
+              className="now-line pointer-events-none absolute mix-blend-screen"
               style={{
                 top: nowTop,
                 left: `var(--timeline-grid-left, ${TIMELINE_GRID_LEFT_FALLBACK})`,
                 right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                zIndex: NOW_LINE_LAYER_Z_INDEX,
               }}
             />
             <div
-              className="pointer-events-none absolute z-[400] flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
+              className="pointer-events-none absolute flex -translate-y-1/2 items-center gap-1 rounded-full bg-white/85 px-2 py-[3px] text-[11px] font-semibold text-slate-800 shadow-sm"
               style={{
                 top: nowTop,
                 left: `var(--timeline-card-left, ${TIMELINE_CARD_LEFT_FALLBACK})`,
+                zIndex: NOW_LINE_LAYER_Z_INDEX,
               }}
             >
               <Clock className="h-3 w-3 text-slate-700" />
               <span>Now</span>
             </div>
             <div
-              className="pointer-events-none absolute z-[400] -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
+              className="pointer-events-none absolute -translate-y-1/2 text-[11px] font-medium tracking-[0.08em] text-white/80"
               style={{
                 top: nowTop,
                 right: `var(--timeline-grid-right, ${TIMELINE_GRID_RIGHT_FALLBACK})`,
+                zIndex: NOW_LINE_LAYER_Z_INDEX,
               }}
             >
               {formatTime((nowMinutes ?? 0) + startHour * 60)}
