@@ -13,6 +13,7 @@ import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { getSkillsForUser } from "@/lib/queries/skills";
 import { recordProjectCompletion } from "@/lib/projects/projectCompletion";
 import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
+import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -785,6 +786,44 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
     [loadProjects, userId]
   );
 
+  const handleGoalDeleted = useCallback(
+    async (goal: Goal) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      try {
+        let targetUserId = userId;
+        if (!targetUserId) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user?.id) {
+            return;
+          }
+          targetUserId = user.id;
+          setUserId(user.id);
+        }
+        await deleteGoalCascade({
+          supabase,
+          goalId: goal.id,
+          userId: targetUserId,
+        });
+        setBaseGoals((prev) => prev.filter((item) => item.id !== goal.id));
+        setProjects((prev) =>
+          prev.filter(
+            (projectGoal) =>
+              projectGoal.parentGoalId !== goal.id && projectGoal.id !== goal.id
+          )
+        );
+        setEditingGoal(null);
+        setDrawerOpen(false);
+        setOpenGoalId(null);
+      } catch (err) {
+        console.error("Error deleting goal from skill view:", err);
+      }
+    },
+    [userId, setBaseGoals, setProjects, setEditingGoal, setDrawerOpen, setOpenGoalId, setUserId]
+  );
+
   const handleGoalOpenChange = useCallback(
     (goalId: string, isOpen: boolean) => {
       if (isOpen) {
@@ -886,6 +925,7 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
         monuments={monumentOptions}
         onAdd={() => {}}
         onUpdate={handleGoalUpdated}
+        onDelete={handleGoalDeleted}
         hideProjects
       />
     </div>

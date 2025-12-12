@@ -12,6 +12,7 @@ import { projectWeight, taskWeight, type TaskLite, type ProjectLite, dueDateUrge
 import { getSkillsForUser } from "@/lib/queries/skills";
 import { getMonumentsForUser } from "@/lib/queries/monuments";
 import { persistGoalUpdate } from "@/lib/goals/persistGoalUpdate";
+import { deleteGoalCascade } from "@/lib/goals/deleteGoalCascade";
 
 type GoalRowWithRelations = GoalRow & {
   due_date?: string | null;
@@ -595,6 +596,37 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     [decorate, userId]
   );
 
+  const handleGoalDeleted = useCallback(
+    async (goal: Goal) => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      try {
+        let targetUserId = userId;
+        if (!targetUserId) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user?.id) {
+            return;
+          }
+          targetUserId = user.id;
+          setUserId(user.id);
+        }
+        await deleteGoalCascade({
+          supabase,
+          goalId: goal.id,
+          userId: targetUserId,
+        });
+        setGoals((prev) => prev.filter((item) => item.id !== goal.id));
+        setEditingGoal((current) => (current?.id === goal.id ? null : current));
+        setDrawerOpen(false);
+      } catch (err) {
+        console.error("Error deleting goal from monument detail:", err);
+      }
+    },
+    [userId, setUserId, setGoals, setEditingGoal, setDrawerOpen]
+  );
+
   useEffect(() => {
     if (!openGoalId) return;
     if (!goals.some((goal) => goal.id === openGoalId)) {
@@ -710,6 +742,7 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
         initialGoal={editingGoal}
         monuments={monuments}
         onUpdate={handleGoalUpdated}
+        onDelete={handleGoalDeleted}
         hideProjects
       />
     </div>
