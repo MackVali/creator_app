@@ -34,6 +34,8 @@ interface GoalDrawerProps {
   initialGoal?: Goal | null;
   /** Callback when updating an existing goal */
   onUpdate?(goal: Goal, context: GoalUpdateContext): void;
+  /** Optional delete handler shown only while editing */
+  onDelete?(goal: Goal): Promise<void> | void;
   monuments?: { id: string; title: string; emoji?: string | null }[];
   hideProjects?: boolean;
 }
@@ -255,6 +257,7 @@ export function GoalDrawer({
   onAdd,
   initialGoal,
   onUpdate,
+  onDelete,
   monuments = [],
   hideProjects = false,
 }: GoalDrawerProps) {
@@ -272,9 +275,11 @@ export function GoalDrawer({
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const monumentSelectionRef = useRef<string>("");
 
   const editing = Boolean(initialGoal);
+  const showDeleteAction = editing && Boolean(onDelete && initialGoal);
 
   const getMonumentEmojiById = useCallback(
     (id?: string | null) => {
@@ -378,6 +383,30 @@ export function GoalDrawer({
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
+
+  const handleDeleteGoal = async () => {
+    if (!initialGoal || !onDelete) return;
+    const shouldDelete =
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            "Deleting this goal will also delete any related projects and tasks. This action cannot be undone. Continue?"
+          );
+    if (!shouldDelete) return;
+    let success = false;
+    try {
+      setDeleteLoading(true);
+      await Promise.resolve(onDelete(initialGoal));
+      success = true;
+    } catch (err) {
+      console.error("Error deleting goal from drawer:", err);
+    } finally {
+      setDeleteLoading(false);
+      if (success) {
+        onClose();
+      }
+    }
+  };
 
   const handleAddProject = () => {
     const stage = DEFAULT_PROJECT_STAGE;
@@ -559,7 +588,7 @@ export function GoalDrawer({
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || deleteLoading) return;
 
     const preservedStatus = initialGoal?.status ?? "Active";
     const computedStatus = active
@@ -1096,20 +1125,34 @@ export function GoalDrawer({
           </div>
         </form>
         <SheetFooter className="border-t border-white/10 bg-white/[0.02] px-6 py-4 sm:px-8">
-          <div className="flex w-full items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-sm text-white/70 hover:text-white"
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
+          <div className="flex w-full flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              {showDeleteAction ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="bg-red-600 text-white hover:bg-red-500 disabled:opacity-70"
+                  onClick={handleDeleteGoal}
+                  disabled={deleteLoading}
+                >
+                  Delete goal
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-sm text-white/70 hover:text-white"
+                onClick={onClose}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </Button>
+            </div>
             <Button
               type="submit"
               form={formId}
               className="bg-white text-sm font-semibold text-[#05070c] hover:bg-white/90 disabled:opacity-60"
-              disabled={!canSubmit}
+              disabled={!canSubmit || deleteLoading}
             >
               Save goal
             </Button>
