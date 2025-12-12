@@ -1092,15 +1092,13 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
   const [skillCategories, setSkillCategories] = useState<CatRow[]>([]);
   const [routineOptions, setRoutineOptions] = useState<RoutineOption[]>([]);
   const [routinesLoading, setRoutinesLoading] = useState(false);
-  const [routineLoadError, setRoutineLoadError] = useState<string | null>(
-    null
-  );
-  const [priorityDefinitions, setPriorityDefinitions] = useState<PriorityDefinition[]>([]);
-  const [energyDefinitions, setEnergyDefinitions] = useState<EnergyDefinition[]>([]);
-  const [priorityOptionsLoading, setPriorityOptionsLoading] = useState(false);
-  const [priorityOptionsError, setPriorityOptionsError] = useState<string | null>(null);
-  const [energyOptionsLoading, setEnergyOptionsLoading] = useState(false);
-  const [energyOptionsError, setEnergyOptionsError] = useState<string | null>(null);
+  const [routineLoadError, setRoutineLoadError] = useState<string | null>(null);
+  const priorityDefinitions: PriorityDefinition[] = DEFAULT_PRIORITY_DEFINITIONS;
+  const energyDefinitions: EnergyDefinition[] = DEFAULT_ENERGY_DEFINITIONS;
+  const priorityOptionsLoading = false;
+  const priorityOptionsError: string | null = null;
+  const energyOptionsLoading = false;
+  const energyOptionsError: string | null = null;
   const [routineId, setRoutineId] = useState<string>("none");
   const [newRoutineName, setNewRoutineName] = useState("");
   const [newRoutineDescription, setNewRoutineDescription] = useState("");
@@ -1299,93 +1297,6 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
     formData.manual_start,
     formData.manual_end,
     showProjectAdvancedOptions,
-  ]);
-
-  const loadPriorityEnergyOptions = useCallback(async () => {
-    setPriorityOptionsLoading(true);
-    setEnergyOptionsLoading(true);
-    setPriorityOptionsError(null);
-    setEnergyOptionsError(null);
-    try {
-      const supabase = getSupabaseBrowser();
-      if (!supabase) {
-        throw new Error("Supabase client not available");
-      }
-
-      const [priorityRes, energyRes] = await Promise.all([
-        supabase.from("priority").select("id, name").order("name", { ascending: true }),
-        supabase.from("energy").select("id, name").order("name", { ascending: true }),
-      ]);
-
-      if (priorityRes.error || energyRes.error) {
-        throw new Error(
-          `Failed to load priority/energy options: ${priorityRes.error?.message ?? ""} ${
-            energyRes.error?.message ?? ""
-          }`
-        );
-      }
-
-      const priorities = (priorityRes.data ?? []).map((row) => ({
-        id: String(row.id),
-        name: row.name?.trim() || "Priority",
-        order_index: null,
-      }));
-      const energies = (energyRes.data ?? []).map((row) => ({
-        id: String(row.id),
-        name: row.name?.trim() || "Energy",
-        order_index: null,
-      }));
-
-      if (priorities.length === 0) {
-        setPriorityDefinitions(DEFAULT_PRIORITY_DEFINITIONS);
-        setPriorityOptionsError("No priority rows found. Showing defaults.");
-      } else {
-        setPriorityDefinitions(priorities);
-        setPriorityOptionsError(null);
-      }
-
-      if (energies.length === 0) {
-        setEnergyDefinitions(DEFAULT_ENERGY_DEFINITIONS);
-        setEnergyOptionsError("No energy rows found. Showing defaults.");
-      } else {
-        setEnergyDefinitions(energies);
-        setEnergyOptionsError(null);
-      }
-    } catch (error) {
-      console.error("Error loading priority/energy options:", error);
-      setPriorityDefinitions(DEFAULT_PRIORITY_DEFINITIONS);
-      setEnergyDefinitions(DEFAULT_ENERGY_DEFINITIONS);
-      setPriorityOptionsError("Unable to load priority options. Using defaults.");
-      setEnergyOptionsError("Unable to load energy options. Using defaults.");
-    } finally {
-      setPriorityOptionsLoading(false);
-      setEnergyOptionsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadPriorityEnergyOptions();
-  }, [loadPriorityEnergyOptions]);
-
-  useEffect(() => {
-    if (
-      isOpen &&
-      !priorityOptionsLoading &&
-      !energyOptionsLoading &&
-      ((priorityDefinitions.length === 0 && !priorityOptionsError) ||
-        (energyDefinitions.length === 0 && !energyOptionsError))
-    ) {
-      void loadPriorityEnergyOptions();
-    }
-  }, [
-    isOpen,
-    priorityDefinitions.length,
-    energyDefinitions.length,
-    priorityOptionsLoading,
-    energyOptionsLoading,
-    priorityOptionsError,
-    energyOptionsError,
-    loadPriorityEnergyOptions,
   ]);
 
   const loadFormData = useCallback(async () => {
@@ -2138,28 +2049,9 @@ export function EventModal({ isOpen, onClose, eventType }: EventModalProps) {
         name: formatNameValue(formData.name.trim()),
       };
 
-      if (eventType === "HABIT") {
-        insertData.energy = resolvedEnergyCode;
-      } else {
-        const energyId = Number(resolvedEnergyValue);
-        if (!Number.isFinite(energyId)) {
-          toast.error(
-            "Energy unavailable",
-            "We couldn’t determine the energy option. Please reopen the modal and try again."
-          );
-          return;
-        }
-        insertData.energy = energyId;
-
-        const priorityId = Number(resolvedPriorityValue);
-        if (!Number.isFinite(priorityId)) {
-          toast.error(
-            "Priority unavailable",
-            "We couldn’t determine the priority option. Please reopen the modal and try again."
-          );
-          return;
-        }
-        insertData.priority = priorityId;
+      insertData.energy = resolvedEnergyCode;
+      if (eventType !== "HABIT") {
+        insertData.priority = resolvedPriorityCode;
       }
 
       if (

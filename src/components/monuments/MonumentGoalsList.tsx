@@ -22,8 +22,8 @@ type GoalRowWithRelations = GoalRow & {
     id: string;
     name: string;
     goal_id: string;
-    priority: { id?: string | number | null; name?: string | null } | string | null;
-    energy: { id?: string | number | null; name?: string | null } | string | null;
+    priority: string | null;
+    energy: string | null;
     stage: string | null;
     duration_min?: number | null;
     created_at: string;
@@ -168,18 +168,6 @@ const extractLookupName = (field: { name?: string | null } | string | null | und
   return null;
 };
 
-const extractLookupId = (
-  field: { id?: string | number | null } | string | number | null | undefined
-) => {
-  if (field && typeof field === "object" && "id" in field) {
-    return field.id ?? null;
-  }
-  if (typeof field === "string" || typeof field === "number") {
-    return field;
-  }
-  return null;
-};
-
 const isProjectStageComplete = (stage?: string | null): boolean => {
   if (typeof stage !== "string") return false;
   return COMPLETED_PROJECT_STAGES.has(stage.toUpperCase());
@@ -277,8 +265,8 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
     ${baseSelect},
     projects (
       id, name, goal_id, stage, duration_min, created_at, due_date,
-      priority:priority(name),
-      energy:energy(name),
+      priority,
+      energy,
       tasks (
         id, project_id, stage, name, skill_id, priority
       ),
@@ -345,32 +333,16 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
     try {
       const { data, error } = await supabase
         .from("goals")
-        .select(
-          "priority, energy, monument_id, due_date, why, active, status, priority_lookup:priority(name), energy_lookup:energy(name)"
-        )
+        .select("priority, energy, monument_id, due_date, why, active, status")
         .eq("id", goal.id)
         .single();
       if (error || !data) {
         return goal;
       }
-      const priorityName =
-        typeof data.priority_lookup?.name === "string"
-          ? data.priority_lookup.name
-          : null;
-      const energyName =
-        typeof data.energy_lookup?.name === "string"
-          ? data.energy_lookup.name
-          : null;
-      const priorityCode = priorityName
-        ? priorityName.toUpperCase()
-        : typeof data.priority === "string"
-          ? data.priority.toUpperCase()
-          : null;
-      const energyCode = energyName
-        ? energyName.toUpperCase()
-        : typeof data.energy === "string"
-          ? data.energy.toUpperCase()
-          : null;
+      const priorityCode =
+        typeof data.priority === "string" ? data.priority.toUpperCase() : null;
+      const energyCode =
+        typeof data.energy === "string" ? data.energy.toUpperCase() : null;
       return {
         ...goal,
         priority: priorityCode ? mapPriority(priorityCode) : goal.priority,
@@ -483,8 +455,6 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
             const rawPriority = extractLookupName(p.priority);
             const energyCode = normalizeEnergyCode(rawEnergy);
             const priorityCode = normalizePriorityCode(rawPriority);
-            const energyId = extractLookupId(p.energy);
-            const priorityId = extractLookupId(p.priority);
             return {
               id: p.id,
               name: p.name,
@@ -496,8 +466,6 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
               emoji: projectEmoji,
               stage: p.stage ?? "BUILD",
               priorityCode,
-              energyId,
-              priorityId,
               durationMinutes:
                 typeof p.duration_min === "number" && Number.isFinite(p.duration_min)
                   ? p.duration_min
