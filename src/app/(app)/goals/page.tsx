@@ -269,7 +269,21 @@ async function fetchGoalsWithRelations(
 ): Promise<GoalRowWithRelations[]> {
   const baseSelect =
     "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
-  const selectWithRelations = `
+  const selectWithEnumColumns = `
+    ${baseSelect},
+    projects (
+      id, name, goal_id, stage, duration_min, created_at, due_date,
+      priority,
+      energy,
+      tasks (
+        id, project_id, stage, name, skill_id, priority
+      ),
+      project_skills (
+        skill_id
+      )
+    )
+  `;
+  const selectWithLookupRelations = `
     ${baseSelect},
     projects (
       id, name, goal_id, stage, duration_min, created_at, due_date,
@@ -290,12 +304,19 @@ async function fetchGoalsWithRelations(
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-  const { data, error } = await runQuery(selectWithRelations);
-  if (!error) {
-    return data ?? [];
+  const variants = [
+    { description: "enum column project fetch", select: selectWithEnumColumns },
+    { description: "lookup relation project fetch", select: selectWithLookupRelations },
+  ];
+  for (const variant of variants) {
+    const { data, error } = await runQuery(variant.select);
+    if (!error) {
+      return data ?? [];
+    }
+    console.warn(`Goal fetch variant failed (${variant.description}):`, error);
   }
 
-  console.warn("Falling back to basic goal fetch (relations unavailable):", error);
+  console.warn("Falling back to basic goal fetch (relations unavailable)");
 
   const fallback = await runQuery(baseSelect);
   if (fallback.error) {

@@ -259,7 +259,21 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
 
   const baseSelect =
     "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
-  const selectWithRelations = `
+  const selectWithEnumColumns = `
+    ${baseSelect},
+    projects (
+      id, name, goal_id, stage, duration_min, created_at, due_date,
+      priority,
+      energy,
+      tasks (
+        id, project_id, stage, name, skill_id, priority
+      ),
+      project_skills (
+        skill_id
+      )
+    )
+  `;
+  const selectWithLookupRelations = `
     ${baseSelect},
     projects (
       id, name, goal_id, stage, duration_min, created_at, due_date,
@@ -282,13 +296,20 @@ async function fetchGoalsWithRelationsForMonument(monumentId: string, userId: st
       .eq("monument_id", monumentId)
       .order("created_at", { ascending: false });
 
-  const { data, error } = await runQuery(selectWithRelations);
+  const variants = [
+    { description: "enum column project fetch", select: selectWithEnumColumns },
+    { description: "lookup relation project fetch", select: selectWithLookupRelations },
+  ];
 
-  if (!error) {
-    return data ?? [];
+  for (const variant of variants) {
+    const { data, error } = await runQuery(variant.select);
+    if (!error) {
+      return data ?? [];
+    }
+    console.warn(`Monument goal fetch variant failed (${variant.description}):`, error);
   }
 
-  console.warn("Falling back to basic monument goal fetch:", error);
+  console.warn("Falling back to basic monument goal fetch");
 
   const fallback = await runQuery(baseSelect);
   if (fallback.error) {
@@ -775,7 +796,6 @@ export function MonumentGoalsList({ monumentId, monumentEmoji }: { monumentId: s
         monuments={monuments}
         onUpdate={handleGoalUpdated}
         onDelete={handleGoalDeleted}
-        hideProjects
       />
     </div>
   );
