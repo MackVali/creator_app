@@ -239,12 +239,26 @@ async function fetchGoalsWithRelations(userId: string) {
   if (!supabase) return [] as GoalRowWithRelations[];
   const baseSelect =
     "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
-  const selectWithRelations = `
+  const selectWithEnumColumns = `
     ${baseSelect},
     projects (
-      id, name, goal_id, stage, created_at, due_date,
+      id, name, goal_id, stage, duration_min, created_at, due_date,
       priority,
       energy,
+      tasks (
+        id, project_id, stage, name, skill_id, priority
+      ),
+      project_skills (
+        skill_id
+      )
+    )
+  `;
+  const selectWithLookupRelations = `
+    ${baseSelect},
+    projects (
+      id, name, goal_id, stage, duration_min, created_at, due_date,
+      priority:priority(name),
+      energy:energy(name),
       tasks (
         id, project_id, stage, name, skill_id, priority
       ),
@@ -261,13 +275,20 @@ async function fetchGoalsWithRelations(userId: string) {
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-  const { data, error } = await runQuery(selectWithRelations);
+  const variants = [
+    { description: "enum column project fetch", select: selectWithEnumColumns },
+    { description: "lookup relation project fetch", select: selectWithLookupRelations },
+  ];
 
-  if (!error) {
-    return data ?? [];
+  for (const variant of variants) {
+    const { data, error } = await runQuery(variant.select);
+    if (!error) {
+      return data ?? [];
+    }
+    console.warn(`Skill goal fetch variant failed (${variant.description}):`, error);
   }
 
-  console.warn("Falling back to basic skill goal fetch:", error);
+  console.warn("Falling back to basic skill goal fetch");
 
   const fallback = await runQuery(baseSelect);
   if (fallback.error) {
@@ -926,7 +947,6 @@ export function SkillProjectsList({ skillId }: { skillId: string }) {
         onAdd={() => {}}
         onUpdate={handleGoalUpdated}
         onDelete={handleGoalDeleted}
-        hideProjects
       />
     </div>
   );
