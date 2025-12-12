@@ -676,15 +676,15 @@ export function GoalDrawer({
     >
       <SheetContent
         side="center"
-        className="h-[90vh] w-full max-w-3xl border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
+        className="h-[90vh] w-full max-w-3xl overflow-hidden border border-white/10 bg-[#05070c] text-white shadow-[0_45px_120px_-40px_rgba(5,8,21,0.85)] sm:max-w-4xl"
       >
         <SheetHeader className="border-b border-white/10 px-6 py-5 sm:px-8 sm:py-6">
           <SheetTitle className="text-left text-xl font-semibold text-white tracking-[0.2em] uppercase">
             {editing ? "Edit goal" : "Create a goal"}
           </SheetTitle>
         </SheetHeader>
-        <form id={formId} onSubmit={submit} className="flex h-full flex-col">
-          <div className="flex-1 space-y-8 overflow-y-auto px-6 pb-10 pt-6 sm:px-8 sm:pb-12">
+        <form id={formId} onSubmit={submit} className="flex flex-1 min-h-0 flex-col">
+          <div className="flex-1 min-h-0 space-y-8 overflow-y-auto px-6 pb-10 pt-6 sm:px-8 sm:pb-12">
             <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
                 <Label
