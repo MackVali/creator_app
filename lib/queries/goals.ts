@@ -12,6 +12,7 @@ export interface Goal {
   active?: boolean;
   status?: string;
   monument_id?: string | null;
+  roadmap_id?: string | null;
   weight?: number | null;
   weight_boost?: number | null;
   due_date?: string | null;

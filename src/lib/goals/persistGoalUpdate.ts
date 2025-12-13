@@ -204,6 +204,7 @@ export async function persistGoalUpdate({
     status: STATUS_TO_DB[goal.status] ?? "ACTIVE",
     why: goal.why ?? null,
     monument_id: goal.monumentId || null,
+    roadmap_id: goal.roadmapId || null,
     due_date: goal.dueDate ?? null,
   };
 
