@@ -5,7 +5,7 @@ import { getSupabaseBrowser } from "@/lib/supabase";
 import type { Goal as GoalRow } from "@/lib/queries/goals";
 import { GoalCard } from "@/app/(app)/goals/components/GoalCard";
 import { RoadmapCard } from "@/app/(app)/goals/components/RoadmapCard";
-import { RoadmapDrawer } from "@/app/(app)/goals/components/RoadmapDrawer";
+import { RoadmapDrawer } from "../../app/(app)/goals/components/RoadmapDrawer";
 import {
   GoalDrawer,
   type GoalUpdateContext,
