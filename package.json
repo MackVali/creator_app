@@ -40,7 +40,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.540.0",
-    "next": "^15.5.7",
+    "next": "^15.5.9",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "suncalc": "^1.9.0",
@@ -48,7 +48,7 @@
     "zod": "^4.1.1"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.0.0",
+    "@eslint/eslintrc": "^3.3.3",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
@@ -64,7 +64,7 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.20.6",
     "typescript": "^5.0.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.0.15"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
