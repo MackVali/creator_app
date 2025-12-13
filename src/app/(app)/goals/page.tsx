@@ -1269,6 +1269,7 @@ export default function GoalsPage() {
             }
             updateGoal(goal);
           }}
+          onDelete={handleDelete}
         />
       </div>
     </ProtectedRoute>
