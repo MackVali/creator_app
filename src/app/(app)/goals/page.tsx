@@ -274,7 +274,7 @@ async function fetchGoalsWithRelations(
   userId: string
 ): Promise<GoalRowWithRelations[]> {
   const baseSelect =
-    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, weight, weight_boost, due_date";
+    "id, name, priority, energy, priority_code, energy_code, why, created_at, active, status, monument_id, roadmap_id, weight, weight_boost, due_date";
   const selectWithEnumColumns = `
     ${baseSelect},
     projects (
@@ -832,6 +832,7 @@ export default function GoalsPage() {
             dueDate: g.due_date ?? undefined,
             projects: projList,
             monumentId: g.monument_id ?? null,
+            roadmapId: g.roadmap_id ?? null,
             priorityCode: normalizedGoalPriorityCode,
             energyCode: normalizedGoalEnergyCode,
             weightBoost: g.weight_boost ?? 0,
@@ -1008,6 +1009,7 @@ export default function GoalsPage() {
             status: statusDb,
             why: _goal.why ?? null,
             monument_id: _goal.monumentId || null,
+            roadmap_id: _goal.roadmapId || null,
             due_date: _goal.dueDate ?? null,
             ...(includeCodeColumns
               ? {
@@ -1016,7 +1018,7 @@ export default function GoalsPage() {
                 }
               : {}),
           })
-          .select("id, created_at, weight, weight_boost, monument_id, due_date")
+          .select("id, created_at, weight, weight_boost, monument_id, roadmap_id, due_date")
           .single();
 
       let insertResult = await performInsert(true);
@@ -1047,6 +1049,7 @@ export default function GoalsPage() {
         id: newGoalId,
         createdAt: inserted.created_at ?? _goal.createdAt,
         monumentId: inserted.monument_id ?? _goal.monumentId ?? null,
+        roadmapId: inserted.roadmap_id ?? _goal.roadmapId ?? null,
         dueDate: inserted.due_date ?? _goal.dueDate,
         weight: inserted.weight ?? _goal.weight,
         weightBoost: inserted.weight_boost ?? _goal.weightBoost,

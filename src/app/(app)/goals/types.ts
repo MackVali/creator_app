@@ -21,8 +21,6 @@ export interface Project {
   priorityCode?: string;
   durationMinutes?: number | null;
   skillIds?: string[];
-  priorityId?: string | number | null;
-  energyId?: string | number | null;
   weight?: number;
   isNew?: boolean;
 }
@@ -45,6 +43,7 @@ export interface Goal {
   projects: Project[];
   monumentId?: string | null;
   monumentEmoji?: string | null;
+  roadmapId?: string | null;
   priorityCode?: string | null;
   energyCode?: string | null;
   /** Associated skill IDs */

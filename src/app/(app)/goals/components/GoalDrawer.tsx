@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, Plus, X } from "lucide-react";
+import { listRoadmaps, createRoadmap } from "@/lib/queries/roadmaps";
+import { getSupabaseBrowser } from "@/lib/supabase";
 import {
   Sheet,
   SheetContent,
@@ -37,6 +39,7 @@ interface GoalDrawerProps {
   /** Optional delete handler shown only while editing */
   onDelete?(goal: Goal): Promise<void> | void;
   monuments?: { id: string; title: string; emoji?: string | null }[];
+  roadmaps?: { id: string; title: string; emoji?: string | null }[];
   hideProjects?: boolean;
 }
 
@@ -259,6 +262,7 @@ export function GoalDrawer({
   onUpdate,
   onDelete,
   monuments = [],
+  roadmaps = undefined,
   hideProjects = false,
 }: GoalDrawerProps) {
   const formId = "goal-editor-form";
@@ -270,8 +274,14 @@ export function GoalDrawer({
   const [active, setActive] = useState(true);
   const [why, setWhy] = useState("");
   const [monumentId, setMonumentId] = useState<string>("");
+  const [roadmapId, setRoadmapId] = useState<string>("");
   const [dueDateInput, setDueDateInput] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showCreateRoadmap, setShowCreateRoadmap] = useState(false);
+  const [newRoadmapTitle, setNewRoadmapTitle] = useState("");
+  const [newRoadmapEmoji, setNewRoadmapEmoji] = useState("");
+  const [roadmapsList, setRoadmapsList] = useState<{ id: string; title: string; emoji?: string | null }[]>(roadmaps || []);
+  const [isCreatingRoadmap, setIsCreatingRoadmap] = useState(false);
   const [projectsState, setProjectsState] = useState<EditableProject[]>([]);
   const [removedProjectIds, setRemovedProjectIds] = useState<string[]>([]);
   const [removedTaskIds, setRemovedTaskIds] = useState<string[]>([]);
@@ -310,6 +320,10 @@ export function GoalDrawer({
       setWhy(initialGoal.why || "");
       setMonumentId(initialGoal.monumentId || "");
       monumentSelectionRef.current = initialGoal.monumentId || "";
+      setRoadmapId(initialGoal.roadmapId || "");
+      setShowCreateRoadmap(false);
+      setNewRoadmapTitle("");
+      setNewRoadmapEmoji("");
       setDueDateInput(toDateInputValue(initialGoal.dueDate));
       setShowAdvanced(Boolean(initialGoal.dueDate));
       setProjectsState(
@@ -343,6 +357,10 @@ export function GoalDrawer({
       setWhy("");
       setMonumentId("");
       monumentSelectionRef.current = "";
+      setRoadmapId("");
+      setShowCreateRoadmap(false);
+      setNewRoadmapTitle("");
+      setNewRoadmapEmoji("");
       setDueDateInput("");
       setShowAdvanced(false);
       setProjectsState([]);
@@ -374,6 +392,74 @@ export function GoalDrawer({
     }
     return [...monuments].sort((a, b) => a.title.localeCompare(b.title));
   }, [monuments]);
+
+  const roadmapOptions = useMemo(() => {
+    if (!roadmapsList.length) {
+      return [] as { id: string; title: string; emoji?: string | null }[];
+    }
+    return [...roadmapsList].sort((a, b) => a.title.localeCompare(b.title));
+  }, [roadmapsList]);
+
+  // Load roadmaps if not provided as prop
+  useEffect(() => {
+    if (roadmaps !== undefined) {
+      setRoadmapsList(roadmaps);
+      return;
+    }
+    if (!open) return;
+    let cancelled = false;
+    const loadRoadmaps = async () => {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) return;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const roadmapsData = await listRoadmaps(user.id);
+        if (!cancelled) {
+          setRoadmapsList(roadmapsData);
+        }
+      } catch (err) {
+        console.error("Error loading roadmaps:", err);
+      }
+    };
+    loadRoadmaps();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, roadmaps]);
+
+  const handleCreateRoadmap = async () => {
+    if (!newRoadmapTitle.trim()) return;
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    try {
+      setIsCreatingRoadmap(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const newRoadmap = await createRoadmap(user.id, {
+        title: newRoadmapTitle.trim(),
+        emoji: newRoadmapEmoji.trim() || null,
+      });
+      setRoadmapsList((prev) => [...prev, newRoadmap]);
+      setRoadmapId(newRoadmap.id);
+      setShowCreateRoadmap(false);
+      setNewRoadmapTitle("");
+      setNewRoadmapEmoji("");
+    } catch (err) {
+      console.error("Error creating roadmap:", err);
+    } finally {
+      setIsCreatingRoadmap(false);
+    }
+  };
+
+  const handleRoadmapSelectChange = (value: string) => {
+    if (value === "__create__") {
+      setShowCreateRoadmap(true);
+    } else {
+      setRoadmapId(value);
+      setShowCreateRoadmap(false);
+    }
+  };
 
   // Allow saving at any point: only require a title.
   // Empty-named projects/tasks will be filtered out during persistence.
@@ -652,6 +738,7 @@ export function GoalDrawer({
       updatedAt: new Date().toISOString(),
       projects: preparedProjects,
       monumentId: monumentId || null,
+      roadmapId: roadmapId || null,
       skills: initialGoal?.skills,
       weight: initialGoal?.weight,
       why: why.trim() ? why.trim() : undefined,
@@ -747,6 +834,91 @@ export function GoalDrawer({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
+                  Roadmap
+                </Label>
+                {showCreateRoadmap ? (
+                  <div className="space-y-2 rounded-xl border border-white/20 bg-white/5 p-3">
+                    <div className="flex gap-2">
+                      <Input
+                        value={newRoadmapEmoji}
+                        onChange={(e) => setNewRoadmapEmoji(e.target.value)}
+                        maxLength={2}
+                        placeholder="✨"
+                        className="h-10 w-16 rounded-xl border-white/20 bg-white/5 text-center text-xl text-white"
+                      />
+                      <Input
+                        value={newRoadmapTitle}
+                        onChange={(e) => setNewRoadmapTitle(e.target.value)}
+                        placeholder="Roadmap name"
+                        className="flex-1 h-10 rounded-xl border-white/20 bg-white/5 text-sm text-white placeholder:text-white/40"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && newRoadmapTitle.trim()) {
+                            e.preventDefault();
+                            handleCreateRoadmap();
+                          }
+                          if (e.key === "Escape") {
+                            setShowCreateRoadmap(false);
+                            setNewRoadmapTitle("");
+                            setNewRoadmapEmoji("");
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        onClick={handleCreateRoadmap}
+                        disabled={!newRoadmapTitle.trim() || isCreatingRoadmap}
+                        className="flex-1 h-8 text-xs"
+                      >
+                        {isCreatingRoadmap ? "Creating..." : "Create"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setShowCreateRoadmap(false);
+                          setNewRoadmapTitle("");
+                          setNewRoadmapEmoji("");
+                        }}
+                        className="h-8 text-xs"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Select
+                    value={roadmapId}
+                    onValueChange={handleRoadmapSelectChange}
+                    placeholder="Not linked"
+                    className="w-full"
+                    triggerClassName="h-11 rounded-xl border-white/20 bg-white/5 text-left text-sm text-white"
+                  >
+                    <SelectContent>
+                      <SelectItem value="" label="Not linked">
+                        <span className="text-sm text-white/70">Not linked</span>
+                      </SelectItem>
+                      {roadmapOptions.map((roadmap) => (
+                        <SelectItem key={roadmap.id} value={roadmap.id}>
+                          <span className="flex items-center gap-2">
+                            {roadmap.emoji && <span>{roadmap.emoji}</span>}
+                            <span>{roadmap.title}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__create__" label="➕ Create new roadmap">
+                        <span className="flex items-center gap-2 text-sm text-white/70">
+                          <Plus className="h-4 w-4" />
+                          <span>Create new roadmap</span>
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="flex flex-row gap-4 sm:grid sm:grid-cols-2">
                 <div className="space-y-3 flex-1">
